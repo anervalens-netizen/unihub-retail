@@ -13,6 +13,7 @@
 
 ## Project State
 
+- **GitHub:** https://github.com/anervalens-netizen/unihub (initial commit `6ac4c06`, 98 files)
 - Local application, no Docker, no deployment
 - Stack: React 19 + Vite + TypeScript (frontend) / FastAPI + asyncpg + PostgreSQL 18 (backend)
 - All 5 modules functional: Hub, Focus, Agenti, Vizite, Setari
@@ -34,7 +35,7 @@ npm run dev:backend  # backend on :8000
 | `App.tsx` | Auth + tab routing |
 | `MainLayout.tsx` | Main shell, navigation, filters |
 | `Dashboard.tsx` | Hub tab |
-| `Campaigns.tsx` | Focus tab |
+| `Campaigns.tsx` | Focus tab (Campanii) — redesigned 2026-03-31 with promo/incentive cards |
 | `Agents.tsx` | Agenti tab — includes AgentDrawer, AgentDetails |
 | `SalariiSubtab.tsx` | Salarii sub-tab in Agenti |
 | `Visits.tsx` | Vizite tab |
@@ -92,6 +93,57 @@ The **Agenti** module has its own independent filters.
 ### ErrorBoundary
 Imported as `import { ErrorBoundary } from './ErrorBoundary'` in `Agents.tsx`.
 There is **no** `error-catcher.tsx` at the project root anymore.
+
+---
+
+## Session Log — 2026-03-31
+
+### param_floor fix (TL/ASM 500 errors)
+Multiple 500 errors on `/api/dashboard/all` and `/api/agents/overview` for TL/ASM were caused by `scope_params` (containing `user_id` for TL) being **prepended** before other params, shifting `$N` positions.
+
+**Root fix:** Added `param_floor=len(params)` to ALL `scoped_clauses()` calls across `dashboard.py`, `dashboard_filters.py`, and `agents.py`. This ensures `scope_params` are always appended at the **end** of the param list, leaving hardcoded positions ($1, $2, $3) untouched.
+
+Files changed:
+- `backend/routers/dashboard_filters.py`: `where_clauses()` and `transaction_filter_parts()` now pass `param_floor=len(params)`
+- `backend/routers/agents.py`: overview query fixed: `*params[1:]` → `*params, prev_month`
+- `backend/routers/shared.py`: `build_scope_filter` uses `param_start` for TL scope params
+
+Also cleaned up duplicate `_get_special_cards_data` query block (lines ~1894-1932).
+
+### TL tab IDs unified
+`App.tsx` and `MainLayout.tsx` tab IDs unified to `hub`/`focus`/`agents`/`ai`/`settings`.
+
+### Focus tab added to TL role
+`src/lib/roles.ts` updated to include `'focus'` in TL role tabs array.
+
+### Campanii — new endpoint + redesigned UI
+
+**New endpoint:** `GET /api/campaigns/promotions-incentives`
+- Params: `start_date`, `end_date`, `zone`
+- Returns: `promo_title`, `promo_description`, `promo_qty`, `promo_total_qty`, `promo_impact` (20% × sales), `incentive_title`, `incentive_description`, `incentive_qty`, `incentive_value` (qty × reward_per_unit), `top_stores[]`, `top_agents[]`
+
+**Tables used:**
+- Promo data: `reporting_item_day` (has `positive_quantity`, `net_quantity`, `total_sales` — NO `total_quantity` column)
+- Incentive data: `reporting_item_month`
+- `reporting_item_day` has NO `category` column — category filters use `reporting_category_month` instead
+
+**Important column notes:**
+- `reporting_item_day`: `positive_quantity`, `net_quantity` (= positive - return), `total_sales` — NO `total_quantity`
+- `reporting_focus_item_month`, `reporting_agent_month`: have `total_quantity`
+- `reporting_item_day`: NO `category` column (unlike `reporting_category_month`)
+
+**Bug fixes during implementation:**
+- `total_quantity` → `net_quantity` in promo queries (reporting_item_day doesn't have total_quantity)
+- `agg.category` removed from category queries (column doesn't exist in reporting_item_day)
+- Date params must be Python `date` objects, not strings (asyncpg binding error)
+- Category subquery param positions: site_code pos = 4 + zona_count (dynamic, not hardcoded $4)
+- `IncentiveTopAgent` uses `agent_name` (not `agent`), `PromoTopStore` uses `store_name` (not `site_code`+`locatie` separate)
+
+**Frontend redesign (`Campaigns.tsx`):**
+- Header card ("Campanii in curs") with month
+- **Card Promotii**: title, description, qty (big number), progress bar (qty/total_qty), impact (20% × sales), embedded Top 10 Magazine table
+- **Card Incentive**: title, description, qty (big number), incentive value (qty × 5 RON), embedded Top 10 Agenti table
+- Tables embedded inside each card, amber/indigo alternating row styling
 
 ---
 

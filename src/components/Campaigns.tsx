@@ -118,7 +118,13 @@ export function Campaigns({
     Promise.all([
       getCampaignSnapshot(buildQuery(currentMonth)),
       getSpecialCards(buildQuery(currentMonth)),
-      getPromotionsIncentives(`${currentMonth}-01`, `${currentMonth}-31`, filters.firma),
+      getPromotionsIncentives(`${currentMonth}-01`, `${currentMonth}-31`, {
+        firma: filters.firma,
+        regional: filters.rm,
+        asm: filters.asm,
+        site_code: filters.magazin,
+        agent: filters.agent,
+      }),
     ])
       .then(([snapshotData, specialsData, promoResponse]) => {
         if (!isMountedRef.current) return;
@@ -141,7 +147,7 @@ export function Campaigns({
       .finally(() => {
         if (isMountedRef.current) setLoading(false);
       });
-  }, [buildQuery, currentCacheKey, currentMonth, filters.firma]);
+  }, [buildQuery, currentCacheKey, currentMonth, filters]);
 
   const loadFocusHistory = useCallback(() => {
     if (!isMountedRef.current) return;

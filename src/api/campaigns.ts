@@ -29,12 +29,26 @@ export async function getFocusHistory(
 export async function getPromotionsIncentives(
   startDate: string,
   endDate: string,
-  zone?: string
+  filters?: {
+    firma?: string;
+    regional?: string;
+    asm?: string;
+    site_code?: string;
+    agent?: string;
+  }
 ): Promise<CampaignsPromotionsResponse> {
   const { data } = await client.get<CampaignsPromotionsResponse>(
     '/api/campaigns/promotions-incentives',
     {
-      params: { start_date: startDate, end_date: endDate, ...(zone && { zone }) },
+      params: {
+        start_date: startDate,
+        end_date: endDate,
+        ...(filters?.firma && { firma: filters.firma }),
+        ...(filters?.regional && { regional: filters.regional }),
+        ...(filters?.asm && { asm: filters.asm }),
+        ...(filters?.site_code && { site_code: filters.site_code }),
+        ...(filters?.agent && { agent: filters.agent }),
+      },
     }
   );
   return data;

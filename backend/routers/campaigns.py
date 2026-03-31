@@ -22,6 +22,7 @@ from models import (
     IncentiveData,
     IncentiveAgentStat,
 )
+from routers.dashboard import _fetch_promo_incentive_summary
 from routers.dashboard_filters import scoped_clauses
 from routers.shared import build_scope_filter, normalize_filter
 from services.dashboard_specials import (
@@ -298,14 +299,18 @@ async def get_focus_history(
 async def get_promotions_incentives(
     start_date: str = Query(...),
     end_date: str = Query(...),
-    zone: str | None = None,
+    firma: str | None = None,
+    regional: str | None = None,
+    asm: str | None = None,
+    site_code: str | None = None,
+    agent: str | None = None,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> CampaignsPromotionsResponse:
-    # Parse date strings to date objects for asyncpg
     from datetime import date as date_cls
 
     start = date_cls.fromisoformat(start_date)
     end = date_cls.fromisoformat(end_date)
+    month = start_date[:7]
 
     config, _ = load_special_cards_config()
     promotion_definition, promotion_error = parse_promotion_definition(config)
@@ -313,39 +318,62 @@ async def get_promotions_incentives(
 
     pool = await get_pool()
     async with pool.acquire() as conn:
-        promo_qty = 0
+        promo_title = (
+            promotion_definition.get("title", "Promotie")
+            if promotion_definition
+            else ""
+        )
+        promo_description = (
+            promotion_definition.get("description", "") if promotion_definition else ""
+        )
+        incentive_title = (
+            incentive_definition.get("title", "Incentive")
+            if incentive_definition
+            else ""
+        )
+        incentive_description = (
+            incentive_definition.get("description", "") if incentive_definition else ""
+        )
+
+        summary = await _fetch_promo_incentive_summary(
+            conn=conn,
+            user=user,
+            month=month,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+
+        promo_qty = summary.promo_qty
+        promo_impact = float(summary.promo_impact)
+        incentive_qty = summary.incentive_qty
+        incentive_value = float(summary.incentive_value)
+
         promo_total_qty = 0
-        promo_category_qty: int | None = None
-        promo_impact: float = 0.0
-        promo_title = ""
-        promo_description = ""
-        incentive_qty = 0
-        incentive_value: float = 0.0
-        incentive_title = ""
-        incentive_description = ""
-        top_stores: list[PromoTopStore] = []
-        top_agents: list[IncentiveTopAgent] = []
-
         if promotion_definition is not None and promotion_error is None:
-            promo_title = promotion_definition.get("title", "Promotie")
-            promo_description = promotion_definition.get("description", "")
-
+            promo_month = start_date[:7]
             promo_params: list[Any] = [
                 start,
                 end,
                 promotion_definition["item_codes"],
+                promo_month,
             ]
             positions: dict[str, int] = {}
             for key, value in [
-                ("firma", normalize_filter(zone)),
-                ("regional", normalize_filter(zone)),
-                ("asm", normalize_filter(zone)),
+                ("firma", normalize_filter(firma)),
+                ("regional", normalize_filter(regional)),
+                ("asm", normalize_filter(asm)),
+                ("site_code", normalize_filter(site_code)),
+                ("agent", normalize_filter(agent)),
             ]:
                 if value is not None:
                     promo_params.append(value)
                     positions[key] = len(promo_params)
 
             promo_clauses = [
+                "agg.import_month = $4",
                 "agg.sale_date BETWEEN $1 AND $2",
                 "agg.item_code = ANY($3::TEXT[])",
             ]
@@ -362,23 +390,17 @@ async def get_promotions_incentives(
             )
             promo_clauses.extend(promo_query_clauses)
 
-            promo_row = await conn.fetchrow(
+            total_row = await conn.fetchrow(
                 f"""
-                SELECT
-                    COALESCE(SUM(agg.positive_quantity), 0) AS promo_qty,
-                    COALESCE(SUM(agg.net_quantity), 0) AS total_qty,
-                    COALESCE(SUM(agg.total_sales), 0) AS total_sales
+                SELECT COALESCE(SUM(agg.net_quantity), 0) AS total_qty
                 FROM reporting_item_day agg
                 WHERE {" AND ".join(promo_clauses)}
                 """,
                 *promo_params,
                 *promo_scope_params,
             )
-            if promo_row:
-                promo_qty = int(promo_row["promo_qty"] or 0)
-                promo_total_qty = int(promo_row["total_qty"] or 0)
-                promo_sales = float(promo_row["total_sales"] or 0)
-                promo_impact = round(promo_sales * 0.20, 2)
+            if total_row:
+                promo_total_qty = int(total_row["total_qty"] or 0)
 
             store_rows = await conn.fetch(
                 f"""
@@ -396,30 +418,32 @@ async def get_promotions_incentives(
                 *promo_params,
                 *promo_scope_params,
             )
-            for row in store_rows:
-                top_stores.append(
-                    PromoTopStore(
-                        store_name=f"{row['site_code']} - {row['locatie']}",
-                        qty=row["qty"],
-                        total_qty=row["total_qty"],
-                        category_qty=0,
-                    )
+            top_stores = [
+                PromoTopStore(
+                    store_name=f"{row['site_code']} - {row['locatie']}",
+                    qty=row["qty"],
+                    total_qty=row["total_qty"],
+                    category_qty=0,
                 )
+                for row in store_rows
+            ]
+        else:
+            top_stores = []
 
         if incentive_definition is not None and incentive_error is None:
-            incentive_title = incentive_definition.get("title", "Incentive")
-            incentive_description = incentive_definition.get("description", "")
-
             incentive_codes, incentive_codes_error = load_incentive_codes(
                 incentive_definition
             )
             if incentive_codes is not None and incentive_codes_error is None:
-                incentive_params: list[Any] = [incentive_codes]
+                incentive_month = start_date[:7]
+                incentive_params: list[Any] = [incentive_codes, incentive_month]
                 incentive_positions: dict[str, int] = {}
                 for key, value in [
-                    ("firma", normalize_filter(zone)),
-                    ("regional", normalize_filter(zone)),
-                    ("asm", normalize_filter(zone)),
+                    ("firma", normalize_filter(firma)),
+                    ("regional", normalize_filter(regional)),
+                    ("asm", normalize_filter(asm)),
+                    ("site_code", normalize_filter(site_code)),
+                    ("agent", normalize_filter(agent)),
                 ]:
                     if value is not None:
                         incentive_params.append(value)
@@ -427,6 +451,7 @@ async def get_promotions_incentives(
 
                 incentive_clauses = [
                     "agg.item_code = ANY($1::TEXT[])",
+                    "agg.import_month = $2",
                 ]
                 incentive_query_clauses, incentive_scope_params = scoped_clauses(
                     user,
@@ -455,20 +480,21 @@ async def get_promotions_incentives(
                     *incentive_params,
                     *incentive_scope_params,
                 )
-                incentive_qty = sum(int(row["qty"] or 0) for row in agent_rows)
-                reward_per_unit = incentive_definition.get("reward_per_unit", 5)
-                incentive_value = round(incentive_qty * reward_per_unit, 2)
                 top_agents = [
                     IncentiveTopAgent(agent_name=row["agent"], qty=row["qty"])
                     for row in agent_rows
                 ]
+            else:
+                top_agents = []
+        else:
+            top_agents = []
 
     return CampaignsPromotionsResponse(
         promo_title=promo_title,
         promo_description=promo_description,
         promo_qty=promo_qty,
         promo_total_qty=promo_total_qty,
-        promo_category_qty=promo_category_qty,
+        promo_category_qty=None,
         promo_impact=promo_impact,
         incentive_title=incentive_title,
         incentive_description=incentive_description,
