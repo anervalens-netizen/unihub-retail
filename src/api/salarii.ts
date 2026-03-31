@@ -1,0 +1,148 @@
+import { client } from './client';
+
+export interface SalariiOverview {
+  total: number;
+  by_company: { name: string; total: number }[];
+  record_count: number;
+  agent_count: number;
+  months_span: [number, number, number, number]; // [minY, minM, maxY, maxM]
+}
+
+export interface SalaryAgentSummary {
+  full_name: string;
+  cnp: string | null;
+  company_name: string;
+  locatie: string | null;
+  month_count: number;
+  total_salary: number;
+  avg_salary: number;
+}
+
+export interface SalaryEvolutionPoint {
+  month: string;
+  total: number;
+  mobicell: number;
+  mobiup: number;
+}
+
+export interface SalaryAgentHistoryRecord {
+  year: number;
+  month: number;
+  company_name: string;
+  total_salary: number;
+  site_code: string | null;
+  locatie: string | null;
+}
+
+export interface SalaryAgentHistory {
+  records: SalaryAgentHistoryRecord[];
+  total: number;
+  avg: number;
+  month_count: number;
+}
+
+export interface SalaryStore {
+  site_code: string;
+  locatie: string | null;
+}
+
+export interface SalaryComparisonPoint {
+  site_code: string;
+  locatie: string | null;
+  company_name: string;
+  total_salary: number;
+  agent_count: number;
+  total_sales: number;
+  ratio: number;
+}
+
+export interface SalarySummaryResponse {
+  month: string | null;
+  items: SalaryComparisonPoint[];
+}
+
+export interface SalaryTrendMonth {
+  month: string;
+  total_salary: number;
+  total_sales: number;
+  agent_count: number;
+  by_company: Record<string, {
+    total_salary: number;
+    total_sales: number;
+    agent_count: number;
+  }>;
+}
+
+export interface SalaryAgentsSummaryResponse {
+  items: SalaryAgentSummary[];
+  total: number;
+}
+
+export async function fetchSalariiOverview(): Promise<SalariiOverview> {
+  const res = await client.get<SalariiOverview>('/salarii/overview');
+  return res.data;
+}
+
+export async function fetchSalaryEvolution(
+  companyName?: string
+): Promise<SalaryEvolutionPoint[]> {
+  const params = companyName ? { company_name: companyName } : {};
+  const res = await client.get<SalaryEvolutionPoint[]>('/salarii/evolution', { params });
+  return res.data;
+}
+
+export async function fetchSalaryAgents(params: {
+  q?: string;
+  company_name?: string;
+  site_code?: string;
+  year?: number;
+  month?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<SalaryAgentsSummaryResponse> {
+  const res = await client.get<SalaryAgentsSummaryResponse>('/salarii/agents/summary', {
+    params,
+  });
+  return res.data;
+}
+
+export async function fetchSalariiStores(companyName?: string): Promise<SalaryStore[]> {
+  const params = companyName ? { company_name: companyName } : {};
+  const res = await client.get<SalaryStore[]>('/salarii/stores', { params });
+  return res.data;
+}
+
+export async function fetchSalaryAgentHistory(cnp: string): Promise<SalaryAgentHistory> {
+  const res = await client.get<SalaryAgentHistory>(`/salarii/agents/history/${encodeURIComponent(cnp)}`);
+  return res.data;
+}
+
+export async function fetchSalaryRecords(params: {
+  company_name?: string;
+  year?: number;
+  month?: number;
+  site_code?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const res = await client.get('/salarii/records', { params });
+  return res.data as Promise<unknown[]>;
+}
+
+export async function fetchSalarySummary(params: {
+  company_name?: string;
+  site_code?: string;
+  year?: number;
+  month?: number;
+}): Promise<SalarySummaryResponse> {
+  const res = await client.get<SalarySummaryResponse>('/salarii/summary', { params });
+  return res.data;
+}
+
+export async function fetchSalaryTrend(params: {
+  company_name?: string;
+  site_code?: string;
+}): Promise<SalaryTrendMonth[]> {
+  const res = await client.get<SalaryTrendMonth[]>('/salarii/trend', { params });
+  return res.data;
+}

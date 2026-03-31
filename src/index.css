@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  --bg-color: #f4f4f5; /* Zinc 100 - Silverish */
+  --text-color: #09090b; /* Zinc 950 */
+  --bg-gradient: 
+    radial-gradient(at 0% 0%, hsla(240, 5%, 96%, 1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(240, 5%, 90%, 1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(240, 5%, 96%, 1) 0, transparent 50%);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(0, 0, 0, 0.05);
+  --glass-panel-bg: rgba(255, 255, 255, 0.6);
+  --glass-panel-border: rgba(0, 0, 0, 0.03);
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+html.dark {
+  --bg-color: #09090b; /* Zinc 950 */
+  --text-color: #fafafa; /* Zinc 50 */
+  --bg-gradient: 
+    radial-gradient(at 0% 0%, hsla(240, 5%, 10%, 1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(240, 5%, 5%, 1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(240, 5%, 8%, 1) 0, transparent 50%);
+  --glass-bg: rgba(24, 24, 27, 0.85); /* Zinc 900 */
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-panel-bg: rgba(39, 39, 42, 0.6); /* Zinc 800 */
+  --glass-panel-border: rgba(255, 255, 255, 0.05);
+  color-scheme: dark;
+}
+
+html.theme-mint {
+  --bg-color: #ffffff;
+  --text-color: #0f172a;
+  --bg-gradient: 
+    radial-gradient(at 0% 0%, hsla(173, 80%, 98%, 1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(173, 80%, 96%, 1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(173, 80%, 94%, 1) 0, transparent 50%);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(20, 184, 166, 0.15);
+  --glass-panel-bg: rgba(255, 255, 255, 0.6);
+  --glass-panel-border: rgba(20, 184, 166, 0.1);
+
+  /* Override Indigo with Teal (Mint) */
+  --color-indigo-50: var(--color-teal-50);
+  --color-indigo-100: var(--color-teal-100);
+  --color-indigo-200: var(--color-teal-200);
+  --color-indigo-300: var(--color-teal-300);
+  --color-indigo-400: var(--color-teal-400);
+  --color-indigo-500: var(--color-teal-500);
+  --color-indigo-600: var(--color-teal-600);
+  --color-indigo-700: var(--color-teal-700);
+  --color-indigo-800: var(--color-teal-800);
+  --color-indigo-900: var(--color-teal-900);
+  --color-indigo-950: var(--color-teal-950);
+}
+
+html.theme-olive {
+  --bg-color: #ffffff;
+  --text-color: #0f172a;
+  --bg-gradient: 
+    radial-gradient(at 0% 0%, hsla(84, 60%, 98%, 1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(84, 60%, 96%, 1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(84, 60%, 94%, 1) 0, transparent 50%);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(132, 204, 22, 0.15);
+  --glass-panel-bg: rgba(255, 255, 255, 0.6);
+  --glass-panel-border: rgba(132, 204, 22, 0.1);
+
+  /* Override Indigo with Lime (Olive) */
+  --color-indigo-50: var(--color-lime-50);
+  --color-indigo-100: var(--color-lime-100);
+  --color-indigo-200: var(--color-lime-200);
+  --color-indigo-300: var(--color-lime-300);
+  --color-indigo-400: var(--color-lime-400);
+  --color-indigo-500: var(--color-lime-500);
+  --color-indigo-600: var(--color-lime-600);
+  --color-indigo-700: var(--color-lime-700);
+  --color-indigo-800: var(--color-lime-800);
+  --color-indigo-900: var(--color-lime-900);
+  --color-indigo-950: var(--color-lime-950);
+}
+
+
+@layer utilities {
+  .glass {
+    background-color: var(--glass-bg);
+    border-color: var(--glass-border);
+    @apply backdrop-blur-xl border shadow-lg;
+  }
+  
+  .glass-panel {
+    background-color: var(--glass-panel-bg);
+    border-color: var(--glass-panel-border);
+    @apply backdrop-blur-md border;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  background-image: var(--bg-gradient);
+  background-attachment: fixed;
+  @apply font-sans antialiased selection:bg-indigo-500/30;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Hide scrollbar for clean mobile look */
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

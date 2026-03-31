@@ -1,0 +1,418 @@
+from __future__ import annotations
+
+import calendar
+import json
+import os
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+from models import DashboardSpecialCard, DashboardSpecialCardMetric
+from services.product_lists import (
+    get_data_dir,
+    get_repo_root,
+    load_product_code_rows,
+    resolve_path,
+)
+
+# Cache: (filepath, mtime) -> parsed result, auto-invalidates on file change
+_special_config_cache: dict[tuple[str, float], tuple[dict[str, Any], str | None]] = {}
+_special_codes_cache: dict[tuple[str, float], tuple[list[str] | None, str | None]] = {}
+
+
+def format_currency(value: float | int) -> str:
+    rounded = round(float(value))
+    grouped = f"{rounded:,}".replace(",", ".")
+    return f"{grouped} RON"
+
+
+def format_int(value: float | int) -> str:
+    rounded = round(float(value))
+    return f"{rounded:,}".replace(",", ".")
+
+
+def format_percent(value: float | int | None) -> str:
+    if value is None:
+        return "-"
+    return f"{float(value):.2f}%"
+
+
+def month_overlaps_period(month: str, start_date: date, end_date: date) -> bool:
+    try:
+        year, month_number = month.split("-", maxsplit=1)
+        month_start = date(int(year), int(month_number), 1)
+    except ValueError:
+        return False
+    month_end = date(
+        month_start.year,
+        month_start.month,
+        calendar.monthrange(month_start.year, month_start.month)[1],
+    )
+    return not (month_end < start_date or month_start > end_date)
+
+
+def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
+    configured_path = os.getenv("UNIHUB_HUB_SPECIALS_CONFIG")
+    config_path = (
+        resolve_path(configured_path, get_repo_root())
+        if configured_path
+        else get_data_dir() / "hub_specials.json"
+    )
+    if not config_path.exists():
+        return {}, None
+
+    mtime = config_path.stat().st_mtime
+    cache_key = (str(config_path), mtime)
+    if cache_key in _special_config_cache:
+        return _special_config_cache[cache_key]
+
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover
+        result = {}, f"Config invalid in {config_path.name}: {exc}"
+        _special_config_cache[cache_key] = result
+        return result
+
+    if not isinstance(payload, dict):
+        result = {}, f"Config invalid in {config_path.name}: root must be a JSON object."
+        _special_config_cache[cache_key] = result
+        return result
+    result = payload, None
+    _special_config_cache[cache_key] = result
+    return result
+
+
+def parse_promotion_definition(
+    config: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    raw_definition = config.get("promotion")
+    if raw_definition is None:
+        return None, None
+    if not isinstance(raw_definition, dict):
+        return None, "Sectiunea `promotion` trebuie sa fie un obiect JSON."
+
+    item_codes = [
+        str(code).strip()
+        for code in raw_definition.get("item_codes", [])
+        if str(code).strip()
+    ]
+    if not item_codes:
+        return None, "Sectiunea `promotion` trebuie sa contina `item_codes`."
+
+    try:
+        start_date = date.fromisoformat(str(raw_definition["start_date"]))
+        end_date = date.fromisoformat(str(raw_definition["end_date"]))
+    except Exception:
+        return (
+            None,
+            "Sectiunea `promotion` trebuie sa contina `start_date` si `end_date` in format `YYYY-MM-DD`.",
+        )
+
+    if end_date < start_date:
+        return (
+            None,
+            "Sectiunea `promotion` are o perioada invalida: `end_date` este inainte de `start_date`.",
+        )
+
+    return (
+        {
+            "title": str(raw_definition.get("title") or "Promotie speciala"),
+            "subtitle": str(
+                raw_definition.get("subtitle") or "Coduri fixe urmarite direct in Hub"
+            ),
+            "description": str(raw_definition.get("description") or ""),
+            "coverage_note": raw_definition.get("coverage_note"),
+            "item_codes": item_codes,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+        None,
+    )
+
+
+def parse_incentive_definition(
+    config: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    raw_definition = config.get("incentive")
+    if raw_definition is None:
+        return None, None
+    if not isinstance(raw_definition, dict):
+        return None, "Sectiunea `incentive` trebuie sa fie un obiect JSON."
+
+    source_file = raw_definition.get("source_file") or os.getenv(
+        "UNIHUB_INCENTIVE_FILE"
+    )
+    if not source_file:
+        return (
+            None,
+            "Sectiunea `incentive` trebuie sa contina `source_file` sau `UNIHUB_INCENTIVE_FILE`.",
+        )
+
+    month_value = raw_definition.get("month")
+    if not month_value:
+        return None, "Sectiunea `incentive` trebuie sa contina `month`."
+
+    reward_per_unit = raw_definition.get("reward_per_unit", 5)
+    try:
+        reward_per_unit_value = float(reward_per_unit)
+    except (TypeError, ValueError):
+        return (
+            None,
+            "Sectiunea `incentive` trebuie sa contina un `reward_per_unit` numeric.",
+        )
+
+    return (
+        {
+            "title": str(raw_definition.get("title") or "Incentive special"),
+            "subtitle": str(
+                raw_definition.get("subtitle")
+                or "Bonus calculat direct din codurile eligibile"
+            ),
+            "description": str(raw_definition.get("description") or ""),
+            "source_file": str(source_file),
+            "month": str(month_value),
+            "reward_per_unit": reward_per_unit_value,
+        },
+        None,
+    )
+
+
+def load_incentive_codes(
+    definition: dict[str, Any],
+) -> tuple[list[str] | None, str | None]:
+    source_path = resolve_path(definition["source_file"], get_data_dir())
+    if not source_path.exists():
+        return None, f"Fisierul extern `{source_path.name}` nu exista in data/."
+
+    mtime = source_path.stat().st_mtime
+    cache_key = (str(source_path), mtime)
+    if cache_key in _special_codes_cache:
+        return _special_codes_cache[cache_key]
+
+    try:
+        rows = load_product_code_rows(source_path)
+    except Exception as exc:
+        result = None, f"Fisierul `{source_path.name}` nu a putut fi citit: {exc}"
+        _special_codes_cache[cache_key] = result
+        return result
+
+    codes = [str(row["item_code"]) for row in rows if row.get("item_code")]
+    if not codes:
+        result = None, f"Fisierul `{source_path.name}` nu contine coduri eligibile."
+        _special_codes_cache[cache_key] = result
+        return result
+    result = codes, None
+    _special_codes_cache[cache_key] = result
+    return result
+
+
+def prewarm_special_cards_cache() -> None:
+    config, _ = load_special_cards_config()
+    promotion_definition, _ = parse_promotion_definition(config)
+    if promotion_definition is not None:
+        # Force config parsing once at startup so first request stays fast.
+        _ = promotion_definition["item_codes"]
+
+    incentive_definition, incentive_error = parse_incentive_definition(config)
+    if incentive_definition is not None and incentive_error is None:
+        load_incentive_codes(incentive_definition)
+
+
+def build_promotion_card(
+    month: str,
+    definition: dict[str, Any] | None,
+    stats: dict[str, Any] | None,
+    *,
+    config_error: str | None = None,
+    definition_error: str | None = None,
+) -> DashboardSpecialCard:
+    if config_error:
+        return DashboardSpecialCard(
+            key="promotion",
+            title="Promotie speciala",
+            subtitle="Card promo cu coduri fixe",
+            status="missing_config",
+            status_label="Config invalid",
+            highlight_value="-",
+            description=config_error,
+        )
+
+    if definition_error:
+        return DashboardSpecialCard(
+            key="promotion",
+            title="Promotie speciala",
+            subtitle="Card promo cu coduri fixe",
+            status="missing_config",
+            status_label="Config incomplet",
+            highlight_value="-",
+            description=definition_error,
+        )
+
+    if definition is None:
+        return DashboardSpecialCard(
+            key="promotion",
+            title="Promotie speciala",
+            subtitle="Card promo cu coduri fixe",
+            status="missing_config",
+            status_label="Config lipsa",
+            highlight_value="-",
+            description="Lipseste definitia `promotion` din `hub_specials.json`.",
+        )
+
+    start_date = definition["start_date"]
+    end_date = definition["end_date"]
+    if not month_overlaps_period(month, start_date, end_date):
+        return DashboardSpecialCard(
+            key="promotion",
+            title=definition["title"],
+            subtitle=definition["subtitle"],
+            status="inactive",
+            status_label="In afara perioadei",
+            highlight_value=f"{start_date.isoformat()} - {end_date.isoformat()}",
+            description=definition["description"]
+            or f"Promotia este definita pe {format_int(len(definition['item_codes']))} coduri fixe.",
+            coverage_note=definition.get("coverage_note"),
+            metrics=[
+                DashboardSpecialCardMetric(
+                    label="Coduri", value=format_int(len(definition["item_codes"]))
+                )
+            ],
+        )
+
+    normalized_stats = stats or {}
+    total_sales = float(normalized_stats.get("total_sales") or 0)
+    total_quantity = int(normalized_stats.get("total_quantity") or 0)
+    active_stores = int(normalized_stats.get("active_stores") or 0)
+    active_agents = int(normalized_stats.get("active_agents") or 0)
+    total_receipts = int(normalized_stats.get("total_receipts") or 0)
+    status = "ready" if total_sales > 0 or total_quantity > 0 else "no_data"
+
+    return DashboardSpecialCard(
+        key="promotion",
+        title=definition["title"],
+        subtitle=definition["subtitle"],
+        status=status,
+        status_label="Activa in selectie" if status == "ready" else "Fara vanzari",
+        highlight_value=format_currency(total_sales),
+        description=definition["description"]
+        or f"Perioada {start_date.isoformat()} - {end_date.isoformat()} pentru {format_int(len(definition['item_codes']))} coduri.",
+        coverage_note=definition.get("coverage_note"),
+        metrics=[
+            DashboardSpecialCardMetric(
+                label="Cantitate", value=format_int(total_quantity)
+            ),
+            DashboardSpecialCardMetric(
+                label="Magazine", value=format_int(active_stores)
+            ),
+            DashboardSpecialCardMetric(label="Agenti", value=format_int(active_agents)),
+            DashboardSpecialCardMetric(
+                label="Bonuri", value=format_int(total_receipts)
+            ),
+        ],
+    )
+
+
+def build_incentive_card(
+    month: str,
+    definition: dict[str, Any] | None,
+    stats: dict[str, Any] | None,
+    *,
+    config_error: str | None = None,
+    definition_error: str | None = None,
+    codes_error: str | None = None,
+) -> DashboardSpecialCard:
+    if config_error:
+        return DashboardSpecialCard(
+            key="incentive",
+            title="Incentive special",
+            subtitle="Bonus pe coduri eligibile",
+            status="missing_config",
+            status_label="Config invalid",
+            highlight_value="-",
+            description=config_error,
+        )
+
+    if definition_error:
+        return DashboardSpecialCard(
+            key="incentive",
+            title="Incentive special",
+            subtitle="Bonus pe coduri eligibile",
+            status="missing_config",
+            status_label="Config incomplet",
+            highlight_value="-",
+            description=definition_error,
+        )
+
+    if definition is None:
+        return DashboardSpecialCard(
+            key="incentive",
+            title="Incentive special",
+            subtitle="Bonus pe coduri eligibile",
+            status="missing_config",
+            status_label="Config lipsa",
+            highlight_value="-",
+            description="Lipseste definitia `incentive` din `hub_specials.json`.",
+        )
+
+    if codes_error:
+        return DashboardSpecialCard(
+            key="incentive",
+            title=definition["title"],
+            subtitle=definition["subtitle"],
+            status="missing_source",
+            status_label="Fisier lipsa",
+            highlight_value=Path(definition["source_file"]).name,
+            description=codes_error,
+        )
+
+    if month != definition["month"]:
+        return DashboardSpecialCard(
+            key="incentive",
+            title=definition["title"],
+            subtitle=definition["subtitle"],
+            status="inactive",
+            status_label="Alta luna",
+            highlight_value=definition["month"],
+            description=definition["description"]
+            or f"Incentive-ul este configurat pentru luna {definition['month']}.",
+            metrics=[
+                DashboardSpecialCardMetric(
+                    label="Bonus / buc",
+                    value=format_currency(definition["reward_per_unit"]),
+                )
+            ],
+        )
+
+    normalized_stats = stats or {}
+    net_quantity = int(normalized_stats.get("net_quantity") or 0)
+    positive_quantity = int(normalized_stats.get("positive_quantity") or 0)
+    return_quantity = abs(int(normalized_stats.get("return_quantity") or 0))
+    active_stores = int(normalized_stats.get("active_stores") or 0)
+    active_agents = int(normalized_stats.get("active_agents") or 0)
+    active_codes = int(normalized_stats.get("active_codes") or 0)
+    estimated_bonus = net_quantity * float(definition["reward_per_unit"])
+    status = "ready" if positive_quantity > 0 or return_quantity > 0 else "no_data"
+
+    return DashboardSpecialCard(
+        key="incentive",
+        title=definition["title"],
+        subtitle=definition["subtitle"],
+        status=status,
+        status_label="Calcul net" if status == "ready" else "Fara vanzari",
+        highlight_value=format_currency(estimated_bonus),
+        description=definition["description"]
+        or f"Fiecare unitate neta eligibila aduce {format_currency(definition['reward_per_unit'])} agentului.",
+        metrics=[
+            DashboardSpecialCardMetric(
+                label="Unitati nete", value=format_int(net_quantity)
+            ),
+            DashboardSpecialCardMetric(
+                label="Retururi", value=format_int(return_quantity)
+            ),
+            DashboardSpecialCardMetric(
+                label="Coduri active", value=format_int(active_codes)
+            ),
+            DashboardSpecialCardMetric(label="Agenti", value=format_int(active_agents)),
+        ],
+        coverage_note=f"Magazine active: {format_int(active_stores)}. Bonusul este calculat pe cantitate neta (retururile scad cate {format_currency(definition['reward_per_unit'])} per unitate).",
+    )
