@@ -43,6 +43,7 @@ import type {
   DashboardSummary,
   MonthlyHistoryPoint,
   PeriodComparisonPayload,
+  PeriodComparisonPoint,
   PromoIncentiveSummary,
   ReceiptBucketItem,
   RegionalStat,
@@ -138,7 +139,7 @@ const TABLE_MAX_HEIGHT_CLASS = 'max-h-[30rem]';
 
 const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
   { key: 'locatie', label: 'Magazin' },
-  { key: 'site_code', label: 'Site' },
+  { key: 'site_code', label: 'Firma' },
   { key: 'target', label: 'Target' },
   { key: 'total_vanzari', label: 'Vanzari' },
   { key: 'proc_realizare_target', label: 'Procent' },
@@ -150,8 +151,8 @@ const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
 ];
 
 const AGENT_COLUMNS: Array<{ key: AgentSortKey; label: string }> = [
-  { key: 'locatie', label: 'Magazin' },
   { key: 'agent', label: 'Agent' },
+  { key: 'locatie', label: 'Magazin' },
   { key: 'target', label: 'Target' },
   { key: 'total_vanzari', label: 'Vanzari' },
   { key: 'proc_realizare_target', label: 'Procent' },
@@ -181,7 +182,6 @@ const REGIONAL_COLUMNS: Array<{ key: RegionalSortKey; label: string }> = [
 
 const ASM_COLUMNS: Array<{ key: AsmSortKey; label: string }> = [
   { key: 'asm', label: 'ASM' },
-  { key: 'regional', label: 'Regional' },
   { key: 'target', label: 'Target' },
   { key: 'total_vanzari', label: 'Vanzari' },
   { key: 'proc_realizare_target', label: 'Procent' },
@@ -922,8 +922,8 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
 
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-[1.35fr_0.85fr]">
-            <div className="glass rounded-3xl p-4">
+          <div className="grid gap-3">
+            <div className="glass rounded-3xl p-4 overflow-hidden min-w-0">
               <div className="mb-4 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Comparatie perioade</h3>
@@ -934,11 +934,11 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="grid gap-3 xl:grid-cols-3">
-                    <PeriodBlock point={periodComparison.current} />
-                    <PeriodBlock point={periodComparison.previous} />
-                    <PeriodBlock point={periodComparison.year_over_year} />
-                  </div>
+                  <PeriodTable
+                    current={periodComparison.current}
+                    previous={periodComparison.previous}
+                    yoy={periodComparison.year_over_year}
+                  />
                   <div className="grid grid-cols-2 gap-3">
                     <DeltaCard
                       title="Vs luna trecuta"
@@ -1068,13 +1068,14 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
               <table className="min-w-330 w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {REGIONAL_COLUMNS.map((column) => (
+                    {REGIONAL_COLUMNS.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
                           active={regionalSort.key === column.key}
                           direction={regionalSort.direction}
                           onClick={() => handleSortRegionals(column.key)}
+                          className={i === 0 ? 'w-24' : ''}
                         />
                       </React.Fragment>
                     ))}
@@ -1086,17 +1087,17 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       key={regional.regional}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className="px-3 py-3 font-semibold">{regional.regional}</td>
-                      <td className="px-3 py-3">{formatCurrency(regional.target)}</td>
-                      <td className="px-3 py-3">{formatCurrency(regional.total_vanzari)}</td>
-                      <td className="px-3 py-3 font-bold text-indigo-600">{formatPercent(regional.proc_realizare_target)}</td>
-                      <td className="px-3 py-3">{formatInt(regional.promo_qty)}</td>
-                      <td className="px-3 py-3">{formatInt(regional.incentive_qty)}</td>
-                      <td className="px-3 py-3">{formatInt(regional.qty_total)}</td>
-                      <td className="px-3 py-3">{formatInt(regional.nr_bonuri)}</td>
-                      <td className="px-3 py-3">{formatCurrency(regional.medie_zilnica ?? 0)}</td>
-                      <td className="px-3 py-3">{formatPercent(regional.proc_bon2acc)}</td>
-                      <td className="px-3 py-3">{formatPercent(regional.prc_focus_acc_qty)}</td>
+                      <td className="max-w-0 w-24 truncate px-3 py-2 font-semibold">{regional.regional}</td>
+                      <td className="px-3 py-2">{formatCurrency(regional.target)}</td>
+                      <td className="px-3 py-2">{formatCurrency(regional.total_vanzari)}</td>
+                      <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(regional.proc_realizare_target)}</td>
+                      <td className="px-3 py-2">{formatInt(regional.promo_qty)}</td>
+                      <td className="px-3 py-2">{formatInt(regional.incentive_qty)}</td>
+                      <td className="px-3 py-2">{formatInt(regional.qty_total)}</td>
+                      <td className="px-3 py-2">{formatInt(regional.nr_bonuri)}</td>
+                      <td className="px-3 py-2">{formatCurrency(regional.medie_zilnica ?? 0)}</td>
+                      <td className="px-3 py-2">{formatPercent(regional.proc_bon2acc)}</td>
+                      <td className="px-3 py-2">{formatPercent(regional.prc_focus_acc_qty)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1120,13 +1121,14 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
               <table className="min-w-370 w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {ASM_COLUMNS.map((column) => (
+                    {ASM_COLUMNS.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
                           active={asmSort.key === column.key}
                           direction={asmSort.direction}
                           onClick={() => handleSortAsms(column.key)}
+                          className={i === 0 ? 'w-24' : ''}
                         />
                       </React.Fragment>
                     ))}
@@ -1138,18 +1140,17 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       key={`${asm.asm}-${asm.regional}`}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className="px-3 py-3 font-semibold">{asm.asm}</td>
-                      <td className="px-3 py-3 text-slate-500">{asm.regional}</td>
-                      <td className="px-3 py-3">{formatCurrency(asm.target)}</td>
-                      <td className="px-3 py-3">{formatCurrency(asm.total_vanzari)}</td>
-                      <td className="px-3 py-3 font-bold text-indigo-600">{formatPercent(asm.proc_realizare_target)}</td>
-                      <td className="px-3 py-3">{formatInt(asm.promo_qty)}</td>
-                      <td className="px-3 py-3">{formatInt(asm.incentive_qty)}</td>
-                      <td className="px-3 py-3">{formatInt(asm.qty_total)}</td>
-                      <td className="px-3 py-3">{formatInt(asm.nr_bonuri)}</td>
-                      <td className="px-3 py-3">{formatCurrency(asm.medie_zilnica ?? 0)}</td>
-                      <td className="px-3 py-3">{formatPercent(asm.proc_bon2acc)}</td>
-                      <td className="px-3 py-3">{formatPercent(asm.prc_focus_acc_qty)}</td>
+                      <td className="max-w-0 w-24 truncate px-3 py-2 font-semibold">{asm.asm}</td>
+                      <td className="px-3 py-2">{formatCurrency(asm.target)}</td>
+                      <td className="px-3 py-2">{formatCurrency(asm.total_vanzari)}</td>
+                      <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(asm.proc_realizare_target)}</td>
+                      <td className="px-3 py-2">{formatInt(asm.promo_qty)}</td>
+                      <td className="px-3 py-2">{formatInt(asm.incentive_qty)}</td>
+                      <td className="px-3 py-2">{formatInt(asm.qty_total)}</td>
+                      <td className="px-3 py-2">{formatInt(asm.nr_bonuri)}</td>
+                      <td className="px-3 py-2">{formatCurrency(asm.medie_zilnica ?? 0)}</td>
+                      <td className="px-3 py-2">{formatPercent(asm.proc_bon2acc)}</td>
+                      <td className="px-3 py-2">{formatPercent(asm.prc_focus_acc_qty)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1173,13 +1174,14 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
               <table className="min-w-330 w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {STORE_COLUMNS.map((column) => (
+                    {STORE_COLUMNS.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
                           active={storeSort.key === column.key}
                           direction={storeSort.direction}
                           onClick={() => handleSortStores(column.key)}
+                          className={i === 0 ? 'w-36' : ''}
                         />
                       </React.Fragment>
                     ))}
@@ -1191,16 +1193,21 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       key={store.site_code}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className="px-3 py-3 font-semibold">{store.locatie}</td>
-                      <td className="px-3 py-3 text-slate-500">{store.site_code}</td>
-                      <td className="px-3 py-3">{formatCurrency(store.target)}</td>
-                      <td className="px-3 py-3">{formatCurrency(store.total_vanzari)}</td>
-                      <td className="px-3 py-3 font-bold text-indigo-600">{formatPercent(store.proc_realizare_target)}</td>
-                      <td className="px-3 py-3">{formatInt(store.qty_total ?? 0)}</td>
-                      <td className="px-3 py-3">{formatInt(store.nr_bonuri)}</td>
-                      <td className="px-3 py-3">{formatInt(store.nr_agenti)}</td>
-                      <td className="px-3 py-3">{formatInt(store.zile_active)}</td>
-                      <td className="px-3 py-3">{formatCurrency(getStoreDailyAverage(store))}</td>
+                      <td className="max-w-0 w-36 truncate px-3 py-2 font-semibold">{store.locatie}</td>
+                      <td className="px-3 py-2 text-center font-bold">
+                        {store.firma?.toLowerCase().includes('mobiup')
+                          ? <span className="text-red-500">MU</span>
+                          : <span className="text-blue-500">MC</span>
+                        }
+                      </td>
+                      <td className="px-3 py-2">{formatCurrency(store.target)}</td>
+                      <td className="px-3 py-2">{formatCurrency(store.total_vanzari)}</td>
+                      <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(store.proc_realizare_target)}</td>
+                      <td className="px-3 py-2">{formatInt(store.qty_total ?? 0)}</td>
+                      <td className="px-3 py-2">{formatInt(store.nr_bonuri)}</td>
+                      <td className="px-3 py-2">{formatInt(store.nr_agenti)}</td>
+                      <td className="px-3 py-2">{formatInt(store.zile_active)}</td>
+                      <td className="px-3 py-2">{formatCurrency(getStoreDailyAverage(store))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1221,13 +1228,14 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
               <table className="min-w-370 w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {AGENT_COLUMNS.map((column) => (
+                    {AGENT_COLUMNS.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
                           active={agentSort.key === column.key}
                           direction={agentSort.direction}
                           onClick={() => handleSortAgents(column.key)}
+                          className={i === 0 ? 'w-24' : ''}
                         />
                       </React.Fragment>
                     ))}
@@ -1239,19 +1247,19 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       key={`${agentRow.agent}-${agentRow.site_code}`}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className="px-3 py-3 font-semibold">{agentRow.locatie}</td>
-                      <td className="px-3 py-3 font-bold">{agentRow.agent}</td>
-                      <td className="px-3 py-3">{formatCurrency(agentRow.target ?? 0)}</td>
-                      <td className="px-3 py-3 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
-                      <td className="px-3 py-3">{formatPercent(agentRow.proc_realizare_target)}</td>
-                      <td className="px-3 py-3">{formatInt(agentRow.promo_qty ?? 0)}</td>
-                      <td className="px-3 py-3">{formatInt(agentRow.incentive_qty ?? 0)}</td>
-                      <td className="px-3 py-3">{formatInt(agentRow.acc_qty_realizat)}</td>
-                      <td className="px-3 py-3">{formatInt(agentRow.nr_bonuri)}</td>
-                      <td className="px-3 py-3">{formatInt(agentRow.zile_lucrate)}</td>
-                      <td className="px-3 py-3">{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
-                      <td className="px-3 py-3">{formatPercent(agentRow.proc_bon2acc)}</td>
-                      <td className="px-3 py-3">{formatPercent(agentRow.prc_focus_acc_qty)}</td>
+                      <td className="max-w-0 w-24 truncate px-3 py-2 font-bold">{agentRow.agent}</td>
+                      <td className="max-w-[7rem] truncate px-3 py-2 text-slate-500">{agentRow.locatie}</td>
+                      <td className="px-3 py-2">{formatCurrency(agentRow.target ?? 0)}</td>
+                      <td className="px-3 py-2 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
+                      <td className="px-3 py-2">{formatPercent(agentRow.proc_realizare_target)}</td>
+                      <td className="px-3 py-2">{formatInt(agentRow.promo_qty ?? 0)}</td>
+                      <td className="px-3 py-2">{formatInt(agentRow.incentive_qty ?? 0)}</td>
+                      <td className="px-3 py-2">{formatInt(agentRow.acc_qty_realizat)}</td>
+                      <td className="px-3 py-2">{formatInt(agentRow.nr_bonuri)}</td>
+                      <td className="px-3 py-2">{formatInt(agentRow.zile_lucrate)}</td>
+                      <td className="px-3 py-2">{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
+                      <td className="px-3 py-2">{formatPercent(agentRow.proc_bon2acc)}</td>
+                      <td className="px-3 py-2">{formatPercent(agentRow.prc_focus_acc_qty)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1261,26 +1269,6 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
         </>
       ) : (
         <>
-          <div className="glass rounded-3xl p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold">Luna analizata</h3>
-                <p className="text-[11px] text-slate-500">Selector dedicat doar pentru sectiunea de istoric</p>
-              </div>
-              <select
-                value={historyMonth}
-                onChange={(event) => setHistoryMonth(event.target.value)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
-              >
-                {months.map((month) => (
-                  <option key={month} value={month}>
-                    {month}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
           {historyLoading ? (
             <LoadingCard label="Se incarca istoricul..." />
           ) : historyError ? (
@@ -1289,6 +1277,78 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
             <ErrorCard message="Nu exista valori istorice pentru luna selectata." onRetry={loadHistory} />
           ) : (
             <>
+              <div className="glass rounded-3xl p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold">Evolutie lunara</h3>
+                    <p className="text-[11px] text-slate-500">Ultimele 12 luni pana la {historyMonth}</p>
+                  </div>
+                  <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-right dark:bg-indigo-900/20">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Best month</div>
+                    <div className="text-lg font-black text-indigo-600">{bestHistoryMonth?.month ?? '-'}</div>
+                  </div>
+                </div>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={historyChartData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatCurrency(value))} />
+                      <Legend />
+                      <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
+                      <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#10b981" strokeWidth={2} dot={false} />
+                      <Line yAxisId="progress" type="monotone" dataKey="progress" name="% target" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="glass rounded-3xl p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <TrendingUp size={16} className="text-indigo-500" />
+                  <h3 className="text-sm font-bold">Trend vanzari vs target</h3>
+                </div>
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={historyChartData}>
+                      <defs>
+                        <linearGradient id="historySalesArea" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Area type="monotone" dataKey="sales" stroke="#4f46e5" fill="url(#historySalesArea)" strokeWidth={3} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="glass rounded-3xl p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold">Luna analizata</h3>
+                    <p className="text-[11px] text-slate-500">Selector dedicat doar pentru sectiunea de istoric</p>
+                  </div>
+                  <select
+                    value={historyMonth}
+                    onChange={(event) => setHistoryMonth(event.target.value)}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    {months.map((month) => (
+                      <option key={month} value={month}>
+                        {month}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {/* Overview card — mirrors the first card from Luna in curs */}
               <div className="glass rounded-3xl p-4 space-y-4">
                 {/* 1. Header */}
@@ -1402,72 +1462,25 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                 </div>
               </div>
 
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold">Evolutie lunara</h3>
-                    <p className="text-[11px] text-slate-500">Ultimele 12 luni pana la {historyMonth}</p>
-                  </div>
-                  <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-right dark:bg-indigo-900/20">
-                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Best month</div>
-                    <div className="text-lg font-black text-indigo-600">{bestHistoryMonth?.month ?? '-'}</div>
-                  </div>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={historyChartData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                      <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatCurrency(value))} />
-                      <Legend />
-                      <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
-                      <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#10b981" strokeWidth={2} dot={false} />
-                      <Line yAxisId="progress" type="monotone" dataKey="progress" name="% target" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <TrendingUp size={16} className="text-indigo-500" />
-                  <h3 className="text-sm font-bold">Trend vanzari vs target</h3>
-                </div>
-                <div className="h-52">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={historyChartData}>
-                      <defs>
-                        <linearGradient id="historySalesArea" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
-                          <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                      <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Area type="monotone" dataKey="sales" stroke="#4f46e5" fill="url(#historySalesArea)" strokeWidth={3} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Promo & Incentive */}
-              <div className="grid gap-3 xl:grid-cols-[1fr]">
-                <div className="glass rounded-3xl p-4">
-                  <div className="mb-4 flex items-center gap-2">
-                    <Sparkles size={16} className="text-indigo-500" />
-                    <h3 className="text-sm font-bold">Promo & incentive</h3>
-                  </div>
-                  <div className="grid gap-3">
-                    {historyPromoSummary.promotion &&
-                      historyPromoSummary.promotion.status !== 'missing_config' && (
+              {/* Promo & Incentive — only rendered when at least one card is active */}
+              {(() => {
+                const showPromo = historyPromoSummary.promotion &&
+                  !['missing_config', 'inactive'].includes(historyPromoSummary.promotion.status);
+                const showIncentive = historyPromoSummary.incentive &&
+                  !['missing_config', 'inactive'].includes(historyPromoSummary.incentive.status);
+                if (!showPromo && !showIncentive) return null;
+                return (
+                  <div className="glass rounded-3xl p-4">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Sparkles size={16} className="text-indigo-500" />
+                      <h3 className="text-sm font-bold">Promo & incentive</h3>
+                    </div>
+                    <div className="grid gap-3">
+                      {showPromo && (
                         <CampaignMiniCard
                           label="Promo"
-                          title={historyPromoSummary.promotion.title}
-                          status={historyPromoSummary.promotion.status_label ?? 'Fara date'}
+                          title={historyPromoSummary.promotion!.title}
+                          status={historyPromoSummary.promotion!.status_label ?? 'Fara date'}
                           metrics={[
                             { label: 'Cantitate', value: formatInt(historyPromoIncentive.promo_qty) },
                             { label: 'Impact', value: formatCurrency(historyPromoIncentive.promo_impact) },
@@ -1475,19 +1488,22 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                           footer={`Vanzari promo: ${formatCurrency(historyPromoIncentive.promo_sales)}`}
                         />
                       )}
-                    <CampaignMiniCard
-                      label="Incentive"
-                      title={historyPromoSummary.incentive?.title ?? 'Incentive neconfigurat'}
-                      status={historyPromoSummary.incentive?.status_label ?? 'Fara date'}
-                      metrics={[
-                        { label: 'Cantitate', value: formatInt(historyPromoIncentive.incentive_qty) },
-                        { label: 'Valoare', value: formatCurrency(historyPromoIncentive.incentive_value) },
-                      ]}
-                      footer={historyPromoSummary.incentive?.coverage_note ?? 'Bonus per unitate eligibila'}
-                    />
+                      {showIncentive && (
+                        <CampaignMiniCard
+                          label="Incentive"
+                          title={historyPromoSummary.incentive!.title}
+                          status={historyPromoSummary.incentive!.status_label ?? 'Fara date'}
+                          metrics={[
+                            { label: 'Cantitate', value: formatInt(historyPromoIncentive.incentive_qty) },
+                            { label: 'Valoare', value: formatCurrency(historyPromoIncentive.incentive_value) },
+                          ]}
+                          footer={historyPromoSummary.incentive!.coverage_note ?? 'Bonus per unitate eligibila'}
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Evolutie zilnica + Top categorii si branduri */}
               <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr]">
@@ -1629,8 +1645,8 @@ function KpiPerformanceCard({
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl border p-3 ${tone.cardClass} ${className}`}>
-      <div className="mb-2 flex items-start justify-between gap-3">
+    <div className={`rounded-3xl border p-2.5 ${tone.cardClass} ${className}`}>
+      <div className="mb-1 flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-wide opacity-75">{title}</div>
           <div className="mt-0.5 text-[2rem] font-black leading-none">{formatPercent(value)}</div>
@@ -1758,8 +1774,8 @@ function DonutLegendChart({
       : 'lg:grid-cols-[minmax(0,190px)_minmax(0,1fr)]';
 
   return (
-    <div className={`grid gap-2.5 ${layoutClass} items-center`}>
-      <div className={`mx-auto w-full ${compact ? 'h-40 max-w-45' : 'h-48 max-w-55'}`}>
+    <div className={`grid gap-1.5 ${layoutClass} items-center`}>
+      <div className={`mx-auto w-full ${compact ? 'h-36 max-w-45' : 'h-48 max-w-55'}`}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -1777,17 +1793,17 @@ function DonutLegendChart({
             </Pie>
             <Tooltip formatter={(value: number) => valueFormatter(Number(value))} />
             <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
-              <tspan x="50%" dy="-0.55em" className={`fill-slate-500 font-bold uppercase tracking-wide ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+              <tspan x="50%" dy="-0.9em" className={`fill-slate-500 font-bold uppercase tracking-wide ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
                 {centerLabel}
               </tspan>
-              <tspan x="50%" dy="1.45em" className={`fill-slate-900 font-black dark:fill-slate-100 ${compact ? 'text-[18px]' : 'text-[20px]'}`}>
+              <tspan x="50%" dy="1.2em" className={`fill-slate-900 font-black dark:fill-slate-100 ${compact ? 'text-[18px]' : 'text-[20px]'}`}>
                 {centerValue}
               </tspan>
             </text>
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className={sideBySide ? 'space-y-0' : compact ? 'space-y-1.5' : 'space-y-2'}>
+      <div className={sideBySide ? 'space-y-0' : compact ? 'space-y-0.5' : 'space-y-2'}>
         {legendRows.map((item, index) => (
           <div
             key={`${String(item[nameKey])}-${index}`}
@@ -1795,7 +1811,7 @@ function DonutLegendChart({
               sideBySide
                 ? 'border-b border-slate-200/70 py-2 last:border-b-0'
                 : compact
-                  ? 'rounded-2xl bg-white/70 px-2.5 py-1.5'
+                  ? 'rounded-2xl bg-white/70 px-2.5 py-0.5'
                   : 'rounded-2xl bg-white/70 px-3 py-2'
             }`}
           >
@@ -1816,34 +1832,58 @@ function DonutLegendChart({
   );
 }
 
-function PeriodBlock({ point }: { point: PeriodComparisonPayload['current'] }) {
-  return (
-    <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/60">
-      <div className="mb-2">
-        <div className="text-xs font-bold">{point.label}</div>
-        <div className="text-[11px] text-slate-500">
-          {point.month} ({point.day_range})
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-        <ComparisonRow label="Vanzari" value={formatCurrency(point.total_sales)} />
-        <ComparisonRow label="Cantitate" value={formatInt(point.total_quantity)} />
-        <ComparisonRow label="Bonuri" value={formatInt(point.total_receipts)} />
-        <ComparisonRow label="Zile" value={formatInt(point.working_days)} />
-        <ComparisonRow label="Medie zilnica" value={formatCurrency(point.daily_average ?? 0)} />
-        <ComparisonRow label="Medie bon" value={formatCurrency(point.avg_receipt_value ?? 0)} />
-        <ComparisonRow label="ProcBon2Acc" value={formatPercent(point.proc_bon2acc)} />
-        <ComparisonRow label="Focus/Acc" value={formatPercent(point.prc_focus_acc_qty)} />
-      </div>
-    </div>
-  );
-}
+function PeriodTable({
+  current,
+  previous,
+  yoy,
+}: {
+  current: PeriodComparisonPoint;
+  previous: PeriodComparisonPoint;
+  yoy: PeriodComparisonPoint;
+}) {
+  const points = [current, previous, yoy];
+  const rows: { label: string; fn: (p: PeriodComparisonPoint) => string }[] = [
+    { label: 'Vanzari',      fn: (p) => formatCurrency(p.total_sales) },
+    { label: 'Cantitate',    fn: (p) => formatInt(p.total_quantity) },
+    { label: 'Bonuri',       fn: (p) => formatInt(p.total_receipts) },
+    { label: 'Zile',         fn: (p) => formatInt(p.working_days) },
+    { label: 'Med. zilnica', fn: (p) => formatCurrency(p.daily_average ?? 0) },
+    { label: 'Med. bon',     fn: (p) => formatCurrency(p.avg_receipt_value ?? 0) },
+    { label: 'Bon2Acc',      fn: (p) => formatPercent(p.proc_bon2acc) },
+    { label: 'Focus/Acc',    fn: (p) => formatPercent(p.prc_focus_acc_qty) },
+  ];
 
-function ComparisonRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold">{value}</span>
+    <div className="w-full overflow-hidden rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+      <table className="w-full table-fixed text-[11px]">
+        <thead>
+          <tr className="border-b border-slate-200 dark:border-slate-700">
+            <th className="py-2 pl-3 pr-2 text-left font-semibold text-slate-400 w-[22%]" />
+            {points.map((p) => (
+              <th key={p.label} className="py-2 px-2 text-center w-[26%]">
+                <div className="font-bold text-slate-700 dark:text-slate-200">{p.label}</div>
+                <div className="text-[10px] font-normal text-slate-400">{p.month}</div>
+                <div className="text-[10px] font-normal text-slate-400">{p.day_range}</div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr
+              key={row.label}
+              className={i % 2 === 0 ? 'bg-white/60 dark:bg-slate-900/20' : ''}
+            >
+              <td className="py-1.5 pl-3 pr-2 text-slate-500 font-medium truncate">{row.label}</td>
+              {points.map((p) => (
+                <td key={p.label} className="py-1.5 px-3 text-center font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                  {row.fn(p)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1884,14 +1924,16 @@ function SortableHeader({
   active,
   direction,
   onClick,
+  className = '',
 }: {
   label: string;
   active: boolean;
   direction: SortDirection;
   onClick: () => void;
+  className?: string;
 }) {
   return (
-    <th className="px-3 py-3 font-bold">
+    <th className={`px-3 py-3 font-bold ${className}`}>
       <button
         type="button"
         onClick={onClick}

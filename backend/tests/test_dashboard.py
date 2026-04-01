@@ -37,9 +37,9 @@ async def test_summary_endpoint_structure():
     from services.dashboard_specials import load_special_cards_config, parse_promotion_definition
 
     config, _ = load_special_cards_config()
-    promo_def, _ = parse_promotion_definition(config)
+    promo_def, _ = parse_promotion_definition(config, "2026-04")
 
-    # Promotion is not configured — should be None
+    # No promotion configured for April
     assert promo_def is None
 
 
@@ -49,7 +49,7 @@ async def test_special_cards_promotion_config():
     from services.dashboard_specials import load_special_cards_config, parse_promotion_definition
 
     config, _ = load_special_cards_config()
-    promo_def, promo_err = parse_promotion_definition(config)
+    promo_def, promo_err = parse_promotion_definition(config, "2026-04")
 
     assert promo_err is None
     assert promo_def is None  # no promotion configured
@@ -65,7 +65,7 @@ async def test_special_cards_incentive_config():
     )
 
     config, _ = load_special_cards_config()
-    incentive_def, incentive_err = parse_incentive_definition(config)
+    incentive_def, incentive_err = parse_incentive_definition(config, "2026-04")
 
     assert incentive_err is None
     assert incentive_def is not None
@@ -95,7 +95,9 @@ async def test_hub_specials_json_exists():
     with open(config_path) as f:
         config = json.load(f)
 
-    assert "incentive" in config
+    assert "incentives" in config
+    assert isinstance(config["incentives"], list)
+    assert len(config["incentives"]) > 0
 
 
 def test_dashboard_scoped_clauses_builds_agent_filter() -> None:

@@ -89,46 +89,38 @@ def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
     return result
 
 
-def parse_promotion_definition(
-    config: dict[str, Any],
+def _parse_single_promotion(
+    raw: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
-    raw_definition = config.get("promotion")
-    if raw_definition is None:
-        return None, None
-    if not isinstance(raw_definition, dict):
-        return None, "Sectiunea `promotion` trebuie sa fie un obiect JSON."
-
     item_codes = [
         str(code).strip()
-        for code in raw_definition.get("item_codes", [])
+        for code in raw.get("item_codes", [])
         if str(code).strip()
     ]
     if not item_codes:
-        return None, "Sectiunea `promotion` trebuie sa contina `item_codes`."
+        return None, "Intrarea `promotions` trebuie sa contina `item_codes`."
 
     try:
-        start_date = date.fromisoformat(str(raw_definition["start_date"]))
-        end_date = date.fromisoformat(str(raw_definition["end_date"]))
+        start_date = date.fromisoformat(str(raw["start_date"]))
+        end_date = date.fromisoformat(str(raw["end_date"]))
     except Exception:
         return (
             None,
-            "Sectiunea `promotion` trebuie sa contina `start_date` si `end_date` in format `YYYY-MM-DD`.",
+            "Intrarea `promotions` trebuie sa contina `start_date` si `end_date` in format `YYYY-MM-DD`.",
         )
 
     if end_date < start_date:
         return (
             None,
-            "Sectiunea `promotion` are o perioada invalida: `end_date` este inainte de `start_date`.",
+            "Intrarea `promotions` are o perioada invalida: `end_date` este inainte de `start_date`.",
         )
 
     return (
         {
-            "title": str(raw_definition.get("title") or "Promotie speciala"),
-            "subtitle": str(
-                raw_definition.get("subtitle") or "Coduri fixe urmarite direct in Hub"
-            ),
-            "description": str(raw_definition.get("description") or ""),
-            "coverage_note": raw_definition.get("coverage_note"),
+            "title": str(raw.get("title") or "Promotie speciala"),
+            "subtitle": str(raw.get("subtitle") or "Coduri fixe urmarite direct in Hub"),
+            "description": str(raw.get("description") or ""),
+            "coverage_note": raw.get("coverage_note"),
             "item_codes": item_codes,
             "start_date": start_date,
             "end_date": end_date,
@@ -137,53 +129,94 @@ def parse_promotion_definition(
     )
 
 
-def parse_incentive_definition(
+def parse_promotion_definition(
     config: dict[str, Any],
+    month: str,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    raw_definition = config.get("incentive")
-    if raw_definition is None:
+    """Find promotion config whose date range overlaps the given month."""
+    entries = config.get("promotions")
+    if entries is not None:
+        if not isinstance(entries, list):
+            return None, "Sectiunea `promotions` trebuie sa fie un array JSON."
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                start = date.fromisoformat(str(entry.get("start_date", "")))
+                end = date.fromisoformat(str(entry.get("end_date", "")))
+            except ValueError:
+                continue
+            if month_overlaps_period(month, start, end):
+                return _parse_single_promotion(entry)
         return None, None
-    if not isinstance(raw_definition, dict):
-        return None, "Sectiunea `incentive` trebuie sa fie un obiect JSON."
 
-    source_file = raw_definition.get("source_file") or os.getenv(
-        "UNIHUB_INCENTIVE_FILE"
-    )
+    # Backward compat: old single-object `promotion` key
+    raw = config.get("promotion")
+    if raw is None or not isinstance(raw, dict):
+        return None, None
+    try:
+        start = date.fromisoformat(str(raw.get("start_date", "")))
+        end = date.fromisoformat(str(raw.get("end_date", "")))
+    except ValueError:
+        return None, None
+    if not month_overlaps_period(month, start, end):
+        return None, None
+    return _parse_single_promotion(raw)
+
+
+def _parse_single_incentive(
+    raw: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    source_file = raw.get("source_file") or os.getenv("UNIHUB_INCENTIVE_FILE")
     if not source_file:
-        return (
-            None,
-            "Sectiunea `incentive` trebuie sa contina `source_file` sau `UNIHUB_INCENTIVE_FILE`.",
-        )
+        return None, "Intrarea `incentives` trebuie sa contina `source_file` sau `UNIHUB_INCENTIVE_FILE`."
 
-    month_value = raw_definition.get("month")
+    month_value = raw.get("month")
     if not month_value:
-        return None, "Sectiunea `incentive` trebuie sa contina `month`."
+        return None, "Intrarea `incentives` trebuie sa contina `month`."
 
-    raw_reward = raw_definition.get("reward_per_unit")
+    raw_reward = raw.get("reward_per_unit")
     reward_per_unit_value: float | None = None
     if raw_reward is not None:
         try:
             reward_per_unit_value = float(raw_reward)
         except (TypeError, ValueError):
-            return (
-                None,
-                "Sectiunea `incentive` trebuie sa contina un `reward_per_unit` numeric sau null.",
-            )
+            return None, "Intrarea `incentives` trebuie sa contina un `reward_per_unit` numeric sau null."
 
     return (
         {
-            "title": str(raw_definition.get("title") or "Incentive special"),
-            "subtitle": str(
-                raw_definition.get("subtitle")
-                or "Bonus calculat direct din codurile eligibile"
-            ),
-            "description": str(raw_definition.get("description") or ""),
+            "title": str(raw.get("title") or "Incentive special"),
+            "subtitle": str(raw.get("subtitle") or "Bonus calculat direct din codurile eligibile"),
+            "description": str(raw.get("description") or ""),
             "source_file": str(source_file),
             "month": str(month_value),
             "reward_per_unit": reward_per_unit_value,  # None = per-produs
         },
         None,
     )
+
+
+def parse_incentive_definition(
+    config: dict[str, Any],
+    month: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Find incentive config for the given month."""
+    entries = config.get("incentives")
+    if entries is not None:
+        if not isinstance(entries, list):
+            return None, "Sectiunea `incentives` trebuie sa fie un array JSON."
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("month") == month:
+                return _parse_single_incentive(entry)
+        return None, None
+
+    # Backward compat: old single-object `incentive` key
+    raw = config.get("incentive")
+    if raw is None or not isinstance(raw, dict):
+        return None, None
+    if raw.get("month") != month:
+        return None, None
+    return _parse_single_incentive(raw)
 
 
 def load_incentive_codes(
@@ -289,15 +322,14 @@ def load_incentive_reward_map(
 
 
 def prewarm_special_cards_cache() -> None:
+    """Warm up caches for all configured months at startup."""
     config, _ = load_special_cards_config()
-    promotion_definition, _ = parse_promotion_definition(config)
-    if promotion_definition is not None:
-        # Force config parsing once at startup so first request stays fast.
-        _ = promotion_definition["item_codes"]
-
-    incentive_definition, incentive_error = parse_incentive_definition(config)
-    if incentive_definition is not None and incentive_error is None:
-        load_incentive_codes(incentive_definition)
+    for entry in config.get("incentives", []):
+        if isinstance(entry, dict):
+            month = entry.get("month", "")
+            incentive_definition, incentive_error = parse_incentive_definition(config, month)
+            if incentive_definition is not None and incentive_error is None:
+                load_incentive_codes(incentive_definition)
 
 
 def build_promotion_card(

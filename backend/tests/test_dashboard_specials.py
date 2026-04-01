@@ -18,13 +18,16 @@ def test_normalize_column_name_strips_diacritics() -> None:
 def test_parse_promotion_definition_requires_codes_and_valid_dates() -> None:
     definition, error = parse_promotion_definition(
         {
-            "promotion": {
-                "title": "Promo",
-                "item_codes": ["AA-01", "BB-02"],
-                "start_date": "2026-03-01",
-                "end_date": "2026-03-31",
-            }
-        }
+            "promotions": [
+                {
+                    "title": "Promo",
+                    "item_codes": ["AA-01", "BB-02"],
+                    "start_date": "2026-03-01",
+                    "end_date": "2026-03-31",
+                }
+            ]
+        },
+        "2026-03",
     )
 
     assert error is None
@@ -32,22 +35,63 @@ def test_parse_promotion_definition_requires_codes_and_valid_dates() -> None:
     assert definition["item_codes"] == ["AA-01", "BB-02"]
 
 
+def test_parse_promotion_definition_returns_none_for_wrong_month() -> None:
+    definition, error = parse_promotion_definition(
+        {
+            "promotions": [
+                {
+                    "title": "Promo",
+                    "item_codes": ["AA-01"],
+                    "start_date": "2026-03-01",
+                    "end_date": "2026-03-31",
+                }
+            ]
+        },
+        "2026-04",
+    )
+
+    assert error is None
+    assert definition is None
+
+
 def test_parse_incentive_definition_requires_month_and_file() -> None:
     definition, error = parse_incentive_definition(
         {
-            "incentive": {
-                "title": "Martie",
-                "month": "2026-03",
-                "source_file": "Martie 2026/Coduri incentive Martie.xlsx",
-                "reward_per_unit": 5,
-            }
-        }
+            "incentives": [
+                {
+                    "title": "Martie",
+                    "month": "2026-03",
+                    "source_file": "Martie 2026/Coduri incentive Martie.xlsx",
+                    "reward_per_unit": 5,
+                }
+            ]
+        },
+        "2026-03",
     )
 
     assert error is None
     assert definition is not None
     assert definition["month"] == "2026-03"
     assert definition["reward_per_unit"] == 5
+
+
+def test_parse_incentive_definition_returns_none_for_wrong_month() -> None:
+    definition, error = parse_incentive_definition(
+        {
+            "incentives": [
+                {
+                    "title": "Martie",
+                    "month": "2026-03",
+                    "source_file": "Martie 2026/Coduri incentive Martie.xlsx",
+                    "reward_per_unit": 5,
+                }
+            ]
+        },
+        "2026-04",
+    )
+
+    assert error is None
+    assert definition is None
 
 
 def test_load_incentive_codes_reads_real_file() -> None:

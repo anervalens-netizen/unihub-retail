@@ -252,8 +252,8 @@ async def _fetch_agent_stats_rows(
         return base_rows
 
     config, _ = load_special_cards_config()
-    promotion_definition, _ = parse_promotion_definition(config)
-    incentive_definition, _ = parse_incentive_definition(config)
+    promotion_definition, _ = parse_promotion_definition(config, month)
+    incentive_definition, _ = parse_incentive_definition(config, month)
     incentive_codes, _ = (
         load_incentive_codes(incentive_definition)
         if incentive_definition is not None
@@ -633,8 +633,8 @@ async def _fetch_promo_incentive_summary(
     agent: str | None,
 ) -> PromoIncentiveSummary:
     config, _ = load_special_cards_config()
-    promotion_definition, promotion_error = parse_promotion_definition(config)
-    incentive_definition, incentive_error = parse_incentive_definition(config)
+    promotion_definition, promotion_error = parse_promotion_definition(config, month)
+    incentive_definition, incentive_error = parse_incentive_definition(config, month)
 
     promo_qty = 0
     promo_sales: Decimal = Decimal("0")
@@ -1264,8 +1264,8 @@ async def _get_special_cards_data(
 ) -> list[DashboardSpecialCard]:
     """Internal helper to build special cards data without HTTP dependencies."""
     config, config_error = load_special_cards_config()
-    promotion_definition, promotion_error = parse_promotion_definition(config)
-    incentive_definition, incentive_error = parse_incentive_definition(config)
+    promotion_definition, promotion_error = parse_promotion_definition(config, month)
+    incentive_definition, incentive_error = parse_incentive_definition(config, month)
     promotion_stats: dict[str, Any] | None = None
     incentive_stats: dict[str, Any] | None = None
     incentive_codes_error: str | None = None

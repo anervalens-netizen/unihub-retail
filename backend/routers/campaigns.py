@@ -299,8 +299,8 @@ async def get_promotions_incentives(
     month = start_date[:7]
 
     config, _ = load_special_cards_config()
-    promotion_definition, promotion_error = parse_promotion_definition(config)
-    incentive_definition, incentive_error = parse_incentive_definition(config)
+    promotion_definition, promotion_error = parse_promotion_definition(config, month)
+    incentive_definition, incentive_error = parse_incentive_definition(config, month)
 
     pool = await get_pool()
     async with pool.acquire() as conn:

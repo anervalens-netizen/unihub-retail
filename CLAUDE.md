@@ -19,7 +19,7 @@ Tonul corect: direct, tehnic, fara padding. Explica pe scurt ce ai facut si de c
 - Aplicatie deployed pe server 192.168.0.68, accesibila la https://unihub.astancu.eu/
 - Stack: React 19 + Vite + TypeScript (frontend) / FastAPI + asyncpg + PostgreSQL 18 (backend)
 - Toate cele 5 module sunt functionale: Hub, Focus, Agenti, Vizite, Setari
-- 24 pytest passing, typecheck si build passing
+- 26 pytest passing, typecheck si build passing
 - Integrata cu Platforma-Mobiup (paralela) pentru vizite: SQLite la `/opt/Mobiup/Platforma-Mobiup/db/visit_reports.db`
 
 Pornire dev:
@@ -84,11 +84,23 @@ sudo systemctl restart unihub-backend
 ### Hub Specials (incentive/promotii)
 - Configuratie: `data/hub_specials.json`
 - Logica: `backend/services/dashboard_specials.py`
-- **Promotia Martie a fost inchisa (1 aprilie 2026)** — cheia `promotion` a fost eliminata din hub_specials.json
+- **Arhitectura multi-luna**: `incentives` si `promotions` sunt array-uri, fiecare entry are `month`
+  - `parse_promotion_definition(config, month)` si `parse_incentive_definition(config, month)` — iau parametru luna
+  - Returnează `(None, None)` daca nu exista config pentru luna respectiva
+  - Cardurile inactive/lipsa se ascund automat in sectiunea Istoric
+- **Incentive Martie 2026**: flat rate 5 RON/buc (de confirmat cu Andrei)
 - **Incentive Aprilie 2026**: mecanism per-produs (nu flat rate)
   - Fisier: `data/Incentiv Mobiup-Mobicell Aprilie 2026.xlsx` (col A = cod produs, col C = valoare incentive: 5/10/25 RON)
   - Calcul: `SUM(qty × reward_per_item)` calculat in Python dupa fetch SQL
   - Cache invalidat la modificarea fisierului Excel (tuple `(filepath, mtime)`)
+- **Promotia Martie**: nu are item_codes salvate (config nu era in git) — nerecuperabila
+
+### Targete magazine
+- Tabel: `store_targets (site_code, import_month, target_value)`
+- **Aprilie 2026**: importate (2026-04-01) din `data/target aprilie 2026.xlsx` — 79 magazine, 3.658.000 RON
+- Fisierele noi per luna au format simplu: `Regional, ASM, Firma, Locatie, Cod, Target` (sheet "target")
+- **Nu** folosi `load_targets_dataframe()` pentru acest format — aceea e pentru formatul `Istoric targete.xlsx`
+- Pattern import: script Python direct cu `upsert_store_targets()`, rulat din `backend/` cu venv activat
 
 ---
 
