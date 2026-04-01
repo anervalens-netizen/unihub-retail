@@ -25,27 +25,13 @@ from models import (
 from routers.dashboard import _fetch_promo_incentive_summary
 from routers.dashboard_filters import scoped_clauses
 from routers.shared import build_scope_filter, normalize_filter
-from services.dashboard_specials import (
-    load_special_cards_config,
-    parse_promotion_definition,
-    parse_incentive_definition,
-    load_incentive_codes,
-)
 from decimal import Decimal
 from services.dashboard_specials import (
+    load_incentive_reward_map,
     load_special_cards_config,
-    parse_promotion_definition,
     parse_incentive_definition,
-    load_incentive_codes,
-)
-from decimal import Decimal
-from services.dashboard_specials import (
-    load_special_cards_config,
     parse_promotion_definition,
-    parse_incentive_definition,
-    load_incentive_codes,
 )
-from decimal import Decimal
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -430,12 +416,15 @@ async def get_promotions_incentives(
         else:
             top_stores = []
 
-        if incentive_definition is not None and incentive_error is None:
-            incentive_codes, incentive_codes_error = load_incentive_codes(
-                incentive_definition
-            )
-            if incentive_codes is not None and incentive_codes_error is None:
+        if (
+            incentive_definition is not None
+            and incentive_error is None
+            and start_date[:7] == incentive_definition["month"]
+        ):
+            reward_map, _ = load_incentive_reward_map(incentive_definition)
+            if reward_map is not None:
                 incentive_month = start_date[:7]
+                incentive_codes = list(reward_map.keys())
                 incentive_params: list[Any] = [incentive_codes, incentive_month]
                 incentive_positions: dict[str, int] = {}
                 for key, value in [
@@ -466,24 +455,29 @@ async def get_promotions_incentives(
                 )
                 incentive_clauses.extend(incentive_query_clauses)
 
-                agent_rows = await conn.fetch(
+                agent_item_rows = await conn.fetch(
                     f"""
                     SELECT
                         agg.agent,
+                        agg.item_code,
                         COALESCE(SUM(agg.positive_quantity), 0)::INT AS qty
                     FROM reporting_item_month agg
                     WHERE {" AND ".join(incentive_clauses)}
-                    GROUP BY agg.agent
-                    ORDER BY qty DESC
-                    LIMIT 10
+                    GROUP BY agg.agent, agg.item_code
                     """,
                     *incentive_params,
                     *incentive_scope_params,
                 )
+                # Aggregate per agent: bonus = sum(qty * reward_per_item)
+                agent_bonus: dict[str, float] = {}
+                for row in agent_item_rows:
+                    agent = row["agent"]
+                    bonus = int(row["qty"]) * reward_map.get(row["item_code"], 0)
+                    agent_bonus[agent] = agent_bonus.get(agent, 0) + bonus
                 top_agents = [
-                    IncentiveTopAgent(agent_name=row["agent"], qty=row["qty"])
-                    for row in agent_rows
-                ]
+                    IncentiveTopAgent(agent_name=agent, qty=round(bonus))
+                    for agent, bonus in sorted(agent_bonus.items(), key=lambda x: -x[1])
+                ][:10]
             else:
                 top_agents = []
         else:

@@ -539,7 +539,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
   const handleOpenFocus = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent('unihub:navigate', {
-        detail: { tab: 'campaigns', section: 'campaigns' },
+        detail: { tab: 'focus', section: 'campaigns' },
       })
     );
   }, []);
@@ -971,16 +971,19 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                 </div>
               </div>
               <div className="grid gap-3">
-                <CampaignMiniCard
-                  label="Promo"
-                  title={promoSummary.promotion?.title ?? 'Promotie neconfigurata'}
-                  status={promoSummary.promotion?.status_label ?? 'Fara date'}
-                  metrics={[
-                    { label: 'Cantitate', value: formatInt(promoIncentive.promo_qty) },
-                    { label: 'Impact', value: formatCurrency(promoIncentive.promo_impact) },
-                  ]}
-                  footer={`Vanzari promo: ${formatCurrency(promoIncentive.promo_sales)}`}
-                />
+                {promoSummary.promotion &&
+                  promoSummary.promotion.status !== 'missing_config' && (
+                    <CampaignMiniCard
+                      label="Promo"
+                      title={promoSummary.promotion.title}
+                      status={promoSummary.promotion.status_label ?? 'Fara date'}
+                      metrics={[
+                        { label: 'Cantitate', value: formatInt(promoIncentive.promo_qty) },
+                        { label: 'Impact', value: formatCurrency(promoIncentive.promo_impact) },
+                      ]}
+                      footer={`Vanzari promo: ${formatCurrency(promoIncentive.promo_sales)}`}
+                    />
+                  )}
                 <CampaignMiniCard
                   label="Incentive"
                   title={promoSummary.incentive?.title ?? 'Incentive neconfigurat'}
@@ -989,7 +992,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                     { label: 'Cantitate', value: formatInt(promoIncentive.incentive_qty) },
                     { label: 'Valoare', value: formatCurrency(promoIncentive.incentive_value) },
                   ]}
-                  footer="Calculat la 5 RON / unitate eligibila"
+                  footer={promoSummary.incentive?.coverage_note ?? 'Bonus per unitate eligibila'}
                 />
               </div>
             </button>
@@ -1459,16 +1462,19 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                     <h3 className="text-sm font-bold">Promo & incentive</h3>
                   </div>
                   <div className="grid gap-3">
-                    <CampaignMiniCard
-                      label="Promo"
-                      title={historyPromoSummary.promotion?.title ?? 'Promotie neconfigurata'}
-                      status={historyPromoSummary.promotion?.status_label ?? 'Fara date'}
-                      metrics={[
-                        { label: 'Cantitate', value: formatInt(historyPromoIncentive.promo_qty) },
-                        { label: 'Impact', value: formatCurrency(historyPromoIncentive.promo_impact) },
-                      ]}
-                      footer={`Vanzari promo: ${formatCurrency(historyPromoIncentive.promo_sales)}`}
-                    />
+                    {historyPromoSummary.promotion &&
+                      historyPromoSummary.promotion.status !== 'missing_config' && (
+                        <CampaignMiniCard
+                          label="Promo"
+                          title={historyPromoSummary.promotion.title}
+                          status={historyPromoSummary.promotion.status_label ?? 'Fara date'}
+                          metrics={[
+                            { label: 'Cantitate', value: formatInt(historyPromoIncentive.promo_qty) },
+                            { label: 'Impact', value: formatCurrency(historyPromoIncentive.promo_impact) },
+                          ]}
+                          footer={`Vanzari promo: ${formatCurrency(historyPromoIncentive.promo_sales)}`}
+                        />
+                      )}
                     <CampaignMiniCard
                       label="Incentive"
                       title={historyPromoSummary.incentive?.title ?? 'Incentive neconfigurat'}
@@ -1477,7 +1483,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                         { label: 'Cantitate', value: formatInt(historyPromoIncentive.incentive_qty) },
                         { label: 'Valoare', value: formatCurrency(historyPromoIncentive.incentive_value) },
                       ]}
-                      footer="Calculat la 5 RON / unitate eligibila"
+                      footer={historyPromoSummary.incentive?.coverage_note ?? 'Bonus per unitate eligibila'}
                     />
                   </div>
                 </div>

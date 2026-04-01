@@ -118,7 +118,7 @@ export function Campaigns({
     Promise.all([
       getCampaignSnapshot(buildQuery(currentMonth)),
       getSpecialCards(buildQuery(currentMonth)),
-      getPromotionsIncentives(`${currentMonth}-01`, `${currentMonth}-31`, {
+      getPromotionsIncentives(`${currentMonth}-01`, (() => { const [yr, mo] = currentMonth.split('-').map(Number); return `${currentMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), {
         firma: filters.firma,
         regional: filters.rm,
         asm: filters.asm,
@@ -268,7 +268,7 @@ export function Campaigns({
               <Sparkles size={16} />
               <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Campanii in curs</span>
             </div>
-            <div className="text-lg font-black">Promotii si incentive pentru {currentMonth}</div>
+            <div className="text-lg font-black">Promotii si incentive</div>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
               {promoData && promoData.promo_qty > 0
                 ? `${promoData.promo_qty} promotie activ${promoData.promo_qty === 1 ? 'a' : 'i'} in curs`
@@ -357,18 +357,18 @@ export function Campaigns({
               )}
             </div>
 
-            <div className="mb-3">
-              <div className="text-3xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div>
-              <div className="text-[11px] text-slate-500">bucati eligible</div>
-            </div>
-
-            {promoData && promoData.incentive_value > 0 && (
-              <div className="mb-3 text-sm">
-                <span className="text-slate-500">Valoare incentive: </span>
-                <span className="font-black text-indigo-600">{formatCurrency(promoData.incentive_value)}</span>
-                <span className="text-[10px] text-slate-400"> ({promoData.incentive_qty} × 5 RON)</span>
+            <div className="mb-3 grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-3xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div>
+                <div className="text-[11px] text-slate-500">bucati vandute</div>
               </div>
-            )}
+              <div>
+                <div className="text-3xl font-black text-indigo-600">
+                  {promoData ? formatCurrency(promoData.incentive_value) : '-'}
+                </div>
+                <div className="text-[11px] text-slate-500">valoare incentive</div>
+              </div>
+            </div>
 
             {/* Top 10 Agenti — embedded inside card */}
             {promoData && promoData.top_agents.length > 0 && (
@@ -377,8 +377,8 @@ export function Campaigns({
                 <div className="space-y-1">
                   <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                     <div className="col-span-1">#</div>
-                    <div className="col-span-9">Agent</div>
-                    <div className="col-span-2 text-right">Buc</div>
+                    <div className="col-span-7">Agent</div>
+                    <div className="col-span-4 text-right">Bonus RON</div>
                   </div>
                   {promoData.top_agents.slice(0, 10).map((agent, index) => (
                     <div
@@ -386,11 +386,10 @@ export function Campaigns({
                       className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
                     >
                       <div className="col-span-1 flex items-center font-bold text-slate-400">
-                        <Building2 size={10} className="mr-1 text-indigo-400" />
                         {index + 1}
                       </div>
-                      <div className="col-span-9 truncate font-semibold">{agent.agent_name}</div>
-                      <div className="col-span-2 text-right font-black text-indigo-600">{formatInt(agent.qty)}</div>
+                      <div className="col-span-7 truncate font-semibold">{agent.agent_name}</div>
+                      <div className="col-span-4 text-right font-black text-indigo-600">{formatCurrency(agent.qty)}</div>
                     </div>
                   ))}
                 </div>

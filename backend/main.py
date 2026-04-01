@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import os
+import pathlib
 from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from bootstrap import (
     ensure_core_users,
@@ -93,3 +97,18 @@ app.include_router(visits_report.router)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# Serve React SPA static files (production build)
+_dist = pathlib.Path(__file__).parent.parent / "dist"
+if _dist.exists():
+    class SPAStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope):
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as ex:
+                if ex.status_code == 404:
+                    return FileResponse(_dist / "index.html")
+                raise
+
+    app.mount("/", SPAStaticFiles(directory=_dist, html=True), name="spa")

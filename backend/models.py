@@ -380,6 +380,76 @@ class VisitReportResponse(BaseModel):
     rows: list[VisitReportRow]
 
 
+class VisitSummaryItem(BaseModel):
+    id: str
+    magazin: str
+    ora: str | None
+    completion_pct: int
+    firma: str | None
+    has_photos: bool
+
+
+class VisitDayGroup(BaseModel):
+    date: str
+    nr_vizite: int
+    visits: list[VisitSummaryItem]
+
+
+class VisitMonthGroup(BaseModel):
+    month: str
+    nr_vizite: int
+    days: list[VisitDayGroup]
+
+
+class AsmGroup(BaseModel):
+    asm: str
+    nr_vizite: int
+    months: list[VisitMonthGroup]
+
+
+class VisitTreeResponse(BaseModel):
+    asms: list[AsmGroup]
+
+
+class VisitDetail(BaseModel):
+    id: str
+    data_raport: str | None
+    ora_trimitere: str | None
+    firma: str | None
+    regional: str | None
+    asm: str | None
+    magazin: str | None
+    durata_vizita_ore: float | None
+    curatenie: bool
+    imagine: bool
+    uniforma: bool
+    afise: bool
+    produse_promo: bool
+    tpu: float | None
+    sticla: float | None
+    altele: float | None
+    avizat: bool
+    charisma: float | None
+    casa: float | None
+    incarcari_epay: float | None
+    incarcari_charisma: float | None
+    agent1_nume: str | None
+    agent1_perf: float | None
+    agent1_doi_pe_bon: float | None
+    agent1_focus: float | None
+    agent1_analiza: str | None
+    agent1_plan: str | None
+    agent2_nume: str | None
+    agent2_perf: float | None
+    agent2_doi_pe_bon: float | None
+    agent2_focus: float | None
+    agent2_analiza: str | None
+    agent2_plan: str | None
+    photos: list[str]
+    completion_pct: int
+    notes: str | None
+
+
 class StoreOption(BaseModel):
     site_code: str
     locatie: str

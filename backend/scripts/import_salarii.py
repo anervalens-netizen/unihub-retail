@@ -14,7 +14,7 @@ from pathlib import Path
 
 from db.connection import get_pool
 
-SALARII_DB = Path(r"C:\Users\andre\Desktop\Workspace\unihub\salarii_simplu.db")
+SALARII_DB = Path(r"C:\Users\andre\Desktop\Workspace\unihub\salarii_simplu.db") if Path(r"C:\Users\andre\Desktop\Workspace\unihub\salarii_simplu.db").exists() else Path(__file__).parent.parent.parent / "salarii_simplu.db"
 
 
 async def run_import() -> None:
@@ -31,11 +31,13 @@ async def run_import() -> None:
 
     pool = await get_pool()
     async with pool.acquire() as conn:
+        valid_site_codes = {r["site_code"] for r in await conn.fetch("SELECT site_code FROM stores")}
         inserted = 0
         updated = 0
         errors = 0
         for row in rows:
             try:
+                site_code = row["site_code"] if row["site_code"] in valid_site_codes else None
                 was_insert = await conn.fetchval(
                     """
                     INSERT INTO salary_records (
@@ -51,7 +53,7 @@ async def run_import() -> None:
                     """,
                     row["year"], row["month"], row["full_name"],
                     row["cnp"], row["total_salary"],
-                    row["company_name"], row["site_code"], row["locatie"],
+                    row["company_name"], site_code, row["locatie"],
                 )
                 if was_insert:
                     inserted += 1

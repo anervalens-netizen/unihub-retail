@@ -33,38 +33,33 @@ async def get_pool_connection():
 
 @pytest.mark.anyio
 async def test_summary_endpoint_structure():
-    """Test that dashboard summary returns expected fields."""
+    """Test that promotion definition returns None when not configured."""
     from services.dashboard_specials import load_special_cards_config, parse_promotion_definition
 
     config, _ = load_special_cards_config()
     promo_def, _ = parse_promotion_definition(config)
 
-    # Verify config is loaded
-    assert promo_def is not None
-    assert "item_codes" in promo_def
-    assert isinstance(promo_def["item_codes"], list)
+    # Promotion is not configured — should be None
+    assert promo_def is None
 
 
 @pytest.mark.anyio
 async def test_special_cards_promotion_config():
-    """Test that promotion card config has required fields."""
+    """Test that promotion config is absent (no promotion for April)."""
     from services.dashboard_specials import load_special_cards_config, parse_promotion_definition
 
     config, _ = load_special_cards_config()
     promo_def, promo_err = parse_promotion_definition(config)
 
     assert promo_err is None
-    assert promo_def is not None
-    assert promo_def["title"]
-    assert promo_def["start_date"]
-    assert promo_def["end_date"]
+    assert promo_def is None  # no promotion configured
 
 
 @pytest.mark.anyio
 async def test_special_cards_incentive_config():
-    """Test that incentive card config has required fields."""
+    """Test that incentive card config has required fields for April."""
     from services.dashboard_specials import (
-        load_incentive_codes,
+        load_incentive_reward_map,
         load_special_cards_config,
         parse_incentive_definition,
     )
@@ -74,14 +69,15 @@ async def test_special_cards_incentive_config():
 
     assert incentive_err is None
     assert incentive_def is not None
-    assert incentive_def["month"] == "2026-03"
-    assert incentive_def["reward_per_unit"] == 5.0
+    assert incentive_def["month"] == "2026-04"
+    assert incentive_def["reward_per_unit"] is None  # per-product mode
 
-    # Load codes
-    codes, codes_err = load_incentive_codes(incentive_def)
-    assert codes_err is None
-    assert codes is not None
-    assert len(codes) > 0
+    # Load reward map
+    reward_map, map_err = load_incentive_reward_map(incentive_def)
+    assert map_err is None
+    assert reward_map is not None
+    assert len(reward_map) > 0
+    assert all(v in (5.0, 10.0, 25.0) for v in reward_map.values())
 
 
 @pytest.mark.anyio
@@ -99,7 +95,6 @@ async def test_hub_specials_json_exists():
     with open(config_path) as f:
         config = json.load(f)
 
-    assert "promotion" in config
     assert "incentive" in config
 
 

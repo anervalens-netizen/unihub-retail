@@ -30,8 +30,14 @@ const defaultFilters: AppFilters = defaultAppFilters();
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('hub');
-  const [campaignsSection, setCampaignsSection] = useState<CampaignsSection>('campaigns');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const saved = localStorage.getItem('unihub_active_tab');
+    return (saved as ActiveTab) || 'hub';
+  });
+  const [campaignsSection, setCampaignsSection] = useState<CampaignsSection>(() => {
+    const saved = localStorage.getItem('unihub_campaigns_section');
+    return (saved as CampaignsSection) || 'campaigns';
+  });
   const [theme, setTheme] = useState('light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [hubFilters, setHubFilters] = useState<AppFilters>(defaultFilters);
@@ -40,6 +46,14 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
+
+  useEffect(() => {
+    localStorage.setItem('unihub_active_tab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    localStorage.setItem('unihub_campaigns_section', campaignsSection);
+  }, [campaignsSection]);
 
   useEffect(() => {
     const root = document.documentElement;

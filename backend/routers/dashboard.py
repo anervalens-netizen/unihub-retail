@@ -38,6 +38,7 @@ from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
     load_incentive_codes,
+    load_incentive_reward_map,
     load_special_cards_config,
     parse_incentive_definition,
     parse_promotion_definition,
@@ -1086,10 +1087,9 @@ async def _fetch_promo_incentive_summary(
         and incentive_error is None
         and month == incentive_definition["month"]
     ):
-        incentive_codes, incentive_codes_error = load_incentive_codes(
-            incentive_definition
-        )
-        if incentive_codes is not None and incentive_codes_error is None:
+        reward_map, reward_map_error = load_incentive_reward_map(incentive_definition)
+        if reward_map is not None and reward_map_error is None:
+            incentive_codes = list(reward_map.keys())
             incentive_params, incentive_positions = _build_scoped_params(
                 [month, incentive_codes],
                 firma=firma,
@@ -1114,21 +1114,21 @@ async def _fetch_promo_incentive_summary(
                 param_floor=len(incentive_params),
             )
             incentive_clauses.extend(incentive_query_clauses)
-            incentive_row = await conn.fetchrow(
+            item_rows = await conn.fetch(
                 f"""
-                SELECT
-                    COALESCE(SUM(agg.positive_quantity), 0) AS incentive_qty
+                SELECT agg.item_code,
+                       COALESCE(SUM(agg.positive_quantity), 0)::INT AS qty
                 FROM reporting_item_month agg
                 WHERE {" AND ".join(incentive_clauses)}
+                GROUP BY agg.item_code
                 """,
                 *incentive_params,
                 *incentive_scope_params,
             )
-            if incentive_row:
-                incentive_qty = int(incentive_row["incentive_qty"] or 0)
-                incentive_value = Decimal(str(incentive_qty)) * Decimal(
-                    str(incentive_definition["reward_per_unit"])
-                )
+            incentive_qty = sum(int(r["qty"]) for r in item_rows)
+            incentive_value = Decimal(str(
+                sum(int(r["qty"]) * reward_map.get(r["item_code"], 0) for r in item_rows)
+            ))
 
     promo_impact = promo_sales * Decimal("0.20")
     return PromoIncentiveSummary(
@@ -1898,10 +1898,9 @@ async def _get_special_cards_data(
             )
 
     if incentive_definition is not None and incentive_error is None:
-        incentive_codes, incentive_codes_error = load_incentive_codes(
-            incentive_definition
-        )
-        if incentive_codes is not None:
+        reward_map, incentive_codes_error = load_incentive_reward_map(incentive_definition)
+        if reward_map is not None:
+            incentive_codes = list(reward_map.keys())
             params = [month, incentive_codes]
             positions = {}
             for key, value in [
@@ -1932,12 +1931,23 @@ async def _get_special_cards_data(
             )
             clauses.extend(query_clauses)
             async with pool.acquire() as conn:
-                row = await conn.fetchrow(
+                item_rows = await conn.fetch(
                     f"""
                     SELECT
-                        COALESCE(SUM(agg.net_quantity), 0) AS net_quantity,
-                        COALESCE(SUM(agg.positive_quantity), 0) AS positive_quantity,
-                        COALESCE(SUM(agg.return_quantity), 0) AS return_quantity,
+                        agg.item_code,
+                        COALESCE(SUM(agg.net_quantity), 0)::INT AS net_quantity,
+                        COALESCE(SUM(agg.positive_quantity), 0)::INT AS positive_quantity,
+                        COALESCE(SUM(agg.return_quantity), 0)::INT AS return_quantity
+                    FROM reporting_item_month agg
+                    WHERE {" AND ".join(clauses)}
+                    GROUP BY agg.item_code
+                    """,
+                    *params,
+                    *scope_params,
+                )
+                meta_row = await conn.fetchrow(
+                    f"""
+                    SELECT
                         COUNT(DISTINCT agg.site_code) FILTER (WHERE agg.positive_quantity > 0) AS active_stores,
                         COUNT(DISTINCT agg.agent) FILTER (WHERE agg.positive_quantity > 0) AS active_agents,
                         COUNT(DISTINCT agg.item_code) FILTER (WHERE agg.positive_quantity > 0) AS active_codes
@@ -1947,16 +1957,24 @@ async def _get_special_cards_data(
                     *params,
                     *scope_params,
                 )
-            incentive_stats = dict(row) if row else None
+            net_qty = sum(int(r["net_quantity"]) for r in item_rows)
+            pos_qty = sum(int(r["positive_quantity"]) for r in item_rows)
+            ret_qty = sum(int(r["return_quantity"]) for r in item_rows)
+            incentive_value = sum(
+                int(r["positive_quantity"]) * reward_map.get(r["item_code"], 0)
+                for r in item_rows
+            )
+            incentive_stats = {
+                "net_quantity": net_qty,
+                "positive_quantity": pos_qty,
+                "return_quantity": ret_qty,
+                "incentive_value": incentive_value,
+                "active_stores": int(meta_row["active_stores"]) if meta_row else 0,
+                "active_agents": int(meta_row["active_agents"]) if meta_row else 0,
+                "active_codes": int(meta_row["active_codes"]) if meta_row else 0,
+            }
 
     return [
-        build_promotion_card(
-            month,
-            promotion_definition,
-            promotion_stats,
-            config_error=config_error,
-            definition_error=promotion_error,
-        ),
         build_incentive_card(
             month,
             incentive_definition,

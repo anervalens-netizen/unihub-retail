@@ -63,7 +63,7 @@ async def rebuild_reporting_month(
             agent TEXT NOT NULL,
             bon_nr TEXT NOT NULL,
             qty_positive INTEGER NOT NULL
-        ) ON COMMIT DROP
+        )
         """
     )
     await conn.execute(

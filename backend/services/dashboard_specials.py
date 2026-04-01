@@ -7,17 +7,24 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from models import DashboardSpecialCard, DashboardSpecialCardMetric
 from services.product_lists import (
     get_data_dir,
     get_repo_root,
     load_product_code_rows,
+    normalize_column_name,
     resolve_path,
+    _read_excel_with_auto_header,
 )
 
 # Cache: (filepath, mtime) -> parsed result, auto-invalidates on file change
 _special_config_cache: dict[tuple[str, float], tuple[dict[str, Any], str | None]] = {}
 _special_codes_cache: dict[tuple[str, float], tuple[list[str] | None, str | None]] = {}
+_reward_map_cache: dict[tuple[str, float], tuple[dict[str, float] | None, str | None]] = {}
+
+_REWARD_COLUMN_ALIASES = {"incentive", "valoare", "reward", "bonus", "incentiv"}
 
 
 def format_currency(value: float | int) -> str:
@@ -152,14 +159,16 @@ def parse_incentive_definition(
     if not month_value:
         return None, "Sectiunea `incentive` trebuie sa contina `month`."
 
-    reward_per_unit = raw_definition.get("reward_per_unit", 5)
-    try:
-        reward_per_unit_value = float(reward_per_unit)
-    except (TypeError, ValueError):
-        return (
-            None,
-            "Sectiunea `incentive` trebuie sa contina un `reward_per_unit` numeric.",
-        )
+    raw_reward = raw_definition.get("reward_per_unit")
+    reward_per_unit_value: float | None = None
+    if raw_reward is not None:
+        try:
+            reward_per_unit_value = float(raw_reward)
+        except (TypeError, ValueError):
+            return (
+                None,
+                "Sectiunea `incentive` trebuie sa contina un `reward_per_unit` numeric sau null.",
+            )
 
     return (
         {
@@ -171,7 +180,7 @@ def parse_incentive_definition(
             "description": str(raw_definition.get("description") or ""),
             "source_file": str(source_file),
             "month": str(month_value),
-            "reward_per_unit": reward_per_unit_value,
+            "reward_per_unit": reward_per_unit_value,  # None = per-produs
         },
         None,
     )
@@ -203,6 +212,79 @@ def load_incentive_codes(
         return result
     result = codes, None
     _special_codes_cache[cache_key] = result
+    return result
+
+
+def load_incentive_reward_map(
+    definition: dict[str, Any],
+) -> tuple[dict[str, float] | None, str | None]:
+    """Returns {item_code: reward_value} from the source file's reward column.
+    Falls back to reward_per_unit if no reward column is found in the file.
+    """
+    source_path = resolve_path(definition["source_file"], get_data_dir())
+    if not source_path.exists():
+        return None, f"Fisierul extern `{source_path.name}` nu exista in data/."
+
+    mtime = source_path.stat().st_mtime
+    cache_key = (str(source_path), mtime)
+    if cache_key in _reward_map_cache:
+        return _reward_map_cache[cache_key]
+
+    try:
+        df = _read_excel_with_auto_header(source_path)
+    except Exception as exc:
+        result: tuple[dict[str, float] | None, str | None] = (
+            None,
+            f"Fisierul `{source_path.name}` nu a putut fi citit: {exc}",
+        )
+        _reward_map_cache[cache_key] = result
+        return result
+
+    # Find reward column
+    normalized_cols = {normalize_column_name(c): c for c in df.columns}
+    reward_col = next(
+        (normalized_cols[alias] for alias in _REWARD_COLUMN_ALIASES if alias in normalized_cols),
+        None,
+    )
+
+    # Find code column
+    from services.product_lists import CODE_COLUMN_ALIASES
+    code_col = next(
+        (normalized_cols[alias] for alias in CODE_COLUMN_ALIASES if alias in normalized_cols),
+        None,
+    )
+
+    if code_col is None:
+        result = None, f"Fisierul `{source_path.name}` nu contine o coloana de cod produs."
+        _reward_map_cache[cache_key] = result
+        return result
+
+    reward_map: dict[str, float] = {}
+    flat_reward = definition.get("reward_per_unit")
+
+    for record in df.to_dict(orient="records"):
+        code = str(record.get(code_col, "")).strip()
+        if not code or code.lower() == "nan":
+            continue
+        if reward_col is not None:
+            raw_val = record.get(reward_col)
+            try:
+                reward = float(raw_val)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+        elif flat_reward is not None:
+            reward = float(flat_reward)
+        else:
+            continue
+        reward_map[code] = reward
+
+    if not reward_map:
+        result = None, f"Fisierul `{source_path.name}` nu contine coduri cu valori de incentive."
+        _reward_map_cache[cache_key] = result
+        return result
+
+    result = reward_map, None
+    _reward_map_cache[cache_key] = result
     return result
 
 
@@ -365,7 +447,17 @@ def build_incentive_card(
             description=codes_error,
         )
 
+    reward_per_unit = definition.get("reward_per_unit")
+    per_product_mode = reward_per_unit is None
+
     if month != definition["month"]:
+        inactive_metrics = []
+        if not per_product_mode and reward_per_unit is not None:
+            inactive_metrics = [
+                DashboardSpecialCardMetric(
+                    label="Bonus / buc", value=format_currency(reward_per_unit)
+                )
+            ]
         return DashboardSpecialCard(
             key="incentive",
             title=definition["title"],
@@ -375,12 +467,7 @@ def build_incentive_card(
             highlight_value=definition["month"],
             description=definition["description"]
             or f"Incentive-ul este configurat pentru luna {definition['month']}.",
-            metrics=[
-                DashboardSpecialCardMetric(
-                    label="Bonus / buc",
-                    value=format_currency(definition["reward_per_unit"]),
-                )
-            ],
+            metrics=inactive_metrics,
         )
 
     normalized_stats = stats or {}
@@ -390,19 +477,42 @@ def build_incentive_card(
     active_stores = int(normalized_stats.get("active_stores") or 0)
     active_agents = int(normalized_stats.get("active_agents") or 0)
     active_codes = int(normalized_stats.get("active_codes") or 0)
-    estimated_bonus = net_quantity * float(definition["reward_per_unit"])
     status = "ready" if positive_quantity > 0 or return_quantity > 0 else "no_data"
 
-    return DashboardSpecialCard(
-        key="incentive",
-        title=definition["title"],
-        subtitle=definition["subtitle"],
-        status=status,
-        status_label="Calcul net" if status == "ready" else "Fara vanzari",
-        highlight_value=format_currency(estimated_bonus),
-        description=definition["description"]
-        or f"Fiecare unitate neta eligibila aduce {format_currency(definition['reward_per_unit'])} agentului.",
-        metrics=[
+    if per_product_mode:
+        # incentive_value pre-calculated in stats as weighted sum
+        estimated_bonus = float(normalized_stats.get("incentive_value") or 0)
+        coverage = (
+            f"Magazine active: {format_int(active_stores)}. "
+            "Bonusul este calculat pe cantitate vanduta x valoarea incentive per cod."
+        )
+        description = definition["description"] or "Bonusul variaza per cod de produs."
+    else:
+        estimated_bonus = net_quantity * float(reward_per_unit)  # type: ignore[arg-type]
+        coverage = (
+            f"Magazine active: {format_int(active_stores)}. "
+            f"Bonusul este calculat pe cantitate neta (retururile scad cate "
+            f"{format_currency(reward_per_unit)} per unitate)."
+        )
+        description = definition["description"] or (
+            f"Fiecare unitate neta eligibila aduce {format_currency(reward_per_unit)} agentului."
+        )
+
+    if per_product_mode:
+        metrics = [
+            DashboardSpecialCardMetric(
+                label="Unitati vandute", value=format_int(positive_quantity)
+            ),
+            DashboardSpecialCardMetric(
+                label="Retururi", value=format_int(return_quantity)
+            ),
+            DashboardSpecialCardMetric(
+                label="Coduri active", value=format_int(active_codes)
+            ),
+            DashboardSpecialCardMetric(label="Agenti", value=format_int(active_agents)),
+        ]
+    else:
+        metrics = [
             DashboardSpecialCardMetric(
                 label="Unitati nete", value=format_int(net_quantity)
             ),
@@ -413,6 +523,16 @@ def build_incentive_card(
                 label="Coduri active", value=format_int(active_codes)
             ),
             DashboardSpecialCardMetric(label="Agenti", value=format_int(active_agents)),
-        ],
-        coverage_note=f"Magazine active: {format_int(active_stores)}. Bonusul este calculat pe cantitate neta (retururile scad cate {format_currency(definition['reward_per_unit'])} per unitate).",
+        ]
+
+    return DashboardSpecialCard(
+        key="incentive",
+        title=definition["title"],
+        subtitle=definition["subtitle"],
+        status=status,
+        status_label="Calcul net" if status == "ready" else "Fara vanzari",
+        highlight_value=format_currency(estimated_bonus),
+        description=description,
+        metrics=metrics,
+        coverage_note=coverage,
     )
