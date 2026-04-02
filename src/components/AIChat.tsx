@@ -187,7 +187,7 @@ function ChartBlock({ spec }: { spec: ChartSpec }) {
   return (
     <div className="mt-2 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/50">
       {spec.title && <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{spec.title}</p>}
-      <ResponsiveContainer width="100%" height={220}>{chart as React.ReactElement}</ResponsiveContainer>
+      <ResponsiveContainer width="100%" height={220} minWidth={0}>{chart as React.ReactElement}</ResponsiveContainer>
     </div>
   );
 }

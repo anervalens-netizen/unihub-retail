@@ -11,5 +11,15 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Force reload when a new service worker activates (handles stale cache)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('controllerchange', function() {
+          if (document.visibilityState === 'visible') {
+            window.location.reload();
+          }
+        });
+      }
+    </script>
   </body>
 </html>

@@ -1018,7 +1018,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                 <h3 className="text-sm font-bold">Evolutie zilnica pentru {currentMonth}</h3>
               </div>
               <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <ComposedChart data={dailyChartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                     <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -1302,7 +1302,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                   </div>
                 </div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <ComposedChart data={historyChartData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -1324,7 +1324,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                   <h3 className="text-sm font-bold">Trend vanzari vs target</h3>
                 </div>
                 <div className="h-52">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <AreaChart data={historyChartData}>
                       <defs>
                         <linearGradient id="historySalesArea" x1="0" y1="0" x2="0" y2="1">
@@ -1526,7 +1526,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                     <h3 className="text-sm font-bold">Evolutie zilnica pentru {historyMonth}</h3>
                   </div>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <ComposedChart data={historyDailyChartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                         <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -1789,7 +1789,7 @@ function DonutLegendChart({
   return (
     <div className={`grid gap-1.5 ${layoutClass} items-center`}>
       <div className={`mx-auto w-full ${compact ? 'h-36 max-w-45' : 'h-48 max-w-55'}`}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <PieChart>
             <Pie
               data={data}

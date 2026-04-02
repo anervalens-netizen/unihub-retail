@@ -102,14 +102,30 @@ async def health() -> dict[str, str]:
 
 # Serve React SPA static files (production build)
 _dist = pathlib.Path(__file__).parent.parent / "dist"
+_NO_CACHE = "no-cache, no-store, must-revalidate"
+_IMMUTABLE = "public, max-age=31536000, immutable"
+
 if _dist.exists():
     class SPAStaticFiles(StaticFiles):
         async def get_response(self, path: str, scope):
             try:
-                return await super().get_response(path, scope)
+                resp = await super().get_response(path, scope)
             except StarletteHTTPException as ex:
                 if ex.status_code == 404:
-                    return FileResponse(_dist / "index.html")
+                    resp = FileResponse(_dist / "index.html")
+                    resp.headers["Cache-Control"] = _NO_CACHE
+                    resp.headers["CDN-Cache-Control"] = "no-store"
+                    resp.headers["Surrogate-Control"] = "no-store"
+                    return resp
                 raise
+            # sw.js and index.html must never be cached (browser + CDN)
+            if path in ("sw.js", "index.html", "", "registerSW.js", "manifest.webmanifest"):
+                resp.headers["Cache-Control"] = _NO_CACHE
+                resp.headers["CDN-Cache-Control"] = "no-store"
+                resp.headers["Surrogate-Control"] = "no-store"
+            # Hashed assets are immutable
+            elif "/assets/" in path or path.startswith("assets/"):
+                resp.headers["Cache-Control"] = _IMMUTABLE
+            return resp
 
     app.mount("/", SPAStaticFiles(directory=_dist, html=True), name="spa")

@@ -477,7 +477,7 @@ export function Campaigns({
                   </div>
                 </div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <AreaChart data={focusHistoryChart}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />

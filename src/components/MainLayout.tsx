@@ -139,7 +139,7 @@ export function MainLayout({
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-transparent">
+    <div className="flex h-dvh flex-col overflow-hidden bg-transparent">
       {activeTab === 'settings' && (
         <div className="flex items-center justify-between px-4 pt-7">
           <div>
@@ -165,7 +165,7 @@ export function MainLayout({
 
       <main
         className={cn(
-          'flex-1 min-h-0 overflow-hidden',
+          'flex-1 min-h-0 overflow-y-auto',
           activeTab === 'ai' ? 'pb-[4.75rem]' : 'pb-24'
         )}
       >

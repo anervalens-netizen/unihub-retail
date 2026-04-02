@@ -159,7 +159,7 @@ function AgentDetails({ agent, currentMonth, onBack }: AgentDetailsProps) {
         <h3 className="mb-4 text-sm font-bold">Istoric Vanzari</h3>
         <div className="h-64 w-full">
           {history && history.history.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <ComposedChart data={history.history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
                 <XAxis 
@@ -650,7 +650,7 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
         
         <div className="h-64 w-full">
           {movement && movement.history.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <ComposedChart data={movement.history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
                 <XAxis 
