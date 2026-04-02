@@ -321,6 +321,15 @@ def load_incentive_reward_map(
     return result
 
 
+def incentive_multiplier(achievement: float) -> float:
+    """Map store target achievement ratio to incentive multiplier (0.0, 0.5, or 1.0)."""
+    if achievement >= 0.99:
+        return 1.0
+    if achievement >= 0.89:
+        return 0.5
+    return 0.0
+
+
 def prewarm_special_cards_cache() -> None:
     """Warm up caches for all configured months at startup."""
     config, _ = load_special_cards_config()
@@ -533,7 +542,7 @@ def build_incentive_card(
     if per_product_mode:
         metrics = [
             DashboardSpecialCardMetric(
-                label="Unitati vandute", value=format_int(positive_quantity)
+                label="Unitati nete", value=format_int(net_quantity)
             ),
             DashboardSpecialCardMetric(
                 label="Retururi", value=format_int(return_quantity)

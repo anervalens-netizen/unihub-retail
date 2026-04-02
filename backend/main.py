@@ -21,7 +21,7 @@ from bootstrap import (
     should_sync_tl_assignments_on_boot,
 )
 from db.connection import close_db_pool, ensure_schema_current, get_pool, init_db_pool
-from routers import admin, agents, auth, campaigns, dashboard, filters, imports, salarii, stores, visits_report
+from routers import admin, agents, ai, auth, campaigns, dashboard, filters, imports, salarii, stores, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(ai.router)
 app.include_router(agents.router)
 app.include_router(campaigns.router)
 app.include_router(dashboard.router)

@@ -17,3 +17,7 @@ backend/.pytest_cache/
 backend/data/
 **/__pycache__/
 *.pyc
+
+# Backend virtual environment
+backend/venv/
+nul

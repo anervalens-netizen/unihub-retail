@@ -758,6 +758,19 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
 
   const filterScopeLabel = useMemo(() => describeFilterScope(filters), [filters]);
 
+  const hasActivePromotion = specialCards.some(
+    (c) => c.key === 'promotion' && c.status !== 'missing_config' && c.status !== 'inactive'
+  );
+  const regionalColumnsVisible = hasActivePromotion
+    ? REGIONAL_COLUMNS
+    : REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty');
+  const asmColumnsVisible = hasActivePromotion
+    ? ASM_COLUMNS
+    : ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
+  const agentColumnsVisible = hasActivePromotion
+    ? AGENT_COLUMNS
+    : AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
+
   return (
     <div className="space-y-3 p-3 pb-24 pt-2">
       <div>
@@ -1060,7 +1073,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                   <h3 className="text-sm font-bold">RM — Regional Manager</h3>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Filtrare: {filterScopeLabel} · Sortare: {REGIONAL_COLUMNS.find((column) => column.key === regionalSort.key)?.label} ({regionalSort.direction}) · {regionals.length} regionale
+                  Filtrare: {filterScopeLabel} · Sortare: {regionalColumnsVisible.find((column) => column.key === regionalSort.key)?.label} ({regionalSort.direction}) · {regionals.length} regionale
                 </p>
               </div>
             </div>
@@ -1068,7 +1081,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
               <table className="min-w-330 w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {REGIONAL_COLUMNS.map((column, i) => (
+                    {regionalColumnsVisible.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
@@ -1091,7 +1104,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       <td className="px-3 py-2">{formatCurrency(regional.target)}</td>
                       <td className="px-3 py-2">{formatCurrency(regional.total_vanzari)}</td>
                       <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(regional.proc_realizare_target)}</td>
-                      <td className="px-3 py-2">{formatInt(regional.promo_qty)}</td>
+                      {hasActivePromotion && <td className="px-3 py-2">{formatInt(regional.promo_qty)}</td>}
                       <td className="px-3 py-2">{formatInt(regional.incentive_qty)}</td>
                       <td className="px-3 py-2">{formatInt(regional.qty_total)}</td>
                       <td className="px-3 py-2">{formatInt(regional.nr_bonuri)}</td>
@@ -1113,7 +1126,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                   <h3 className="text-sm font-bold">ASM — Area Sales Manager</h3>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Filtrare: {filterScopeLabel} · Sortare: {ASM_COLUMNS.find((column) => column.key === asmSort.key)?.label} ({asmSort.direction}) · {asms.length} ASM
+                  Filtrare: {filterScopeLabel} · Sortare: {asmColumnsVisible.find((column) => column.key === asmSort.key)?.label} ({asmSort.direction}) · {asms.length} ASM
                 </p>
               </div>
             </div>
@@ -1121,7 +1134,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
               <table className="min-w-370 w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {ASM_COLUMNS.map((column, i) => (
+                    {asmColumnsVisible.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
@@ -1144,7 +1157,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       <td className="px-3 py-2">{formatCurrency(asm.target)}</td>
                       <td className="px-3 py-2">{formatCurrency(asm.total_vanzari)}</td>
                       <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(asm.proc_realizare_target)}</td>
-                      <td className="px-3 py-2">{formatInt(asm.promo_qty)}</td>
+                      {hasActivePromotion && <td className="px-3 py-2">{formatInt(asm.promo_qty)}</td>}
                       <td className="px-3 py-2">{formatInt(asm.incentive_qty)}</td>
                       <td className="px-3 py-2">{formatInt(asm.qty_total)}</td>
                       <td className="px-3 py-2">{formatInt(asm.nr_bonuri)}</td>
@@ -1220,7 +1233,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                 <div>
                   <h3 className="text-sm font-bold">Agenti - Toti agentii</h3>
                   <p className="text-[11px] text-slate-500">
-                    Filtrare: {filterScopeLabel} Â· Sortare: {AGENT_COLUMNS.find((column) => column.key === agentSort.key)?.label} ({agentSort.direction}) Â· {agents.length} agenti
+                    Filtrare: {filterScopeLabel} · Sortare: {agentColumnsVisible.find((column) => column.key === agentSort.key)?.label} ({agentSort.direction}) · {agents.length} agenti
                   </p>
                 </div>
               </div>
@@ -1228,7 +1241,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
               <table className="min-w-370 w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {AGENT_COLUMNS.map((column, i) => (
+                    {agentColumnsVisible.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
@@ -1252,7 +1265,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       <td className="px-3 py-2">{formatCurrency(agentRow.target ?? 0)}</td>
                       <td className="px-3 py-2 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
                       <td className="px-3 py-2">{formatPercent(agentRow.proc_realizare_target)}</td>
-                      <td className="px-3 py-2">{formatInt(agentRow.promo_qty ?? 0)}</td>
+                      {hasActivePromotion && <td className="px-3 py-2">{formatInt(agentRow.promo_qty ?? 0)}</td>}
                       <td className="px-3 py-2">{formatInt(agentRow.incentive_qty ?? 0)}</td>
                       <td className="px-3 py-2">{formatInt(agentRow.acc_qty_realizat)}</td>
                       <td className="px-3 py-2">{formatInt(agentRow.nr_bonuri)}</td>

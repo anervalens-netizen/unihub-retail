@@ -22,7 +22,7 @@ from models import (
     IncentiveData,
     IncentiveAgentStat,
 )
-from routers.dashboard import _fetch_promo_incentive_summary
+from routers.dashboard import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
 from routers.dashboard_filters import scoped_clauses
 from routers.shared import build_scope_filter, normalize_filter
 from decimal import Decimal
@@ -338,7 +338,21 @@ async def get_promotions_incentives(
         incentive_value = float(summary.incentive_value)
 
         promo_total_qty = 0
-        if promotion_definition is not None and promotion_error is None:
+        # Build store multipliers (used for both top_stores incentive and top_agents)
+        store_multipliers: dict[str, float] = {}
+        store_achievements: dict[str, float | None] = {}
+        if (
+            incentive_definition is not None
+            and incentive_error is None
+            and start_date[:7] == incentive_definition["month"]
+        ):
+            store_multipliers, store_achievements = await _get_store_incentive_multipliers(
+                conn, user, month, firma, regional, asm, site_code
+            )
+
+        has_active_promotion = promotion_definition is not None and promotion_error is None
+
+        if has_active_promotion:
             promo_month = start_date[:7]
             promo_params: list[Any] = [
                 start,
@@ -410,11 +424,93 @@ async def get_promotions_incentives(
                     qty=row["qty"],
                     total_qty=row["total_qty"],
                     category_qty=0,
+                    incentive_value=0.0,
+                    achievement=store_achievements.get(row["site_code"]),
                 )
                 for row in store_rows
             ]
         else:
             top_stores = []
+
+        # Add incentive_value per store (promo stores or incentive-based list)
+        if (
+            incentive_definition is not None
+            and incentive_error is None
+            and start_date[:7] == incentive_definition["month"]
+        ):
+            reward_map_for_stores, _ = load_incentive_reward_map(incentive_definition)
+            if reward_map_for_stores is not None:
+                inc_store_params: list[Any] = [list(reward_map_for_stores.keys()), month]
+                inc_store_positions: dict[str, int] = {}
+                for key, value in [
+                    ("firma", normalize_filter(firma)),
+                    ("regional", normalize_filter(regional)),
+                    ("asm", normalize_filter(asm)),
+                    ("site_code", normalize_filter(site_code)),
+                ]:
+                    if value is not None:
+                        inc_store_params.append(value)
+                        inc_store_positions[key] = len(inc_store_params)
+                inc_store_clauses = [
+                    "agg.item_code = ANY($1::TEXT[])",
+                    "agg.import_month = $2",
+                ]
+                inc_store_query_clauses, inc_store_scope_params = scoped_clauses(
+                    user, inc_store_positions,
+                    site_alias="agg", store_alias="agg", agent_alias="agg",
+                    month_alias=None, month_position=None,
+                    scope_base_alias="agg", param_floor=len(inc_store_params),
+                )
+                inc_store_clauses.extend(inc_store_query_clauses)
+                store_item_rows = await conn.fetch(
+                    f"""
+                    SELECT agg.site_code, MAX(agg.locatie) AS locatie,
+                           agg.item_code,
+                           COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
+                    FROM reporting_item_month agg
+                    WHERE {" AND ".join(inc_store_clauses)}
+                    GROUP BY agg.site_code, agg.item_code
+                    """,
+                    *inc_store_params,
+                    *inc_store_scope_params,
+                )
+                # Build {site_code: (locatie, incentive_value)}
+                store_inc: dict[str, list] = {}
+                for row in store_item_rows:
+                    sc = row["site_code"]
+                    loc = row["locatie"]
+                    val = max(0, int(row["qty"])) * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
+                    if sc not in store_inc:
+                        store_inc[sc] = [loc, 0.0]
+                    store_inc[sc][1] += val
+
+                if has_active_promotion:
+                    # Patch incentive_value into existing top_stores list
+                    top_stores = [
+                        PromoTopStore(
+                            store_name=s.store_name,
+                            qty=s.qty,
+                            total_qty=s.total_qty,
+                            category_qty=s.category_qty,
+                            incentive_value=round(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0])[1], 2),
+                            achievement=s.achievement,
+                        )
+                        for s in top_stores
+                    ]
+                else:
+                    # No promo: build top_stores from incentive data, sorted by incentive_value
+                    top_stores = [
+                        PromoTopStore(
+                            store_name=f"{sc} - {data[0]}",
+                            qty=0,
+                            total_qty=0,
+                            category_qty=0,
+                            incentive_value=round(data[1], 2),
+                            achievement=store_achievements.get(sc),
+                        )
+                        for sc, data in sorted(store_inc.items(), key=lambda x: -x[1][1])
+                        if data[1] > 0
+                    ][:10]
 
         if (
             incentive_definition is not None
@@ -459,20 +555,22 @@ async def get_promotions_incentives(
                     f"""
                     SELECT
                         agg.agent,
+                        agg.site_code,
                         agg.item_code,
-                        COALESCE(SUM(agg.positive_quantity), 0)::INT AS qty
+                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
                     FROM reporting_item_month agg
                     WHERE {" AND ".join(incentive_clauses)}
-                    GROUP BY agg.agent, agg.item_code
+                    GROUP BY agg.agent, agg.site_code, agg.item_code
                     """,
                     *incentive_params,
                     *incentive_scope_params,
                 )
-                # Aggregate per agent: bonus = sum(qty * reward_per_item)
+                # Aggregate per agent: bonus = sum(qty * reward_per_item * store_multiplier)
                 agent_bonus: dict[str, float] = {}
                 for row in agent_item_rows:
                     agent = row["agent"]
-                    bonus = int(row["qty"]) * reward_map.get(row["item_code"], 0)
+                    multiplier = store_multipliers.get(row["site_code"], 0)
+                    bonus = max(0, int(row["qty"])) * reward_map.get(row["item_code"], 0) * multiplier
                     agent_bonus[agent] = agent_bonus.get(agent, 0) + bonus
                 top_agents = [
                     IncentiveTopAgent(agent_name=agent, qty=round(bonus))
@@ -494,6 +592,7 @@ async def get_promotions_incentives(
         incentive_description=incentive_description,
         incentive_qty=incentive_qty,
         incentive_value=incentive_value,
+        has_active_promotion=has_active_promotion,
         top_stores=top_stores,
         top_agents=top_agents,
     )

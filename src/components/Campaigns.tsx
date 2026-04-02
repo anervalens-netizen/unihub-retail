@@ -276,73 +276,93 @@ export function Campaigns({
             </p>
           </div>
 
-          {/* Card Promotii */}
-          <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-            <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
-              <BadgePercent size={16} />
-              <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Promotii</span>
-            </div>
-            <div className="mb-1">
-              <h4 className="text-base font-black tracking-tight">{promoData?.promo_title || 'Promotie'}</h4>
-              {promoData?.promo_description && (
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.promo_description}</p>
+          {/* Card Promotii — ascuns daca nu exista promotie activa */}
+          {promoData?.has_active_promotion && (
+            <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+              <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <BadgePercent size={16} />
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Promotii</span>
+              </div>
+              <div className="mb-1">
+                <h4 className="text-base font-black tracking-tight">{promoData.promo_title || 'Promotie'}</h4>
+                {promoData.promo_description && (
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.promo_description}</p>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <div className="text-3xl font-black">{formatInt(promoData.promo_qty)}</div>
+                <div className="text-[11px] text-slate-500">bucati vandute</div>
+              </div>
+
+              {promoData.promo_total_qty > 0 && (
+                <div className="mb-3">
+                  <div className="mb-1 flex justify-between text-[10px] text-slate-500">
+                    <span>Progres</span>
+                    <span>{formatInt(promoData.promo_qty)} / {formatInt(promoData.promo_total_qty)}</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">
+                    <div
+                      className="h-2 rounded-full bg-amber-500"
+                      style={{ width: `${Math.min((promoData.promo_qty / promoData.promo_total_qty) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {promoData.promo_impact > 0 && (
+                <div className="mb-3 text-sm">
+                  <span className="text-slate-500">Impact: </span>
+                  <span className="font-black text-amber-600">{formatCurrency(promoData.promo_impact)}</span>
+                  <span className="text-[10px] text-slate-400"> (20% din vanzari)</span>
+                </div>
               )}
             </div>
+          )}
 
-            <div className="mb-3">
-              <div className="text-3xl font-black">{promoData ? formatInt(promoData.promo_qty) : '-'}</div>
-              <div className="text-[11px] text-slate-500">bucati vandute</div>
-            </div>
-
-            {promoData && promoData.promo_total_qty > 0 && (
-              <div className="mb-3">
-                <div className="mb-1 flex justify-between text-[10px] text-slate-500">
-                  <span>Progres</span>
-                  <span>{formatInt(promoData.promo_qty)} / {formatInt(promoData.promo_total_qty)}</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">
-                  <div
-                    className="h-2 rounded-full bg-amber-500"
-                    style={{ width: `${Math.min((promoData.promo_qty / promoData.promo_total_qty) * 100, 100)}%` }}
-                  />
-                </div>
+          {/* Card Magazine (incentive + promo daca activa) */}
+          {promoData && promoData.top_stores.length > 0 && (
+            <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+              <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <Building2 size={16} />
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine</span>
               </div>
-            )}
-
-            {promoData && promoData.promo_impact > 0 && (
-              <div className="mb-3 text-sm">
-                <span className="text-slate-500">Impact: </span>
-                <span className="font-black text-amber-600">{formatCurrency(promoData.promo_impact)}</span>
-                <span className="text-[10px] text-slate-400"> (20% din vanzari)</span>
-              </div>
-            )}
-
-            {/* Top 10 Magazine — embedded inside card */}
-            {promoData && promoData.top_stores.length > 0 && (
-              <div className="mt-4 border-t border-amber-100 dark:border-amber-900/30 pt-3">
-                <h5 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Top 10 Magazine</h5>
-                <div className="space-y-1">
-                  <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                    <div className="col-span-1">#</div>
-                    <div className="col-span-7">Magazin</div>
-                    <div className="col-span-2 text-right">Buc</div>
-                    <div className="col-span-2 text-right">Total</div>
-                  </div>
-                  {promoData.top_stores.slice(0, 10).map((store, index) => (
+              <div className="space-y-1">
+                <div className={`grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500 ${promoData.has_active_promotion ? 'grid-cols-12' : 'grid-cols-12'}`}>
+                  <div className="col-span-1">#</div>
+                  <div className={promoData.has_active_promotion ? 'col-span-4' : 'col-span-6'}>Magazin</div>
+                  <div className="col-span-2 text-right">Target%</div>
+                  {promoData.has_active_promotion && <div className="col-span-2 text-right">Promo</div>}
+                  <div className={`text-right ${promoData.has_active_promotion ? 'col-span-3' : 'col-span-3'}`}>Incentive</div>
+                </div>
+                {promoData.top_stores.slice(0, 10).map((store, index) => {
+                  const ach = store.achievement;
+                  const achPct = ach !== null && ach !== undefined ? Math.round(ach * 100) : null;
+                  const achColor = ach === null || ach === undefined
+                    ? 'text-slate-400'
+                    : ach >= 0.99 ? 'text-emerald-600 font-black'
+                    : ach >= 0.89 ? 'text-amber-500 font-semibold'
+                    : 'text-red-500';
+                  return (
                     <div
                       key={store.store_name}
                       className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}
                     >
                       <div className="col-span-1 font-bold text-slate-400">{index + 1}</div>
-                      <div className="col-span-7 truncate font-semibold">{store.store_name}</div>
-                      <div className="col-span-2 text-right font-black text-amber-600">{formatInt(store.qty)}</div>
-                      <div className="col-span-2 text-right text-slate-500">{formatInt(store.total_qty)}</div>
+                      <div className={`truncate font-semibold ${promoData.has_active_promotion ? 'col-span-4' : 'col-span-6'}`}>{store.store_name}</div>
+                      <div className={`col-span-2 text-right ${achColor}`}>
+                        {achPct !== null ? `${achPct}%` : '-'}
+                      </div>
+                      {promoData.has_active_promotion && (
+                        <div className="col-span-2 text-right font-black text-amber-600">{formatInt(store.qty)}</div>
+                      )}
+                      <div className="col-span-3 text-right font-black text-indigo-600">{store.incentive_value > 0 ? formatCurrency(store.incentive_value) : '-'}</div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Card Incentive */}
           <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">

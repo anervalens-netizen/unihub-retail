@@ -37,6 +37,7 @@ from routers.shared import build_scope_filter, normalize_filter
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
+    incentive_multiplier,
     load_incentive_codes,
     load_incentive_reward_map,
     load_special_cards_config,
@@ -85,6 +86,99 @@ def _build_scoped_params(
             params.append(value)
             positions[key] = len(params)
     return params, positions
+
+
+async def _get_store_incentive_multipliers(
+    conn: Any,
+    user: dict[str, Any],
+    month: str,
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+) -> tuple[dict[str, float], dict[str, float | None]]:
+    """Returns (multipliers, achievements) keyed by site_code.
+    multipliers: {site_code: 0.0 | 0.5 | 1.0}
+    achievements: {site_code: forecasted_ratio | None} — None when no target configured.
+    Uses previziune (actual * days_in_month / last_imported_day) for partial months.
+    Agent filter intentionally excluded — achievement is a store-level metric.
+    """
+    params, positions = _build_scoped_params(
+        [month],
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=None,
+    )
+    query_clauses, scope_params = scoped_clauses(
+        user,
+        positions,
+        site_alias="ram",
+        store_alias="ram",
+        agent_alias="ram",
+        month_alias="ram.import_month",
+        month_position=1,
+        scope_base_alias="ram",
+        param_floor=len(params),
+    )
+    clauses = ["ram.import_month = $1"] + query_clauses
+
+    # Compute forecast factor: project partial-month sales to end-of-month
+    meta_row = await conn.fetchrow(
+        """
+        SELECT
+            COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
+            EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
+            EXTRACT(DAY FROM (
+                date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
+                + INTERVAL '1 month - 1 day'
+            ))::INT AS days_in_month
+        FROM import_snapshots snap
+        LEFT JOIN (
+            SELECT MAX(sale_date) AS sale_date
+            FROM reporting_item_day
+            WHERE import_month = $1
+        ) rid ON true
+        WHERE snap.import_month = $1
+        """,
+        month,
+    )
+    if meta_row and not meta_row["is_final"] and meta_row["last_sale_day"]:
+        last_day = int(meta_row["last_sale_day"])
+        days_in_month = int(meta_row["days_in_month"] or last_day)
+        forecast_factor = days_in_month / last_day if last_day > 0 else 1.0
+    else:
+        forecast_factor = 1.0
+
+    rows = await conn.fetch(
+        f"""
+        SELECT
+            ram.site_code,
+            COALESCE(SUM(ram.total_sales), 0) AS store_sales,
+            COALESCE(MAX(st.target_value), 0) AS target
+        FROM reporting_agent_month ram
+        LEFT JOIN store_targets st
+            ON st.site_code = ram.site_code AND st.import_month = $1
+        WHERE {" AND ".join(clauses)}
+        GROUP BY ram.site_code
+        """,
+        *params,
+        *scope_params,
+    )
+    multipliers: dict[str, float] = {}
+    achievements: dict[str, float | None] = {}
+    for row in rows:
+        target = float(row["target"] or 0)
+        sales = float(row["store_sales"] or 0) * forecast_factor
+        if target > 0:
+            ach = sales / target
+            achievements[row["site_code"]] = ach
+        else:
+            achievements[row["site_code"]] = None
+            ach = 0.0
+        multipliers[row["site_code"]] = incentive_multiplier(ach)
+    return multipliers, achievements
 
 
 async def _fetch_store_stats_rows(
@@ -1116,18 +1210,26 @@ async def _fetch_promo_incentive_summary(
             incentive_clauses.extend(incentive_query_clauses)
             item_rows = await conn.fetch(
                 f"""
-                SELECT agg.item_code,
-                       COALESCE(SUM(agg.positive_quantity), 0)::INT AS qty
+                SELECT agg.site_code, agg.item_code,
+                       COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
                 FROM reporting_item_month agg
                 WHERE {" AND ".join(incentive_clauses)}
-                GROUP BY agg.item_code
+                GROUP BY agg.site_code, agg.item_code
                 """,
                 *incentive_params,
                 *incentive_scope_params,
             )
+            store_multipliers, _ = await _get_store_incentive_multipliers(
+                conn, user, month, firma, regional, asm, site_code
+            )
             incentive_qty = sum(int(r["qty"]) for r in item_rows)
             incentive_value = Decimal(str(
-                sum(int(r["qty"]) * reward_map.get(r["item_code"], 0) for r in item_rows)
+                sum(
+                    max(0, int(r["qty"]))
+                    * reward_map.get(r["item_code"], 0)
+                    * store_multipliers.get(r["site_code"], 0)
+                    for r in item_rows
+                )
             ))
 
     promo_impact = promo_sales * Decimal("0.20")
@@ -1934,13 +2036,14 @@ async def _get_special_cards_data(
                 item_rows = await conn.fetch(
                     f"""
                     SELECT
+                        agg.site_code,
                         agg.item_code,
                         COALESCE(SUM(agg.net_quantity), 0)::INT AS net_quantity,
                         COALESCE(SUM(agg.positive_quantity), 0)::INT AS positive_quantity,
                         COALESCE(SUM(agg.return_quantity), 0)::INT AS return_quantity
                     FROM reporting_item_month agg
                     WHERE {" AND ".join(clauses)}
-                    GROUP BY agg.item_code
+                    GROUP BY agg.site_code, agg.item_code
                     """,
                     *params,
                     *scope_params,
@@ -1957,11 +2060,16 @@ async def _get_special_cards_data(
                     *params,
                     *scope_params,
                 )
+                store_multipliers, _ = await _get_store_incentive_multipliers(
+                    conn, user, month, firma, regional, asm, site_code
+                )
             net_qty = sum(int(r["net_quantity"]) for r in item_rows)
             pos_qty = sum(int(r["positive_quantity"]) for r in item_rows)
             ret_qty = sum(int(r["return_quantity"]) for r in item_rows)
             incentive_value = sum(
-                int(r["positive_quantity"]) * reward_map.get(r["item_code"], 0)
+                max(0, int(r["net_quantity"]))
+                * reward_map.get(r["item_code"], 0)
+                * store_multipliers.get(r["site_code"], 0)
                 for r in item_rows
             )
             incentive_stats = {

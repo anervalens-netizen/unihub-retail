@@ -419,6 +419,8 @@ export interface PromoTopStore {
   qty: number;
   total_qty: number;
   category_qty: number;
+  incentive_value: number;
+  achievement: number | null;  // ratio 0-1, null = no target
 }
 
 export interface IncentiveTopAgent {
@@ -437,6 +439,7 @@ export interface CampaignsPromotionsResponse {
   incentive_description: string;
   incentive_qty: number;
   incentive_value: number;
+  has_active_promotion: boolean;
   top_stores: PromoTopStore[];
   top_agents: IncentiveTopAgent[];
 }
