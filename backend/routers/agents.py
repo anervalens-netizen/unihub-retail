@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from db.connection import get_pool
 from dependencies import get_current_user
@@ -358,8 +357,6 @@ async def get_agent_profile(
         row = await conn.fetchrow(query, agent, selected_month)
 
     if not row:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Agent not found")
 
     return AgentProfileResponse(**dict(row))

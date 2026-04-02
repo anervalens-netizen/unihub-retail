@@ -25,7 +25,6 @@ from models import (
 from routers.dashboard import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
 from routers.dashboard_filters import scoped_clauses
 from routers.shared import build_scope_filter, normalize_filter
-from decimal import Decimal
 from services.dashboard_specials import (
     load_incentive_reward_map,
     load_special_cards_config,

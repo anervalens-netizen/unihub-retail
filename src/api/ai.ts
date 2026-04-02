@@ -4,6 +4,8 @@
  * Connects to /api/ai/ws and handles the streaming chat protocol.
  */
 
+import type { AiAttachment } from './aiSessions';
+
 export type AiEventType =
   | 'welcome'
   | 'typing'
@@ -41,18 +43,29 @@ export class AiWebSocket {
   private onEvent: AiEventHandler;
   private onClose: () => void;
   private token: string;
+  private deviceId: string;
+  private sessionId: string | null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
 
-  constructor(token: string, onEvent: AiEventHandler, onClose: () => void) {
+  constructor(token: string, deviceId: string, sessionId: string | null, onEvent: AiEventHandler, onClose: () => void) {
     this.token = token;
+    this.deviceId = deviceId;
+    this.sessionId = sessionId;
     this.onEvent = onEvent;
     this.onClose = onClose;
   }
 
   connect(): void {
     this.closed = false;
-    const url = `${resolveWsUrl()}?token=${encodeURIComponent(this.token)}`;
+    const params = new URLSearchParams({
+      token: this.token,
+      device_id: this.deviceId,
+    });
+    if (this.sessionId) {
+      params.set('session_id', this.sessionId);
+    }
+    const url = `${resolveWsUrl()}?${params.toString()}`;
     this.ws = new WebSocket(url);
 
     this.ws.onmessage = (ev) => {
@@ -76,9 +89,9 @@ export class AiWebSocket {
     };
   }
 
-  send(message: string, reset = false): void {
+  send(message: string, attachments: AiAttachment[] = [], reset = false): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'message', content: message, reset }));
+      this.ws.send(JSON.stringify({ type: 'message', content: message, attachments, reset }));
     }
   }
 
@@ -100,6 +113,10 @@ export class AiWebSocket {
 
   get isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  setSession(sessionId: string | null): void {
+    this.sessionId = sessionId;
   }
 
   private scheduleReconnect(): void {

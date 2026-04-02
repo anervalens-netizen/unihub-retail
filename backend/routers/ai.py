@@ -6,30 +6,43 @@ Endpoints:
   GET /api/ai/health          — bridge health check
   POST /api/ai/reset          — reset conversation session
 """
+
 from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from starlette.websockets import WebSocketState
 
 from dependencies import get_current_user
+from models import AiAttachmentResponse, AiSessionDetailResponse, AiSessionListResponse
 from services.auth_service import decode_access_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-BRIDGE_URL = "http://127.0.0.1:7777"
-BRIDGE_TIMEOUT = 180.0  # seconds — generous for complex AI queries
+BRIDGE_URL = os.getenv("AI_BRIDGE_URL", "http://127.0.0.1:7777")
+BRIDGE_TIMEOUT = float(os.getenv("AI_BRIDGE_TIMEOUT", "180"))  # seconds — generous for complex AI queries
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _bridge_healthy() -> bool:
     try:
@@ -48,6 +61,7 @@ async def _validate_ws_token(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Token invalid") from exc
 
     from db.connection import get_pool
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -63,10 +77,13 @@ async def _validate_ws_token(token: str) -> dict[str, Any]:
 # WebSocket endpoint
 # ---------------------------------------------------------------------------
 
+
 @router.websocket("/ws")
 async def ai_websocket(
     websocket: WebSocket,
     token: str = Query(...),
+    device_id: str = Query(..., min_length=6),
+    session_id: str | None = Query(None),
 ):
     """
     WebSocket chat endpoint.
@@ -89,21 +106,32 @@ async def ai_websocket(
 
     await websocket.accept()
 
-    # Unique session per user
-    session_id = f"user_{user['id']}"
+    bridge_session_id = session_id
+    if not bridge_session_id:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{BRIDGE_URL}/sessions/{user['id']}",
+                params={"device_id": device_id},
+            )
+            resp.raise_for_status()
+            bridge_session_id = resp.json()["active_session_id"]
 
     # Check bridge availability
     if not await _bridge_healthy():
-        await websocket.send_json({"type": "bridge_offline", "message": "UniAI nu este disponibil momentan."})
+        await websocket.send_json(
+            {"type": "bridge_offline", "message": "UniAI nu este disponibil momentan."}
+        )
         await websocket.close()
         return
 
     # Send welcome
-    await websocket.send_json({
-        "type": "welcome",
-        "message": f"Bine ai venit, {user.get('full_name') or user['username']}! Sunt UniAI, asistentul tău de analiză vânzări.",
-        "session_id": session_id,
-    })
+    await websocket.send_json(
+        {
+            "type": "welcome",
+            "message": f"Bine ai venit, {user.get('full_name') or user['username']}! Sunt UniAI, asistentul tău de analiză vânzări.",
+            "session_id": bridge_session_id,
+        }
+    )
 
     try:
         while True:
@@ -112,7 +140,9 @@ async def ai_websocket(
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_json({"type": "error", "message": "Format mesaj invalid."})
+                await websocket.send_json(
+                    {"type": "error", "message": "Format mesaj invalid."}
+                )
                 continue
 
             content = msg.get("content", "").strip()
@@ -127,8 +157,10 @@ async def ai_websocket(
             # Stream from bridge
             bridge_payload = {
                 "message": content,
-                "session_id": session_id,
+                "session_id": bridge_session_id,
+                "user_id": str(user["id"]),
                 "reset": reset,
+                "attachments": msg.get("attachments", []),
             }
 
             try:
@@ -140,10 +172,12 @@ async def ai_websocket(
                         headers={"Accept": "text/event-stream"},
                     ) as response:
                         if response.status_code != 200:
-                            await websocket.send_json({
-                                "type": "error",
-                                "message": f"Eroare bridge: HTTP {response.status_code}",
-                            })
+                            await websocket.send_json(
+                                {
+                                    "type": "error",
+                                    "message": f"Eroare bridge: HTTP {response.status_code}",
+                                }
+                            )
                             continue
 
                         async for line in response.aiter_lines():
@@ -165,11 +199,13 @@ async def ai_websocket(
                                 await websocket.send_json(event)
 
                             elif event_type == "tool_start":
-                                await websocket.send_json({
-                                    "type": "tool_use",
-                                    "name": event.get("name", ""),
-                                    "input": event.get("input", ""),
-                                })
+                                await websocket.send_json(
+                                    {
+                                        "type": "tool_use",
+                                        "name": event.get("name", ""),
+                                        "input": event.get("input", ""),
+                                    }
+                                )
 
                             elif event_type == "tool_done":
                                 # Don't forward tool results — too verbose
@@ -182,21 +218,29 @@ async def ai_websocket(
                                 await websocket.send_json(event)
 
             except httpx.TimeoutException:
-                await websocket.send_json({
-                    "type": "error",
-                    "message": "Timeout: UniAI nu a răspuns în timp util.",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "message": "Timeout: UniAI nu a răspuns în timp util.",
+                    }
+                )
             except httpx.ConnectError:
-                await websocket.send_json({
-                    "type": "bridge_offline",
-                    "message": "UniAI nu este disponibil momentan.",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "bridge_offline",
+                        "message": "UniAI nu este disponibil momentan.",
+                    }
+                )
             except Exception as exc:
-                logger.exception("Bridge communication error for user %s", user["username"])
-                await websocket.send_json({
-                    "type": "error",
-                    "message": "Eroare internă de comunicare cu UniAI.",
-                })
+                logger.exception(
+                    "Bridge communication error for user %s", user["username"]
+                )
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "message": "Eroare internă de comunicare cu UniAI.",
+                    }
+                )
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected for user %s", user["username"])
@@ -213,6 +257,7 @@ async def ai_websocket(
 # REST endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/health")
 async def ai_health(user: dict[str, Any] = Depends(get_current_user)):
     """Check if the AI bridge is online."""
@@ -220,13 +265,85 @@ async def ai_health(user: dict[str, Any] = Depends(get_current_user)):
     return {"online": healthy, "bridge_url": BRIDGE_URL}
 
 
-@router.post("/reset")
-async def ai_reset(user: dict[str, Any] = Depends(get_current_user)):
-    """Reset conversation history for current user."""
-    session_id = f"user_{user['id']}"
+@router.get("/sessions", response_model=AiSessionListResponse)
+async def ai_sessions(
+    device_id: str = Query(..., min_length=6),
+    user: dict[str, Any] = Depends(get_current_user),
+):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{BRIDGE_URL}/session/{session_id}/reset")
+            resp = await client.get(
+                f"{BRIDGE_URL}/sessions/{user['id']}",
+                params={"device_id": device_id},
+            )
+            return resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Bridge offline") from exc
+
+
+@router.get("/sessions/{session_id}", response_model=AiSessionDetailResponse)
+async def ai_session_detail(
+    session_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{BRIDGE_URL}/sessions/{user['id']}/{session_id}")
+            return resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Bridge offline") from exc
+
+
+@router.post("/sessions", response_model=AiSessionDetailResponse)
+async def ai_create_session(
+    device_id: str = Query(..., min_length=6),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{BRIDGE_URL}/sessions",
+                json={"user_id": str(user["id"]), "device_id": device_id},
+            )
+            payload = resp.json()
+            return {"session": payload["session"], "messages": payload["messages"]}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Bridge offline") from exc
+
+
+@router.post("/sessions/{session_id}/activate", response_model=AiSessionDetailResponse)
+async def ai_activate_session(
+    session_id: str,
+    device_id: str = Query(..., min_length=6),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{BRIDGE_URL}/sessions/{session_id}/activate",
+                json={"user_id": str(user["id"]), "device_id": device_id},
+            )
+            payload = resp.json()
+            return {"session": payload["session"], "messages": payload["messages"]}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Bridge offline") from exc
+
+
+@router.post("/attachments", response_model=AiAttachmentResponse)
+async def ai_upload_attachment(
+    file: UploadFile = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        files = {
+            "file": (
+                file.filename or "attachment",
+                await file.read(),
+                file.content_type or "application/octet-stream",
+            )
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(f"{BRIDGE_URL}/attachments", files=files)
             return resp.json()
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Bridge offline") from exc

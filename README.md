@@ -160,7 +160,7 @@ Setup-ul complet este in [LOCAL_SETUP.md](./LOCAL_SETUP.md).
 
 Comenzi rapide:
 
-```powershell
+```bash
 npm install
 npm run dev
 npm run dev:backend
@@ -170,7 +170,7 @@ npm run dev:backend
 
 Comenzi importante:
 
-```powershell
+```bash
 pytest backend -q
 python backend/scripts/smoke_api.py
 npm run typecheck
@@ -180,4 +180,3 @@ npm run build
 ## Documente suplimentare
 
 - setup local: [LOCAL_SETUP.md](./LOCAL_SETUP.md)
-- handoff tehnic si status aplicatie: [HANDOFF.md](./HANDOFF.md)

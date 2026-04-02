@@ -175,39 +175,6 @@ class PromotionsIncentivesResponse(BaseModel):
     incentive: IncentiveData | None
 
 
-class PromoStoreStat(BaseModel):
-    site_code: str
-    locatie: str
-    qty_total: int
-    sales_total: Decimal
-    target: Decimal | None = None
-    realizat_pct: Decimal | None = None
-
-
-class PromoData(BaseModel):
-    overall_qty: int
-    overall_sales: Decimal
-    category_qty: int | None = None
-    stores: list[PromoStoreStat]
-
-
-class IncentiveAgentStat(BaseModel):
-    agent: str
-    qty_total: int
-    value: Decimal
-
-
-class IncentiveData(BaseModel):
-    overall_qty: int
-    overall_value: Decimal
-    agents: list[IncentiveAgentStat]
-
-
-class PromotionsIncentivesResponse(BaseModel):
-    promo: PromoData | None
-    incentive: IncentiveData | None
-
-
 class FocusHistoryPoint(BaseModel):
     month: str
     total_focus_sales: Decimal
@@ -355,6 +322,44 @@ class ImportResponse(BaseModel):
     snapshot_id: int
     filename: str
     is_month_final: bool
+
+
+class AiAttachmentResponse(BaseModel):
+    kind: Literal["image", "document"]
+    path: str
+    mime_type: str
+    name: str
+    size: int
+
+
+class AiSessionSummary(BaseModel):
+    id: str
+    title: str
+    preview: str = ""
+    updated_at: datetime
+    is_active: bool = False
+
+
+class AiSessionListResponse(BaseModel):
+    active_session_id: str
+    sessions: list[AiSessionSummary] = Field(default_factory=list)
+
+
+class AiSessionMessage(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: datetime
+
+
+class AiSessionDetailPayload(BaseModel):
+    id: str
+    title: str
+
+
+class AiSessionDetailResponse(BaseModel):
+    session: AiSessionDetailPayload
+    messages: list[AiSessionMessage] = Field(default_factory=list)
 
 
 class VisitReportRow(BaseModel):

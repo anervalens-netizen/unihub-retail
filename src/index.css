@@ -23,6 +23,7 @@ html {
 html,
 body,
 #root {
+  height: 100%;
   width: 100%;
   min-width: 100%;
   min-height: 100%;
@@ -120,6 +121,7 @@ body {
 }
 
 #root {
+  height: 100vh;
   min-height: 100vh;
 }
 

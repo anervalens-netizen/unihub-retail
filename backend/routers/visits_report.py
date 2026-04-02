@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
+import os
 import sqlite3
 from collections import defaultdict
 from functools import partial
@@ -25,8 +26,8 @@ from models import (
 )
 from routers.shared import normalize_filter
 
-VISITS_DB = Path("/opt/Mobiup/Platforma-Mobiup/db/visit_reports.db")
-IMAGES_DIR = Path("/opt/Mobiup/Platforma-Mobiup/local-data/visit-reports/images")
+VISITS_DB = Path(os.getenv("VISITS_DB_PATH", "/opt/Mobiup/Platforma-Mobiup/db/visit_reports.db"))
+IMAGES_DIR = Path(os.getenv("VISITS_IMAGES_DIR", "/opt/Mobiup/Platforma-Mobiup/local-data/visit-reports/images"))
 
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
 

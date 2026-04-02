@@ -163,7 +163,14 @@ export function MainLayout({
 
       {activeTab === 'settings' ? <div className="px-4 py-3" /> : null}
 
-      <main className="flex-1 overflow-y-auto pb-24">{children}</main>
+      <main
+        className={cn(
+          'flex-1 min-h-0 overflow-hidden',
+          activeTab === 'ai' ? 'pb-[4.75rem]' : 'pb-24'
+        )}
+      >
+        {children}
+      </main>
 
       <AnimatePresence>
         {isFilterOpen && (

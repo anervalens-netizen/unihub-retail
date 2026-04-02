@@ -49,20 +49,20 @@ DEFAULT_ADMIN_USERNAME=admin
 DEFAULT_ADMIN_PASSWORD=9999
 DEFAULT_MANAGEMENT_USERNAME=management
 DEFAULT_MANAGEMENT_PASSWORD=9999
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://192.168.0.23:3000
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 ## 4. Instalare dependinte
 
 Frontend:
 
-```powershell
+```bash
 npm install
 ```
 
 Backend:
 
-```powershell
+```bash
 cd backend
 python -m pip install -r requirements.txt
 cd ..
@@ -72,13 +72,13 @@ cd ..
 
 Frontend:
 
-```powershell
+```bash
 npm run dev
 ```
 
 Backend:
 
-```powershell
+```bash
 npm run dev:backend
 ```
 
@@ -91,14 +91,14 @@ Aplicatia va fi disponibila pe:
 
 Scripturile actuale pornesc pe `0.0.0.0`, deci frontendul si backendul sunt expuse si in LAN.
 
-Exemplu:
-- PC: `192.168.0.23`
-- telefon: `http://192.168.0.23:3000`
+Adauga IP-ul masinii tale de dev in `.env`:
+```env
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://<IP-PC>:3000
+```
 
 Atentie:
 - telefonul trebuie sa fie pe acelasi Wi-Fi
-- firewall-ul Windows trebuie sa permita traficul local
-- `CORS_ORIGINS` trebuie sa includa IP-ul folosit
+- firewall-ul trebuie sa permita traficul local pe portul 3000
 
 ## 7. Bootstrap utilizatori si login
 
@@ -117,7 +117,7 @@ management / 9999
 
 Daca login-ul nu merge pentru ca userul exista deja cu alta parola, ruleaza reset explicit:
 
-```powershell
+```bash
 cd backend
 python scripts/reset_default_users.py
 cd ..
@@ -135,7 +135,7 @@ Implicit, acest flag trebuie sa ramana dezactivat.
 
 ### Seed complet din `data/`
 
-```powershell
+```bash
 cd backend
 python scripts/seed.py
 cd ..
@@ -150,7 +150,7 @@ Ce face:
 
 ### Rebuild agregate reporting
 
-```powershell
+```bash
 cd backend
 python scripts/rebuild_reporting.py
 cd ..
@@ -158,7 +158,7 @@ cd ..
 
 Sau pentru o luna anume:
 
-```powershell
+```bash
 cd backend
 python scripts/rebuild_reporting.py --month 2026-03
 cd ..
@@ -191,25 +191,25 @@ Dashboard-urile si istoricul nu mai citesc in principal din `sales_transactions`
 
 Backend tests:
 
-```powershell
+```bash
 pytest backend -q
 ```
 
 Smoke API:
 
-```powershell
+```bash
 python backend/scripts/smoke_api.py
 ```
 
 Frontend typecheck:
 
-```powershell
+```bash
 npm run typecheck
 ```
 
 Frontend production build:
 
-```powershell
+```bash
 npm run build
 ```
 

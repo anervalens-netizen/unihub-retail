@@ -7,8 +7,6 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 from models import DashboardSpecialCard, DashboardSpecialCardMetric
 from services.product_lists import (
     get_data_dir,

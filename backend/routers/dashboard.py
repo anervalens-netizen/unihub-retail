@@ -33,7 +33,7 @@ from models import (
 from routers.dashboard_filters import (
     scoped_clauses,
 )
-from routers.shared import build_scope_filter, normalize_filter
+from routers.shared import normalize_filter
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
