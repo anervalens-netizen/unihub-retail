@@ -329,6 +329,25 @@ async def ai_activate_session(
         raise HTTPException(status_code=503, detail="Bridge offline") from exc
 
 
+@router.delete("/sessions/{session_id}")
+async def ai_delete_session(
+    session_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.delete(
+                f"{BRIDGE_URL}/sessions/{session_id}",
+                params={"user_id": str(user["id"])},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail="Bridge error") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Bridge offline") from exc
+
+
 @router.post("/attachments", response_model=AiAttachmentResponse)
 async def ai_upload_attachment(
     file: UploadFile = File(...),

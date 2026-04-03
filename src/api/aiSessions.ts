@@ -71,6 +71,10 @@ export async function activateAiSession(sessionId: string, deviceId: string): Pr
   return data;
 }
 
+export async function deleteAiSession(sessionId: string): Promise<void> {
+  await client.delete(`/api/ai/sessions/${sessionId}`);
+}
+
 export async function uploadAiAttachment(file: File): Promise<AiAttachment> {
   const formData = new FormData();
   formData.append('file', file);

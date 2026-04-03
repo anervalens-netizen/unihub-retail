@@ -26,6 +26,7 @@ import {
   Paperclip,
   PlusSquare,
   Send,
+  Trash2,
   User,
   WifiOff,
   X,
@@ -34,6 +35,7 @@ import { AiWebSocket, type AiEvent } from '../api/ai';
 import {
   activateAiSession,
   createAiSession,
+  deleteAiSession,
   getAiDeviceId,
   listAiSessions,
   uploadAiAttachment,
@@ -399,6 +401,22 @@ export default function AIChat() {
     setSessionDrawerOpen(false);
   };
 
+  const handleDeleteSession = async (event: React.MouseEvent, sessionId: string) => {
+    event.stopPropagation();
+    await deleteAiSession(sessionId);
+    const wasActive = sessionId === activeSessionId;
+    const updated = await refreshSessions(wasActive ? null : activeSessionId);
+    if (wasActive) {
+      if (updated) {
+        const detail = await activateAiSession(updated, deviceId);
+        setMessages(normalizeMessages(detail.messages));
+        reconnectSocket(updated);
+      } else {
+        await handleNewSession();
+      }
+    }
+  };
+
   const statusDot = {
     connected: 'bg-emerald-500',
     connecting: 'bg-amber-400 animate-pulse',
@@ -435,23 +453,31 @@ export default function AIChat() {
         </button>
         <div className="space-y-2 overflow-y-auto pr-1">
           {sessions.map((session) => (
-            <button
-              key={session.id}
-              onClick={() => void handleActivateSession(session.id)}
-              className={cn(
-                'w-full rounded-2xl border px-3 py-3 text-left transition-colors',
-                session.is_active
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-100'
-                  : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800'
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-semibold">{session.title}</p>
-                {session.is_active && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-800/50 dark:text-emerald-200">activ</span>}
-              </div>
-              <p className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{session.preview || 'Sesiune fara preview inca.'}</p>
-              <p className="mt-2 text-[11px] text-slate-400">{formatSessionTime(session.updated_at)}</p>
-            </button>
+            <div key={session.id} className="group relative">
+              <button
+                onClick={() => void handleActivateSession(session.id)}
+                className={cn(
+                  'w-full rounded-2xl border px-3 py-3 pr-9 text-left transition-colors',
+                  session.is_active
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-100'
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold">{session.title}</p>
+                  {session.is_active && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-800/50 dark:text-emerald-200">activ</span>}
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{session.preview || 'Sesiune fara preview inca.'}</p>
+                <p className="mt-2 text-[11px] text-slate-400">{formatSessionTime(session.updated_at)}</p>
+              </button>
+              <button
+                onClick={(e) => void handleDeleteSession(e, session.id)}
+                className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-xl text-slate-300 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                aria-label="Sterge sesiunea"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           ))}
         </div>
       </aside>
@@ -474,9 +500,6 @@ export default function AIChat() {
               </div>
               <p className="text-[11px] text-slate-500">{statusLabel}</p>
             </div>
-            <button onClick={handleNewSession} className="ml-auto rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-              Chat nou
-            </button>
           </div>
         </div>
 
@@ -578,9 +601,6 @@ export default function AIChat() {
             </div>
           )}
           <div className="flex items-end gap-2 rounded-[28px] border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-            <button onClick={() => setSessionDrawerOpen(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
-              <Menu size={18} />
-            </button>
             <button onClick={() => fileInputRef.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
               <Paperclip size={18} />
             </button>

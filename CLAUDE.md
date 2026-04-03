@@ -97,14 +97,19 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
   - `GET /api/ai/sessions/{session_id}`
   - `POST /api/ai/sessions?device_id=...`
   - `POST /api/ai/sessions/{session_id}/activate?device_id=...`
+  - `DELETE /api/ai/sessions/{session_id}` — șterge sesiunea din Hermes SQLite
   - `POST /api/ai/attachments`
   - `WS /api/ai/ws?token=...&device_id=...&session_id=...`
 
 - Suport attachments: imagini (vision), `.txt`, `.md`, PDF (`pdftotext`), `.docx/.xlsx/.pptx`
 
+- Grafice în chat: Hermes poate returna blocuri `\`\`\`chart` cu JSON spec; frontend-ul le randează via `ChartBlock` (recharts). Tipuri: `bar`, `line`, `pie`, `area`.
+
+- Memorie cross-sesiune: Hermes citește/scrie `memory.md` în workspace (`/opt/Mobiup/unihub/data/uniai-workspace/`) la prima interacțiune din sesiune. Configurat în `/home/andrei/.hermes/SOUL.md`.
+
 - Gotcha important:
   - bridge-ul trebuie sa creeze `AIAgent` cu `session_id` + `session_db`, iar payload-ul catre bridge trebuie sa includa `user_id`
-  - `MainLayout.tsx` are padding de jos special pentru tabul AI
+  - `MainLayout.tsx`: tabul AI are `overflow-hidden` (nu `overflow-y-auto`) — scroll-ul e gestionat intern de messages area pentru a preveni saltul address bar-ului pe mobile
 
 - Variabile de mediu:
   - `AI_BRIDGE_URL` — adresa bridge Hermes (default: `http://127.0.0.1:7777`)

@@ -39,6 +39,15 @@ Permite inregistrarea si urmarirea vizitelor in magazine:
 
 Geolocatia a fost eliminata complet din arhitectura aplicatiei.
 
+### UniAI
+Asistent de analiză vânzări integrat, alimentat de Hermes AI Agent:
+- chat cu memorie persistentă cross-sesiune
+- query SQL read-only pe baza de date UniHub
+- grafice interactive (bar, line, pie, area) randare în chat
+- tabele markdown
+- suport atașamente (imagini, PDF, Word, Excel)
+- istoric sesiuni cu posibilitate de ștergere
+
 ### Setari
 Zona administrativa pentru:
 - tema
