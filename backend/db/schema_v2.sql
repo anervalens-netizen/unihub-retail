@@ -538,3 +538,110 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- VIEW-URI COMPATIBILITATE PLATFORMA-MOBIUP
+-- Permit Platforma-Mobiup sa citeasca din PostgreSQL UniHub
+-- in loc de SQLite-ul propriu, eliminand dubla import zilnic.
+-- ============================================================
+
+CREATE OR REPLACE VIEW v_platforma_dashboard AS
+SELECT
+    ram.import_month,
+    s.firma,
+    s.regional,
+    s.asm,
+    ram.site_code,
+    s.locatie,
+    ram.agent,
+    ram.receipt_count                                           AS transactions_count,
+    ram.total_quantity,
+    ram.total_sales,
+    ram.working_days,
+    CASE WHEN ram.working_days > 0
+         THEN ROUND(ram.total_sales / ram.working_days, 2)
+         ELSE 0 END                                             AS avg_daily_sales,
+    ram.total_quantity                                          AS acc_qty_realizat,
+    ram.receipt_count                                           AS nr_bonuri,
+    ram.receipt_2plus_count                                     AS nr_bon2acc,
+    CASE WHEN ram.receipt_count > 0
+         THEN ROUND(ram.receipt_2plus_count * 100.0 / ram.receipt_count, 2)
+         ELSE 0 END                                             AS proc_bon2acc,
+    ram.focus_quantity                                          AS acc_focus_qty,
+    CASE WHEN ram.total_quantity > 0
+         THEN ROUND(ram.focus_quantity * 100.0 / ram.total_quantity, 2)
+         ELSE 0 END                                             AS prc_focus_acc_qty
+FROM reporting_agent_month ram
+JOIN stores s ON s.site_code = ram.site_code;
+
+CREATE OR REPLACE VIEW v_platforma_import_meta AS
+SELECT
+    last_snap.import_month,
+    TO_CHAR(
+        DATE_TRUNC('month', (last_snap.import_month || '-01')::date),
+        'YYYY-MM-DD'
+    )                                                           AS period_start,
+    CASE WHEN last_snap.is_month_final THEN
+        TO_CHAR(
+            DATE_TRUNC('month', (last_snap.import_month || '-01')::date)
+            + INTERVAL '1 month - 1 day',
+            'YYYY-MM-DD'
+        )
+    ELSE
+        TO_CHAR(
+            (SELECT MAX(st.sale_date)
+             FROM sales_transactions st
+             WHERE st.import_month = last_snap.import_month),
+            'YYYY-MM-DD'
+        )
+    END                                                         AS period_end,
+    CASE WHEN last_snap.is_month_final THEN 0 ELSE 1 END       AS is_partial,
+    CASE WHEN last_snap.is_month_final
+         THEN last_snap.import_month || ' (final)'
+         ELSE last_snap.import_month || ' (intermediar)'
+    END                                                         AS label,
+    last_snap.created_at::text                                  AS updated_at
+FROM (
+    SELECT DISTINCT ON (import_month)
+        import_month, is_month_final, created_at
+    FROM import_snapshots
+    WHERE status = 'completed'
+    ORDER BY import_month, created_at DESC
+) last_snap;
+
+CREATE OR REPLACE VIEW v_platforma_raw_sales AS
+SELECT
+    st.id,
+    st.import_month,
+    st.sale_date::text          AS sale_date,
+    st.site_code,
+    s.locatie,
+    s.firma,
+    s.regional,
+    s.asm,
+    st.agent,
+    st.bon_nr                   AS nr,
+    st.item_code,
+    st.item_name,
+    st.category,
+    st.subcategory,
+    st.brand,
+    st.quantity,
+    st.unit_price,
+    st.total_value,
+    st.is_cartela,
+    st.is_return
+FROM sales_transactions st
+JOIN stores s ON s.site_code = st.site_code;
+
+CREATE OR REPLACE VIEW v_platforma_store_targets AS
+SELECT
+    st.import_month,
+    st.site_code,
+    s.regional,
+    s.asm,
+    s.firma,
+    s.locatie,
+    st.target_value
+FROM store_targets st
+JOIN stores s ON s.site_code = st.site_code;
