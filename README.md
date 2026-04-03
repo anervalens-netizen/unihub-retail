@@ -128,6 +128,18 @@ Implementarea este in:
 - `backend/services/importer.py`
 - `backend/services/reporting_refresh.py`
 
+## Integrare Platforma-Mobiup
+
+Platforma-Mobiup (aplicatia veche) citeste datele de vanzari direct din PostgreSQL UniHub via VIEW-uri de compatibilitate. Importul zilnic se face **o singura data**, in UniHub.
+
+VIEW-uri disponibile in `schema_v2.sql`:
+- `v_platforma_dashboard` — agregat lunar per agent
+- `v_platforma_import_meta` — metadata per luna (is_partial, period_end)
+- `v_platforma_raw_sales` — tranzactii brute cu campuri aliasate pentru compatibilitate
+- `v_platforma_store_targets` — targete magazine cu detalii firma/asm/regional
+
+Vizitele din Platforma-Mobiup sunt citite de UniHub via SQLite read-only (`VISITS_DB_PATH`).
+
 ## Gestionarea schemei DB
 
 Schema principala este in:

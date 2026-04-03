@@ -120,9 +120,17 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 - Aplicata hash-based la boot via `ensure_schema_current()` in `backend/db/connection.py`
 - **Nu modifica schema direct in DB** — editeaza `schema_v2.sql` si reporneste backend-ul
 - Reporting pe agregate: `reporting_agent_*`, `reporting_item_*`, `reporting_focus_*`, `reporting_category_*`
+- VIEW-uri compatibilitate Platforma-Mobiup (la finalul `schema_v2.sql`):
+  - `v_platforma_dashboard` — agregat lunar pe agent (din `reporting_agent_month` JOIN `stores`)
+  - `v_platforma_import_meta` — metadata per luna (din `import_snapshots`)
+  - `v_platforma_raw_sales` — tranzactii brute (din `sales_transactions` JOIN `stores`; `bon_nr` alisat ca `nr`)
+  - `v_platforma_store_targets` — targete magazin (din `store_targets` JOIN `stores`)
 
-### Integrare Platforma-Mobiup (vizite)
-- SQLite read-only: `VISITS_DB_PATH` in `.env` (default: `/opt/Mobiup/Platforma-Mobiup/db/visit_reports.db`)
+### Integrare Platforma-Mobiup
+- **Date vanzari**: Platforma-Mobiup citeste din PostgreSQL UniHub via VIEW-urile `v_platforma_*`
+  - Importul de vanzari se face **o singura data**, in UniHub
+  - Ruta `/api/v2/intermediate-import` din Platforma-Mobiup returnează 410 Gone
+- **Vizite**: UniHub citeste SQLite read-only: `VISITS_DB_PATH` in `.env` (default: `/opt/Mobiup/Platforma-Mobiup/db/visit_reports.db`)
 - Poze: `VISITS_IMAGES_DIR` in `.env` (default: `/opt/Mobiup/Platforma-Mobiup/local-data/visit-reports/images/`)
 - Router `visits_report.py` citeste SQLite async via `run_in_executor` (non-blocking)
 - Endpoint `/api/visits-report/photo/{visit_id}/{filename}` serveste pozele cu auth (`FileResponse`)
