@@ -150,23 +150,24 @@ async def update_tl_assignments(
                 detail="Alocările se aplică doar utilizatorilor TL",
             )
 
-        await conn.execute(
-            "DELETE FROM tl_store_assignments WHERE user_id = $1", user_id
-        )
-        if payload.site_codes:
-            valid_rows = await conn.fetch(
-                "SELECT site_code FROM stores WHERE site_code = ANY($1::text[])",
-                payload.site_codes,
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM tl_store_assignments WHERE user_id = $1", user_id
             )
-            valid_site_codes = [row["site_code"] for row in valid_rows]
-            await conn.executemany(
-                """
-                INSERT INTO tl_store_assignments (user_id, site_code)
-                VALUES ($1, $2)
-                ON CONFLICT (user_id, site_code) DO NOTHING
-                """,
-                [(user_id, site_code) for site_code in valid_site_codes],
-            )
+            if payload.site_codes:
+                valid_rows = await conn.fetch(
+                    "SELECT site_code FROM stores WHERE site_code = ANY($1::text[])",
+                    payload.site_codes,
+                )
+                valid_site_codes = [row["site_code"] for row in valid_rows]
+                await conn.executemany(
+                    """
+                    INSERT INTO tl_store_assignments (user_id, site_code)
+                    VALUES ($1, $2)
+                    ON CONFLICT (user_id, site_code) DO NOTHING
+                    """,
+                    [(user_id, site_code) for site_code in valid_site_codes],
+                )
 
         row = await conn.fetchrow(
             """
@@ -277,9 +278,9 @@ async def delete_focus_product(
                 "DELETE FROM focus_products WHERE item_code = $1",
                 item_code,
             )
-            if not result.endswith("0"):
+            if result != "DELETE 0":
                 await rebuild_reporting_all(conn)
-    if result.endswith("0"):
+    if result == "DELETE 0":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Produsul focus nu există"
         )

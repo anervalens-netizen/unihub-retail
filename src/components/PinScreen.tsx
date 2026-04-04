@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { motion } from 'motion/react';
 import { AlertCircle, LockKeyhole, User } from 'lucide-react';
 import { getCurrentUser, login } from '../api/auth';
@@ -14,7 +14,7 @@ export function PinScreen({ onAuthenticated }: PinScreenProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setLoading(true);
     setError('');

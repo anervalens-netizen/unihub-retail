@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
 import { getCurrentUser, logout } from './api/auth';
 import { getAvailableMonths } from './api/filters';
@@ -40,6 +40,7 @@ export default function App() {
   });
   const [theme, setTheme] = useState('light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [hubSection, setHubSection] = useState<'current' | 'history' | 'visits'>('current');
   const [hubFilters, setHubFilters] = useState<AppFilters>(defaultFilters);
   const [focusFilters, setFocusFilters] = useState<AppFilters>(defaultFilters);
   const [agentsFilters, setAgentsFilters] = useState<AppFilters>(defaultFilters);
@@ -124,11 +125,18 @@ export default function App() {
   }, []);
 
   const handleAuthenticated = async (currentUser: AuthUser) => {
-    const availableMonths = await getAvailableMonths();
-    setUser(currentUser);
-    setMonths(availableMonths);
-    setCurrentMonth(availableMonths[0] || '');
-    setIsAuthenticated(true);
+    try {
+      const availableMonths = await getAvailableMonths();
+      setUser(currentUser);
+      setMonths(availableMonths);
+      setCurrentMonth(availableMonths[0] || '');
+      setIsAuthenticated(true);
+    } catch {
+      setUser(currentUser);
+      setMonths([]);
+      setCurrentMonth('');
+      setIsAuthenticated(true);
+    }
   };
 
   const handleLogout = () => {
@@ -176,10 +184,11 @@ export default function App() {
       onLogout={handleLogout}
       theme={theme}
       setTheme={setTheme}
+      showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
-          <Dashboard currentMonth={currentMonth} months={months} filters={hubFilters} user={user} />
+          <Dashboard currentMonth={currentMonth} months={months} filters={hubFilters} user={user} onSectionChange={setHubSection} />
         )}
         {activeTab === 'focus' && currentMonth && (
           <Campaigns
@@ -196,10 +205,7 @@ export default function App() {
         {activeTab === 'ai' && <AIChat />}
         {activeTab === 'settings' && (
           <Settings
-            theme={theme}
-            setTheme={setTheme}
             user={user}
-            activeMonth={currentMonth}
             onImportCompleted={(month) => {
               setMonths((previous) => {
                 const next = previous.includes(month) ? previous : [...previous, month];

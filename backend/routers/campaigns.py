@@ -16,11 +16,6 @@ from models import (
     FocusHistoryResponse,
     IncentiveTopAgent,
     PromoTopStore,
-    PromotionsIncentivesResponse,
-    PromoData,
-    PromoStoreStat,
-    IncentiveData,
-    IncentiveAgentStat,
 )
 from routers.dashboard import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
 from routers.dashboard_filters import scoped_clauses
@@ -567,10 +562,10 @@ async def get_promotions_incentives(
                 # Aggregate per agent: bonus = sum(qty * reward_per_item * store_multiplier)
                 agent_bonus: dict[str, float] = {}
                 for row in agent_item_rows:
-                    agent = row["agent"]
+                    agent_name = row["agent"]
                     multiplier = store_multipliers.get(row["site_code"], 0)
                     bonus = max(0, int(row["qty"])) * reward_map.get(row["item_code"], 0) * multiplier
-                    agent_bonus[agent] = agent_bonus.get(agent, 0) + bonus
+                    agent_bonus[agent_name] = agent_bonus.get(agent_name, 0) + bonus
                 top_agents = [
                     IncentiveTopAgent(agent_name=agent, qty=round(bonus))
                     for agent, bonus in sorted(agent_bonus.items(), key=lambda x: -x[1])

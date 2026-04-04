@@ -26,8 +26,8 @@ from models import (
 )
 from routers.shared import normalize_filter
 
-VISITS_DB = Path(os.getenv("VISITS_DB_PATH", "/opt/Mobiup/Platforma-Mobiup/db/visit_reports.db"))
-IMAGES_DIR = Path(os.getenv("VISITS_IMAGES_DIR", "/opt/Mobiup/Platforma-Mobiup/local-data/visit-reports/images"))
+VISITS_DB = Path(os.getenv("VISITS_DB_PATH", "/opt/Mobiup/unihub/data/visits/visits.db"))
+IMAGES_DIR = Path(os.getenv("VISITS_IMAGES_DIR", "/opt/Mobiup/unihub/data/visits/images"))
 
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
 
@@ -146,7 +146,7 @@ async def get_visits_report(
         "magazin": normalize_filter(magazin),
     }
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, partial(_query_sqlite, month, filters, tl_stores))
 
     report_rows = [
@@ -222,7 +222,7 @@ async def get_visits_tree(
         "magazin": normalize_filter(magazin),
     }
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     rows = await loop.run_in_executor(None, partial(_query_tree, filters, tl_stores))
 
     # Group: asm → month → day → visits
@@ -281,9 +281,14 @@ async def get_visit_detail(
     visit_id: str,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> VisitDetail:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     row = await loop.run_in_executor(None, partial(_query_visit, visit_id))
     if row is None:
+        raise HTTPException(status_code=404, detail="Vizita nu a fost gasita.")
+
+    # TL scope check: verify visit's store is in TL's assignments
+    tl_stores = await _get_tl_stores(user)
+    if tl_stores is not None and row["magazin"] not in tl_stores:
         raise HTTPException(status_code=404, detail="Vizita nu a fost gasita.")
 
     photos = _photo_filenames(visit_id)
@@ -339,11 +344,21 @@ async def get_visit_photo(
     filename: str,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> FileResponse:
+    # TL scope check
+    loop = asyncio.get_running_loop()
+    visit_row = await loop.run_in_executor(None, partial(_query_visit, visit_id))
+    if visit_row is not None:
+        tl_stores = await _get_tl_stores(user)
+        if tl_stores is not None and visit_row["magazin"] not in tl_stores:
+            raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
+
     # Sanitize: no path traversal
-    if "/" in filename or "\\" in filename or ".." in visit_id:
+    if "/" in filename or "\\" in filename or ".." in visit_id or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid path.")
 
-    photo_path = IMAGES_DIR / visit_id / filename
+    photo_path = (IMAGES_DIR / visit_id / filename).resolve()
+    if not str(photo_path).startswith(str(IMAGES_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid path.")
     if not photo_path.exists():
         raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
 

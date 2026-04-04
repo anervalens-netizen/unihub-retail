@@ -117,18 +117,6 @@ export async function fetchSalaryAgentHistory(cnp: string): Promise<SalaryAgentH
   return res.data;
 }
 
-export async function fetchSalaryRecords(params: {
-  company_name?: string;
-  year?: number;
-  month?: number;
-  site_code?: string;
-  limit?: number;
-  offset?: number;
-}) {
-  const res = await client.get('/salarii/records', { params });
-  return res.data as Promise<unknown[]>;
-}
-
 export async function fetchSalarySummary(params: {
   company_name?: string;
   site_code?: string;

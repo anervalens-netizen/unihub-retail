@@ -88,29 +88,36 @@ Avantaje ale abordarii curente:
 
 ## Cum functioneaza datele
 
-Aplicatia are doua straturi majore de date:
+Aplicatia are trei straturi de date:
 
 ### 1. Stratul operational brut
 Tabelele brute sunt sursa de adevar pentru audit si import:
-- `stores`
-- `users`
-- `tl_store_assignments`
-- `focus_products`
-- `import_snapshots`
-- `sales_transactions`
-- `store_targets`
-- `visits`
+- `stores`, `users`, `tl_store_assignments`, `focus_products`
+- `import_snapshots`, `sales_transactions`, `store_targets`
+- `incentive_campaigns`, `incentive_products` — campanii incentive per-produs (importate cu `import_incentive_campaign.py`)
 
 ### 2. Stratul agregat de reporting
 Acesta este stratul principal folosit de dashboard-uri:
-- `reporting_agent_day`
-- `reporting_agent_month`
-- `reporting_item_day`
-- `reporting_item_month`
-- `reporting_focus_item_month`
-- `reporting_category_month`
+- `reporting_agent_day`, `reporting_agent_month`
+- `reporting_item_day`, `reporting_item_month`
+- `reporting_focus_item_month`, `reporting_category_month`
 
 Scopul lui este sa evite raportarea direct din `sales_transactions` pentru fiecare request.
+
+### 3. Stratul de date istorice
+Pentru perioadele fara tranzactii individuale (2022, 2023 Jan–Aug):
+- `historical_annual_sales` — agregate anuale per magazin/firma, importate din `vanzari 2022 si 2023.xlsx`
+
+Acoperirea completa a datelor:
+| Perioada | Sursa |
+|----------|-------|
+| 2022 (integral) | `historical_annual_sales` |
+| 2023 Ian–Aug (derivat) | `historical_annual_sales` (`is_partial_year=True`) |
+| 2023 Sep–Dec | `sales_transactions` (tranzactii) |
+| 2024 Ian–Dec | `sales_transactions` (tranzactii) |
+| 2025–prezent | `sales_transactions` (tranzactii) |
+
+Nota: datele 2023-2024 nu au informatii per-agent individual (campul `agent` este `'-'`).
 
 ## Fluxul de import
 
@@ -138,7 +145,22 @@ VIEW-uri disponibile in `schema_v2.sql`:
 - `v_platforma_raw_sales` — tranzactii brute cu campuri aliasate pentru compatibilitate
 - `v_platforma_store_targets` — targete magazine cu detalii firma/asm/regional
 
-Vizitele din Platforma-Mobiup sunt citite de UniHub via SQLite read-only (`VISITS_DB_PATH`).
+**Vizite**: UniHub este sursa de adevar pentru vizite. Ambele aplicatii citesc din acelasi SQLite:
+`/opt/Mobiup/unihub/data/visits/visits.db` (configurat via `VISITS_DB_PATH` in `.env`).
+
+## Backup
+
+Backup-urile automate sunt configurate in crontab zilnic la ora 02:00:
+- Script: `/opt/Mobiup/scripts/backup.sh`
+- Destinatie: `/opt/Mobiup/backups/`
+  - `postgres/` — dump PostgreSQL (`pg_dump -Fc`)
+  - `visits/` — copie SQLite visits
+- Retentie: 30 zile
+
+Restore PostgreSQL:
+```bash
+pg_restore -d unihub /opt/Mobiup/backups/postgres/<fisier.dump>
+```
 
 ## Gestionarea schemei DB
 
@@ -197,6 +219,19 @@ python backend/scripts/smoke_api.py
 npm run typecheck
 npm run build
 ```
+
+## Scripturi utile
+
+| Script | Utilizare |
+|--------|-----------|
+| `backend/scripts/import_incentive_campaign.py` | Import campanie incentive per-produs din Excel in DB |
+| `backend/scripts/import_historical.py` | Import date istorice 2023 Q4 + 2024 (tranzactii) |
+| `backend/scripts/import_annual_summary.py` | Import agregate anuale 2022/2023 din `vanzari 2022 si 2023.xlsx` |
+| `backend/scripts/seed.py` | Seed complet din `data/` |
+| `backend/scripts/rebuild_reporting.py` | Rebuild agregate reporting |
+| `backend/scripts/reset_default_users.py` | Reset parole utilizatori default |
+| `backend/scripts/smoke_api.py` | Smoke test API |
+| `/opt/Mobiup/scripts/backup.sh` | Backup zilnic PostgreSQL + SQLite |
 
 ## Documente suplimentare
 

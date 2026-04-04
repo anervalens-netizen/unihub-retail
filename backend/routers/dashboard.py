@@ -27,8 +27,9 @@ from models import (
     PromoIncentiveSummary,
     ReceiptBucketItem,
     RegionalStats,
-    StoreAgentStats,
     StoreStats,
+    YearHistoryPoint,
+    YearHistoryResponse,
 )
 from routers.dashboard_filters import (
     scoped_clauses,
@@ -38,12 +39,10 @@ from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
     incentive_multiplier,
-    load_incentive_codes,
-    load_incentive_reward_map,
     load_special_cards_config,
-    parse_incentive_definition,
     parse_promotion_definition,
 )
+from services.incentive_db import get_incentive_campaign
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -352,12 +351,8 @@ async def _fetch_agent_stats_rows(
 
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
-    incentive_definition, _ = parse_incentive_definition(config, month)
-    incentive_codes, _ = (
-        load_incentive_codes(incentive_definition)
-        if incentive_definition is not None
-        else (None, None)
-    )
+    incentive_campaign = await get_incentive_campaign(conn, month)
+    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
     promotion_codes = (
         promotion_definition["item_codes"] if promotion_definition is not None else []
     )
@@ -542,12 +537,8 @@ async def _fetch_regional_stats(
 
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
-    incentive_definition, _ = parse_incentive_definition(config, month)
-    incentive_codes, _ = (
-        load_incentive_codes(incentive_definition)
-        if incentive_definition is not None
-        else (None, None)
-    )
+    incentive_campaign = await get_incentive_campaign(conn, month)
+    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
     promotion_codes = (
         promotion_definition["item_codes"] if promotion_definition is not None else []
     )
@@ -735,12 +726,8 @@ async def _fetch_asm_stats(
 
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
-    incentive_definition, _ = parse_incentive_definition(config, month)
-    incentive_codes, _ = (
-        load_incentive_codes(incentive_definition)
-        if incentive_definition is not None
-        else (None, None)
-    )
+    incentive_campaign = await get_incentive_campaign(conn, month)
+    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
     promotion_codes = (
         promotion_definition["item_codes"] if promotion_definition is not None else []
     )
@@ -1123,7 +1110,7 @@ async def _fetch_promo_incentive_summary(
 ) -> PromoIncentiveSummary:
     config, _ = load_special_cards_config()
     promotion_definition, promotion_error = parse_promotion_definition(config, month)
-    incentive_definition, incentive_error = parse_incentive_definition(config, month)
+    incentive_campaign = await get_incentive_campaign(conn, month)
 
     promo_qty = 0
     promo_sales: Decimal = Decimal("0")
@@ -1176,13 +1163,9 @@ async def _fetch_promo_incentive_summary(
             promo_qty = int(promo_row["promo_qty"] or 0)
             promo_sales = promo_row["promo_sales"] or Decimal("0")
 
-    if (
-        incentive_definition is not None
-        and incentive_error is None
-        and month == incentive_definition["month"]
-    ):
-        reward_map, reward_map_error = load_incentive_reward_map(incentive_definition)
-        if reward_map is not None and reward_map_error is None:
+    if incentive_campaign is not None:
+        reward_map = incentive_campaign["reward_map"]
+        if reward_map:
             incentive_codes = list(reward_map.keys())
             incentive_params, incentive_positions = _build_scoped_params(
                 [month, incentive_codes],
@@ -1412,163 +1395,6 @@ async def get_summary(
                         AND fd.import_month = c.import_month
                   )
             )
-            SELECT
-                ss.month,
-                ss.total_sales,
-                COALESCE(ts.total_target, 0) AS total_target,
-                CASE
-                    WHEN COALESCE(ts.total_target, 0) > 0
-                    THEN ROUND(ss.total_sales * 100.0 / ts.total_target, 2)
-                    ELSE NULL
-                END AS target_progress_pct,
-                CASE
-                    WHEN COALESCE(mm.is_month_final, true) = false
-                         AND ls.last_sale_date IS NOT NULL
-                         AND EXTRACT(DAY FROM ls.last_sale_date) > 0
-                    THEN ROUND(ss.total_sales / EXTRACT(DAY FROM ls.last_sale_date) * mm.days_in_month, 2)
-                    ELSE ss.total_sales
-                END AS forecast_sales,
-                CASE
-                    WHEN COALESCE(ts.total_target, 0) > 0
-                         AND COALESCE(mm.is_month_final, true) = false
-                         AND ls.last_sale_date IS NOT NULL
-                         AND EXTRACT(DAY FROM ls.last_sale_date) > 0
-                    THEN ROUND((ss.total_sales / EXTRACT(DAY FROM ls.last_sale_date) * mm.days_in_month) * 100.0 / ts.total_target, 2)
-                    WHEN COALESCE(ts.total_target, 0) > 0
-                    THEN ROUND(ss.total_sales * 100.0 / ts.total_target, 2)
-                    ELSE NULL
-                END AS forecast_target_progress_pct,
-                ss.total_quantity,
-                ss.total_receipts,
-                ss.proc_bon2acc,
-                ss.prc_focus_acc_qty,
-                ss.total_stores,
-                ss.total_agents,
-                ss.working_days,
-                ss.daily_average,
-                COALESCE(mm.is_month_final, true) AS is_month_final,
-                ls.last_sale_date,
-                CASE
-                    WHEN ls.last_sale_date IS NOT NULL THEN EXTRACT(DAY FROM ls.last_sale_date)::INT
-                    ELSE NULL
-                END AS imported_day_of_month,
-                mm.days_in_month,
-                cs.cartele_qty
-            FROM sales_summary ss
-            LEFT JOIN target_summary ts ON ts.month = ss.month
-            LEFT JOIN month_meta mm ON mm.import_month = ss.month
-            LEFT JOIN last_sale ls ON true
-            LEFT JOIN cartele_summary cs ON true
-            """,
-            *params,
-            *scope_params,
-        )
-    if row is None:
-        return DashboardSummary(
-            month=month,
-            total_sales=0,
-            total_target=0,
-            target_progress_pct=None,
-            forecast_sales=None,
-            forecast_target_progress_pct=None,
-            total_quantity=0,
-            total_receipts=0,
-            proc_bon2acc=None,
-            prc_focus_acc_qty=None,
-            total_stores=0,
-            total_agents=0,
-            working_days=0,
-            daily_average=None,
-            is_month_final=True,
-            last_sale_date=None,
-            imported_day_of_month=None,
-            days_in_month=None,
-            cartele_qty=0,
-        )
-    return DashboardSummary(**dict(row))
-
-
-@router.get("/agents", response_model=list[AgentStats])
-async def get_agent_stats(
-    month: str = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> list[AgentStats]:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            f"""
-            WITH filtered_days AS (
-                SELECT *
-                FROM reporting_agent_day agg
-                WHERE {" AND ".join(clauses)}
-            ),
-            sales_summary AS (
-                SELECT
-                    fd.import_month AS month,
-                    COALESCE(SUM(fd.total_sales), 0) AS total_sales,
-                    COALESCE(SUM(fd.total_quantity), 0)::INT AS total_quantity,
-                    COALESCE(SUM(fd.receipt_count), 0)::INT AS total_receipts,
-                    ROUND(COALESCE(SUM(fd.receipt_2plus_count), 0) * 100.0 / NULLIF(COALESCE(SUM(fd.receipt_count), 0), 0), 2) AS proc_bon2acc,
-                    ROUND(COALESCE(SUM(fd.focus_quantity), 0) * 100.0 / NULLIF(COALESCE(SUM(fd.total_quantity), 0), 0), 2) AS prc_focus_acc_qty,
-                    COUNT(DISTINCT fd.site_code)::INT AS total_stores,
-                    COUNT(DISTINCT fd.agent)::INT AS total_agents,
-                    COUNT(DISTINCT fd.sale_date)::INT AS working_days,
-                    ROUND(
-                        COALESCE(SUM(fd.total_sales), 0) / NULLIF(COUNT(DISTINCT fd.sale_date), 0),
-                        2
-                    ) AS daily_average
-                FROM filtered_days fd
-                GROUP BY fd.import_month
-            ),
-            last_sale AS (
-                SELECT MAX(sale_date) AS last_sale_date
-                FROM filtered_days
-            ),
-            target_summary AS (
-                SELECT
-                    stg.import_month AS month,
-                    COALESCE(SUM(stg.target_value), 0) AS total_target
-                FROM store_targets stg
-                WHERE stg.import_month = $1
-                  AND EXISTS (
-                      SELECT 1
-                      FROM filtered_days fd
-                      WHERE fd.site_code = stg.site_code
-                  )
-                GROUP BY stg.import_month
-            ),
-            month_meta AS (
-                SELECT
-                    snap.import_month,
-                    COALESCE(snap.is_month_final, true) AS is_month_final,
-                    EXTRACT(DAY FROM (
-                        date_trunc('month', to_date(snap.import_month || '-01', 'YYYY-MM-DD'))
-                        + INTERVAL '1 month - 1 day'
-                    ))::INT AS days_in_month
-                FROM import_snapshots snap
-                WHERE snap.import_month = $1 AND snap.status = 'completed'
-                ORDER BY snap.created_at DESC
-                LIMIT 1
-            ),
-
-            cartele_summary AS (
-                SELECT
-                    COALESCE(SUM(c.qty_total), 0)::INT AS cartele_qty
-                FROM v_cartele_monthly c
-                WHERE c.import_month = $1
-                  AND EXISTS (
-                      SELECT 1
-                      FROM filtered_days fd
-                      WHERE fd.site_code = c.site_code
-                        AND fd.agent = c.agent
-                        AND fd.import_month = c.import_month
-                  )
-            ),
             SELECT
                 ss.month,
                 ss.total_sales,
@@ -1912,12 +1738,12 @@ async def _get_special_cards_data(
     """Internal helper to build special cards data without HTTP dependencies."""
     config, config_error = load_special_cards_config()
     promotion_definition, promotion_error = parse_promotion_definition(config, month)
-    incentive_definition, incentive_error = parse_incentive_definition(config, month)
     promotion_stats: dict[str, Any] | None = None
     incentive_stats: dict[str, Any] | None = None
-    incentive_codes_error: str | None = None
 
     pool = await get_pool()
+    async with pool.acquire() as _conn_ic:
+        incentive_campaign = await get_incentive_campaign(_conn_ic, month)
 
     if promotion_definition is not None and promotion_error is None:
         params: list[Any] = [
@@ -1999,9 +1825,9 @@ async def _get_special_cards_data(
                 (receipt_row["total_receipts"] if receipt_row else 0) or 0
             )
 
-    if incentive_definition is not None and incentive_error is None:
-        reward_map, incentive_codes_error = load_incentive_reward_map(incentive_definition)
-        if reward_map is not None:
+    if incentive_campaign is not None:
+        reward_map = incentive_campaign["reward_map"]
+        if reward_map:
             incentive_codes = list(reward_map.keys())
             params = [month, incentive_codes]
             positions = {}
@@ -2093,15 +1919,26 @@ async def _get_special_cards_data(
                 definition_error=promotion_error,
             )
         )
-    if incentive_definition is not None or config_error:
+    if incentive_campaign is not None or config_error:
+        incentive_definition = (
+            {
+                "title": incentive_campaign["title"],
+                "subtitle": incentive_campaign["subtitle"],
+                "description": incentive_campaign["description"],
+                "month": incentive_campaign["month"],
+                "reward_per_unit": None,  # per-produs — reward_map în stats
+            }
+            if incentive_campaign is not None
+            else None
+        )
         cards.append(
             build_incentive_card(
                 month,
                 incentive_definition,
                 incentive_stats,
                 config_error=config_error,
-                definition_error=incentive_error,
-                codes_error=incentive_codes_error,
+                definition_error=None,
+                codes_error=None,
             )
         )
     return cards
@@ -2244,3 +2081,162 @@ async def get_monthly_history(
     return DashboardHistoryResponse(
         history=[MonthlyHistoryPoint(**dict(row)) for row in rows]
     )
+
+
+_RO_MONTHS = {
+    1: "Ian", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Mai", 6: "Iun",
+    7: "Iul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+}
+
+
+@router.get("/history-year", response_model=YearHistoryResponse)
+async def get_history_by_year(
+    year: int = Query(..., ge=2022, le=2030),
+    firma: str | None = None,
+    regional: str | None = None,
+    asm: str | None = None,
+    site_code: str | None = None,
+    agent: str | None = None,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> YearHistoryResponse:
+    _firma = normalize_filter(firma)
+    _regional = normalize_filter(regional)
+    _asm = normalize_filter(asm)
+    _site_code = normalize_filter(site_code)
+    _agent = normalize_filter(agent)
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        points: list[YearHistoryPoint] = []
+
+        # --- Historical aggregate (2022 full year or 2023 Ian–Aug) ---
+        # Skip when agent filter is active: historical data has no per-agent breakdown.
+        if year <= 2023 and _agent is None:
+            hist_params: list[Any] = [year]
+            hist_clauses: list[str] = []
+            if year == 2023:
+                hist_clauses.append("has.is_partial_year = TRUE")
+            p = 2
+            for val, col in [
+                (_firma, "has.firma"),
+                (_regional, "s.regional"),
+                (_asm, "s.asm"),
+                (_site_code, "has.site_code"),
+            ]:
+                if val is not None:
+                    hist_clauses.append(f"{col} = ${p}")
+                    hist_params.append(val)
+                    p += 1
+            if user["role"] == "tl":
+                hist_clauses.append(
+                    f"s.site_code IN (SELECT site_code FROM tl_store_assignments WHERE user_id = ${p}::INTEGER)"
+                )
+                hist_params.append(user["id"])
+                p += 1
+
+            where_hist = f"AND {' AND '.join(hist_clauses)}" if hist_clauses else ""
+            row = await conn.fetchrow(
+                f"""
+                SELECT COALESCE(SUM(has.total_value), 0) AS total_sales,
+                       COALESCE(SUM(has.total_qty), 0)::INT AS total_quantity
+                FROM historical_annual_sales has
+                JOIN stores s ON s.site_code = has.site_code
+                WHERE has.year = $1 {where_hist}
+                """,
+                *hist_params,
+            )
+            if row and row["total_sales"] > 0:
+                points.append(
+                    YearHistoryPoint(
+                        label="Ian–Aug" if year == 2023 else "2022",
+                        sort_key=f"{year}-00",
+                        total_sales=row["total_sales"],
+                        total_target=Decimal(0),
+                        total_quantity=row["total_quantity"],
+                        is_aggregate=True,
+                    )
+                )
+
+        # --- reporting_agent_month part ---
+        # For 2023 only load Sep–Dec (Jan–Aug are in historical_annual_sales).
+        start_month = f"{year}-09" if year == 2023 else f"{year}-01"
+        end_month = f"{year}-12"
+
+        rep_params: list[Any] = [start_month, end_month]
+        rep_clauses: list[str] = []
+        p = 3
+        for val, col in [
+            (_firma, "agg.firma"),
+            (_regional, "agg.regional"),
+            (_asm, "agg.asm"),
+            (_site_code, "agg.site_code"),
+            (_agent, "agg.agent"),
+        ]:
+            if val is not None:
+                rep_clauses.append(f"{col} = ${p}")
+                rep_params.append(val)
+                p += 1
+        if user["role"] == "tl":
+            rep_clauses.append(
+                f"s.site_code IN (SELECT site_code FROM tl_store_assignments WHERE user_id = ${p}::INTEGER)"
+            )
+            rep_params.append(user["id"])
+            p += 1
+
+        where_rep = f"AND {' AND '.join(rep_clauses)}" if rep_clauses else ""
+
+        rows = await conn.fetch(
+            f"""
+            WITH sales_agg AS (
+                SELECT agg.import_month, agg.site_code,
+                       SUM(agg.total_sales)    AS total_sales,
+                       SUM(agg.total_quantity) AS total_quantity
+                FROM reporting_agent_month agg
+                JOIN stores s ON s.site_code = agg.site_code
+                WHERE agg.import_month >= $1 AND agg.import_month <= $2
+                  {where_rep}
+                GROUP BY agg.import_month, agg.site_code
+            ),
+            month_sales AS (
+                SELECT import_month,
+                       SUM(total_sales)          AS total_sales,
+                       SUM(total_quantity)::INT  AS total_quantity
+                FROM sales_agg
+                GROUP BY import_month
+            ),
+            month_targets AS (
+                SELECT st.import_month, SUM(st.target_value) AS total_target
+                FROM store_targets st
+                WHERE st.import_month >= $1 AND st.import_month <= $2
+                  AND EXISTS (
+                      SELECT 1 FROM sales_agg sa
+                      WHERE sa.import_month = st.import_month
+                        AND sa.site_code = st.site_code
+                  )
+                GROUP BY st.import_month
+            )
+            SELECT ms.import_month,
+                   ms.total_sales,
+                   COALESCE(mt.total_target, 0) AS total_target,
+                   ms.total_quantity
+            FROM month_sales ms
+            LEFT JOIN month_targets mt ON mt.import_month = ms.import_month
+            ORDER BY ms.import_month
+            """,
+            *rep_params,
+        )
+
+        for r in rows:
+            month_num = int(r["import_month"][5:7])
+            points.append(
+                YearHistoryPoint(
+                    label=_RO_MONTHS[month_num],
+                    sort_key=r["import_month"],
+                    total_sales=r["total_sales"],
+                    total_target=r["total_target"],
+                    total_quantity=r["total_quantity"],
+                    is_aggregate=False,
+                )
+            )
+
+    return YearHistoryResponse(points=points)

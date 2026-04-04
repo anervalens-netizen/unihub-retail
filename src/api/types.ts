@@ -78,10 +78,6 @@ export interface DashboardSpecialCard {
   metrics: DashboardSpecialCardMetric[];
 }
 
-export interface DashboardSpecialCardsResponse {
-  cards: DashboardSpecialCard[];
-}
-
 export interface PromoIncentiveSummary {
   promo_qty: number;
   promo_sales: number;
@@ -260,67 +256,12 @@ export interface ImportResponse {
   is_month_final: boolean;
 }
 
-export interface Visit {
-  id: string;
-  created_at: string;
-  updated_at: string;
-  data_raport: string | null;
-  ora_trimitere: string | null;
-  firma: string | null;
-  regional: string | null;
-  asm: string | null;
-  magazin: string | null;
-  site_code: string | null;
-  durata_vizita_ore: number | null;
-  curatenie: boolean;
-  imagine: boolean;
-  uniforma: boolean;
-  afise: boolean;
-  produse_promo: boolean;
-  tpu: number | null;
-  sticla: number | null;
-  altele: number | null;
-  avizat: boolean;
-  avize: number | null;
-  charisma: number | null;
-  casa: number | null;
-  incarcari_epay: number | null;
-  incarcari_charisma: number | null;
-  agent1_nume: string | null;
-  agent1_perf: number | null;
-  agent1_doi_pe_bon: number | null;
-  agent1_focus: number | null;
-  agent1_analiza: string | null;
-  agent1_plan: string | null;
-  agent2_nume: string | null;
-  agent2_perf: number | null;
-  agent2_doi_pe_bon: number | null;
-  agent2_focus: number | null;
-  agent2_analiza: string | null;
-  agent2_plan: string | null;
-  foto1: string | null;
-  foto2: string | null;
-  foto3: string | null;
-  foto4: string | null;
-  status: 'submitted' | 'approved' | 'rejected';
-  completion_pct: number;
-  tl: string | null;
-  notes: string | null;
-  source: string;
-}
-
 export interface StoreOption {
   site_code: string;
   locatie: string;
   firma: string;
   regional: string;
   asm: string;
-}
-
-export interface StoreTargetInput {
-  site_code: string;
-  import_month: string;
-  target_value: number;
 }
 
 export interface AdminUser {
@@ -348,18 +289,6 @@ export interface AdminUserUpdate {
   password?: string;
 }
 
-export interface FocusProduct {
-  item_code: string;
-  item_name: string | null;
-  added_at: string;
-  added_by: number | null;
-}
-
-export interface FocusProductCreate {
-  item_code: string;
-  item_name?: string | null;
-}
-
 export interface DashboardAllResponse {
   summary: DashboardSummary;
   agents: AgentStat[];
@@ -378,6 +307,19 @@ export interface DashboardAllResponse {
 
 export interface DashboardHistoryResponse {
   history: MonthlyHistoryPoint[];
+}
+
+export interface YearHistoryPoint {
+  label: string;
+  sort_key: string;
+  total_sales: number;
+  total_target: number;
+  total_quantity: number;
+  is_aggregate: boolean;
+}
+
+export interface YearHistoryResponse {
+  points: YearHistoryPoint[];
 }
 
 export interface PeriodComparisonPoint {

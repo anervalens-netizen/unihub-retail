@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bot, Filter, LayoutDashboard, LogOut, Moon, Settings, Sparkles, Sun, SunMoon, Users, X } from 'lucide-react';
 import { getFilterOptions } from '../api/filters';
@@ -33,7 +33,16 @@ interface MainLayoutProps {
   onLogout: () => void;
   theme: string;
   setTheme: (theme: string) => void;
+  showFilterButton?: boolean;
 }
+
+const ALL_TABS = [
+  { id: 'hub', icon: LayoutDashboard, label: 'Hub' },
+  { id: 'focus', icon: Sparkles, label: 'Focus' },
+  { id: 'agents', icon: Users, label: 'Agenti' },
+  { id: 'ai', icon: Bot, label: 'AI' },
+  { id: 'settings', icon: Settings, label: 'Setari' },
+] as const;
 
 const emptyOptions: FilterOptions = {
   firme: [],
@@ -56,22 +65,19 @@ export function MainLayout({
   onLogout,
   theme,
   setTheme,
+  showFilterButton = true,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
 
-  const allTabs = [
-    { id: 'hub', icon: LayoutDashboard, label: 'Hub' },
-    { id: 'focus', icon: Sparkles, label: 'Focus' },
-    { id: 'agents', icon: Users, label: 'Agenti' },
-    { id: 'ai', icon: Bot, label: 'AI' },
-    { id: 'settings', icon: Settings, label: 'Setari' },
-  ] as const;
-
   const userRole: Role = (user?.role as Role) ?? 'tl';
   const isAdmin = userRole === 'admin';
-  const visibleTabs = isAdmin
-    ? [...allTabs]
-    : allTabs.filter((tab) => canAccessTab(userRole, tab.id as TabId));
+  const visibleTabs = useMemo(
+    () =>
+      isAdmin
+        ? [...ALL_TABS]
+        : ALL_TABS.filter((tab) => canAccessTab(userRole, tab.id as TabId)),
+    [isAdmin, userRole]
+  );
 
   useEffect(() => {
     if (!filterMonth) return;
@@ -328,7 +334,7 @@ export function MainLayout({
         </div>
       </div>
 
-      {(['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents') && (
+      {showFilterButton && (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents') && (
         <button
           onClick={() => setIsFilterOpen(true)}
           aria-label="Filtre"

@@ -3,8 +3,6 @@ import type {
   AdminUser,
   AdminUserCreate,
   AdminUserUpdate,
-  FocusProduct,
-  FocusProductCreate,
 } from './types';
 
 export async function getAdminUsers(): Promise<AdminUser[]> {
@@ -27,20 +25,6 @@ export async function updateTlAssignments(id: number, siteCodes: string[]): Prom
     site_codes: siteCodes,
   });
   return data;
-}
-
-export async function getFocusProducts(): Promise<FocusProduct[]> {
-  const { data } = await client.get<FocusProduct[]>('/api/admin/focus-products');
-  return data;
-}
-
-export async function createFocusProduct(payload: FocusProductCreate): Promise<FocusProduct> {
-  const { data } = await client.post<FocusProduct>('/api/admin/focus-products', payload);
-  return data;
-}
-
-export async function deleteFocusProduct(itemCode: string): Promise<void> {
-  await client.delete(`/api/admin/focus-products/${itemCode}`);
 }
 
 export async function deleteAdminUser(id: number): Promise<void> {

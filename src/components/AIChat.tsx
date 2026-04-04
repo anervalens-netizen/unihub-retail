@@ -216,6 +216,14 @@ export default function AIChat() {
   const streamBufRef = useRef('');
   const streamIdRef = useRef('');
   const streamToolsRef = useRef<string[]>([]);
+  const handleEventRef = useRef<(event: AiEvent) => void>(() => {});
+  const handleCloseRef = useRef<() => void>(() => {});
+  const activeSessionIdRef = useRef<string | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   const refreshSessions = useCallback(async (expectedActiveId?: string | null) => {
     const list = await listAiSessions(deviceId);
@@ -229,28 +237,38 @@ export default function AIChat() {
     const token = localStorage.getItem('unihub_token') ?? '';
     if (!token || !sessionId) return;
     wsRef.current?.disconnect();
-    const ws = new AiWebSocket(token, deviceId, sessionId, handleEvent, handleClose);
+    const ws = new AiWebSocket(
+      token, deviceId, sessionId,
+      (evt: AiEvent) => handleEventRef.current(evt),
+      () => handleCloseRef.current()
+    );
     wsRef.current = ws;
     setStatus('connecting');
     ws.connect();
   }, [deviceId]);
 
   const loadInitialState = useCallback(async () => {
-    setLoadingSession(true);
-    const activeId = await refreshSessions();
-    if (activeId) {
-      const detail = await activateAiSession(activeId, deviceId);
-      setMessages(normalizeMessages(detail.messages));
-      reconnectSocket(activeId);
+    try {
+      setLoadingSession(true);
+      const activeId = await refreshSessions();
+      if (activeId) {
+        const detail = await activateAiSession(activeId, deviceId);
+        setMessages(normalizeMessages(detail.messages));
+        reconnectSocket(activeId);
+      }
+    } catch (err) {
+      console.warn('Failed to load AI initial state:', err);
+      setStatus('disconnected');
+    } finally {
+      setLoadingSession(false);
     }
-    setLoadingSession(false);
   }, [deviceId, reconnectSocket, refreshSessions]);
 
-  const handleClose = useCallback(() => {
+  handleCloseRef.current = useCallback(() => {
     setStatus((current) => (current === 'offline' ? 'offline' : 'disconnected'));
   }, []);
 
-  const handleEvent = useCallback((event: AiEvent) => {
+  handleEventRef.current = useCallback((event: AiEvent) => {
     switch (event.type) {
       case 'welcome':
         setStatus('connected');
@@ -291,7 +309,7 @@ export default function AIChat() {
         streamBufRef.current = '';
         streamIdRef.current = '';
         streamToolsRef.current = [];
-        void refreshSessions(activeSessionId);
+        void refreshSessions(activeSessionIdRef.current);
         break;
       }
       case 'error':
@@ -313,7 +331,7 @@ export default function AIChat() {
         setToolInProgress(null);
         break;
     }
-  }, [activeSessionId, refreshSessions]);
+  }, [refreshSessions]);
 
   useEffect(() => {
     void loadInitialState();
@@ -365,6 +383,8 @@ export default function AIChat() {
     try {
       const uploaded = await Promise.all(files.map((file) => uploadAiAttachment(file)));
       setAttachments((prev) => [...prev, ...uploaded]);
+    } catch (err) {
+      console.warn('File upload failed:', err);
     } finally {
       setUploading(false);
       event.target.value = '';
@@ -376,14 +396,18 @@ export default function AIChat() {
   };
 
   const handleNewSession = async () => {
-    const detail = await createAiSession(deviceId);
-    setMessages([]);
-    setAttachments([]);
-    setInput('');
-    setActiveSessionId(detail.session.id);
-    await refreshSessions(detail.session.id);
-    reconnectSocket(detail.session.id);
-    setSessionDrawerOpen(false);
+    try {
+      const detail = await createAiSession(deviceId);
+      setMessages([]);
+      setAttachments([]);
+      setInput('');
+      setActiveSessionId(detail.session.id);
+      await refreshSessions(detail.session.id);
+      reconnectSocket(detail.session.id);
+      setSessionDrawerOpen(false);
+    } catch (err) {
+      console.warn('Failed to create session:', err);
+    }
   };
 
   const handleActivateSession = async (sessionId: string) => {
@@ -391,29 +415,37 @@ export default function AIChat() {
       setSessionDrawerOpen(false);
       return;
     }
-    const detail = await activateAiSession(sessionId, deviceId);
-    setMessages(normalizeMessages(detail.messages));
-    setAttachments([]);
-    setInput('');
-    setActiveSessionId(sessionId);
-    await refreshSessions(sessionId);
-    reconnectSocket(sessionId);
-    setSessionDrawerOpen(false);
+    try {
+      const detail = await activateAiSession(sessionId, deviceId);
+      setMessages(normalizeMessages(detail.messages));
+      setAttachments([]);
+      setInput('');
+      setActiveSessionId(sessionId);
+      await refreshSessions(sessionId);
+      reconnectSocket(sessionId);
+      setSessionDrawerOpen(false);
+    } catch (err) {
+      console.warn('Failed to activate session:', err);
+    }
   };
 
   const handleDeleteSession = async (event: React.MouseEvent, sessionId: string) => {
     event.stopPropagation();
-    await deleteAiSession(sessionId);
-    const wasActive = sessionId === activeSessionId;
-    const updated = await refreshSessions(wasActive ? null : activeSessionId);
-    if (wasActive) {
-      if (updated) {
-        const detail = await activateAiSession(updated, deviceId);
-        setMessages(normalizeMessages(detail.messages));
-        reconnectSocket(updated);
-      } else {
-        await handleNewSession();
+    try {
+      await deleteAiSession(sessionId);
+      const wasActive = sessionId === activeSessionId;
+      const updated = await refreshSessions(wasActive ? null : activeSessionId);
+      if (wasActive) {
+        if (updated) {
+          const detail = await activateAiSession(updated, deviceId);
+          setMessages(normalizeMessages(detail.messages));
+          reconnectSocket(updated);
+        } else {
+          await handleNewSession();
+        }
       }
+    } catch (err) {
+      console.warn('Failed to delete session:', err);
     }
   };
 

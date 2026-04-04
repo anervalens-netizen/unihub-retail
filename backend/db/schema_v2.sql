@@ -83,6 +83,37 @@ CREATE TABLE IF NOT EXISTS store_targets (
     PRIMARY KEY (import_month, site_code)
 );
 
+CREATE TABLE IF NOT EXISTS incentive_campaigns (
+    id SERIAL PRIMARY KEY,
+    month TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    subtitle TEXT,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS incentive_products (
+    id SERIAL PRIMARY KEY,
+    campaign_id INTEGER NOT NULL REFERENCES incentive_campaigns(id) ON DELETE CASCADE,
+    item_code TEXT NOT NULL,
+    item_name TEXT,
+    reward_value NUMERIC(10, 2) NOT NULL,
+    UNIQUE (campaign_id, item_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_incentive_products_campaign ON incentive_products(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_incentive_products_code ON incentive_products(item_code);
+
+CREATE TABLE IF NOT EXISTS historical_annual_sales (
+    site_code TEXT NOT NULL REFERENCES stores(site_code),
+    year INTEGER NOT NULL,
+    firma TEXT NOT NULL,
+    total_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    total_qty INTEGER NOT NULL DEFAULT 0,
+    is_partial_year BOOLEAN NOT NULL DEFAULT false,
+    PRIMARY KEY (site_code, year, firma)
+);
+
 CREATE TABLE IF NOT EXISTS visits (
     id TEXT PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL,

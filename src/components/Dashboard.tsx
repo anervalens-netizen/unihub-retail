@@ -11,7 +11,6 @@ import {
   PieChart as PieChartIcon,
   RefreshCw,
   Sparkles,
-  Target,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -31,7 +30,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getDashboardAll, getDashboardHistory } from '../api/dashboard';
+import { getDashboardAll, getDashboardHistory, getDashboardHistoryYear } from '../api/dashboard';
 import type {
   AgentStat,
   AsmStat,
@@ -48,6 +47,7 @@ import type {
   ReceiptBucketItem,
   RegionalStat,
   StoreStat,
+  YearHistoryPoint,
 } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
@@ -61,6 +61,7 @@ interface DashboardProps {
   months: string[];
   filters: AppFilters;
   user: AuthUser | null;
+  onSectionChange?: (section: DashboardSection) => void;
 }
 
 type DashboardSection = 'current' | 'history' | 'visits';
@@ -137,6 +138,13 @@ const DEFAULT_PROMO_INCENTIVE: PromoIncentiveSummary = {
 const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
 const TABLE_MAX_HEIGHT_CLASS = 'max-h-[30rem]';
 
+const CATEGORY_SHORT: Record<string, string> = {
+  'Casti intraauriculare': 'Casti intraaur.',
+  'Baterie Externa': 'Baterie Ext.',
+  'Suport telescopic': 'Suport telesk.',
+  'Suport auto': 'Suport auto',
+};
+
 const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
   { key: 'locatie', label: 'Magazin' },
   { key: 'site_code', label: 'Firma' },
@@ -194,7 +202,7 @@ const ASM_COLUMNS: Array<{ key: AsmSortKey; label: string }> = [
   { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
 
-export function Dashboard({ currentMonth, months, filters, user }: DashboardProps) {
+export function Dashboard({ currentMonth, months, filters, user, onSectionChange }: DashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>('current');
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -209,6 +217,11 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
   const [brandMix, setBrandMix] = useState<BrandMixItem[]>([]);
   const [promoIncentive, setPromoIncentive] =
     useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
+  const [currentHistory, setCurrentHistory] = useState<MonthlyHistoryPoint[]>([]);
+  const [currentHistoryLoading, setCurrentHistoryLoading] = useState(false);
+  const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
+  const [yearHistory, setYearHistory] = useState<YearHistoryPoint[]>([]);
+  const [yearHistoryLoading, setYearHistoryLoading] = useState(false);
   const [history, setHistory] = useState<MonthlyHistoryPoint[]>([]);
   const [historySummary, setHistorySummary] = useState<DashboardSummary | null>(null);
   const [historyReceiptBucketMix, setHistoryReceiptBucketMix] = useState<ReceiptBucketItem[]>([]);
@@ -219,6 +232,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
   const [historySpecialCards, setHistorySpecialCards] = useState<DashboardSpecialCard[]>([]);
   const [historyPeriodComparison, setHistoryPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
   const [historyPromoIncentive, setHistoryPromoIncentive] = useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
+  const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -320,7 +334,6 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
       setLoading(false);
       setError(null);
       if (cached.isFresh) {
-        prefetchHistory(historyMonth);
         return;
       }
     }
@@ -358,7 +371,6 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
           brandMix: data.brand_mix,
           promoIncentive: data.promo_incentive ?? DEFAULT_PROMO_INCENTIVE,
         });
-        prefetchHistory(historyMonth);
       })
       .catch((err: Error) => {
         if (!isMountedRef.current) return;
@@ -367,7 +379,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
       .finally(() => {
         if (isMountedRef.current) setLoading(false);
       });
-  }, [buildQuery, currentCacheKey, currentMonth, historyMonth, prefetchHistory]);
+  }, [buildQuery, currentCacheKey, currentMonth]);
 
   const loadHistory = useCallback(() => {
     if (!isMountedRef.current) return;
@@ -456,6 +468,18 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
     };
   }, [fetchCurrentData]);
 
+  // Prefetch history data in background (decoupled from fetchCurrentData to avoid
+  // re-fetching current data when only historyMonth changes)
+  useEffect(() => {
+    if (!loading) {
+      prefetchHistory(historyMonth);
+    }
+  }, [loading, historyMonth, prefetchHistory]);
+
+  useEffect(() => {
+    onSectionChange?.(activeSection);
+  }, [activeSection, onSectionChange]);
+
   useEffect(() => {
     setHistory([]);
     setHistorySummary(null);
@@ -472,6 +496,38 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
       loadHistory();
     }
   }, [activeSection, historyMonth, loadHistory]);
+
+  // Reset currentHistory when filters or month change so it reloads with new params
+  useEffect(() => {
+    setCurrentHistory([]);
+  }, [buildQuery, currentMonth]);
+
+  // Load currentHistory when opening Istoric (or after reset above)
+  useEffect(() => {
+    if (activeSection !== 'history' || currentHistory.length > 0 || currentHistoryLoading) return;
+    setCurrentHistoryLoading(true);
+    getDashboardHistory({ ...buildQuery(currentMonth), months_back: 13 })
+      .then((data) => { if (isMountedRef.current) setCurrentHistory(data.history); })
+      .catch((err: Error) => { if (isMountedRef.current) setCurrentHistory([]); console.warn('currentHistory fetch failed:', err.message); })
+      .finally(() => { if (isMountedRef.current) setCurrentHistoryLoading(false); });
+  }, [activeSection, currentHistory.length, currentHistoryLoading, buildQuery, currentMonth]);
+
+  // Load year history when a specific year is selected
+  useEffect(() => {
+    if (historyYearFilter === null || activeSection !== 'history') return;
+    setYearHistoryLoading(true);
+    setYearHistory([]);
+    const { month: _month, ...filterParams } = buildQuery(currentMonth);
+    getDashboardHistoryYear({ ...filterParams, year: historyYearFilter })
+      .then((data) => { if (isMountedRef.current) setYearHistory(data.points); })
+      .catch((err: Error) => { if (isMountedRef.current) setYearHistory([]); console.warn('yearHistory fetch failed:', err.message); })
+      .finally(() => { if (isMountedRef.current) setYearHistoryLoading(false); });
+  }, [historyYearFilter, activeSection, buildQuery, currentMonth]);
+
+  const availableYears = useMemo(() => {
+    const cy = parseInt(currentMonth.slice(0, 4));
+    return Array.from({ length: cy - 2022 + 1 }, (_, i) => 2022 + i);
+  }, [currentMonth]);
 
   const promoSummary = useMemo(() => {
     const promotion = specialCards.find((card) => card.key === 'promotion');
@@ -499,6 +555,53 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
         progress: Number(item.target_progress_pct ?? 0),
       })),
     [history]
+  );
+
+  // Card 1 data — always anchored to currentMonth; last bar shows forecast if month not final
+  const currentHistoryChartData = useMemo(() => {
+    return currentHistory.map((item, idx) => {
+      const isLast = idx === currentHistory.length - 1;
+      const isForecast = isLast && summary != null && !summary.is_month_final;
+      const forecastSales = isForecast ? Number(summary!.forecast_sales ?? item.total_sales) : null;
+      const target = Number(item.total_target);
+      const progress = isForecast && forecastSales != null && target > 0
+        ? Math.round(forecastSales / target * 10000) / 100
+        : Number(item.target_progress_pct ?? 0);
+      return {
+        month: item.month.slice(2),
+        sales: isForecast ? forecastSales! : Number(item.total_sales),
+        target,
+        progress,
+        isForecast,
+      };
+    });
+  }, [currentHistory, summary]);
+
+  const yearHistoryChartData = useMemo(
+    () =>
+      yearHistory.map((pt) => ({
+        label: pt.label,
+        sales: Number(pt.total_sales),
+        target: Number(pt.total_target),
+        progress: pt.total_target > 0
+          ? Math.round((Number(pt.total_sales) / Number(pt.total_target)) * 100 * 100) / 100
+          : 0,
+        isAggregate: pt.is_aggregate,
+      })),
+    [yearHistory]
+  );
+
+  // KPI trend data for new Card 2
+  const kpiChartData = useMemo(
+    () =>
+      currentHistory.map((item) => ({
+        month: item.month.slice(2),
+        value:
+          kpiMetric === 'total_receipts'
+            ? Number(item.total_receipts)
+            : Number(item[kpiMetric] ?? 0),
+      })),
+    [currentHistory, kpiMetric]
   );
 
   const selectedHistoryPoint = useMemo(
@@ -564,13 +667,6 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
       })),
     [receiptBucketMix]
   );
-
-  const CATEGORY_SHORT: Record<string, string> = {
-    'Casti intraauriculare': 'Casti intraaur.',
-    'Baterie Externa': 'Baterie Ext.',
-    'Suport telescopic': 'Suport telesk.',
-    'Suport auto': 'Suport auto',
-  };
 
   const focusSubcategoryChartData = useMemo(
     () =>
@@ -1050,7 +1146,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                   dataKey="sales_total"
                   nameKey="category"
                   valueFormatter={formatCurrency}
-                  centerValue={formatCompactDonutValue(sumChartValues(categoryMixChartData, 'sales_total'), 'currency')}
+                  centerValue={formatCompactDonutValue(sumChartValues(categoryMixChartData, 'sales_total'))}
                 />
                 <CompactPieSection
                   title="Branduri compatibile"
@@ -1059,7 +1155,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                   dataKey="sales_total"
                   nameKey="brand"
                   valueFormatter={formatCurrency}
-                  centerValue={formatCompactDonutValue(sumChartValues(brandMixChartData, 'sales_total'), 'currency')}
+                  centerValue={formatCompactDonutValue(sumChartValues(brandMixChartData, 'sales_total'))}
                 />
               </div>
             </div>
@@ -1179,7 +1275,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                   <h3 className="text-sm font-bold">Magazine</h3>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Filtrare: {filterScopeLabel} Â· Sortare: {STORE_COLUMNS.find((column) => column.key === storeSort.key)?.label} ({storeSort.direction}) Â· {stores.length} magazine
+                  Filtrare: {filterScopeLabel} · Sortare: {STORE_COLUMNS.find((column) => column.key === storeSort.key)?.label} ({storeSort.direction}) · {stores.length} magazine
                 </p>
               </div>
             </div>
@@ -1290,56 +1386,133 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
             <ErrorCard message="Nu exista valori istorice pentru luna selectata." onRetry={loadHistory} />
           ) : (
             <>
+              {/* Card 1 — Evolutie lunara (independent de historyMonth) */}
               <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3 flex items-start justify-between gap-2">
                   <div>
                     <h3 className="text-sm font-bold">Evolutie lunara</h3>
-                    <p className="text-[11px] text-slate-500">Ultimele 12 luni pana la {historyMonth}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {historyYearFilter === null
+                        ? `Ultimele 12 luni finalizate${summary && !summary.is_month_final ? ' + previziune luna in curs' : ''}`
+                        : `Toate lunile disponibile — ${historyYearFilter}`}
+                    </p>
                   </div>
-                  <div className="rounded-2xl bg-indigo-50 px-3 py-2 text-right dark:bg-indigo-900/20">
-                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Best month</div>
-                    <div className="text-lg font-black text-indigo-600">{bestHistoryMonth?.month ?? '-'}</div>
+                  <select
+                    value={historyYearFilter ?? ''}
+                    onChange={(e) => setHistoryYearFilter(e.target.value === '' ? null : parseInt(e.target.value))}
+                    className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    <option value="">Standard</option>
+                    {availableYears.map((yr) => (
+                      <option key={yr} value={yr}>{yr}</option>
+                    ))}
+                  </select>
+                </div>
+                {(historyYearFilter === null ? currentHistoryLoading : yearHistoryLoading) ? (
+                  <div className="flex h-64 items-center justify-center text-xs text-slate-400">Se incarca...</div>
+                ) : historyYearFilter === null ? (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <ComposedChart data={currentHistoryChartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatCurrency(value))} />
+                        <Legend />
+                        <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
+                          {currentHistoryChartData.map((entry, index) => (
+                            <Cell key={index} fill={entry.isForecast ? '#a78bfa' : '#4f46e5'} />
+                          ))}
+                        </Bar>
+                        <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#10b981" strokeWidth={2} dot={false} />
+                        <Line yAxisId="progress" type="monotone" dataKey="progress" name="% target" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
                   </div>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <ComposedChart data={historyChartData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                      <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatCurrency(value))} />
-                      <Legend />
-                      <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
-                      <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#10b981" strokeWidth={2} dot={false} />
-                      <Line yAxisId="progress" type="monotone" dataKey="progress" name="% target" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
+                ) : yearHistoryChartData.length === 0 ? (
+                  <div className="flex h-64 items-center justify-center text-xs text-slate-400">
+                    Nu exista date pentru {historyYearFilter} cu filtrele curente.
+                  </div>
+                ) : (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <ComposedChart data={yearHistoryChartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+                        <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatCurrency(value))} />
+                        <Legend />
+                        <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
+                          {yearHistoryChartData.map((entry, index) => (
+                            <Cell key={index} fill={entry.isAggregate ? '#818cf8' : '#4f46e5'} />
+                          ))}
+                        </Bar>
+                        {yearHistoryChartData.some((p) => p.target > 0) && (
+                          <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#10b981" strokeWidth={2} dot={false} />
+                        )}
+                        {yearHistoryChartData.some((p) => p.progress > 0) && (
+                          <Line yAxisId="progress" type="monotone" dataKey="progress" name="% target" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                        )}
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
 
+              {/* Card 2 — Trend KPI (inlocuieste area chart duplicat) */}
               <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <TrendingUp size={16} className="text-indigo-500" />
-                  <h3 className="text-sm font-bold">Trend vanzari vs target</h3>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp size={16} className="text-indigo-500" />
+                    <h3 className="text-sm font-bold">Trend KPI</h3>
+                  </div>
+                  <div className="flex gap-1">
+                    {([
+                      { key: 'proc_bon2acc', label: 'Bon2Acc' },
+                      { key: 'prc_focus_acc_qty', label: 'Focus' },
+                      { key: 'total_receipts', label: 'Bonuri' },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setKpiMetric(key)}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                          kpiMetric === key
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="h-52">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <AreaChart data={historyChartData}>
-                      <defs>
-                        <linearGradient id="historySalesArea" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
-                          <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                      <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Area type="monotone" dataKey="sales" stroke="#4f46e5" fill="url(#historySalesArea)" strokeWidth={3} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                {currentHistoryLoading ? (
+                  <div className="flex h-48 items-center justify-center text-xs text-slate-400">Se incarca...</div>
+                ) : (
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <AreaChart data={kpiChartData}>
+                        <defs>
+                          <linearGradient id="kpiTrendArea" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
+                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          formatter={(value: number) =>
+                            kpiMetric === 'total_receipts' ? formatInt(value) : `${value.toFixed(1)}%`
+                          }
+                        />
+                        <Area type="monotone" dataKey="value" name={kpiMetric === 'proc_bon2acc' ? 'ProcBon2Acc' : kpiMetric === 'prc_focus_acc_qty' ? 'PrcFocus/AccQtty' : 'Total bonuri'} stroke="#4f46e5" fill="url(#kpiTrendArea)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
 
               <div className="glass rounded-3xl p-4">
@@ -1558,7 +1731,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       dataKey="sales_total"
                       nameKey="category"
                       valueFormatter={formatCurrency}
-                      centerValue={formatCompactDonutValue(sumChartValues(historyCategoryMixChartData, 'sales_total'), 'currency')}
+                      centerValue={formatCompactDonutValue(sumChartValues(historyCategoryMixChartData, 'sales_total'))}
                     />
                     <CompactPieSection
                       title="Branduri compatibile"
@@ -1567,7 +1740,7 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
                       dataKey="sales_total"
                       nameKey="brand"
                       valueFormatter={formatCurrency}
-                      centerValue={formatCompactDonutValue(sumChartValues(historyBrandMixChartData, 'sales_total'), 'currency')}
+                      centerValue={formatCompactDonutValue(sumChartValues(historyBrandMixChartData, 'sales_total'))}
                     />
                   </div>
                 </div>
@@ -1576,35 +1749,6 @@ export function Dashboard({ currentMonth, months, filters, user }: DashboardProp
           )}
         </>
       )}
-    </div>
-  );
-}
-
-function KpiCard({
-  icon: Icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  value: string;
-  accent: 'indigo' | 'emerald' | 'amber' | 'rose';
-}) {
-  const accentClasses: Record<string, string> = {
-    indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20',
-    emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20',
-    amber: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20',
-    rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20',
-  };
-
-  return (
-    <div className="glass rounded-3xl p-4">
-      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl ${accentClasses[accent]}`}>
-        <Icon size={18} />
-      </div>
-      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-lg font-black">{value}</div>
     </div>
   );
 }
@@ -1675,7 +1819,7 @@ function KpiPerformanceCard({
         colors={KPI_PIE_COLORS}
         valueFormatter={formatValue}
         centerLabel="TOTAL"
-        centerValue={formatCompactDonutValue(sumChartValues(chartData, dataKey), 'number')}
+        centerValue={formatCompactDonutValue(sumChartValues(chartData, dataKey))}
         showShare
         compact
       />
@@ -2026,12 +2170,11 @@ function sumChartValues(rows: Array<Record<string, string | number>>, key: strin
   return rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
 }
 
-function formatCompactDonutValue(value: number, mode: 'number' | 'currency'): string {
-  const compact = new Intl.NumberFormat('ro-RO', {
+function formatCompactDonutValue(value: number): string {
+  return new Intl.NumberFormat('ro-RO', {
     notation: 'compact',
     maximumFractionDigits: value >= 1000000 ? 1 : 0,
   }).format(value);
-  return mode === 'currency' ? compact : compact;
 }
 
 function describeFilterScope(filters: AppFilters): string {

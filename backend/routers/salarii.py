@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
+from dependencies import require_role
 
-router = APIRouter(prefix="/salarii", tags=["salarii"])
+router = APIRouter(
+    prefix="/salarii",
+    tags=["salarii"],
+    dependencies=[Depends(require_role("admin", "management"))],
+)
 
 
 @router.get("/overview")

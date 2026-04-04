@@ -532,6 +532,19 @@ class DashboardHistoryResponse(BaseModel):
     history: list[MonthlyHistoryPoint]
 
 
+class YearHistoryPoint(BaseModel):
+    label: str
+    sort_key: str
+    total_sales: Decimal
+    total_target: Decimal
+    total_quantity: int
+    is_aggregate: bool
+
+
+class YearHistoryResponse(BaseModel):
+    points: list[YearHistoryPoint]
+
+
 class PeriodComparisonPoint(BaseModel):
     label: str
     month: str
@@ -678,6 +691,7 @@ class SalaryAgentSummary(BaseModel):
     full_name: str
     cnp: str | None
     company_name: str
+    locatie: str | None = None
     month_count: int
     total_salary: Decimal
     avg_salary: Decimal

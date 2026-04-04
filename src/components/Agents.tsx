@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarRange, Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronLeft, ChevronDown, Calendar, Award, LayoutGrid, Store, FileText, X } from 'lucide-react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronLeft, ChevronDown, Award, LayoutGrid, Store, X } from 'lucide-react';
 import {
   Bar,
   CartesianGrid,
@@ -26,7 +26,6 @@ import {
   AgentsQuery,
   AgentsOverviewResponse,
   AgentMovementResponse,
-  AgentListResponse,
   AgentListItem,
   AgentProfileResponse,
   AgentHistoryResponse,
@@ -287,6 +286,35 @@ interface AgentsProps {
   user: import('../api/types').AuthUser | null;
 }
 
+function CustomTooltip({ active, payload, label }: any) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
+        <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
+        <div className="space-y-1">
+          {payload.map((entry: any, i: number) => (
+            <div key={i} className="flex items-center gap-3">
+              <div
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: entry.color }}
+              />
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                {entry.name}:
+              </span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                {entry.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
 export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -351,13 +379,6 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
     return result;
   }, [list, activeTab, cardFirma, cardMagazin, filterOptions]);
 
-  const filteredCount = useMemo(() => {
-    if (activeTab === 'active') return list.filter((ag: AgentListItem) => ag.current_status === 'active').length;
-    if (activeTab === 'movement') return list.filter((ag: AgentListItem) => ag.is_new || ag.is_reactivated).length;
-    if (activeTab === 'inactive') return list.filter((ag: AgentListItem) => ag.current_status === 'inactive_recent' || ag.current_status === 'churned').length;
-    return list.length;
-  }, [list, activeTab]);
-
   const filterLabel = useMemo(() => {
     if (filters.agent !== 'Toti') return `Agent: ${filters.agent}`;
     if (filters.magazin !== 'Toate') return `Magazin: ${filters.magazin}`;
@@ -421,6 +442,7 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
         if (filters.rm !== 'Toti') p.regional = filters.rm;
         if (filters.asm !== 'Toti') p.asm = filters.asm;
         if (filters.magazin !== 'Toate') p.site_code = filters.magazin;
+        if (filters.agent !== 'Toti') p.agent = filters.agent;
         if (debouncedSearch) p.search = debouncedSearch;
 
         const data = await fetchAgentsList(p);
@@ -434,60 +456,6 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
     load();
     return () => { active = false; };
   }, [currentMonth, filters, debouncedSearch]);
-
-  // Load Coverage
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      setLoadingCoverage(true);
-      try {
-        const p: AgentsQuery = { selected_month: currentMonth };
-        if (filters.firma !== 'Toate') p.firma = filters.firma;
-        if (filters.rm !== 'Toti') p.regional = filters.rm;
-        if (filters.asm !== 'Toti') p.asm = filters.asm;
-        if (filters.magazin !== 'Toate') p.site_code = filters.magazin;
-        if (filters.agent !== 'Toti') p.agent = filters.agent;
-
-        const data = await fetchStoreCoverage(p);
-        if (active) setCoverage(data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        if (active) setLoadingCoverage(false);
-      }
-    }
-    load();
-    return () => { active = false; };
-  }, [currentMonth, filters]);
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
-          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-            {label}
-          </p>
-          <div className="space-y-1">
-            {payload.map((entry: any, i: number) => (
-              <div key={i} className="flex items-center gap-3">
-                <div
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: entry.color }}
-                />
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                  {entry.name}:
-                </span>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">
-                  {entry.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
 
   if (selectedAgent) {
     return (
@@ -536,7 +504,7 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
 
       {mainTab === 'salarii' && user?.role === 'admin' ? (
         <ErrorBoundary>
-          <SalariiSubtab globalFilters={filters} currentMonth={currentMonth} />
+          <SalariiSubtab globalFilters={filters} />
         </ErrorBoundary>
       ) : (
         <>

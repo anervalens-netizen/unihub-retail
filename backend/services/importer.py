@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -100,7 +100,7 @@ def is_month_final(import_month: str) -> bool:
     """A month is final if we're uploading in a later month.
     E.g. uploading 2026-03 data on 2026-04-01 means march is final.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     current = now.strftime("%Y-%m")
     return import_month < current
 

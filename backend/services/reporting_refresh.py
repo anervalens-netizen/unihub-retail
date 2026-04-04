@@ -653,6 +653,7 @@ async def rebuild_reporting_all(
 ) -> list[str]:
     target_months = list(months) if months is not None else await list_completed_import_months(conn)
     for import_month in target_months:
-        await rebuild_reporting_month(conn, import_month)
+        async with conn.transaction():
+            await rebuild_reporting_month(conn, import_month)
     await rebuild_agent_lifecycle_reporting(conn)
     return target_months

@@ -19,7 +19,7 @@ Tonul corect: direct, tehnic, fara padding. Explica pe scurt ce ai facut si de c
 - Stack: React 19 + Vite + TypeScript (frontend) / FastAPI + asyncpg + PostgreSQL 18 (backend)
 - Module functionale: Hub, Focus, Agenti (+ Salarii), Vizite, Setari, AI
 - 26 pytest passing, typecheck curat, build passing
-- Integrata cu Platforma-Mobiup pentru vizite (SQLite read-only)
+- UniHub este sursa de adevar pentru vanzari SI vizite; Platforma-Mobiup citeste de aici
 - UniAI: sesiuni persistente per-device, istoric selectabil, suport atasamente
 
 Deploy productie (dupa modificari):
@@ -66,7 +66,7 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `filters` | `/api/filters` |
 | `imports` | `/api/imports` |
 | `stores` | `/api/stores` |
-| `visits_report` | `/api/visits-report` — citeste SQLite Platforma-Mobiup |
+| `visits_report` | `/api/visits-report` — citeste SQLite din `data/visits/visits.db` |
 | `admin` | `/api/admin` |
 | `agents` | `/api/agents` |
 | `salarii` | `/api/salarii` |
@@ -97,15 +97,15 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
   - `GET /api/ai/sessions/{session_id}`
   - `POST /api/ai/sessions?device_id=...`
   - `POST /api/ai/sessions/{session_id}/activate?device_id=...`
-  - `DELETE /api/ai/sessions/{session_id}` — șterge sesiunea din Hermes SQLite
+  - `DELETE /api/ai/sessions/{session_id}` — sterge sesiunea din Hermes SQLite
   - `POST /api/ai/attachments`
   - `WS /api/ai/ws?token=...&device_id=...&session_id=...`
 
 - Suport attachments: imagini (vision), `.txt`, `.md`, PDF (`pdftotext`), `.docx/.xlsx/.pptx`
 
-- Grafice în chat: Hermes poate returna blocuri `\`\`\`chart` cu JSON spec; frontend-ul le randează via `ChartBlock` (recharts). Tipuri: `bar`, `line`, `pie`, `area`.
+- Grafice in chat: Hermes poate returna blocuri ```chart cu JSON spec; frontend-ul le randeaza via `ChartBlock` (recharts). Tipuri: `bar`, `line`, `pie`, `area`.
 
-- Memorie cross-sesiune: Hermes citește/scrie `memory.md` în workspace (`/opt/Mobiup/unihub/data/uniai-workspace/`) la prima interacțiune din sesiune. Configurat în `/home/andrei/.hermes/SOUL.md`.
+- Memorie cross-sesiune: Hermes citeste/scrie `memory.md` in workspace (`/opt/Mobiup/unihub/data/uniai-workspace/`) la prima interactiune din sesiune. Configurat in `/home/andrei/.hermes/SOUL.md`.
 
 - Gotcha important:
   - bridge-ul trebuie sa creeze `AIAgent` cu `session_id` + `session_db`, iar payload-ul catre bridge trebuie sa includa `user_id`
@@ -120,38 +120,95 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 - Aplicata hash-based la boot via `ensure_schema_current()` in `backend/db/connection.py`
 - **Nu modifica schema direct in DB** — editeaza `schema_v2.sql` si reporneste backend-ul
 - Reporting pe agregate: `reporting_agent_*`, `reporting_item_*`, `reporting_focus_*`, `reporting_category_*`
-- VIEW-uri compatibilitate Platforma-Mobiup (la finalul `schema_v2.sql`):
-  - `v_platforma_dashboard` — agregat lunar pe agent (din `reporting_agent_month` JOIN `stores`)
-  - `v_platforma_import_meta` — metadata per luna (din `import_snapshots`)
-  - `v_platforma_raw_sales` — tranzactii brute (din `sales_transactions` JOIN `stores`; `bon_nr` alisat ca `nr`)
-  - `v_platforma_store_targets` — targete magazin (din `store_targets` JOIN `stores`)
+
+#### Tabele principale
+| Tabel | Continut |
+|-------|----------|
+| `sales_transactions` | Tranzactii detaliate 2023-09 → prezent |
+| `historical_annual_sales` | Agregate anuale: 2022 complet, 2023 Ian-Aug (derivat) |
+| `incentive_campaigns` | Campanii incentive per luna (titlu, subtitlu, descriere) |
+| `incentive_products` | Produse eligibile + reward per produs per campanie |
+| `store_targets` | Targete lunare per magazin |
+| `stores` | Magazine cu site_code, locatie, firma, asm, regional |
+| `reporting_agent_month` | Agregat lunar per agent (sursa principala dashboard) |
+| `reporting_item_month` | Agregat lunar per produs |
+| `historical_annual_sales` | 2022 an complet + 2023 Ian-Aug per magazin/firma |
+
+#### VIEW-uri compatibilitate Platforma-Mobiup
+- `v_platforma_dashboard` — agregat lunar pe agent (din `reporting_agent_month` JOIN `stores`)
+- `v_platforma_import_meta` — metadata per luna (din `import_snapshots`)
+- `v_platforma_raw_sales` — tranzactii brute (din `sales_transactions` JOIN `stores`; `bon_nr` alisat ca `nr`)
+- `v_platforma_store_targets` — targete magazin (din `store_targets` JOIN `stores`)
+
+### Acoperire date istorice
+| Perioada | Sursa | Granularitate |
+|----------|-------|---------------|
+| 2022 | `historical_annual_sales` | anual per magazin |
+| 2023 Ian-Aug | `historical_annual_sales` | anual per magazin (derivat: annual - Q4) |
+| 2023 Sep-Dec | `sales_transactions` | tranzactie per tranzactie |
+| 2024 Ian-Dec | `sales_transactions` | tranzactie per tranzactie |
+| 2025 Ian → prezent | `sales_transactions` | tranzactie per tranzactie |
+
+**Nota import istoric:** fisierele 2023-2024 nu aveau coloana `Agent` (prezenta din 2025).
+Agent = `'-'` pentru toate tranzactiile 2023-2024. Rapoartele per-ASM/magazin sunt corecte.
 
 ### Integrare Platforma-Mobiup
 - **Date vanzari**: Platforma-Mobiup citeste din PostgreSQL UniHub via VIEW-urile `v_platforma_*`
   - Importul de vanzari se face **o singura data**, in UniHub
-  - Ruta `/api/v2/intermediate-import` din Platforma-Mobiup returnează 410 Gone
-- **Vizite**: UniHub citeste SQLite read-only: `VISITS_DB_PATH` in `.env` (default: `/opt/Mobiup/Platforma-Mobiup/db/visit_reports.db`)
-- Poze: `VISITS_IMAGES_DIR` in `.env` (default: `/opt/Mobiup/Platforma-Mobiup/local-data/visit-reports/images/`)
-- Router `visits_report.py` citeste SQLite async via `run_in_executor` (non-blocking)
-- Endpoint `/api/visits-report/photo/{visit_id}/{filename}` serveste pozele cu auth (`FileResponse`)
-- Frontend: componenta `AuthImage` face fetch blob cu axios + `URL.createObjectURL` (nu `<img src>` direct)
+  - Ruta `/api/v2/intermediate-import` din Platforma-Mobiup returneaza 410 Gone
+- **Vizite**: UniHub este sursa de adevar — `data/visits/visits.db` si `data/visits/images/`
+  - Platforma-Mobiup citeste din acelasi fisier (default hardcodat la `/opt/Mobiup/unihub/data/visits/visits.db`)
+  - Router `visits_report.py` citeste SQLite async via `run_in_executor` (non-blocking)
+  - Endpoint `/api/visits-report/photo/{visit_id}/{filename}` serveste pozele cu auth (`FileResponse`)
+  - Frontend: componenta `AuthImage` face fetch blob cu axios + `URL.createObjectURL` (nu `<img src>` direct)
 
 ### Hub Specials (incentive/promotii)
-- Configuratie: `data/hub_specials.json`
-- Logica: `backend/services/dashboard_specials.py`
-- Arhitectura multi-luna: `incentives` si `promotions` sunt array-uri, fiecare entry are `month`
-  - `parse_promotion_definition(config, month)` si `parse_incentive_definition(config, month)`
-  - Returneaza `(None, None)` daca nu exista config pentru luna respectiva
-  - Cardurile inactive se ascund automat in sectiunea Istoric
-- Incentive per-produs: fisier Excel cu col A = cod produs, col C = valoare incentive
-  - Calcul: `SUM(qty × reward_per_item)` in Python dupa fetch SQL
-  - Cache invalidat la modificarea fisierului (tuple `(filepath, mtime)`)
+- **Incentive**: stocate complet in DB — `incentive_campaigns` + `incentive_products`
+  - `hub_specials.json` contine doar promotii (coduri fixe); sectiunea `incentives` este goala
+  - Logica in `backend/services/incentive_db.py` — `get_incentive_campaign(conn, month)`
+  - Dashboard citeste reward_map din DB, nu din Excel
+  - Pentru a adauga o campanie noua:
+    ```bash
+    cd /opt/Mobiup/unihub/backend
+    source venv/bin/activate
+    python3 scripts/import_incentive_campaign.py \
+        --month 2026-05 \
+        --title "Incentive Mai 2026" \
+        --file "NumeFisier.xlsx" \
+        --sheet Sheet1 \
+        [--header 1]  # daca header-ul nu e pe primul rand
+    ```
+- **Promotii**: configurate in `data/hub_specials.json` (array `promotions` cu `item_codes`, `start_date`, `end_date`)
+- Cardurile inactive se ascund automat in sectiunea Istoric
 
 ### Targete magazine
 - Tabel: `store_targets (site_code, import_month, target_value)`
 - Format fisier nou per luna: `Regional, ASM, Firma, Locatie, Cod, Target` (sheet "target")
 - **Nu** folosi `load_targets_dataframe()` pentru acest format — aceea e pentru `Istoric targete.xlsx`
 - Pattern import: script Python direct cu `upsert_store_targets()`, rulat din `backend/` cu venv activat
+
+### Scripts utile (`backend/scripts/`)
+| Script | Scop |
+|--------|------|
+| `import_historical.py` | Import batch fisiere vechi 2023/2024 (format fara Agent/Categorie) |
+| `import_annual_summary.py` | Import rezumat anual din `vanzari 2022 si 2023.xlsx` |
+| `import_incentive_campaign.py` | Import campanie incentive dintr-un Excel in DB |
+| `rebuild_reporting.py` | Reconstruieste agregatele de reporting (toate lunile sau una anume) |
+| `reset_default_users.py` | Reseteaza parolele admin/management la `9999` |
+| `seed.py` | Seed complet din fisierele din `data/` |
+
+### Backup
+- Locatie unica: `/opt/Mobiup/backups/`
+  - `postgres/` — dump-uri PostgreSQL (format custom pg_dump, `.dump`)
+  - `visits/` — copii SQLite vizite
+  - `platforma-mobiup/` — arhive punctuale Platforma-Mobiup
+  - `backup.log` — log al rularii zilnice
+- Script: `/opt/Mobiup/scripts/backup.sh`
+- Cron: zilnic la 02:00, retentie 30 zile
+- Restore PostgreSQL:
+  ```bash
+  pg_restore -h localhost -U unihub -d unihub --clean /opt/Mobiup/backups/postgres/unihub_YYYYMMDD.dump
+  ```
 
 ---
 
@@ -187,3 +244,4 @@ Modulul **Agenti** are filtrele sale proprii, independente.
 - Nu crea fisiere temporare in radacina proiectului (`fix.py`, `patch.txt`, etc.) — curata-le dupa
 - Nu modifica schema direct in DB
 - Nu reseta parolele utilizatorilor fara confirmare explicita
+- Nu importa campanii incentive din Excel manual — foloseste `import_incentive_campaign.py`

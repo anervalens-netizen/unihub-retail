@@ -71,7 +71,7 @@ export function SalaryDrawer({ cnp, fullName, isOpen, onClose }: Props) {
                 <span className={companyColor(history.records[0]?.company_name)}>
                   {history.records[0]?.company_name}
                 </span>
-                {history.records[0]?.locatie && ` &bull; ${history.records[0].locatie}`}
+                {history.records[0]?.locatie && ` \u2022 ${history.records[0].locatie}`}
               </p>
             )}
           </div>
@@ -169,7 +169,7 @@ export function SalaryDrawer({ cnp, fullName, isOpen, onClose }: Props) {
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <p className="text-slate-500">Nu s-au putut încărca datele</p>
               <button
-                onClick={() => fetchSalaryAgentHistory(cnp).then(setHistory)}
+                onClick={() => fetchSalaryAgentHistory(cnp).then(setHistory).catch(() => setHistory(null))}
                 className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-600"
               >
                 Retry

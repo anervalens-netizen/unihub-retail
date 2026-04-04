@@ -25,7 +25,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'robots.txt'],
+        includeAssets: ['favicon.svg'],
         manifest: {
           name: 'UniHub',
           short_name: 'UniHub',

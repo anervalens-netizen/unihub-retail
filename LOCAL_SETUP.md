@@ -168,6 +168,43 @@ cd ..
 
 Scriptul load_focus_products.py exista dar nu mai este accesibil din UI. Focus products se adauga prin coding agent direct in DB sau via seed.
 
+### Import date istorice (one-time, deja rulat pe productie)
+
+Date tranzactii 2023 Q4 + 2024:
+```bash
+cd backend
+python scripts/import_historical.py
+cd ..
+```
+
+Agregate anuale 2022 + 2023 Jan–Aug:
+```bash
+cd backend
+python scripts/import_annual_summary.py
+cd ..
+```
+
+### Import campanie incentive per-produs
+
+Campaniile de incentive sunt stocate in DB (tabelele `incentive_campaigns` si `incentive_products`).
+Import dintr-un fisier Excel:
+
+```bash
+cd backend
+python scripts/import_incentive_campaign.py \
+    --month 2026-04 \
+    --title "Incentive Aprilie 2026" \
+    --file "../data/incentive-apr-2026.xlsx" \
+    [--header 1]   # daca headerul e pe rand 2 (0-indexed)
+    [--dry-run]
+cd ..
+```
+
+Coloane Excel detectate automat (alias-uri acceptate):
+- Cod produs: `Cod`, `ItemCode`, `cod_produs`, `code`, `sku`
+- Valoare incentive: `Incentive`, `Valoare`, `Bonus`, `Reward`, `valoare_incentive`
+- Nume produs (optional): `ItemName`, `Denumire`, `name`
+
 ## 9. Cum sunt gestionate datele
 
 Fluxul standard este:
@@ -234,3 +271,8 @@ npm run build
 ### Vrei sa confirmi schema
 - la startup, `ensure_schema_current()` verifica hash-ul din `schema_meta`
 - daca schema este deja la zi, nu reaplica tot SQL-ul
+
+### Incentive per-produs nu apar in dashboard
+- verifica ca exista campanie importata: `SELECT * FROM incentive_campaigns;`
+- luna din request trebuie sa coincida cu `month` din campanie (ex: `2026-04`)
+- reimporta cu `import_incentive_campaign.py` daca e nevoie

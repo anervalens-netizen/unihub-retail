@@ -327,7 +327,7 @@ async def get_agent_profile(
     last_seen_idx = month_index_expr("last_seen_month")
 
     query = f"""
-        SELECT 
+        SELECT
             agent,
             first_seen_month,
             last_seen_month,
@@ -354,6 +354,15 @@ async def get_agent_profile(
     """
 
     async with pool.acquire() as conn:
+        if user["role"] == "tl":
+            visible = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM reporting_agent_month r "
+                "JOIN tl_store_assignments t ON t.site_code = r.site_code "
+                "WHERE r.agent = $1 AND t.user_id = $2)",
+                agent, user["id"],
+            )
+            if not visible:
+                raise HTTPException(status_code=404, detail="Agent not found")
         row = await conn.fetchrow(query, agent, selected_month)
 
     if not row:
@@ -370,7 +379,7 @@ async def get_agent_history(
     pool = await get_pool()
 
     query = """
-        SELECT 
+        SELECT
             import_month as month,
             total_sales,
             total_quantity,
@@ -383,6 +392,15 @@ async def get_agent_history(
     """
 
     async with pool.acquire() as conn:
+        if user["role"] == "tl":
+            visible = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM reporting_agent_month r "
+                "JOIN tl_store_assignments t ON t.site_code = r.site_code "
+                "WHERE r.agent = $1 AND t.user_id = $2)",
+                agent, user["id"],
+            )
+            if not visible:
+                raise HTTPException(status_code=404, detail="Agent not found")
         rows = await conn.fetch(query, agent)
 
     history = [AgentHistoryPoint(**dict(row)) for row in rows]

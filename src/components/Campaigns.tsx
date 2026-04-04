@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   BadgePercent,
@@ -21,8 +21,7 @@ import {
   YAxis,
 } from 'recharts';
 import { getCampaignSnapshot, getFocusHistory, getPromotionsIncentives } from '../api/campaigns';
-import { getSpecialCards } from '../api/dashboard';
-import type { CampaignSnapshot, CampaignsPromotionsResponse, DashboardSpecialCard, FocusHistoryPoint } from '../api/types';
+import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
@@ -50,6 +49,13 @@ const emptySnapshot: CampaignSnapshot = {
 };
 const CAMPAIGNS_CACHE_TTL_MS = 3 * 60 * 1000;
 
+const STAT_ACCENT_CLASSES: Record<string, string> = {
+  amber: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20',
+  indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20',
+  emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20',
+  rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20',
+};
+
 export function Campaigns({
   currentMonth,
   months,
@@ -59,7 +65,6 @@ export function Campaigns({
 }: CampaignsProps) {
   const [activeSection, setActiveSection] = useState<'campaigns' | 'focus'>(preferredSection);
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
-  const [specialCards, setSpecialCards] = useState<DashboardSpecialCard[]>([]);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(emptySnapshot);
   const [focusHistory, setFocusHistory] = useState<FocusHistoryPoint[]>([]);
   const [promoData, setPromoData] = useState<CampaignsPromotionsResponse | null>(null);
@@ -99,12 +104,10 @@ export function Campaigns({
     if (!isMountedRef.current) return;
     const cached = getCachedView<{
       snapshot: CampaignSnapshot;
-      specialCards: DashboardSpecialCard[];
       promoData: CampaignsPromotionsResponse | null;
     }>(currentCacheKey, CAMPAIGNS_CACHE_TTL_MS);
     if (cached.value) {
       setSnapshot(cached.value.snapshot);
-      setSpecialCards(cached.value.specialCards);
       setPromoData(cached.value.promoData);
       setLoading(false);
       setError('');
@@ -117,7 +120,6 @@ export function Campaigns({
     setError('');
     Promise.all([
       getCampaignSnapshot(buildQuery(currentMonth)),
-      getSpecialCards(buildQuery(currentMonth)),
       getPromotionsIncentives(`${currentMonth}-01`, (() => { const [yr, mo] = currentMonth.split('-').map(Number); return `${currentMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), {
         firma: filters.firma,
         regional: filters.rm,
@@ -126,21 +128,18 @@ export function Campaigns({
         agent: filters.agent,
       }),
     ])
-      .then(([snapshotData, specialsData, promoResponse]) => {
+      .then(([snapshotData, promoResponse]) => {
         if (!isMountedRef.current) return;
         setSnapshot(snapshotData);
-        setSpecialCards(specialsData.cards);
         setPromoData(promoResponse);
         setCachedView(currentCacheKey, {
           snapshot: snapshotData,
-          specialCards: specialsData.cards,
           promoData: promoResponse,
         });
       })
       .catch(() => {
         if (!isMountedRef.current) return;
         setSnapshot(emptySnapshot);
-        setSpecialCards([]);
         setPromoData(null);
         setError('Datele pentru campanii si focus nu au putut fi incarcate.');
       })
@@ -328,12 +327,12 @@ export function Campaigns({
                 <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine</span>
               </div>
               <div className="space-y-1">
-                <div className={`grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500 ${promoData.has_active_promotion ? 'grid-cols-12' : 'grid-cols-12'}`}>
+                <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                   <div className="col-span-1">#</div>
                   <div className={promoData.has_active_promotion ? 'col-span-4' : 'col-span-6'}>Magazin</div>
                   <div className="col-span-2 text-right">Target%</div>
                   {promoData.has_active_promotion && <div className="col-span-2 text-right">Promo</div>}
-                  <div className={`text-right ${promoData.has_active_promotion ? 'col-span-3' : 'col-span-3'}`}>Incentive</div>
+                  <div className="col-span-3 text-right">Incentive</div>
                 </div>
                 {promoData.top_stores.slice(0, 10).map((store, index) => {
                   const ach = store.achievement;
@@ -540,21 +539,14 @@ function StatCard({
   value,
   accent,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: ComponentType<{ size?: number; className?: string }>;
   label: string;
   value: string;
   accent: 'amber' | 'indigo' | 'emerald' | 'rose';
 }) {
-  const accentClasses: Record<string, string> = {
-    amber: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20',
-    indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20',
-    emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20',
-    rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20',
-  };
-
   return (
     <div className="glass rounded-3xl p-4">
-      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl ${accentClasses[accent]}`}>
+      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl ${STAT_ACCENT_CLASSES[accent]}`}>
         <Icon size={18} />
       </div>
       <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
@@ -643,44 +635,3 @@ function DataTable({
   );
 }
 
-function SpecialHubCard({ card }: { card: DashboardSpecialCard }) {
-  const statusStyles: Record<DashboardSpecialCard['status'], string> = {
-    ready: 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-white',
-    inactive: 'border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white',
-    no_data: 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white',
-    missing_config: 'border-rose-200 bg-gradient-to-br from-rose-50 via-white to-white',
-    missing_source: 'border-rose-200 bg-gradient-to-br from-rose-50 via-white to-white',
-    limited_scope: 'border-orange-200 bg-gradient-to-br from-orange-50 via-white to-white',
-  };
-  const statusBadgeStyles: Record<DashboardSpecialCard['status'], string> = {
-    ready: 'bg-emerald-100 text-emerald-700',
-    inactive: 'bg-slate-100 text-slate-600',
-    no_data: 'bg-amber-100 text-amber-700',
-    missing_config: 'bg-rose-100 text-rose-700',
-    missing_source: 'bg-rose-100 text-rose-700',
-    limited_scope: 'bg-orange-100 text-orange-700',
-  };
-  const Icon = card.key === 'promotion' ? BadgePercent : Gift;
-
-  return (
-    <div className={`glass rounded-4xl border p-4 ${statusStyles[card.status]}`}>
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
-            <Icon size={14} className="text-indigo-500" />
-            <span>{card.key === 'promotion' ? 'Promotie' : 'Incentive'}</span>
-          </div>
-          <h4 className="text-base font-black tracking-tight">{card.title}</h4>
-          {card.subtitle && <p className="mt-1 text-[11px] text-slate-500">{card.subtitle}</p>}
-        </div>
-        <div className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${statusBadgeStyles[card.status]}`}>
-          {card.status_label}
-        </div>
-      </div>
-
-      <div className="mb-3 text-2xl font-black text-slate-900">{card.highlight_value}</div>
-      <p className="text-xs leading-relaxed text-slate-600">{card.description}</p>
-      {card.coverage_note && <p className="mt-2 text-[11px] font-semibold text-slate-500">{card.coverage_note}</p>}
-    </div>
-  );
-}

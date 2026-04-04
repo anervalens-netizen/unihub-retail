@@ -6,7 +6,7 @@ from typing import Any
 
 from services.auth_service import hash_password
 
-TL_DEFAULT_PASSWORD = "9999"
+TL_DEFAULT_PASSWORD = os.getenv("TL_DEFAULT_PASSWORD", "9999")
 
 TL_ACCOUNTS = {
     "andreea.ciobanu": {

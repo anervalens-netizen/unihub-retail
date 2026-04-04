@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
   CheckCircle2,
@@ -51,20 +51,6 @@ interface VisiteSubtabProps {
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────
-
-function ComplianceDot({ pct }: { pct: number }) {
-  const ok = pct >= 80;
-  const mid = pct >= 50;
-  return (
-    <span
-      className={cn(
-        'inline-block h-2 w-2 rounded-full',
-        ok ? 'bg-emerald-500' : mid ? 'bg-amber-400' : 'bg-red-400'
-      )}
-      title={`${pct}%`}
-    />
-  );
-}
 
 function PctBar({ value }: { value: number }) {
   const color = value >= 80 ? 'bg-emerald-500' : value >= 50 ? 'bg-amber-400' : 'bg-red-400';
@@ -485,6 +471,36 @@ const COMPLIANCE_KEYS: Array<{ key: keyof import('../api/visitsReport').VisitRep
   { key: 'produse_promo_pct', label: 'Promo' },
 ];
 
+// ── month picker ──────────────────────────────────────────────────────────────
+
+function MonthPicker({
+  months,
+  selected,
+  onChange,
+}: {
+  months: string[];
+  selected: string;
+  onChange: (m: string) => void;
+}) {
+  if (months.length === 0) return null;
+  return (
+    <select
+      value={selected}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    >
+      {months.map((m) => {
+        const label = new Date(m + '-01').toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
+        return (
+          <option key={m} value={m}>
+            {label.charAt(0).toUpperCase() + label.slice(1)}
+          </option>
+        );
+      })}
+    </select>
+  );
+}
+
 // ── main component ────────────────────────────────────────────────────────────
 
 export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
@@ -494,15 +510,30 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
   const [loadingTree, setLoadingTree] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openVisitId, setOpenVisitId] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
+
+  // extract sorted months from tree data
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    asms.forEach((a) => a.months.forEach((m) => set.add(m.month)));
+    return Array.from(set).sort().reverse();
+  }, [asms]);
+
+  // when tree loads, default to the latest month with visits
+  useEffect(() => {
+    if (availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
+      setSelectedMonth(availableMonths[0]);
+    }
+  }, [availableMonths, selectedMonth]);
 
   useEffect(() => {
     setLoadingSummary(true);
     setError(null);
-    getVisitsReport(currentMonth, filters)
+    getVisitsReport(selectedMonth, filters)
       .then(setSummary)
       .catch((e: Error) => setError(e.message || 'Eroare la incarcare'))
       .finally(() => setLoadingSummary(false));
-  }, [currentMonth, filters]);
+  }, [selectedMonth, filters]);
 
   useEffect(() => {
     setLoadingTree(true);
@@ -512,7 +543,21 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
       .finally(() => setLoadingTree(false));
   }, [filters]);
 
-  if (loadingSummary) {
+  // filter tree client-side to selected month
+  const filteredAsms = useMemo(() => {
+    return asms
+      .map((a) => ({
+        ...a,
+        months: a.months.filter((m) => m.month === selectedMonth),
+      }))
+      .filter((a) => a.months.length > 0)
+      .map((a) => ({
+        ...a,
+        nr_vizite: a.months.reduce((s, m) => s + m.nr_vizite, 0),
+      }));
+  }, [asms, selectedMonth]);
+
+  if (loadingTree && loadingSummary) {
     return (
       <div className="flex h-40 items-center justify-center text-sm font-semibold text-slate-500">
         Se incarca vizitele...
@@ -520,25 +565,25 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
     );
   }
 
-  if (error || !summary) {
+  if (error) {
     return (
       <div className="mx-4 mt-4 rounded-2xl bg-red-50 p-4 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-        {error ?? 'Date indisponibile.'}
+        {error}
       </div>
     );
   }
 
-  if (summary.total_vizite === 0 && asms.length === 0) {
+  if (!loadingTree && availableMonths.length === 0) {
     return (
       <div className="flex h-40 flex-col items-center justify-center gap-2 text-slate-400">
         <MapPin size={28} strokeWidth={1.5} />
-        <p className="text-sm font-semibold">Nicio vizita inregistrata pentru {currentMonth}</p>
+        <p className="text-sm font-semibold">Nicio vizita inregistrata</p>
       </div>
     );
   }
 
   const avgCompliance =
-    summary.rows.length > 0
+    summary && summary.rows.length > 0
       ? COMPLIANCE_KEYS.reduce((acc, { key }) => {
           const vals = summary.rows.map((r) => r[key] as number);
           return { ...acc, [key]: vals.reduce((a, b) => a + b, 0) / vals.length };
@@ -547,16 +592,23 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
 
   return (
     <div className="space-y-4 px-4">
+      {/* Month picker */}
+      <MonthPicker months={availableMonths} selected={selectedMonth} onChange={setSelectedMonth} />
+
       {/* KPI cards */}
       <div className="grid grid-cols-3 gap-2">
         <div className="glass rounded-2xl p-3 text-center">
-          <div className="text-2xl font-black text-indigo-600">{summary.total_vizite}</div>
+          <div className="text-2xl font-black text-indigo-600">
+            {loadingSummary ? '—' : (summary?.total_vizite ?? 0)}
+          </div>
           <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Vizite
           </div>
         </div>
         <div className="glass rounded-2xl p-3 text-center">
-          <div className="text-2xl font-black text-indigo-600">{summary.magazine_unice}</div>
+          <div className="text-2xl font-black text-indigo-600">
+            {loadingSummary ? '—' : (summary?.magazine_unice ?? 0)}
+          </div>
           <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Magazine
           </div>
@@ -565,14 +617,14 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
           <div
             className={cn(
               'text-2xl font-black',
-              summary.avg_completion >= 80
+              (summary?.avg_completion ?? 0) >= 80
                 ? 'text-emerald-600'
-                : summary.avg_completion >= 50
+                : (summary?.avg_completion ?? 0) >= 50
                   ? 'text-amber-500'
                   : 'text-red-500'
             )}
           >
-            {summary.avg_completion.toFixed(0)}%
+            {loadingSummary ? '—' : `${(summary?.avg_completion ?? 0).toFixed(0)}%`}
           </div>
           <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Completare
@@ -581,10 +633,10 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
       </div>
 
       {/* Compliance bars */}
-      {summary.rows.length > 0 && (
+      {summary && summary.rows.length > 0 && (
         <div className="glass rounded-2xl p-4">
           <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">
-            Conformitate medie — {currentMonth}
+            Conformitate medie — {selectedMonth}
           </h3>
           <div className="space-y-2">
             {COMPLIANCE_KEYS.map(({ key, label }) => {
@@ -618,13 +670,13 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
           <div className="flex h-16 items-center justify-center text-xs text-slate-400">
             Se incarca...
           </div>
-        ) : asms.length === 0 ? (
+        ) : filteredAsms.length === 0 ? (
           <div className="flex h-16 items-center justify-center text-xs text-slate-400">
-            Nicio vizita
+            Nicio vizita pentru luna selectata
           </div>
         ) : (
           <div>
-            {asms.map((g) => (
+            {filteredAsms.map((g) => (
               <AsmRow key={g.asm} group={g} onOpenVisit={setOpenVisitId} />
             ))}
           </div>

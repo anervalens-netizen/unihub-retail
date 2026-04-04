@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   Database,
@@ -32,10 +32,7 @@ import { getCachedView, setCachedView } from '../lib/viewCache';
 import { getRoleAccessLabel, type Role } from '../lib/roles';
 
 interface SettingsProps {
-  theme: string;
-  setTheme: (theme: string) => void;
   user: AuthUser | null;
-  activeMonth: string;
   onImportCompleted: (month: string) => void;
 }
 
@@ -49,16 +46,14 @@ const ROLE_OPTIONS = [
 ] as const;
 
 export function Settings({
-  theme,
-  setTheme,
   user,
-  activeMonth,
   onImportCompleted,
 }: SettingsProps) {
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [newUser, setNewUser] = useState<AdminUserCreate>({
@@ -109,8 +104,9 @@ export function Settings({
         setUsers([]);
         setStores([]);
         setMessage('Nu am putut încărca datele de administrare.');
+        setMessageType('error');
       });
-  }, [user]);
+  }, [user?.id, user?.role]);
 
   const tlUsers = useMemo(() => users.filter((entry) => entry.role === 'tl'), [users]);
   const selectedTl = tlUsers.find((entry) => entry.id === selectedTlId) ?? null;
@@ -131,6 +127,7 @@ export function Settings({
     try {
       setUploading(true);
       setMessage('');
+      setMessageType('success');
       const response = await uploadSalesFile(file);
       setHistory((previous) => [
         {
@@ -164,6 +161,7 @@ export function Settings({
       setFile(null);
     } catch {
       setMessage('Importul a eșuat. Verifică fișierul și încearcă din nou.');
+      setMessageType('error');
     } finally {
       setUploading(false);
     }
@@ -173,8 +171,14 @@ export function Settings({
     if (!newUser.username.trim()) return;
     try {
       setMessage('');
+      setMessageType('success');
       if (editingUserId !== null) {
-        const updated = await updateAdminUser(editingUserId, newUser);
+        const updated = await updateAdminUser(editingUserId, {
+          full_name: newUser.full_name,
+          role: newUser.role,
+          is_active: newUser.is_active,
+          ...(newUser.password ? { password: newUser.password } : {}),
+        });
         setUsers((previous) =>
           previous.map((entry) => (entry.id === updated.id ? updated : entry))
         );
@@ -193,18 +197,21 @@ export function Settings({
     } catch (err) {
       console.error(err);
       setMessage('Nu am putut salva utilizatorul.');
+      setMessageType('error');
     }
   };
 
   const handleDeleteUser = async (id: number, username: string) => {
     try {
       setMessage('');
+      setMessageType('success');
       await deleteAdminUser(id);
       setUsers((previous) => previous.filter((entry) => entry.id !== id));
       setMessage(`Utilizatorul ${username} a fost șters.`);
     } catch (err) {
       console.error(err);
       setMessage('Nu am putut șterge utilizatorul.');
+      setMessageType('error');
     }
   };
 
@@ -238,6 +245,7 @@ export function Settings({
     if (!selectedTlId) return;
     try {
       setMessage('');
+      setMessageType('success');
       const updated = await updateTlAssignments(selectedTlId, selectedSiteCodes);
       setUsers((previous) =>
         previous.map((entry) => (entry.id === updated.id ? updated : entry))
@@ -245,6 +253,7 @@ export function Settings({
       setMessage(`Alocările TL pentru ${updated.username} au fost salvate.`);
     } catch {
       setMessage('Nu am putut salva alocările TL.');
+      setMessageType('error');
     }
   };
 
@@ -321,7 +330,11 @@ export function Settings({
               {uploading ? 'Se încarcă...' : 'Importă fișier'}
             </button>
             {message && (
-              <div className="mt-3 rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+              <div className={`mt-3 rounded-2xl px-3 py-2 text-xs font-semibold ${
+                messageType === 'error'
+                  ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'
+                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+              }`}>
                 {message}
               </div>
             )}

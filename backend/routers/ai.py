@@ -108,13 +108,20 @@ async def ai_websocket(
 
     bridge_session_id = session_id
     if not bridge_session_id:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                f"{BRIDGE_URL}/sessions/{user['id']}",
-                params={"device_id": device_id},
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{BRIDGE_URL}/sessions/{user['id']}",
+                    params={"device_id": device_id},
+                )
+                resp.raise_for_status()
+                bridge_session_id = resp.json().get("active_session_id")
+        except Exception:
+            await websocket.send_json(
+                {"type": "error", "message": "Nu s-a putut obține sesiunea AI."}
             )
-            resp.raise_for_status()
-            bridge_session_id = resp.json()["active_session_id"]
+            await websocket.close()
+            return
 
     # Check bridge availability
     if not await _bridge_healthy():
@@ -262,7 +269,7 @@ async def ai_websocket(
 async def ai_health(user: dict[str, Any] = Depends(get_current_user)):
     """Check if the AI bridge is online."""
     healthy = await _bridge_healthy()
-    return {"online": healthy, "bridge_url": BRIDGE_URL}
+    return {"online": healthy}
 
 
 @router.get("/sessions", response_model=AiSessionListResponse)
@@ -276,6 +283,7 @@ async def ai_sessions(
                 f"{BRIDGE_URL}/sessions/{user['id']}",
                 params={"device_id": device_id},
             )
+            resp.raise_for_status()
             return resp.json()
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Bridge offline") from exc
@@ -289,6 +297,7 @@ async def ai_session_detail(
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{BRIDGE_URL}/sessions/{user['id']}/{session_id}")
+            resp.raise_for_status()
             return resp.json()
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Bridge offline") from exc

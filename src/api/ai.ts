@@ -95,12 +95,6 @@ export class AiWebSocket {
     }
   }
 
-  resetSession(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'message', content: '__reset__', reset: true }));
-    }
-  }
-
   disconnect(): void {
     this.closed = true;
     if (this.reconnectTimer) {
@@ -113,10 +107,6 @@ export class AiWebSocket {
 
   get isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
-  }
-
-  setSession(sessionId: string | null): void {
-    this.sessionId = sessionId;
   }
 
   private scheduleReconnect(): void {

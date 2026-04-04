@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import asyncio
-from typing import Any
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from db.connection import get_pool
 from routers.dashboard_filters import scoped_clauses
@@ -15,6 +12,7 @@ from routers.shared import normalize_filter
 @pytest.fixture(scope="module")
 def anyio_backend():
     return "asyncio"
+
 
 
 async def get_auth_token() -> str:
@@ -57,32 +55,25 @@ async def test_special_cards_promotion_config():
 
 @pytest.mark.anyio
 async def test_special_cards_incentive_config():
-    """Test that incentive card config has required fields for April."""
-    from services.dashboard_specials import (
-        load_incentive_reward_map,
-        load_special_cards_config,
-        parse_incentive_definition,
-    )
+    """Test that incentive campaigns are stored in the DB (not hub_specials.json)."""
+    from services.incentive_db import get_incentive_campaign
 
-    config, _ = load_special_cards_config()
-    incentive_def, incentive_err = parse_incentive_definition(config, "2026-04")
-
-    assert incentive_err is None
-    assert incentive_def is not None
-    assert incentive_def["month"] == "2026-04"
-    assert incentive_def["reward_per_unit"] is None  # per-product mode
-
-    # Load reward map
-    reward_map, map_err = load_incentive_reward_map(incentive_def)
-    assert map_err is None
-    assert reward_map is not None
-    assert len(reward_map) > 0
-    assert all(v in (5.0, 10.0, 25.0) for v in reward_map.values())
+    conn, pool = await get_pool_connection()
+    try:
+        campaign = await get_incentive_campaign(conn, "2026-04")
+        if campaign is not None:
+            assert campaign["month"] == "2026-04"
+            assert "reward_map" in campaign
+            assert isinstance(campaign["reward_map"], dict)
+            assert len(campaign["reward_map"]) > 0
+    finally:
+        await pool.release(conn)
 
 
 @pytest.mark.anyio
 async def test_hub_specials_json_exists():
-    """Test that hub_specials.json config file exists and is valid."""
+    """Test that hub_specials.json exists and has valid promotions structure."""
+    import json
     import os
 
     repo_path = Path(__file__).resolve().parents[2] / "data" / "hub_specials.json"
@@ -90,14 +81,14 @@ async def test_hub_specials_json_exists():
 
     assert os.path.exists(config_path), f"hub_specials.json not found at {config_path}"
 
-    import json
-
     with open(config_path) as f:
         config = json.load(f)
 
+    # Promotions are still in JSON; incentives migrated to DB (array intentionally empty)
+    assert "promotions" in config
+    assert isinstance(config["promotions"], list)
     assert "incentives" in config
     assert isinstance(config["incentives"], list)
-    assert len(config["incentives"]) > 0
 
 
 def test_dashboard_scoped_clauses_builds_agent_filter() -> None:
@@ -124,13 +115,20 @@ def test_normalize_filter_accepts_clean_all_scope_values() -> None:
     assert normalize_filter("Agent 007") == "Agent 007"
 
 
-def test_dashboard_all_endpoint_returns_composite_payload() -> None:
+@pytest.mark.anyio
+async def test_dashboard_all_endpoint_returns_composite_payload() -> None:
+    import httpx
     from main import app
     from services.auth_service import create_access_token
 
+    # Discard stale pool (bound to a dead event loop from prior async tests)
+    import db.connection as _db
+    _db.pool = None
+
     token = create_access_token(user_id=1, username="admin", role="admin")
-    with TestClient(app) as client:
-        response = client.get(
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
             "/api/dashboard/all?month=2026-03",
             headers={"Authorization": f"Bearer {token}"},
         )

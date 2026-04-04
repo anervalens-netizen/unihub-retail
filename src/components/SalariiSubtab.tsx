@@ -42,11 +42,6 @@ const COMPANY_COLORS: Record<string, string> = {
   Mobiup: 'text-emerald-500',
 };
 
-const COMPANY_BG: Record<string, string> = {
-  Mobicell: 'bg-indigo-50 dark:bg-indigo-950/30',
-  Mobiup: 'bg-emerald-50 dark:bg-emerald-950/30',
-};
-
 interface DrawerState {
   cnp: string;
   fullName: string;
@@ -54,10 +49,9 @@ interface DrawerState {
 
 interface SalariiSubtabProps {
   globalFilters?: AppFilters;
-  currentMonth?: string;
 }
 
-export function SalariiSubtab({ globalFilters, currentMonth }: SalariiSubtabProps) {
+export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const [overview, setOverview] = useState<SalariiOverview | null>(null);
   const [evolution, setEvolution] = useState<SalaryEvolutionPoint[]>([]);
   const [agents, setAgents] = useState<SalaryAgentSummary[]>([]);
@@ -190,14 +184,10 @@ export function SalariiSubtab({ globalFilters, currentMonth }: SalariiSubtabProp
     setPage(0);
   }
 
-  const totalPages = Math.ceil(totalAgents / PAGE_SIZE);
   const hasMore = (page + 1) * PAGE_SIZE < totalAgents;
 
   const mobicellTotal = overview?.by_company?.find((c) => c.name === 'Mobicell')?.total ?? 0;
   const mobiupTotal = overview?.by_company?.find((c) => c.name === 'Mobiup')?.total ?? 0;
-
-  const filteredSummary = summary;
-  const filteredTrend = trend;
 
   return (
     <div className="space-y-4 px-4 py-4">
@@ -283,12 +273,12 @@ export function SalariiSubtab({ globalFilters, currentMonth }: SalariiSubtabProp
               </tr>
             </thead>
             <tbody>
-              {filteredSummary.length === 0 && !loadingCards && (
+              {summary.length === 0 && !loadingCards && (
                 <tr>
                   <td colSpan={5} className="py-6 text-center text-xs text-slate-400">Fara date</td>
                 </tr>
               )}
-              {filteredSummary.map((item) => (
+              {summary.map((item) => (
                 <tr key={`${item.site_code}-${item.company_name}`} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="py-2 font-medium text-slate-700 dark:text-slate-200">
                     {item.locatie ?? item.site_code}
@@ -329,12 +319,12 @@ export function SalariiSubtab({ globalFilters, currentMonth }: SalariiSubtabProp
               </tr>
             </thead>
             <tbody>
-              {filteredTrend.length === 0 && !loadingCards && (
+              {trend.length === 0 && !loadingCards && (
                 <tr>
                   <td colSpan={4} className="py-6 text-center text-xs text-slate-400">Fara date</td>
                 </tr>
               )}
-              {filteredTrend.map((t) => {
+              {trend.map((t) => {
                 const ratio = t.total_sales > 0 ? (t.total_salary / t.total_sales) * 100 : 0;
                 return (
                   <tr key={t.month} className="border-b border-slate-100 dark:border-slate-800">
