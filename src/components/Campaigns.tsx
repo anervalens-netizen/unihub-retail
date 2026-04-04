@@ -225,7 +225,7 @@ export function Campaigns({
   }, [snapshot.products]);
 
   return (
-    <div className="space-y-3 p-3 pb-24 pt-2">
+    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Focus</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -427,7 +427,7 @@ export function Campaigns({
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{headline}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard icon={Tag} label="Vanzari focus" value={formatCurrency(snapshot.overview.total_focus_sales)} accent="amber" />
             <StatCard icon={PackageSearch} label="Cantitate focus" value={formatInt(snapshot.overview.total_focus_qty)} accent="indigo" />
             <StatCard icon={Sparkles} label="Share focus" value={formatPercent(snapshot.overview.focus_share_pct)} accent="emerald" />
@@ -505,7 +505,7 @@ export function Campaigns({
               </div>
 
               <div className="glass rounded-3xl p-4">
-                <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="grid grid-cols-2 gap-3 text-xs lg:grid-cols-4">
                   <Metric label="Vanzari focus" value={formatCurrency(selectedHistoryPoint.total_focus_sales)} />
                   <Metric label="Cantitate focus" value={formatInt(selectedHistoryPoint.total_focus_qty)} />
                   <Metric label="Pondere in volum" value={formatPercent(selectedHistoryPoint.focus_share_pct)} />

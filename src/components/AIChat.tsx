@@ -517,7 +517,7 @@ export default function AIChat() {
       {sessionDrawerOpen && <div className="absolute inset-0 z-10 bg-slate-900/30 backdrop-blur-sm" onClick={() => setSessionDrawerOpen(false)} />}
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden pb-2">
-        <div className="px-4 pb-3 pt-6">
+        <div className="mx-auto w-full max-w-4xl px-4 pb-3 pt-6">
           <div className="flex items-center gap-3">
             <button onClick={() => setSessionDrawerOpen(true)} className="rounded-2xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
               <Menu size={16} />
@@ -536,16 +536,17 @@ export default function AIChat() {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
-          {status === 'offline' && (
-            <div className="flex flex-col items-center gap-2 py-10 text-slate-400">
-              <WifiOff size={28} />
-              <p className="text-[13px]">UniAI nu este disponibil momentan.</p>
-            </div>
-          )}
+          <div className="mx-auto w-full max-w-4xl">
+            {status === 'offline' && (
+              <div className="flex flex-col items-center gap-2 py-10 text-slate-400">
+                <WifiOff size={28} />
+                <p className="text-[13px]">UniAI nu este disponibil momentan.</p>
+              </div>
+            )}
 
-          {loadingSession ? (
-            <div className="py-10 text-center text-sm text-slate-500">Incarc sesiunea curenta...</div>
-          ) : (
+            {loadingSession ? (
+              <div className="py-10 text-center text-sm text-slate-500">Incarc sesiunea curenta...</div>
+            ) : (
             <div className="space-y-3">
               {messages.map((message) => (
                 <div key={message.id} className={cn('flex gap-2', message.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
@@ -615,10 +616,11 @@ export default function AIChat() {
               )}
               <div ref={bottomRef} />
             </div>
-          )}
+            )}
+          </div>
         </div>
 
-        <div className="bg-transparent px-4 pb-5 pt-3">
+        <div className="mx-auto w-full max-w-4xl bg-transparent px-4 pb-5 pt-3">
           {attachments.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachments.map((file) => (

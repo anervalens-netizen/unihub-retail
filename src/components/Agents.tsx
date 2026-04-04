@@ -469,7 +469,7 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
   }
 
   return (
-    <div className="space-y-3 p-3 pb-24 pt-2">
+    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Agenti</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">

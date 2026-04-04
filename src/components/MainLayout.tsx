@@ -147,7 +147,7 @@ export function MainLayout({
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-transparent">
       {activeTab === 'settings' && (
-        <div className="flex items-center justify-between px-4 pt-7">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 pt-7">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
               UniHub
@@ -193,7 +193,7 @@ export function MainLayout({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 24, stiffness: 180 }}
-              className="fixed inset-x-0 bottom-0 z-50 rounded-t-4xl bg-white p-4 shadow-2xl dark:bg-slate-900"
+              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-4xl bg-white p-4 shadow-2xl dark:bg-slate-900"
             >
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-bold">Filtre active</h3>
@@ -306,7 +306,7 @@ export function MainLayout({
         )}
       </AnimatePresence>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 p-3">
+      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-6xl p-3">
         <div className="glass flex items-center justify-around rounded-2xl p-1.5">
           {visibleTabs.map((tab) => {
             const Icon = tab.icon;

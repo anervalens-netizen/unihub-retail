@@ -868,7 +868,7 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
     : AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
 
   return (
-    <div className="space-y-3 p-3 pb-24 pt-2">
+    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Sales Hub</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1006,7 +1006,7 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
             </div>
 
             {/* 4. Metrici operationale */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
               <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
               <Metric label="Accesorii" value={formatInt(summary.total_quantity)} className="p-2" />
               <Metric label="Magazine" value={formatInt(summary.total_stores)} className="p-2" />
@@ -1031,7 +1031,7 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
 
           </div>
 
-          <div className="grid gap-3">
+          <div className="grid gap-3 lg:grid-cols-2">
             <div className="glass rounded-3xl p-4 overflow-hidden min-w-0">
               <div className="mb-4 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
@@ -1107,7 +1107,7 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
             </button>
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr]">
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
             <div className="glass rounded-3xl p-4">
               <div className="mb-3 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
@@ -1624,7 +1624,7 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
                 </div>
 
                 {/* 4. Operational metrics */}
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
                   <Metric label="Bonuri" value={formatInt(historySummary?.total_receipts ?? selectedHistoryPoint.total_receipts)} className="p-2" />
                   <Metric label="Accesorii" value={formatInt(historySummary?.total_quantity ?? selectedHistoryPoint.total_quantity)} className="p-2" />
                   <Metric label="Magazine" value={formatInt(historySummary?.total_stores ?? selectedHistoryPoint.total_stores)} className="p-2" />
@@ -1692,7 +1692,7 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
               })()}
 
               {/* Evolutie zilnica + Top categorii si branduri */}
-              <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr]">
+              <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
                 <div className="glass rounded-3xl p-4">
                   <div className="mb-3 flex items-center gap-2">
                     <CalendarRange size={16} className="text-indigo-500" />
