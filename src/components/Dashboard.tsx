@@ -234,6 +234,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
   const [historySpecialCards, setHistorySpecialCards] = useState<DashboardSpecialCard[]>([]);
   const [historyPeriodComparison, setHistoryPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
   const [historyPromoIncentive, setHistoryPromoIncentive] = useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
+  const [historyRegionals, setHistoryRegionals] = useState<RegionalStat[]>([]);
+  const [historyAsms, setHistoryAsms] = useState<AsmStat[]>([]);
+  const [historyStores, setHistoryStores] = useState<StoreStat[]>([]);
+  const [historyAgents, setHistoryAgents] = useState<AgentStat[]>([]);
   const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +259,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
     key: 'total_vanzari',
     direction: 'desc',
   });
+  const [historyRegionalSort, setHistoryRegionalSort] = useState<{ key: RegionalSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
+  const [historyAsmSort, setHistoryAsmSort] = useState<{ key: AsmSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
+  const [historyStoreSort, setHistoryStoreSort] = useState<{ key: StoreSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
+  const [historyAgentSort, setHistoryAgentSort] = useState<{ key: AgentSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
   const [regionals, setRegionals] = useState<RegionalStat[]>([]);
   const [asms, setAsms] = useState<AsmStat[]>([]);
   const isMountedRef = useRef(true);
@@ -493,6 +501,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
     setHistorySpecialCards([]);
     setHistoryPeriodComparison(null);
     setHistoryPromoIncentive(DEFAULT_PROMO_INCENTIVE);
+    setHistoryRegionals([]);
+    setHistoryAsms([]);
+    setHistoryStores([]);
+    setHistoryAgents([]);
     setHistoryError(null);
     if (activeSection === 'history') {
       loadHistory();
@@ -838,6 +850,50 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
     return rows;
   }, [asms, asmSort]);
 
+  const sortedHistoryRegionals = useMemo(() => {
+    const rows = [...historyRegionals];
+    rows.sort((left, right) => {
+      const leftValue = getRegionalSortValue(left, historyRegionalSort.key);
+      const rightValue = getRegionalSortValue(right, historyRegionalSort.key);
+      const result = leftValue - rightValue;
+      return historyRegionalSort.direction === 'asc' ? result : -result;
+    });
+    return rows;
+  }, [historyRegionals, historyRegionalSort]);
+
+  const sortedHistoryAsms = useMemo(() => {
+    const rows = [...historyAsms];
+    rows.sort((left, right) => {
+      const leftValue = getAsmSortValue(left, historyAsmSort.key);
+      const rightValue = getAsmSortValue(right, historyAsmSort.key);
+      const result = leftValue - rightValue;
+      return historyAsmSort.direction === 'asc' ? result : -result;
+    });
+    return rows;
+  }, [historyAsms, historyAsmSort]);
+
+  const sortedHistoryStores = useMemo(() => {
+    const rows = [...historyStores];
+    rows.sort((left, right) => {
+      const leftValue = getStoreSortValue(left, historyStoreSort.key);
+      const rightValue = getStoreSortValue(right, historyStoreSort.key);
+      const result = leftValue - rightValue;
+      return historyStoreSort.direction === 'asc' ? result : -result;
+    });
+    return rows;
+  }, [historyStores, historyStoreSort]);
+
+  const sortedHistoryAgents = useMemo(() => {
+    const rows = [...historyAgents];
+    rows.sort((left, right) => {
+      const leftValue = getAgentSortValue(left, historyAgentSort.key);
+      const rightValue = getAgentSortValue(right, historyAgentSort.key);
+      const result = leftValue - rightValue;
+      return historyAgentSort.direction === 'asc' ? result : -result;
+    });
+    return rows;
+  }, [historyAgents, historyAgentSort]);
+
   const handleSortRegionals = useCallback((key: RegionalSortKey) => {
     setRegionalSort((current) =>
       current.key === key
@@ -851,6 +907,38 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
       current.key === key
         ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: key === 'asm' || key === 'regional' ? 'asc' : 'desc' }
+    );
+  }, []);
+
+  const handleSortHistoryRegionals = useCallback((key: RegionalSortKey) => {
+    setHistoryRegionalSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: key === 'regional' ? 'asc' : 'desc' }
+    );
+  }, []);
+
+  const handleSortHistoryAsms = useCallback((key: AsmSortKey) => {
+    setHistoryAsmSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: key === 'asm' || key === 'regional' ? 'asc' : 'desc' }
+    );
+  }, []);
+
+  const handleSortHistoryStores = useCallback((key: StoreSortKey) => {
+    setHistoryStoreSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: key === 'locatie' || key === 'site_code' ? 'asc' : 'desc' }
+    );
+  }, []);
+
+  const handleSortHistoryAgents = useCallback((key: AgentSortKey) => {
+    setHistoryAgentSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: key === 'locatie' || key === 'agent' ? 'asc' : 'desc' }
     );
   }, []);
 
