@@ -229,6 +229,8 @@ class StoreStats(BaseModel):
     zile_active: int
     target: Decimal
     proc_realizare_target: Decimal | None
+    promo_qty: int = 0
+    incentive_qty: int = 0
 
 
 class RegionalStats(BaseModel):
