@@ -455,8 +455,8 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
         setHistoryPromoIncentive(allData.promo_incentive ?? DEFAULT_PROMO_INCENTIVE);
         setHistoryRegionals(allData.regionals ?? []);
         setHistoryAsms(allData.asms ?? []);
-        setHistoryStores(allData.stores);
-        setHistoryAgents(allData.agents);
+        setHistoryStores(allData.stores ?? []);
+        setHistoryAgents(allData.agents ?? []);
         setCachedView(historyDetailCacheKey, {
           summary: allData.summary,
           receiptBucketMix: allData.receipt_bucket_mix,
