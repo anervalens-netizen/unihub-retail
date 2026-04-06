@@ -24,7 +24,7 @@ import {
   YAxis,
 } from 'recharts';
 import { getCampaignSnapshot, getFocusHistory, getPromotionsIncentives } from '../api/campaigns';
-import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint, IncentiveCategory } from '../api/types';
+import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint, IncentiveCategory, IncentiveTopAgent } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
@@ -369,30 +369,64 @@ export function Campaigns({
           {/* Card Incentive — stats + pie chart */}
           <IncentiveCard promoData={promoData} />
 
-          {/* Top 10 Agenti — card separat */}
+          {/* Top Agenti — card separat, sortabil, scroll */}
           {promoData && promoData.top_agents.length > 0 && (
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Sparkles size={16} />
-                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top 10 Agenti</span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Agenti</span>
               </div>
-              <div className="space-y-1">
-                <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                  <div className="col-span-1">#</div>
-                  <div className="col-span-7">Agent</div>
-                  <div className="col-span-4 text-right">Bonus RON</div>
-                </div>
-                {promoData.top_agents.slice(0, 10).map((agent, index) => (
-                  <div
-                    key={agent.agent_name}
-                    className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
-                  >
-                    <div className="col-span-1 flex items-center font-bold text-slate-400">{index + 1}</div>
-                    <div className="col-span-7 truncate font-semibold">{agent.agent_name}</div>
-                    <div className="col-span-4 text-right font-black text-indigo-600">{formatCurrency(agent.val_incentive)}</div>
-                  </div>
-                ))}
-              </div>
+              <SortableTable<IncentiveTopAgent & Record<string, unknown>>
+                rows={promoData.top_agents as (IncentiveTopAgent & Record<string, unknown>)[]}
+                defaultSortKey="val_incentive"
+                columns={[
+                  {
+                    key: 'rank',
+                    label: '#',
+                    sortable: false,
+                    render: (_row, index) => (
+                      <span className="font-bold text-slate-400">{index + 1}</span>
+                    ),
+                  },
+                  {
+                    key: 'agent_name',
+                    label: 'Agent',
+                    render: (row) => (
+                      <span className="truncate font-semibold" title={(row as unknown as IncentiveTopAgent).agent_name}>
+                        {(row as unknown as IncentiveTopAgent).agent_name}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'achievement',
+                    label: '%Prev.',
+                    align: 'right',
+                    render: (row) => (
+                      <span className={achievementColor((row as unknown as IncentiveTopAgent).achievement)}>
+                        {achievementLabel((row as unknown as IncentiveTopAgent).achievement)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'qty_sold',
+                    label: 'Cant.',
+                    align: 'right',
+                    render: (row) => (
+                      <span className="text-slate-500">{formatInt((row as unknown as IncentiveTopAgent).qty_sold)}</span>
+                    ),
+                  },
+                  {
+                    key: 'val_incentive',
+                    label: 'Val Inc.',
+                    align: 'right',
+                    render: (row) => (
+                      <span className={(row as unknown as IncentiveTopAgent).val_incentive > 0 ? 'font-black text-indigo-600' : 'text-slate-400'}>
+                        {(row as unknown as IncentiveTopAgent).val_incentive > 0 ? formatCurrency((row as unknown as IncentiveTopAgent).val_incentive) : '0 RON'}
+                      </span>
+                    ),
+                  },
+                ]}
+              />
             </div>
           )}
 
