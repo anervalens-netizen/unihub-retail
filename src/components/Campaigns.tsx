@@ -1,4 +1,4 @@
-import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   BadgePercent,
@@ -13,15 +13,18 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import { getCampaignSnapshot, getFocusHistory, getPromotionsIncentives } from '../api/campaigns';
-import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint } from '../api/types';
+import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint, IncentiveCategory } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
@@ -319,8 +322,8 @@ export function Campaigns({
             </div>
           )}
 
-          {/* Card Magazine (incentive + promo daca activa) */}
-          {promoData && promoData.top_stores.length > 0 && (
+          {/* Card Magazine — doar cand exista promotie activa (combina promo + incentive) */}
+          {promoData && promoData.has_active_promotion && promoData.top_stores.length > 0 && (
             <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
                 <Building2 size={16} />
@@ -363,58 +366,64 @@ export function Campaigns({
             </div>
           )}
 
-          {/* Card Incentive */}
-          <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
-            <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-              <Gift size={16} />
-              <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Incentive</span>
-            </div>
-            <div className="mb-1">
-              <h4 className="text-base font-black tracking-tight">{promoData?.incentive_title || 'Incentive'}</h4>
-              {promoData?.incentive_description && (
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.incentive_description}</p>
-              )}
-            </div>
+          {/* Card Incentive — stats + pie chart */}
+          <IncentiveCard promoData={promoData} />
 
-            <div className="mb-3 grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-3xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div>
-                <div className="text-[11px] text-slate-500">bucati vandute</div>
+          {/* Top 10 Agenti — card separat */}
+          {promoData && promoData.top_agents.length > 0 && (
+            <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+              <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+                <Sparkles size={16} />
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top 10 Agenti</span>
               </div>
-              <div>
-                <div className="text-3xl font-black text-indigo-600">
-                  {promoData ? formatCurrency(promoData.incentive_value) : '-'}
+              <div className="space-y-1">
+                <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <div className="col-span-1">#</div>
+                  <div className="col-span-7">Agent</div>
+                  <div className="col-span-4 text-right">Bonus RON</div>
                 </div>
-                <div className="text-[11px] text-slate-500">valoare incentive</div>
-              </div>
-            </div>
-
-            {/* Top 10 Agenti — embedded inside card */}
-            {promoData && promoData.top_agents.length > 0 && (
-              <div className="mt-4 border-t border-indigo-100 dark:border-indigo-900/30 pt-3">
-                <h5 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Top 10 Agenti</h5>
-                <div className="space-y-1">
-                  <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                    <div className="col-span-1">#</div>
-                    <div className="col-span-7">Agent</div>
-                    <div className="col-span-4 text-right">Bonus RON</div>
+                {promoData.top_agents.slice(0, 10).map((agent, index) => (
+                  <div
+                    key={agent.agent_name}
+                    className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
+                  >
+                    <div className="col-span-1 flex items-center font-bold text-slate-400">{index + 1}</div>
+                    <div className="col-span-7 truncate font-semibold">{agent.agent_name}</div>
+                    <div className="col-span-4 text-right font-black text-indigo-600">{formatCurrency(agent.qty)}</div>
                   </div>
-                  {promoData.top_agents.slice(0, 10).map((agent, index) => (
-                    <div
-                      key={agent.agent_name}
-                      className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
-                    >
-                      <div className="col-span-1 flex items-center font-bold text-slate-400">
-                        {index + 1}
-                      </div>
-                      <div className="col-span-7 truncate font-semibold">{agent.agent_name}</div>
-                      <div className="col-span-4 text-right font-black text-indigo-600">{formatCurrency(agent.qty)}</div>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Top Magazine Incentive — card separat, doar fara promotie activa */}
+          {promoData && !promoData.has_active_promotion && promoData.top_stores.length > 0 && (
+            <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+              <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+                <Building2 size={16} />
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine</span>
+              </div>
+              <div className="space-y-1">
+                <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <div className="col-span-1">#</div>
+                  <div className="col-span-7">Magazin</div>
+                  <div className="col-span-4 text-right">Incentive</div>
+                </div>
+                {promoData.top_stores.slice(0, 10).map((store, index) => (
+                  <div
+                    key={store.store_name}
+                    className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
+                  >
+                    <div className="col-span-1 font-bold text-slate-400">{index + 1}</div>
+                    <div className="col-span-7 truncate font-semibold">{store.store_name}</div>
+                    <div className="col-span-4 text-right font-black text-indigo-600">
+                      {store.incentive_value > 0 ? formatCurrency(store.incentive_value) : '-'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <>
@@ -533,6 +542,97 @@ export function Campaigns({
   );
 }
 
+const INCENTIVE_TIER_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
+
+function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse | null }) {
+  const categories: IncentiveCategory[] = promoData?.incentive_categories ?? [];
+  const pieData = categories.map((cat) => ({ name: cat.label, value: cat.qty }));
+  const totalQty = categories.reduce((sum, c) => sum + c.qty, 0);
+
+  return (
+    <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+      {/* Header */}
+      <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+        <Gift size={16} />
+        <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Incentive</span>
+      </div>
+      <div className="mb-1">
+        <h4 className="text-base font-black tracking-tight">{promoData?.incentive_title || 'Incentive'}</h4>
+        {promoData?.incentive_description && (
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.incentive_description}</p>
+        )}
+        {promoData && promoData.incentive_product_count > 0 && (
+          <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
+            <Tag size={11} />
+            <span>{promoData.incentive_product_count} coduri eligibile</span>
+          </div>
+        )}
+      </div>
+
+      {/* Stats principale */}
+      <div className="mb-4 grid grid-cols-2 gap-3">
+        <div>
+          <div className="text-3xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div>
+          <div className="text-[11px] text-slate-500">bucati vandute</div>
+        </div>
+        <div>
+          <div className="text-3xl font-black text-indigo-600">
+            {promoData ? formatCurrency(promoData.incentive_value) : '-'}
+          </div>
+          <div className="text-[11px] text-slate-500">valoare incentive</div>
+        </div>
+      </div>
+
+      {/* Pie chart pe tiere de reward */}
+      {pieData.length > 0 && (
+        <div className="mb-4 border-t border-indigo-100 pt-3 dark:border-indigo-900/30">
+          <h5 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Distributie pe tier</h5>
+          <div className="flex items-center gap-4">
+            <div className="h-[120px] w-[120px] shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={32}
+                    outerRadius={52}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {pieData.map((_, index) => (
+                      <Cell key={index} fill={INCENTIVE_TIER_COLORS[index % INCENTIVE_TIER_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number, name: string) => [
+                      `${formatInt(value)} buc (${totalQty > 0 ? Math.round((value / totalQty) * 100) : 0}%)`,
+                      name,
+                    ]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              {categories.map((cat, index) => (
+                <div key={cat.label} className="flex items-center gap-2 text-xs">
+                  <div
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: INCENTIVE_TIER_COLORS[index % INCENTIVE_TIER_COLORS.length] }}
+                  />
+                  <span className="min-w-0 flex-1 truncate font-semibold">{cat.label}</span>
+                  <span className="shrink-0 font-black text-indigo-600">{formatInt(cat.qty)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
 function StatCard({
   icon: Icon,
   label,
@@ -632,6 +732,132 @@ function DataTable({
         )}
       </div>
     </div>
+  );
+}
+
+type SortDir = 'asc' | 'desc';
+
+interface ColDef<T> {
+  key: keyof T | 'rank';
+  label: string;
+  align?: 'left' | 'right';
+  sortable?: boolean;
+  render: (row: T, index: number) => React.ReactNode;
+}
+
+function SortableTable<T extends Record<string, unknown>>({
+  rows,
+  columns,
+  defaultSortKey,
+  defaultSortDir = 'desc',
+  maxHeightClass = 'max-h-[360px]',
+}: {
+  rows: T[];
+  columns: ColDef<T>[];
+  defaultSortKey: keyof T;
+  defaultSortDir?: SortDir;
+  maxHeightClass?: string;
+}) {
+  const [sortKey, setSortKey] = useState<keyof T>(defaultSortKey);
+  const [sortDir, setSortDir] = useState<SortDir>(defaultSortDir);
+
+  const sorted = useMemo(() => {
+    const col = columns.find((c) => c.key === sortKey);
+    if (!col || col.key === 'rank') return rows;
+    return [...rows].sort((a, b) => {
+      const av = a[sortKey as keyof T];
+      const bv = b[sortKey as keyof T];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [rows, columns, sortKey, sortDir]);
+
+  function handleSort(key: keyof T | 'rank') {
+    if (key === 'rank') return;
+    const k = key as keyof T;
+    if (k === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(k);
+      setSortDir('desc');
+    }
+  }
+
+  return (
+    <div
+      className={`${maxHeightClass} overflow-y-auto rounded-xl`}
+      style={{ scrollbarWidth: 'thin', scrollbarColor: '#c7d2fe transparent' }}
+    >
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr>
+            {columns.map((col) => (
+              <th
+                key={String(col.key)}
+                onClick={() => handleSort(col.key)}
+                className={`sticky top-0 z-10 bg-indigo-50/80 px-2 py-2 text-[9px] font-bold uppercase tracking-wide text-slate-500 backdrop-blur-sm dark:bg-indigo-950/60 ${
+                  col.align === 'right' ? 'text-right' : 'text-left'
+                } ${col.sortable !== false && col.key !== 'rank' ? 'cursor-pointer select-none hover:text-indigo-600' : ''}`}
+              >
+                {col.label}
+                {col.sortable !== false && col.key !== 'rank' && (
+                  <span className="ml-1 inline-block w-2 text-center">
+                    {sortKey === col.key ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                  </span>
+                )}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row, index) => (
+            <tr
+              key={index}
+              className={index % 2 === 0 ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}
+            >
+              {columns.map((col) => (
+                <td
+                  key={String(col.key)}
+                  className={`px-2 py-1.5 ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                >
+                  {col.render(row, index)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function achievementColor(ach: number | null): string {
+  if (ach === null || ach === undefined) return 'text-slate-400';
+  if (ach >= 0.99) return 'text-emerald-600 font-black';
+  if (ach >= 0.89) return 'text-amber-500 font-semibold';
+  return 'text-red-500';
+}
+
+function achievementLabel(ach: number | null): string {
+  if (ach === null || ach === undefined) return '—';
+  return `${Math.round(ach * 100)}%`;
+}
+
+function FirmaBadge({ firma }: { firma: string }) {
+  const lower = firma.toLowerCase();
+  const color = lower.includes('mobicell') ? '#3b82f6'
+              : lower.includes('mobiup')   ? '#ef4444'
+              : '#9ca3af';
+  return (
+    <span
+      title={firma}
+      style={{ background: color }}
+      className="mr-1 inline-flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center rounded-[3px] text-[8px] font-black text-white"
+    >
+      M
+    </span>
   );
 }
 
