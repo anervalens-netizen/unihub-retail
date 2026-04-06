@@ -393,13 +393,13 @@ async def get_promotions_incentives(
                 SELECT
                     agg.site_code,
                     MAX(agg.locatie) AS locatie,
+                    MAX(agg.firma) AS firma,
                     COALESCE(SUM(agg.positive_quantity), 0)::INT AS qty,
                     COALESCE(SUM(agg.net_quantity), 0)::INT AS total_qty
                 FROM reporting_item_day agg
                 WHERE {" AND ".join(promo_clauses)}
                 GROUP BY agg.site_code
                 ORDER BY qty DESC
-                LIMIT 10
                 """,
                 *promo_params,
                 *promo_scope_params,
@@ -412,6 +412,7 @@ async def get_promotions_incentives(
                     category_qty=0,
                     incentive_value=0.0,
                     achievement=store_achievements.get(row["site_code"]),
+                    firma=row["firma"] or "",
                 )
                 for row in store_rows
             ]
@@ -447,6 +448,7 @@ async def get_promotions_incentives(
                 store_item_rows = await conn.fetch(
                     f"""
                     SELECT agg.site_code, MAX(agg.locatie) AS locatie,
+                           MAX(agg.firma) AS firma,
                            agg.item_code,
                            COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
                     FROM reporting_item_month agg
@@ -456,14 +458,15 @@ async def get_promotions_incentives(
                     *inc_store_params,
                     *inc_store_scope_params,
                 )
-                # Build {site_code: (locatie, incentive_value)}
+                # Build {site_code: [locatie, incentive_value, firma]}
                 store_inc: dict[str, list] = {}
                 for row in store_item_rows:
                     sc = row["site_code"]
                     loc = row["locatie"]
+                    firma_val = row["firma"] or ""
                     val = max(0, int(row["qty"])) * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
                     if sc not in store_inc:
-                        store_inc[sc] = [loc, 0.0]
+                        store_inc[sc] = [loc, 0.0, firma_val]
                     store_inc[sc][1] += val
 
                 if has_active_promotion:
@@ -474,8 +477,9 @@ async def get_promotions_incentives(
                             qty=s.qty,
                             total_qty=s.total_qty,
                             category_qty=s.category_qty,
-                            incentive_value=round(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0])[1], 2),
+                            incentive_value=round(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0, ""])[1], 2),
                             achievement=s.achievement,
+                            firma=s.firma,
                         )
                         for s in top_stores
                     ]
@@ -489,10 +493,12 @@ async def get_promotions_incentives(
                             category_qty=0,
                             incentive_value=round(data[1], 2),
                             achievement=store_achievements.get(sc),
+                            firma=data[2],
                         )
                         for sc, data in sorted(store_inc.items(), key=lambda x: -x[1][1])
                         if data[1] > 0
-                    ][:10]
+                    ]
+                    # Fara [:10] — toate magazinele
 
         if incentive_campaign is not None:
             reward_map: dict[str, float] | None = incentive_campaign["reward_map"] or None
