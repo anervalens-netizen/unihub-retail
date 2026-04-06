@@ -72,6 +72,7 @@ type StoreSortKey =
   | 'target'
   | 'total_vanzari'
   | 'proc_realizare_target'
+  | 'incentive_qty'
   | 'qty_total'
   | 'nr_bonuri'
   | 'nr_agenti'
@@ -151,6 +152,7 @@ const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
   { key: 'target', label: 'Target' },
   { key: 'total_vanzari', label: 'Vanzari' },
   { key: 'proc_realizare_target', label: 'Procent' },
+  { key: 'incentive_qty', label: 'Incentive' },
   { key: 'qty_total', label: 'Cantitate' },
   { key: 'nr_bonuri', label: 'Nr bonuri' },
   { key: 'nr_agenti', label: 'Agenti' },
