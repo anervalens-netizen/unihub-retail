@@ -740,11 +740,20 @@ class PromoTopStore(BaseModel):
     category_qty: int
     incentive_value: float = 0.0
     achievement: float | None = None  # ratio 0-1, None = no target configured
+    firma: str = ""
 
 
 class IncentiveTopAgent(BaseModel):
     agent_name: str
+    qty_sold: int
+    val_incentive: float
+    achievement: float | None = None
+
+
+class IncentiveCategory(BaseModel):
+    label: str
     qty: int
+    value: float
 
 
 class CampaignsPromotionsResponse(BaseModel):
@@ -758,6 +767,8 @@ class CampaignsPromotionsResponse(BaseModel):
     incentive_description: str = ""
     incentive_qty: int = 0
     incentive_value: float = 0.0
+    incentive_product_count: int = 0
+    incentive_categories: list[IncentiveCategory] = Field(default_factory=list)
     has_active_promotion: bool = False
     top_stores: list[PromoTopStore] = Field(default_factory=list)
     top_agents: list[IncentiveTopAgent] = Field(default_factory=list)
