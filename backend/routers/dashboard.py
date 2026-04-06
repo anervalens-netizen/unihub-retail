@@ -253,6 +253,104 @@ async def _fetch_store_stats_rows(
     )
 
 
+async def _enrich_store_stats_with_campaign(
+    conn: Any,
+    base_rows: list[dict[str, Any]],
+    month: str,
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+    user: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Attach promo_qty and incentive_qty to each store stats row."""
+    if not base_rows:
+        return base_rows
+
+    config, _ = load_special_cards_config()
+    promotion_definition, _ = parse_promotion_definition(config, month)
+    incentive_campaign = await get_incentive_campaign(conn, month)
+    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
+    promotion_codes = (
+        promotion_definition["item_codes"] if promotion_definition is not None else []
+    )
+    if not promotion_codes and not incentive_codes:
+        for row in base_rows:
+            row["promo_qty"] = 0
+            row["incentive_qty"] = 0
+        return base_rows
+
+    metric_positions: dict[str, int] = {}
+    metric_params: list[Any] = [month, promotion_codes or [], incentive_codes or []]
+    for key, value in [
+        ("firma", normalize_filter(firma)),
+        ("regional", normalize_filter(regional)),
+        ("asm", normalize_filter(asm)),
+        ("site_code", normalize_filter(site_code)),
+        ("agent", normalize_filter(agent)),
+    ]:
+        if value is not None:
+            metric_params.append(value)
+            metric_positions[key] = len(metric_params)
+
+    metric_query_clauses, metric_scope_params = scoped_clauses(
+        user,
+        metric_positions,
+        site_alias="agg",
+        store_alias="agg",
+        agent_alias="agg",
+        month_alias="agg.import_month",
+        month_position=1,
+        scope_base_alias="agg",
+        param_floor=len(metric_params),
+    )
+    metric_clauses = ["agg.import_month = $1", *metric_query_clauses]
+    metric_rows = await conn.fetch(
+        f"""
+        SELECT
+            agg.import_month,
+            agg.site_code,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN cardinality($2::TEXT[]) > 0
+                             AND agg.item_code = ANY($2::TEXT[])
+                        THEN agg.positive_quantity
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS promo_qty,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN cardinality($3::TEXT[]) > 0
+                             AND agg.item_code = ANY($3::TEXT[])
+                        THEN agg.positive_quantity
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS incentive_qty
+        FROM reporting_item_month agg
+        WHERE {" AND ".join(metric_clauses)}
+        GROUP BY agg.import_month, agg.site_code
+        """,
+        *metric_params,
+        *metric_scope_params,
+    )
+    campaign_metrics = {
+        (str(row["import_month"]), str(row["site_code"])): dict(row)
+        for row in metric_rows
+    }
+    for row in base_rows:
+        metrics = campaign_metrics.get((str(row["import_month"]), str(row["site_code"])))
+        row["promo_qty"] = int(metrics["promo_qty"]) if metrics else 0
+        row["incentive_qty"] = int(metrics["incentive_qty"]) if metrics else 0
+    return base_rows
+
+
 async def _fetch_agent_stats_rows(
     conn: Any,
     user: dict[str, Any],
@@ -1514,7 +1612,18 @@ async def get_dashboard_all(
                 site_code,
                 agent,
             )
-        return [StoreStats(**dict(row)) for row in rows]
+            enriched = await _enrich_store_stats_with_campaign(
+                conn,
+                [dict(r) for r in rows],
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                user,
+            )
+        return [StoreStats(**row) for row in enriched]
 
     async def get_daily_data() -> list[DailySalesPoint]:
         params, positions = _build_scoped_params(
