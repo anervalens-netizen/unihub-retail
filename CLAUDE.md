@@ -18,7 +18,7 @@ Tonul corect: direct, tehnic, fara padding. Explica pe scurt ce ai facut si de c
 - Aplicatie deployed pe server `192.168.0.68`, accesibila la https://unihub.astancu.eu/
 - Stack: React 19 + Vite + TypeScript (frontend) / FastAPI + asyncpg + PostgreSQL 18 (backend)
 - Module functionale: Hub, Focus, Agenti (+ Salarii), Vizite, Setari, AI
-- 26 pytest passing, typecheck curat, build passing
+- 32 pytest passing, typecheck curat, build passing
 - UniHub este sursa de adevar pentru vanzari SI vizite; Platforma-Mobiup citeste de aici
 - UniAI: sesiuni persistente per-device, istoric selectabil, suport atasamente
 
@@ -44,8 +44,8 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 |--------|-----|
 | `App.tsx` | Auth + tab routing + localStorage persistence tab activ |
 | `MainLayout.tsx` | Shell principal, navigare, filtre |
-| `Dashboard.tsx` | Tab Hub — carduri Incentive/Promo, navigare catre Focus |
-| `Campaigns.tsx` | Tab Focus — campanii, incentive per-produs |
+| `Dashboard.tsx` | Tab Hub — Luna în curs (tabele RM/ASM/Magazine/Agenti), Istoric (aceleasi tabele filtrate pe luna analizata), grafice |
+| `Campaigns.tsx` | Tab Focus — campanii, incentive per-produs, Top Agenti + Top Magazine sortabile |
 | `Agents.tsx` | Tab Agenti — include AgentDrawer, AgentDetails |
 | `SalariiSubtab.tsx` | Sub-tab Salarii in Agenti |
 | `SalaryDrawer.tsx` | Drawer detalii salariu per agent |
@@ -162,6 +162,21 @@ Agent = `'-'` pentru toate tranzactiile 2023-2024. Rapoartele per-ASM/magazin su
   - Endpoint `/api/visits-report/photo/{visit_id}/{filename}` serveste pozele cu auth (`FileResponse`)
   - Frontend: componenta `AuthImage` face fetch blob cu axios + `URL.createObjectURL` (nu `<img src>` direct)
 
+### Hub Dashboard — structura tabele
+
+Sectiunea **Luna in curs** si sectiunea **Istoric** afiseaza ambele 4 tabele: RM, ASM, Magazine, Agenti.
+
+- **Coloane Magazine**: Magazin / Firma / Target / Vanzari / Procent / **Incentive** / Cantitate / Nr bonuri / Agenti / Zile active / Medie zilnica
+- **Coloane RM / ASM**: fara `promo_qty` in Istoric (filtrat la render)
+- **Coloane Agenti**: fara `promo_qty` in Istoric
+- `incentive_qty` la Magazine este calculat in `_enrich_store_stats_with_campaign()` din `dashboard.py` — query pe `reporting_item_month` grupat pe `site_code`. Daca lipseste aceasta functie, valorile apar 0.
+
+Pattern enrichment campanie (acelas pentru RM/ASM/Magazine/Agenti):
+1. Incarca `promotion_codes` + `incentive_codes` din config/DB
+2. Daca niciun cod activ → seteaza 0 si returneaza
+3. Query `reporting_item_month` grupat pe cheia relevanta (regional / asm / site_code / agent)
+4. Join pe rows de baza si ataseaza `promo_qty` + `incentive_qty`
+
 ### Hub Specials (incentive/promotii)
 - **Incentive**: stocate complet in DB — `incentive_campaigns` + `incentive_products`
   - `hub_specials.json` contine doar promotii (coduri fixe); sectiunea `incentives` este goala
@@ -218,7 +233,7 @@ Agent = `'-'` pentru toate tranzactiile 2023-2024. Rapoartele per-ASM/magazin su
 Toate query-urile de raportare merg pe agregatele `reporting_*`. Exceptie: lookup-uri administrative punctuale.
 
 ### Modele Pydantic in `backend/models.py`
-Orice camp returnat de un endpoint trebuie sa fie declarat explicit in modelul Pydantic corespunzator, altfel Pydantic il elimina din raspuns.
+Orice camp returnat de un endpoint trebuie sa fie declarat explicit in modelul Pydantic corespunzator, altfel Pydantic il elimina din raspuns fara eroare (silent drop). Modelele cu `ConfigDict(from_attributes=True)` sunt deosebit de susceptibile — SQL poate calcula campul, dar daca nu e declarat in model, nu apare in raspuns.
 
 ### Filtre in frontend
 Filtrul global (firma, regional, asm, magazin) din `MainLayout` este shared intre Hub si Focus.
