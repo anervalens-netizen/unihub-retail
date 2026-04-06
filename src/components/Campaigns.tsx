@@ -24,7 +24,7 @@ import {
   YAxis,
 } from 'recharts';
 import { getCampaignSnapshot, getFocusHistory, getPromotionsIncentives } from '../api/campaigns';
-import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint, IncentiveCategory, IncentiveTopAgent } from '../api/types';
+import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint, IncentiveCategory, IncentiveTopAgent, PromoTopStore } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
@@ -430,32 +430,75 @@ export function Campaigns({
             </div>
           )}
 
-          {/* Top Magazine Incentive — card separat, doar fara promotie activa */}
+          {/* Top Magazine Incentive — card separat, sortabil, scroll, doar fara promotie activa */}
           {promoData && !promoData.has_active_promotion && promoData.top_stores.length > 0 && (
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Building2 size={16} />
                 <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine</span>
               </div>
-              <div className="space-y-1">
-                <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                  <div className="col-span-1">#</div>
-                  <div className="col-span-7">Magazin</div>
-                  <div className="col-span-4 text-right">Incentive</div>
-                </div>
-                {promoData.top_stores.slice(0, 10).map((store, index) => (
-                  <div
-                    key={store.store_name}
-                    className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
-                  >
-                    <div className="col-span-1 font-bold text-slate-400">{index + 1}</div>
-                    <div className="col-span-7 truncate font-semibold">{store.store_name}</div>
-                    <div className="col-span-4 text-right font-black text-indigo-600">
-                      {store.incentive_value > 0 ? formatCurrency(store.incentive_value) : '-'}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SortableTable<PromoTopStore & Record<string, unknown>>
+                rows={promoData.top_stores as (PromoTopStore & Record<string, unknown>)[]}
+                defaultSortKey="incentive_value"
+                columns={[
+                  {
+                    key: 'rank',
+                    label: '#',
+                    sortable: false,
+                    render: (_row, index) => (
+                      <span className="font-bold text-slate-400">{index + 1}</span>
+                    ),
+                  },
+                  {
+                    key: 'store_name',
+                    label: 'Magazin',
+                    render: (row) => {
+                      const store = row as unknown as PromoTopStore;
+                      const displayName = store.store_name.includes(' - ')
+                        ? store.store_name.split(' - ').slice(1).join(' - ')
+                        : store.store_name;
+                      return (
+                        <span className="flex items-center">
+                          <FirmaBadge firma={store.firma} />
+                          <span className="max-w-[90px] truncate font-semibold" title={store.store_name}>
+                            {displayName}
+                          </span>
+                        </span>
+                      );
+                    },
+                  },
+                  {
+                    key: 'achievement',
+                    label: '%Prev.',
+                    align: 'right',
+                    render: (row) => {
+                      const ach = (row as unknown as PromoTopStore).achievement;
+                      return <span className={achievementColor(ach)}>{achievementLabel(ach)}</span>;
+                    },
+                  },
+                  {
+                    key: 'qty',
+                    label: 'Cant.',
+                    align: 'right',
+                    render: (row) => (
+                      <span className="text-slate-500">{formatInt((row as unknown as PromoTopStore).qty)}</span>
+                    ),
+                  },
+                  {
+                    key: 'incentive_value',
+                    label: 'Val Inc.',
+                    align: 'right',
+                    render: (row) => {
+                      const val = (row as unknown as PromoTopStore).incentive_value;
+                      return (
+                        <span className={val > 0 ? 'font-black text-indigo-600' : 'text-slate-400'}>
+                          {val > 0 ? formatCurrency(val) : '—'}
+                        </span>
+                      );
+                    },
+                  },
+                ]}
+              />
             </div>
           )}
         </>
