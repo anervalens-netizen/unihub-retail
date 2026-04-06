@@ -404,6 +404,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
       specialCards: DashboardSpecialCard[];
       periodComparison: PeriodComparisonPayload | null;
       promoIncentive: PromoIncentiveSummary;
+      regionals: RegionalStat[];
+      asms: AsmStat[];
+      stores: StoreStat[];
+      agents: AgentStat[];
     }>(historyDetailCacheKey, DASHBOARD_CACHE_TTL_MS);
 
     if (cached.value) {
@@ -419,6 +423,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
         setHistorySpecialCards(cachedDetail.value.specialCards);
         setHistoryPeriodComparison(cachedDetail.value.periodComparison);
         setHistoryPromoIncentive(cachedDetail.value.promoIncentive);
+        setHistoryRegionals(cachedDetail.value.regionals ?? []);
+        setHistoryAsms(cachedDetail.value.asms ?? []);
+        setHistoryStores(cachedDetail.value.stores ?? []);
+        setHistoryAgents(cachedDetail.value.agents ?? []);
       }
       setHistoryLoading(false);
       if (cached.isFresh && cachedDetail.isFresh) {
@@ -445,6 +453,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
         setHistorySpecialCards(allData.special_cards);
         setHistoryPeriodComparison(allData.period_comparison);
         setHistoryPromoIncentive(allData.promo_incentive ?? DEFAULT_PROMO_INCENTIVE);
+        setHistoryRegionals(allData.regionals ?? []);
+        setHistoryAsms(allData.asms ?? []);
+        setHistoryStores(allData.stores);
+        setHistoryAgents(allData.agents);
         setCachedView(historyDetailCacheKey, {
           summary: allData.summary,
           receiptBucketMix: allData.receipt_bucket_mix,
@@ -455,6 +467,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
           specialCards: allData.special_cards,
           periodComparison: allData.period_comparison,
           promoIncentive: allData.promo_incentive ?? DEFAULT_PROMO_INCENTIVE,
+          regionals: allData.regionals ?? [],
+          asms: allData.asms ?? [],
+          stores: allData.stores,
+          agents: allData.agents,
         });
         if (histData.history.length === 0) {
           setHistoryError('Nu exista date istorice pentru filtrarea curenta.');
