@@ -1314,6 +1314,7 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
                       <td className="px-3 py-2">{formatCurrency(store.target)}</td>
                       <td className="px-3 py-2">{formatCurrency(store.total_vanzari)}</td>
                       <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(store.proc_realizare_target)}</td>
+                      <td className="px-3 py-2">{formatInt(store.incentive_qty ?? 0)}</td>
                       <td className="px-3 py-2">{formatInt(store.qty_total ?? 0)}</td>
                       <td className="px-3 py-2">{formatInt(store.nr_bonuri)}</td>
                       <td className="px-3 py-2">{formatInt(store.nr_agenti)}</td>
