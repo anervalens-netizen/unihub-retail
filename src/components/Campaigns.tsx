@@ -389,7 +389,7 @@ export function Campaigns({
                   >
                     <div className="col-span-1 flex items-center font-bold text-slate-400">{index + 1}</div>
                     <div className="col-span-7 truncate font-semibold">{agent.agent_name}</div>
-                    <div className="col-span-4 text-right font-black text-indigo-600">{formatCurrency(agent.qty)}</div>
+                    <div className="col-span-4 text-right font-black text-indigo-600">{formatCurrency(agent.val_incentive)}</div>
                   </div>
                 ))}
               </div>
