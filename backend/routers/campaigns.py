@@ -14,6 +14,7 @@ from models import (
     CampaignsPromotionsResponse,
     FocusHistoryPoint,
     FocusHistoryResponse,
+    IncentiveCategory,
     IncentiveTopAgent,
     PromoTopStore,
 )
@@ -21,11 +22,10 @@ from routers.dashboard import _fetch_promo_incentive_summary, _get_store_incenti
 from routers.dashboard_filters import scoped_clauses
 from routers.shared import build_scope_filter, normalize_filter
 from services.dashboard_specials import (
-    load_incentive_reward_map,
     load_special_cards_config,
-    parse_incentive_definition,
     parse_promotion_definition,
 )
+from services.incentive_db import get_incentive_campaign
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -294,7 +294,6 @@ async def get_promotions_incentives(
 
     config, _ = load_special_cards_config()
     promotion_definition, promotion_error = parse_promotion_definition(config, month)
-    incentive_definition, incentive_error = parse_incentive_definition(config, month)
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -306,14 +305,11 @@ async def get_promotions_incentives(
         promo_description = (
             promotion_definition.get("description", "") if promotion_definition else ""
         )
-        incentive_title = (
-            incentive_definition.get("title", "Incentive")
-            if incentive_definition
-            else ""
-        )
-        incentive_description = (
-            incentive_definition.get("description", "") if incentive_definition else ""
-        )
+
+        # Load incentive campaign from DB (single source of truth)
+        incentive_campaign = await get_incentive_campaign(conn, month)
+        incentive_title = incentive_campaign["title"] if incentive_campaign else ""
+        incentive_description = incentive_campaign["description"] if incentive_campaign else ""
 
         summary = await _fetch_promo_incentive_summary(
             conn=conn,
@@ -335,11 +331,7 @@ async def get_promotions_incentives(
         # Build store multipliers (used for both top_stores incentive and top_agents)
         store_multipliers: dict[str, float] = {}
         store_achievements: dict[str, float | None] = {}
-        if (
-            incentive_definition is not None
-            and incentive_error is None
-            and start_date[:7] == incentive_definition["month"]
-        ):
+        if incentive_campaign is not None:
             store_multipliers, store_achievements = await _get_store_incentive_multipliers(
                 conn, user, month, firma, regional, asm, site_code
             )
@@ -427,13 +419,9 @@ async def get_promotions_incentives(
             top_stores = []
 
         # Add incentive_value per store (promo stores or incentive-based list)
-        if (
-            incentive_definition is not None
-            and incentive_error is None
-            and start_date[:7] == incentive_definition["month"]
-        ):
-            reward_map_for_stores, _ = load_incentive_reward_map(incentive_definition)
-            if reward_map_for_stores is not None:
+        if incentive_campaign is not None:
+            reward_map_for_stores: dict[str, float] | None = incentive_campaign["reward_map"] or None
+            if reward_map_for_stores:
                 inc_store_params: list[Any] = [list(reward_map_for_stores.keys()), month]
                 inc_store_positions: dict[str, int] = {}
                 for key, value in [
@@ -506,13 +494,9 @@ async def get_promotions_incentives(
                         if data[1] > 0
                     ][:10]
 
-        if (
-            incentive_definition is not None
-            and incentive_error is None
-            and start_date[:7] == incentive_definition["month"]
-        ):
-            reward_map, _ = load_incentive_reward_map(incentive_definition)
-            if reward_map is not None:
+        if incentive_campaign is not None:
+            reward_map: dict[str, float] | None = incentive_campaign["reward_map"] or None
+            if reward_map:
                 incentive_month = start_date[:7]
                 incentive_codes = list(reward_map.keys())
                 incentive_params: list[Any] = [incentive_codes, incentive_month]
@@ -559,21 +543,53 @@ async def get_promotions_incentives(
                     *incentive_params,
                     *incentive_scope_params,
                 )
-                # Aggregate per agent: bonus = sum(qty * reward_per_item * store_multiplier)
+                # Aggregate per agent and per reward-tier category
                 agent_bonus: dict[str, float] = {}
+                agent_qty: dict[str, int] = {}       # bucati incentive per agent
+                agent_site: dict[str, str] = {}      # site_code per agent (pentru achievement lookup)
+                tier_qty: dict[float, int] = {}
+                tier_value: dict[float, float] = {}
                 for row in agent_item_rows:
                     agent_name = row["agent"]
-                    multiplier = store_multipliers.get(row["site_code"], 0)
-                    bonus = max(0, int(row["qty"])) * reward_map.get(row["item_code"], 0) * multiplier
+                    site = row["site_code"]
+                    multiplier = store_multipliers.get(site, 0)
+                    qty = max(0, int(row["qty"]))
+                    reward = reward_map.get(row["item_code"], 0)
+                    bonus = qty * reward * multiplier
                     agent_bonus[agent_name] = agent_bonus.get(agent_name, 0) + bonus
+                    agent_qty[agent_name] = agent_qty.get(agent_name, 0) + qty
+                    agent_site[agent_name] = site
+                    # Category = reward tier (regardless of store multiplier for grouping)
+                    tier_qty[reward] = tier_qty.get(reward, 0) + qty
+                    tier_value[reward] = tier_value.get(reward, 0) + qty * reward
                 top_agents = [
-                    IncentiveTopAgent(agent_name=agent, qty=round(bonus))
+                    IncentiveTopAgent(
+                        agent_name=agent,
+                        qty_sold=agent_qty.get(agent, 0),
+                        val_incentive=round(bonus, 2),
+                        achievement=store_achievements.get(agent_site.get(agent, "")),
+                    )
                     for agent, bonus in sorted(agent_bonus.items(), key=lambda x: -x[1])
-                ][:10]
+                ]
+                # Fara [:10] — toti agentii
+                incentive_categories = [
+                    IncentiveCategory(
+                        label=f"{int(rv) if rv == int(rv) else rv} RON/buc",
+                        qty=tier_qty[rv],
+                        value=round(tier_value[rv], 2),
+                    )
+                    for rv in sorted(tier_qty, key=lambda r: -tier_qty[r])
+                    if tier_qty[rv] > 0
+                ]
+                incentive_product_count = len(reward_map)
             else:
                 top_agents = []
+                incentive_categories = []
+                incentive_product_count = 0
         else:
             top_agents = []
+            incentive_categories = []
+            incentive_product_count = 0
 
     return CampaignsPromotionsResponse(
         promo_title=promo_title,
@@ -586,6 +602,8 @@ async def get_promotions_incentives(
         incentive_description=incentive_description,
         incentive_qty=incentive_qty,
         incentive_value=incentive_value,
+        incentive_product_count=incentive_product_count,
+        incentive_categories=incentive_categories,
         has_active_promotion=has_active_promotion,
         top_stores=top_stores,
         top_agents=top_agents,
