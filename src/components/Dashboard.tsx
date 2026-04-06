@@ -204,6 +204,11 @@ const ASM_COLUMNS: Array<{ key: AsmSortKey; label: string }> = [
   { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
 
+const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty');
+const HIST_ASM_COLUMNS = ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
+const HIST_STORE_COLUMNS = STORE_COLUMNS; // promo_qty not in STORE_COLUMNS
+const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
+
 export function Dashboard({ currentMonth, months, filters, user, onSectionChange }: DashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>('current');
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
@@ -1850,6 +1855,220 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
                       centerValue={formatCompactDonutValue(sumChartValues(historyBrandMixChartData, 'sales_total'))}
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Breakdown tables — RM / ASM / Magazine / Agenti */}
+              <div className="glass rounded-3xl p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <MapPin size={16} className="text-indigo-500" />
+                      <h3 className="text-sm font-bold">RM</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Sortare: {HIST_REGIONAL_COLUMNS.find((c) => c.key === historyRegionalSort.key)?.label} ({historyRegionalSort.direction}) · {historyRegionals.length} regionali
+                    </p>
+                  </div>
+                </div>
+                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
+                  <table className="min-w-330 w-full border-collapse text-xs">
+                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                        {HIST_REGIONAL_COLUMNS.map((column, i) => (
+                          <React.Fragment key={column.key}>
+                            <SortableHeader
+                              label={column.label}
+                              active={historyRegionalSort.key === column.key}
+                              direction={historyRegionalSort.direction}
+                              onClick={() => handleSortHistoryRegionals(column.key)}
+                              className={i === 0 ? 'w-28' : ''}
+                            />
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedHistoryRegionals.map((row, index) => (
+                        <tr
+                          key={row.regional}
+                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
+                        >
+                          <td className="max-w-0 w-28 truncate px-3 py-2 font-semibold">{row.regional}</td>
+                          <td className="px-3 py-2">{formatCurrency(row.target)}</td>
+                          <td className="px-3 py-2">{formatCurrency(row.total_vanzari)}</td>
+                          <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(row.proc_realizare_target)}</td>
+                          <td className="px-3 py-2">{formatInt(row.incentive_qty)}</td>
+                          <td className="px-3 py-2">{formatInt(row.qty_total)}</td>
+                          <td className="px-3 py-2">{formatInt(row.nr_bonuri)}</td>
+                          <td className="px-3 py-2">{formatCurrency(row.medie_zilnica ?? 0)}</td>
+                          <td className="px-3 py-2">{formatPercent(row.proc_bon2acc)}</td>
+                          <td className="px-3 py-2">{formatPercent(row.prc_focus_acc_qty)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="glass rounded-3xl p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Users size={16} className="text-indigo-500" />
+                      <h3 className="text-sm font-bold">ASM</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Sortare: {HIST_ASM_COLUMNS.find((c) => c.key === historyAsmSort.key)?.label} ({historyAsmSort.direction}) · {historyAsms.length} ASM
+                    </p>
+                  </div>
+                </div>
+                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
+                  <table className="min-w-330 w-full border-collapse text-xs">
+                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                        {HIST_ASM_COLUMNS.map((column, i) => (
+                          <React.Fragment key={column.key}>
+                            <SortableHeader
+                              label={column.label}
+                              active={historyAsmSort.key === column.key}
+                              direction={historyAsmSort.direction}
+                              onClick={() => handleSortHistoryAsms(column.key)}
+                              className={i === 0 ? 'w-28' : ''}
+                            />
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedHistoryAsms.map((row, index) => (
+                        <tr
+                          key={row.asm}
+                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
+                        >
+                          <td className="max-w-0 w-28 truncate px-3 py-2 font-semibold">{row.asm}</td>
+                          <td className="px-3 py-2">{formatCurrency(row.target)}</td>
+                          <td className="px-3 py-2">{formatCurrency(row.total_vanzari)}</td>
+                          <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(row.proc_realizare_target)}</td>
+                          <td className="px-3 py-2">{formatInt(row.incentive_qty)}</td>
+                          <td className="px-3 py-2">{formatInt(row.qty_total)}</td>
+                          <td className="px-3 py-2">{formatInt(row.nr_bonuri)}</td>
+                          <td className="px-3 py-2">{formatCurrency(row.medie_zilnica ?? 0)}</td>
+                          <td className="px-3 py-2">{formatPercent(row.proc_bon2acc)}</td>
+                          <td className="px-3 py-2">{formatPercent(row.prc_focus_acc_qty)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="glass rounded-3xl p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Building2 size={16} className="text-indigo-500" />
+                      <h3 className="text-sm font-bold">Magazine</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Sortare: {HIST_STORE_COLUMNS.find((c) => c.key === historyStoreSort.key)?.label} ({historyStoreSort.direction}) · {historyStores.length} magazine
+                    </p>
+                  </div>
+                </div>
+                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
+                  <table className="min-w-330 w-full border-collapse text-xs">
+                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                        {HIST_STORE_COLUMNS.map((column, i) => (
+                          <React.Fragment key={column.key}>
+                            <SortableHeader
+                              label={column.label}
+                              active={historyStoreSort.key === column.key}
+                              direction={historyStoreSort.direction}
+                              onClick={() => handleSortHistoryStores(column.key)}
+                              className={i === 0 ? 'w-36' : ''}
+                            />
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedHistoryStores.map((store, index) => (
+                        <tr
+                          key={store.site_code}
+                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
+                        >
+                          <td className="max-w-0 w-36 truncate px-3 py-2 font-semibold">{store.locatie}</td>
+                          <td className="px-3 py-2 text-center font-bold">
+                            {store.firma?.toLowerCase().includes('mobiup')
+                              ? <span className="text-red-500">MU</span>
+                              : <span className="text-blue-500">MC</span>
+                            }
+                          </td>
+                          <td className="px-3 py-2">{formatCurrency(store.target)}</td>
+                          <td className="px-3 py-2">{formatCurrency(store.total_vanzari)}</td>
+                          <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(store.proc_realizare_target)}</td>
+                          <td className="px-3 py-2">{formatInt(store.incentive_qty ?? 0)}</td>
+                          <td className="px-3 py-2">{formatInt(store.qty_total ?? 0)}</td>
+                          <td className="px-3 py-2">{formatInt(store.nr_bonuri)}</td>
+                          <td className="px-3 py-2">{formatInt(store.nr_agenti)}</td>
+                          <td className="px-3 py-2">{formatInt(store.zile_active)}</td>
+                          <td className="px-3 py-2">{formatCurrency(getStoreDailyAverage(store))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="glass rounded-3xl p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold">Agenti</h3>
+                    <p className="text-[11px] text-slate-500">
+                      Sortare: {HIST_AGENT_COLUMNS.find((c) => c.key === historyAgentSort.key)?.label} ({historyAgentSort.direction}) · {historyAgents.length} agenti
+                    </p>
+                  </div>
+                </div>
+                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
+                  <table className="min-w-370 w-full border-collapse text-xs">
+                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                        {HIST_AGENT_COLUMNS.map((column, i) => (
+                          <React.Fragment key={column.key}>
+                            <SortableHeader
+                              label={column.label}
+                              active={historyAgentSort.key === column.key}
+                              direction={historyAgentSort.direction}
+                              onClick={() => handleSortHistoryAgents(column.key)}
+                              className={i === 0 ? 'w-24' : ''}
+                            />
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedHistoryAgents.map((agentRow, index) => (
+                        <tr
+                          key={`${agentRow.agent}-${agentRow.site_code}`}
+                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
+                        >
+                          <td className="max-w-0 w-24 truncate px-3 py-2 font-bold">{agentRow.agent}</td>
+                          <td className="max-w-[7rem] truncate px-3 py-2 text-slate-500">{agentRow.locatie}</td>
+                          <td className="px-3 py-2">{formatCurrency(agentRow.target ?? 0)}</td>
+                          <td className="px-3 py-2 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
+                          <td className="px-3 py-2">{formatPercent(agentRow.proc_realizare_target)}</td>
+                          <td className="px-3 py-2">{formatInt(agentRow.incentive_qty ?? 0)}</td>
+                          <td className="px-3 py-2">{formatInt(agentRow.acc_qty_realizat)}</td>
+                          <td className="px-3 py-2">{formatInt(agentRow.nr_bonuri)}</td>
+                          <td className="px-3 py-2">{formatInt(agentRow.zile_lucrate)}</td>
+                          <td className="px-3 py-2">{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
+                          <td className="px-3 py-2">{formatPercent(agentRow.proc_bon2acc)}</td>
+                          <td className="px-3 py-2">{formatPercent(agentRow.prc_focus_acc_qty)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </>
