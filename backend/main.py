@@ -21,7 +21,7 @@ from bootstrap import (
     should_sync_tl_assignments_on_boot,
 )
 from db.connection import close_db_pool, ensure_schema_current, get_pool, init_db_pool
-from routers import admin, agents, ai, auth, campaigns, dashboard, filters, imports, salarii, stores, visits_report
+from routers import admin, agents, ai, auth, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,9 @@ app.include_router(imports.router)
 app.include_router(stores.router)
 app.include_router(salarii.router)
 app.include_router(visits_report.router)
+app.include_router(tasks.router)
+app.include_router(hr.router)
+app.include_router(crm.router)
 
 
 @app.get("/health")
