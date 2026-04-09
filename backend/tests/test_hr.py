@@ -58,3 +58,27 @@ async def test_performance_returns_list():
     async with pool.acquire() as conn:
         result = await get_agent_performance(conn, "NonexistentAgent")
         assert isinstance(result, list)
+
+
+@pytest.mark.anyio
+async def test_asm_performance_returns_list():
+    from routers.hr import get_asm_performance
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await get_asm_performance(conn, "2026-03", regional=None)
+        assert isinstance(result, list)
+        if result:
+            row = result[0]
+            assert "asm" in row
+            assert "total_sales" in row
+            assert "total_visits" in row
+            assert "target_pct" in row
+
+
+@pytest.mark.anyio
+async def test_asm_performance_history_returns_list():
+    from routers.hr import get_asm_performance_history
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await get_asm_performance_history(conn, "Andreea Vladascau", months=6)
+        assert isinstance(result, list)

@@ -155,3 +155,199 @@ async def get_performance(agent_name: str, user: dict = Depends(ALLOWED_ROLES)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await get_agent_performance(conn, agent_name)
+
+
+import asyncio
+import sqlite3
+
+VISITS_DB_PATH = "/opt/Mobiup/unihub/data/visits/visits.db"
+
+
+def _query_visits_by_asm(year_month: str) -> list[dict]:
+    """Execuție sincronă — apelată din run_in_executor."""
+    con = sqlite3.connect(VISITS_DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.execute(
+        """
+        SELECT
+            asm,
+            COUNT(*) AS total_visits,
+            ROUND(AVG(completion_pct), 1) AS avg_completion,
+            ROUND(AVG(durata_vizita_ore), 2) AS avg_duration,
+            COUNT(DISTINCT magazin) AS distinct_stores,
+            ROUND(AVG(
+                (COALESCE(curatenie, 0) + COALESCE(imagine, 0) + COALESCE(uniforma, 0)
+                 + COALESCE(afise, 0) + COALESCE(produse_promo, 0)) * 20.0
+            ), 1) AS checklist_score,
+            ROUND(
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) * 100.0 / COUNT(*),
+                1
+            ) AS approved_pct
+        FROM visits
+        WHERE substr(data_raport, 1, 7) = ?
+          AND asm IS NOT NULL AND asm != ''
+        GROUP BY asm
+        """,
+        (year_month,),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def _query_visits_history(asm_name: str, months: int) -> list[dict]:
+    """Execuție sincronă — istoricul vizitelor per ASM."""
+    con = sqlite3.connect(VISITS_DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.execute(
+        """
+        SELECT
+            substr(data_raport, 1, 7) AS month,
+            COUNT(*) AS total_visits,
+            ROUND(AVG(completion_pct), 1) AS avg_completion,
+            ROUND(AVG(durata_vizita_ore), 2) AS avg_duration
+        FROM visits
+        WHERE asm = ?
+          AND data_raport >= date('now', ? || ' months')
+        GROUP BY substr(data_raport, 1, 7)
+        ORDER BY month
+        """,
+        (asm_name, f"-{months}"),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+async def get_asm_performance(conn: Any, month: str, regional: str | None) -> list[dict]:
+    """Profil combinat per ASM: vânzări din PostgreSQL + vizite din SQLite."""
+    pg_rows = await conn.fetch(
+        """
+        SELECT
+            s.asm,
+            s.regional,
+            SUM(ram.total_sales)                                         AS total_sales,
+            COALESCE(SUM(st.target_value), 0)                           AS total_target,
+            COUNT(DISTINCT ram.site_code)                                AS active_stores,
+            COUNT(DISTINCT ram.agent)                                    AS active_agents,
+            ROUND(
+                SUM(ram.receipt_2plus_count) * 100.0
+                / NULLIF(SUM(ram.receipt_count), 0),
+                1
+            )                                                            AS pct_bon2acc,
+            ROUND(
+                SUM(ram.focus_quantity) * 100.0
+                / NULLIF(SUM(ram.total_quantity), 0),
+                1
+            )                                                            AS pct_focus
+        FROM reporting_agent_month ram
+        JOIN stores s ON s.site_code = ram.site_code
+        LEFT JOIN store_targets st
+            ON st.site_code = ram.site_code AND st.import_month = ram.import_month
+        WHERE ram.import_month = $1
+          AND ($2::text IS NULL OR s.regional = $2)
+        GROUP BY s.asm, s.regional
+        ORDER BY total_sales DESC
+        """,
+        month,
+        regional,
+    )
+
+    loop = asyncio.get_event_loop()
+    sqlite_rows = await loop.run_in_executor(None, _query_visits_by_asm, month)
+    sqlite_map = {r["asm"]: r for r in sqlite_rows}
+
+    result = []
+    for pg in pg_rows:
+        asm = pg["asm"]
+        sq = sqlite_map.get(asm, {})
+        total_sales = float(pg["total_sales"] or 0)
+        total_target = float(pg["total_target"] or 0)
+        result.append({
+            "asm": asm,
+            "regional": pg["regional"],
+            "total_sales": total_sales,
+            "total_target": total_target,
+            "target_pct": round(total_sales / total_target * 100, 1) if total_target > 0 else None,
+            "active_stores": pg["active_stores"],
+            "active_agents": pg["active_agents"],
+            "pct_bon2acc": float(pg["pct_bon2acc"] or 0),
+            "pct_focus": float(pg["pct_focus"] or 0),
+            "total_visits": sq.get("total_visits", 0),
+            "avg_completion": sq.get("avg_completion"),
+            "avg_duration": sq.get("avg_duration"),
+            "distinct_stores_visited": sq.get("distinct_stores", 0),
+            "checklist_score": sq.get("checklist_score"),
+            "approved_pct": sq.get("approved_pct"),
+        })
+    return result
+
+
+async def get_asm_performance_history(conn: Any, asm_name: str, months: int = 6) -> list[dict]:
+    """Trend lunar per ASM: vânzări (PG) + vizite (SQLite) — ultimele N luni."""
+    pg_rows = await conn.fetch(
+        """
+        SELECT
+            ram.import_month,
+            SUM(ram.total_sales)              AS total_sales,
+            COALESCE(SUM(st.target_value), 0) AS total_target,
+            COUNT(DISTINCT ram.site_code)      AS active_stores
+        FROM reporting_agent_month ram
+        JOIN stores s ON s.site_code = ram.site_code
+        LEFT JOIN store_targets st
+            ON st.site_code = ram.site_code AND st.import_month = ram.import_month
+        WHERE s.asm = $1
+          AND ram.import_month >= to_char(now() - ($2 || ' months')::interval, 'YYYY-MM')
+        GROUP BY ram.import_month
+        ORDER BY ram.import_month
+        """,
+        asm_name,
+        str(months),
+    )
+
+    loop = asyncio.get_event_loop()
+    sqlite_hist = await loop.run_in_executor(None, _query_visits_history, asm_name, months)
+    sqlite_map = {r["month"]: r for r in sqlite_hist}
+
+    result = []
+    for pg in pg_rows:
+        m = pg["import_month"]
+        sq = sqlite_map.get(m, {})
+        total_sales = float(pg["total_sales"] or 0)
+        total_target = float(pg["total_target"] or 0)
+        result.append({
+            "month": m,
+            "total_sales": total_sales,
+            "total_target": total_target,
+            "target_pct": round(total_sales / total_target * 100, 1) if total_target > 0 else None,
+            "active_stores": pg["active_stores"],
+            "total_visits": sq.get("total_visits", 0),
+            "avg_completion": sq.get("avg_completion"),
+            "avg_duration": sq.get("avg_duration"),
+        })
+    return result
+
+
+@router.get("/asm-performance")
+async def get_asm_perf(
+    month: str = Query(...),
+    regional: str | None = Query(None),
+    user: dict = Depends(ALLOWED_ROLES),
+):
+    pool = await get_pool()
+    effective_regional = regional
+    if user.get("role") == "management" and not regional:
+        effective_regional = user.get("full_name")
+    async with pool.acquire() as conn:
+        return await get_asm_performance(conn, month, effective_regional)
+
+
+@router.get("/asm-performance/{asm_name}/history")
+async def get_asm_perf_history(
+    asm_name: str,
+    months: int = Query(6, ge=1, le=24),
+    user: dict = Depends(ALLOWED_ROLES),
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        return await get_asm_performance_history(conn, asm_name, months)
