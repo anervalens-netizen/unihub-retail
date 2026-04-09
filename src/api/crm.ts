@@ -10,6 +10,9 @@ api.interceptors.request.use((config) => {
 
 export interface StoreScore {
   site_code: string;
+  locatie: string;
+  regional: string;
+  asm: string;
   score: number;
   breakdown: {
     target_pct: number;
@@ -17,12 +20,18 @@ export interface StoreScore {
     active_days_pct: number;
     visits_pct: number;
     target_attainment: number;
+    forecast_factor: number;
+    nr_vizite: number;
+    avg_completion: number;
   } | null;
   calculated_at: string;
 }
 
 export interface StoreAlert {
   site_code: string;
+  locatie: string;
+  regional: string;
+  asm: string;
   score: number;
   reasons: string[];
 }

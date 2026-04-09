@@ -6,6 +6,7 @@ import type { AuthUser, FilterOptions } from '../api/types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES, defaultAppFilters } from '../lib/filterValues';
 import { cn } from '../lib/utils';
 import { canAccessTab, type Role, type TabId } from '../lib/roles';
+import { fetchMyPendingCount } from '../api/tasks';
 
 export interface AppFilters {
   firma: string;
@@ -69,6 +70,7 @@ export function MainLayout({
   showFilterButton = true,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
+  const [pendingTaskCount, setPendingTaskCount] = useState(0);
 
   const userRole: Role = (user?.role as Role) ?? 'tl';
   const isAdmin = userRole === 'admin';
@@ -92,6 +94,14 @@ export function MainLayout({
       setActiveTab(visibleTabs[0]?.id);
     }
   }, [userRole, visibleTabs, activeTab, setActiveTab]);
+
+  useEffect(() => {
+    if (!user) return;
+    const load = () => fetchMyPendingCount().then(setPendingTaskCount).catch(() => {});
+    load();
+    const interval = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   const filteredRegionals = useMemo(() => {
     if (filters.firma === ALL_FIRMS) {
@@ -312,6 +322,11 @@ export function MainLayout({
           {visibleTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
+            const isManagerRole = userRole === 'admin' || userRole === 'management';
+            const showBadge =
+              pendingTaskCount > 0 &&
+              ((isManagerRole && tab.id === 'management') ||
+                (!isManagerRole && tab.id === 'hub'));
             return (
               <button
                 key={tab.id}
@@ -327,7 +342,14 @@ export function MainLayout({
                     className="absolute inset-0 rounded-xl bg-indigo-100 dark:bg-indigo-500/20"
                   />
                 )}
-                <Icon size={18} className="relative z-10 mb-0.5" />
+                <div className="relative z-10 mb-0.5">
+                  <Icon size={18} />
+                  {showBadge && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white">
+                      {pendingTaskCount > 9 ? '9+' : pendingTaskCount}
+                    </span>
+                  )}
+                </div>
                 <span className="relative z-10 text-[9px] font-semibold">{tab.label}</span>
               </button>
             );

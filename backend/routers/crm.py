@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -8,22 +10,82 @@ from fastapi import APIRouter, Depends, Query
 from db.connection import get_pool
 from dependencies import require_role
 
+VISITS_DB_PATH = "/opt/Mobiup/unihub/data/visits/visits.db"
+
+
+def _query_visits_by_store(year_month: str) -> dict[str, dict]:
+    """
+    Returnează {site_code: {nr_vizite, avg_completion}} pentru luna dată.
+    Execuție sincronă — apelată din run_in_executor.
+    """
+    con = sqlite3.connect(VISITS_DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.execute(
+        """
+        SELECT
+            magazin AS site_code,
+            COUNT(*) AS nr_vizite,
+            ROUND(AVG(completion_pct), 1) AS avg_completion
+        FROM visits
+        WHERE substr(data_raport, 1, 7) = ?
+          AND magazin IS NOT NULL AND magazin != ''
+        GROUP BY magazin
+        """,
+        (year_month,),
+    )
+    result = {r["site_code"]: dict(r) for r in cur.fetchall()}
+    con.close()
+    return result
+
 router = APIRouter(prefix="/api/crm", tags=["crm"])
 
 ALLOWED_ROLES = require_role("admin", "management")
+
+
+async def get_forecast_factor(conn: Any, month: str) -> float:
+    """Factor de extrapolare: zile_luna / ultima_zi_vanzari. 1.0 daca luna e finalizata."""
+    meta = await conn.fetchrow(
+        """
+        SELECT
+            COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
+            EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
+            EXTRACT(DAY FROM (
+                date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
+                + INTERVAL '1 month - 1 day'
+            ))::INT AS days_in_month
+        FROM import_snapshots snap
+        LEFT JOIN (
+            SELECT MAX(sale_date) AS sale_date
+            FROM reporting_item_day
+            WHERE import_month = $1
+        ) rid ON true
+        WHERE snap.import_month = $1
+        """,
+        month,
+    )
+    if meta and not meta["is_final"] and meta["last_sale_day"]:
+        last_day = int(meta["last_sale_day"])
+        days_in_month = int(meta["days_in_month"] or last_day)
+        return days_in_month / last_day if last_day > 0 else 1.0
+    return 1.0
 
 
 async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
     """
     Calculează scorul 0-100 per magazin pentru luna dată.
     Formula:
-      - % target atins (max 40 pct)
-      - trend față de luna anterioară (max 30 pct)
+      - % target atins — previziune (max 40 pct)
+      - trend previziune luna curentă vs realizat luna anterioară (max 30 pct)
       - zile active (max 20 pct)
-      - vizite (max 10 pct) — 0 în v1
+      - vizite ASM: frecvență × calitate (max 10 pct)
     """
     y, m = map(int, month.split("-"))
     prev_month = f"{y}-{m - 1:02d}" if m > 1 else f"{y - 1}-12"
+
+    forecast_factor = await get_forecast_factor(conn, month)
+
+    loop = asyncio.get_event_loop()
+    visit_map = await loop.run_in_executor(None, _query_visits_by_store, month)
 
     rows = await conn.fetch(
         """
@@ -70,14 +132,15 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
         target = float(row["target_value"] or 0)
         prev = float(row["prev_value"] or 0)
         active_days = int(row["active_days"] or 0)
+        forecast = total * forecast_factor
 
-        # Componentă 1: % target (max 40)
-        target_pct = (total / target * 100) if target > 0 else 0
+        # Componentă 1: % target (max 40) — bazat pe previziune
+        target_pct = (forecast / target * 100) if target > 0 else 0
         c1 = min(target_pct / 100 * 40, 40)
 
-        # Componentă 2: trend față de luna anterioară (max 30)
+        # Componentă 2: trend previziune vs realizat luna anterioară (max 30)
         if prev > 0:
-            trend = (total - prev) / prev * 100
+            trend = (forecast - prev) / prev * 100
             c2 = max(0.0, min(30.0, (trend + 20) / 40 * 30))
         else:
             c2 = 15.0
@@ -85,8 +148,14 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
         # Componentă 3: zile active (max 20) — 20 zile = maxim
         c3 = min(active_days / 20 * 20, 20)
 
-        # Componentă 4: vizite — 0 (SQLite, ignorat în v1)
-        c4 = 0.0
+        # Componentă 4: vizite ASM (max 10)
+        # Formula: min(nr_vizite × 5, 10) × (avg_completion / 100)
+        # 1 vizită = bază 5 pct, 2+ vizite = bază 10 pct, ponderat cu calitatea formularului
+        vdata = visit_map.get(row["site_code"], {})
+        nr_vizite = int(vdata.get("nr_vizite", 0) or 0)
+        avg_completion = float(vdata.get("avg_completion", 0) or 0)
+        freq_score = min(nr_vizite * 5, 10)
+        c4 = round(freq_score * (avg_completion / 100), 1)
 
         score = round(c1 + c2 + c3 + c4)
         scores.append({
@@ -96,8 +165,11 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
                 "target_pct": round(c1, 1),
                 "trend_pct": round(c2, 1),
                 "active_days_pct": round(c3, 1),
-                "visits_pct": round(c4, 1),
+                "visits_pct": c4,
                 "target_attainment": round(target_pct, 1),
+                "forecast_factor": round(forecast_factor, 4),
+                "nr_vizite": nr_vizite,
+                "avg_completion": round(avg_completion, 1),
             },
         })
 
@@ -122,9 +194,11 @@ async def upsert_scores(conn: Any, month: str, scores: list[dict]) -> None:
 
 
 async def get_store_alerts(conn: Any, month: str) -> list[dict]:
-    """Magazine cu risc: scor < 40 sau scădere > 20%."""
+    """Magazine cu risc: scor < 40 sau scădere previziune > 20% față de luna anterioară."""
     y, m_int = map(int, month.split("-"))
     prev_month = f"{y}-{m_int - 1:02d}" if m_int > 1 else f"{y - 1}-12"
+
+    forecast_factor = await get_forecast_factor(conn, month)
 
     rows = await conn.fetch(
         """
@@ -147,10 +221,14 @@ async def get_store_alerts(conn: Any, month: str) -> list[dict]:
             c.site_code,
             COALESCE(s.score, -1) AS score,
             c.val AS current_val,
-            COALESCE(p.val, 0) AS prev_val
+            COALESCE(p.val, 0) AS prev_val,
+            COALESCE(st.regional, 'Necunoscut') AS regional,
+            COALESCE(st.asm, 'Necunoscut') AS asm,
+            COALESCE(st.locatie, c.site_code) AS locatie
         FROM current c
         LEFT JOIN prev p ON p.site_code = c.site_code
         LEFT JOIN scores s ON s.site_code = c.site_code
+        LEFT JOIN stores st ON st.site_code = c.site_code
         """,
         month,
         prev_month,
@@ -162,20 +240,24 @@ async def get_store_alerts(conn: Any, month: str) -> list[dict]:
         score = row["score"]
         current_val = float(row["current_val"] or 0)
         prev_val = float(row["prev_val"] or 0)
+        forecast_val = current_val * forecast_factor
 
         if score >= 0 and score < 40:
             reasons.append(f"Scor scăzut ({score}/100)")
 
         if prev_val > 0:
-            trend = (current_val - prev_val) / prev_val * 100
+            trend = (forecast_val - prev_val) / prev_val * 100
             if trend < -20:
-                reasons.append(f"Scădere {abs(round(trend))}% față de luna anterioară")
+                reasons.append(f"Scădere previzionată {abs(round(trend))}% față de luna anterioară")
 
         if reasons:
             alerts.append({
                 "site_code": row["site_code"],
                 "score": score,
                 "reasons": reasons,
+                "regional": row["regional"],
+                "asm": row["asm"],
+                "locatie": row["locatie"],
             })
 
     return sorted(alerts, key=lambda x: x["score"])
@@ -189,10 +271,25 @@ async def get_scores(
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT site_code, score, breakdown, calculated_at::text FROM store_scores WHERE score_month = $1 ORDER BY score",
+            """
+            SELECT ss.site_code, ss.score, ss.breakdown, ss.calculated_at::text,
+                   COALESCE(s.regional, 'Necunoscut') AS regional,
+                   COALESCE(s.asm, 'Necunoscut') AS asm,
+                   COALESCE(s.locatie, ss.site_code) AS locatie
+            FROM store_scores ss
+            LEFT JOIN stores s ON s.site_code = ss.site_code
+            WHERE ss.score_month = $1
+            ORDER BY s.regional NULLS LAST, s.asm NULLS LAST, ss.score ASC
+            """,
             month,
         )
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if isinstance(d.get("breakdown"), str):
+                d["breakdown"] = json.loads(d["breakdown"])
+            result.append(d)
+        return result
 
 
 @router.post("/scores/recalculate")

@@ -76,6 +76,9 @@ export interface AsmHistoryPoint {
   total_sales: number;
   total_target: number;
   target_pct: number | null;
+  forecast_sales: number;
+  forecast_target_pct: number | null;
+  is_forecast: boolean;
   active_stores: number;
   total_visits: number;
   avg_completion: number | null;
@@ -89,5 +92,16 @@ export async function fetchAsmPerformance(month: string, regional?: string): Pro
 
 export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmHistoryPoint[]> {
   const { data } = await api.get(`/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
+  return data;
+}
+
+export interface AssignableUser {
+  full_name: string;
+  role: 'asm' | 'tl';
+  username: string;
+}
+
+export async function fetchAssignableUsers(): Promise<AssignableUser[]> {
+  const { data } = await api.get('/users');
   return data;
 }

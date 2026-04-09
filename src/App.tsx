@@ -205,7 +205,7 @@ export default function App() {
         {activeTab === 'agents' && currentMonth && (
           <Agents currentMonth={currentMonth} months={months} filters={agentsFilters} user={user} />
         )}
-        {activeTab === 'management' && <Management />}
+        {activeTab === 'management' && <Management userRole={user?.role} userFullName={user?.full_name} />}
         {activeTab === 'ai' && <AIChat />}
         {activeTab === 'settings' && (
           <Settings

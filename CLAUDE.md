@@ -254,9 +254,30 @@ Modulul **Agenti** are filtrele sale proprii, independente.
 
 ---
 
+## Verificare end-to-end dupa modificari backend
+
+Dupa orice import de date sau modificare backend (coloane noi, enrichment, logica noua):
+1. Query direct in DB — confirma ca valorile sunt corecte
+2. Apeleaza endpoint-ul API corespunzator — confirma ca returneaza valorile din DB
+3. Confirma ca frontend-ul citeste din sursa corecta (DB vs fisier JSON)
+
+Nu declara task-ul terminat inainte de aceasta verificare. Erorile de tipul `incentive_qty = 0` sau date lipsa apar exact din cauza ca pasul 3 e sarit.
+
+---
+
+## CSS / Layout
+
+La orice modificare de CSS sau layout:
+- Testeaza atat pe mobile cat si pe desktop
+- Cand un element nu se redimensioneaza corect, verifica: `box-sizing`, `overflow`, constrangerile containerului parinte — nu doar elementul tinta
+- Daca utilizatorul raporteaza ca problema e inca vizibila, cere descrierea exacta sau un screenshot inainte de urmatorul fix
+
+---
+
 ## Ce sa nu faci
 
 - Nu crea fisiere temporare in radacina proiectului (`fix.py`, `patch.txt`, etc.) — curata-le dupa
 - Nu modifica schema direct in DB
 - Nu reseta parolele utilizatorilor fara confirmare explicita
 - Nu importa campanii incentive din Excel manual — foloseste `import_incentive_campaign.py`
+- Nu aplica fix-uri speculative in cascada fara sa diagnostichezi root cause-ul mai intai

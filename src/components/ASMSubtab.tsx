@@ -7,7 +7,7 @@ import {
   type AsmHistoryPoint,
 } from '../api/hr';
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
+  ComposedChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 
@@ -90,9 +90,16 @@ function ASMRow({ row }: { row: AsmPerformance }) {
           ) : history.length === 0 ? (
             <div className="text-center text-slate-400 text-xs py-4">Fără date istorice</div>
           ) : (
-            <div className="h-48">
+            <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={history} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <ComposedChart
+                  data={history.map((p) => ({
+                    ...p,
+                    display_sales: p.is_forecast ? p.forecast_sales : p.total_sales,
+                    display_target_pct: p.is_forecast ? p.forecast_target_pct : p.target_pct,
+                  }))}
+                  margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.15)" />
                   <XAxis dataKey="month" tickFormatter={formatMonth} tick={{ fill: '#94a3b8', fontSize: 10 }} />
                   <YAxis yAxisId="left" tick={{ fill: '#94a3b8', fontSize: 10 }} />
@@ -100,13 +107,41 @@ function ASMRow({ row }: { row: AsmPerformance }) {
                   <Tooltip
                     contentStyle={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: 8, fontSize: 12 }}
                     labelFormatter={formatMonth}
+                    formatter={(value: number, name: string, props: { payload?: { is_forecast?: boolean } }) => {
+                      const isForecast = props.payload?.is_forecast;
+                      if (name === 'Vânzări') {
+                        const label = isForecast ? 'Previziune vânzări' : 'Vânzări';
+                        return [`${(value / 1000).toFixed(1)}k`, label];
+                      }
+                      if (name === '% Target') {
+                        const label = isForecast ? 'Previziune % Target' : '% Target';
+                        return [`${value}%`, label];
+                      }
+                      return [value, name];
+                    }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
-                  <Bar yAxisId="left" dataKey="total_sales" name="Vânzări" fill="#6366f1" opacity={0.7} radius={[4, 4, 0, 0]} />
-                  <Line yAxisId="right" type="monotone" dataKey="target_pct" name="% Target" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                  <Bar yAxisId="left" dataKey="display_sales" name="Vânzări" radius={[4, 4, 0, 0]}>
+                    {history.map((p) => (
+                      <Cell
+                        key={p.month}
+                        fill="#6366f1"
+                        opacity={p.is_forecast ? 0.35 : 0.7}
+                        strokeDasharray={p.is_forecast ? '4 2' : undefined}
+                        stroke={p.is_forecast ? '#6366f1' : 'none'}
+                        strokeWidth={p.is_forecast ? 1.5 : 0}
+                      />
+                    ))}
+                  </Bar>
+                  <Line yAxisId="right" type="monotone" dataKey="display_target_pct" name="% Target" stroke="#0ea5e9" strokeWidth={2} dot={false} strokeDasharray="0" />
                   <Line yAxisId="right" type="monotone" dataKey="total_visits" name="Vizite" stroke="#f59e0b" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
+              {history.some((p) => p.is_forecast) && (
+                <p className="text-[10px] text-slate-400 text-center mt-1">
+                  Bara transparentă = previziune luna curentă (extrapolare la finalul lunii)
+                </p>
+              )}
             </div>
           )}
         </div>

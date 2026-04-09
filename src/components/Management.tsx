@@ -13,7 +13,12 @@ const TABS: { id: ManagementTab; label: string }[] = [
   { id: 'hr', label: 'HR' },
 ];
 
-export function Management() {
+interface Props {
+  userRole?: string;
+  userFullName?: string;
+}
+
+export function Management({ userRole, userFullName }: Props) {
   const [activeTab, setActiveTab] = useState<ManagementTab>('asm');
 
   return (
@@ -39,7 +44,7 @@ export function Management() {
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'asm' && <ASMSubtab />}
         {activeTab === 'crm' && <CRMSubtab />}
-        {activeTab === 'tasks' && <TasksSubtab />}
+        {activeTab === 'tasks' && <TasksSubtab userRole={userRole} userFullName={userFullName} />}
         {activeTab === 'hr' && <HRSubtab />}
       </div>
     </div>

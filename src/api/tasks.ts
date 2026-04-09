@@ -57,3 +57,18 @@ export async function updateTask(id: number, body: TaskUpdate): Promise<Task> {
 export async function deleteTask(id: number): Promise<void> {
   await api.delete(`/${id}`);
 }
+
+export async function fetchMyTasks(status?: string): Promise<Task[]> {
+  const { data } = await api.get('/my', { params: status ? { status } : undefined });
+  return data;
+}
+
+export async function fetchMyPendingCount(): Promise<number> {
+  const { data } = await api.get('/my/count');
+  return data.count as number;
+}
+
+export async function updateMyTask(id: number, body: TaskUpdate): Promise<Task> {
+  const { data } = await api.patch(`/my/${id}`, body);
+  return data;
+}

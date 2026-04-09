@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from db.connection import get_pool
-from dependencies import require_role
+from dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 
 ALLOWED_ROLES = require_role("admin", "management")
+ALL_ROLES = get_current_user
 
 
 class LeaveRequestCreate(BaseModel):
@@ -309,17 +310,49 @@ async def get_asm_performance_history(conn: Any, asm_name: str, months: int = 6)
     sqlite_hist = await loop.run_in_executor(None, _query_visits_history, asm_name, months)
     sqlite_map = {r["month"]: r for r in sqlite_hist}
 
+    # Forecast factor pentru luna curentă (parțială)
+    current_month = await conn.fetchrow(
+        """
+        SELECT
+            COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
+            EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
+            EXTRACT(DAY FROM (
+                date_trunc('month', now()) + INTERVAL '1 month - 1 day'
+            ))::INT AS days_in_month
+        FROM import_snapshots snap
+        LEFT JOIN (
+            SELECT MAX(sale_date) AS sale_date
+            FROM reporting_item_day
+            WHERE import_month = to_char(now(), 'YYYY-MM')
+        ) rid ON true
+        WHERE snap.import_month = to_char(now(), 'YYYY-MM')
+        """,
+    )
+    if current_month and not current_month["is_final"] and current_month["last_sale_day"]:
+        last_day = int(current_month["last_sale_day"])
+        days_in_month = int(current_month["days_in_month"] or last_day)
+        forecast_factor = days_in_month / last_day if last_day > 0 else 1.0
+    else:
+        forecast_factor = 1.0
+    this_month = __import__("datetime").date.today().strftime("%Y-%m")
+
     result = []
     for pg in pg_rows:
         m = pg["import_month"]
         sq = sqlite_map.get(m, {})
         total_sales = float(pg["total_sales"] or 0)
         total_target = float(pg["total_target"] or 0)
+        is_current = m == this_month and forecast_factor > 1.001
+        forecast_sales = total_sales * forecast_factor if is_current else total_sales
+        forecast_target_pct = round(forecast_sales / total_target * 100, 1) if total_target > 0 else None
         result.append({
             "month": m,
             "total_sales": total_sales,
             "total_target": total_target,
             "target_pct": round(total_sales / total_target * 100, 1) if total_target > 0 else None,
+            "forecast_sales": forecast_sales,
+            "forecast_target_pct": forecast_target_pct,
+            "is_forecast": is_current,
             "active_stores": pg["active_stores"],
             "total_visits": sq.get("total_visits", 0),
             "avg_completion": sq.get("avg_completion"),
@@ -351,3 +384,19 @@ async def get_asm_perf_history(
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await get_asm_performance_history(conn, asm_name, months)
+
+
+@router.get("/users")
+async def get_assignable_users(user: dict = Depends(ALL_ROLES)):
+    """Lista utilizatorilor activi cu rol ASM sau TL — pentru dropdown assignee în Tasks."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT full_name, role, username
+            FROM users
+            WHERE is_active = true AND role IN ('asm', 'tl')
+            ORDER BY role, full_name
+            """,
+        )
+        return [dict(r) for r in rows]
