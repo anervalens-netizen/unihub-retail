@@ -52,3 +52,42 @@ export async function fetchAgentPerformance(agentName: string): Promise<Performa
   const { data } = await api.get(`/performance/${encodeURIComponent(agentName)}`);
   return data;
 }
+
+export interface AsmPerformance {
+  asm: string;
+  regional: string;
+  total_sales: number;
+  total_target: number;
+  target_pct: number | null;
+  active_stores: number;
+  active_agents: number;
+  pct_bon2acc: number;
+  pct_focus: number;
+  total_visits: number;
+  avg_completion: number | null;
+  avg_duration: number | null;
+  distinct_stores_visited: number;
+  checklist_score: number | null;
+  approved_pct: number | null;
+}
+
+export interface AsmHistoryPoint {
+  month: string;
+  total_sales: number;
+  total_target: number;
+  target_pct: number | null;
+  active_stores: number;
+  total_visits: number;
+  avg_completion: number | null;
+  avg_duration: number | null;
+}
+
+export async function fetchAsmPerformance(month: string, regional?: string): Promise<AsmPerformance[]> {
+  const { data } = await api.get('/asm-performance', { params: { month, regional } });
+  return data;
+}
+
+export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmHistoryPoint[]> {
+  const { data } = await api.get(`/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
+  return data;
+}
