@@ -676,3 +676,59 @@ SELECT
     st.target_value
 FROM store_targets st
 JOIN stores s ON s.site_code = st.site_code;
+
+-- =====================================================================
+-- MANAGEMENT: Tasks
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    assignee TEXT,
+    site_code TEXT,
+    deadline DATE,
+    status TEXT NOT NULL DEFAULT 'deschis',
+    source TEXT NOT NULL DEFAULT 'manual',
+    source_meta JSONB,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- =====================================================================
+-- MANAGEMENT: HR — Concedii
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS leave_requests (
+    id SERIAL PRIMARY KEY,
+    agent_name TEXT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    leave_type TEXT NOT NULL,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- =====================================================================
+-- MANAGEMENT: HR — Pontaj
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS attendance_records (
+    id SERIAL PRIMARY KEY,
+    agent_name TEXT NOT NULL,
+    record_date DATE NOT NULL,
+    status TEXT NOT NULL,
+    notes TEXT,
+    UNIQUE(agent_name, record_date)
+);
+
+-- =====================================================================
+-- MANAGEMENT: CRM — Scoruri magazine
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS store_scores (
+    id SERIAL PRIMARY KEY,
+    site_code TEXT NOT NULL,
+    score_month TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    breakdown JSONB,
+    calculated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(site_code, score_month)
+);
