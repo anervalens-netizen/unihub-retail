@@ -82,7 +82,7 @@ function AgentDetails({ agent, currentMonth, onBack }: AgentDetailsProps) {
   if (!profile) return <div>Eroare la incarcare profil</div>;
 
   return (
-    <div className="space-y-3 pb-24">
+    <div className="space-y-3 pb-24 lg:pb-6">
       <div className="glass rounded-3xl p-5">
         <div className="mb-6 flex items-start justify-between">
           <div>
@@ -469,7 +469,7 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
+    <div className="space-y-3 p-3 pb-24 lg:pb-6 pt-2">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Agenti</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">

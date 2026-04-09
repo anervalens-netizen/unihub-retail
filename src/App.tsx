@@ -4,6 +4,7 @@ import { getCurrentUser, logout } from './api/auth';
 import { getAvailableMonths } from './api/filters';
 import type { AuthUser } from './api/types';
 import { defaultAppFilters } from './lib/filterValues';
+import type { ManagementTab } from './lib/tabs';
 
 const PinScreen = lazy(() =>
   import('./components/PinScreen').then((module) => ({ default: module.PinScreen }))
@@ -50,6 +51,7 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [mgmtSubTab, setMgmtSubTab] = useState<ManagementTab>('asm');
 
   useEffect(() => {
     localStorage.setItem('unihub_active_tab', activeTab);
@@ -188,6 +190,8 @@ export default function App() {
       theme={theme}
       setTheme={setTheme}
       showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
+      mgmtSubTab={mgmtSubTab}
+      setMgmtSubTab={setMgmtSubTab}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
@@ -205,7 +209,14 @@ export default function App() {
         {activeTab === 'agents' && currentMonth && (
           <Agents currentMonth={currentMonth} months={months} filters={agentsFilters} user={user} />
         )}
-        {activeTab === 'management' && <Management userRole={user?.role} userFullName={user?.full_name} />}
+        {activeTab === 'management' && (
+          <Management
+            userRole={user?.role}
+            userFullName={user?.full_name}
+            activeSubTab={mgmtSubTab}
+            setActiveSubTab={setMgmtSubTab}
+          />
+        )}
         {activeTab === 'ai' && <AIChat />}
         {activeTab === 'settings' && (
           <Settings

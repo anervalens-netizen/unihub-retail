@@ -17,6 +17,10 @@ const TAB_LABELS: Record<TabId, string> = {
   management: 'Management',
 };
 
+export function isManagerRole(role: Role): boolean {
+  return role === 'admin' || role === 'management';
+}
+
 export function canAccessTab(role: Role, tab: TabId): boolean {
   return ROLE_TABS[role]?.includes(tab) ?? false;
 }

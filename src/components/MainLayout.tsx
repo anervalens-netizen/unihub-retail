@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bot, Briefcase, Filter, LayoutDashboard, LogOut, Moon, Settings, Sparkles, Sun, SunMoon, Users, X } from 'lucide-react';
+import { Filter, X } from 'lucide-react';
 import { getFilterOptions } from '../api/filters';
 import type { AuthUser, FilterOptions } from '../api/types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES, defaultAppFilters } from '../lib/filterValues';
 import { cn } from '../lib/utils';
-import { canAccessTab, type Role, type TabId } from '../lib/roles';
+import { canAccessTab, isManagerRole, type Role, type TabId } from '../lib/roles';
+import { ALL_TABS, type ManagementTab } from '../lib/tabs';
 import { fetchMyPendingCount } from '../api/tasks';
+import { DesktopSidebar } from './DesktopSidebar';
+import { DesktopTopBar } from './DesktopTopBar';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 export interface AppFilters {
   firma: string;
@@ -35,16 +39,9 @@ interface MainLayoutProps {
   theme: string;
   setTheme: (theme: string) => void;
   showFilterButton?: boolean;
+  mgmtSubTab: ManagementTab;
+  setMgmtSubTab: (tab: ManagementTab) => void;
 }
-
-const ALL_TABS = [
-  { id: 'hub', icon: LayoutDashboard, label: 'Hub' },
-  { id: 'focus', icon: Sparkles, label: 'Focus' },
-  { id: 'agents', icon: Users, label: 'Agenti' },
-  { id: 'management', icon: Briefcase, label: 'Management' },
-  { id: 'ai', icon: Bot, label: 'AI' },
-  { id: 'settings', icon: Settings, label: 'Setari' },
-] as const;
 
 const emptyOptions: FilterOptions = {
   firme: [],
@@ -68,6 +65,8 @@ export function MainLayout({
   theme,
   setTheme,
   showFilterButton = true,
+  mgmtSubTab,
+  setMgmtSubTab,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
@@ -91,7 +90,7 @@ export function MainLayout({
 
   useEffect(() => {
     if (!visibleTabs.some((t) => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0]?.id);
+      setActiveTab(visibleTabs[0]?.id as TabId);
     }
   }, [userRole, visibleTabs, activeTab, setActiveTab]);
 
@@ -156,39 +155,70 @@ export function MainLayout({
   };
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-transparent">
-      {activeTab === 'settings' && (
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 pt-7">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
-              UniHub
+    <div className="flex h-dvh overflow-hidden bg-transparent">
+      {/* ── Desktop sidebar (hidden on mobile) ── */}
+      <DesktopSidebar
+        user={user}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab as (tab: TabId) => void}
+        mgmtSubTab={mgmtSubTab}
+        setMgmtSubTab={setMgmtSubTab}
+        theme={theme}
+        setTheme={setTheme}
+        onLogout={onLogout}
+        pendingTaskCount={pendingTaskCount}
+        userRole={userRole}
+      />
+
+      {/* ── Right column: topbar + content ── */}
+      <div className="flex flex-col flex-1 min-w-0 min-h-0">
+        {/* Settings mobile header */}
+        {activeTab === 'settings' && (
+          <div className="lg:hidden mx-auto flex w-full max-w-6xl items-center justify-between px-4 pt-7">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                UniHub
+              </div>
+              <div className="text-sm font-semibold">{user?.full_name ?? user?.username}</div>
             </div>
-            <div className="text-sm font-semibold">{user?.full_name ?? user?.username}</div>
+            <div className="flex items-center gap-1.5">
+              <ThemeSwitcher theme={theme} setTheme={setTheme} />
+              <button
+                onClick={onLogout}
+                aria-label="Delogare"
+                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <ThemeSwitcher theme={theme} setTheme={setTheme} />
-            <button
-              onClick={onLogout}
-              aria-label="Delogare"
-              className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'settings' ? <div className="px-4 py-3" /> : null}
-
-      <main
-        className={cn(
-          'flex-1 min-h-0',
-          activeTab === 'ai' ? 'overflow-hidden pb-[4.75rem]' : 'overflow-y-auto pb-24'
         )}
-      >
-        {children}
-      </main>
+        {activeTab === 'settings' ? <div className="lg:hidden px-4 py-3" /> : null}
 
+        {/* Desktop top bar (hidden on mobile) */}
+        <DesktopTopBar
+          activeTab={activeTab}
+          mgmtSubTab={mgmtSubTab}
+          showFilterButton={showFilterButton}
+          onOpenFilter={() => setIsFilterOpen(true)}
+          filters={filters}
+          user={user}
+        />
+
+        {/* Main content */}
+        <main
+          className={cn(
+            'flex-1 min-h-0',
+            activeTab === 'ai'
+              ? 'overflow-hidden pb-[4.75rem] lg:pb-0'
+              : 'overflow-y-auto pb-24 lg:pb-6'
+          )}
+        >
+          {children}
+        </main>
+      </div>
+
+      {/* ── Filter sheet (shared mobile + desktop) ── */}
       <AnimatePresence>
         {isFilterOpen && (
           <>
@@ -317,16 +347,16 @@ export function MainLayout({
         )}
       </AnimatePresence>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-6xl p-3">
+      {/* ── Bottom tab bar — mobile only ── */}
+      <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 mx-auto max-w-6xl p-3">
         <div className="glass flex items-center justify-around rounded-2xl p-1.5">
           {visibleTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
-            const isManagerRole = userRole === 'admin' || userRole === 'management';
             const showBadge =
               pendingTaskCount > 0 &&
-              ((isManagerRole && tab.id === 'management') ||
-                (!isManagerRole && tab.id === 'hub'));
+              ((isManagerRole(userRole) && tab.id === 'management') ||
+                (!isManagerRole(userRole) && tab.id === 'hub'));
             return (
               <button
                 key={tab.id}
@@ -357,48 +387,16 @@ export function MainLayout({
         </div>
       </div>
 
+      {/* ── Filter float button — mobile only ── */}
       {showFilterButton && (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents') && (
         <button
           onClick={() => setIsFilterOpen(true)}
           aria-label="Filtre"
-          className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-indigo-200/50 bg-indigo-500/18 text-indigo-700 shadow-lg shadow-indigo-500/10 backdrop-blur-xl transition hover:bg-indigo-500/24 dark:border-indigo-400/20 dark:bg-indigo-400/14 dark:text-indigo-200 dark:hover:bg-indigo-400/20"
+          className="lg:hidden fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-indigo-200/50 bg-indigo-500/18 text-indigo-700 shadow-lg shadow-indigo-500/10 backdrop-blur-xl transition hover:bg-indigo-500/24 dark:border-indigo-400/20 dark:bg-indigo-400/14 dark:text-indigo-200 dark:hover:bg-indigo-400/20"
         >
           <Filter size={18} />
         </button>
       )}
-    </div>
-  );
-}
-
-function ThemeSwitcher({ theme, setTheme }: { theme: string; setTheme: (theme: string) => void }) {
-  const themes = [
-    { id: 'light', icon: Sun, label: 'Light' },
-    { id: 'light-mint', icon: SunMoon, label: 'Mint' },
-    { id: 'light-olive', icon: SunMoon, label: 'Olive' },
-    { id: 'dark', icon: Moon, label: 'Dark' },
-  ];
-
-  return (
-    <div className="flex items-center gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-      {themes.map((item) => {
-        const Icon = item.icon;
-        const isActive = theme === item.id;
-        return (
-          <button
-            key={item.id}
-            onClick={() => setTheme(item.id)}
-            className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-xl text-xs transition-all',
-              isActive
-                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
-                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-            )}
-            title={item.label}
-          >
-            <Icon size={14} />
-          </button>
-        );
-      })}
     </div>
   );
 }
