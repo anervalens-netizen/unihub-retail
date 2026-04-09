@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bot, Filter, LayoutDashboard, LogOut, Moon, Settings, Sparkles, Sun, SunMoon, Users, X } from 'lucide-react';
+import { Bot, Briefcase, Filter, LayoutDashboard, LogOut, Moon, Settings, Sparkles, Sun, SunMoon, Users, X } from 'lucide-react';
 import { getFilterOptions } from '../api/filters';
 import type { AuthUser, FilterOptions } from '../api/types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES, defaultAppFilters } from '../lib/filterValues';
@@ -24,7 +24,7 @@ interface MainLayoutProps {
   children: React.ReactNode;
   user: AuthUser | null;
   activeTab: string;
-  setActiveTab: (tab: 'hub' | 'focus' | 'agents' | 'ai' | 'settings') => void;
+  setActiveTab: (tab: 'hub' | 'focus' | 'agents' | 'management' | 'ai' | 'settings') => void;
   isFilterOpen: boolean;
   setIsFilterOpen: (open: boolean) => void;
   filters: AppFilters;
@@ -40,6 +40,7 @@ const ALL_TABS = [
   { id: 'hub', icon: LayoutDashboard, label: 'Hub' },
   { id: 'focus', icon: Sparkles, label: 'Focus' },
   { id: 'agents', icon: Users, label: 'Agenti' },
+  { id: 'management', icon: Briefcase, label: 'Management' },
   { id: 'ai', icon: Bot, label: 'AI' },
   { id: 'settings', icon: Settings, label: 'Setari' },
 ] as const;

@@ -1,11 +1,11 @@
 export type Role = 'admin' | 'asm' | 'management' | 'tl';
-export type TabId = 'hub' | 'focus' | 'agents' | 'ai' | 'settings';
+export type TabId = 'hub' | 'focus' | 'agents' | 'ai' | 'settings' | 'management';
 
 const ROLE_TABS: Record<Role, TabId[]> = {
   tl: ['hub', 'focus', 'agents', 'ai', 'settings'],
   asm: ['hub', 'focus', 'agents', 'ai', 'settings'],
-  management: ['hub', 'focus', 'agents', 'ai', 'settings'],
-  admin: ['hub', 'focus', 'agents', 'ai', 'settings'],
+  management: ['hub', 'focus', 'agents', 'ai', 'settings', 'management'],
+  admin: ['hub', 'focus', 'agents', 'ai', 'settings', 'management'],
 };
 
 const TAB_LABELS: Record<TabId, string> = {
@@ -14,6 +14,7 @@ const TAB_LABELS: Record<TabId, string> = {
   agents: 'Agenti',
   ai: 'AI',
   settings: 'Setări',
+  management: 'Management',
 };
 
 export function canAccessTab(role: Role, tab: TabId): boolean {

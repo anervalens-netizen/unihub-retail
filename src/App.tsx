@@ -21,8 +21,11 @@ const AIChat = lazy(() => import('./components/AIChat'));
 const Settings = lazy(() =>
   import('./components/Settings').then((module) => ({ default: module.Settings }))
 );
+const Management = lazy(() =>
+  import('./components/Management').then((module) => ({ default: module.Management }))
+);
 
-type ActiveTab = 'hub' | 'focus' | 'agents' | 'ai' | 'settings';
+type ActiveTab = 'hub' | 'focus' | 'agents' | 'management' | 'ai' | 'settings';
 type CampaignsSection = 'campaigns' | 'focus';
 
 const defaultFilters: AppFilters = defaultAppFilters();
@@ -202,6 +205,7 @@ export default function App() {
         {activeTab === 'agents' && currentMonth && (
           <Agents currentMonth={currentMonth} months={months} filters={agentsFilters} user={user} />
         )}
+        {activeTab === 'management' && <Management />}
         {activeTab === 'ai' && <AIChat />}
         {activeTab === 'settings' && (
           <Settings
