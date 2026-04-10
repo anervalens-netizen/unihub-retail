@@ -222,7 +222,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               className="rounded-lg border border-slate-200 bg-white/80 py-1.5 px-2 text-xs text-slate-700 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
             >
               <option value="">Luna curenta</option>
-              {overview && (() => {
+              {overview && overview.months_span && (() => {
                 const [minY, minM, maxY, maxM] = overview.months_span;
                 const months: string[] = [];
                 for (let y = maxY; y >= minY; y--) {
