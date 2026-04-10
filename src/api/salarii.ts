@@ -5,7 +5,7 @@ export interface SalariiOverview {
   by_company: { name: string; total: number }[];
   record_count: number;
   agent_count: number;
-  months_span: [number, number, number, number]; // [minY, minM, maxY, maxM]
+  months_span: [number, number, number, number] | null; // [minY, minM, maxY, maxM], null when no data
 }
 
 export interface SalaryAgentSummary {

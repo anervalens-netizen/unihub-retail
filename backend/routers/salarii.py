@@ -67,7 +67,7 @@ async def salarii_overview(
             *params,
         )
         if not months_row or months_row["min_year"] is None:
-            months_span = [0, 0, 0, 0]
+            months_span = None
         else:
             months_span = [
                 int(months_row["min_year"]),
