@@ -453,22 +453,41 @@ async def get_stores_coverage(
             WHERE import_month = $1
             GROUP BY site_code
         ),
+        curr_agents AS (
+            SELECT site_code, array_agg(DISTINCT agent ORDER BY agent) AS agents
+            FROM reporting_agent_month
+            WHERE import_month = $1
+              AND agent IS NOT NULL AND agent != '-'
+            GROUP BY site_code
+        ),
+        prev_agents AS (
+            SELECT site_code, array_agg(DISTINCT agent ORDER BY agent) AS agents
+            FROM reporting_agent_month
+            WHERE import_month = to_char(
+                (TO_DATE($1, 'YYYY-MM') - INTERVAL '1 month'), 'YYYY-MM'
+            )
+              AND agent IS NOT NULL AND agent != '-'
+            GROUP BY site_code
+        ),
         store_status AS (
-            SELECT 
+            SELECT
                 s.site_code,
                 s.locatie,
                 s.firma,
                 s.regional,
                 s.asm,
                 COALESCE(sa.agent_count, 0) as agent_count,
-                CASE 
-                    WHEN s.last_seen_month = $1 THEN 
+                CASE
+                    WHEN s.last_seen_month = $1 THEN
                         CASE WHEN COALESCE(sa.agent_count, 0) > 0 THEN 'covered' ELSE 'uncovered' END
                     WHEN {selected_idx} - {month_index_expr("s.last_seen_month")} > 3 THEN 'closed'
                     ELSE 'inactive'
-                END as status
+                END as status,
+                ca.agents IS DISTINCT FROM pa.agents AS has_changes
             FROM stores s
             LEFT JOIN store_agents sa ON sa.site_code = s.site_code
+            LEFT JOIN curr_agents ca ON ca.site_code = s.site_code
+            LEFT JOIN prev_agents pa ON pa.site_code = s.site_code
             {where_sql}
         )
         SELECT * FROM store_status
@@ -483,10 +502,12 @@ async def get_stores_coverage(
     active_stores = [i for i in items if i.status in ("covered", "uncovered")]
     uncovered_stores = [i for i in items if i.status == "uncovered"]
     closed_stores = [i for i in items if i.status == "closed"]
+    modified_stores_count = sum(1 for i in items if i.has_changes)
 
     return StoreCoverageResponse(
         active_stores_count=len(active_stores),
         uncovered_stores_count=len(uncovered_stores),
         closed_stores_count=len(closed_stores),
+        modified_stores_count=modified_stores_count,
         items=items,
     )
