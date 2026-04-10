@@ -33,12 +33,14 @@ export interface StoreCoverageItem {
   asm: string;
   status: 'covered' | 'uncovered' | 'closed' | 'inactive';
   agent_count: number;
+  has_changes: boolean;
 }
 
 export interface StoreCoverageResponse {
   active_stores_count: number;
   uncovered_stores_count: number;
   closed_stores_count: number;
+  modified_stores_count: number;
   items: StoreCoverageItem[];
 }
 
