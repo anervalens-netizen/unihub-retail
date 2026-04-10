@@ -25,8 +25,8 @@ async def salarii_overview(
         join_sql = "LEFT JOIN stores st ON st.site_code = sr.site_code" if needs_store_join else ""
 
         if company_name:
-            params.append(company_name)
-            conditions.append(f"sr.company_name = ${len(params)}")
+            params.append(company_name.lower())
+            conditions.append(f"LOWER(sr.company_name) = ${len(params)}")
         if regional:
             params.append(regional)
             conditions.append(f"st.regional = ${len(params)}")
@@ -97,8 +97,8 @@ async def salarii_evolution(
         join_sql = "LEFT JOIN stores st ON st.site_code = sr.site_code" if needs_store_join else ""
 
         if company_name:
-            params.append(company_name)
-            conditions.append(f"sr.company_name = ${len(params)}")
+            params.append(company_name.lower())
+            conditions.append(f"LOWER(sr.company_name) = ${len(params)}")
         if regional:
             params.append(regional)
             conditions.append(f"st.regional = ${len(params)}")
@@ -168,8 +168,8 @@ async def agents_summary(
             params.append(f"%{q}%")
             conditions.append(f"sr.full_name ILIKE ${len(params)}")
         if company_name:
-            params.append(company_name)
-            conditions.append(f"sr.company_name = ${len(params)}")
+            params.append(company_name.lower())
+            conditions.append(f"LOWER(sr.company_name) = ${len(params)}")
         if site_code:
             params.append(site_code)
             conditions.append(f"sr.site_code = ${len(params)}")
@@ -257,10 +257,17 @@ async def salarii_summary(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Determine the month to query - default to latest in salary_records
+        # Determine the month to query - default to latest in salary_records (scoped to filter)
         if year is None or month is None:
+            latest_conds = []
+            latest_params: list = []
+            if company_name:
+                latest_params.append(company_name.lower())
+                latest_conds.append(f"LOWER(company_name) = ${len(latest_params)}")
+            latest_where = "WHERE " + " AND ".join(latest_conds) if latest_conds else ""
             latest = await conn.fetchrow(
-                "SELECT year, month FROM salary_records ORDER BY year DESC, month DESC LIMIT 1"
+                f"SELECT year, month FROM salary_records {latest_where} ORDER BY year DESC, month DESC LIMIT 1",
+                *latest_params,
             )
             if not latest:
                 return {"month": None, "items": []}
@@ -279,8 +286,8 @@ async def salarii_summary(
         conditions = ["s.year = $1", "s.month = $2"]
         params: list = [query_year, query_month]
         if company_name:
-            params.append(company_name)
-            conditions.append(f"s.company_name = ${len(params)}")
+            params.append(company_name.lower())
+            conditions.append(f"LOWER(s.company_name) = ${len(params)}")
         if site_code:
             params.append(site_code)
             conditions.append(f"s.site_code = ${len(params)}")
@@ -347,8 +354,8 @@ async def salarii_trend(
         needs_store_join = regional is not None or asm is not None
 
         if company_name:
-            params.append(company_name)
-            conditions.append(f"sr.company_name = ${len(params)}")
+            params.append(company_name.lower())
+            conditions.append(f"LOWER(sr.company_name) = ${len(params)}")
         if site_code:
             params.append(site_code)
             conditions.append(f"sr.site_code = ${len(params)}")
