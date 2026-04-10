@@ -109,6 +109,8 @@ class PromoIncentiveSummary(BaseModel):
     promo_impact: Decimal = 0
     incentive_qty: int = 0
     incentive_value: Decimal = 0
+    incentive_qualified_stores: int = 0
+    incentive_qualified_agents: int = 0
 
 
 class CampaignOverview(BaseModel):
@@ -602,14 +604,16 @@ class StoreCoverageItem(BaseModel):
     firma: str
     regional: str
     asm: str
-    status: str  # 'covered', 'uncovered', 'closed'
+    status: str  # 'covered', 'uncovered', 'closed', 'inactive'
     agent_count: int
+    has_changes: bool = False
 
 
 class StoreCoverageResponse(BaseModel):
     active_stores_count: int
     uncovered_stores_count: int
     closed_stores_count: int
+    modified_stores_count: int = 0
     items: list[StoreCoverageItem]
 
 
