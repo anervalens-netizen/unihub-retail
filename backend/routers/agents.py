@@ -451,6 +451,7 @@ async def get_stores_coverage(
             SELECT site_code, COUNT(DISTINCT agent)::INT as agent_count
             FROM reporting_agent_month
             WHERE import_month = $1
+              AND agent IS NOT NULL AND agent != '-'
             GROUP BY site_code
         ),
         curr_agents AS (
@@ -499,7 +500,7 @@ async def get_stores_coverage(
 
     items = [StoreCoverageItem(**dict(row)) for row in rows]
 
-    active_stores = [i for i in items if i.status in ("covered", "uncovered")]
+    active_stores = [i for i in items if i.status == "covered"]
     uncovered_stores = [i for i in items if i.status == "uncovered"]
     closed_stores = [i for i in items if i.status == "closed"]
     modified_stores_count = sum(1 for i in items if i.has_changes)

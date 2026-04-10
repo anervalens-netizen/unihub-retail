@@ -1,6 +1,5 @@
 from __future__ import annotations
 import pytest
-from db.connection import get_pool
 
 
 @pytest.fixture(scope="module")
@@ -8,8 +7,7 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.mark.anyio
-async def test_stores_coverage_response_shape():
+def test_stores_coverage_response_shape():
     """StoreCoverageItem and StoreCoverageResponse include has_changes and modified_stores_count."""
     from models import StoreCoverageItem, StoreCoverageResponse
 
@@ -41,12 +39,7 @@ async def test_stores_coverage_endpoint_returns_has_changes():
     """The /stores-coverage endpoint returns has_changes on each item and modified_stores_count in root."""
     import httpx
 
-    try:
-        client_ctx = httpx.AsyncClient(base_url="http://localhost:8000")
-    except Exception:
-        pytest.skip("httpx not available")
-
-    async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
+    async with httpx.AsyncClient(base_url="http://localhost:9898") as client:
         try:
             login = await client.post(
                 "/api/auth/login",
@@ -69,6 +62,6 @@ async def test_stores_coverage_endpoint_returns_has_changes():
         assert isinstance(data["modified_stores_count"], int)
         assert "items" in data
         if data["items"]:
-            item = data["items"][0]
-            assert "has_changes" in item
-            assert isinstance(item["has_changes"], bool)
+            first = data["items"][0]
+            assert "has_changes" in first
+            assert isinstance(first["has_changes"], bool)
