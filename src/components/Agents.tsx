@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronLeft, ChevronDown, Award, LayoutGrid, Store, X } from 'lucide-react';
+import { Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronLeft, ChevronDown, ChevronUp, Award, LayoutGrid, Store, X } from 'lucide-react';
 import {
   Bar,
   CartesianGrid,
@@ -341,6 +341,7 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
   const [cardFirma, setCardFirma] = useState('Toate');
   const [cardMagazin, setCardMagazin] = useState('Toate');
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
+  const [expandedSection, setExpandedSection] = useState<'active' | 'modified' | 'inactive' | null>(null);
 
   // Fetch filter options for card filters
   useEffect(() => {
@@ -378,6 +379,11 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
     }
     return result;
   }, [list, activeTab, cardFirma, cardMagazin, filterOptions]);
+
+  const chartData = useMemo(
+    () => (movement?.history ?? []).filter((p) => p.month >= '2025-01'),
+    [movement]
+  );
 
   const filterLabel = useMemo(() => {
     if (filters.agent !== 'Toti') return `Agent: ${filters.agent}`;
@@ -617,9 +623,9 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
         </div>
         
         <div className="h-64 w-full">
-          {movement && movement.history.length > 0 ? (
+          {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <ComposedChart data={movement.history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
                 <XAxis 
                   dataKey="month" 
@@ -669,62 +675,115 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-emerald-50/50 p-3 dark:bg-emerald-900/10">
-            <div className="mb-2 flex items-center gap-2">
-              <Store size={16} className="text-emerald-500" />
-              <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Cu Agent</div>
+          {/* Active */}
+          <button
+            onClick={() => setExpandedSection(prev => prev === 'active' ? null : 'active')}
+            className="rounded-2xl bg-emerald-50/50 p-3 dark:bg-emerald-900/10 text-left hover:bg-emerald-100/60 dark:hover:bg-emerald-900/20 transition-colors"
+          >
+            <div className="mb-2 flex items-center justify-between gap-1">
+              <div className="flex items-center gap-2">
+                <Store size={16} className="text-emerald-500" />
+                <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Active</div>
+              </div>
+              {expandedSection === 'active'
+                ? <ChevronUp size={12} className="text-slate-400 shrink-0" />
+                : <ChevronDown size={12} className="text-slate-400 shrink-0" />}
             </div>
             <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
               {coverage ? coverage.active_stores_count : '-'}
             </div>
-          </div>
-          <div className="rounded-2xl bg-amber-50/50 p-3 dark:bg-amber-900/10">
-            <div className="mb-2 flex items-center gap-2">
-              <Store size={16} className="text-amber-500" />
-              <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Fara Agent</div>
+          </button>
+
+          {/* Cu Modificări */}
+          <button
+            onClick={() => setExpandedSection(prev => prev === 'modified' ? null : 'modified')}
+            className="rounded-2xl bg-amber-50/50 p-3 dark:bg-amber-900/10 text-left hover:bg-amber-100/60 dark:hover:bg-amber-900/20 transition-colors"
+          >
+            <div className="mb-2 flex items-center justify-between gap-1">
+              <div className="flex items-center gap-2">
+                <Store size={16} className="text-amber-500" />
+                <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Cu Modificări</div>
+              </div>
+              {expandedSection === 'modified'
+                ? <ChevronUp size={12} className="text-slate-400 shrink-0" />
+                : <ChevronDown size={12} className="text-slate-400 shrink-0" />}
             </div>
             <div className="text-2xl font-black text-amber-600 dark:text-amber-400">
-              {coverage ? coverage.uncovered_stores_count : '-'}
+              {coverage ? coverage.modified_stores_count : '-'}
             </div>
-          </div>
-          <div className="rounded-2xl bg-slate-50/80 p-3 dark:bg-slate-800/40">
-            <div className="mb-2 flex items-center gap-2">
-              <Store size={16} className="text-slate-500" />
-              <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Inactive</div>
+          </button>
+
+          {/* Inactive */}
+          <button
+            onClick={() => setExpandedSection(prev => prev === 'inactive' ? null : 'inactive')}
+            className="rounded-2xl bg-slate-50/80 p-3 dark:bg-slate-800/40 text-left hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-colors"
+          >
+            <div className="mb-2 flex items-center justify-between gap-1">
+              <div className="flex items-center gap-2">
+                <Store size={16} className="text-slate-500" />
+                <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Inactive</div>
+              </div>
+              {expandedSection === 'inactive'
+                ? <ChevronUp size={12} className="text-slate-400 shrink-0" />
+                : <ChevronDown size={12} className="text-slate-400 shrink-0" />}
             </div>
             <div className="text-2xl font-black">
               {coverage ? coverage.closed_stores_count : '-'}
             </div>
             <div className="mt-1 text-[10px] text-slate-500">&gt; 3 luni fara activitate</div>
-          </div>
+          </button>
         </div>
 
-        {coverage && coverage.items.length > 0 && coverage.uncovered_stores_count > 0 && (
-          <div className="mt-3 max-h-48 overflow-y-auto space-y-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Magazine fara agent (descoperite)</div>
+        {/* Active list */}
+        {coverage && expandedSection === 'active' && (
+          <div className="mt-3 max-h-56 overflow-y-auto space-y-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              Magazine active ({coverage.active_stores_count})
+            </div>
             {coverage.items
-              .filter((item: StoreCoverageItem) => item.status === 'uncovered')
-              .slice(0, 10)
+              .filter((item: StoreCoverageItem) => item.status === 'covered')
               .map((item: StoreCoverageItem) => (
-                <div key={item.site_code} className="flex items-center justify-between rounded-xl bg-amber-50/50 px-3 py-2 dark:bg-amber-900/10">
-                  <div>
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{item.locatie || item.site_code}</span>
-                    <span className="ml-2 text-[10px] text-slate-400">{item.asm}</span>
+                <div key={item.site_code} className="flex items-center justify-between rounded-xl bg-emerald-50/50 px-3 py-2 dark:bg-emerald-900/10">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">{item.locatie || item.site_code}</span>
+                    <span className="text-[10px] text-slate-400">{item.asm}</span>
                   </div>
-                  <span className="text-[10px] font-bold text-amber-600">Fara agent</span>
+                  <span className="ml-2 shrink-0 text-[10px] font-bold text-emerald-600">{item.agent_count} ag.</span>
                 </div>
               ))}
           </div>
         )}
 
-        {coverage && coverage.items.length > 0 && coverage.closed_stores_count > 0 && (
-          <div className="mt-3 max-h-48 overflow-y-auto space-y-1">
+        {/* Cu Modificări list */}
+        {coverage && expandedSection === 'modified' && (
+          <div className="mt-3 max-h-56 overflow-y-auto space-y-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              Magazine cu modificări ({coverage.modified_stores_count})
+            </div>
+            {coverage.items
+              .filter((item: StoreCoverageItem) => item.has_changes)
+              .map((item: StoreCoverageItem) => (
+                <div key={item.site_code} className="flex items-center justify-between rounded-xl bg-amber-50/50 px-3 py-2 dark:bg-amber-900/10">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">{item.locatie || item.site_code}</span>
+                    <span className="text-[10px] text-slate-400">{item.asm}</span>
+                  </div>
+                  <span className="ml-2 shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                    modificat
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* Inactive list */}
+        {coverage && expandedSection === 'inactive' && coverage.closed_stores_count > 0 && (
+          <div className="mt-3 max-h-56 overflow-y-auto space-y-1">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
               Magazine inactive ({coverage.closed_stores_count}) — &gt; 3 luni fara activitate
             </div>
             {coverage.items
               .filter((item: StoreCoverageItem) => item.status === 'closed')
-              .slice(0, 15)
               .map((item: StoreCoverageItem) => (
                 <div key={item.site_code} className="flex items-center justify-between rounded-xl bg-slate-100/60 px-3 py-2 dark:bg-slate-800/40">
                   <div className="min-w-0 flex-1">
