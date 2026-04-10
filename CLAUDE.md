@@ -18,7 +18,7 @@ Tonul corect: direct, tehnic, fara padding. Explica pe scurt ce ai facut si de c
 - Aplicatie deployed pe server `192.168.0.68`, accesibila la https://unihub.astancu.eu/
 - Stack: React 19 + Vite + TypeScript (frontend) / FastAPI + asyncpg + PostgreSQL 18 (backend)
 - Module functionale: Hub, Focus, Agenti (+ Salarii), Vizite, Setari, AI
-- 32 pytest passing, typecheck curat, build passing
+- 51 pytest passing, typecheck curat, build passing
 - UniHub este sursa de adevar pentru vanzari SI vizite; Platforma-Mobiup citeste de aici
 - UniAI: sesiuni persistente per-device, istoric selectabil, suport atasamente
 
@@ -69,7 +69,7 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `visits_report` | `/api/visits-report` — citeste SQLite din `data/visits/visits.db` |
 | `admin` | `/api/admin` |
 | `agents` | `/api/agents` |
-| `salarii` | `/api/salarii` |
+| `salarii` | `/salarii` (fara prefix `/api`) |
 | `ai` | `/api/ai` — WebSocket proxy + sesiuni + attachments pentru Hermes bridge |
 | `dashboard_filters` | *(fara prefix)* — helpers SQL: `where_clauses`, `scoped_clauses`, `transaction_filter_parts` |
 | `shared` | *(fara prefix)* — utilitare comune: `normalize_filter`, `build_scope_filter` |
@@ -237,7 +237,16 @@ Orice camp returnat de un endpoint trebuie sa fie declarat explicit in modelul P
 
 ### Filtre in frontend
 Filtrul global (firma, regional, asm, magazin) din `MainLayout` este shared intre Hub si Focus.
-Modulul **Agenti** are filtrele sale proprii, independente.
+Modulul **Agenti** are filtrele sale proprii, independente (`agentsFilters` in `App.tsx`).
+
+`SalariiSubtab` primeste `globalFilters: AppFilters` din `Agents.tsx` — acestea sunt `agentsFilters`, nu `hubFilters`. Butonul flotant de filtru activ pe tab-ul Agenti alimenteaza `agentsFilters`.
+
+Mapping `AppFilters` → parametri backend salarii:
+- `firma` (`!= 'Toate'`) → `company_name` — comparatie **case-insensitive** (`LOWER()`), deoarece `salary_records.company_name` (`'Mobicell'`/`'Mobiup'`) difera ca si majuscule de `stores.firma` (`'MobiCell'`/`'MobiUp'`)
+- `rm` (`!= 'Toti'`) → `regional`
+- `asm` (`!= 'Toti'`) → `asm`
+
+Endpointurile salarii adauga `LEFT JOIN stores` **doar** cand `regional` sau `asm` sunt prezente (evita JOIN inutil).
 
 ### Autentificare
 - Roluri: `admin`, `management`, `tl`
