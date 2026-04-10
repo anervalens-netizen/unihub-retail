@@ -13,31 +13,68 @@ router = APIRouter(
 
 
 @router.get("/overview")
-async def salarii_overview():
+async def salarii_overview(
+    company_name: str | None = Query(None),
+    regional: str | None = Query(None),
+    asm: str | None = Query(None),
+):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        conditions, params = [], []
+        needs_store_join = regional is not None or asm is not None
+        join_sql = "LEFT JOIN stores st ON st.site_code = sr.site_code" if needs_store_join else ""
+
+        if company_name:
+            params.append(company_name)
+            conditions.append(f"sr.company_name = ${len(params)}")
+        if regional:
+            params.append(regional)
+            conditions.append(f"st.regional = ${len(params)}")
+        if asm:
+            params.append(asm)
+            conditions.append(f"st.asm = ${len(params)}")
+
+        where_sql = "WHERE " + " AND ".join(conditions) if conditions else ""
+        cnp_where = "WHERE " + " AND ".join(conditions + ["sr.cnp IS NOT NULL"]) if conditions else "WHERE sr.cnp IS NOT NULL"
+
         total = await conn.fetchval(
-            "SELECT COALESCE(SUM(total_salary), 0) FROM salary_records"
+            f"SELECT COALESCE(SUM(sr.total_salary), 0) FROM salary_records sr {join_sql} {where_sql}",
+            *params,
         )
         by_company = await conn.fetch(
-            "SELECT company_name AS name, COALESCE(SUM(total_salary), 0) AS total "
-            "FROM salary_records GROUP BY company_name ORDER BY total DESC"
+            f"SELECT sr.company_name AS name, COALESCE(SUM(sr.total_salary), 0) AS total "
+            f"FROM salary_records sr {join_sql} {where_sql} "
+            f"GROUP BY sr.company_name ORDER BY total DESC",
+            *params,
         )
-        record_count = await conn.fetchval("SELECT COUNT(*) FROM salary_records")
+        record_count = await conn.fetchval(
+            f"SELECT COUNT(*) FROM salary_records sr {join_sql} {where_sql}",
+            *params,
+        )
         agent_count = await conn.fetchval(
-            "SELECT COUNT(DISTINCT cnp) FROM salary_records WHERE cnp IS NOT NULL"
+            f"SELECT COUNT(DISTINCT sr.cnp) FROM salary_records sr {join_sql} {cnp_where}",
+            *params,
         )
-        months = await conn.fetch(
-            """
-            SELECT 
-                (SELECT year FROM salary_records ORDER BY year ASC, month ASC LIMIT 1) as y,
-                (SELECT month FROM salary_records ORDER BY year ASC, month ASC LIMIT 1) as m,
-                (SELECT year FROM salary_records ORDER BY year DESC, month DESC LIMIT 1) as y2,
-                (SELECT month FROM salary_records ORDER BY year DESC, month DESC LIMIT 1) as m2
-            """
+        months_row = await conn.fetchrow(
+            f"""
+            SELECT
+                MIN(sr.year * 100 + sr.month) / 100 AS min_year,
+                MIN(sr.year * 100 + sr.month) % 100 AS min_month,
+                MAX(sr.year * 100 + sr.month) / 100 AS max_year,
+                MAX(sr.year * 100 + sr.month) % 100 AS max_month
+            FROM salary_records sr {join_sql} {where_sql}
+            """,
+            *params,
         )
-        row = months[0]
-        months_span = [int(row["y"]), int(row["m"]), int(row["y2"]), int(row["m2"])]
+        if not months_row or months_row["min_year"] is None:
+            months_span = [0, 0, 0, 0]
+        else:
+            months_span = [
+                int(months_row["min_year"]),
+                int(months_row["min_month"]),
+                int(months_row["max_year"]),
+                int(months_row["max_month"]),
+            ]
         return {
             "total": float(total),
             "by_company": [dict(r) for r in by_company],
@@ -50,45 +87,61 @@ async def salarii_overview():
 @router.get("/evolution")
 async def salarii_evolution(
     company_name: str | None = Query(None),
+    regional: str | None = Query(None),
+    asm: str | None = Query(None),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        conditions, params = [], []
+        needs_store_join = regional is not None or asm is not None
+        join_sql = "LEFT JOIN stores st ON st.site_code = sr.site_code" if needs_store_join else ""
+
+        if company_name:
+            params.append(company_name)
+            conditions.append(f"sr.company_name = ${len(params)}")
+        if regional:
+            params.append(regional)
+            conditions.append(f"st.regional = ${len(params)}")
+        if asm:
+            params.append(asm)
+            conditions.append(f"st.asm = ${len(params)}")
+
+        where_sql = "WHERE " + " AND ".join(conditions) if conditions else ""
+
         if company_name:
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT
-                    year * 100 + month AS sort_key,
-                    TO_CHAR(year, 'FM9999') || '-' || TO_CHAR(month, 'FM00') AS month,
-                    SUM(total_salary) AS total
-                FROM salary_records
-                WHERE company_name = $1
-                GROUP BY year, month
+                    sr.year * 100 + sr.month AS sort_key,
+                    TO_CHAR(sr.year, 'FM9999') || '-' || TO_CHAR(sr.month, 'FM00') AS month,
+                    SUM(sr.total_salary) AS total
+                FROM salary_records sr
+                {join_sql}
+                {where_sql}
+                GROUP BY sr.year, sr.month
                 ORDER BY sort_key
                 """,
-                company_name,
+                *params,
             )
             return [
-                {
-                    "month": r["month"],
-                    "total": float(r["total"]),
-                    "mobicell": 0.0,
-                    "mobiup": 0.0,
-                }
+                {"month": r["month"], "total": float(r["total"]), "mobicell": 0.0, "mobiup": 0.0}
                 for r in rows
             ]
-        # Full evolution: total + per company per month
         rows = await conn.fetch(
-            """
+            f"""
             SELECT
-                year * 100 + month AS sort_key,
-                TO_CHAR(year, 'FM9999') || '-' || TO_CHAR(month, 'FM00') AS month,
-                COALESCE(SUM(total_salary) FILTER (WHERE company_name = 'Mobicell'), 0) AS mobicell,
-                COALESCE(SUM(total_salary) FILTER (WHERE company_name = 'Mobiup'), 0) AS mobiup,
-                COALESCE(SUM(total_salary), 0) AS total
-            FROM salary_records
-            GROUP BY year, month
+                sr.year * 100 + sr.month AS sort_key,
+                TO_CHAR(sr.year, 'FM9999') || '-' || TO_CHAR(sr.month, 'FM00') AS month,
+                COALESCE(SUM(sr.total_salary) FILTER (WHERE sr.company_name = 'Mobicell'), 0) AS mobicell,
+                COALESCE(SUM(sr.total_salary) FILTER (WHERE sr.company_name = 'Mobiup'), 0) AS mobiup,
+                COALESCE(SUM(sr.total_salary), 0) AS total
+            FROM salary_records sr
+            {join_sql}
+            {where_sql}
+            GROUP BY sr.year, sr.month
             ORDER BY sort_key
-            """
+            """,
+            *params,
         )
         return [dict(r) for r in rows]
 
@@ -98,6 +151,8 @@ async def agents_summary(
     q: str | None = Query(None),
     company_name: str | None = Query(None),
     site_code: str | None = Query(None),
+    regional: str | None = Query(None),
+    asm: str | None = Query(None),
     year: int | None = Query(None),
     month: int | None = Query(None),
     limit: int = Query(50, le=500),
@@ -106,26 +161,35 @@ async def agents_summary(
     pool = await get_pool()
     async with pool.acquire() as conn:
         conditions, params = [], []
+        needs_store_join = regional is not None or asm is not None
+        join_sql = "LEFT JOIN stores st ON st.site_code = sr.site_code" if needs_store_join else ""
+
         if q:
             params.append(f"%{q}%")
-            conditions.append(f"full_name ILIKE ${len(params)}")
+            conditions.append(f"sr.full_name ILIKE ${len(params)}")
         if company_name:
             params.append(company_name)
-            conditions.append(f"company_name = ${len(params)}")
+            conditions.append(f"sr.company_name = ${len(params)}")
         if site_code:
             params.append(site_code)
-            conditions.append(f"site_code = ${len(params)}")
+            conditions.append(f"sr.site_code = ${len(params)}")
+        if regional:
+            params.append(regional)
+            conditions.append(f"st.regional = ${len(params)}")
+        if asm:
+            params.append(asm)
+            conditions.append(f"st.asm = ${len(params)}")
         if year is not None:
             params.append(year)
-            conditions.append(f"year = ${len(params)}")
+            conditions.append(f"sr.year = ${len(params)}")
         if month is not None:
             params.append(month)
-            conditions.append(f"month = ${len(params)}")
+            conditions.append(f"sr.month = ${len(params)}")
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
         total = await conn.fetchval(
-            f"SELECT COUNT(DISTINCT full_name) FROM salary_records {where}",
+            f"SELECT COUNT(DISTINCT sr.full_name) FROM salary_records sr {join_sql} {where}",
             *params,
         )
 
@@ -133,16 +197,17 @@ async def agents_summary(
         rows = await conn.fetch(
             f"""
             SELECT
-                full_name,
-                cnp,
-                company_name,
-                locatie,
+                sr.full_name,
+                sr.cnp,
+                sr.company_name,
+                sr.locatie,
                 COUNT(*) AS month_count,
-                SUM(total_salary) AS total_salary,
-                AVG(total_salary) AS avg_salary
-            FROM salary_records
+                SUM(sr.total_salary) AS total_salary,
+                AVG(sr.total_salary) AS avg_salary
+            FROM salary_records sr
+            {join_sql}
             {where}
-            GROUP BY full_name, cnp, company_name, locatie
+            GROUP BY sr.full_name, sr.cnp, sr.company_name, sr.locatie
             ORDER BY total_salary DESC
             LIMIT ${len(params) - 1} OFFSET ${len(params)}
             """,
@@ -185,6 +250,8 @@ async def agent_history(cnp: str):
 async def salarii_summary(
     company_name: str | None = Query(None),
     site_code: str | None = Query(None),
+    regional: str | None = Query(None),
+    asm: str | None = Query(None),
     year: int | None = Query(None),
     month: int | None = Query(None),
 ):
@@ -205,21 +272,27 @@ async def salarii_summary(
 
         import_month = f"{query_year}-{query_month:02d}"
 
+        needs_store_join = regional is not None or asm is not None
+        join_stores = "LEFT JOIN stores st ON st.site_code = s.site_code" if needs_store_join else ""
+
         # Build conditions - always filter by year/month
-        conditions = [f"s.year = $1", f"s.month = $2"]
-        params = [query_year, query_month]
+        conditions = ["s.year = $1", "s.month = $2"]
+        params: list = [query_year, query_month]
         if company_name:
             params.append(company_name)
             conditions.append(f"s.company_name = ${len(params)}")
         if site_code:
             params.append(site_code)
             conditions.append(f"s.site_code = ${len(params)}")
+        if regional:
+            params.append(regional)
+            conditions.append(f"st.regional = ${len(params)}")
+        if asm:
+            params.append(asm)
+            conditions.append(f"st.asm = ${len(params)}")
 
         where_clause = " AND ".join(conditions)
 
-        # Query: salary data grouped by store, joined with sales data from reporting_agent_month
-        # $1=year, $2=month (WHERE), then optional company_name ($3 or $4), site_code ($4 or $5)
-        # import_month is always the LAST param after all filters, so use $3, $4, or $5 based on count
         rows = await conn.fetch(
             f"""
             SELECT
@@ -230,6 +303,7 @@ async def salarii_summary(
                 COUNT(DISTINCT s.full_name) AS agent_count,
                 COALESCE(SUM(r.total_sales), 0) AS total_sales
             FROM salary_records s
+            {join_stores}
             LEFT JOIN reporting_agent_month r
                 ON r.import_month = ${len(params) + 1}
                 AND r.site_code = s.site_code
@@ -264,38 +338,36 @@ async def salarii_summary(
 async def salarii_trend(
     company_name: str | None = Query(None),
     site_code: str | None = Query(None),
+    regional: str | None = Query(None),
+    asm: str | None = Query(None),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Build conditions
-        conditions = []
-        params = []
+        conditions, params = [], []
+        needs_store_join = regional is not None or asm is not None
+
         if company_name:
             params.append(company_name)
             conditions.append(f"sr.company_name = ${len(params)}")
         if site_code:
             params.append(site_code)
             conditions.append(f"sr.site_code = ${len(params)}")
+        if regional:
+            params.append(regional)
+            conditions.append(f"st.regional = ${len(params)}")
+        if asm:
+            params.append(asm)
+            conditions.append(f"st.asm = ${len(params)}")
 
-        # Query monthly trend - join salary_records with reporting_agent_month
-        # Group by import_month and optionally company_name
         if company_name:
-            group_by = "sr.year, sr.month, sr.company_name"
-            order_by = "sr.year DESC, sr.month DESC, sr.company_name"
             select_company = "sr.company_name,"
             sql_company_group = ", sr.company_name"
-            sql_company_order = ", sr.company_name"
         else:
-            group_by = "sr.year, sr.month"
-            order_by = "sr.year DESC, sr.month DESC"
             select_company = ""
             sql_company_group = ""
-            sql_company_order = ""
 
-        if conditions:
-            where_clause = "WHERE " + " AND ".join(conditions)
-        else:
-            where_clause = ""
+        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+        join_stores = "LEFT JOIN stores st ON st.site_code = sr.site_code" if needs_store_join else ""
 
         rows = await conn.fetch(
             f"""
@@ -311,6 +383,7 @@ async def salarii_trend(
                 FROM salary_records
                 GROUP BY year, month, site_code, company_name
             ) sr
+            {join_stores}
             LEFT JOIN (
                 SELECT import_month, site_code, firma, SUM(total_sales) as total_sales
                 FROM reporting_agent_month
@@ -321,12 +394,11 @@ async def salarii_trend(
                 AND LOWER(r.firma) = LOWER(sr.company_name)
             {where_clause}
             GROUP BY sr.year, sr.month{sql_company_group}
-            ORDER BY sr.year DESC, sr.month DESC{sql_company_order}
+            ORDER BY sr.year DESC, sr.month DESC{', sr.company_name' if company_name else ''}
             """,
             *params,
         )
 
-        # Group results by month for the response
         months_map: dict = {}
         for r in rows:
             import_month = f"{r['year']}-{r['month']:02d}"
@@ -347,16 +419,10 @@ async def salarii_trend(
                         "total_salary": 0,
                         "total_sales": 0,
                     }
-                months_map[import_month]["by_company"][company]["total_salary"] += (
-                    float(r["total_salary"])
-                )
-                months_map[import_month]["by_company"][company]["total_sales"] += float(
-                    r["total_sales"]
-                )
+                months_map[import_month]["by_company"][company]["total_salary"] += float(r["total_salary"])
+                months_map[import_month]["by_company"][company]["total_sales"] += float(r["total_sales"])
 
-        # Sort by month descending
-        result = sorted(months_map.values(), key=lambda x: x["month"], reverse=True)
-        return result
+        return sorted(months_map.values(), key=lambda x: x["month"], reverse=True)
 
 
 @router.get("/stores")
