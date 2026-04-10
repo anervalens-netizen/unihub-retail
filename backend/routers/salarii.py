@@ -257,16 +257,24 @@ async def salarii_summary(
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Determine the month to query - default to latest in salary_records (scoped to filter)
+        # Determine the month to query - default to latest in salary_records (scoped to all active filters)
         if year is None or month is None:
             latest_conds = []
             latest_params: list = []
+            latest_needs_join = regional is not None or asm is not None
+            latest_join = "LEFT JOIN stores st ON st.site_code = sr.site_code" if latest_needs_join else ""
             if company_name:
                 latest_params.append(company_name.lower())
-                latest_conds.append(f"LOWER(company_name) = ${len(latest_params)}")
+                latest_conds.append(f"LOWER(sr.company_name) = ${len(latest_params)}")
+            if regional:
+                latest_params.append(regional)
+                latest_conds.append(f"st.regional = ${len(latest_params)}")
+            if asm:
+                latest_params.append(asm)
+                latest_conds.append(f"st.asm = ${len(latest_params)}")
             latest_where = "WHERE " + " AND ".join(latest_conds) if latest_conds else ""
             latest = await conn.fetchrow(
-                f"SELECT year, month FROM salary_records {latest_where} ORDER BY year DESC, month DESC LIMIT 1",
+                f"SELECT sr.year, sr.month FROM salary_records sr {latest_join} {latest_where} ORDER BY sr.year DESC, sr.month DESC LIMIT 1",
                 *latest_params,
             )
             if not latest:

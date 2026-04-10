@@ -149,9 +149,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     [debouncedSearch, globalFilters]
   );
 
-  useEffect(() => { loadOverview(); }, [globalFilters]);
-  useEffect(() => { loadSummary(); }, [globalFilters, selectedSummaryMonth]);
-  useEffect(() => { loadTrend(); }, [globalFilters]);
+  useEffect(() => { loadOverview(); }, [loadOverview]);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+  useEffect(() => { loadTrend(); }, [loadTrend]);
   useEffect(() => { setPage(0); loadAgents(0); }, [loadAgents]);
 
   function handleSearchChange(val: string) {
