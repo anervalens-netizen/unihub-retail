@@ -4,7 +4,6 @@ import {
   fetchSalariiOverview,
   fetchSalaryAgents,
   fetchSalaryEvolution,
-  fetchSalariiStores,
   fetchSalarySummary,
   fetchSalaryTrend,
 } from '../api/salarii';
@@ -12,7 +11,6 @@ import type {
   SalariiOverview,
   SalaryAgentSummary,
   SalaryEvolutionPoint,
-  SalaryStore,
   SalaryComparisonPoint,
   SalaryTrendMonth,
 } from '../api/salarii';
@@ -59,9 +57,6 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [companyFilter, setCompanyFilter] = useState('');
-  const [storeFilter, setStoreFilter] = useState('');
-  const [availableStores, setAvailableStores] = useState<SalaryStore[]>([]);
   const [page, setPage] = useState(0);
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [summary, setSummary] = useState<SalaryComparisonPoint[]>([]);
@@ -78,37 +73,32 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
   const loadOverview = useCallback(async () => {
     try {
+      const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
+      const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
+      const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
       const [ov, ev] = await Promise.all([
-        fetchSalariiOverview(),
-        fetchSalaryEvolution(),
+        fetchSalariiOverview({ company_name: firma, regional, asm }),
+        fetchSalaryEvolution({ company_name: firma, regional, asm }),
       ]);
       setOverview(ov);
       setEvolution(ev);
     } catch (e) {
       console.error('Failed to load overview:', e);
     }
-  }, []);
-
-  const loadStores = useCallback(async (company?: string) => {
-    try {
-      const stores = await fetchSalariiStores(company || undefined);
-      setAvailableStores(stores);
-    } catch (e) {
-      console.error('Failed to load stores:', e);
-    }
-  }, []);
+  }, [globalFilters]);
 
   const loadSummary = useCallback(async () => {
     setLoadingCards(true);
     try {
-      const firma = globalFilters?.firma && globalFilters.firma !== 'Toate' ? globalFilters.firma : undefined;
-      // Parse year/month from selectedSummaryMonth if set, otherwise API uses latest
+      const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
+      const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
+      const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
       let year: number | undefined;
       let month: number | undefined;
       if (selectedSummaryMonth && /^\d{4}-\d{2}$/.test(selectedSummaryMonth)) {
         [year, month] = selectedSummaryMonth.split('-').map(Number);
       }
-      const data = await fetchSalarySummary({ company_name: firma, year, month });
+      const data = await fetchSalarySummary({ company_name: firma, regional, asm, year, month });
       setSummary(data.items || []);
       setSummaryMonth(data.month);
     } catch (e) {
@@ -121,8 +111,10 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const loadTrend = useCallback(async () => {
     setLoadingCards(true);
     try {
-      const firma = globalFilters?.firma && globalFilters.firma !== 'Toate' ? globalFilters.firma : undefined;
-      const data = await fetchSalaryTrend({ company_name: firma });
+      const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
+      const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
+      const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
+      const data = await fetchSalaryTrend({ company_name: firma, regional, asm });
       setTrend(data || []);
     } catch (e) {
       console.error('Failed to load trend:', e);
@@ -135,10 +127,14 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     async (offset = 0) => {
       setLoading(true);
       try {
+        const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
+        const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
+        const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
         const res = await fetchSalaryAgents({
           q: debouncedSearch || undefined,
-          company_name: companyFilter || undefined,
-          site_code: storeFilter || undefined,
+          company_name: firma,
+          regional,
+          asm,
           limit: PAGE_SIZE,
           offset,
         });
@@ -150,10 +146,10 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         setLoading(false);
       }
     },
-    [debouncedSearch, companyFilter, storeFilter]
+    [debouncedSearch, globalFilters]
   );
 
-  useEffect(() => { loadOverview(); loadStores(); }, []);
+  useEffect(() => { loadOverview(); }, [globalFilters]);
   useEffect(() => { loadSummary(); }, [globalFilters, selectedSummaryMonth]);
   useEffect(() => { loadTrend(); }, [globalFilters]);
   useEffect(() => { setPage(0); loadAgents(0); }, [loadAgents]);
@@ -163,24 +159,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     setPage(0);
   }
 
-  function handleCompanyChange(val: string) {
-    setCompanyFilter(val);
-    setStoreFilter('');
-    loadStores(val || undefined);
-    setPage(0);
-  }
-
-  function handleStoreChange(val: string) {
-    setStoreFilter(val);
-    setPage(0);
-  }
-
   function resetFilters() {
     setSearch('');
     setDebouncedSearch('');
-    setCompanyFilter('');
-    setStoreFilter('');
-    loadStores();
     setPage(0);
   }
 
@@ -371,30 +352,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                   className="w-32 rounded-lg border border-slate-200 bg-white/80 py-1.5 pl-7 pr-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
                 />
               </div>
-              {/* Firma filter */}
-              <select
-                value={companyFilter}
-                onChange={(e) => handleCompanyChange(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white/80 py-1.5 px-2 text-xs text-slate-700 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
-              >
-                <option value="">Toate firmele</option>
-                <option value="Mobicell">Mobicell</option>
-                <option value="Mobiup">Mobiup</option>
-              </select>
-              {/* Magazin filter */}
-              <select
-                value={storeFilter}
-                onChange={(e) => handleStoreChange(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white/80 py-1.5 px-2 text-xs text-slate-700 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
-              >
-                <option value="">Toate magazinele</option>
-                {availableStores.map((s) => (
-                  <option key={s.site_code} value={s.site_code}>
-                    {s.locatie ?? s.site_code}
-                  </option>
-                ))}
-              </select>
-              {(search || companyFilter || storeFilter) && (
+              {search && (
                 <button
                   onClick={resetFilters}
                   className="rounded-lg border border-slate-200 bg-white/80 py-1.5 px-2 text-xs text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-400"

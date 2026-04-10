@@ -78,15 +78,20 @@ export interface SalaryAgentsSummaryResponse {
   total: number;
 }
 
-export async function fetchSalariiOverview(): Promise<SalariiOverview> {
-  const res = await client.get<SalariiOverview>('/salarii/overview');
+export async function fetchSalariiOverview(params?: {
+  company_name?: string;
+  regional?: string;
+  asm?: string;
+}): Promise<SalariiOverview> {
+  const res = await client.get<SalariiOverview>('/salarii/overview', { params });
   return res.data;
 }
 
-export async function fetchSalaryEvolution(
-  companyName?: string
-): Promise<SalaryEvolutionPoint[]> {
-  const params = companyName ? { company_name: companyName } : {};
+export async function fetchSalaryEvolution(params?: {
+  company_name?: string;
+  regional?: string;
+  asm?: string;
+}): Promise<SalaryEvolutionPoint[]> {
   const res = await client.get<SalaryEvolutionPoint[]>('/salarii/evolution', { params });
   return res.data;
 }
@@ -95,6 +100,8 @@ export async function fetchSalaryAgents(params: {
   q?: string;
   company_name?: string;
   site_code?: string;
+  regional?: string;
+  asm?: string;
   year?: number;
   month?: number;
   limit?: number;
@@ -120,6 +127,8 @@ export async function fetchSalaryAgentHistory(cnp: string): Promise<SalaryAgentH
 export async function fetchSalarySummary(params: {
   company_name?: string;
   site_code?: string;
+  regional?: string;
+  asm?: string;
   year?: number;
   month?: number;
 }): Promise<SalarySummaryResponse> {
@@ -130,6 +139,8 @@ export async function fetchSalarySummary(params: {
 export async function fetchSalaryTrend(params: {
   company_name?: string;
   site_code?: string;
+  regional?: string;
+  asm?: string;
 }): Promise<SalaryTrendMonth[]> {
   const res = await client.get<SalaryTrendMonth[]>('/salarii/trend', { params });
   return res.data;
