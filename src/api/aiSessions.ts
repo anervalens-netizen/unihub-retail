@@ -52,11 +52,6 @@ export async function listAiSessions(deviceId: string): Promise<AiSessionList> {
   return data;
 }
 
-export async function getAiSession(sessionId: string): Promise<AiSessionDetail> {
-  const { data } = await client.get<AiSessionDetail>(`/api/ai/sessions/${sessionId}`);
-  return data;
-}
-
 export async function createAiSession(deviceId: string): Promise<AiSessionDetail> {
   const { data } = await client.post<AiSessionDetail>('/api/ai/sessions', null, {
     params: { device_id: deviceId },

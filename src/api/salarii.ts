@@ -113,12 +113,6 @@ export async function fetchSalaryAgents(params: {
   return res.data;
 }
 
-export async function fetchSalariiStores(companyName?: string): Promise<SalaryStore[]> {
-  const params = companyName ? { company_name: companyName } : {};
-  const res = await client.get<SalaryStore[]>('/salarii/stores', { params });
-  return res.data;
-}
-
 export async function fetchSalaryAgentHistory(cnp: string): Promise<SalaryAgentHistory> {
   const res = await client.get<SalaryAgentHistory>(`/salarii/agents/history/${encodeURIComponent(cnp)}`);
   return res.data;

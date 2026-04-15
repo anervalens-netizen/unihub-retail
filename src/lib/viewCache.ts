@@ -42,10 +42,3 @@ export function setCachedView<T>(key: string, value: T) {
   });
 }
 
-export function invalidateCachedView(prefix: string) {
-  for (const key of cache.keys()) {
-    if (key.startsWith(prefix)) {
-      cache.delete(key);
-    }
-  }
-}
