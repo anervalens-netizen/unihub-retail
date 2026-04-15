@@ -41,6 +41,7 @@ interface MainLayoutProps {
   showFilterButton?: boolean;
   mgmtSubTab: ManagementTab;
   setMgmtSubTab: (tab: ManagementTab) => void;
+  errorCount?: number;
 }
 
 const emptyOptions: FilterOptions = {
@@ -67,6 +68,7 @@ export function MainLayout({
   showFilterButton = true,
   mgmtSubTab,
   setMgmtSubTab,
+  errorCount = 0,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
@@ -168,6 +170,7 @@ export function MainLayout({
         onLogout={onLogout}
         pendingTaskCount={pendingTaskCount}
         userRole={userRole}
+        errorCount={errorCount}
       />
 
       {/* ── Right column: topbar + content ── */}
@@ -377,6 +380,11 @@ export function MainLayout({
                   {showBadge && (
                     <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white">
                       {pendingTaskCount > 9 ? '9+' : pendingTaskCount}
+                    </span>
+                  )}
+                  {errorCount > 0 && tab.id === 'settings' && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white">
+                      {errorCount > 9 ? '9+' : errorCount}
                     </span>
                   )}
                 </div>

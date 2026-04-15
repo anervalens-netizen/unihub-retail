@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ErrorLogsTab } from './ErrorLogsTab';
 import {
   ChevronDown,
   Database,
@@ -34,6 +35,8 @@ import { getRoleAccessLabel, type Role } from '../lib/roles';
 interface SettingsProps {
   user: AuthUser | null;
   onImportCompleted: (month: string) => void;
+  token: string | null;
+  onUnseenCountChange: (count: number) => void;
 }
 
 const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -48,6 +51,8 @@ const ROLE_OPTIONS = [
 export function Settings({
   user,
   onImportCompleted,
+  token,
+  onUnseenCountChange,
 }: SettingsProps) {
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -67,6 +72,7 @@ export function Settings({
   const [createPanelOpen, setCreatePanelOpen] = useState(false);
   const [selectedTlId, setSelectedTlId] = useState<number | null>(null);
   const [selectedSiteCodes, setSelectedSiteCodes] = useState<string[]>([]);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'admin' | 'errors'>('admin');
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -265,6 +271,46 @@ export function Settings({
           {user?.role === 'admin' ? 'Administrare aplicație' : 'Tema și contul tău'}
         </p>
       </div>
+
+      {/* Tab bar — vizibil doar pentru admin */}
+      {user?.role === 'admin' && (
+        <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setActiveSettingsTab('admin')}
+            className={cn(
+              'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+              activeSettingsTab === 'admin'
+                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            )}
+          >
+            Administrare
+          </button>
+          <button
+            onClick={() => setActiveSettingsTab('errors')}
+            className={cn(
+              'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+              activeSettingsTab === 'errors'
+                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            )}
+          >
+            Erori sistem
+          </button>
+        </div>
+      )}
+
+      {/* Tab Erori sistem */}
+      {user?.role === 'admin' && activeSettingsTab === 'errors' && (
+        <ErrorLogsTab
+          user={user}
+          token={token}
+          onUnseenCountChange={onUnseenCountChange}
+        />
+      )}
+
+      {/* Tab Administrare (conținut original) — ascuns când e activ tab Erori */}
+      <div className={(user?.role === 'admin' && activeSettingsTab === 'errors') ? 'hidden' : ''}>
 
       <div className="glass rounded-3xl p-4">
         <div className="mb-3 flex items-center gap-2">
@@ -641,6 +687,8 @@ export function Settings({
           {message}
         </div>
       )}
+
+      </div>{/* end: Tab Administrare wrapper */}
     </div>
   );
 }

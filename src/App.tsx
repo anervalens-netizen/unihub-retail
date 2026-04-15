@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
 import { getCurrentUser, logout } from './api/auth';
+import { getUnseenCount } from './api/errors';
 import { getAvailableMonths } from './api/filters';
 import type { AuthUser } from './api/types';
 import { defaultAppFilters } from './lib/filterValues';
@@ -34,6 +35,7 @@ const defaultFilters: AppFilters = defaultAppFilters();
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [errorCount, setErrorCount] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const saved = localStorage.getItem('unihub_active_tab');
     return (saved as ActiveTab) || 'hub';
@@ -130,6 +132,28 @@ export default function App() {
     };
   }, []);
 
+  // Polling unseen error count — doar pentru admin
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    const token = localStorage.getItem('unihub_token');
+    if (!token) return;
+
+    async function poll() {
+      const t = localStorage.getItem('unihub_token');
+      if (!t) return;
+      try {
+        const count = await getUnseenCount(t);
+        setErrorCount(count);
+      } catch {
+        // silențios
+      }
+    }
+
+    void poll();
+    const interval = setInterval(() => { void poll(); }, 60_000);
+    return () => clearInterval(interval);
+  }, [user?.role]);
+
   const handleAuthenticated = async (currentUser: AuthUser) => {
     try {
       const availableMonths = await getAvailableMonths();
@@ -193,6 +217,7 @@ export default function App() {
       showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
       mgmtSubTab={mgmtSubTab}
       setMgmtSubTab={setMgmtSubTab}
+      errorCount={errorCount}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
@@ -229,6 +254,8 @@ export default function App() {
               });
               setCurrentMonth(month);
             }}
+            token={localStorage.getItem('unihub_token')}
+            onUnseenCountChange={setErrorCount}
           />
         )}
       </Suspense>

@@ -18,6 +18,7 @@ interface Props {
   onLogout: () => void;
   pendingTaskCount: number;
   userRole: Role;
+  errorCount?: number;
 }
 
 export function DesktopSidebar({
@@ -31,6 +32,7 @@ export function DesktopSidebar({
   onLogout,
   pendingTaskCount,
   userRole,
+  errorCount = 0,
 }: Props) {
   const [mgmtExpanded, setMgmtExpanded] = useState(activeTab === 'management');
 
@@ -100,6 +102,11 @@ export function DesktopSidebar({
                   {showBadge && (
                     <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold text-white">
                       {pendingTaskCount > 9 ? '9+' : pendingTaskCount}
+                    </span>
+                  )}
+                  {errorCount > 0 && tab.id === 'settings' && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold text-white">
+                      {errorCount > 9 ? '9+' : errorCount}
                     </span>
                   )}
                 </div>
