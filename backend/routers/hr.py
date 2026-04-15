@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from db.connection import get_pool
 from dependencies import get_current_user, require_role
@@ -16,6 +16,8 @@ ALL_ROLES = get_current_user
 
 
 class LeaveRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     agent_name: str
     start_date: str   # YYYY-MM-DD
     end_date: str     # YYYY-MM-DD
@@ -24,6 +26,8 @@ class LeaveRequestCreate(BaseModel):
 
 
 class LeaveStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     status: str       # 'approved' | 'rejected'
 
 

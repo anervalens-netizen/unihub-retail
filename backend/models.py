@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     username: str
     password: str
 
@@ -468,12 +470,16 @@ class StoreOption(BaseModel):
 
 
 class StoreTargetInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     site_code: str
     import_month: str
     target_value: Decimal
 
 
 class AdminUserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     username: str
     password: str
     full_name: str | None = None
@@ -482,6 +488,8 @@ class AdminUserCreate(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     full_name: str | None = None
     role: Literal["admin", "asm", "management", "tl"]
     is_active: bool = True
@@ -499,10 +507,14 @@ class AdminUserResponse(BaseModel):
 
 
 class TlAssignmentsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     site_codes: list[str]
 
 
 class FocusProductCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     item_code: str
     item_name: str | None = None
 

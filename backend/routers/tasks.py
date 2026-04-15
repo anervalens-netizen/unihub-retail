@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from db.connection import get_pool
 from dependencies import get_current_user, require_role
@@ -16,6 +16,8 @@ ALL_ROLES = get_current_user  # orice utilizator autentificat
 
 
 class TaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     assignee: str | None = None
     site_code: str | None = None
@@ -26,6 +28,8 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     assignee: str | None = None
     site_code: str | None = None
