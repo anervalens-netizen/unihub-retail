@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -71,11 +72,30 @@ async def init_db_pool() -> asyncpg.Pool:
     if pool is None:
         pool = await asyncpg.create_pool(
             dsn=get_database_url(),
-            min_size=1,
+            min_size=int(os.getenv("DB_POOL_MIN_SIZE", "3")),
             max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10")),
             command_timeout=120,
         )
     return pool
+
+
+async def prewarm_pool() -> None:
+    """Force pool to open min_size connections and verify each round-trips.
+
+    asyncpg normally opens min_size connections eagerly, but the verification
+    round-trip catches auth/network issues at boot instead of on first request.
+    """
+    current_pool = await get_pool()
+    min_size = current_pool.get_min_size()
+    if min_size <= 0:
+        return
+
+    async def _ping() -> None:
+        async with current_pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+
+    await asyncio.gather(*(_ping() for _ in range(min_size)))
+    logger.info("DB pool prewarmed (%d connections)", min_size)
 
 
 async def close_db_pool() -> None:

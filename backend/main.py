@@ -28,6 +28,7 @@ from db.connection import (
     ensure_schema_current,
     get_pool,
     init_db_pool,
+    prewarm_pool,
 )
 from routers import admin, agents, ai, auth, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
@@ -74,6 +75,7 @@ async def lifespan(_: FastAPI):
     else:
         logger.info("No pending migrations")
     await ensure_default_users()
+    await prewarm_pool()
     prewarm_special_cards_cache()
     yield
     await close_db_pool()
