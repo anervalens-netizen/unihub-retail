@@ -749,3 +749,22 @@ CREATE TABLE IF NOT EXISTS visits_snapshot (
     synced_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (asm, month)
 );
+
+-- =====================================================================
+-- ERROR LOGS — Capturare erori backend + frontend, vizibile în Settings
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS error_logs (
+    id          SERIAL PRIMARY KEY,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    source      TEXT NOT NULL CHECK (source IN ('backend', 'frontend')),
+    level       TEXT NOT NULL CHECK (level IN ('error', 'warning')),
+    message     TEXT NOT NULL,
+    traceback   TEXT,
+    path        TEXT,
+    user_id     INT REFERENCES users(id) ON DELETE SET NULL,
+    extra       JSONB,
+    seen        BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_error_logs_ts   ON error_logs(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_error_logs_seen ON error_logs(seen) WHERE seen = false;
