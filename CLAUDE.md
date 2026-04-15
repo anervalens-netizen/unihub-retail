@@ -58,9 +58,10 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `TasksSubtab.tsx` | Sub-tab Tasks — task-uri per agent/magazin, creare din alerte CRM |
 | `HRSubtab.tsx` | Sub-tab HR — cereri concediu, pontaj, performanta ASM |
 | `AIChat.tsx` | Tab AI — chat UI, sesiuni, attachments, drawer istoric |
-| `Settings.tsx` | Tab Setari (admin) |
+| `Settings.tsx` | Tab Setari (admin) — 2 sub-taburi: Administrare + Erori sistem (admin only) |
+| `ErrorLogsTab.tsx` | Sub-tab Erori sistem — tabel erori cu filtre (sursa/seen), modal detalii traceback |
 | `PinScreen.tsx` | Ecran PIN pentru autentificare |
-| `ErrorBoundary.tsx` | Error boundary React |
+| `ErrorBoundary.tsx` | Error boundary React — `componentDidCatch` trimite eroarea la `POST /api/errors` |
 
 ### Backend — `backend/routers/`
 | Router | Prefix / Rol |
@@ -79,6 +80,7 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `hr` | `/api/hr` — concedii, pontaj, performanta ASM (merge PG + SQLite) |
 | `crm` | `/api/crm` — scoruri magazine, alerte, `get_forecast_factor` (shared cu hr.py) |
 | `ai` | `/api/ai` — WebSocket proxy + sesiuni + attachments pentru Hermes bridge |
+| `errors` | `/api/errors` (public) + `/api/admin/error-logs` (admin) — ingest erori frontend + vizualizare |
 
 Helperele de filtre si scope (SQL `where_clauses`, `scoped_clauses`, `transaction_filter_parts`, `normalize_filter`, `build_scope_filter`) traiesc in `services/filters.py`. Helperele de forecast (CRM/HR shared) traiesc in `services/forecast.py`.
 
@@ -181,6 +183,8 @@ Tab nou cu 4 sub-taburi, accesibil rolurilor `admin` si `management`.
 | `leave_requests` | Cereri concediu agenti (`agent_name`, `start_date`, `end_date`, `leave_type`, `status`) |
 | `attendance_records` | Pontaj zilnic (`agent_name`, `record_date`, `status`) — UNIQUE per agent+zi |
 | `store_scores` | Scoruri CRM per magazin per luna (`site_code`, `score_month`, `score`, `breakdown` JSONB) — UNIQUE per magazin+luna |
+| `visits_snapshot` | Agregat vizite din SQLite, sync la boot — elimina citirile blocking din `hr.py` |
+| `error_logs` | Erori sistem (backend + frontend) — `source`, `level`, `message`, `traceback`, `path`, `extra` JSONB, `seen` |
 
 #### VIEW-uri compatibilitate Platforma-Mobiup
 - `v_platforma_dashboard` — agregat lunar pe agent (din `reporting_agent_month` JOIN `stores`)
@@ -209,6 +213,7 @@ Agent = `'-'` pentru toate tranzactiile 2023-2024. Rapoartele per-ASM/magazin su
   - Router `visits_report.py` citeste SQLite async via `run_in_executor` (non-blocking)
   - Endpoint `/api/visits-report/photo/{visit_id}/{filename}` serveste pozele cu auth (`FileResponse`)
   - Frontend: componenta `AuthImage` face fetch blob cu axios + `URL.createObjectURL` (nu `<img src>` direct)
+  - `hr.py` NU mai citeste SQLite direct — foloseste tabelul PG `visits_snapshot` (sync la boot, upsert)
 
 ### Hub Dashboard — structura tabele
 
@@ -272,6 +277,46 @@ Pattern enrichment campanie (acelas pentru RM/ASM/Magazine/Agenti):
   ```bash
   pg_restore -h localhost -U unihub -d unihub --clean /opt/Mobiup/backups/postgres/unihub_YYYYMMDD.dump
   ```
+
+### Error Tracking intern
+
+Sistem propriu fara dependente externe. Capteaza erori din backend (Python logging) si frontend (JS global hooks + React ErrorBoundary).
+
+**Capturare automata backend:** `DBErrorHandler` in `logging_config.py` — orice `logging.ERROR` sau mai sever ajunge in `error_logs` via `asyncio.create_task` (non-blocking). Atasat la boot in `main.py` dupa `init_db_pool()`.
+
+**Capturare frontend:**
+- `window.onerror` + `window.onunhandledrejection` in `src/main.tsx` — erori JS nehandled
+- `ErrorBoundary.componentDidCatch` — crash-uri React
+- Toate trimit la `POST /api/errors` (fara autentificare, rate limit 10 req/min per IP)
+
+**Vizualizare:** Tab "Erori sistem" in Settings (admin only) — `ErrorLogsTab.tsx`. Filtre dupa sursa/seen, modal cu traceback complet, buton "Marchează toate ca văzute".
+
+**Badge:** `App.tsx` polleaza `/api/admin/error-logs/unseen-count` la 60s (admin only). Badge roșu pe Settings in sidebar desktop + tab bar mobile.
+
+**Cleanup automat:** la boot se sterg intrari mai vechi de 30 zile (`delete_old_logs`).
+
+**Endpoints:**
+- `POST /api/errors` — ingest frontend (public, rate limited)
+- `GET /api/admin/error-logs` — lista cu filtre `?source=&seen=&page_size=`
+- `GET /api/admin/error-logs/unseen-count` — badge count
+- `POST /api/admin/error-logs/mark-seen` — marchează toate ca văzute
+- `DELETE /api/admin/error-logs/cleanup?days=N` — cleanup manual
+
+### JSON Structured Logging
+
+Backend-ul suporta logging structurat JSON via variabila de mediu `LOG_FORMAT=json`.
+
+Implicit: format text uvicorn standard. Cu `LOG_FORMAT=json`: fiecare linie de log e un obiect JSON cu campurile `ts`, `level`, `logger`, `message`, `exc_info` (optional).
+
+Util pentru filtrare cu `jq` sau indexare in Grafana Loki / journald.
+
+### Vitest — frontend unit tests
+
+Setup minimal pentru utilitare pure (fara DOM/React). Fisiere acoperite:
+- `src/lib/formatters.ts` — `formatCurrency`, `formatInt`, `formatPercent`
+- `src/lib/viewCache.ts` — `getCachedView`, `setCachedView`, eviction la MAX_CACHE_SIZE=50
+
+Rulare: `npm run test` din radacina proiectului.
 
 ---
 
