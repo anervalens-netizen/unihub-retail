@@ -20,6 +20,3 @@ backend/data/
 
 # Backend virtual environment
 backend/venv/
-
-# Graphify output (knowledge graph artifacts; skill-ul e versionat in .claude/)
-graphify-out/
