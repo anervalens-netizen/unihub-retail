@@ -82,6 +82,13 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 
 Helperele de filtre si scope (SQL `where_clauses`, `scoped_clauses`, `transaction_filter_parts`, `normalize_filter`, `build_scope_filter`) traiesc in `services/filters.py`. Helperele de forecast (CRM/HR shared) traiesc in `services/forecast.py`.
 
+Logica grea a dashboard-ului e extrasa in `services/dashboard/`:
+- `services/dashboard/utils.py` — `_shift_month`, `_month_day_range`, `_build_scoped_params`
+- `services/dashboard/queries.py` — toate `_fetch_*_stats`, `_enrich_*`, mix-uri (category/brand/bucket/subcategory), `_fetch_period_comparison`, `_fetch_promo_incentive_summary`, `_get_store_incentive_multipliers`
+- `services/dashboard/specials_data.py` — `_get_special_cards_data` (folosit de endpoint-ul `/special-cards` si de `/all`)
+
+Routerul `dashboard.py` contine doar endpoint-urile (`@router.get(...)`) si importa din `services.dashboard.*`. Alte routere (campaigns) importa direct din `services.dashboard.queries` — niciodata din `routers.dashboard`.
+
 ### UniAI / AI tab
 - Frontend:
   - `src/components/AIChat.tsx` — layout messenger, composer fix jos, drawer sesiuni, upload attachments

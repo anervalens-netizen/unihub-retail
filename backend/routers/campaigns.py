@@ -18,7 +18,7 @@ from models import (
     IncentiveTopAgent,
     PromoTopStore,
 )
-from routers.dashboard import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
+from services.dashboard.queries import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
 from services.filters import build_scope_filter, normalize_filter, scoped_clauses
 from services.dashboard_specials import (
     load_special_cards_config,
