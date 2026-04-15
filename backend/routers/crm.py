@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
 from dependencies import require_role
+from services.forecast import get_forecast_factor
 
 VISITS_DB_PATH = "/opt/Mobiup/unihub/data/visits/visits.db"
 
@@ -40,34 +41,6 @@ def _query_visits_by_store(year_month: str) -> dict[str, dict]:
 router = APIRouter(prefix="/api/crm", tags=["crm"])
 
 ALLOWED_ROLES = require_role("admin", "management")
-
-
-async def get_forecast_factor(conn: Any, month: str) -> float:
-    """Factor de extrapolare: zile_luna / ultima_zi_vanzari. 1.0 daca luna e finalizata."""
-    meta = await conn.fetchrow(
-        """
-        SELECT
-            COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
-            EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
-            EXTRACT(DAY FROM (
-                date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
-                + INTERVAL '1 month - 1 day'
-            ))::INT AS days_in_month
-        FROM import_snapshots snap
-        LEFT JOIN (
-            SELECT MAX(sale_date) AS sale_date
-            FROM reporting_item_day
-            WHERE import_month = $1
-        ) rid ON true
-        WHERE snap.import_month = $1
-        """,
-        month,
-    )
-    if meta and not meta["is_final"] and meta["last_sale_day"]:
-        last_day = int(meta["last_sale_day"])
-        days_in_month = int(meta["days_in_month"] or last_day)
-        return days_in_month / last_day if last_day > 0 else 1.0
-    return 1.0
 
 
 async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:

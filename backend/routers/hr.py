@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from db.connection import get_pool
 from dependencies import get_current_user, require_role
-from routers.crm import get_forecast_factor
+from services.forecast import get_forecast_factor
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 
