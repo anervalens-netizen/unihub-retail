@@ -283,6 +283,19 @@ La orice modificare de CSS sau layout:
 
 ---
 
+## Graphify (skill `/graphify`)
+
+Skill versionat in `.claude/skills/graphify/SKILL.md` — calatoreste cu repo-ul, disponibil pe orice masina unde clonezi proiectul. Transforma codul + docs intr-un knowledge graph (HTML + JSON + `GRAPH_REPORT.md`).
+
+**Dependenta**: necesita `graphifyy` (Python 3.10+) instalat pe masina respectiva pentru utilitarele CLI (path / explain / query / update / cluster-only):
+```bash
+python3 -m venv ~/.venvs/graphify && ~/.venvs/graphify/bin/pip install graphifyy
+```
+
+Invocare din Claude Code: `/graphify .` (prima data — full pipeline) sau `/graphify . --update` (incremental, doar AST). Output-ul merge in `graphify-out/` care e in `.gitignore`.
+
+---
+
 ## Ce sa nu faci
 
 - Nu crea fisiere temporare in radacina proiectului (`fix.py`, `patch.txt`, etc.) — curata-le dupa
