@@ -6,6 +6,30 @@ Scope: EXPLAIN ANALYZE on the hot `_fetch_*` queries in
 findings only. Index creation belongs on a dedicated branch with
 before/after measurements, per advisor guidance.
 
+## Follow-up: `idx_sales_month_date_cartela` — applied 2026-04-15
+
+Branch `perf/cartela-index`, migration `001_add_cartela_composite_index.sql`.
+
+| Metric | Before | After | Delta |
+|--------|-------:|------:|------:|
+| Execution time (cold) | 63.2 ms | 44.2 ms | −30% |
+| Execution time (warm) | ~39 ms | ~49 ms* | — |
+| **Index bitmap scan time** | **15.4 ms** | **0.85 ms** | **−94%** |
+| Index disk reads | 65 blocks | 31 blocks | −52% |
+| Plan node | `BitmapAnd` (2 indexes) | Single `Bitmap Index Scan` | ✓ |
+| Heap blocks re-checked | 872 | 872 | unchanged** |
+
+\* Warm-cache total rămâne ~49ms: `COUNT(DISTINCT bon_nr)` pe 31255 rânduri domină
+agregarea. Indexul nu poate optimiza hash-ul de aggregate — acesta e noul bottleneck.
+
+\*\* Heap re-checks dispar complet doar cu opțiunea B (covering, INCLUDE bon_nr)
+care permite index-only scan. Opțiunea B rămâne candidat pentru sprint viitor dacă
+query-ul rămâne hot după filtrare reală pe `item_code`.
+
+**Concluzie:** BitmapAnd eliminat, index scan 18× mai rapid. Câștigul vizibil în
+producție va fi mai mare decât în test sintetic deoarece query-ul real filtrează
+și pe `item_code = ANY(...)` → subset mai mic de rânduri de agregat.
+
 Target month: `2026-03` (fully loaded, 2575 agent-day rows / 31819 tx).
 Database: PostgreSQL 18 on 192.168.0.68.
 
@@ -20,33 +44,16 @@ Database: PostgreSQL 18 on 192.168.0.68.
 | `reporting_item_month` group by site+item | 0.07 ms | 3 / 0 | `idx_reporting_item_month_month_item` — fine |
 | **cartela receipt count** (specials_data) | **39.4 ms** | **922 / 25** | BitmapAnd of `idx_sales_transactions_month_cartela` + `idx_sales_date`; 872 heap blocks re-checked |
 
-## The one candidate worth filing as follow-up
+## Remaining candidate (optional upgrade)
 
-`sales_transactions` cartela receipt count is the slowest hot query at
-~40 ms. Plan currently does BitmapAnd of two indexes (partial-month +
-date-range) and re-checks 872 heap blocks. Two options for a follow-up
-branch:
-
-1. Composite partial index:
-   ```sql
-   CREATE INDEX idx_sales_month_date_cartela
-     ON sales_transactions (import_month, sale_date)
-     WHERE is_cartela = false;
-   ```
-   Expected: single index scan, no BitmapAnd, ~10–15 ms.
-
-2. Covering variant (index-only scan):
-   ```sql
-   CREATE INDEX idx_sales_month_date_cartela_bon
-     ON sales_transactions (import_month, sale_date) INCLUDE (bon_nr)
-     WHERE is_cartela = false;
-   ```
-   Expected: zero heap reads, ~2–5 ms — but larger on-disk index.
-
-Size/write-cost tradeoff needs measuring on the prod dataset. Do not
-add either blindly — build the composite on a staging dump, compare
-EXPLAIN (ANALYZE, BUFFERS) before/after, and confirm writes don't
-regress the import path.
+Opțiunea B — covering index cu `INCLUDE (bon_nr)`:
+```sql
+CREATE INDEX idx_sales_month_date_cartela_bon
+  ON sales_transactions (import_month, sale_date) INCLUDE (bon_nr)
+  WHERE is_cartela = false;
+```
+Ar permite index-only scan, eliminând cele 872 heap re-checks → ~2–5ms total.
+Tradeoff: index mai mare pe disk. De măsurat dacă query-ul rămâne hot.
 
 ## What is NOT a candidate
 
