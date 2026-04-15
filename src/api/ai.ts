@@ -58,15 +58,17 @@ export class AiWebSocket {
 
   connect(): void {
     this.closed = false;
+    // Token-ul trece prin Sec-WebSocket-Protocol header (nu ajunge în access logs),
+    // nu prin query param. Browserul trimite subprotocoalele listate în al
+    // doilea argument al WebSocket(); serverul alege și echo-ează 'bearer'.
     const params = new URLSearchParams({
-      token: this.token,
       device_id: this.deviceId,
     });
     if (this.sessionId) {
       params.set('session_id', this.sessionId);
     }
     const url = `${resolveWsUrl()}?${params.toString()}`;
-    this.ws = new WebSocket(url);
+    this.ws = new WebSocket(url, ['bearer', this.token]);
 
     this.ws.onmessage = (ev) => {
       try {

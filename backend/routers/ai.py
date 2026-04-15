@@ -2,7 +2,10 @@
 AI Router — WebSocket + HTTP proxy to Hermes Bridge (localhost:7777).
 
 Endpoints:
-  WS  /api/ai/ws?token=...   — streaming chat via WebSocket
+  WS  /api/ai/ws   — streaming chat via WebSocket
+                    Auth: Sec-WebSocket-Protocol: bearer, <jwt>
+                    (query param ?token=... still accepted for backward-compat,
+                    marked deprecated — va fi eliminat într-o versiune ulterioară)
   GET /api/ai/health          — bridge health check
   POST /api/ai/reset          — reset conversation session
 """
@@ -78,15 +81,39 @@ async def _validate_ws_token(token: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _extract_bearer_subprotocol(websocket: WebSocket) -> tuple[str | None, str | None]:
+    """Parse Sec-WebSocket-Protocol header looking for ['bearer', '<token>'].
+
+    Returns (token, chosen_subprotocol). Browser trimite ca header:
+      Sec-WebSocket-Protocol: bearer, <jwt>
+    Server acceptă echo-ind 'bearer' (RFC 6455 cere ca server să aleagă unul
+    din protocoalele propuse sau să refuze — alegem 'bearer').
+    """
+    raw = websocket.headers.get("sec-websocket-protocol", "")
+    if not raw:
+        return None, None
+    protocols = [p.strip() for p in raw.split(",") if p.strip()]
+    if len(protocols) >= 2 and protocols[0] == "bearer":
+        return protocols[1], "bearer"
+    return None, None
+
+
 @router.websocket("/ws")
 async def ai_websocket(
     websocket: WebSocket,
-    token: str = Query(...),
+    token: str | None = Query(None),
     device_id: str = Query(..., min_length=6),
     session_id: str | None = Query(None),
 ):
     """
     WebSocket chat endpoint.
+
+    Authentication (preferred): client connects with
+        new WebSocket(url, ['bearer', jwtToken])
+    Server reads Sec-WebSocket-Protocol header and echoes 'bearer'.
+
+    Backward-compat: `?token=<jwt>` query param still accepted (logged as
+    deprecated). Va fi eliminat.
 
     Protocol:
       Client → Server: {"type": "message", "content": "...", "reset": false}
@@ -97,14 +124,27 @@ async def ai_websocket(
       Server → Client: {"type": "error", "message": "..."}
       Server → Client: {"type": "bridge_offline"}
     """
-    # Validate token before accepting
+    # Preferăm subprotocol header (nu apare în logs), fallback la query
+    header_token, chosen_subprotocol = _extract_bearer_subprotocol(websocket)
+    effective_token = header_token or token
+
+    if not effective_token:
+        await websocket.close(code=4001)
+        return
+
+    if header_token is None and token:
+        logger.warning(
+            "WS auth via query ?token= is deprecated, client should send "
+            "Sec-WebSocket-Protocol: bearer, <jwt>"
+        )
+
     try:
-        user = await _validate_ws_token(token)
+        user = await _validate_ws_token(effective_token)
     except HTTPException:
         await websocket.close(code=4001)
         return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol=chosen_subprotocol)
 
     bridge_session_id = session_id
     if not bridge_session_id:
