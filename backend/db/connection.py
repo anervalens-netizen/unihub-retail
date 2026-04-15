@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
+import re
 from pathlib import Path
 
 import asyncpg
+
+logger = logging.getLogger(__name__)
 
 pool: asyncpg.Pool | None = None
 SCHEMA_NAME = "schema_v2"
@@ -15,6 +19,16 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 """.strip()
+
+SCHEMA_MIGRATIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    filename TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+""".strip()
+
+# Migrations must match NNN_name.sql (3-digit numeric prefix)
+_MIGRATION_FILENAME_RE = re.compile(r"^\d{3}_[a-z0-9_]+\.sql$")
 
 
 def _load_repo_env_file() -> None:
@@ -113,3 +127,70 @@ async def ensure_schema_current(*, force: bool = False) -> bool:
 
 async def apply_schema() -> None:
     await ensure_schema_current(force=True)
+
+
+def get_migrations_dir() -> Path:
+    return Path(__file__).with_name("migrations")
+
+
+def list_migration_files(migrations_dir: Path | None = None) -> list[Path]:
+    """Return NNN_*.sql migrations în ordine numerică.
+
+    Ignoră fișiere fără prefix numeric (README.md, backup-uri etc.) și
+    validează strict formatul ca să nu apară surprize de ordonare
+    (e.g. 2_foo.sql înainte de 10_bar.sql ar sorta lexicografic greșit —
+    de-aia impun 3 cifre).
+    """
+    d = migrations_dir or get_migrations_dir()
+    if not d.exists():
+        return []
+    candidates = [p for p in d.iterdir() if p.is_file() and p.suffix == ".sql"]
+    valid = [p for p in candidates if _MIGRATION_FILENAME_RE.match(p.name)]
+    invalid = [p.name for p in candidates if not _MIGRATION_FILENAME_RE.match(p.name)]
+    if invalid:
+        raise RuntimeError(
+            "Migrations invalide (format cerut: NNN_nume.sql cu 3 cifre): "
+            + ", ".join(sorted(invalid))
+        )
+    return sorted(valid, key=lambda p: p.name)
+
+
+async def apply_pending_migrations(*, migrations_dir: Path | None = None) -> list[str]:
+    """Aplică migrations NNN_*.sql nebifate în `schema_migrations`.
+
+    Fiecare fișier rulează într-o tranzacție separată — dacă pica una,
+    restul nu se aplică. Returnează lista fișierelor aplicate (pentru log).
+
+    Flow:
+    1. `ensure_schema_current()` rulează schema_v2.sql (baseline idempotent)
+    2. `apply_pending_migrations()` rulează delta peste baseline
+
+    Migrations ar trebui să fie idempotente când e posibil (IF NOT EXISTS),
+    dar tracking-ul ne acoperă pentru operațiuni care nu sunt (e.g. INSERT
+    pentru data seeding, UPDATE cu efect unic).
+    """
+    current_pool = await get_pool()
+    files = list_migration_files(migrations_dir)
+    applied: list[str] = []
+
+    async with current_pool.acquire() as connection:
+        await connection.execute(SCHEMA_MIGRATIONS_TABLE_SQL)
+        already = {
+            row["filename"]
+            for row in await connection.fetch("SELECT filename FROM schema_migrations")
+        }
+
+        for path in files:
+            if path.name in already:
+                continue
+            sql = path.read_text(encoding="utf-8")
+            async with connection.transaction():
+                await connection.execute(sql)
+                await connection.execute(
+                    "INSERT INTO schema_migrations (filename) VALUES ($1)",
+                    path.name,
+                )
+            applied.append(path.name)
+            logger.info("Applied migration %s", path.name)
+
+    return applied
