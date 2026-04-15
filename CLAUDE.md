@@ -77,7 +77,7 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `agents` | `/api/agents` |
 | `salarii` | `/salarii` (fara prefix `/api`) |
 | `tasks` | `/api/tasks` — task-uri per agent/magazin; sursa si din alerte CRM |
-| `hr` | `/api/hr` — concedii, pontaj, performanta ASM (merge PG + SQLite) |
+| `hr` | `/api/hr` — concedii, pontaj, performanta ASM (PG + `visits_snapshot`, nu mai citeste SQLite direct) |
 | `crm` | `/api/crm` — scoruri magazine, alerte, `get_forecast_factor` (shared cu hr.py) |
 | `ai` | `/api/ai` — WebSocket proxy + sesiuni + attachments pentru Hermes bridge |
 | `errors` | `/api/errors` (public) + `/api/admin/error-logs` (admin) — ingest erori frontend + vizualizare |
