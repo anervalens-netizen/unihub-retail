@@ -67,3 +67,20 @@ access patterns. No action needed on them.
   into fewer round-trips. Behavior-changing; separate branch.
 - `visits_snapshot` PG table (cache SQLite-derived visit aggregates in PG).
   Schema change + new service code; feature, not a refactor.
+
+## GROUPING SETS consolidation — decizie 2026-04-15
+
+Analizat și decis **skip** pentru `_fetch_regional_stats` + `_fetch_asm_stats`.
+
+Motivare: cele 4 funcții `_fetch_*_stats` rulează deja în `asyncio.gather()` —
+fiecare pe conexiune proprie, în paralel. Latența totală = MAX(fiecare query),
+nu SUM. GROUPING SETS ar economisi o singură conexiune din pool și ar deduplica
+~120 linii de enrichment identic, dar nu ar reduce latența vizibilă pentru user.
+
+Raport risc/câștig nefavorabil:
+- SQL mai complex cu markeri `GROUPING()` → mai greu de debugat
+- Python side trebuie să split rezultatele după marker → logică adițională
+- Risc de regresie pe enrichment promo/incentive (același cod duplicat, dar izolat)
+- Zero reducere de latență (già parallele)
+
+Dacă pool-ul devine bottleneck (>50 req/s concurrent pe `/all`), reevaluăm.
