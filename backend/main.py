@@ -9,34 +9,6 @@ from logging_config import attach_db_error_handler, setup_logging
 
 setup_logging()
 
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.logging import LoggingIntegration
-from sentry_sdk.integrations.starlette import StarletteIntegration
-
-
-def _init_sentry() -> None:
-    """Inițializează Sentry dacă SENTRY_DSN e setat. No-op altfel."""
-    dsn = os.getenv("SENTRY_DSN", "").strip()
-    if not dsn:
-        return
-    sentry_sdk.init(
-        dsn=dsn,
-        integrations=[
-            StarletteIntegration(),
-            FastApiIntegration(),
-            LoggingIntegration(
-                level=logging.WARNING,   # breadcrumb din WARNING+
-                event_level=logging.ERROR,  # eveniment Sentry din ERROR+
-            ),
-        ],
-        traces_sample_rate=0.1,
-        environment=os.getenv("UNIHUB_ENV", "development"),
-        release=os.getenv("APP_VERSION", "dev"),
-    )
-
-
-_init_sentry()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
