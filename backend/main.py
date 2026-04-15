@@ -21,6 +21,7 @@ from bootstrap import (
     ensure_tl_users_and_assignments,
     should_sync_tl_assignments_on_boot,
 )
+from config import validate_required_env_vars
 from db.connection import close_db_pool, ensure_schema_current, get_pool, init_db_pool
 from routers import admin, agents, ai, auth, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
@@ -57,6 +58,7 @@ async def ensure_default_users() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    validate_required_env_vars()
     await init_db_pool()
     schema_applied = await ensure_schema_current()
     logger.info("Database schema %s", "applied" if schema_applied else "already current")
