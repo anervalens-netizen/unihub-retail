@@ -5,7 +5,7 @@ import pathlib
 from contextlib import asynccontextmanager
 import logging
 
-from logging_config import setup_logging
+from logging_config import attach_db_error_handler, setup_logging
 
 setup_logging()
 
@@ -101,6 +101,8 @@ async def ensure_default_users() -> None:
 async def lifespan(_: FastAPI):
     validate_required_env_vars()
     await init_db_pool()
+    current_pool = await get_pool()
+    attach_db_error_handler(current_pool)
     schema_applied = await ensure_schema_current()
     logger.info("Database schema %s", "applied" if schema_applied else "already current")
     migrations = await apply_pending_migrations()

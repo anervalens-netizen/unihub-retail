@@ -9,6 +9,7 @@ Usage în main.py (top-level, înainte de FastAPI()):
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -101,3 +102,79 @@ def setup_logging(fmt: str | None = None) -> None:
         uvicorn_logger.handlers.clear()
         uvicorn_logger.addHandler(handler)
         uvicorn_logger.propagate = False
+
+
+# ── DB Error Handler ──────────────────────────────────────────────────────────
+
+_db_handler_instance: "DBErrorHandler | None" = None
+
+_HANDLER_SKIP_FIELDS = frozenset({
+    "name", "msg", "args", "levelname", "levelno", "pathname",
+    "filename", "module", "exc_info", "exc_text", "stack_info",
+    "lineno", "funcName", "created", "msecs", "relativeCreated",
+    "thread", "threadName", "processName", "process", "message",
+    "taskName",
+})
+
+
+class DBErrorHandler(logging.Handler):
+    """Handler async non-blocking — inserează ERROR+ în tabelul error_logs.
+
+    Activat prin attach_db_error_handler(pool) după init_db_pool().
+    Înainte de attach sau dacă event loop-ul nu rulează, emit() e no-op.
+    Niciodată nu ridică excepții — erorile de scriere în DB sunt silențioase.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self._pool: object | None = None
+
+    def attach(self, pool: object) -> None:
+        self._pool = pool
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self._pool is None:
+            return
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self._insert(record))
+        except Exception:
+            pass
+
+    async def _insert(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage()
+            traceback_text: str | None = None
+            if record.exc_info:
+                traceback_text = self.formatException(record.exc_info)
+
+            extra_data = {
+                k: v for k, v in record.__dict__.items()
+                if k not in _HANDLER_SKIP_FIELDS and not k.startswith("_")
+            }
+            extra_json = json.dumps(extra_data, default=str) if extra_data else None
+
+            async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+                await conn.execute(
+                    """
+                    INSERT INTO error_logs
+                        (source, level, message, traceback, path, extra)
+                    VALUES ('backend', 'error', $1, $2, $3, $4)
+                    """,
+                    message[:2000],
+                    (traceback_text or "")[:4000] or None,
+                    record.name,
+                    extra_json,
+                )
+        except Exception:
+            pass  # Niciodată nu crăpa din cauza logging-ului
+
+
+def attach_db_error_handler(pool: object) -> None:
+    """Activează DBErrorHandler pe root logger. Apelat după init_db_pool."""
+    global _db_handler_instance
+    if _db_handler_instance is None:
+        _db_handler_instance = DBErrorHandler()
+        logging.getLogger().addHandler(_db_handler_instance)
+    _db_handler_instance.attach(pool)
