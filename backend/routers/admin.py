@@ -14,6 +14,7 @@ from models import (
 )
 from services.auth_service import hash_password
 from services.reporting_refresh import rebuild_reporting_all
+from services.visits_sync import sync_visits_snapshot
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -285,3 +286,18 @@ async def delete_focus_product(
             status_code=status.HTTP_404_NOT_FOUND, detail="Produsul focus nu există"
         )
     return {"deleted": True}
+
+
+@router.post("/sync-visits-snapshot")
+async def sync_visits_snapshot_endpoint(
+    user: dict = Depends(require_role("admin")),
+) -> dict[str, int]:
+    """Refresh manual al visits_snapshot din SQLite.
+
+    Apelat după ce agenți au adăugat/aprobat vizite noi și
+    vrei să reflecte imediat în tab-ul Echipa din Management.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        synced = await sync_visits_snapshot(conn)
+    return {"synced": synced}

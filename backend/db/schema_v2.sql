@@ -732,3 +732,20 @@ CREATE TABLE IF NOT EXISTS store_scores (
     calculated_at TIMESTAMPTZ DEFAULT now(),
     UNIQUE(site_code, score_month)
 );
+
+-- =====================================================================
+-- VISITS SNAPSHOT — Agregate vizite din SQLite, cacheate în PG
+-- Sincronizat la boot și via POST /api/admin/sync-visits-snapshot
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS visits_snapshot (
+    asm             TEXT NOT NULL,
+    month           TEXT NOT NULL,
+    total_visits    INT  NOT NULL DEFAULT 0,
+    avg_completion  NUMERIC(5,1),
+    avg_duration    NUMERIC(6,2),
+    distinct_stores INT  NOT NULL DEFAULT 0,
+    checklist_score NUMERIC(5,1),
+    approved_pct    NUMERIC(5,1),
+    synced_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (asm, month)
+);

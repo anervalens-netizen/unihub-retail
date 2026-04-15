@@ -36,6 +36,7 @@ from db.connection import (
 )
 from routers import admin, agents, ai, auth, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
+from services.visits_sync import sync_visits_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,10 @@ async def lifespan(_: FastAPI):
         logger.info("No pending migrations")
     await ensure_default_users()
     await prewarm_pool()
+    current_pool = await get_pool()
+    async with current_pool.acquire() as conn:
+        synced = await sync_visits_snapshot(conn)
+        logger.info("visits_snapshot synced at boot: %d rows", synced)
     prewarm_special_cards_cache()
     yield
     await close_db_pool()

@@ -163,66 +163,6 @@ async def get_performance(agent_name: str, user: dict = Depends(ALLOWED_ROLES)):
         return await get_agent_performance(conn, agent_name)
 
 
-import asyncio
-import sqlite3
-
-VISITS_DB_PATH = "/opt/Mobiup/unihub/data/visits/visits.db"
-
-
-def _query_visits_by_asm(year_month: str) -> list[dict]:
-    """Execuție sincronă — apelată din run_in_executor."""
-    con = sqlite3.connect(VISITS_DB_PATH)
-    con.row_factory = sqlite3.Row
-    cur = con.execute(
-        """
-        SELECT
-            asm,
-            COUNT(*) AS total_visits,
-            ROUND(AVG(completion_pct), 1) AS avg_completion,
-            ROUND(AVG(durata_vizita_ore), 2) AS avg_duration,
-            COUNT(DISTINCT magazin) AS distinct_stores,
-            ROUND(AVG(
-                (COALESCE(curatenie, 0) + COALESCE(imagine, 0) + COALESCE(uniforma, 0)
-                 + COALESCE(afise, 0) + COALESCE(produse_promo, 0)) * 20.0
-            ), 1) AS checklist_score,
-            ROUND(
-                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) * 100.0 / COUNT(*),
-                1
-            ) AS approved_pct
-        FROM visits
-        WHERE substr(data_raport, 1, 7) = ?
-          AND asm IS NOT NULL AND asm != ''
-        GROUP BY asm
-        """,
-        (year_month,),
-    )
-    rows = [dict(r) for r in cur.fetchall()]
-    con.close()
-    return rows
-
-
-def _query_visits_history(asm_name: str, months: int) -> list[dict]:
-    """Execuție sincronă — istoricul vizitelor per ASM."""
-    con = sqlite3.connect(VISITS_DB_PATH)
-    con.row_factory = sqlite3.Row
-    cur = con.execute(
-        """
-        SELECT
-            substr(data_raport, 1, 7) AS month,
-            COUNT(*) AS total_visits,
-            ROUND(AVG(completion_pct), 1) AS avg_completion,
-            ROUND(AVG(durata_vizita_ore), 2) AS avg_duration
-        FROM visits
-        WHERE asm = ?
-          AND data_raport >= date('now', ? || ' months')
-        GROUP BY substr(data_raport, 1, 7)
-        ORDER BY month
-        """,
-        (asm_name, f"-{months}"),
-    )
-    rows = [dict(r) for r in cur.fetchall()]
-    con.close()
-    return rows
 
 
 async def get_asm_performance(conn: Any, month: str, regional: str | None) -> list[dict]:
@@ -265,9 +205,10 @@ async def get_asm_performance(conn: Any, month: str, regional: str | None) -> li
         regional,
     )
 
-    loop = asyncio.get_running_loop()
-    sqlite_rows = await loop.run_in_executor(None, _query_visits_by_asm, month)
-    sqlite_map = {r["asm"]: r for r in sqlite_rows}
+    snapshot_rows = await conn.fetch(
+        "SELECT * FROM visits_snapshot WHERE month = $1", month
+    )
+    sqlite_map = {r["asm"]: dict(r) for r in snapshot_rows}
 
     forecast_factor = await get_forecast_factor(conn, month)
     is_partial = forecast_factor > 1.001
@@ -331,9 +272,17 @@ async def get_asm_performance_history(conn: Any, asm_name: str, months: int = 6)
         str(months),
     )
 
-    loop = asyncio.get_running_loop()
-    sqlite_hist = await loop.run_in_executor(None, _query_visits_history, asm_name, months)
-    sqlite_map = {r["month"]: r for r in sqlite_hist}
+    snapshot_hist = await conn.fetch(
+        """
+        SELECT * FROM visits_snapshot
+        WHERE asm = $1
+          AND month >= to_char(now() - ($2 || ' months')::interval, 'YYYY-MM')
+        ORDER BY month
+        """,
+        asm_name,
+        str(months),
+    )
+    sqlite_map = {r["month"]: dict(r) for r in snapshot_hist}
 
     # Forecast factor pentru luna curentă (parțială)
     current_month = await conn.fetchrow(
