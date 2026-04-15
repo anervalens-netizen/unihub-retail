@@ -1214,6 +1214,8 @@ async def _fetch_promo_incentive_summary(
     promo_sales: Decimal = Decimal("0")
     incentive_qty = 0
     incentive_value: Decimal = Decimal("0")
+    incentive_qualified_stores = 0
+    incentive_qualified_agents = 0
 
     if promotion_definition is not None and promotion_error is None:
         promo_params, promo_positions = _build_scoped_params(
@@ -1300,7 +1302,7 @@ async def _fetch_promo_incentive_summary(
                 *incentive_params,
                 *incentive_scope_params,
             )
-            store_multipliers, _ = await _get_store_incentive_multipliers(
+            store_multipliers, achievements = await _get_store_incentive_multipliers(
                 conn, user, month, firma, regional, asm, site_code
             )
             incentive_qty = sum(int(r["qty"]) for r in item_rows)
@@ -1313,6 +1315,26 @@ async def _fetch_promo_incentive_summary(
                 )
             ))
 
+            # Magazine/agenți cu previziune ≥ 90% față de target.
+            # achievements provine din _get_store_incentive_multipliers care aplică deja
+            # filtrele de scope (firma/regional/asm/site_code + RBAC per rol) — deci
+            # ANY($2) pe qualified_store_codes este implicit scope-filtrat, fără scoped_clauses adiționale.
+            qualified_store_codes = [sc for sc, v in achievements.items() if v is not None and v >= 0.9]
+            incentive_qualified_stores = len(qualified_store_codes)
+            incentive_qualified_agents = 0
+            if qualified_store_codes:
+                aq_row = await conn.fetchrow(
+                    """
+                    SELECT COUNT(DISTINCT agent) AS cnt
+                    FROM reporting_agent_month
+                    WHERE import_month = $1
+                      AND site_code = ANY($2)
+                      AND agent IS NOT NULL AND agent != '-'
+                    """,
+                    month, qualified_store_codes,
+                )
+                incentive_qualified_agents = int(aq_row["cnt"] or 0) if aq_row else 0
+
     promo_impact = promo_sales * Decimal("0.20")
     return PromoIncentiveSummary(
         promo_qty=promo_qty,
@@ -1320,6 +1342,8 @@ async def _fetch_promo_incentive_summary(
         promo_impact=promo_impact,
         incentive_qty=incentive_qty,
         incentive_value=incentive_value,
+        incentive_qualified_stores=incentive_qualified_stores,
+        incentive_qualified_agents=incentive_qualified_agents,
     )
 
 

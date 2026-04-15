@@ -42,7 +42,7 @@ export default function App() {
     const saved = localStorage.getItem('unihub_campaigns_section');
     return (saved as CampaignsSection) || 'campaigns';
   });
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState(() => localStorage.getItem('unihub_theme') ?? 'light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [hubSection, setHubSection] = useState<'current' | 'history' | 'visits'>('current');
   const [hubFilters, setHubFilters] = useState<AppFilters>(defaultFilters);
@@ -62,6 +62,7 @@ export default function App() {
   }, [campaignsSection]);
 
   useEffect(() => {
+    localStorage.setItem('unihub_theme', theme);
     const root = document.documentElement;
     root.className = '';
     if (theme === 'dark') {

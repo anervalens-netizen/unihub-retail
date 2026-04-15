@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import {
   fetchAsmPerformance,
   fetchAsmHistory,
@@ -13,28 +13,53 @@ import {
 
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
-function TargetBadge({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-slate-400 text-xs">—</span>;
-  const color = pct >= 90 ? 'text-green-600 dark:text-green-400' : pct >= 70 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
-  return <span className={`text-sm font-bold ${color}`}>{pct}%</span>;
-}
-
-function ScoreDot({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-slate-400 text-xs">—</span>;
-  const pct = value / 100;
-  const color = pct >= 0.7 ? 'bg-green-500' : pct >= 0.4 ? 'bg-amber-500' : 'bg-red-500';
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-sm text-slate-700 dark:text-slate-300">{value}</span>
-      <div className={`w-2 h-2 rounded-full ${color}`} />
-    </div>
-  );
-}
-
 function formatMonth(m: string) {
   const [y, mo] = m.split('-');
   const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
   return `${labels[parseInt(mo) - 1]} ${y.slice(2)}`;
+}
+
+function pctColor(pct: number | null): string {
+  if (pct === null) return 'text-slate-400';
+  if (pct >= 90) return 'text-green-600 dark:text-green-400';
+  if (pct >= 70) return 'text-amber-600 dark:text-amber-400';
+  return 'text-red-600 dark:text-red-400';
+}
+
+function barFill(pct: number | null): string {
+  if (pct === null) return 'bg-slate-300 dark:bg-slate-600';
+  if (pct >= 90) return 'bg-green-500';
+  if (pct >= 70) return 'bg-amber-500';
+  return 'bg-red-500';
+}
+
+type KpiStatus = 'green' | 'amber' | 'red';
+
+function kpiStatus(value: number, greenThreshold: number, amberThreshold?: number): KpiStatus {
+  if (value >= greenThreshold) return 'green';
+  if (amberThreshold !== undefined && value >= amberThreshold) return 'amber';
+  return 'red';
+}
+
+const STATUS_DOT: Record<KpiStatus, string> = {
+  green: 'bg-green-500',
+  amber: 'bg-amber-400',
+  red: 'bg-red-500',
+};
+
+function KPIChip({ label, value, status, unit = '%' }: {
+  label: string;
+  value: number;
+  status?: KpiStatus;
+  unit?: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs">
+      {status && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[status]}`} />}
+      <span className="text-slate-400">{label}</span>
+      <strong className="text-slate-700 dark:text-slate-200 font-semibold">{value}{unit}</strong>
+    </span>
+  );
 }
 
 function ASMRow({ row }: { row: AsmPerformance }) {
@@ -54,35 +79,110 @@ function ASMRow({ row }: { row: AsmPerformance }) {
     setExpanded(!expanded);
   };
 
+  const displayPct = row.is_forecast ? row.forecast_target_pct : row.target_pct;
+  const pctLabel = row.is_forecast ? 'Previziune target' : '% Target realizat';
+  const barWidth = Math.min(displayPct ?? 0, 100);
+
   return (
     <div className="glass rounded-2xl overflow-hidden">
       <button
         onClick={handleExpand}
-        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
+        className="w-full px-4 pt-3.5 pb-3 text-left hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
       >
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div>
             <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.asm}</span>
-            <span className="text-xs text-slate-400">{row.regional}</span>
+            <span className="ml-2 text-xs text-slate-400">{row.regional}</span>
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-500">
-            <span>Vânzări: <strong className="text-slate-700 dark:text-slate-300">{(row.total_sales / 1000).toFixed(1)}k</strong></span>
-            <span>Target: <TargetBadge pct={row.target_pct} /></span>
-            <span>Magazine: <strong className="text-slate-700 dark:text-slate-300">{row.active_stores}</strong></span>
-            <span>Agenți: <strong className="text-slate-700 dark:text-slate-300">{row.active_agents}</strong></span>
-            <span>Bon2+: <strong className="text-slate-700 dark:text-slate-300">{row.pct_bon2acc}%</strong></span>
-            <span>Focus: <strong className="text-slate-700 dark:text-slate-300">{row.pct_focus}%</strong></span>
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-slate-500">
-            <span>Vizite: <strong className="text-slate-700 dark:text-slate-300">{row.total_visits}</strong></span>
-            {row.avg_completion !== null && <span>Completion: <strong className="text-slate-700 dark:text-slate-300">{row.avg_completion}%</strong></span>}
-            {row.checklist_score !== null && <span>Checklist: <ScoreDot value={row.checklist_score} /></span>}
-            {row.avg_duration !== null && <span>Durată: <strong className="text-slate-700 dark:text-slate-300">{row.avg_duration}h</strong></span>}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {row.is_forecast && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 font-medium">
+                previziune
+              </span>
+            )}
+            {expanded
+              ? <ChevronUp size={15} className="text-slate-400" />
+              : <ChevronDown size={15} className="text-slate-400" />}
           </div>
         </div>
-        {expanded ? <ChevronUp size={16} className="text-slate-400 shrink-0" /> : <ChevronDown size={16} className="text-slate-400 shrink-0" />}
+
+        {/* Forecast / target progress bar */}
+        <div className="mb-3">
+          <div className="flex items-baseline justify-between mb-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500 flex items-center gap-1">
+              <TrendingUp size={11} className="opacity-60" />
+              {pctLabel}
+            </span>
+            <span className={`text-lg font-bold tabular-nums leading-none ${pctColor(displayPct)}`}>
+              {displayPct !== null ? `${displayPct}%` : '—'}
+            </span>
+          </div>
+          <div className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+            <div
+              className={`h-2.5 rounded-full transition-all duration-500 ${barFill(displayPct)}`}
+              style={{ width: `${barWidth}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mb-2">
+          <span>
+            Vânzări{' '}
+            <strong className="text-slate-700 dark:text-slate-300">
+              {(row.total_sales / 1000).toFixed(1)}k
+            </strong>
+            {row.is_forecast && (
+              <span className="text-slate-400">
+                {' '}→ <span className="text-indigo-500 dark:text-indigo-400">{(row.forecast_sales / 1000).toFixed(1)}k</span>
+              </span>
+            )}
+          </span>
+          <span>
+            Vizite{' '}
+            <strong className="text-slate-700 dark:text-slate-300">{row.total_visits}</strong>
+            {row.avg_completion !== null && (
+              <span className="text-slate-400"> · {row.avg_completion}%</span>
+            )}
+          </span>
+          <span>
+            Magazine <strong className="text-slate-700 dark:text-slate-300">{row.active_stores}</strong>
+          </span>
+          <span>
+            Agenți <strong className="text-slate-700 dark:text-slate-300">{row.active_agents}</strong>
+          </span>
+        </div>
+
+        {/* KPI chips */}
+        <div className="flex gap-1.5 flex-wrap">
+          <KPIChip
+            label="Bon2+"
+            value={row.pct_bon2acc}
+            status={kpiStatus(row.pct_bon2acc, 30, 29)}
+          />
+          <KPIChip
+            label="Focus"
+            value={row.pct_focus}
+            status={kpiStatus(row.pct_focus, 6.9, 6)}
+          />
+          {row.checklist_score !== null && (
+            <KPIChip
+              label="Checklist"
+              value={row.checklist_score}
+              status={kpiStatus(row.checklist_score, 95)}
+            />
+          )}
+          {row.avg_duration !== null && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs">
+              <span className="text-slate-400">Durată</span>
+              <strong className="text-slate-700 dark:text-slate-200 font-semibold">{row.avg_duration}h</strong>
+            </span>
+          )}
+        </div>
       </button>
 
+      {/* Expanded history chart */}
       {expanded && (
         <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/50">
           {loadingHistory ? (
@@ -90,6 +190,7 @@ function ASMRow({ row }: { row: AsmPerformance }) {
           ) : history.length === 0 ? (
             <div className="text-center text-slate-400 text-xs py-4">Fără date istorice</div>
           ) : (
+            <>
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
@@ -110,12 +211,10 @@ function ASMRow({ row }: { row: AsmPerformance }) {
                     formatter={(value: number, name: string, props: { payload?: { is_forecast?: boolean } }) => {
                       const isForecast = props.payload?.is_forecast;
                       if (name === 'Vânzări') {
-                        const label = isForecast ? 'Previziune vânzări' : 'Vânzări';
-                        return [`${(value / 1000).toFixed(1)}k`, label];
+                        return [`${(value / 1000).toFixed(1)}k`, isForecast ? 'Previziune vânzări' : 'Vânzări'];
                       }
                       if (name === '% Target') {
-                        const label = isForecast ? 'Previziune % Target' : '% Target';
-                        return [`${value}%`, label];
+                        return [`${value}%`, isForecast ? 'Previziune % Target' : '% Target'];
                       }
                       return [value, name];
                     }}
@@ -133,16 +232,17 @@ function ASMRow({ row }: { row: AsmPerformance }) {
                       />
                     ))}
                   </Bar>
-                  <Line yAxisId="right" type="monotone" dataKey="display_target_pct" name="% Target" stroke="#0ea5e9" strokeWidth={2} dot={false} strokeDasharray="0" />
+                  <Line yAxisId="right" type="monotone" dataKey="display_target_pct" name="% Target" stroke="#0ea5e9" strokeWidth={2} dot={false} />
                   <Line yAxisId="right" type="monotone" dataKey="total_visits" name="Vizite" stroke="#f59e0b" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
-              {history.some((p) => p.is_forecast) && (
-                <p className="text-[10px] text-slate-400 text-center mt-1">
-                  Bara transparentă = previziune luna curentă (extrapolare la finalul lunii)
-                </p>
-              )}
             </div>
+            {history.some((p) => p.is_forecast) && (
+              <p className="text-[10px] text-slate-400 text-center mt-1">
+                Bara transparentă = previziune luna curentă (extrapolare la finalul lunii)
+              </p>
+            )}
+            </>
           )}
         </div>
       )}

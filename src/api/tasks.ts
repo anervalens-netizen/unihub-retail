@@ -1,12 +1,4 @@
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api/tasks' });
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('unihub_token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+import { client } from './client';
 
 export interface Task {
   id: number;
@@ -40,35 +32,35 @@ export interface TaskUpdate {
 }
 
 export async function fetchTasks(params?: { status?: string; assignee?: string; site_code?: string }): Promise<Task[]> {
-  const { data } = await api.get('', { params });
+  const { data } = await client.get('/api/tasks', { params });
   return data;
 }
 
 export async function createTask(body: TaskCreate): Promise<Task> {
-  const { data } = await api.post('', body);
+  const { data } = await client.post('/api/tasks', body);
   return data;
 }
 
 export async function updateTask(id: number, body: TaskUpdate): Promise<Task> {
-  const { data } = await api.patch(`/${id}`, body);
+  const { data } = await client.patch(`/api/tasks/${id}`, body);
   return data;
 }
 
 export async function deleteTask(id: number): Promise<void> {
-  await api.delete(`/${id}`);
+  await client.delete(`/api/tasks/${id}`);
 }
 
 export async function fetchMyTasks(status?: string): Promise<Task[]> {
-  const { data } = await api.get('/my', { params: status ? { status } : undefined });
+  const { data } = await client.get('/api/tasks/my', { params: status ? { status } : undefined });
   return data;
 }
 
 export async function fetchMyPendingCount(): Promise<number> {
-  const { data } = await api.get('/my/count');
+  const { data } = await client.get('/api/tasks/my/count');
   return data.count as number;
 }
 
 export async function updateMyTask(id: number, body: TaskUpdate): Promise<Task> {
-  const { data } = await api.patch(`/my/${id}`, body);
+  const { data } = await client.patch(`/api/tasks/my/${id}`, body);
   return data;
 }

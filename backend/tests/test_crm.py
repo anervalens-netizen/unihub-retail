@@ -21,6 +21,11 @@ async def test_calculate_scores_returns_list():
             assert "score" in score
             assert 0 <= score["score"] <= 100
             assert "breakdown" in score
+            bd = score["breakdown"]
+            for key in ("target_pct", "trend_pct", "kpi_pct", "kpi_bon2acc_score",
+                        "kpi_focus_score", "visits_pct", "kpi_bon2acc", "kpi_focus",
+                        "kpi_bon2acc_avg", "kpi_focus_avg", "nr_vizite", "avg_completion"):
+                assert key in bd, f"breakdown missing key: {key}"
 
 
 @pytest.mark.anyio

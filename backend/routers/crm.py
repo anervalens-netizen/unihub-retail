@@ -76,7 +76,7 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
     Formula:
       - % target atins — previziune (max 40 pct)
       - trend previziune luna curentă vs realizat luna anterioară (max 30 pct)
-      - zile active (max 20 pct)
+      - KPI calitate: Bon2+ și Focus vs mediile lunii (max 20 pct)
       - vizite ASM: frecvență × calitate (max 10 pct)
     """
     y, m = map(int, month.split("-"))
@@ -84,7 +84,7 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
 
     forecast_factor = await get_forecast_factor(conn, month)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     visit_map = await loop.run_in_executor(None, _query_visits_by_store, month)
 
     rows = await conn.fetch(
@@ -93,7 +93,8 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
             SELECT
                 ram.site_code,
                 SUM(ram.total_sales) AS total_value,
-                SUM(ram.working_days) AS active_days,
+                ROUND(SUM(ram.receipt_2plus_count) * 100.0 / NULLIF(SUM(ram.receipt_count), 0), 2) AS pct_bon2acc,
+                ROUND(SUM(ram.focus_quantity) * 100.0 / NULLIF(SUM(ram.total_quantity), 0), 2) AS pct_focus,
                 COALESCE(
                     (SELECT SUM(st.target_value)
                      FROM store_targets st
@@ -112,15 +113,26 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
             FROM reporting_agent_month
             WHERE import_month = $2
             GROUP BY site_code
+        ),
+        kpi_avgs AS (
+            SELECT
+                ROUND(SUM(receipt_2plus_count) * 100.0 / NULLIF(SUM(receipt_count), 0), 2) AS avg_bon2acc,
+                ROUND(SUM(focus_quantity) * 100.0 / NULLIF(SUM(total_quantity), 0), 2) AS avg_focus
+            FROM reporting_agent_month
+            WHERE import_month = $1
         )
         SELECT
             c.site_code,
             c.total_value,
-            c.active_days,
+            c.pct_bon2acc,
+            c.pct_focus,
             c.target_value,
-            COALESCE(p.total_value, 0) AS prev_value
+            COALESCE(p.total_value, 0) AS prev_value,
+            k.avg_bon2acc,
+            k.avg_focus
         FROM current c
         LEFT JOIN prev p ON p.site_code = c.site_code
+        CROSS JOIN kpi_avgs k
         """,
         month,
         prev_month,
@@ -131,7 +143,10 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
         total = float(row["total_value"] or 0)
         target = float(row["target_value"] or 0)
         prev = float(row["prev_value"] or 0)
-        active_days = int(row["active_days"] or 0)
+        pct_bon2acc = float(row["pct_bon2acc"] or 0)
+        pct_focus = float(row["pct_focus"] or 0)
+        avg_bon2acc = float(row["avg_bon2acc"] or 0)
+        avg_focus = float(row["avg_focus"] or 0)
         forecast = total * forecast_factor
 
         # Componentă 1: % target (max 40) — bazat pe previziune
@@ -145,12 +160,14 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
         else:
             c2 = 15.0
 
-        # Componentă 3: zile active (max 20) — 20 zile = maxim
-        c3 = min(active_days / 20 * 20, 20)
+        # Componentă 3: KPI calitate (max 20) — Bon2+ și Focus vs mediile lunii
+        # Scaling midpoint: media = 5/10, dublu față de medie = 10/10
+        bon2acc_score = min(pct_bon2acc / avg_bon2acc * 5, 10.0) if avg_bon2acc > 0 else 5.0
+        focus_score = min(pct_focus / avg_focus * 5, 10.0) if avg_focus > 0 else 5.0
+        c3 = round(bon2acc_score + focus_score, 1)
 
         # Componentă 4: vizite ASM (max 10)
         # Formula: min(nr_vizite × 5, 10) × (avg_completion / 100)
-        # 1 vizită = bază 5 pct, 2+ vizite = bază 10 pct, ponderat cu calitatea formularului
         vdata = visit_map.get(row["site_code"], {})
         nr_vizite = int(vdata.get("nr_vizite", 0) or 0)
         avg_completion = float(vdata.get("avg_completion", 0) or 0)
@@ -164,10 +181,16 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
             "breakdown": {
                 "target_pct": round(c1, 1),
                 "trend_pct": round(c2, 1),
-                "active_days_pct": round(c3, 1),
+                "kpi_pct": c3,
+                "kpi_bon2acc_score": round(bon2acc_score, 1),
+                "kpi_focus_score": round(focus_score, 1),
                 "visits_pct": c4,
                 "target_attainment": round(target_pct, 1),
                 "forecast_factor": round(forecast_factor, 4),
+                "kpi_bon2acc": round(pct_bon2acc, 1),
+                "kpi_focus": round(pct_focus, 1),
+                "kpi_bon2acc_avg": round(avg_bon2acc, 1),
+                "kpi_focus_avg": round(avg_focus, 1),
                 "nr_vizite": nr_vizite,
                 "avg_completion": round(avg_completion, 1),
             },
@@ -177,20 +200,21 @@ async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
 
 
 async def upsert_scores(conn: Any, month: str, scores: list[dict]) -> None:
-    for s in scores:
-        await conn.execute(
-            """
-            INSERT INTO store_scores (site_code, score_month, score, breakdown)
-            VALUES ($1, $2, $3, $4::jsonb)
-            ON CONFLICT (site_code, score_month)
-            DO UPDATE SET score = EXCLUDED.score, breakdown = EXCLUDED.breakdown,
-                          calculated_at = now()
-            """,
-            s["site_code"],
-            month,
-            s["score"],
-            json.dumps(s["breakdown"]),
-        )
+    async with conn.transaction():
+        for s in scores:
+            await conn.execute(
+                """
+                INSERT INTO store_scores (site_code, score_month, score, breakdown)
+                VALUES ($1, $2, $3, $4::jsonb)
+                ON CONFLICT (site_code, score_month)
+                DO UPDATE SET score = EXCLUDED.score, breakdown = EXCLUDED.breakdown,
+                              calculated_at = now()
+                """,
+                s["site_code"],
+                month,
+                s["score"],
+                json.dumps(s["breakdown"]),
+            )
 
 
 async def get_store_alerts(conn: Any, month: str) -> list[dict]:

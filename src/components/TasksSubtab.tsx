@@ -69,30 +69,42 @@ export function TasksSubtab({ userRole, userFullName }: Props) {
 
   const handleCreate = async () => {
     if (!newTitle.trim()) return;
-    await createTask({
-      title: newTitle.trim(),
-      assignee: newAssignee || null,
-      site_code: newSiteCode || null,
-      deadline: newDeadline || null,
-    });
-    setNewTitle(''); setNewAssignee(''); setNewSiteCode(''); setNewDeadline('');
-    setShowForm(false);
-    await load();
+    try {
+      await createTask({
+        title: newTitle.trim(),
+        assignee: newAssignee || null,
+        site_code: newSiteCode || null,
+        deadline: newDeadline || null,
+      });
+      setNewTitle(''); setNewAssignee(''); setNewSiteCode(''); setNewDeadline('');
+      setShowForm(false);
+      await load();
+    } catch (err) {
+      console.error('Failed to create task', err);
+    }
   };
 
   const handleStatusCycle = async (task: Task) => {
     const nextStatus = STATUS_NEXT[task.status];
-    if (isManager) {
-      await updateTask(task.id, { status: nextStatus });
-    } else {
-      await updateMyTask(task.id, { status: nextStatus });
+    try {
+      if (isManager) {
+        await updateTask(task.id, { status: nextStatus });
+      } else {
+        await updateMyTask(task.id, { status: nextStatus });
+      }
+      await load();
+    } catch (err) {
+      console.error('Failed to update task status', err);
     }
-    await load();
   };
 
   const handleDelete = async (id: number) => {
-    await deleteTask(id);
-    await load();
+    try {
+      await deleteTask(id);
+      await load();
+    } catch (err) {
+      console.error('Failed to delete task', err);
+    }
   };
 
   const inputCls = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:placeholder-slate-500';

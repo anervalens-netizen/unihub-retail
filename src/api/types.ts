@@ -84,6 +84,8 @@ export interface PromoIncentiveSummary {
   promo_impact: number;
   incentive_qty: number;
   incentive_value: number;
+  incentive_qualified_stores: number;
+  incentive_qualified_agents: number;
 }
 
 export interface CampaignOverview {

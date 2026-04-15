@@ -20,3 +20,7 @@ backend/data/
 
 # Backend virtual environment
 backend/venv/
+
+# graphify tooling internals
+graphify-out/.graphify_*
+entities.json

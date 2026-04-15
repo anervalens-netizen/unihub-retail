@@ -45,15 +45,23 @@ export function HRSubtab() {
 
   const handleCreate = async () => {
     if (!form.agent_name || !form.start_date || !form.end_date) return;
-    await createLeaveRequest({ ...form, notes: form.notes || undefined });
-    setForm({ agent_name: '', start_date: '', end_date: '', leave_type: 'odihna', notes: '' });
-    setShowForm(false);
-    await load();
+    try {
+      await createLeaveRequest({ ...form, notes: form.notes || undefined });
+      setForm({ agent_name: '', start_date: '', end_date: '', leave_type: 'odihna', notes: '' });
+      setShowForm(false);
+      await load();
+    } catch (err) {
+      console.error('Failed to create leave request', err);
+    }
   };
 
   const handleStatus = async (id: number, status: 'approved' | 'rejected') => {
-    await updateLeaveStatus(id, status);
-    await load();
+    try {
+      await updateLeaveStatus(id, status);
+      await load();
+    } catch (err) {
+      console.error('Failed to update leave request status', err);
+    }
   };
 
   const handleSelectAgent = async (name: string) => {

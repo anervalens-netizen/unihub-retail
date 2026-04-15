@@ -1,12 +1,4 @@
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api/crm' });
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('unihub_token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+import { client } from './client';
 
 export interface StoreScore {
   site_code: string;
@@ -17,10 +9,16 @@ export interface StoreScore {
   breakdown: {
     target_pct: number;
     trend_pct: number;
-    active_days_pct: number;
+    kpi_pct: number;
+    kpi_bon2acc_score: number;
+    kpi_focus_score: number;
     visits_pct: number;
     target_attainment: number;
     forecast_factor: number;
+    kpi_bon2acc: number;
+    kpi_focus: number;
+    kpi_bon2acc_avg: number;
+    kpi_focus_avg: number;
     nr_vizite: number;
     avg_completion: number;
   } | null;
@@ -37,16 +35,16 @@ export interface StoreAlert {
 }
 
 export async function fetchScores(month: string): Promise<StoreScore[]> {
-  const { data } = await api.get('/scores', { params: { month } });
+  const { data } = await client.get('/api/crm/scores', { params: { month } });
   return data;
 }
 
 export async function recalculateScores(month: string): Promise<{ recalculated: number; month: string }> {
-  const { data } = await api.post('/scores/recalculate', null, { params: { month } });
+  const { data } = await client.post('/api/crm/scores/recalculate', null, { params: { month } });
   return data;
 }
 
 export async function fetchAlerts(month: string): Promise<StoreAlert[]> {
-  const { data } = await api.get('/alerts', { params: { month } });
+  const { data } = await client.get('/api/crm/alerts', { params: { month } });
   return data;
 }

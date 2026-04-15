@@ -17,8 +17,8 @@ Tonul corect: direct, tehnic, fara padding. Explica pe scurt ce ai facut si de c
 
 - Aplicatie deployed pe server `192.168.0.68`, accesibila la https://unihub.astancu.eu/
 - Stack: React 19 + Vite + TypeScript (frontend) / FastAPI + asyncpg + PostgreSQL 18 (backend)
-- Module functionale: Hub, Focus, Agenti (+ Salarii), Vizite, Setari, AI
-- 51 pytest passing, typecheck curat, build passing
+- Module functionale: Hub, Focus, Agenti (+ Salarii), Vizite, Management (Echipa/Magazine/Tasks/HR), Setari, AI
+- pytest passing, typecheck curat, build passing
 - UniHub este sursa de adevar pentru vanzari SI vizite; Platforma-Mobiup citeste de aici
 - UniAI: sesiuni persistente per-device, istoric selectabil, suport atasamente
 
@@ -52,6 +52,11 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `SalaryAgentBarChart.tsx` | Bar chart salarii per agent |
 | `SalaryAreaChart.tsx` | Area chart evolutie salarii |
 | `VisiteSubtab.tsx` | Tab Vizite — ASM accordion + drawer vizita cu poze |
+| `Management.tsx` | Tab Management — shell cu 4 sub-taburi (Echipa/Magazine/Tasks/HR) |
+| `ASMSubtab.tsx` | Sub-tab Echipa — performanta ASM combinata PG + SQLite |
+| `CRMSubtab.tsx` | Sub-tab Magazine — scoruri CRM, alerte, recalculare |
+| `TasksSubtab.tsx` | Sub-tab Tasks — task-uri per agent/magazin, creare din alerte CRM |
+| `HRSubtab.tsx` | Sub-tab HR — cereri concediu, pontaj, performanta ASM |
 | `AIChat.tsx` | Tab AI — chat UI, sesiuni, attachments, drawer istoric |
 | `Settings.tsx` | Tab Setari (admin) |
 | `PinScreen.tsx` | Ecran PIN pentru autentificare |
@@ -70,6 +75,9 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `admin` | `/api/admin` |
 | `agents` | `/api/agents` |
 | `salarii` | `/salarii` (fara prefix `/api`) |
+| `tasks` | `/api/tasks` — task-uri per agent/magazin; sursa si din alerte CRM |
+| `hr` | `/api/hr` — concedii, pontaj, performanta ASM (merge PG + SQLite) |
+| `crm` | `/api/crm` — scoruri magazine, alerte, `get_forecast_factor` (shared cu hr.py) |
 | `ai` | `/api/ai` — WebSocket proxy + sesiuni + attachments pentru Hermes bridge |
 | `dashboard_filters` | *(fara prefix)* — helpers SQL: `where_clauses`, `scoped_clauses`, `transaction_filter_parts` |
 | `shared` | *(fara prefix)* — utilitare comune: `normalize_filter`, `build_scope_filter` |
@@ -115,6 +123,35 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
   - `AI_BRIDGE_URL` — adresa bridge Hermes (default: `http://127.0.0.1:7777`)
   - `AI_BRIDGE_TIMEOUT` — timeout in secunde (default: `180`)
 
+### Tab Management
+
+Tab nou cu 4 sub-taburi, accesibil rolurilor `admin` si `management`.
+
+| Sub-tab | Componenta | Backend | Descriere |
+|---------|-----------|---------|-----------|
+| Echipa (asm) | `ASMSubtab.tsx` | `/api/hr` | Performanta ASM — merge `reporting_agent_month` (PG) + `visits.db` (SQLite) + forecast factor din CRM |
+| Magazine (crm) | `CRMSubtab.tsx` | `/api/crm` | Scoruri magazine, alerte, recalculare manuala. Alerte pot fi convertite direct in Tasks |
+| Tasks | `TasksSubtab.tsx` | `/api/tasks` | Task-uri per agent/magazin. `source` poate fi `manual` sau `crm_alert` (cu `source_meta` JSONB) |
+| HR | `HRSubtab.tsx` | `/api/hr` | Cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric ASM |
+
+**Dependenta cross-router importanta:** `hr.py` importa `get_forecast_factor` din `crm.py` — la modificari in CRM, verifica si HR.
+
+**CRM score logic:** `get_forecast_factor(conn, month)` calculeaza factor extrapolat (zile_luna / ultima_zi_vanzari). 1.0 daca luna e finalizata.
+
+**Endpoints principale:**
+- `GET /api/crm/scores?month=YYYY-MM` — scoruri magazine
+- `POST /api/crm/scores/recalculate?month=YYYY-MM` — recalculeaza scoruri
+- `GET /api/crm/alerts?month=YYYY-MM` — alerte active
+- `GET /api/hr/leave-requests` — cereri concediu
+- `POST /api/hr/leave-requests` — creare cerere
+- `PATCH /api/hr/leave-requests/{id}` — aprobare/respingere
+- `GET /api/hr/asm-performance?month=YYYY-MM&regional=...` — performanta ASM
+- `GET /api/hr/asm-performance/{name}/history?months=N` — istoric ASM
+- `GET /api/tasks` — lista task-uri
+- `POST /api/tasks` — creare task
+- `GET /api/tasks/my` — task-urile utilizatorului curent
+- `GET /api/tasks/my/pending-count` — badge notificari
+
 ### Baza de date
 - Schema unica: `backend/db/schema_v2.sql`
 - Aplicata hash-based la boot via `ensure_schema_current()` in `backend/db/connection.py`
@@ -133,6 +170,10 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `reporting_agent_month` | Agregat lunar per agent (sursa principala dashboard) |
 | `reporting_item_month` | Agregat lunar per produs |
 | `historical_annual_sales` | 2022 an complet + 2023 Ian-Aug per magazin/firma |
+| `tasks` | Task-uri per agent/magazin (`title`, `assignee`, `site_code`, `deadline`, `status`, `source`, `source_meta`) |
+| `leave_requests` | Cereri concediu agenti (`agent_name`, `start_date`, `end_date`, `leave_type`, `status`) |
+| `attendance_records` | Pontaj zilnic (`agent_name`, `record_date`, `status`) — UNIQUE per agent+zi |
+| `store_scores` | Scoruri CRM per magazin per luna (`site_code`, `score_month`, `score`, `breakdown` JSONB) — UNIQUE per magazin+luna |
 
 #### VIEW-uri compatibilitate Platforma-Mobiup
 - `v_platforma_dashboard` — agregat lunar pe agent (din `reporting_agent_month` JOIN `stores`)

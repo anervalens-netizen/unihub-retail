@@ -1,6 +1,6 @@
 # UniHub
 
-UniHub este o aplicatie de operare comerciala pentru retail, construita pentru monitorizarea vanzarilor, a targetelor, a focus products, a promotiilor si a fiselor de vizita din magazine.
+UniHub este o aplicatie de operare comerciala pentru retail, construita pentru monitorizarea vanzarilor, a targetelor, a focus products, a promotiilor, a fiselor de vizita din magazine si a operatiunilor de management (echipa, CRM, tasks, HR).
 
 Aplicatia este gandita pentru lucru local, fara Docker, cu:
 - frontend React + Vite
@@ -38,6 +38,18 @@ Permite inregistrarea si urmarirea vizitelor in magazine:
 - status si completare
 
 Geolocatia a fost eliminata complet din arhitectura aplicatiei.
+
+### Management
+Tab dedicat rolurilor `admin` si `management`, cu 4 sub-taburi:
+
+- **Echipa (ASM)** — performanta ASM combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM. Router: `/api/hr`
+- **Magazine (CRM)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
+- **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
+- **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
+
+**Dependenta cross-router:** `hr.py` importa `get_forecast_factor` din `crm.py`.
+
+Tabele noi in `schema_v2.sql`: `tasks`, `leave_requests`, `attendance_records`, `store_scores`.
 
 ### UniAI
 Asistent de analiză vânzări integrat, alimentat de Hermes AI Agent:
@@ -95,6 +107,7 @@ Tabelele brute sunt sursa de adevar pentru audit si import:
 - `stores`, `users`, `tl_store_assignments`, `focus_products`
 - `import_snapshots`, `sales_transactions`, `store_targets`
 - `incentive_campaigns`, `incentive_products` — campanii incentive per-produs (importate cu `import_incentive_campaign.py`)
+- `tasks`, `leave_requests`, `attendance_records`, `store_scores` — date operationale Management tab
 
 ### 2. Stratul agregat de reporting
 Acesta este stratul principal folosit de dashboard-uri:

@@ -64,6 +64,29 @@ function ComponentBar({ label, value, max, sublabel, color = 'bg-indigo-500' }: 
   );
 }
 
+function KPIComponentBar({ label, storeVal, avg, score, max = 10, color = 'bg-sky-500' }: {
+  label: string; storeVal: number; avg: number; score: number; max?: number; color?: string;
+}) {
+  const pct = Math.min((score / max) * 100, 100);
+  // Average marker sits at 50% (score of 5/10 = avg store)
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs text-slate-600 dark:text-slate-400">{label}</span>
+        <span className="text-xs text-slate-700 dark:text-slate-300">
+          <strong className="font-mono">{storeVal.toFixed(1)}%</strong>
+          <span className="text-slate-400 font-normal"> / med. {avg.toFixed(1)}%</span>
+        </span>
+      </div>
+      <div className="relative h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+        <div className={`h-2 rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+        <div className="absolute top-0 bottom-0 w-0.5 bg-slate-500/40 dark:bg-slate-400/40" style={{ left: '50%' }} />
+      </div>
+      <p className="text-[10px] text-slate-400 mt-0.5">{score.toFixed(1)} / {max} pct · linia = media lunii</p>
+    </div>
+  );
+}
+
 function StoreBreakdown({ store }: { store: StoreScore }) {
   const bd = store.breakdown;
   if (!bd) {
@@ -95,13 +118,30 @@ function StoreBreakdown({ store }: { store: StoreScore }) {
         sublabel={trendPct}
         color={bd.trend_pct >= 20 ? 'bg-green-500' : bd.trend_pct >= 10 ? 'bg-amber-500' : 'bg-red-500'}
       />
-      <ComponentBar
-        label="Zile active"
-        value={bd.active_days_pct}
-        max={20}
-        sublabel={`${Math.round(bd.active_days_pct)} din 20 zile de referință`}
-        color={bd.active_days_pct >= 16 ? 'bg-green-500' : bd.active_days_pct >= 10 ? 'bg-amber-500' : 'bg-red-500'}
-      />
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-slate-600 dark:text-slate-400">KPI calitate</span>
+          <span className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300">
+            {bd.kpi_pct.toFixed(1)} <span className="text-slate-400 font-normal">/ 20</span>
+          </span>
+        </div>
+        <div className="space-y-2 pl-2 border-l-2 border-sky-200 dark:border-sky-800">
+          <KPIComponentBar
+            label="Bon2+"
+            storeVal={bd.kpi_bon2acc}
+            avg={bd.kpi_bon2acc_avg}
+            score={bd.kpi_bon2acc_score}
+            color="bg-sky-500"
+          />
+          <KPIComponentBar
+            label="Focus"
+            storeVal={bd.kpi_focus}
+            avg={bd.kpi_focus_avg}
+            score={bd.kpi_focus_score}
+            color="bg-violet-500"
+          />
+        </div>
+      </div>
       <ComponentBar
         label="Vizite ASM"
         value={bd.visits_pct}
@@ -166,9 +206,9 @@ function ScoringInfo({ onClose }: { onClose: () => void }) {
             desc: 'Previziunea lunii curente față de realizatul lunii anterioare. −20% sau mai mult = 0 pct, +20% sau mai mult = 30 pct.',
           },
           {
-            label: 'Zile active', pts: '20 pct',
+            label: 'KPI calitate', pts: '20 pct',
             color: 'bg-sky-500',
-            desc: 'Numărul de zile în care magazinul a avut vânzări. 20 zile = 20 puncte maxim.',
+            desc: 'Bon2+ și Focus raportate la media lunii. La medie = 10 pct, dublu față de medie = 20 pct. Compus din două sub-scoruri (max 10 fiecare).',
           },
           {
             label: 'Vizite ASM', pts: '10 pct',
@@ -453,13 +493,17 @@ export function CRMSubtab() {
   };
 
   const handleCreateTaskFromAlert = async (alertItem: StoreAlert) => {
-    await createTask({
-      title: `${alertItem.locatie || alertItem.site_code}: ${alertItem.reasons[0]}`,
-      site_code: alertItem.site_code,
-      source: 'crm_alert',
-      source_meta: { score: alertItem.score, reasons: alertItem.reasons, month },
-    });
-    window.dispatchEvent(new CustomEvent('unihub:navigate', { detail: { tab: 'management', subtab: 'tasks' } }));
+    try {
+      await createTask({
+        title: `${alertItem.locatie || alertItem.site_code}: ${alertItem.reasons[0] ?? 'Scor scăzut'}`,
+        site_code: alertItem.site_code,
+        source: 'crm_alert',
+        source_meta: { score: alertItem.score, reasons: alertItem.reasons, month },
+      });
+      window.dispatchEvent(new CustomEvent('unihub:navigate', { detail: { tab: 'management', subtab: 'tasks' } }));
+    } catch (err) {
+      console.error('Failed to create task from alert', err);
+    }
   };
 
   return (

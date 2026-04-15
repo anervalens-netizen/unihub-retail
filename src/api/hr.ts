@@ -1,12 +1,4 @@
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api/hr' });
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('unihub_token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+import { client } from './client';
 
 export interface LeaveRequest {
   id: number;
@@ -28,7 +20,7 @@ export interface PerformancePoint {
 }
 
 export async function fetchLeaveRequests(params?: { status?: string; agent_name?: string }): Promise<LeaveRequest[]> {
-  const { data } = await api.get('/leave-requests', { params });
+  const { data } = await client.get('/api/hr/leave-requests', { params });
   return data;
 }
 
@@ -39,17 +31,17 @@ export async function createLeaveRequest(body: {
   leave_type: string;
   notes?: string;
 }): Promise<LeaveRequest> {
-  const { data } = await api.post('/leave-requests', body);
+  const { data } = await client.post('/api/hr/leave-requests', body);
   return data;
 }
 
 export async function updateLeaveStatus(id: number, status: 'approved' | 'rejected'): Promise<LeaveRequest> {
-  const { data } = await api.patch(`/leave-requests/${id}`, { status });
+  const { data } = await client.patch(`/api/hr/leave-requests/${id}`, { status });
   return data;
 }
 
 export async function fetchAgentPerformance(agentName: string): Promise<PerformancePoint[]> {
-  const { data } = await api.get(`/performance/${encodeURIComponent(agentName)}`);
+  const { data } = await client.get(`/api/hr/performance/${encodeURIComponent(agentName)}`);
   return data;
 }
 
@@ -59,6 +51,9 @@ export interface AsmPerformance {
   total_sales: number;
   total_target: number;
   target_pct: number | null;
+  forecast_sales: number;
+  forecast_target_pct: number | null;
+  is_forecast: boolean;
   active_stores: number;
   active_agents: number;
   pct_bon2acc: number;
@@ -86,12 +81,12 @@ export interface AsmHistoryPoint {
 }
 
 export async function fetchAsmPerformance(month: string, regional?: string): Promise<AsmPerformance[]> {
-  const { data } = await api.get('/asm-performance', { params: { month, regional } });
+  const { data } = await client.get('/api/hr/asm-performance', { params: { month, regional } });
   return data;
 }
 
 export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmHistoryPoint[]> {
-  const { data } = await api.get(`/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
+  const { data } = await client.get(`/api/hr/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
   return data;
 }
 
@@ -102,6 +97,6 @@ export interface AssignableUser {
 }
 
 export async function fetchAssignableUsers(): Promise<AssignableUser[]> {
-  const { data } = await api.get('/users');
+  const { data } = await client.get('/api/hr/users');
   return data;
 }

@@ -135,6 +135,8 @@ const DEFAULT_PROMO_INCENTIVE: PromoIncentiveSummary = {
   promo_impact: 0,
   incentive_qty: 0,
   incentive_value: 0,
+  incentive_qualified_stores: 0,
+  incentive_qualified_agents: 0,
 };
 const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
 const TABLE_MAX_HEIGHT_CLASS = 'max-h-[30rem]';
@@ -657,12 +659,17 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
     const currentAvg = Number(periodComparison.current.daily_average ?? 0);
     const previousAvg = Number(periodComparison.previous.daily_average ?? 0);
     const yearOverYearAvg = Number(periodComparison.year_over_year.daily_average ?? 0);
+    const pct = (delta: number, base: number) => base > 0 ? Math.round((delta / base) * 100) : null;
 
     return {
       previousSales: current - previous,
+      previousSalesPct: pct(current - previous, previous),
       previousDaily: currentAvg - previousAvg,
+      previousDailyPct: pct(currentAvg - previousAvg, previousAvg),
       yearSales: current - yearOverYear,
+      yearSalesPct: pct(current - yearOverYear, yearOverYear),
       yearDaily: currentAvg - yearOverYearAvg,
+      yearDailyPct: pct(currentAvg - yearOverYearAvg, yearOverYearAvg),
     };
   }, [periodComparison]);
 
@@ -1163,12 +1170,16 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
                     <DeltaCard
                       title="Vs luna trecuta"
                       salesDelta={comparisonDeltas.previousSales}
+                      salesPct={comparisonDeltas.previousSalesPct}
                       dailyDelta={comparisonDeltas.previousDaily}
+                      dailyPct={comparisonDeltas.previousDailyPct}
                     />
                     <DeltaCard
                       title="Vs anul trecut"
                       salesDelta={comparisonDeltas.yearSales}
+                      salesPct={comparisonDeltas.yearSalesPct}
                       dailyDelta={comparisonDeltas.yearDaily}
+                      dailyPct={comparisonDeltas.yearDailyPct}
                     />
                   </div>
                 </div>
@@ -1211,6 +1222,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
                   metrics={[
                     { label: 'Cantitate', value: formatInt(promoIncentive.incentive_qty) },
                     { label: 'Valoare', value: formatCurrency(promoIncentive.incentive_value) },
+                    ...(promoSummary.incentive ? [
+                      { label: 'Magazine calificate', value: formatInt(promoIncentive.incentive_qualified_stores) },
+                      { label: 'Agenți calificați', value: formatInt(promoIncentive.incentive_qualified_agents) },
+                    ] : []),
                   ]}
                   footer={promoSummary.incentive?.coverage_note ?? 'Bonus per unitate eligibila'}
                 />
@@ -1794,6 +1809,10 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
                           metrics={[
                             { label: 'Cantitate', value: formatInt(historyPromoIncentive.incentive_qty) },
                             { label: 'Valoare', value: formatCurrency(historyPromoIncentive.incentive_value) },
+                            ...(historyPromoSummary.incentive ? [
+                              { label: 'Magazine calificate', value: formatInt(historyPromoIncentive.incentive_qualified_stores) },
+                              { label: 'Agenți calificați', value: formatInt(historyPromoIncentive.incentive_qualified_agents) },
+                            ] : []),
                           ]}
                           footer={historyPromoSummary.incentive!.coverage_note ?? 'Bonus per unitate eligibila'}
                         />
@@ -2371,31 +2390,56 @@ function PeriodTable({
   );
 }
 
+function deltaBadgeClass(positive: boolean) {
+  return positive
+    ? 'bg-emerald-600/20 text-emerald-800 dark:bg-emerald-400/20 dark:text-emerald-200'
+    : 'bg-rose-600/20 text-rose-800 dark:bg-rose-400/20 dark:text-rose-200';
+}
+
+function DeltaPctBadge({ pct, positive }: { pct: number; positive: boolean }) {
+  return (
+    <span className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${deltaBadgeClass(positive)}`}>
+      {pct > 0 ? '+' : ''}{pct}%
+    </span>
+  );
+}
+
 function DeltaCard({
   title,
   salesDelta,
+  salesPct,
   dailyDelta,
+  dailyPct,
 }: {
   title: string;
   salesDelta: number;
+  salesPct?: number | null;
   dailyDelta: number;
+  dailyPct?: number | null;
 }) {
-  const positive = salesDelta >= 0;
-  const tone = positive
+  const salesPositive = salesDelta >= 0;
+  const dailyPositive = dailyDelta >= 0;
+  const tone = salesPositive
     ? 'border-emerald-200 bg-emerald-50/80 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'
     : 'border-rose-200 bg-rose-50/80 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300';
 
   return (
     <div className={`rounded-2xl border p-3 ${tone}`}>
-      <div className="mb-2 text-[11px] font-bold uppercase tracking-wide">{title}</div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="mb-3 text-[11px] font-bold uppercase tracking-wide">{title}</div>
+      <div className="space-y-2">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide opacity-70">Delta vanzari</div>
-          <div className="mt-1 text-lg font-black">{formatDeltaCurrency(salesDelta)}</div>
+          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta vanzari</div>
+          <div className="mt-1 flex items-center gap-2 min-w-0">
+            <span className="text-base font-black tabular-nums truncate">{formatDeltaCurrency(salesDelta)}</span>
+            {salesPct != null && <DeltaPctBadge pct={salesPct} positive={salesPositive} />}
+          </div>
         </div>
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide opacity-70">Delta medie zilnica</div>
-          <div className="mt-1 text-lg font-black">{formatDeltaCurrency(dailyDelta)}</div>
+          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta medie zilnica</div>
+          <div className="mt-1 flex items-center gap-2 min-w-0">
+            <span className="text-base font-black tabular-nums truncate">{formatDeltaCurrency(dailyDelta)}</span>
+            {dailyPct != null && <DeltaPctBadge pct={dailyPct} positive={dailyPositive} />}
+          </div>
         </div>
       </div>
     </div>

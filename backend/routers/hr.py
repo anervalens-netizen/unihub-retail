@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from db.connection import get_pool
 from dependencies import get_current_user, require_role
+from routers.crm import get_forecast_factor
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 
@@ -224,11 +225,18 @@ async def get_asm_performance(conn: Any, month: str, regional: str | None) -> li
     """Profil combinat per ASM: vânzări din PostgreSQL + vizite din SQLite."""
     pg_rows = await conn.fetch(
         """
+        WITH asm_targets AS (
+            SELECT s.asm, SUM(st.target_value) AS total_target
+            FROM store_targets st
+            JOIN stores s ON s.site_code = st.site_code
+            WHERE st.import_month = $1
+            GROUP BY s.asm
+        )
         SELECT
             s.asm,
             s.regional,
             SUM(ram.total_sales)                                         AS total_sales,
-            COALESCE(SUM(st.target_value), 0)                           AS total_target,
+            COALESCE(at.total_target, 0)                                 AS total_target,
             COUNT(DISTINCT ram.site_code)                                AS active_stores,
             COUNT(DISTINCT ram.agent)                                    AS active_agents,
             ROUND(
@@ -243,20 +251,22 @@ async def get_asm_performance(conn: Any, month: str, regional: str | None) -> li
             )                                                            AS pct_focus
         FROM reporting_agent_month ram
         JOIN stores s ON s.site_code = ram.site_code
-        LEFT JOIN store_targets st
-            ON st.site_code = ram.site_code AND st.import_month = ram.import_month
+        LEFT JOIN asm_targets at ON at.asm = s.asm
         WHERE ram.import_month = $1
           AND ($2::text IS NULL OR s.regional = $2)
-        GROUP BY s.asm, s.regional
+        GROUP BY s.asm, s.regional, at.total_target
         ORDER BY total_sales DESC
         """,
         month,
         regional,
     )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     sqlite_rows = await loop.run_in_executor(None, _query_visits_by_asm, month)
     sqlite_map = {r["asm"]: r for r in sqlite_rows}
+
+    forecast_factor = await get_forecast_factor(conn, month)
+    is_partial = forecast_factor > 1.001
 
     result = []
     for pg in pg_rows:
@@ -264,12 +274,16 @@ async def get_asm_performance(conn: Any, month: str, regional: str | None) -> li
         sq = sqlite_map.get(asm, {})
         total_sales = float(pg["total_sales"] or 0)
         total_target = float(pg["total_target"] or 0)
+        forecast_sales = total_sales * forecast_factor
         result.append({
             "asm": asm,
             "regional": pg["regional"],
             "total_sales": total_sales,
             "total_target": total_target,
             "target_pct": round(total_sales / total_target * 100, 1) if total_target > 0 else None,
+            "forecast_sales": forecast_sales,
+            "forecast_target_pct": round(forecast_sales / total_target * 100, 1) if total_target > 0 else None,
+            "is_forecast": is_partial,
             "active_stores": pg["active_stores"],
             "active_agents": pg["active_agents"],
             "pct_bon2acc": float(pg["pct_bon2acc"] or 0),
@@ -288,25 +302,32 @@ async def get_asm_performance_history(conn: Any, asm_name: str, months: int = 6)
     """Trend lunar per ASM: vânzări (PG) + vizite (SQLite) — ultimele N luni."""
     pg_rows = await conn.fetch(
         """
+        WITH asm_month_targets AS (
+            SELECT st.import_month, SUM(st.target_value) AS total_target
+            FROM store_targets st
+            JOIN stores s ON s.site_code = st.site_code
+            WHERE s.asm = $1
+              AND st.import_month >= to_char(now() - ($2 || ' months')::interval, 'YYYY-MM')
+            GROUP BY st.import_month
+        )
         SELECT
             ram.import_month,
-            SUM(ram.total_sales)              AS total_sales,
-            COALESCE(SUM(st.target_value), 0) AS total_target,
-            COUNT(DISTINCT ram.site_code)      AS active_stores
+            SUM(ram.total_sales)               AS total_sales,
+            COALESCE(amt.total_target, 0)      AS total_target,
+            COUNT(DISTINCT ram.site_code)       AS active_stores
         FROM reporting_agent_month ram
         JOIN stores s ON s.site_code = ram.site_code
-        LEFT JOIN store_targets st
-            ON st.site_code = ram.site_code AND st.import_month = ram.import_month
+        LEFT JOIN asm_month_targets amt ON amt.import_month = ram.import_month
         WHERE s.asm = $1
           AND ram.import_month >= to_char(now() - ($2 || ' months')::interval, 'YYYY-MM')
-        GROUP BY ram.import_month
+        GROUP BY ram.import_month, amt.total_target
         ORDER BY ram.import_month
         """,
         asm_name,
         str(months),
     )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     sqlite_hist = await loop.run_in_executor(None, _query_visits_history, asm_name, months)
     sqlite_map = {r["month"]: r for r in sqlite_hist}
 

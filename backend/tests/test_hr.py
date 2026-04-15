@@ -49,6 +49,12 @@ async def test_list_leave_requests():
     async with pool.acquire() as conn:
         rows = await list_leave_requests(conn, status=None, agent_name=None)
         assert isinstance(rows, list)
+        if rows:
+            row = rows[0]
+            assert "agent_name" in row
+            assert "status" in row
+            assert "start_date" in row
+            assert "leave_type" in row
 
 
 @pytest.mark.anyio
@@ -77,8 +83,16 @@ async def test_asm_performance_returns_list():
 
 @pytest.mark.anyio
 async def test_asm_performance_history_returns_list():
-    from routers.hr import get_asm_performance_history
+    from routers.hr import get_asm_performance_history, get_asm_performance
     pool = await get_pool()
     async with pool.acquire() as conn:
-        result = await get_asm_performance_history(conn, "Andreea Vladascau", months=6)
+        # Găsim un ASM din date reale în loc de hardcode
+        perf = await get_asm_performance(conn, "2026-03", regional=None)
+        asm_name = perf[0]["asm"] if perf else "NonexistentASM"
+        result = await get_asm_performance_history(conn, asm_name, months=6)
         assert isinstance(result, list)
+        if result:
+            row = result[0]
+            assert "month" in row
+            assert "total_sales" in row
+            assert "total_target" in row
