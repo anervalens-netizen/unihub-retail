@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from db.connection import get_pool
 from dependencies import get_current_user
 from models import FilterOptions
-from routers.shared import build_scope_filter, normalize_filter
+from services.filters import build_scope_filter, normalize_filter
 
 router = APIRouter(prefix="/api/filters", tags=["filters"])
 

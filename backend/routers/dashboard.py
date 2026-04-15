@@ -31,10 +31,7 @@ from models import (
     YearHistoryPoint,
     YearHistoryResponse,
 )
-from routers.dashboard_filters import (
-    scoped_clauses,
-)
-from routers.shared import normalize_filter
+from services.filters import normalize_filter, scoped_clauses
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,

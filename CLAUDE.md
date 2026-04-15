@@ -79,8 +79,8 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `hr` | `/api/hr` — concedii, pontaj, performanta ASM (merge PG + SQLite) |
 | `crm` | `/api/crm` — scoruri magazine, alerte, `get_forecast_factor` (shared cu hr.py) |
 | `ai` | `/api/ai` — WebSocket proxy + sesiuni + attachments pentru Hermes bridge |
-| `dashboard_filters` | *(fara prefix)* — helpers SQL: `where_clauses`, `scoped_clauses`, `transaction_filter_parts` |
-| `shared` | *(fara prefix)* — utilitare comune: `normalize_filter`, `build_scope_filter` |
+
+Helperele de filtre si scope (SQL `where_clauses`, `scoped_clauses`, `transaction_filter_parts`, `normalize_filter`, `build_scope_filter`) traiesc in `services/filters.py`. Helperele de forecast (CRM/HR shared) traiesc in `services/forecast.py`.
 
 ### UniAI / AI tab
 - Frontend:

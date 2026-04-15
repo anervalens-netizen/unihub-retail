@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from db.connection import get_pool
 from dependencies import get_current_user
-from routers.dashboard_filters import where_clauses
+from services.filters import where_clauses
 from models import (
     AgentsOverviewResponse,
     AgentMovementPoint,
@@ -433,7 +433,7 @@ async def get_stores_coverage(
         clauses.append(f"s.asm = ${len(params)}")
 
     # TL scope
-    from routers.shared import build_scope_filter
+    from services.filters import build_scope_filter
 
     scope_sql, scope_params = build_scope_filter(
         user, base_alias="s", param_start=len(params) + 1

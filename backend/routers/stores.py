@@ -6,7 +6,7 @@ from db.connection import get_pool
 from dependencies import get_current_user, require_role
 from models import StoreOption, StoreTargetInput
 from routers.filters import clear_filter_options_cache
-from routers.shared import build_scope_filter
+from services.filters import build_scope_filter
 from services.importer import upsert_store_targets
 
 router = APIRouter(prefix="/api/stores", tags=["stores"])

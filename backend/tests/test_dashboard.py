@@ -5,8 +5,7 @@ from pathlib import Path
 import pytest
 
 from db.connection import get_pool
-from routers.dashboard_filters import scoped_clauses
-from routers.shared import normalize_filter
+from services.filters import normalize_filter, scoped_clauses
 
 
 @pytest.fixture(scope="module")

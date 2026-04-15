@@ -24,7 +24,7 @@ from models import (
     VisitSummaryItem,
     VisitTreeResponse,
 )
-from routers.shared import normalize_filter
+from services.filters import normalize_filter
 
 VISITS_DB = Path(os.getenv("VISITS_DB_PATH", "/opt/Mobiup/unihub/data/visits/visits.db"))
 IMAGES_DIR = Path(os.getenv("VISITS_IMAGES_DIR", "/opt/Mobiup/unihub/data/visits/images"))
