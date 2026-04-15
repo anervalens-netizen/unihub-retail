@@ -7,7 +7,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -116,8 +116,25 @@ app.include_router(crm.router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> JSONResponse:
+    """Readiness probe: verifica pool-ul DB cu SELECT 1.
+
+    Returneaza 200 daca pool-ul raspunde, 503 altfel. Load balancer-ul
+    vede diferenta intre "procesul e sus" si "poate servi request-uri".
+    """
+    try:
+        current_pool = await get_pool()
+        async with current_pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+    except Exception:  # noqa: BLE001 — orice exceptie = unhealthy
+        # Log complet pentru diagnoza, dar raspunsul HTTP nu expune detalii
+        # (connection string-uri / path-uri pot ajunge la load balancer).
+        logger.exception("Health check failed")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy"},
+        )
+    return JSONResponse(content={"status": "ok"})
 
 
 # Serve React SPA static files (production build)
