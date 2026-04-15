@@ -63,7 +63,7 @@ from db.connection import (
     init_db_pool,
     prewarm_pool,
 )
-from routers import admin, agents, ai, auth, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
+from routers import admin, agents, ai, auth, campaigns, crm, dashboard, errors, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.visits_sync import sync_visits_snapshot
 
@@ -151,6 +151,7 @@ app.include_router(visits_report.router)
 app.include_router(tasks.router)
 app.include_router(hr.router)
 app.include_router(crm.router)
+app.include_router(errors.router)
 
 
 @app.get("/health")
