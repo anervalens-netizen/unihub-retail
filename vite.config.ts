@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig} from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
@@ -126,6 +126,10 @@ export default defineConfig(() => {
           changeOrigin: true,
         },
       },
+    },
+    test: {
+      environment: 'node',
+      include: ['src/**/*.test.ts'],
     },
   };
 });
