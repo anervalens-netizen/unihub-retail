@@ -4,7 +4,7 @@ from collections.abc import Iterable
 import os
 from typing import Any
 
-from services.auth_service import hash_password
+from services.auth_service import hash_password, verify_password
 
 TL_DEFAULT_PASSWORD = os.getenv("TL_DEFAULT_PASSWORD", "9999")
 
@@ -195,6 +195,71 @@ def should_reset_default_users_on_boot() -> bool:
         "yes",
         "on",
     }
+
+
+def get_unihub_env() -> str:
+    return os.getenv("UNIHUB_ENV", "development").strip().lower()
+
+
+def is_production_env() -> bool:
+    return get_unihub_env() == "production"
+
+
+async def assert_no_default_passwords_in_production(conn) -> None:
+    """Fail-fast la boot dacă admin/management au încă parola default în producție.
+
+    Parola default `9999` e folosită în dev + la bootstrap inițial. În producție,
+    e o gaură de securitate critică: oricine cu acces la endpoint /auth/login
+    poate intra ca admin. Check-ul compară hash-ul stocat în DB cu un hash
+    default — dacă verify trece, parola nu a fost schimbată.
+    """
+    if not is_production_env():
+        return
+
+    credentials = get_default_core_credentials()
+    offenders: list[str] = []
+    for role, (username, default_password, _) in credentials.items():
+        row = await conn.fetchrow(
+            "SELECT password_hash FROM users WHERE username = $1",
+            username,
+        )
+        if row is None:
+            continue
+        stored_hash = row["password_hash"]
+        if not stored_hash:
+            continue
+        try:
+            if verify_password(default_password, stored_hash):
+                offenders.append(f"{role}/{username}")
+        except Exception:
+            # hash corrupt / format necunoscut → nu blocăm, doar sărim
+            continue
+
+    if offenders:
+        allow_default = os.getenv("UNIHUB_ALLOW_DEFAULT_PASSWORDS", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        message = (
+            "SECURITY: conturile core au încă parola default în producție: "
+            + ", ".join(offenders)
+        )
+        if allow_default:
+            # escape hatch pentru bootstrap inițial în prod — loghează, nu blochează
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "%s. UNIHUB_ALLOW_DEFAULT_PASSWORDS=1 active — skip fail-fast. "
+                "Schimbă parolele și dezactivează flag-ul ASAP.",
+                message,
+            )
+            return
+        raise RuntimeError(
+            message
+            + ". Schimbă parolele via UI sau SQL, apoi restart. "
+            + "Pentru bootstrap inițial, setează UNIHUB_ALLOW_DEFAULT_PASSWORDS=1 (o singură dată)."
+        )
 
 
 def get_tl_usernames() -> Iterable[str]:

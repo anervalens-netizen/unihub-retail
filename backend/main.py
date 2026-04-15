@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from bootstrap import (
+    assert_no_default_passwords_in_production,
     ensure_core_users,
     get_core_user_bootstrap_status,
     reset_default_core_users,
@@ -32,6 +33,7 @@ async def ensure_default_users() -> None:
 
     async with pool.acquire() as conn:
         await ensure_core_users(conn)
+        await assert_no_default_passwords_in_production(conn)
         if should_reset_default_users_on_boot():
             reset_users = await reset_default_core_users(conn)
             for row in reset_users:
