@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 from typing import Any
 
@@ -10,7 +11,7 @@ from fastapi import APIRouter, Query
 from db.connection import get_pool
 from services.forecast import get_forecast_factor
 
-VISITS_DB_PATH = "/opt/Mobiup/unihub/data/visits/visits.db"
+VISITS_DB_PATH = os.getenv("VISITS_DB_PATH", "/opt/Mobiup/unihub-retail/data/visits/visits.db")
 
 
 def _query_visits_by_store(year_month: str) -> dict[str, dict]:

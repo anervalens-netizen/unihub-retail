@@ -33,7 +33,7 @@ async def get_import_history() -> list[ImportHistoryEntry]:
         rows = await conn.fetch(
             """
             SELECT id, import_month, filename, upload_date, is_month_final, rows_in_file,
-                   rows_imported, status, error_message, imported_by, created_at
+                   rows_imported, status, error_message, created_at
             FROM import_snapshots
             ORDER BY created_at DESC
             """

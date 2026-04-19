@@ -294,7 +294,6 @@ class ImportHistoryEntry(BaseModel):
     rows_imported: int | None
     status: str
     error_message: str | None
-    imported_by: int | None
     created_at: datetime
 
 
