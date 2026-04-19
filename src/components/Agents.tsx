@@ -283,7 +283,6 @@ interface AgentsProps {
   currentMonth: string;
   months: string[];
   filters: AppFilters;
-  user: import('../api/types').AuthUser | null;
 }
 
 function CustomTooltip({ active, payload, label }: any) {
@@ -315,7 +314,7 @@ function CustomTooltip({ active, payload, label }: any) {
   return null;
 }
 
-export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
+export function Agents({ currentMonth, months, filters }: AgentsProps) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<string | null>(() => {
@@ -494,21 +493,19 @@ export function Agents({ currentMonth, months, filters, user }: AgentsProps) {
         >
           Prezentare Generala
         </button>
-        {user?.role === 'admin' && (
-          <button
-            onClick={() => setMainTab('salarii')}
-            className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
-              mainTab === 'salarii'
-                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-            }`}
-          >
-            Salarii
-          </button>
-        )}
+        <button
+          onClick={() => setMainTab('salarii')}
+          className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
+            mainTab === 'salarii'
+              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+          }`}
+        >
+          Salarii
+        </button>
       </div>
 
-      {mainTab === 'salarii' && user?.role === 'admin' ? (
+      {mainTab === 'salarii' ? (
         <ErrorBoundary>
           <SalariiSubtab globalFilters={filters} />
         </ErrorBoundary>

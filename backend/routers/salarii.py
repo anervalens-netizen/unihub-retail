@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
 from db.connection import get_pool
-from dependencies import require_role
 
 router = APIRouter(
     prefix="/salarii",
     tags=["salarii"],
-    dependencies=[Depends(require_role("admin", "management"))],
 )
 
 

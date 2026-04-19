@@ -1,37 +1,27 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown, LogOut } from 'lucide-react';
-import type { AuthUser } from '../api/types';
-import { canAccessTab, isManagerRole, type Role, type TabId } from '../lib/roles';
-import { ALL_TABS, MGMT_SUBTABS, type ManagementTab } from '../lib/tabs';
+import { ChevronDown } from 'lucide-react';
+import { ALL_TABS, MGMT_SUBTABS, type ManagementTab, type TabId } from '../lib/tabs';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { cn } from '../lib/utils';
 
 interface Props {
-  user: AuthUser | null;
   activeTab: string;
   setActiveTab: (tab: TabId) => void;
   mgmtSubTab: ManagementTab;
   setMgmtSubTab: (tab: ManagementTab) => void;
   theme: string;
   setTheme: (theme: string) => void;
-  onLogout: () => void;
-  pendingTaskCount: number;
-  userRole: Role;
   errorCount?: number;
 }
 
 export function DesktopSidebar({
-  user,
   activeTab,
   setActiveTab,
   mgmtSubTab,
   setMgmtSubTab,
   theme,
   setTheme,
-  onLogout,
-  pendingTaskCount,
-  userRole,
   errorCount = 0,
 }: Props) {
   const [mgmtExpanded, setMgmtExpanded] = useState(activeTab === 'management');
@@ -44,22 +34,6 @@ export function DesktopSidebar({
     }
   }, [activeTab]);
 
-  const visibleTabs = ALL_TABS.filter((tab) => canAccessTab(userRole, tab.id as TabId));
-  const initials = ((user?.full_name?.trim() || user?.username || '?'))
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-
-  const roleLabel: Record<Role, string> = {
-    admin: 'Admin',
-    management: 'Regional',
-    asm: 'ASM',
-    tl: 'Team Lead',
-  };
-
   return (
     <aside className="hidden lg:flex flex-col h-full w-60 shrink-0 border-r border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl z-40">
       {/* Header */}
@@ -68,19 +42,15 @@ export function DesktopSidebar({
           U
         </div>
         <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          UniHub
+          UniHub Retail
         </span>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {visibleTabs.map((tab) => {
+        {ALL_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
-          const showBadge =
-            pendingTaskCount > 0 &&
-            ((isManagerRole(userRole) && tab.id === 'management') ||
-              (!isManagerRole(userRole) && tab.id === 'hub'));
           const isMgmt = tab.id === 'management';
 
           return (
@@ -99,11 +69,6 @@ export function DesktopSidebar({
               >
                 <div className="relative shrink-0">
                   <Icon size={17} />
-                  {showBadge && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold text-white">
-                      {pendingTaskCount > 9 ? '9+' : pendingTaskCount}
-                    </span>
-                  )}
                   {errorCount > 0 && tab.id === 'settings' && (
                     <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold text-white">
                       {errorCount > 9 ? '9+' : errorCount}
@@ -167,26 +132,8 @@ export function DesktopSidebar({
       </nav>
 
       {/* Footer */}
-      <div className="shrink-0 border-t border-[var(--glass-border)] p-3 space-y-3">
+      <div className="shrink-0 border-t border-[var(--glass-border)] p-3">
         <ThemeSwitcher theme={theme} setTheme={setTheme} />
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-xs font-bold text-indigo-600 dark:text-indigo-400">
-            {initials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-              {user?.full_name ?? user?.username}
-            </p>
-            <p className="text-[10px] text-slate-400">{roleLabel[userRole] ?? userRole}</p>
-          </div>
-          <button
-            onClick={onLogout}
-            aria-label="Delogare"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
-          >
-            <LogOut size={14} />
-          </button>
-        </div>
       </div>
     </aside>
   );

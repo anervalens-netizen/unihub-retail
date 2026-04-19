@@ -6,11 +6,8 @@ import {
   markAllSeen,
   type ErrorLogEntry,
 } from '../api/errors';
-import type { AuthUser } from '../api/types';
 
 interface Props {
-  user: AuthUser | null;
-  token: string | null;
   onUnseenCountChange: (count: number) => void;
 }
 
@@ -19,7 +16,7 @@ const SOURCE_LABELS: Record<string, string> = {
   frontend: 'Frontend',
 };
 
-export function ErrorLogsTab({ user: _user, token, onUnseenCountChange }: Props) {
+export function ErrorLogsTab({ onUnseenCountChange }: Props) {
   const [logs, setLogs] = useState<ErrorLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState<ErrorLogEntry | null>(null);
@@ -27,13 +24,12 @@ export function ErrorLogsTab({ user: _user, token, onUnseenCountChange }: Props)
   const [filterSeen, setFilterSeen] = useState<'' | 'false' | 'true'>('');
 
   async function load() {
-    if (!token) return;
     setLoading(true);
     try {
       const params: Record<string, unknown> = { page_size: 100 };
       if (filterSource) params.source = filterSource;
       if (filterSeen !== '') params.seen = filterSeen === 'true';
-      const data = await getErrorLogs(token, params);
+      const data = await getErrorLogs(params);
       setLogs(data);
       const unseen = data.filter((l) => !l.seen).length;
       onUnseenCountChange(unseen);
@@ -42,11 +38,10 @@ export function ErrorLogsTab({ user: _user, token, onUnseenCountChange }: Props)
     }
   }
 
-  useEffect(() => { load(); }, [filterSource, filterSeen, token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [filterSource, filterSeen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleMarkAllSeen() {
-    if (!token) return;
-    await markAllSeen(token);
+    await markAllSeen();
     await load();
   }
 

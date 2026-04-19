@@ -1,5 +1,4 @@
 import { Filter } from 'lucide-react';
-import type { AuthUser } from '../api/types';
 import type { AppFilters } from './MainLayout';
 import { TAB_LABELS, MGMT_SUBTAB_LABELS, type ManagementTab } from '../lib/tabs';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
@@ -11,12 +10,11 @@ interface Props {
   showFilterButton: boolean;
   onOpenFilter: () => void;
   filters: AppFilters;
-  user: AuthUser | null;
 }
 
 const FILTER_TABS = new Set(['hub', 'focus', 'agents']);
 
-export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenFilter, filters, user }: Props) {
+export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenFilter, filters }: Props) {
   const breadcrumb =
     activeTab === 'management'
       ? `Management › ${MGMT_SUBTAB_LABELS[mgmtSubTab] ?? ''}`
@@ -27,14 +25,6 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
   ).length;
 
   const showFilter = showFilterButton && FILTER_TABS.has(activeTab);
-
-  const initials = ((user?.full_name?.trim() || user?.username || '?'))
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
 
   return (
     <div className="hidden lg:flex items-center justify-between h-14 px-6 shrink-0 border-b border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-md sticky top-0 z-30">
@@ -62,13 +52,6 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
             )}
           </button>
         )}
-
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-xs font-bold text-indigo-600 dark:text-indigo-400 select-none"
-          title={user?.full_name ?? user?.username}
-        >
-          {initials}
-        </div>
       </div>
     </div>
   );

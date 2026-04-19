@@ -2,15 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Filter, X } from 'lucide-react';
 import { getFilterOptions } from '../api/filters';
-import type { AuthUser, FilterOptions } from '../api/types';
+import type { FilterOptions } from '../api/types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES, defaultAppFilters } from '../lib/filterValues';
 import { cn } from '../lib/utils';
-import { canAccessTab, isManagerRole, type Role, type TabId } from '../lib/roles';
-import { ALL_TABS, type ManagementTab } from '../lib/tabs';
-import { fetchMyPendingCount } from '../api/tasks';
+import { ALL_TABS, type ManagementTab, type TabId } from '../lib/tabs';
 import { DesktopSidebar } from './DesktopSidebar';
 import { DesktopTopBar } from './DesktopTopBar';
-import { ThemeSwitcher } from './ThemeSwitcher';
 
 export interface AppFilters {
   firma: string;
@@ -27,15 +24,13 @@ interface FilterValueOption {
 
 interface MainLayoutProps {
   children: React.ReactNode;
-  user: AuthUser | null;
   activeTab: string;
-  setActiveTab: (tab: 'hub' | 'focus' | 'agents' | 'management' | 'ai' | 'settings') => void;
+  setActiveTab: (tab: TabId) => void;
   isFilterOpen: boolean;
   setIsFilterOpen: (open: boolean) => void;
   filters: AppFilters;
   setFilters: (filters: AppFilters) => void;
   filterMonth: string;
-  onLogout: () => void;
   theme: string;
   setTheme: (theme: string) => void;
   showFilterButton?: boolean;
@@ -54,7 +49,6 @@ const emptyOptions: FilterOptions = {
 
 export function MainLayout({
   children,
-  user,
   activeTab,
   setActiveTab,
   isFilterOpen,
@@ -62,7 +56,6 @@ export function MainLayout({
   filters,
   setFilters,
   filterMonth,
-  onLogout,
   theme,
   setTheme,
   showFilterButton = true,
@@ -71,17 +64,6 @@ export function MainLayout({
   errorCount = 0,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
-  const [pendingTaskCount, setPendingTaskCount] = useState(0);
-
-  const userRole: Role = (user?.role as Role) ?? 'tl';
-  const isAdmin = userRole === 'admin';
-  const visibleTabs = useMemo(
-    () =>
-      isAdmin
-        ? [...ALL_TABS]
-        : ALL_TABS.filter((tab) => canAccessTab(userRole, tab.id as TabId)),
-    [isAdmin, userRole]
-  );
 
   useEffect(() => {
     if (!filterMonth) return;
@@ -89,20 +71,6 @@ export function MainLayout({
       .then(setFilterOptions)
       .catch(() => setFilterOptions(emptyOptions));
   }, [filterMonth]);
-
-  useEffect(() => {
-    if (!visibleTabs.some((t) => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0]?.id as TabId);
-    }
-  }, [userRole, visibleTabs, activeTab, setActiveTab]);
-
-  useEffect(() => {
-    if (!user) return;
-    const load = () => fetchMyPendingCount().then(setPendingTaskCount).catch(() => {});
-    load();
-    const interval = setInterval(load, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [user]);
 
   const filteredRegionals = useMemo(() => {
     if (filters.firma === ALL_FIRMS) {
@@ -158,57 +126,25 @@ export function MainLayout({
 
   return (
     <div className="flex h-dvh overflow-hidden bg-transparent">
-      {/* ── Desktop sidebar (hidden on mobile) ── */}
       <DesktopSidebar
-        user={user}
         activeTab={activeTab}
-        setActiveTab={setActiveTab as (tab: TabId) => void}
+        setActiveTab={setActiveTab}
         mgmtSubTab={mgmtSubTab}
         setMgmtSubTab={setMgmtSubTab}
         theme={theme}
         setTheme={setTheme}
-        onLogout={onLogout}
-        pendingTaskCount={pendingTaskCount}
-        userRole={userRole}
         errorCount={errorCount}
       />
 
-      {/* ── Right column: topbar + content ── */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0">
-        {/* Settings mobile header */}
-        {activeTab === 'settings' && (
-          <div className="lg:hidden mx-auto flex w-full max-w-6xl items-center justify-between px-4 pt-7">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
-                UniHub
-              </div>
-              <div className="text-sm font-semibold">{user?.full_name ?? user?.username}</div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <ThemeSwitcher theme={theme} setTheme={setTheme} />
-              <button
-                onClick={onLogout}
-                aria-label="Delogare"
-                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-        )}
-        {activeTab === 'settings' ? <div className="lg:hidden px-4 py-3" /> : null}
-
-        {/* Desktop top bar (hidden on mobile) */}
         <DesktopTopBar
           activeTab={activeTab}
           mgmtSubTab={mgmtSubTab}
           showFilterButton={showFilterButton}
           onOpenFilter={() => setIsFilterOpen(true)}
           filters={filters}
-          user={user}
         />
 
-        {/* Main content */}
         <main
           className={cn(
             'flex-1 min-h-0',
@@ -221,7 +157,6 @@ export function MainLayout({
         </main>
       </div>
 
-      {/* ── Filter sheet (shared mobile + desktop) ── */}
       <AnimatePresence>
         {isFilterOpen && (
           <>
@@ -350,16 +285,11 @@ export function MainLayout({
         )}
       </AnimatePresence>
 
-      {/* ── Bottom tab bar — mobile only ── */}
       <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 mx-auto max-w-6xl p-3">
         <div className="glass flex items-center justify-around rounded-2xl p-1.5">
-          {visibleTabs.map((tab) => {
+          {ALL_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
-            const showBadge =
-              pendingTaskCount > 0 &&
-              ((isManagerRole(userRole) && tab.id === 'management') ||
-                (!isManagerRole(userRole) && tab.id === 'hub'));
             return (
               <button
                 key={tab.id}
@@ -377,11 +307,6 @@ export function MainLayout({
                 )}
                 <div className="relative z-10 mb-0.5">
                   <Icon size={18} />
-                  {showBadge && (
-                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white">
-                      {pendingTaskCount > 9 ? '9+' : pendingTaskCount}
-                    </span>
-                  )}
                   {errorCount > 0 && tab.id === 'settings' && (
                     <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white">
                       {errorCount > 9 ? '9+' : errorCount}
@@ -395,7 +320,6 @@ export function MainLayout({
         </div>
       </div>
 
-      {/* ── Filter float button — mobile only ── */}
       {showFilterButton && (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents') && (
         <button
           onClick={() => setIsFilterOpen(true)}

@@ -20,7 +20,6 @@ async def test_insert_and_list_error_log():
             "message": "test error",
             "traceback": "Traceback...",
             "path": "/api/test",
-            "user_id": None,
             "extra": None,
         })
         assert row["message"] == "test error"
@@ -43,7 +42,7 @@ async def test_mark_all_seen():
         row = await insert_error_log(conn, {
             "source": "frontend", "level": "error",
             "message": "js crash", "traceback": None,
-            "path": "/app", "user_id": None, "extra": None,
+            "path": "/app", "extra": None,
         })
         log_id = row["id"]
 
@@ -98,11 +97,11 @@ async def test_list_filter_by_source():
     async with pool.acquire() as conn:
         r1 = await insert_error_log(conn, {
             "source": "backend", "level": "error", "message": "be err",
-            "traceback": None, "path": None, "user_id": None, "extra": None,
+            "traceback": None, "path": None, "extra": None,
         })
         r2 = await insert_error_log(conn, {
             "source": "frontend", "level": "error", "message": "fe err",
-            "traceback": None, "path": None, "user_id": None, "extra": None,
+            "traceback": None, "path": None, "extra": None,
         })
 
         be_rows = await list_error_logs(conn, source="backend", level=None,

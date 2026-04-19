@@ -34,7 +34,6 @@ import { getDashboardAll, getDashboardHistory, getDashboardHistoryYear } from '.
 import type {
   AgentStat,
   AsmStat,
-  AuthUser,
   BrandMixItem,
   CategoryMixItem,
   DailySalesPoint,
@@ -60,7 +59,6 @@ interface DashboardProps {
   currentMonth: string;
   months: string[];
   filters: AppFilters;
-  user: AuthUser | null;
   onSectionChange?: (section: DashboardSection) => void;
 }
 
@@ -211,7 +209,7 @@ const HIST_ASM_COLUMNS = ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
 const HIST_STORE_COLUMNS = STORE_COLUMNS; // promo_qty not in STORE_COLUMNS
 const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
 
-export function Dashboard({ currentMonth, months, filters, user, onSectionChange }: DashboardProps) {
+export function Dashboard({ currentMonth, months, filters, onSectionChange }: DashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>('current');
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -1015,19 +1013,17 @@ export function Dashboard({ currentMonth, months, filters, user, onSectionChange
         >
           Istoric
         </button>
-        {user?.role === 'management' || user?.role === 'admin' ? (
-          <button
-            onClick={() => setActiveSection('visits')}
-            className={`flex-1 flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-              activeSection === 'visits'
-                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-                : 'text-slate-500'
-            }`}
-          >
-            <MapPin size={11} />
-            Vizite
-          </button>
-        ) : null}
+        <button
+          onClick={() => setActiveSection('visits')}
+          className={`flex-1 flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+            activeSection === 'visits'
+              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
+              : 'text-slate-500'
+          }`}
+        >
+          <MapPin size={11} />
+          Vizite
+        </button>
       </div>
 
       {activeSection === 'visits' ? (

@@ -41,21 +41,12 @@ async def test_stores_coverage_endpoint_returns_has_changes():
 
     async with httpx.AsyncClient(base_url="http://localhost:9898") as client:
         try:
-            login = await client.post(
-                "/api/auth/login",
-                json={"username": "admin", "password": "9999"},
+            resp = await client.get(
+                "/api/agents/stores-coverage",
+                params={"selected_month": "2025-04"},
             )
         except httpx.ConnectError:
             pytest.skip("Backend not running")
-        if login.status_code != 200:
-            pytest.skip("Backend credentials wrong")
-        token = login.json()["access_token"]
-
-        resp = await client.get(
-            "/api/agents/stores-coverage",
-            params={"selected_month": "2025-04"},
-            headers={"Authorization": f"Bearer {token}"},
-        )
         assert resp.status_code == 200
         data = resp.json()
         assert "modified_stores_count" in data

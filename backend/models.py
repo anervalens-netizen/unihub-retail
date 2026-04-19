@@ -7,26 +7,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    username: str
-    password: str
-
-
-class LoginResponse(BaseModel):
-    access_token: str
-    role: str
-    full_name: str | None = None
-
-
-class UserResponse(BaseModel):
-    id: int
-    username: str
-    role: str
-    full_name: str | None = None
-
-
 class DashboardSummary(BaseModel):
     month: str
     total_sales: Decimal
@@ -477,41 +457,6 @@ class StoreTargetInput(BaseModel):
     target_value: Decimal
 
 
-class AdminUserCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    username: str
-    password: str
-    full_name: str | None = None
-    role: Literal["admin", "asm", "management", "tl"]
-    is_active: bool = True
-
-
-class AdminUserUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    full_name: str | None = None
-    role: Literal["admin", "asm", "management", "tl"]
-    is_active: bool = True
-    password: str | None = None
-
-
-class AdminUserResponse(BaseModel):
-    id: int
-    username: str
-    full_name: str | None = None
-    role: Literal["admin", "asm", "management", "tl"]
-    is_active: bool
-    assignment_count: int = 0
-    assigned_site_codes: list[str] = []
-
-
-class TlAssignmentsUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    site_codes: list[str]
-
-
 class FocusProductCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -523,7 +468,6 @@ class FocusProductResponse(BaseModel):
     item_code: str
     item_name: str | None = None
     added_at: datetime
-    added_by: int | None = None
 
 
 class DashboardAllResponse(BaseModel):

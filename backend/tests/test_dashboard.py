@@ -13,14 +13,6 @@ def anyio_backend():
     return "asyncio"
 
 
-
-async def get_auth_token() -> str:
-    """Get admin JWT token for testing."""
-    from services.auth_service import create_access_token
-
-    return create_access_token(user_id=1, username="admin", role="admin")
-
-
 async def get_pool_connection():
     """Get a connection from the pool."""
     pool = await get_pool()
@@ -36,7 +28,6 @@ async def test_summary_endpoint_structure():
     config, _ = load_special_cards_config()
     promo_def, _ = parse_promotion_definition(config, "2026-04")
 
-    # No promotion configured for April
     assert promo_def is None
 
 
@@ -49,7 +40,7 @@ async def test_special_cards_promotion_config():
     promo_def, promo_err = parse_promotion_definition(config, "2026-04")
 
     assert promo_err is None
-    assert promo_def is None  # no promotion configured
+    assert promo_def is None
 
 
 @pytest.mark.anyio
@@ -83,7 +74,6 @@ async def test_hub_specials_json_exists():
     with open(config_path) as f:
         config = json.load(f)
 
-    # Promotions are still in JSON; incentives migrated to DB (array intentionally empty)
     assert "promotions" in config
     assert isinstance(config["promotions"], list)
     assert "incentives" in config
@@ -91,20 +81,17 @@ async def test_hub_specials_json_exists():
 
 
 def test_dashboard_scoped_clauses_builds_agent_filter() -> None:
-    clauses, scope_params = scoped_clauses(
-        {"role": "admin", "id": 1},
+    clauses = scoped_clauses(
         {"agent": 5, "site_code": 4},
         site_alias="st",
         store_alias="s",
         agent_alias="st",
         include_cartela_filter=True,
-        scope_base_alias="st",
     )
 
     assert "NOT st.is_cartela" in clauses
     assert "st.site_code = $4" in clauses
     assert "st.agent = $5" in clauses
-    assert scope_params == []
 
 
 def test_normalize_filter_accepts_clean_all_scope_values() -> None:
@@ -118,19 +105,13 @@ def test_normalize_filter_accepts_clean_all_scope_values() -> None:
 async def test_dashboard_all_endpoint_returns_composite_payload() -> None:
     import httpx
     from main import app
-    from services.auth_service import create_access_token
 
-    # Discard stale pool (bound to a dead event loop from prior async tests)
     import db.connection as _db
     _db.pool = None
 
-    token = create_access_token(user_id=1, username="admin", role="admin")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/api/dashboard/all?month=2026-03",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        response = await client.get("/api/dashboard/all?month=2026-03")
 
     assert response.status_code == 200
     payload = response.json()

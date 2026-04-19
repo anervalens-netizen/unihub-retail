@@ -49,18 +49,3 @@ export async function updateTask(id: number, body: TaskUpdate): Promise<Task> {
 export async function deleteTask(id: number): Promise<void> {
   await client.delete(`/api/tasks/${id}`);
 }
-
-export async function fetchMyTasks(status?: string): Promise<Task[]> {
-  const { data } = await client.get('/api/tasks/my', { params: status ? { status } : undefined });
-  return data;
-}
-
-export async function fetchMyPendingCount(): Promise<number> {
-  const { data } = await client.get('/api/tasks/my/count');
-  return data.count as number;
-}
-
-export async function updateMyTask(id: number, body: TaskUpdate): Promise<Task> {
-  const { data } = await client.patch(`/api/tasks/my/${id}`, body);
-  return data;
-}

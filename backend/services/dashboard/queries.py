@@ -28,19 +28,13 @@ from services.incentive_db import get_incentive_campaign
 
 async def _get_store_incentive_multipliers(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
     asm: str | None,
     site_code: str | None,
 ) -> tuple[dict[str, float], dict[str, float | None]]:
-    """Returns (multipliers, achievements) keyed by site_code.
-    multipliers: {site_code: 0.0 | 0.5 | 1.0}
-    achievements: {site_code: forecasted_ratio | None} — None when no target configured.
-    Uses previziune (actual * days_in_month / last_imported_day) for partial months.
-    Agent filter intentionally excluded — achievement is a store-level metric.
-    """
+    """Returns (multipliers, achievements) keyed by site_code."""
     params, positions = _build_scoped_params(
         [month],
         firma=firma,
@@ -49,20 +43,16 @@ async def _get_store_incentive_multipliers(
         site_code=site_code,
         agent=None,
     )
-    query_clauses, scope_params = scoped_clauses(
-        user,
+    query_clauses = scoped_clauses(
         positions,
         site_alias="ram",
         store_alias="ram",
         agent_alias="ram",
         month_alias="ram.import_month",
         month_position=1,
-        scope_base_alias="ram",
-        param_floor=len(params),
     )
     clauses = ["ram.import_month = $1"] + query_clauses
 
-    # Compute forecast factor: project partial-month sales to end-of-month
     meta_row = await conn.fetchrow(
         """
         SELECT
@@ -102,7 +92,6 @@ async def _get_store_incentive_multipliers(
         GROUP BY ram.site_code
         """,
         *params,
-        *scope_params,
     )
     multipliers: dict[str, float] = {}
     achievements: dict[str, float | None] = {}
@@ -121,7 +110,6 @@ async def _get_store_incentive_multipliers(
 
 async def _fetch_store_stats_rows(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -137,16 +125,13 @@ async def _fetch_store_stats_rows(
         site_code=site_code,
         agent=agent,
     )
-    query_clauses, scope_params = scoped_clauses(
-        user,
+    query_clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     clauses = query_clauses or ["true"]
     return await conn.fetch(
@@ -188,7 +173,6 @@ async def _fetch_store_stats_rows(
         ORDER BY proc_realizare_target DESC NULLS LAST, total_vanzari DESC, fd.locatie ASC
         """,
         *params,
-        *scope_params,
     )
 
 
@@ -201,7 +185,6 @@ async def _enrich_store_stats_with_campaign(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
-    user: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Attach promo_qty and incentive_qty to each store stats row."""
     if not base_rows:
@@ -233,16 +216,13 @@ async def _enrich_store_stats_with_campaign(
             metric_params.append(value)
             metric_positions[key] = len(metric_params)
 
-    metric_query_clauses, metric_scope_params = scoped_clauses(
-        user,
+    metric_query_clauses = scoped_clauses(
         metric_positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(metric_params),
     )
     metric_clauses = ["agg.import_month = $1", *metric_query_clauses]
     metric_rows = await conn.fetch(
@@ -277,7 +257,6 @@ async def _enrich_store_stats_with_campaign(
         GROUP BY agg.import_month, agg.site_code
         """,
         *metric_params,
-        *metric_scope_params,
     )
     campaign_metrics = {
         (str(row["import_month"]), str(row["site_code"])): dict(row)
@@ -292,7 +271,6 @@ async def _enrich_store_stats_with_campaign(
 
 async def _fetch_agent_stats_rows(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -308,16 +286,13 @@ async def _fetch_agent_stats_rows(
         site_code=site_code,
         agent=agent,
     )
-    agent_clauses, scope_params = scoped_clauses(
-        user,
+    agent_clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     rows = await conn.fetch(
         f"""
@@ -379,7 +354,6 @@ async def _fetch_agent_stats_rows(
         ORDER BY agg.total_sales DESC, agg.agent ASC
         """,
         *params,
-        *scope_params,
     )
 
     base_rows = [dict(row) for row in rows]
@@ -409,16 +383,13 @@ async def _fetch_agent_stats_rows(
             metric_params.append(value)
             metric_positions[key] = len(metric_params)
 
-    metric_query_clauses, metric_scope_params = scoped_clauses(
-        user,
+    metric_query_clauses = scoped_clauses(
         metric_positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(metric_params),
     )
     metric_clauses = ["agg.import_month = $1", *metric_query_clauses]
     metric_rows = await conn.fetch(
@@ -454,7 +425,6 @@ async def _fetch_agent_stats_rows(
         GROUP BY agg.import_month, agg.site_code, agg.agent
         """,
         *metric_params,
-        *metric_scope_params,
     )
     campaign_metrics = {
         (str(row["import_month"]), str(row["site_code"]), str(row["agent"])): dict(row)
@@ -471,7 +441,6 @@ async def _fetch_agent_stats_rows(
 
 async def _fetch_regional_stats(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -487,16 +456,13 @@ async def _fetch_regional_stats(
         site_code=site_code,
         agent=agent,
     )
-    query_clauses, scope_params = scoped_clauses(
-        user,
+    query_clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     clauses = query_clauses or ["true"]
     rows = await conn.fetch(
@@ -565,7 +531,6 @@ async def _fetch_regional_stats(
         ORDER BY rb.total_vanzari DESC, rb.regional ASC
         """,
         *params,
-        *scope_params,
     )
 
     base_rows = [dict(row) for row in rows]
@@ -598,16 +563,13 @@ async def _fetch_regional_stats(
             metric_params.append(value)
             metric_positions[key] = len(metric_params)
 
-    metric_query_clauses, metric_scope_params = scoped_clauses(
-        user,
+    metric_query_clauses = scoped_clauses(
         metric_positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(metric_params),
     )
     metric_clauses = ["agg.import_month = $1", *metric_query_clauses]
     metric_rows = await conn.fetch(
@@ -642,7 +604,6 @@ async def _fetch_regional_stats(
         GROUP BY agg.import_month, agg.regional
         """,
         *metric_params,
-        *metric_scope_params,
     )
     campaign_metrics = {
         (str(row["import_month"]), str(row["regional"])): dict(row)
@@ -657,7 +618,6 @@ async def _fetch_regional_stats(
 
 async def _fetch_asm_stats(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -673,16 +633,13 @@ async def _fetch_asm_stats(
         site_code=site_code,
         agent=agent,
     )
-    query_clauses, scope_params = scoped_clauses(
-        user,
+    query_clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     clauses = query_clauses or ["true"]
     rows = await conn.fetch(
@@ -754,7 +711,6 @@ async def _fetch_asm_stats(
         ORDER BY ab.total_vanzari DESC, ab.regional ASC, ab.asm ASC
         """,
         *params,
-        *scope_params,
     )
 
     base_rows = [dict(row) for row in rows]
@@ -787,16 +743,13 @@ async def _fetch_asm_stats(
             metric_params.append(value)
             metric_positions[key] = len(metric_params)
 
-    metric_query_clauses, metric_scope_params = scoped_clauses(
-        user,
+    metric_query_clauses = scoped_clauses(
         metric_positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(metric_params),
     )
     metric_clauses = ["agg.import_month = $1", *metric_query_clauses]
     metric_rows = await conn.fetch(
@@ -832,7 +785,6 @@ async def _fetch_asm_stats(
         GROUP BY agg.import_month, agg.regional, agg.asm
         """,
         *metric_params,
-        *metric_scope_params,
     )
     campaign_metrics = {
         (str(row["import_month"]), str(row["regional"]), str(row["asm"])): dict(row)
@@ -849,7 +801,6 @@ async def _fetch_asm_stats(
 
 async def _fetch_period_comparison(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     cutoff_day: int,
     firma: str | None,
@@ -878,14 +829,11 @@ async def _fetch_period_comparison(
             agent=agent,
         )
 
-        query_clauses, scope_params = scoped_clauses(
-            user,
+        query_clauses = scoped_clauses(
             positions,
             site_alias="agg",
             store_alias="agg",
             agent_alias="agg",
-            scope_base_alias="agg",
-            param_floor=len(params),
         )
         clauses = [
             "agg.import_month = $1",
@@ -919,7 +867,6 @@ async def _fetch_period_comparison(
             FROM filtered_days fd
             """,
             *params,
-            *scope_params,
         )
         rows.append(
             PeriodComparisonPoint(
@@ -946,7 +893,6 @@ async def _fetch_period_comparison(
 
 async def _fetch_receipt_bucket_mix(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -962,16 +908,13 @@ async def _fetch_receipt_bucket_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     rows = await conn.fetch(
         f"""
@@ -1003,14 +946,12 @@ async def _fetch_receipt_bucket_mix(
             END
         """,
         *params,
-        *scope_params,
     )
     return [ReceiptBucketItem(**dict(row)) for row in rows]
 
 
 async def _fetch_focus_subcategory_mix(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -1026,16 +967,13 @@ async def _fetch_focus_subcategory_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     rows = await conn.fetch(
         f"""
@@ -1074,14 +1012,12 @@ async def _fetch_focus_subcategory_mix(
         ORDER BY quantity_total DESC, sales_total DESC, category ASC
         """,
         *params,
-        *scope_params,
     )
     return [CategoryMixItem(**dict(row)) for row in rows]
 
 
 async def _fetch_brand_mix(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -1097,16 +1033,13 @@ async def _fetch_brand_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     rows = await conn.fetch(
         f"""
@@ -1130,14 +1063,12 @@ async def _fetch_brand_mix(
         ORDER BY sales_total DESC, quantity_total DESC, brand ASC
         """,
         *params,
-        *scope_params,
     )
     return [BrandMixItem(**dict(row)) for row in rows]
 
 
 async def _fetch_promo_incentive_summary(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -1173,18 +1104,13 @@ async def _fetch_promo_incentive_summary(
         promo_clauses = [
             "agg.import_month = $1",
             "agg.sale_date BETWEEN $2 AND $3",
-            f"agg.item_code = ANY($4::TEXT[])",
+            "agg.item_code = ANY($4::TEXT[])",
         ]
-        promo_query_clauses, promo_scope_params = scoped_clauses(
-            user,
+        promo_query_clauses = scoped_clauses(
             promo_positions,
             site_alias="agg",
             store_alias="agg",
             agent_alias="agg",
-            month_alias="agg.import_month",
-            month_position=1,
-            scope_base_alias="agg",
-            param_floor=len(promo_params),
         )
         promo_clauses.extend(promo_query_clauses)
         promo_row = await conn.fetchrow(
@@ -1196,7 +1122,6 @@ async def _fetch_promo_incentive_summary(
             WHERE {" AND ".join(promo_clauses)}
             """,
             *promo_params,
-            *promo_scope_params,
         )
         if promo_row:
             promo_qty = int(promo_row["promo_qty"] or 0)
@@ -1218,16 +1143,11 @@ async def _fetch_promo_incentive_summary(
                 "agg.import_month = $1",
                 "agg.item_code = ANY($2::TEXT[])",
             ]
-            incentive_query_clauses, incentive_scope_params = scoped_clauses(
-                user,
+            incentive_query_clauses = scoped_clauses(
                 incentive_positions,
                 site_alias="agg",
                 store_alias="agg",
                 agent_alias="agg",
-                month_alias="agg.import_month",
-                month_position=1,
-                scope_base_alias="agg",
-                param_floor=len(incentive_params),
             )
             incentive_clauses.extend(incentive_query_clauses)
             item_rows = await conn.fetch(
@@ -1239,10 +1159,9 @@ async def _fetch_promo_incentive_summary(
                 GROUP BY agg.site_code, agg.item_code
                 """,
                 *incentive_params,
-                *incentive_scope_params,
             )
             store_multipliers, achievements = await _get_store_incentive_multipliers(
-                conn, user, month, firma, regional, asm, site_code
+                conn, month, firma, regional, asm, site_code
             )
             incentive_qty = sum(int(r["qty"]) for r in item_rows)
             incentive_value = Decimal(str(
@@ -1254,10 +1173,6 @@ async def _fetch_promo_incentive_summary(
                 )
             ))
 
-            # Magazine/agenți cu previziune ≥ 90% față de target.
-            # achievements provine din _get_store_incentive_multipliers care aplică deja
-            # filtrele de scope (firma/regional/asm/site_code + RBAC per rol) — deci
-            # ANY($2) pe qualified_store_codes este implicit scope-filtrat, fără scoped_clauses adiționale.
             qualified_store_codes = [sc for sc, v in achievements.items() if v is not None and v >= 0.9]
             incentive_qualified_stores = len(qualified_store_codes)
             incentive_qualified_agents = 0
@@ -1288,7 +1203,6 @@ async def _fetch_promo_incentive_summary(
 
 async def _fetch_category_mix(
     conn: Any,
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -1304,16 +1218,13 @@ async def _fetch_category_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     rows = await conn.fetch(
         f"""
@@ -1351,6 +1262,5 @@ async def _fetch_category_mix(
         ORDER BY sales_total DESC, category ASC
         """,
         *params,
-        *scope_params,
     )
     return [CategoryMixItem(**dict(row)) for row in rows]

@@ -1,5 +1,12 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Auth removed: drop legacy auth tables + FK columns on existing DBs
+DROP TABLE IF EXISTS tl_store_assignments CASCADE;
+ALTER TABLE IF EXISTS focus_products DROP COLUMN IF EXISTS added_by;
+ALTER TABLE IF EXISTS import_snapshots DROP COLUMN IF EXISTS imported_by;
+ALTER TABLE IF EXISTS error_logs DROP COLUMN IF EXISTS user_id;
+DROP TABLE IF EXISTS users CASCADE;
+
 CREATE TABLE IF NOT EXISTS stores (
     site_code TEXT PRIMARY KEY,
     locatie TEXT NOT NULL,
@@ -12,32 +19,10 @@ CREATE TABLE IF NOT EXISTS stores (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    full_name TEXT,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'asm', 'management', 'tl')),
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_login_at TIMESTAMPTZ
-);
-
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'asm', 'management', 'tl'));
-
 CREATE TABLE IF NOT EXISTS focus_products (
     item_code TEXT PRIMARY KEY,
     item_name TEXT,
-    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    added_by INTEGER REFERENCES users(id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS tl_store_assignments (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    site_code TEXT NOT NULL REFERENCES stores(site_code) ON DELETE CASCADE,
-    UNIQUE (user_id, site_code)
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS import_snapshots (
@@ -50,7 +35,6 @@ CREATE TABLE IF NOT EXISTS import_snapshots (
     rows_imported INTEGER,
     status TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'completed', 'failed')),
     error_message TEXT,
-    imported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -761,7 +745,6 @@ CREATE TABLE IF NOT EXISTS error_logs (
     message     TEXT NOT NULL,
     traceback   TEXT,
     path        TEXT,
-    user_id     INT REFERENCES users(id) ON DELETE SET NULL,
     extra       JSONB,
     seen        BOOLEAN NOT NULL DEFAULT false
 );

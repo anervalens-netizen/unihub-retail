@@ -1,31 +1,26 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from db.connection import get_pool
-from dependencies import get_current_user, require_role
 from models import StoreOption, StoreTargetInput
 from routers.filters import clear_filter_options_cache
-from services.filters import build_scope_filter
 from services.importer import upsert_store_targets
 
 router = APIRouter(prefix="/api/stores", tags=["stores"])
 
 
 @router.get("", response_model=list[StoreOption])
-async def list_stores(user: dict = Depends(get_current_user)) -> list[StoreOption]:
-    scope_sql, scope_params = build_scope_filter(user, base_alias="s", param_start=1)
+async def list_stores() -> list[StoreOption]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            f"""
+            """
             SELECT site_code, locatie, firma, regional, asm
-            FROM stores s
+            FROM stores
             WHERE is_active = true
-              {f"AND {scope_sql}" if scope_sql else ""}
             ORDER BY locatie
             """,
-            *scope_params,
         )
     return [StoreOption(**dict(row)) for row in rows]
 
@@ -33,7 +28,6 @@ async def list_stores(user: dict = Depends(get_current_user)) -> list[StoreOptio
 @router.post("/targets")
 async def save_targets(
     payload: list[StoreTargetInput],
-    user: dict = Depends(require_role("admin")),
 ) -> dict[str, int]:
     pool = await get_pool()
     async with pool.acquire() as conn:

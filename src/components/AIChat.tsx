@@ -234,11 +234,10 @@ export default function AIChat() {
   }, [deviceId]);
 
   const reconnectSocket = useCallback((sessionId: string | null) => {
-    const token = localStorage.getItem('unihub_token') ?? '';
-    if (!token || !sessionId) return;
+    if (!sessionId) return;
     wsRef.current?.disconnect();
     const ws = new AiWebSocket(
-      token, deviceId, sessionId,
+      deviceId, sessionId,
       (evt: AiEvent) => handleEventRef.current(evt),
       () => handleCloseRef.current()
     );

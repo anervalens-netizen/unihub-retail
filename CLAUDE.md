@@ -42,7 +42,7 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 ### Frontend — `src/components/`
 | Fisier | Rol |
 |--------|-----|
-| `App.tsx` | Auth + tab routing + localStorage persistence tab activ |
+| `App.tsx` | Tab routing + localStorage persistence tab activ |
 | `MainLayout.tsx` | Shell principal, navigare, filtre |
 | `Dashboard.tsx` | Tab Hub — Luna în curs (tabele RM/ASM/Magazine/Agenti), Istoric (aceleasi tabele filtrate pe luna analizata), grafice |
 | `Campaigns.tsx` | Tab Focus — campanii, incentive per-produs, Top Agenti + Top Magazine sortabile |
@@ -58,29 +58,26 @@ sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path
 | `TasksSubtab.tsx` | Sub-tab Tasks — task-uri per agent/magazin, creare din alerte CRM |
 | `HRSubtab.tsx` | Sub-tab HR — cereri concediu, pontaj, performanta ASM |
 | `AIChat.tsx` | Tab AI — chat UI, sesiuni, attachments, drawer istoric |
-| `Settings.tsx` | Tab Setari (admin) — 2 sub-taburi: Administrare + Erori sistem (admin only) |
+| `Settings.tsx` | Tab Setari — 2 sub-taburi: Administrare (import fișier + istoric) + Erori sistem |
 | `ErrorLogsTab.tsx` | Sub-tab Erori sistem — tabel erori cu filtre (sursa/seen), modal detalii traceback |
-| `PinScreen.tsx` | Ecran PIN pentru autentificare |
 | `ErrorBoundary.tsx` | Error boundary React — `componentDidCatch` trimite eroarea la `POST /api/errors` |
 
 ### Backend — `backend/routers/`
 | Router | Prefix / Rol |
 |--------|--------|
-| `auth` | `/api/auth` |
 | `dashboard` | `/api/dashboard` |
 | `campaigns` | `/api/campaigns` |
 | `filters` | `/api/filters` |
 | `imports` | `/api/imports` |
 | `stores` | `/api/stores` |
 | `visits_report` | `/api/visits-report` — citeste SQLite din `data/visits/visits.db` |
-| `admin` | `/api/admin` |
 | `agents` | `/api/agents` |
 | `salarii` | `/salarii` (fara prefix `/api`) |
 | `tasks` | `/api/tasks` — task-uri per agent/magazin; sursa si din alerte CRM |
 | `hr` | `/api/hr` — concedii, pontaj, performanta ASM (PG + `visits_snapshot`, nu mai citeste SQLite direct) |
 | `crm` | `/api/crm` — scoruri magazine, alerte, `get_forecast_factor` (shared cu hr.py) |
 | `ai` | `/api/ai` — WebSocket proxy + sesiuni + attachments pentru Hermes bridge |
-| `errors` | `/api/errors` (public) + `/api/admin/error-logs` (admin) — ingest erori frontend + vizualizare |
+| `errors` | `/api/errors` (public) + `/api/admin/error-logs` — ingest erori frontend + vizualizare |
 
 Helperele de filtre si scope (SQL `where_clauses`, `scoped_clauses`, `transaction_filter_parts`, `normalize_filter`, `build_scope_filter`) traiesc in `services/filters.py`. Helperele de forecast (CRM/HR shared) traiesc in `services/forecast.py`.
 
@@ -116,7 +113,7 @@ Routerul `dashboard.py` contine doar endpoint-urile (`@router.get(...)`) si impo
   - `POST /api/ai/sessions/{session_id}/activate?device_id=...`
   - `DELETE /api/ai/sessions/{session_id}` — sterge sesiunea din Hermes SQLite
   - `POST /api/ai/attachments`
-  - `WS /api/ai/ws?token=...&device_id=...&session_id=...`
+  - `WS /api/ai/ws?device_id=...&session_id=...`
 
 - Suport attachments: imagini (vision), `.txt`, `.md`, PDF (`pdftotext`), `.docx/.xlsx/.pptx`
 
@@ -125,7 +122,7 @@ Routerul `dashboard.py` contine doar endpoint-urile (`@router.get(...)`) si impo
 - Memorie cross-sesiune: Hermes citeste/scrie `memory.md` in workspace (`/opt/Mobiup/unihub/data/uniai-workspace/`) la prima interactiune din sesiune. Configurat in `/home/andrei/.hermes/SOUL.md`.
 
 - Gotcha important:
-  - bridge-ul trebuie sa creeze `AIAgent` cu `session_id` + `session_db`, iar payload-ul catre bridge trebuie sa includa `user_id`
+  - bridge-ul creaza `AIAgent` cu `session_id` + `session_db`; sesiunile sunt partitionate pe `BRIDGE_USER_ID = "default"` (constanta in `ai.py`, fara auth)
   - `MainLayout.tsx`: tabul AI are `overflow-hidden` (nu `overflow-y-auto`) — scroll-ul e gestionat intern de messages area pentru a preveni saltul address bar-ului pe mobile
 
 - Variabile de mediu:
@@ -134,7 +131,7 @@ Routerul `dashboard.py` contine doar endpoint-urile (`@router.get(...)`) si impo
 
 ### Tab Management
 
-Tab nou cu 4 sub-taburi, accesibil rolurilor `admin` si `management`.
+Tab cu 4 sub-taburi, accesibil tuturor.
 
 | Sub-tab | Componenta | Backend | Descriere |
 |---------|-----------|---------|-----------|
@@ -158,8 +155,6 @@ Tab nou cu 4 sub-taburi, accesibil rolurilor `admin` si `management`.
 - `GET /api/hr/asm-performance/{name}/history?months=N` — istoric ASM
 - `GET /api/tasks` — lista task-uri
 - `POST /api/tasks` — creare task
-- `GET /api/tasks/my` — task-urile utilizatorului curent
-- `GET /api/tasks/my/pending-count` — badge notificari
 
 ### Baza de date
 - Schema unica: `backend/db/schema_v2.sql`
@@ -262,7 +257,6 @@ Pattern enrichment campanie (acelas pentru RM/ASM/Magazine/Agenti):
 | `import_annual_summary.py` | Import rezumat anual din `vanzari 2022 si 2023.xlsx` |
 | `import_incentive_campaign.py` | Import campanie incentive dintr-un Excel in DB |
 | `rebuild_reporting.py` | Reconstruieste agregatele de reporting (toate lunile sau una anume) |
-| `reset_default_users.py` | Reseteaza parolele admin/management la `9999` |
 | `seed.py` | Seed complet din fisierele din `data/` |
 
 ### Backup
@@ -289,9 +283,9 @@ Sistem propriu fara dependente externe. Capteaza erori din backend (Python loggi
 - `ErrorBoundary.componentDidCatch` — crash-uri React
 - Toate trimit la `POST /api/errors` (fara autentificare, rate limit 10 req/min per IP)
 
-**Vizualizare:** Tab "Erori sistem" in Settings (admin only) — `ErrorLogsTab.tsx`. Filtre dupa sursa/seen, modal cu traceback complet, buton "Marchează toate ca văzute".
+**Vizualizare:** Tab "Erori sistem" in Settings — `ErrorLogsTab.tsx`. Filtre dupa sursa/seen, modal cu traceback complet, buton "Marchează toate ca văzute".
 
-**Badge:** `App.tsx` polleaza `/api/admin/error-logs/unseen-count` la 60s (admin only). Badge roșu pe Settings in sidebar desktop + tab bar mobile.
+**Badge:** `App.tsx` polleaza `/api/admin/error-logs/unseen-count` la 60s. Badge roșu pe Settings in sidebar desktop + tab bar mobile.
 
 **Cleanup automat:** la boot se sterg intrari mai vechi de 30 zile (`delete_old_logs`).
 
@@ -341,12 +335,6 @@ Mapping `AppFilters` → parametri backend salarii:
 
 Endpointurile salarii adauga `LEFT JOIN stores` **doar** cand `regional` sau `asm` sunt prezente (evita JOIN inutil).
 
-### Autentificare
-- Roluri: `admin`, `management`, `tl`
-- `admin` si `management` vad totul
-- `tl` vede doar magazinele alocate lui
-- Parole default: `9999` pentru admin si management
-
 ---
 
 ## Cum sa incepi o sesiune noua
@@ -393,6 +381,5 @@ Invocare din Claude Code: `/graphify .` (prima data — full pipeline) sau `/gra
 
 - Nu crea fisiere temporare in radacina proiectului (`fix.py`, `patch.txt`, etc.) — curata-le dupa
 - Nu modifica schema direct in DB
-- Nu reseta parolele utilizatorilor fara confirmare explicita
 - Nu importa campanii incentive din Excel manual — foloseste `import_incentive_campaign.py`
 - Nu aplica fix-uri speculative in cascada fara sa diagnostichezi root cause-ul mai intai

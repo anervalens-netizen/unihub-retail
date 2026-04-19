@@ -4,10 +4,9 @@ import asyncio
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
 from db.connection import get_pool
-from dependencies import get_current_user
 from models import (
     AgentStats,
     AsmStats,
@@ -55,7 +54,6 @@ async def get_summary(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> DashboardSummary:
     params, positions = _build_scoped_params(
         [month],
@@ -65,16 +63,13 @@ async def get_summary(
         site_code=site_code,
         agent=agent,
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -196,7 +191,6 @@ async def get_summary(
             LEFT JOIN cartele_summary cs ON true
             """,
             *params,
-            *scope_params,
         )
     if row is None:
         return DashboardSummary(
@@ -231,7 +225,6 @@ async def get_dashboard_all(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> DashboardAllResponse:
     """Returns all dashboard data except history in a single response.
 
@@ -244,7 +237,6 @@ async def get_dashboard_all(
         async with pool.acquire() as conn:
             rows = await _fetch_agent_stats_rows(
                 conn,
-                user,
                 month,
                 firma,
                 regional,
@@ -258,7 +250,6 @@ async def get_dashboard_all(
         async with pool.acquire() as conn:
             rows = await _fetch_store_stats_rows(
                 conn,
-                user,
                 month,
                 firma,
                 regional,
@@ -275,7 +266,6 @@ async def get_dashboard_all(
                 asm,
                 site_code,
                 agent,
-                user,
             )
         return [StoreStats(**row) for row in enriched]
 
@@ -288,16 +278,13 @@ async def get_dashboard_all(
             site_code=site_code,
             agent=agent,
         )
-        clauses, scope_params = scoped_clauses(
-            user,
+        clauses = scoped_clauses(
             positions,
             site_alias="agg",
             store_alias="agg",
             agent_alias="agg",
             month_alias="agg.import_month",
             month_position=1,
-            scope_base_alias="agg",
-            param_floor=len(params),
         )
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -313,7 +300,6 @@ async def get_dashboard_all(
                 ORDER BY agg.sale_date ASC
                 """,
                 *params,
-                *scope_params,
             )
         return [DailySalesPoint(**dict(row)) for row in rows]
 
@@ -323,7 +309,6 @@ async def get_dashboard_all(
         async with pool.acquire() as conn:
             return await _fetch_period_comparison(
                 conn,
-                user,
                 month,
                 cutoff_day,
                 firma,
@@ -336,49 +321,47 @@ async def get_dashboard_all(
     async def get_category_mix_data() -> list[CategoryMixItem]:
         async with pool.acquire() as conn:
             return await _fetch_category_mix(
-                conn, user, month, firma, regional, asm, site_code, agent
+                conn, month, firma, regional, asm, site_code, agent
             )
 
     async def get_receipt_bucket_mix_data() -> list[ReceiptBucketItem]:
         async with pool.acquire() as conn:
             return await _fetch_receipt_bucket_mix(
-                conn, user, month, firma, regional, asm, site_code, agent
+                conn, month, firma, regional, asm, site_code, agent
             )
 
     async def get_focus_subcategory_mix_data() -> list[CategoryMixItem]:
         async with pool.acquire() as conn:
             return await _fetch_focus_subcategory_mix(
-                conn, user, month, firma, regional, asm, site_code, agent
+                conn, month, firma, regional, asm, site_code, agent
             )
 
     async def get_brand_mix_data() -> list[BrandMixItem]:
         async with pool.acquire() as conn:
             return await _fetch_brand_mix(
-                conn, user, month, firma, regional, asm, site_code, agent
+                conn, month, firma, regional, asm, site_code, agent
             )
 
     async def get_promo_incentive_data() -> PromoIncentiveSummary:
         async with pool.acquire() as conn:
             return await _fetch_promo_incentive_summary(
-                conn, user, month, firma, regional, asm, site_code, agent
+                conn, month, firma, regional, asm, site_code, agent
             )
 
     async def get_regional_data() -> list[RegionalStats]:
         async with pool.acquire() as conn:
             rows = await _fetch_regional_stats(
-                conn, user, month, firma, regional, asm, site_code, agent
+                conn, month, firma, regional, asm, site_code, agent
             )
         return [RegionalStats(**row) for row in rows]
 
     async def get_asm_data() -> list[AsmStats]:
         async with pool.acquire() as conn:
             rows = await _fetch_asm_stats(
-                conn, user, month, firma, regional, asm, site_code, agent
+                conn, month, firma, regional, asm, site_code, agent
             )
         return [AsmStats(**row) for row in rows]
 
-    # Run agents, stores, daily in parallel (each gets own connection)
-    # Call get_summary directly for complete summary (targets, forecast, etc.)
     (
         agents,
         stores,
@@ -409,7 +392,6 @@ async def get_dashboard_all(
         asm=asm,
         site_code=site_code,
         agent=agent,
-        user=user,
     )
     special_cards_response = await get_special_cards(
         month=month,
@@ -418,7 +400,6 @@ async def get_dashboard_all(
         asm=asm,
         site_code=site_code,
         agent=agent,
-        user=user,
     )
     cutoff_day = summary.imported_day_of_month or summary.days_in_month or 1
     period_comparison = await get_period_comparison_data(cutoff_day)
@@ -448,7 +429,6 @@ async def get_daily_sales(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> list[DailySalesPoint]:
     params, positions = _build_scoped_params(
         [month],
@@ -458,16 +438,13 @@ async def get_daily_sales(
         site_code=site_code,
         agent=agent,
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
         month_alias="agg.import_month",
         month_position=1,
-        scope_base_alias="agg",
-        param_floor=len(params),
     )
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -484,7 +461,6 @@ async def get_daily_sales(
             ORDER BY agg.sale_date ASC
             """,
             *params,
-            *scope_params,
         )
     return [DailySalesPoint(**dict(row)) for row in rows]
 
@@ -497,10 +473,9 @@ async def get_special_cards(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> DashboardSpecialCardsResponse:
     cards = await _get_special_cards_data(
-        month, firma, regional, asm, site_code, agent, user
+        month, firma, regional, asm, site_code, agent
     )
     return DashboardSpecialCardsResponse(cards=cards)
 
@@ -514,7 +489,6 @@ async def get_monthly_history(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> DashboardHistoryResponse:
     params: list[Any] = [month, months_back]
     positions: dict[str, int] = {}
@@ -529,14 +503,11 @@ async def get_monthly_history(
             params.append(value)
             positions[key] = len(params)
 
-    sales_clauses, sales_scope_params = scoped_clauses(
-        user,
+    sales_clauses = scoped_clauses(
         positions,
         site_alias="agg",
         store_alias="agg",
         agent_alias="agg",
-        scope_base_alias="agg",
-        param_floor=2,
     )
     sales_clauses.insert(
         0, "agg.import_month IN (SELECT import_month FROM recent_months)"
@@ -621,7 +592,6 @@ async def get_monthly_history(
             ORDER BY ss.month ASC
             """,
             *params,
-            *sales_scope_params,
         )
     return DashboardHistoryResponse(
         history=[MonthlyHistoryPoint(**dict(row)) for row in rows]
@@ -642,7 +612,6 @@ async def get_history_by_year(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> YearHistoryResponse:
     _firma = normalize_filter(firma)
     _regional = normalize_filter(regional)
@@ -654,8 +623,6 @@ async def get_history_by_year(
     async with pool.acquire() as conn:
         points: list[YearHistoryPoint] = []
 
-        # --- Historical aggregate (2022 full year or 2023 Ian–Aug) ---
-        # Skip when agent filter is active: historical data has no per-agent breakdown.
         if year <= 2023 and _agent is None:
             hist_params: list[Any] = [year]
             hist_clauses: list[str] = []
@@ -672,12 +639,6 @@ async def get_history_by_year(
                     hist_clauses.append(f"{col} = ${p}")
                     hist_params.append(val)
                     p += 1
-            if user["role"] == "tl":
-                hist_clauses.append(
-                    f"s.site_code IN (SELECT site_code FROM tl_store_assignments WHERE user_id = ${p}::INTEGER)"
-                )
-                hist_params.append(user["id"])
-                p += 1
 
             where_hist = f"AND {' AND '.join(hist_clauses)}" if hist_clauses else ""
             row = await conn.fetchrow(
@@ -702,8 +663,6 @@ async def get_history_by_year(
                     )
                 )
 
-        # --- reporting_agent_month part ---
-        # For 2023 only load Sep–Dec (Jan–Aug are in historical_annual_sales).
         start_month = f"{year}-09" if year == 2023 else f"{year}-01"
         end_month = f"{year}-12"
 
@@ -721,12 +680,6 @@ async def get_history_by_year(
                 rep_clauses.append(f"{col} = ${p}")
                 rep_params.append(val)
                 p += 1
-        if user["role"] == "tl":
-            rep_clauses.append(
-                f"s.site_code IN (SELECT site_code FROM tl_store_assignments WHERE user_id = ${p}::INTEGER)"
-            )
-            rep_params.append(user["id"])
-            p += 1
 
         where_rep = f"AND {' AND '.join(rep_clauses)}" if rep_clauses else ""
 

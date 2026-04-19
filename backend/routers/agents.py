@@ -3,10 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from db.connection import get_pool
-from dependencies import get_current_user
 from services.filters import where_clauses
 from models import (
     AgentsOverviewResponse,
@@ -43,46 +42,40 @@ async def get_agents_overview(
     asm: str | None = Query(None),
     site_code: str | None = Query(None),
     agent: str | None = Query(None),
-    user: dict[str, Any] = Depends(get_current_user),
 ):
     pool = await get_pool()
     prev_month = get_prev_month(selected_month)
 
     clauses, params = where_clauses(
-        user, selected_month, firma, regional, asm, site_code, agent, include_agent=True
+        selected_month, firma, regional, asm, site_code, agent, include_agent=True
     )
     where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
 
-    # 1. Snapshot: Active, New, Reactivated
-    # We also need Retention and LeftThisMonth
-    # For retention we need to know who was active last month under SAME filters
-
-    # We need filters without the month for some queries
     base_clauses = [c for c in clauses if "import_month =" not in c]
     base_where = "WHERE " + " AND ".join(base_clauses) if base_clauses else ""
 
     query = f"""
-        WITH 
+        WITH
         current_active AS (
             SELECT DISTINCT agent FROM reporting_agent_month {where_sql}
         ),
         prev_active AS (
-            SELECT DISTINCT agent FROM reporting_agent_month 
+            SELECT DISTINCT agent FROM reporting_agent_month
             {base_where} {" AND " if base_where else "WHERE "} import_month = ${len(params) + 1}
         ),
         stats AS (
-            SELECT 
+            SELECT
                 COUNT(DISTINCT ca.agent)::INT as active_count,
                 COUNT(DISTINCT ca.agent) FILTER (WHERE lc.is_new)::INT as new_count,
                 COUNT(DISTINCT ca.agent) FILTER (WHERE lc.is_reactivated)::INT as reactivated_count,
-                COUNT(DISTINCT ca.agent) FILTER (WHERE 
+                COUNT(DISTINCT ca.agent) FILTER (WHERE
                     (SELECT COUNT(*)::INT FROM reporting_agent_lifecycle_month l2 WHERE l2.agent = ca.agent AND l2.import_month <= $1) > 6
                 )::INT as stable_count
             FROM current_active ca
             JOIN reporting_agent_lifecycle_month lc ON lc.agent = ca.agent AND lc.import_month = $1
         ),
         retention AS (
-            SELECT 
+            SELECT
                 COUNT(DISTINCT pa.agent)::INT as prev_active_count,
                 COUNT(DISTINCT pa.agent) FILTER (WHERE ca.agent IS NOT NULL)::INT as stayed_count,
                 COUNT(DISTINCT pa.agent) FILTER (WHERE ca.agent IS NULL)::INT as left_count
@@ -90,7 +83,7 @@ async def get_agents_overview(
             LEFT JOIN current_active ca ON ca.agent = pa.agent
         ),
         global_stats AS (
-            SELECT 
+            SELECT
                 COUNT(DISTINCT agent)::INT as total_unique,
                 AVG(active_months)::NUMERIC as avg_seniority
             FROM (
@@ -174,17 +167,13 @@ async def get_agents_movement(
     asm: str | None = Query(None),
     site_code: str | None = Query(None),
     agent: str | None = Query(None),
-    user: dict[str, Any] = Depends(get_current_user),
 ):
     pool = await get_pool()
 
-    # We use a trick: where_clauses with no month filter, so we get the base filters.
-    # Actually, where_clauses requires a month. We can just pass selected_month, and replace 'import_month = $1' with 'import_month <= $1'
     clauses, params = where_clauses(
-        user, selected_month, firma, regional, asm, site_code, agent, include_agent=True
+        selected_month, firma, regional, asm, site_code, agent, include_agent=True
     )
 
-    # modify the month clause
     where_sql = "WHERE " + " AND ".join(
         [
             c.replace("import_month = $1", "st.import_month <= $1")
@@ -195,13 +184,13 @@ async def get_agents_movement(
     )
 
     query = f"""
-        SELECT 
+        SELECT
             st.import_month as month,
             COUNT(DISTINCT lc.agent)::INT as active,
             COUNT(DISTINCT lc.agent) FILTER (WHERE lc.is_new)::INT as new,
             COUNT(DISTINCT lc.agent) FILTER (WHERE lc.is_reactivated)::INT as reactivated
         FROM reporting_agent_month st
-        JOIN reporting_agent_lifecycle_month lc 
+        JOIN reporting_agent_lifecycle_month lc
           ON lc.agent = st.agent AND lc.import_month = st.import_month
         {where_sql}
         GROUP BY st.import_month
@@ -217,8 +206,8 @@ async def get_agents_movement(
             active=row["active"],
             new=row["new"],
             reactivated=row["reactivated"],
-            churned=0,  # placeholder for now
-            net_growth=row["new"],  # new - churned (churned=0 placeholder)
+            churned=0,
+            net_growth=row["new"],
         )
         for row in rows
     ]
@@ -234,16 +223,13 @@ async def get_agents_list(
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     site_code: str | None = Query(None),
-    user: dict[str, Any] = Depends(get_current_user),
 ):
     pool = await get_pool()
 
-    # We use where_clauses with include_agent=False
     clauses, params = where_clauses(
-        user, selected_month, firma, regional, asm, site_code, None, include_agent=False
+        selected_month, firma, regional, asm, site_code, None, include_agent=False
     )
 
-    # Modify for <= selected_month
     scope_clauses = [
         c.replace("import_month = $1", "import_month <= $1") for c in clauses
     ]
@@ -319,7 +305,6 @@ async def get_agents_list(
 async def get_agent_profile(
     agent: str = Query(...),
     selected_month: str = Query(...),
-    user: dict[str, Any] = Depends(get_current_user),
 ):
     pool = await get_pool()
 
@@ -354,15 +339,6 @@ async def get_agent_profile(
     """
 
     async with pool.acquire() as conn:
-        if user["role"] == "tl":
-            visible = await conn.fetchval(
-                "SELECT EXISTS(SELECT 1 FROM reporting_agent_month r "
-                "JOIN tl_store_assignments t ON t.site_code = r.site_code "
-                "WHERE r.agent = $1 AND t.user_id = $2)",
-                agent, user["id"],
-            )
-            if not visible:
-                raise HTTPException(status_code=404, detail="Agent not found")
         row = await conn.fetchrow(query, agent, selected_month)
 
     if not row:
@@ -374,7 +350,6 @@ async def get_agent_profile(
 @router.get("/history", response_model=AgentHistoryResponse)
 async def get_agent_history(
     agent: str = Query(...),
-    user: dict[str, Any] = Depends(get_current_user),
 ):
     pool = await get_pool()
 
@@ -392,15 +367,6 @@ async def get_agent_history(
     """
 
     async with pool.acquire() as conn:
-        if user["role"] == "tl":
-            visible = await conn.fetchval(
-                "SELECT EXISTS(SELECT 1 FROM reporting_agent_month r "
-                "JOIN tl_store_assignments t ON t.site_code = r.site_code "
-                "WHERE r.agent = $1 AND t.user_id = $2)",
-                agent, user["id"],
-            )
-            if not visible:
-                raise HTTPException(status_code=404, detail="Agent not found")
         rows = await conn.fetch(query, agent)
 
     history = [AgentHistoryPoint(**dict(row)) for row in rows]
@@ -414,11 +380,9 @@ async def get_stores_coverage(
     firma: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
-    user: dict[str, Any] = Depends(get_current_user),
 ):
     pool = await get_pool()
 
-    # Base filters
     params: list[Any] = [selected_month]
     clauses: list[str] = []
 
@@ -431,16 +395,6 @@ async def get_stores_coverage(
     if asm and asm != "Toti":
         params.append(asm)
         clauses.append(f"s.asm = ${len(params)}")
-
-    # TL scope
-    from services.filters import build_scope_filter
-
-    scope_sql, scope_params = build_scope_filter(
-        user, base_alias="s", param_start=len(params) + 1
-    )
-    if scope_sql:
-        clauses.append(scope_sql)
-        params.extend(scope_params)
 
     where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
 

@@ -5,12 +5,11 @@ import time
 from collections import defaultdict
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict
 
 from db.connection import get_pool
-from dependencies import require_role
 
 router = APIRouter(tags=["errors"])
 
@@ -49,7 +48,6 @@ class FrontendErrorPayload(BaseModel):
     message: str
     traceback: str | None = None
     path: str | None = None
-    user_id: int | None = None
     extra: dict[str, Any] | None = None
 
 
@@ -59,17 +57,16 @@ async def insert_error_log(conn: Any, data: dict) -> dict:
     row = await conn.fetchrow(
         """
         INSERT INTO error_logs
-            (source, level, message, traceback, path, user_id, extra)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (source, level, message, traceback, path, extra)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id, ts::text, source, level, message, traceback, path,
-                  user_id, extra::text, seen
+                  extra::text, seen
         """,
         data["source"],
         data["level"],
         data["message"][:2000],
         (data.get("traceback") or "")[:4000] or None,
         data.get("path"),
-        data.get("user_id"),
         json.dumps(data["extra"]) if data.get("extra") else None,
     )
     return dict(row)
@@ -106,7 +103,7 @@ async def list_error_logs(
     rows = await conn.fetch(
         f"""
         SELECT id, ts::text, source, level, message, traceback, path,
-               user_id, extra::text, seen
+               extra::text, seen
         FROM error_logs
         {where}
         ORDER BY ts DESC
@@ -154,7 +151,6 @@ async def ingest_frontend_error(
             "message": payload.message,
             "traceback": payload.traceback,
             "path": payload.path,
-            "user_id": payload.user_id,
             "extra": payload.extra,
         })
     return Response(status_code=204)
@@ -169,7 +165,6 @@ async def get_error_logs(
     to_date: str | None = None,
     page: int = 1,
     page_size: int = 50,
-    user: dict = Depends(require_role("admin")),
 ) -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -177,14 +172,14 @@ async def get_error_logs(
 
 
 @router.get("/api/admin/error-logs/unseen-count")
-async def unseen_count(user: dict = Depends(require_role("admin"))) -> dict[str, int]:
+async def unseen_count() -> dict[str, int]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         return {"count": await get_unseen_count(conn)}
 
 
 @router.post("/api/admin/error-logs/mark-seen")
-async def mark_seen(user: dict = Depends(require_role("admin"))) -> Response:
+async def mark_seen() -> Response:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await mark_all_seen(conn)
@@ -194,7 +189,6 @@ async def mark_seen(user: dict = Depends(require_role("admin"))) -> Response:
 @router.delete("/api/admin/error-logs/old")
 async def delete_old(
     days: int = 30,
-    user: dict = Depends(require_role("admin")),
 ) -> dict[str, int]:
     pool = await get_pool()
     async with pool.acquire() as conn:

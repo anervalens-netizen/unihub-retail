@@ -33,7 +33,6 @@ const resolveWsUrl = (): string => {
     const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${url.host}/api/ai/ws`;
   }
-  // Same host as the page
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}/api/ai/ws`;
 };
@@ -42,14 +41,12 @@ export class AiWebSocket {
   private ws: WebSocket | null = null;
   private onEvent: AiEventHandler;
   private onClose: () => void;
-  private token: string;
   private deviceId: string;
   private sessionId: string | null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
 
-  constructor(token: string, deviceId: string, sessionId: string | null, onEvent: AiEventHandler, onClose: () => void) {
-    this.token = token;
+  constructor(deviceId: string, sessionId: string | null, onEvent: AiEventHandler, onClose: () => void) {
     this.deviceId = deviceId;
     this.sessionId = sessionId;
     this.onEvent = onEvent;
@@ -58,9 +55,6 @@ export class AiWebSocket {
 
   connect(): void {
     this.closed = false;
-    // Token-ul trece prin Sec-WebSocket-Protocol header (nu ajunge în access logs),
-    // nu prin query param. Browserul trimite subprotocoalele listate în al
-    // doilea argument al WebSocket(); serverul alege și echo-ează 'bearer'.
     const params = new URLSearchParams({
       device_id: this.deviceId,
     });
@@ -68,7 +62,7 @@ export class AiWebSocket {
       params.set('session_id', this.sessionId);
     }
     const url = `${resolveWsUrl()}?${params.toString()}`;
-    this.ws = new WebSocket(url, ['bearer', this.token]);
+    this.ws = new WebSocket(url);
 
     this.ws.onmessage = (ev) => {
       try {

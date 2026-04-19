@@ -2,33 +2,29 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 from db.connection import get_pool
-from dependencies import get_current_user, require_role
 from services.forecast import get_forecast_factor
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
-
-ALLOWED_ROLES = require_role("admin", "management")
-ALL_ROLES = get_current_user
 
 
 class LeaveRequestCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_name: str
-    start_date: str   # YYYY-MM-DD
-    end_date: str     # YYYY-MM-DD
-    leave_type: str   # 'odihna' | 'medical' | 'altul'
+    start_date: str
+    end_date: str
+    leave_type: str
     notes: str | None = None
 
 
 class LeaveStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: str       # 'approved' | 'rejected'
+    status: str
 
 
 async def create_leave_request(conn: Any, data: dict) -> dict:
@@ -92,7 +88,6 @@ async def list_leave_requests(conn: Any, status: str | None, agent_name: str | N
 
 
 async def get_agent_performance(conn: Any, agent_name: str) -> list[dict]:
-    """Agregat lunar per agent: vânzări, % target — ultimele 12 luni."""
     rows = await conn.fetch(
         """
         SELECT
@@ -129,7 +124,6 @@ async def get_agent_performance(conn: Any, agent_name: str) -> list[dict]:
 async def get_leave_requests(
     status: str | None = Query(None),
     agent_name: str | None = Query(None),
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -137,7 +131,7 @@ async def get_leave_requests(
 
 
 @router.post("/leave-requests")
-async def post_leave_request(body: LeaveRequestCreate, user: dict = Depends(ALLOWED_ROLES)):
+async def post_leave_request(body: LeaveRequestCreate):
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await create_leave_request(conn, body.model_dump())
@@ -147,7 +141,6 @@ async def post_leave_request(body: LeaveRequestCreate, user: dict = Depends(ALLO
 async def patch_leave_request(
     request_id: int,
     body: LeaveStatusUpdate,
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     if body.status not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="Status invalid. Folosește 'approved' sau 'rejected'.")
@@ -157,16 +150,13 @@ async def patch_leave_request(
 
 
 @router.get("/performance/{agent_name}")
-async def get_performance(agent_name: str, user: dict = Depends(ALLOWED_ROLES)):
+async def get_performance(agent_name: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await get_agent_performance(conn, agent_name)
 
 
-
-
 async def get_asm_performance(conn: Any, month: str, regional: str | None) -> list[dict]:
-    """Profil combinat per ASM: vânzări din PostgreSQL + vizite din SQLite."""
     pg_rows = await conn.fetch(
         """
         WITH asm_targets AS (
@@ -244,7 +234,6 @@ async def get_asm_performance(conn: Any, month: str, regional: str | None) -> li
 
 
 async def get_asm_performance_history(conn: Any, asm_name: str, months: int = 6) -> list[dict]:
-    """Trend lunar per ASM: vânzări (PG) + vizite (SQLite) — ultimele N luni."""
     pg_rows = await conn.fetch(
         """
         WITH asm_month_targets AS (
@@ -284,7 +273,6 @@ async def get_asm_performance_history(conn: Any, asm_name: str, months: int = 6)
     )
     sqlite_map = {r["month"]: dict(r) for r in snapshot_hist}
 
-    # Forecast factor pentru luna curentă (parțială)
     current_month = await conn.fetchrow(
         """
         SELECT
@@ -339,38 +327,17 @@ async def get_asm_performance_history(conn: Any, asm_name: str, months: int = 6)
 async def get_asm_perf(
     month: str = Query(...),
     regional: str | None = Query(None),
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     pool = await get_pool()
-    effective_regional = regional
-    if user.get("role") == "management" and not regional:
-        effective_regional = user.get("full_name")
     async with pool.acquire() as conn:
-        return await get_asm_performance(conn, month, effective_regional)
+        return await get_asm_performance(conn, month, regional)
 
 
 @router.get("/asm-performance/{asm_name}/history")
 async def get_asm_perf_history(
     asm_name: str,
     months: int = Query(6, ge=1, le=24),
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await get_asm_performance_history(conn, asm_name, months)
-
-
-@router.get("/users")
-async def get_assignable_users(user: dict = Depends(ALL_ROLES)):
-    """Lista utilizatorilor activi cu rol ASM sau TL — pentru dropdown assignee în Tasks."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT full_name, role, username
-            FROM users
-            WHERE is_active = true AND role IN ('asm', 'tl')
-            ORDER BY role, full_name
-            """,
-        )
-        return [dict(r) for r in rows]

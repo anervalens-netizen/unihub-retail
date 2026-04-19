@@ -9,11 +9,9 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from db.connection import get_pool
-from dependencies import get_current_user
 from models import (
     AsmGroup,
     VisitDayGroup,
@@ -32,11 +30,8 @@ IMAGES_DIR = Path(os.getenv("VISITS_IMAGES_DIR", "/opt/Mobiup/unihub/data/visits
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-
 def _build_clauses(
     filters: dict[str, str | None],
-    tl_stores: list[str] | None,
     month: str | None = None,
 ) -> tuple[list[str], list[Any]]:
     clauses: list[str] = ["status != 'draft'"]
@@ -57,13 +52,6 @@ def _build_clauses(
     if filters.get("magazin"):
         clauses.append("magazin = ?")
         params.append(filters["magazin"])
-    if tl_stores is not None:
-        if not tl_stores:
-            clauses.append("1=0")
-        else:
-            placeholders = ",".join("?" * len(tl_stores))
-            clauses.append(f"magazin IN ({placeholders})")
-            params.extend(tl_stores)
 
     return clauses, params
 
@@ -75,13 +63,11 @@ def _photo_filenames(visit_id: str) -> list[str]:
     return sorted(p.name for p in folder.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"})
 
 
-# ── summary endpoint (existing) ───────────────────────────────────────────────
-
-def _query_sqlite(month: str, filters: dict[str, str | None], tl_stores: list[str] | None) -> dict:
+def _query_sqlite(month: str, filters: dict[str, str | None]) -> dict:
     if not VISITS_DB.exists():
         return {"total": 0, "magazine_unice": 0, "avg_completion": 0.0, "rows": []}
 
-    clauses, params = _build_clauses(filters, tl_stores, month=month)
+    clauses, params = _build_clauses(filters, month=month)
     where = " AND ".join(clauses)
 
     con = sqlite3.connect(f"file:{VISITS_DB}?mode=ro", uri=True)
@@ -133,12 +119,10 @@ async def get_visits_report(
     rm: str | None = None,
     asm: str | None = None,
     magazin: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> VisitReportResponse:
     if not VISITS_DB.exists():
         raise HTTPException(status_code=503, detail="Baza de date vizite nu este disponibila.")
 
-    tl_stores = await _get_tl_stores(user)
     filters = {
         "firma": normalize_filter(firma),
         "rm": normalize_filter(rm),
@@ -147,7 +131,7 @@ async def get_visits_report(
     }
 
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, partial(_query_sqlite, month, filters, tl_stores))
+    result = await loop.run_in_executor(None, partial(_query_sqlite, month, filters))
 
     report_rows = [
         VisitReportRow(
@@ -176,13 +160,11 @@ async def get_visits_report(
     )
 
 
-# ── tree endpoint ─────────────────────────────────────────────────────────────
-
-def _query_tree(filters: dict[str, str | None], tl_stores: list[str] | None) -> list[dict]:
+def _query_tree(filters: dict[str, str | None]) -> list[dict]:
     if not VISITS_DB.exists():
         return []
 
-    clauses, params = _build_clauses(filters, tl_stores)
+    clauses, params = _build_clauses(filters)
     where = " AND ".join(clauses)
 
     con = sqlite3.connect(f"file:{VISITS_DB}?mode=ro", uri=True)
@@ -209,12 +191,10 @@ async def get_visits_tree(
     rm: str | None = None,
     asm: str | None = None,
     magazin: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> VisitTreeResponse:
     if not VISITS_DB.exists():
         raise HTTPException(status_code=503, detail="Baza de date vizite nu este disponibila.")
 
-    tl_stores = await _get_tl_stores(user)
     filters = {
         "firma": normalize_filter(firma),
         "rm": normalize_filter(rm),
@@ -223,9 +203,8 @@ async def get_visits_tree(
     }
 
     loop = asyncio.get_running_loop()
-    rows = await loop.run_in_executor(None, partial(_query_tree, filters, tl_stores))
+    rows = await loop.run_in_executor(None, partial(_query_tree, filters))
 
-    # Group: asm → month → day → visits
     asm_map: dict[str, dict[str, dict[str, list[VisitSummaryItem]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
     )
@@ -262,8 +241,6 @@ async def get_visits_tree(
     return VisitTreeResponse(asms=asms)
 
 
-# ── single visit detail ───────────────────────────────────────────────────────
-
 def _query_visit(visit_id: str) -> dict | None:
     if not VISITS_DB.exists():
         return None
@@ -279,16 +256,10 @@ def _query_visit(visit_id: str) -> dict | None:
 @router.get("/visit/{visit_id}", response_model=VisitDetail)
 async def get_visit_detail(
     visit_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> VisitDetail:
     loop = asyncio.get_running_loop()
     row = await loop.run_in_executor(None, partial(_query_visit, visit_id))
     if row is None:
-        raise HTTPException(status_code=404, detail="Vizita nu a fost gasita.")
-
-    # TL scope check: verify visit's store is in TL's assignments
-    tl_stores = await _get_tl_stores(user)
-    if tl_stores is not None and row["magazin"] not in tl_stores:
         raise HTTPException(status_code=404, detail="Vizita nu a fost gasita.")
 
     photos = _photo_filenames(visit_id)
@@ -336,23 +307,11 @@ async def get_visit_detail(
     )
 
 
-# ── photo serving ─────────────────────────────────────────────────────────────
-
 @router.get("/photo/{visit_id}/{filename}")
 async def get_visit_photo(
     visit_id: str,
     filename: str,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> FileResponse:
-    # TL scope check
-    loop = asyncio.get_running_loop()
-    visit_row = await loop.run_in_executor(None, partial(_query_visit, visit_id))
-    if visit_row is not None:
-        tl_stores = await _get_tl_stores(user)
-        if tl_stores is not None and visit_row["magazin"] not in tl_stores:
-            raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
-
-    # Sanitize: no path traversal
     if "/" in filename or "\\" in filename or ".." in visit_id or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid path.")
 
@@ -364,17 +323,3 @@ async def get_visit_photo(
 
     mime, _ = mimetypes.guess_type(filename)
     return FileResponse(photo_path, media_type=mime or "image/jpeg")
-
-
-# ── shared helper ─────────────────────────────────────────────────────────────
-
-async def _get_tl_stores(user: dict[str, Any]) -> list[str] | None:
-    if user["role"] != "tl":
-        return None
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        records = await conn.fetch(
-            "SELECT site_code FROM tl_store_assignments WHERE user_id = $1",
-            user["id"],
-        )
-    return [r["site_code"] for r in records]

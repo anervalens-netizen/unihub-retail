@@ -1,6 +1,6 @@
 import { Bot, Briefcase, CheckSquare, LayoutDashboard, Settings, Sparkles, UserCog, Users, Building2 } from 'lucide-react';
-import type { TabId } from './roles';
 
+export type TabId = 'hub' | 'focus' | 'agents' | 'management' | 'ai' | 'settings';
 export type ManagementTab = 'asm' | 'crm' | 'tasks' | 'hr';
 
 export const ALL_TABS = [

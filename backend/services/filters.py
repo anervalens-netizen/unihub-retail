@@ -1,12 +1,6 @@
-"""Unified filter helpers — normalizare, scope, where clauses.
+"""Unified filter helpers — normalizare + where clauses.
 
-Consolidat din routers/shared.py și routers/dashboard_filters.py.
-Acestea nu erau "routers" — erau helpere SQL care se nimeriseră acolo
-istoric. Mutate în services/ ca restul modulelor cu logică pură.
-
-Zero schimbări funcționale față de versiunile vechi. Orice caller care
-importa din routers.shared / routers.dashboard_filters acum importă de
-aici.
+Zero scope la nivel de utilizator — sistemul de autentificare a fost eliminat.
 """
 from __future__ import annotations
 
@@ -17,8 +11,8 @@ _FILTER_SENTINELS = {
     "Toate",
     "Toti",
     "To\u021bi",
-    "To\u00c8\u203aI",  # legacy mojibake value kept for backward compatibility
-    "To\u00c3\u02c6\u20ac\u203aI",  # older corrupted variant seen in local state
+    "To\u00c8\u203aI",
+    "To\u00c3\u02c6\u20ac\u203aI",
 }
 
 
@@ -29,20 +23,6 @@ def normalize_filter(value: Any) -> str | None:
     if cleaned in _FILTER_SENTINELS:
         return None
     return cleaned
-
-
-def build_scope_filter(
-    user: dict[str, Any],
-    base_alias: str = "s",
-    param_start: int = 1,
-) -> tuple[str, list[Any]]:
-    if user["role"] != "tl":
-        return "", []
-    site_column = f"{base_alias}.site_code" if base_alias else "site_code"
-    return (
-        f"{site_column} IN (SELECT site_code FROM tl_store_assignments WHERE user_id = ${param_start}::INTEGER)",
-        [user["id"]],
-    )
 
 
 def base_filter_values(
@@ -69,7 +49,6 @@ def base_filter_values(
 
 
 def scoped_clauses(
-    user: dict[str, Any],
     positions: dict[str, int],
     site_alias: str,
     store_alias: str,
@@ -77,9 +56,7 @@ def scoped_clauses(
     month_alias: str | None = None,
     month_position: int | None = None,
     include_cartela_filter: bool = False,
-    scope_base_alias: str = "",
-    param_floor: int = 0,
-) -> tuple[list[str], list[Any]]:
+) -> list[str]:
     clauses: list[str] = []
 
     def col(alias: str, name: str) -> str:
@@ -100,19 +77,10 @@ def scoped_clauses(
     if "agent" in positions and agent_alias is not None:
         clauses.append(f"{col(agent_alias, 'agent')} = ${positions['agent']}")
 
-    scope_param_start = (
-        max([param_floor, month_position or 0, *positions.values()], default=0) + 1
-    )
-    scope_sql, scope_params = build_scope_filter(
-        user, base_alias=scope_base_alias, param_start=scope_param_start
-    )
-    if scope_sql:
-        clauses.append(scope_sql)
-    return clauses, scope_params
+    return clauses
 
 
 def where_clauses(
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -124,35 +92,29 @@ def where_clauses(
     params, positions = base_filter_values(
         month, firma, regional, asm, site_code, agent
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="",
         store_alias="",
         agent_alias="" if include_agent else None,
         month_alias="import_month",
         month_position=1,
-        include_cartela_filter=False,
-        scope_base_alias="",
-        param_floor=len(params),
     )
-    return clauses, [*params, *scope_params]
+    return clauses, params
 
 
 def transaction_filter_parts(
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
     asm: str | None,
     site_code: str | None,
     agent: str | None,
-) -> tuple[list[str], list[Any], list[Any]]:
+) -> tuple[list[str], list[Any]]:
     params, positions = base_filter_values(
         month, firma, regional, asm, site_code, agent
     )
-    clauses, scope_params = scoped_clauses(
-        user,
+    clauses = scoped_clauses(
         positions,
         site_alias="st",
         store_alias="s",
@@ -160,7 +122,5 @@ def transaction_filter_parts(
         month_alias="st.import_month",
         month_position=1,
         include_cartela_filter=True,
-        scope_base_alias="st",
-        param_floor=len(params),
     )
-    return clauses, params, scope_params
+    return clauses, params

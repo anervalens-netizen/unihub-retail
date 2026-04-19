@@ -89,14 +89,3 @@ export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmH
   const { data } = await client.get(`/api/hr/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
   return data;
 }
-
-export interface AssignableUser {
-  full_name: string;
-  role: 'asm' | 'tl';
-  username: string;
-}
-
-export async function fetchAssignableUsers(): Promise<AssignableUser[]> {
-  const { data } = await client.get('/api/hr/users');
-  return data;
-}

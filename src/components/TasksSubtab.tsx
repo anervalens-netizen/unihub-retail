@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, RefreshCw } from 'lucide-react';
 import {
   fetchTasks, createTask, updateTask, deleteTask,
-  fetchMyTasks, updateMyTask,
   type Task,
 } from '../api/tasks';
-import { fetchAssignableUsers, type AssignableUser } from '../api/hr';
 
 const STATUS_LABELS: Record<string, string> = {
   deschis: 'Deschis',
@@ -25,47 +23,28 @@ const STATUS_NEXT: Record<string, string> = {
   inchis: 'deschis',
 };
 
-const ROLE_LABEL: Record<string, string> = { asm: 'ASM', tl: 'TL' };
-
-interface Props {
-  userRole?: string;
-  userFullName?: string;
-}
-
-export function TasksSubtab({ userRole, userFullName }: Props) {
-  const isManager = userRole === 'admin' || userRole === 'management';
+export function TasksSubtab() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('');
   const [showForm, setShowForm] = useState(false);
-  const [users, setUsers] = useState<AssignableUser[]>([]);
 
-  // Form state
   const [newTitle, setNewTitle] = useState('');
   const [newAssignee, setNewAssignee] = useState('');
   const [newSiteCode, setNewSiteCode] = useState('');
   const [newDeadline, setNewDeadline] = useState('');
-  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
       const params = filter ? { status: filter } : undefined;
-      const data = isManager
-        ? await fetchTasks(params)
-        : await fetchMyTasks(filter || undefined);
-      setTasks(data);
+      setTasks(await fetchTasks(params));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, [filter, isManager]);
-  useEffect(() => {
-    if (isManager) {
-      fetchAssignableUsers().then(setUsers).catch(() => {});
-    }
-  }, [isManager]);
+  useEffect(() => { load(); }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = async () => {
     if (!newTitle.trim()) return;
@@ -85,13 +64,8 @@ export function TasksSubtab({ userRole, userFullName }: Props) {
   };
 
   const handleStatusCycle = async (task: Task) => {
-    const nextStatus = STATUS_NEXT[task.status];
     try {
-      if (isManager) {
-        await updateTask(task.id, { status: nextStatus });
-      } else {
-        await updateMyTask(task.id, { status: nextStatus });
-      }
+      await updateTask(task.id, { status: STATUS_NEXT[task.status] });
       await load();
     } catch (err) {
       console.error('Failed to update task status', err);
@@ -121,7 +95,6 @@ export function TasksSubtab({ userRole, userFullName }: Props) {
 
   return (
     <div className="p-4 space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-1.5 flex-wrap">
           {['', 'deschis', 'in_lucru', 'inchis'].map((s) => (
@@ -142,28 +115,16 @@ export function TasksSubtab({ userRole, userFullName }: Props) {
           <button onClick={load} className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
-          {isManager && (
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium"
-            >
-              <Plus size={14} /> Task nou
-            </button>
-          )}
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium"
+          >
+            <Plus size={14} /> Task nou
+          </button>
         </div>
       </div>
 
-      {/* Banner pentru non-manageri */}
-      {!isManager && (
-        <div className="rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 px-4 py-2.5">
-          <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium">
-            Taskuri asignate ție{userFullName ? ` — ${userFullName}` : ''}
-          </p>
-        </div>
-      )}
-
-      {/* Form creare (doar manageri) */}
-      {showForm && isManager && (
+      {showForm && (
         <div className="glass rounded-2xl p-4 space-y-3">
           <input
             className={`w-full ${inputCls}`}
@@ -173,49 +134,7 @@ export function TasksSubtab({ userRole, userFullName }: Props) {
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
           />
           <div className="grid grid-cols-3 gap-2">
-            {/* Dropdown assignee */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className={`w-full flex items-center justify-between ${inputCls} cursor-pointer`}
-              >
-                <span className={newAssignee ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'}>
-                  {newAssignee || 'Responsabil'}
-                </span>
-                <ChevronDown size={14} className="text-slate-400 shrink-0" />
-              </button>
-              {userDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg z-20 max-h-48 overflow-y-auto">
-                  <button
-                    onClick={() => { setNewAssignee(''); setUserDropdownOpen(false); }}
-                    className="w-full px-3 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
-                  >
-                    Fără responsabil
-                  </button>
-                  {['asm', 'tl'].map((role) => {
-                    const group = users.filter((u) => u.role === role);
-                    if (!group.length) return null;
-                    return (
-                      <div key={role}>
-                        <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 dark:bg-slate-900">
-                          {ROLE_LABEL[role]}
-                        </div>
-                        {group.map((u) => (
-                          <button
-                            key={u.username}
-                            onClick={() => { setNewAssignee(u.full_name); setUserDropdownOpen(false); }}
-                            className="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
-                          >
-                            {u.full_name}
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <input className={inputCls} placeholder="Responsabil" value={newAssignee} onChange={(e) => setNewAssignee(e.target.value)} />
             <input className={inputCls} placeholder="Cod magazin" value={newSiteCode} onChange={(e) => setNewSiteCode(e.target.value)} />
             <input type="date" className={inputCls} value={newDeadline} onChange={(e) => setNewDeadline(e.target.value)} />
           </div>
@@ -226,13 +145,10 @@ export function TasksSubtab({ userRole, userFullName }: Props) {
         </div>
       )}
 
-      {/* Lista */}
       <div className="space-y-2">
         {tasks.length === 0 && !loading && (
           <div className="text-center text-slate-400 py-8 text-sm">
-            {isManager
-              ? `Niciun task${filter ? ` cu status "${STATUS_LABELS[filter]}"` : ''}`
-              : 'Nu ai taskuri asignate momentan'}
+            {`Niciun task${filter ? ` cu status "${STATUS_LABELS[filter]}"` : ''}`}
           </div>
         )}
         {tasks.map((task) => (
@@ -262,14 +178,12 @@ export function TasksSubtab({ userRole, userFullName }: Props) {
                 )}
               </div>
             </div>
-            {isManager && (
-              <button
-                onClick={() => handleDelete(task.id)}
-                className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
+            <button
+              onClick={() => handleDelete(task.id)}
+              className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         ))}
       </div>

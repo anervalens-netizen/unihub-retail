@@ -120,8 +120,6 @@ def load_product_code_rows(
 async def sync_focus_products(
     conn: asyncpg.Connection,
     source: str | Path,
-    *,
-    added_by: int | None = None,
 ) -> int:
     rows = load_product_code_rows(source)
     item_codes = [row["item_code"] for row in rows]
@@ -154,17 +152,15 @@ async def sync_focus_products(
 
         await conn.executemany(
             """
-            INSERT INTO focus_products (item_code, item_name, added_by)
-            VALUES ($1, $2, $3)
+            INSERT INTO focus_products (item_code, item_name)
+            VALUES ($1, $2)
             ON CONFLICT (item_code) DO UPDATE
-            SET item_name = COALESCE(EXCLUDED.item_name, focus_products.item_name),
-                added_by = EXCLUDED.added_by
+            SET item_name = COALESCE(EXCLUDED.item_name, focus_products.item_name)
             """,
             [
                 (
                     row["item_code"],
                     row["item_name"] or latest_names.get(row["item_code"]),
-                    added_by,
                 )
                 for row in rows
             ],

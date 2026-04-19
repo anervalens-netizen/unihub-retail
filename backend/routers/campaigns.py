@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
 from db.connection import get_pool
-from dependencies import get_current_user
 from models import (
     CampaignOverview,
     CampaignProductStat,
@@ -19,7 +18,7 @@ from models import (
     PromoTopStore,
 )
 from services.dashboard.queries import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
-from services.filters import build_scope_filter, normalize_filter, scoped_clauses
+from services.filters import normalize_filter, scoped_clauses
 from services.dashboard_specials import (
     load_special_cards_config,
     parse_promotion_definition,
@@ -30,7 +29,6 @@ router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
 
 def _campaign_clauses(
-    user: dict[str, Any],
     month: str,
     firma: str | None,
     regional: str | None,
@@ -52,14 +50,6 @@ def _campaign_clauses(
         if value:
             params.append(value)
             clauses.append(f"{column} = ${len(params)}")
-    scope_sql, scope_params = build_scope_filter(
-        user,
-        base_alias=alias,
-        param_start=len(params) + 1,
-    )
-    if scope_sql:
-        clauses.append(scope_sql)
-        params.extend(scope_params)
     return clauses, params
 
 
@@ -71,13 +61,12 @@ async def get_campaign_overview(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> CampaignSnapshot:
     focus_clauses, focus_params = _campaign_clauses(
-        user, month, firma, regional, asm, site_code, agent, alias="agg"
+        month, firma, regional, asm, site_code, agent, alias="agg"
     )
     totals_clauses, totals_params = _campaign_clauses(
-        user, month, firma, regional, asm, site_code, agent, alias="tot"
+        month, firma, regional, asm, site_code, agent, alias="tot"
     )
     focus_where_sql = " AND ".join(focus_clauses)
     totals_where_sql = " AND ".join(totals_clauses)
@@ -173,7 +162,6 @@ async def get_focus_history(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> FocusHistoryResponse:
     params: list[Any] = [month, months_back]
     positions: dict[str, int] = {}
@@ -200,21 +188,6 @@ async def get_focus_history(
         if key in positions:
             focus_clauses.append(f"{focus_column} = ${positions[key]}")
             totals_clauses.append(f"{totals_column} = ${positions[key]}")
-
-    focus_scope_sql, scope_params = build_scope_filter(
-        user,
-        base_alias="agg",
-        param_start=max([2, *positions.values()], default=2) + 1,
-    )
-    totals_scope_sql, _totals_scope_params = build_scope_filter(
-        user,
-        base_alias="tot",
-        param_start=max([2, *positions.values()], default=2) + 1,
-    )
-    if focus_scope_sql:
-        focus_clauses.append(focus_scope_sql)
-    if totals_scope_sql:
-        totals_clauses.append(totals_scope_sql)
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -266,7 +239,6 @@ async def get_focus_history(
             ORDER BY fs.month ASC
             """,
             *params,
-            *scope_params,
         )
 
     return FocusHistoryResponse(
@@ -283,7 +255,6 @@ async def get_promotions_incentives(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
-    user: dict[str, Any] = Depends(get_current_user),
 ) -> CampaignsPromotionsResponse:
     from datetime import date as date_cls
 
@@ -305,14 +276,12 @@ async def get_promotions_incentives(
             promotion_definition.get("description", "") if promotion_definition else ""
         )
 
-        # Load incentive campaign from DB (single source of truth)
         incentive_campaign = await get_incentive_campaign(conn, month)
         incentive_title = incentive_campaign["title"] if incentive_campaign else ""
         incentive_description = incentive_campaign["description"] if incentive_campaign else ""
 
         summary = await _fetch_promo_incentive_summary(
             conn=conn,
-            user=user,
             month=month,
             firma=firma,
             regional=regional,
@@ -327,12 +296,11 @@ async def get_promotions_incentives(
         incentive_value = float(summary.incentive_value)
 
         promo_total_qty = 0
-        # Build store multipliers (used for both top_stores incentive and top_agents)
         store_multipliers: dict[str, float] = {}
         store_achievements: dict[str, float | None] = {}
         if incentive_campaign is not None:
             store_multipliers, store_achievements = await _get_store_incentive_multipliers(
-                conn, user, month, firma, regional, asm, site_code
+                conn, month, firma, regional, asm, site_code
             )
 
         has_active_promotion = promotion_definition is not None and promotion_error is None
@@ -362,16 +330,11 @@ async def get_promotions_incentives(
                 "agg.sale_date BETWEEN $1 AND $2",
                 "agg.item_code = ANY($3::TEXT[])",
             ]
-            promo_query_clauses, promo_scope_params = scoped_clauses(
-                user,
+            promo_query_clauses = scoped_clauses(
                 positions,
                 site_alias="agg",
                 store_alias="agg",
                 agent_alias="agg",
-                month_alias=None,
-                month_position=None,
-                scope_base_alias="agg",
-                param_floor=len(promo_params),
             )
             promo_clauses.extend(promo_query_clauses)
 
@@ -382,7 +345,6 @@ async def get_promotions_incentives(
                 WHERE {" AND ".join(promo_clauses)}
                 """,
                 *promo_params,
-                *promo_scope_params,
             )
             if total_row:
                 promo_total_qty = int(total_row["total_qty"] or 0)
@@ -401,7 +363,6 @@ async def get_promotions_incentives(
                 ORDER BY qty DESC
                 """,
                 *promo_params,
-                *promo_scope_params,
             )
             top_stores = [
                 PromoTopStore(
@@ -418,7 +379,6 @@ async def get_promotions_incentives(
         else:
             top_stores = []
 
-        # Add incentive_value per store (promo stores or incentive-based list)
         if incentive_campaign is not None:
             reward_map_for_stores: dict[str, float] | None = incentive_campaign["reward_map"] or None
             if reward_map_for_stores:
@@ -437,11 +397,9 @@ async def get_promotions_incentives(
                     "agg.item_code = ANY($1::TEXT[])",
                     "agg.import_month = $2",
                 ]
-                inc_store_query_clauses, inc_store_scope_params = scoped_clauses(
-                    user, inc_store_positions,
+                inc_store_query_clauses = scoped_clauses(
+                    inc_store_positions,
                     site_alias="agg", store_alias="agg", agent_alias="agg",
-                    month_alias=None, month_position=None,
-                    scope_base_alias="agg", param_floor=len(inc_store_params),
                 )
                 inc_store_clauses.extend(inc_store_query_clauses)
                 store_item_rows = await conn.fetch(
@@ -455,9 +413,7 @@ async def get_promotions_incentives(
                     GROUP BY agg.site_code, agg.item_code
                     """,
                     *inc_store_params,
-                    *inc_store_scope_params,
                 )
-                # Build {site_code: [locatie, incentive_value, firma]}
                 store_inc: dict[str, list] = {}
                 for row in store_item_rows:
                     sc = row["site_code"]
@@ -469,7 +425,6 @@ async def get_promotions_incentives(
                     store_inc[sc][1] += val
 
                 if has_active_promotion:
-                    # Patch incentive_value into existing top_stores list
                     top_stores = [
                         PromoTopStore(
                             store_name=s.store_name,
@@ -483,7 +438,6 @@ async def get_promotions_incentives(
                         for s in top_stores
                     ]
                 else:
-                    # No promo: build top_stores from incentive data, sorted by incentive_value
                     top_stores = [
                         PromoTopStore(
                             store_name=f"{sc} - {data[0]}",
@@ -497,7 +451,6 @@ async def get_promotions_incentives(
                         for sc, data in sorted(store_inc.items(), key=lambda x: -x[1][1])
                         if data[1] > 0
                     ]
-                    # Fara [:10] — toate magazinele
 
         if incentive_campaign is not None:
             reward_map: dict[str, float] | None = incentive_campaign["reward_map"] or None
@@ -521,16 +474,11 @@ async def get_promotions_incentives(
                     "agg.item_code = ANY($1::TEXT[])",
                     "agg.import_month = $2",
                 ]
-                incentive_query_clauses, incentive_scope_params = scoped_clauses(
-                    user,
+                incentive_query_clauses = scoped_clauses(
                     incentive_positions,
                     site_alias="agg",
                     store_alias="agg",
                     agent_alias="agg",
-                    month_alias=None,
-                    month_position=None,
-                    scope_base_alias="agg",
-                    param_floor=len(incentive_params),
                 )
                 incentive_clauses.extend(incentive_query_clauses)
 
@@ -546,12 +494,10 @@ async def get_promotions_incentives(
                     GROUP BY agg.agent, agg.site_code, agg.item_code
                     """,
                     *incentive_params,
-                    *incentive_scope_params,
                 )
-                # Aggregate per agent and per reward-tier category
                 agent_bonus: dict[str, float] = {}
-                agent_qty: dict[str, int] = {}       # bucati incentive per agent
-                agent_site: dict[str, str] = {}      # site_code per agent (pentru achievement lookup)
+                agent_qty: dict[str, int] = {}
+                agent_site: dict[str, str] = {}
                 tier_qty: dict[float, int] = {}
                 tier_value: dict[float, float] = {}
                 for row in agent_item_rows:
@@ -564,7 +510,6 @@ async def get_promotions_incentives(
                     agent_bonus[agent_name] = agent_bonus.get(agent_name, 0) + bonus
                     agent_qty[agent_name] = agent_qty.get(agent_name, 0) + qty
                     agent_site[agent_name] = site
-                    # Category = reward tier (regardless of store multiplier for grouping)
                     tier_qty[reward] = tier_qty.get(reward, 0) + qty
                     tier_value[reward] = tier_value.get(reward, 0) + qty * reward
                 top_agents = [
@@ -576,7 +521,6 @@ async def get_promotions_incentives(
                     )
                     for agent, bonus in sorted(agent_bonus.items(), key=lambda x: -x[1])
                 ]
-                # Fara [:10] — toti agentii
                 incentive_categories = [
                     IncentiveCategory(
                         label=f"{int(rv) if rv == int(rv) else rv} RON/buc",

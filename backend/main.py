@@ -16,16 +16,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from bootstrap import (
-    assert_no_default_passwords_in_production,
-    ensure_core_users,
-    get_core_user_bootstrap_status,
-    reset_default_core_users,
-    should_reset_default_users_on_boot,
-    ensure_tl_users,
-    ensure_tl_users_and_assignments,
-    should_sync_tl_assignments_on_boot,
-)
 from config import validate_required_env_vars
 from db.connection import (
     apply_pending_migrations,
@@ -35,38 +25,11 @@ from db.connection import (
     init_db_pool,
     prewarm_pool,
 )
-from routers import admin, agents, ai, auth, campaigns, crm, dashboard, errors, filters, hr, imports, salarii, stores, tasks, visits_report
+from routers import agents, ai, campaigns, crm, dashboard, errors, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.visits_sync import sync_visits_snapshot
 
 logger = logging.getLogger(__name__)
-
-
-async def ensure_default_users() -> None:
-    pool = await get_pool()
-
-    async with pool.acquire() as conn:
-        await ensure_core_users(conn)
-        await assert_no_default_passwords_in_production(conn)
-        if should_reset_default_users_on_boot():
-            reset_users = await reset_default_core_users(conn)
-            for row in reset_users:
-                logger.warning(
-                    "Default user reset on boot for role=%s username=%s",
-                    row["role"],
-                    row["username"],
-                )
-        for row in await get_core_user_bootstrap_status(conn):
-            logger.info(
-                "Default user status role=%s username=%s exists=%s active=%s",
-                row["role"],
-                row["username"],
-                row["exists"],
-                row["is_active"],
-            )
-        await ensure_tl_users(conn)
-        if should_sync_tl_assignments_on_boot():
-            await ensure_tl_users_and_assignments(conn)
 
 
 @asynccontextmanager
@@ -82,7 +45,6 @@ async def lifespan(_: FastAPI):
         logger.info("Applied %d migrations: %s", len(migrations), ", ".join(migrations))
     else:
         logger.info("No pending migrations")
-    await ensure_default_users()
     await prewarm_pool()
     current_pool = await get_pool()
     async with current_pool.acquire() as conn:
@@ -116,8 +78,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(admin.router)
 app.include_router(ai.router)
 app.include_router(agents.router)
 app.include_router(campaigns.router)

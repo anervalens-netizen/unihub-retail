@@ -1,15 +1,10 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
-import { getCurrentUser, logout } from './api/auth';
 import { getUnseenCount } from './api/errors';
 import { getAvailableMonths } from './api/filters';
-import type { AuthUser } from './api/types';
 import { defaultAppFilters } from './lib/filterValues';
 import type { ManagementTab } from './lib/tabs';
 
-const PinScreen = lazy(() =>
-  import('./components/PinScreen').then((module) => ({ default: module.PinScreen }))
-);
 const Campaigns = lazy(() =>
   import('./components/Campaigns').then((module) => ({ default: module.Campaigns }))
 );
@@ -33,8 +28,6 @@ type CampaignsSection = 'campaigns' | 'focus';
 const defaultFilters: AppFilters = defaultAppFilters();
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState<AuthUser | null>(null);
   const [errorCount, setErrorCount] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const saved = localStorage.getItem('unihub_active_tab');
@@ -79,25 +72,13 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     async function bootstrap() {
-      const token = localStorage.getItem('unihub_token');
-      if (!token) {
-        setBootstrapping(false);
-        return;
-      }
       try {
-        const [currentUser, availableMonths] = await Promise.all([
-          getCurrentUser(),
-          getAvailableMonths(),
-        ]);
+        const availableMonths = await getAvailableMonths();
         if (!mounted) return;
-        setUser(currentUser);
         setMonths(availableMonths);
         setCurrentMonth((previous) => previous || availableMonths[0] || '');
-        setIsAuthenticated(true);
       } catch {
-        logout();
-        setIsAuthenticated(false);
-        setUser(null);
+        // ignore — empty state OK
       } finally {
         if (mounted) {
           setBootstrapping(false);
@@ -106,12 +87,6 @@ export default function App() {
     }
 
     void bootstrap();
-
-    const handleLogout = () => {
-      logout();
-      setUser(null);
-      setIsAuthenticated(false);
-    };
 
     const handleNavigate = (event: Event) => {
       const detail = (event as CustomEvent<{ tab?: ActiveTab; section?: CampaignsSection }>).detail;
@@ -123,57 +98,27 @@ export default function App() {
       }
     };
 
-    window.addEventListener('unihub:logout', handleLogout);
     window.addEventListener('unihub:navigate', handleNavigate as EventListener);
     return () => {
       mounted = false;
-      window.removeEventListener('unihub:logout', handleLogout);
       window.removeEventListener('unihub:navigate', handleNavigate as EventListener);
     };
   }, []);
 
-  // Polling unseen error count — doar pentru admin
   useEffect(() => {
-    if (user?.role !== 'admin') return;
-    const token = localStorage.getItem('unihub_token');
-    if (!token) return;
-
     async function poll() {
-      const t = localStorage.getItem('unihub_token');
-      if (!t) return;
       try {
-        const count = await getUnseenCount(t);
+        const count = await getUnseenCount();
         setErrorCount(count);
       } catch {
-        // silențios
+        // silent
       }
     }
 
     void poll();
     const interval = setInterval(() => { void poll(); }, 60_000);
     return () => clearInterval(interval);
-  }, [user?.role]);
-
-  const handleAuthenticated = async (currentUser: AuthUser) => {
-    try {
-      const availableMonths = await getAvailableMonths();
-      setUser(currentUser);
-      setMonths(availableMonths);
-      setCurrentMonth(availableMonths[0] || '');
-      setIsAuthenticated(true);
-    } catch {
-      setUser(currentUser);
-      setMonths([]);
-      setCurrentMonth('');
-      setIsAuthenticated(true);
-    }
-  };
-
-  const handleLogout = () => {
-    logout();
-    setUser(null);
-    setIsAuthenticated(false);
-  };
+  }, []);
 
   const activeFilters =
     activeTab === 'focus'
@@ -193,17 +138,16 @@ export default function App() {
     </div>
   );
 
-  const content = bootstrapping ? (
-    <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">
-      Se incarca sesiunea...
-    </div>
-  ) : !isAuthenticated ? (
-    <Suspense fallback={screenFallback}>
-      <PinScreen onAuthenticated={handleAuthenticated} />
-    </Suspense>
-  ) : (
+  if (bootstrapping) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">
+        Se incarca...
+      </div>
+    );
+  }
+
+  return (
     <MainLayout
-      user={user}
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       isFilterOpen={isFilterOpen}
@@ -211,7 +155,6 @@ export default function App() {
       filters={activeFilters}
       setFilters={setActiveFilters}
       filterMonth={currentMonth}
-      onLogout={handleLogout}
       theme={theme}
       setTheme={setTheme}
       showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
@@ -221,7 +164,7 @@ export default function App() {
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
-          <Dashboard currentMonth={currentMonth} months={months} filters={hubFilters} user={user} onSectionChange={setHubSection} />
+          <Dashboard currentMonth={currentMonth} months={months} filters={hubFilters} onSectionChange={setHubSection} />
         )}
         {activeTab === 'focus' && currentMonth && (
           <Campaigns
@@ -233,12 +176,10 @@ export default function App() {
           />
         )}
         {activeTab === 'agents' && currentMonth && (
-          <Agents currentMonth={currentMonth} months={months} filters={agentsFilters} user={user} />
+          <Agents currentMonth={currentMonth} months={months} filters={agentsFilters} />
         )}
         {activeTab === 'management' && (
           <Management
-            userRole={user?.role}
-            userFullName={user?.full_name}
             activeSubTab={mgmtSubTab}
             setActiveSubTab={setMgmtSubTab}
           />
@@ -246,7 +187,8 @@ export default function App() {
         {activeTab === 'ai' && <AIChat />}
         {activeTab === 'settings' && (
           <Settings
-            user={user}
+            theme={theme}
+            setTheme={setTheme}
             onImportCompleted={(month) => {
               setMonths((previous) => {
                 const next = previous.includes(month) ? previous : [...previous, month];
@@ -254,13 +196,10 @@ export default function App() {
               });
               setCurrentMonth(month);
             }}
-            token={localStorage.getItem('unihub_token')}
             onUnseenCountChange={setErrorCount}
           />
         )}
       </Suspense>
     </MainLayout>
   );
-
-  return content;
 }

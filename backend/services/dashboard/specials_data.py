@@ -23,7 +23,6 @@ async def _get_special_cards_data(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
-    user: dict[str, Any],
 ) -> list[DashboardSpecialCard]:
     """Internal helper to build special cards data without HTTP dependencies."""
     config, config_error = load_special_cards_config()
@@ -59,16 +58,11 @@ async def _get_special_cards_data(
             "agg.sale_date BETWEEN $2 AND $3",
             "agg.item_code = ANY($4::TEXT[])",
         ]
-        query_clauses, scope_params = scoped_clauses(
-            user,
+        query_clauses = scoped_clauses(
             positions,
             site_alias="agg",
             store_alias="agg",
             agent_alias="agg",
-            month_alias="agg.import_month",
-            month_position=1,
-            scope_base_alias="agg",
-            param_floor=len(params),
         )
         clauses.extend(query_clauses)
         async with pool.acquire() as conn:
@@ -83,17 +77,13 @@ async def _get_special_cards_data(
                 WHERE {" AND ".join(clauses)}
                 """,
                 *params,
-                *scope_params,
             )
-            receipt_query_clauses, receipt_scope_params = scoped_clauses(
-                user,
+            receipt_query_clauses = scoped_clauses(
                 positions,
                 site_alias="st",
                 store_alias="s",
                 agent_alias="st",
                 include_cartela_filter=True,
-                scope_base_alias="st",
-                param_floor=len(params),
             )
             receipt_row = await conn.fetchrow(
                 f"""
@@ -107,7 +97,6 @@ async def _get_special_cards_data(
                   {" ".join(f"AND {clause}" for clause in receipt_query_clauses)}
                 """,
                 *params,
-                *receipt_scope_params,
             )
         promotion_stats = dict(row) if row else None
         if promotion_stats is not None:
@@ -136,16 +125,11 @@ async def _get_special_cards_data(
                 "agg.import_month = $1",
                 "agg.item_code = ANY($2::TEXT[])",
             ]
-            query_clauses, scope_params = scoped_clauses(
-                user,
+            query_clauses = scoped_clauses(
                 positions,
                 site_alias="agg",
                 store_alias="agg",
                 agent_alias="agg",
-                month_alias="agg.import_month",
-                month_position=1,
-                scope_base_alias="agg",
-                param_floor=len(params),
             )
             clauses.extend(query_clauses)
             async with pool.acquire() as conn:
@@ -162,7 +146,6 @@ async def _get_special_cards_data(
                     GROUP BY agg.site_code, agg.item_code
                     """,
                     *params,
-                    *scope_params,
                 )
                 meta_row = await conn.fetchrow(
                     f"""
@@ -174,10 +157,9 @@ async def _get_special_cards_data(
                     WHERE {" AND ".join(clauses)}
                     """,
                     *params,
-                    *scope_params,
                 )
                 store_multipliers, _ = await _get_store_incentive_multipliers(
-                    conn, user, month, firma, regional, asm, site_code
+                    conn, month, firma, regional, asm, site_code
                 )
             net_qty = sum(int(r["net_quantity"]) for r in item_rows)
             pos_qty = sum(int(r["positive_quantity"]) for r in item_rows)
@@ -216,7 +198,7 @@ async def _get_special_cards_data(
                 "subtitle": incentive_campaign["subtitle"],
                 "description": incentive_campaign["description"],
                 "month": incentive_campaign["month"],
-                "reward_per_unit": None,  # per-produs — reward_map în stats
+                "reward_per_unit": None,
             }
             if incentive_campaign is not None
             else None

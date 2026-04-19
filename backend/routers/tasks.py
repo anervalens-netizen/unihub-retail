@@ -3,16 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 from db.connection import get_pool
-from dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
-
-ALLOWED_ROLES = require_role("admin", "management")
-ALL_ROLES = get_current_user  # orice utilizator autentificat
 
 
 class TaskCreate(BaseModel):
@@ -141,14 +137,11 @@ async def delete_task(conn: Any, task_id: int) -> bool:
     return result == "DELETE 1"
 
 
-# ─── Endpoints pentru admin / management (toate taskurile) ──────────────────
-
 @router.get("")
 async def get_tasks(
     status: str | None = Query(None),
     assignee: str | None = Query(None),
     site_code: str | None = Query(None),
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -156,77 +149,24 @@ async def get_tasks(
 
 
 @router.post("")
-async def post_task(body: TaskCreate, user: dict = Depends(ALLOWED_ROLES)):
+async def post_task(body: TaskCreate):
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await create_task(conn, body.model_dump())
 
 
 @router.patch("/{task_id}")
-async def patch_task(task_id: int, body: TaskUpdate, user: dict = Depends(ALLOWED_ROLES)):
+async def patch_task(task_id: int, body: TaskUpdate):
     pool = await get_pool()
     async with pool.acquire() as conn:
         return await update_task(conn, task_id, body.model_dump(exclude_none=True))
 
 
 @router.delete("/{task_id}")
-async def remove_task(task_id: int, user: dict = Depends(ALLOWED_ROLES)):
+async def remove_task(task_id: int):
     pool = await get_pool()
     async with pool.acquire() as conn:
         deleted = await delete_task(conn, task_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Task negăsit")
         return {"ok": True}
-
-
-# ─── Endpoints pentru toți utilizatorii (taskurile proprii) ─────────────────
-
-@router.get("/my")
-async def get_my_tasks(
-    status: str | None = Query(None),
-    user: dict = Depends(ALL_ROLES),
-):
-    """Returnează taskurile asignate utilizatorului curent. Accesibil oricărui rol."""
-    full_name = user.get("full_name") or ""
-    if not full_name:
-        return []
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        return await list_tasks(conn, status=status, assignee=None, site_code=None, only_mine=full_name)
-
-
-@router.get("/my/count")
-async def get_my_pending_count(user: dict = Depends(ALL_ROLES)):
-    """Numărul de taskuri deschise/în lucru asignate utilizatorului curent."""
-    full_name = user.get("full_name") or ""
-    if not full_name:
-        return {"count": 0}
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT COUNT(*) AS count FROM tasks
-            WHERE assignee ILIKE $1 AND status != 'inchis'
-            """,
-            full_name,
-        )
-        return {"count": int(row["count"])}
-
-
-@router.patch("/my/{task_id}")
-async def patch_my_task(task_id: int, body: TaskUpdate, user: dict = Depends(ALL_ROLES)):
-    """Utilizatorul poate actualiza statusul taskurilor sale."""
-    full_name = user.get("full_name") or ""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        # Verifică că taskul aparține utilizatorului
-        row = await conn.fetchrow("SELECT assignee FROM tasks WHERE id = $1", task_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="Task negăsit")
-        if (row["assignee"] or "").lower() != full_name.lower():
-            raise HTTPException(status_code=403, detail="Nu poți modifica taskurile altora")
-        # Permite doar schimbarea statusului
-        allowed = {k: v for k, v in body.model_dump(exclude_none=True).items() if k == "status"}
-        if not allowed:
-            raise HTTPException(status_code=400, detail="Poți modifica doar statusul")
-        return await update_task(conn, task_id, allowed)

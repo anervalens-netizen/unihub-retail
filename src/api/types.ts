@@ -1,16 +1,3 @@
-export interface AuthUser {
-  id: number;
-  username: string;
-  role: 'admin' | 'asm' | 'management' | 'tl';
-  full_name: string | null;
-}
-
-export interface LoginResponse {
-  access_token: string;
-  role: AuthUser['role'];
-  full_name: string | null;
-}
-
 export interface DashboardSummary {
   month: string;
   total_sales: number;
@@ -244,7 +231,6 @@ export interface ImportHistoryEntry {
   rows_imported: number | null;
   status: string;
   error_message: string | null;
-  imported_by: number | null;
   created_at: string;
 }
 
@@ -266,31 +252,6 @@ export interface StoreOption {
   firma: string;
   regional: string;
   asm: string;
-}
-
-export interface AdminUser {
-  id: number;
-  username: string;
-  full_name: string | null;
-  role: 'admin' | 'asm' | 'management' | 'tl';
-  is_active: boolean;
-  assignment_count: number;
-  assigned_site_codes: string[];
-}
-
-export interface AdminUserCreate {
-  username: string;
-  password: string;
-  full_name: string | null;
-  role: 'admin' | 'asm' | 'management' | 'tl';
-  is_active: boolean;
-}
-
-export interface AdminUserUpdate {
-  full_name: string | null;
-  role: 'admin' | 'asm' | 'management' | 'tl';
-  is_active: boolean;
-  password?: string;
 }
 
 export interface DashboardAllResponse {

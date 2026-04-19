@@ -5,10 +5,9 @@ import json
 import sqlite3
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
 from db.connection import get_pool
-from dependencies import require_role
 from services.forecast import get_forecast_factor
 
 VISITS_DB_PATH = "/opt/Mobiup/unihub/data/visits/visits.db"
@@ -39,8 +38,6 @@ def _query_visits_by_store(year_month: str) -> dict[str, dict]:
     return result
 
 router = APIRouter(prefix="/api/crm", tags=["crm"])
-
-ALLOWED_ROLES = require_role("admin", "management")
 
 
 async def calculate_scores_for_month(conn: Any, month: str) -> list[dict]:
@@ -263,7 +260,6 @@ async def get_store_alerts(conn: Any, month: str) -> list[dict]:
 @router.get("/scores")
 async def get_scores(
     month: str = Query(...),
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -292,7 +288,6 @@ async def get_scores(
 @router.post("/scores/recalculate")
 async def recalculate_scores(
     month: str = Query(...),
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -304,7 +299,6 @@ async def recalculate_scores(
 @router.get("/alerts")
 async def get_alerts(
     month: str = Query(...),
-    user: dict = Depends(ALLOWED_ROLES),
 ):
     pool = await get_pool()
     async with pool.acquire() as conn:

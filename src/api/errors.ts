@@ -8,7 +8,6 @@ export interface ErrorLogEntry {
   message: string;
   traceback: string | null;
   path: string | null;
-  user_id: number | null;
   extra: string | null;
   seen: boolean;
 }
@@ -21,7 +20,6 @@ export async function postFrontendError(payload: {
   message: string;
   traceback?: string | null;
   path?: string | null;
-  user_id?: number | null;
   extra?: Record<string, unknown> | null;
 }): Promise<void> {
   try {
@@ -31,24 +29,16 @@ export async function postFrontendError(payload: {
   }
 }
 
-export async function getUnseenCount(token: string): Promise<number> {
-  const res = await axios.get<UnseenCountResponse>(
-    '/api/admin/error-logs/unseen-count',
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+export async function getUnseenCount(): Promise<number> {
+  const res = await axios.get<UnseenCountResponse>('/api/admin/error-logs/unseen-count');
   return res.data.count;
 }
 
-export async function markAllSeen(token: string): Promise<void> {
-  await axios.post(
-    '/api/admin/error-logs/mark-seen',
-    {},
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+export async function markAllSeen(): Promise<void> {
+  await axios.post('/api/admin/error-logs/mark-seen', {});
 }
 
 export async function getErrorLogs(
-  token: string,
   params: {
     source?: string;
     level?: string;
@@ -59,9 +49,6 @@ export async function getErrorLogs(
     page_size?: number;
   } = {}
 ): Promise<ErrorLogEntry[]> {
-  const res = await axios.get<ErrorLogEntry[]>('/api/admin/error-logs', {
-    headers: { Authorization: `Bearer ${token}` },
-    params,
-  });
+  const res = await axios.get<ErrorLogEntry[]>('/api/admin/error-logs', { params });
   return res.data;
 }
