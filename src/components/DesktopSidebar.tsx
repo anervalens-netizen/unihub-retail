@@ -38,9 +38,12 @@ export function DesktopSidebar({
     <aside className="hidden lg:flex flex-col h-full w-60 shrink-0 border-r border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-xl z-40">
       {/* Header */}
       <div className="flex items-center gap-2.5 h-14 px-4 border-b border-[var(--glass-border)] shrink-0">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white text-xs font-bold shrink-0">
-          U
-        </div>
+        <img
+          src="/logo-mark.png"
+          alt=""
+          className="h-7 w-7 shrink-0 rounded-lg bg-white p-0.5 shadow-sm"
+          aria-hidden
+        />
         <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
           UniHub Retail
         </span>

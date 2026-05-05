@@ -309,44 +309,6 @@ class ImportResponse(BaseModel):
     is_month_final: bool
 
 
-class AiAttachmentResponse(BaseModel):
-    kind: Literal["image", "document"]
-    path: str
-    mime_type: str
-    name: str
-    size: int
-
-
-class AiSessionSummary(BaseModel):
-    id: str
-    title: str
-    preview: str = ""
-    updated_at: datetime
-    is_active: bool = False
-
-
-class AiSessionListResponse(BaseModel):
-    active_session_id: str
-    sessions: list[AiSessionSummary] = Field(default_factory=list)
-
-
-class AiSessionMessage(BaseModel):
-    id: str
-    role: Literal["user", "assistant"]
-    content: str
-    timestamp: datetime
-
-
-class AiSessionDetailPayload(BaseModel):
-    id: str
-    title: str
-
-
-class AiSessionDetailResponse(BaseModel):
-    session: AiSessionDetailPayload
-    messages: list[AiSessionMessage] = Field(default_factory=list)
-
-
 class VisitReportRow(BaseModel):
     magazin: str
     asm: str | None

@@ -1,5 +1,5 @@
 import React, { Component, type ReactNode } from 'react';
-import { postFrontendError } from '../api/errors';
+import * as Sentry from '@sentry/react';
 
 interface Props {
   children: ReactNode;
@@ -21,12 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    postFrontendError({
-      message: error.message,
-      traceback: error.stack ?? null,
-      path: window.location.pathname,
-      extra: { componentStack: errorInfo.componentStack },
-    });
+    Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } });
   }
 
   render(): ReactNode {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ErrorLogsTab } from './ErrorLogsTab';
+
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { FileSpreadsheet, Upload } from 'lucide-react';
 import { getImportHistory, uploadSalesFile } from '../api/imports';
@@ -11,7 +11,6 @@ interface SettingsProps {
   theme: string;
   setTheme: (theme: string) => void;
   onImportCompleted: (month: string) => void;
-  onUnseenCountChange: (count: number) => void;
 }
 
 const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -21,14 +20,12 @@ export function Settings({
   theme,
   setTheme,
   onImportCompleted,
-  onUnseenCountChange,
 }: SettingsProps) {
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'admin' | 'errors'>('admin');
 
   useEffect(() => {
     const cached = getCachedView<{ history: ImportHistoryEntry[] }>(CACHE_KEY, SETTINGS_CACHE_TTL_MS);
@@ -102,36 +99,7 @@ export function Settings({
         <p className="text-xs text-slate-500 dark:text-slate-400">Administrare aplicație</p>
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
-        <button
-          onClick={() => setActiveSettingsTab('admin')}
-          className={cn(
-            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-            activeSettingsTab === 'admin'
-              ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-          )}
-        >
-          Administrare
-        </button>
-        <button
-          onClick={() => setActiveSettingsTab('errors')}
-          className={cn(
-            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-            activeSettingsTab === 'errors'
-              ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-          )}
-        >
-          Erori sistem
-        </button>
-      </div>
 
-      {activeSettingsTab === 'errors' && (
-        <ErrorLogsTab onUnseenCountChange={onUnseenCountChange} />
-      )}
-
-      {activeSettingsTab === 'admin' && (
         <>
           <div className="glass rounded-3xl p-4 lg:hidden">
             <h3 className="mb-3 text-sm font-bold">Temă</h3>
@@ -221,7 +189,7 @@ export function Settings({
             </div>
           </div>
         </>
-      )}
+
     </div>
   );
 }

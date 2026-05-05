@@ -1,6 +1,6 @@
-import { Bot, Briefcase, CheckSquare, LayoutDashboard, Settings, Sparkles, UserCog, Users, Building2 } from 'lucide-react';
+import { Briefcase, CheckSquare, LayoutDashboard, Settings, Sparkles, UserCog, Users, Building2 } from 'lucide-react';
 
-export type TabId = 'hub' | 'focus' | 'agents' | 'management' | 'ai' | 'settings';
+export type TabId = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
 export type ManagementTab = 'asm' | 'crm' | 'tasks' | 'hr';
 
 export const ALL_TABS = [
@@ -8,7 +8,6 @@ export const ALL_TABS = [
   { id: 'focus', icon: Sparkles, label: 'Focus' },
   { id: 'agents', icon: Users, label: 'Agenti' },
   { id: 'management', icon: Briefcase, label: 'Management' },
-  { id: 'ai', icon: Bot, label: 'AI' },
   { id: 'settings', icon: Settings, label: 'Setari' },
 ] as const;
 
@@ -24,7 +23,6 @@ export const TAB_LABELS: Record<TabId, string> = {
   focus: 'Focus & Campanii',
   agents: 'Agenți',
   management: 'Management',
-  ai: 'AI Assistant',
   settings: 'Setări',
 };
 

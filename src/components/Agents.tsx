@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronLeft, ChevronDown, ChevronUp, Award, LayoutGrid, Store, X } from 'lucide-react';
 import {
   Bar,
@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
 import { getFilterOptions } from '../api/filters';
 import type { AppFilters } from './MainLayout';
 import type { FilterOptions } from '../api/types';
@@ -44,32 +45,17 @@ interface AgentDetailsProps {
 }
 
 function AgentDetails({ agent, currentMonth, onBack }: AgentDetailsProps) {
-  const [profile, setProfile] = useState<AgentProfileResponse | null>(null);
-  const [history, setHistory] = useState<AgentHistoryResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: profile, isLoading: profileLoading } = useQuery({
+    queryKey: ['agents', 'profile', agent, currentMonth],
+    queryFn: () => fetchAgentProfile(agent, currentMonth),
+  });
 
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      setLoading(true);
-      try {
-        const [prof, hist] = await Promise.all([
-          fetchAgentProfile(agent, currentMonth),
-          fetchAgentHistory(agent)
-        ]);
-        if (active) {
-          setProfile(prof);
-          setHistory(hist);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    load();
-    return () => { active = false; };
-  }, [agent, currentMonth]);
+  const { data: history, isLoading: historyLoading } = useQuery({
+    queryKey: ['agents', 'history', agent],
+    queryFn: () => fetchAgentHistory(agent),
+  });
+
+  const loading = profileLoading || historyLoading;
 
   if (loading) {
     return (
@@ -330,17 +316,44 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     return 'overview';
   });
   
-  const [overview, setOverview] = useState<AgentsOverviewResponse | null>(null);
-  const [movement, setMovement] = useState<AgentMovementResponse | null>(null);
-  const [coverage, setCoverage] = useState<StoreCoverageResponse | null>(null);
-  const [list, setList] = useState<AgentListItem[]>([]);
-  const [loadingOverview, setLoadingOverview] = useState(false);
-  const [loadingList, setLoadingList] = useState(false);
-  const [loadingCoverage, setLoadingCoverage] = useState(false);
   const [cardFirma, setCardFirma] = useState('Toate');
   const [cardMagazin, setCardMagazin] = useState('Toate');
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [expandedSection, setExpandedSection] = useState<'active' | 'modified' | 'inactive' | null>(null);
+
+  const queryParams = useMemo(() => {
+    const p: AgentsQuery = { selected_month: currentMonth };
+    if (filters.firma !== 'Toate') p.firma = filters.firma;
+    if (filters.rm !== 'Toti') p.regional = filters.rm;
+    if (filters.asm !== 'Toti') p.asm = filters.asm;
+    if (filters.magazin !== 'Toate') p.site_code = filters.magazin;
+    if (filters.agent !== 'Toti') p.agent = filters.agent;
+    return p;
+  }, [currentMonth, filters]);
+
+  const { data: overview, isLoading: loadingOverview } = useQuery({
+    queryKey: ['agents', 'overview', queryParams],
+    queryFn: () => fetchAgentsOverview(queryParams),
+  });
+
+  const { data: movement } = useQuery({
+    queryKey: ['agents', 'movement', queryParams],
+    queryFn: () => fetchAgentsMovement(queryParams),
+  });
+
+  const { data: coverage, isLoading: loadingCoverage } = useQuery({
+    queryKey: ['agents', 'coverage', queryParams],
+    queryFn: () => fetchStoreCoverage(queryParams),
+  });
+
+  const listParams = useMemo(() => ({ ...queryParams, search: debouncedSearch || undefined }), [queryParams, debouncedSearch]);
+  
+  const { data: listResponse, isLoading: loadingList } = useQuery({
+    queryKey: ['agents', 'list', listParams],
+    queryFn: () => fetchAgentsList(listParams),
+  });
+  
+  const list = listResponse?.items || [];
 
   // Fetch filter options for card filters
   useEffect(() => {
@@ -398,69 +411,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Load Overview & Movement
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      setLoadingOverview(true);
-      setLoadingCoverage(true);
-      try {
-        const p: AgentsQuery = { selected_month: currentMonth };
-        if (filters.firma !== 'Toate') p.firma = filters.firma;
-        if (filters.rm !== 'Toti') p.regional = filters.rm;
-        if (filters.asm !== 'Toti') p.asm = filters.asm;
-        if (filters.magazin !== 'Toate') p.site_code = filters.magazin;
-        if (filters.agent !== 'Toti') p.agent = filters.agent;
 
-        const [ov, mv, cv] = await Promise.all([
-          fetchAgentsOverview(p),
-          fetchAgentsMovement(p),
-          fetchStoreCoverage(p)
-        ]);
-
-        if (active) {
-          setOverview(ov);
-          setMovement(mv);
-          setCoverage(cv);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        if (active) {
-          setLoadingOverview(false);
-          setLoadingCoverage(false);
-        }
-      }
-    }
-    load();
-    return () => { active = false; };
-  }, [currentMonth, filters]);
-
-  // Load List
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      setLoadingList(true);
-      try {
-        const p: AgentsQuery = { selected_month: currentMonth };
-        if (filters.firma !== 'Toate') p.firma = filters.firma;
-        if (filters.rm !== 'Toti') p.regional = filters.rm;
-        if (filters.asm !== 'Toti') p.asm = filters.asm;
-        if (filters.magazin !== 'Toate') p.site_code = filters.magazin;
-        if (filters.agent !== 'Toti') p.agent = filters.agent;
-        if (debouncedSearch) p.search = debouncedSearch;
-
-        const data = await fetchAgentsList(p);
-        if (active) setList(data.items);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        if (active) setLoadingList(false);
-      }
-    }
-    load();
-    return () => { active = false; };
-  }, [currentMonth, filters, debouncedSearch]);
 
   if (selectedAgent) {
     return (

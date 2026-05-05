@@ -1,385 +1,241 @@
-# CLAUDE.md — Ghid pentru sesiunile Claude
+# CLAUDE.md — UniHub (retail)
 
-Acest fisier explica tot ce trebuie sa stii pentru a lucra eficient pe proiectul **UniHub**.
-Citeste-l la inceputul fiecarei sesiuni noi.
+## Overview
 
----
+**Sursa de adevar** pentru vanzari + vizite in ecosistemul MobiUp. Platforma-Mobiup citeste de aici via VIEW-uri `v_platforma_*`. Module: Hub, Focus, Agenti (+Salarii), Vizite, Management (Echipa/Magazine/Tasks/HR), Setari, UniAI.
 
-## Cine esti si cu cine lucrezi
+## Stack
 
-Andrei este managerul echipei Mobiup. Lucreaza exclusiv cu Claude. Are bypass approvals activat — executa fara a cere confirmare pentru fiecare pas.
+- Frontend: React 19 + Vite + TypeScript
+- Backend: FastAPI + asyncpg + PostgreSQL 18
+- Realtime AI: WebSocket (UniHub) ↔ Hermes SSE bridge (`hermes-unihub-bridge`, systemd user)
+- Test: pytest (backend), vitest (frontend)
 
-Tonul corect: direct, tehnic, fara padding. Explica pe scurt ce ai facut si de ce, fara liste lungi de recapitulari.
+## Deploy
 
----
+- Path: `/opt/Mobiup/unihub-retail` (symlink logic: `/opt/Mobiup/unihub` — folosit in comenzi deploy)
+- Service: `unihub-backend.service`
+- URL public: `https://retail.unihub.ro/` (ex `unihub.astancu.eu`, eliminat 2026-04-19)
+- Deploy standard:
+  ```bash
+  cd /opt/Mobiup/unihub
+  git pull
+  npm run build
+  sudo systemctl restart unihub-backend
+  ```
+- Pentru UniAI / bridge Hermes:
+  ```bash
+  sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
+    systemctl --user restart hermes-unihub-bridge
+  ```
 
-## Starea proiectului
+## Commands
 
-- Aplicatie deployed pe server `192.168.0.68`, accesibila la https://unihub.astancu.eu/
-- Stack: React 19 + Vite + TypeScript (frontend) / FastAPI + asyncpg + PostgreSQL 18 (backend)
-- Module functionale: Hub, Focus, Agenti (+ Salarii), Vizite, Management (Echipa/Magazine/Tasks/HR), Setari, AI
-- pytest passing, typecheck curat, build passing
-- UniHub este sursa de adevar pentru vanzari SI vizite; Platforma-Mobiup citeste de aici
-- UniAI: sesiuni persistente per-device, istoric selectabil, suport atasamente
-
-Deploy productie (dupa modificari):
 ```bash
-cd /opt/Mobiup/unihub
-git pull
-npm run build
-sudo systemctl restart unihub-backend
+npm run build               # frontend Vite build
+npm run test                # vitest (formatters, viewCache)
+pytest                      # backend tests
+sudo journalctl -u unihub-backend -f   # logs live
 ```
 
-Pentru modificari care ating UniAI / bridge-ul Hermes:
-```bash
-sudo -u andrei XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user restart hermes-unihub-bridge
-```
+## Structura
 
----
-
-## Structura importanta
-
-### Frontend — `src/components/`
+### Frontend `src/components/`
 | Fisier | Rol |
 |--------|-----|
 | `App.tsx` | Tab routing + localStorage persistence tab activ |
-| `MainLayout.tsx` | Shell principal, navigare, filtre |
-| `Dashboard.tsx` | Tab Hub — Luna în curs (tabele RM/ASM/Magazine/Agenti), Istoric (aceleasi tabele filtrate pe luna analizata), grafice |
-| `Campaigns.tsx` | Tab Focus — campanii, incentive per-produs, Top Agenti + Top Magazine sortabile |
-| `Agents.tsx` | Tab Agenti — include AgentDrawer, AgentDetails |
-| `SalariiSubtab.tsx` | Sub-tab Salarii in Agenti |
-| `SalaryDrawer.tsx` | Drawer detalii salariu per agent |
-| `SalaryAgentBarChart.tsx` | Bar chart salarii per agent |
-| `SalaryAreaChart.tsx` | Area chart evolutie salarii |
-| `VisiteSubtab.tsx` | Tab Vizite — ASM accordion + drawer vizita cu poze |
-| `Management.tsx` | Tab Management — shell cu 4 sub-taburi (Echipa/Magazine/Tasks/HR) |
-| `ASMSubtab.tsx` | Sub-tab Echipa — performanta ASM combinata PG + SQLite |
-| `CRMSubtab.tsx` | Sub-tab Magazine — scoruri CRM, alerte, recalculare |
-| `TasksSubtab.tsx` | Sub-tab Tasks — task-uri per agent/magazin, creare din alerte CRM |
-| `HRSubtab.tsx` | Sub-tab HR — cereri concediu, pontaj, performanta ASM |
-| `AIChat.tsx` | Tab AI — chat UI, sesiuni, attachments, drawer istoric |
-| `Settings.tsx` | Tab Setari — 2 sub-taburi: Administrare (import fișier + istoric) + Erori sistem |
-| `ErrorLogsTab.tsx` | Sub-tab Erori sistem — tabel erori cu filtre (sursa/seen), modal detalii traceback |
-| `ErrorBoundary.tsx` | Error boundary React — `componentDidCatch` trimite eroarea la `POST /api/errors` |
+| `MainLayout.tsx` | Shell principal, navigare, filtre globale |
+| `Dashboard.tsx` | Tab Hub — Luna curenta + Istoric (4 tabele: RM/ASM/Magazine/Agenti) |
+| `Campaigns.tsx` | Tab Focus — campanii, incentive per-produs, Top Agenti/Magazine |
+| `Agents.tsx` + `AgentDrawer`, `AgentDetails` | Tab Agenti |
+| `SalariiSubtab.tsx` + `SalaryDrawer`, `SalaryAgentBarChart`, `SalaryAreaChart` | Sub-tab Salarii |
+| `VisiteSubtab.tsx` | Tab Vizite — ASM accordion + drawer cu poze |
+| `Management.tsx` + 4 sub-taburi: `ASMSubtab`, `CRMSubtab`, `TasksSubtab`, `HRSubtab` | Management |
+| `AIChat.tsx` | Tab AI — chat UI, sesiuni, attachments |
+| `Settings.tsx` + `ErrorLogsTab` + `ErrorBoundary` | Setari + Erori sistem |
 
-### Backend — `backend/routers/`
-| Router | Prefix / Rol |
+### Backend `backend/routers/`
+| Router | Prefix |
 |--------|--------|
 | `dashboard` | `/api/dashboard` |
 | `campaigns` | `/api/campaigns` |
 | `filters` | `/api/filters` |
 | `imports` | `/api/imports` |
 | `stores` | `/api/stores` |
-| `visits_report` | `/api/visits-report` — citeste SQLite din `data/visits/visits.db` |
+| `visits_report` | `/api/visits-report` (SQLite `data/visits/visits.db`) |
 | `agents` | `/api/agents` |
-| `salarii` | `/salarii` (fara prefix `/api`) |
-| `tasks` | `/api/tasks` — task-uri per agent/magazin; sursa si din alerte CRM |
-| `hr` | `/api/hr` — concedii, pontaj, performanta ASM (PG + `visits_snapshot`, nu mai citeste SQLite direct) |
-| `crm` | `/api/crm` — scoruri magazine, alerte, `get_forecast_factor` (shared cu hr.py) |
-| `ai` | `/api/ai` — WebSocket proxy + sesiuni + attachments pentru Hermes bridge |
-| `errors` | `/api/errors` (public) + `/api/admin/error-logs` — ingest erori frontend + vizualizare |
+| `salarii` | `/salarii` (**fara** prefix `/api`) |
+| `tasks` | `/api/tasks` |
+| `hr` | `/api/hr` (PG + `visits_snapshot`, NU mai citeste SQLite direct) |
+| `crm` | `/api/crm` |
+| `ai` | `/api/ai` (WS proxy + sesiuni + attachments pentru Hermes bridge) |
+| `errors` | `/api/errors` (public, rate limit) + `/api/admin/error-logs` |
 
-Helperele de filtre si scope (SQL `where_clauses`, `scoped_clauses`, `transaction_filter_parts`, `normalize_filter`, `build_scope_filter`) traiesc in `services/filters.py`. Helperele de forecast (CRM/HR shared) traiesc in `services/forecast.py`.
+Helperele de filtre/scope → `services/filters.py`. Forecast shared CRM/HR → `services/forecast.py`. Dashboard greu → `services/dashboard/{utils,queries,specials_data}.py`.
 
-Logica grea a dashboard-ului e extrasa in `services/dashboard/`:
-- `services/dashboard/utils.py` — `_shift_month`, `_month_day_range`, `_build_scoped_params`
-- `services/dashboard/queries.py` — toate `_fetch_*_stats`, `_enrich_*`, mix-uri (category/brand/bucket/subcategory), `_fetch_period_comparison`, `_fetch_promo_incentive_summary`, `_get_store_incentive_multipliers`
-- `services/dashboard/specials_data.py` — `_get_special_cards_data` (folosit de endpoint-ul `/special-cards` si de `/all`)
+**Regula import cross-router:** alte routere importa direct din `services.dashboard.queries` — **niciodata** din `routers.dashboard`.
 
-Routerul `dashboard.py` contine doar endpoint-urile (`@router.get(...)`) si importa din `services.dashboard.*`. Alte routere (campaigns) importa direct din `services.dashboard.queries` — niciodata din `routers.dashboard`.
+### UniAI — sesiuni persistente cross-sesiune
 
-### UniAI / AI tab
-- Frontend:
-  - `src/components/AIChat.tsx` — layout messenger, composer fix jos, drawer sesiuni, upload attachments
-  - `src/api/ai.ts` — WebSocket client pentru streaming (`device_id`, `session_id`, `attachments`)
-  - `src/api/aiSessions.ts` — REST client pentru sesiuni si upload fisiere
-- Backend UniHub:
-  - `backend/routers/ai.py` — WS `/api/ai/ws` + REST pentru list/create/activate sesiuni si upload attachments
-  - `backend/models.py` — modelele Pydantic pentru sesiuni AI / attachments
-- Hermes bridge:
-  - `/home/andrei/.hermes/hermes-agent/unihub_bridge.py` — SSE bridge catre AIAgent
-  - `/home/andrei/.hermes/hermes-agent/unihub_session_store.py` — persistenta sesiuni active per-device
-  - serviciu systemd user: `hermes-unihub-bridge`
+- Frontend: `src/components/AIChat.tsx` + `src/api/ai.ts` (WS) + `src/api/aiSessions.ts` (REST)
+- Backend: `backend/routers/ai.py` (WS `/api/ai/ws` + REST sesiuni/attachments)
+- Hermes bridge: `/home/andrei/.hermes/hermes-agent/unihub_bridge.py` + `unihub_session_store.py`
+- `device_id` in `localStorage` (`unihub_ai_device_id`), transcript in Hermes `SessionDB` (SQLite)
+- Sesiuni active per-device mapate in `~/.hermes/sessions/unihub_active_sessions.json`
+- `memory.md` cross-sesiune in `/opt/Mobiup/unihub/data/uniai-workspace/`, config in `/home/andrei/.hermes/SOUL.md`
+- Attachments: imagini (vision), `.txt`, `.md`, PDF (`pdftotext`), `.docx/.xlsx/.pptx`
+- Charts in chat: Hermes returneaza blocuri ```chart cu JSON spec; randat de `ChartBlock` (recharts: bar/line/pie/area)
+- Env: `AI_BRIDGE_URL` (default `http://127.0.0.1:7777`), `AI_BRIDGE_TIMEOUT` (default 180s)
 
-- Persistenta sesiuni:
-  - `device_id` salvat in localStorage sub cheia `unihub_ai_device_id`
-  - transcriptul salvat in Hermes `SessionDB` (SQLite)
-  - sesiunea activa per-device mapata in `~/.hermes/sessions/unihub_active_sessions.json`
+### Tab Management — dependente cheie
 
-- Endpointuri AI:
-  - `GET /api/ai/sessions?device_id=...`
-  - `GET /api/ai/sessions/{session_id}`
-  - `POST /api/ai/sessions?device_id=...`
-  - `POST /api/ai/sessions/{session_id}/activate?device_id=...`
-  - `DELETE /api/ai/sessions/{session_id}` — sterge sesiunea din Hermes SQLite
-  - `POST /api/ai/attachments`
-  - `WS /api/ai/ws?device_id=...&session_id=...`
+`hr.py` importa `get_forecast_factor` din `crm.py` → la modificari CRM verifica si HR.
+`get_forecast_factor(conn, month)` = factor extrapolat (`zile_luna / ultima_zi_vanzari`); 1.0 daca luna e finalizata.
 
-- Suport attachments: imagini (vision), `.txt`, `.md`, PDF (`pdftotext`), `.docx/.xlsx/.pptx`
+## Baza de date
 
-- Grafice in chat: Hermes poate returna blocuri ```chart cu JSON spec; frontend-ul le randeaza via `ChartBlock` (recharts). Tipuri: `bar`, `line`, `pie`, `area`.
-
-- Memorie cross-sesiune: Hermes citeste/scrie `memory.md` in workspace (`/opt/Mobiup/unihub/data/uniai-workspace/`) la prima interactiune din sesiune. Configurat in `/home/andrei/.hermes/SOUL.md`.
-
-- Gotcha important:
-  - bridge-ul creaza `AIAgent` cu `session_id` + `session_db`; sesiunile sunt partitionate pe `BRIDGE_USER_ID = "default"` (constanta in `ai.py`, fara auth)
-  - `MainLayout.tsx`: tabul AI are `overflow-hidden` (nu `overflow-y-auto`) — scroll-ul e gestionat intern de messages area pentru a preveni saltul address bar-ului pe mobile
-
-- Variabile de mediu:
-  - `AI_BRIDGE_URL` — adresa bridge Hermes (default: `http://127.0.0.1:7777`)
-  - `AI_BRIDGE_TIMEOUT` — timeout in secunde (default: `180`)
-
-### Tab Management
-
-Tab cu 4 sub-taburi, accesibil tuturor.
-
-| Sub-tab | Componenta | Backend | Descriere |
-|---------|-----------|---------|-----------|
-| Echipa (asm) | `ASMSubtab.tsx` | `/api/hr` | Performanta ASM — merge `reporting_agent_month` (PG) + `visits.db` (SQLite) + forecast factor din CRM |
-| Magazine (crm) | `CRMSubtab.tsx` | `/api/crm` | Scoruri magazine, alerte, recalculare manuala. Alerte pot fi convertite direct in Tasks |
-| Tasks | `TasksSubtab.tsx` | `/api/tasks` | Task-uri per agent/magazin. `source` poate fi `manual` sau `crm_alert` (cu `source_meta` JSONB) |
-| HR | `HRSubtab.tsx` | `/api/hr` | Cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric ASM |
-
-**Dependenta cross-router importanta:** `hr.py` importa `get_forecast_factor` din `crm.py` — la modificari in CRM, verifica si HR.
-
-**CRM score logic:** `get_forecast_factor(conn, month)` calculeaza factor extrapolat (zile_luna / ultima_zi_vanzari). 1.0 daca luna e finalizata.
-
-**Endpoints principale:**
-- `GET /api/crm/scores?month=YYYY-MM` — scoruri magazine
-- `POST /api/crm/scores/recalculate?month=YYYY-MM` — recalculeaza scoruri
-- `GET /api/crm/alerts?month=YYYY-MM` — alerte active
-- `GET /api/hr/leave-requests` — cereri concediu
-- `POST /api/hr/leave-requests` — creare cerere
-- `PATCH /api/hr/leave-requests/{id}` — aprobare/respingere
-- `GET /api/hr/asm-performance?month=YYYY-MM&regional=...` — performanta ASM
-- `GET /api/hr/asm-performance/{name}/history?months=N` — istoric ASM
-- `GET /api/tasks` — lista task-uri
-- `POST /api/tasks` — creare task
-
-### Baza de date
 - Schema unica: `backend/db/schema_v2.sql`
 - Aplicata hash-based la boot via `ensure_schema_current()` in `backend/db/connection.py`
 - **Nu modifica schema direct in DB** — editeaza `schema_v2.sql` si reporneste backend-ul
-- Reporting pe agregate: `reporting_agent_*`, `reporting_item_*`, `reporting_focus_*`, `reporting_category_*`
 
-#### Tabele principale
+### Tabele principale
 | Tabel | Continut |
 |-------|----------|
 | `sales_transactions` | Tranzactii detaliate 2023-09 → prezent |
-| `historical_annual_sales` | Agregate anuale: 2022 complet, 2023 Ian-Aug (derivat) |
-| `incentive_campaigns` | Campanii incentive per luna (titlu, subtitlu, descriere) |
-| `incentive_products` | Produse eligibile + reward per produs per campanie |
+| `historical_annual_sales` | Agregate anuale: 2022 complet, 2023 Ian-Aug |
+| `incentive_campaigns` + `incentive_products` | Campanii incentive + produse eligibile |
 | `store_targets` | Targete lunare per magazin |
-| `stores` | Magazine cu site_code, locatie, firma, asm, regional |
-| `reporting_agent_month` | Agregat lunar per agent (sursa principala dashboard) |
-| `reporting_item_month` | Agregat lunar per produs |
-| `historical_annual_sales` | 2022 an complet + 2023 Ian-Aug per magazin/firma |
-| `tasks` | Task-uri per agent/magazin (`title`, `assignee`, `site_code`, `deadline`, `status`, `source`, `source_meta`) |
-| `leave_requests` | Cereri concediu agenti (`agent_name`, `start_date`, `end_date`, `leave_type`, `status`) |
-| `attendance_records` | Pontaj zilnic (`agent_name`, `record_date`, `status`) — UNIQUE per agent+zi |
-| `store_scores` | Scoruri CRM per magazin per luna (`site_code`, `score_month`, `score`, `breakdown` JSONB) — UNIQUE per magazin+luna |
-| `visits_snapshot` | Agregat vizite din SQLite, sync la boot — elimina citirile blocking din `hr.py` |
-| `error_logs` | Erori sistem (backend + frontend) — `source`, `level`, `message`, `traceback`, `path`, `extra` JSONB, `seen` |
+| `stores` | Magazine: site_code, locatie, firma, asm, regional |
+| `reporting_agent_month` / `reporting_item_month` | Agregate lunare (sursa dashboard) |
+| `tasks` | Task-uri per agent/magazin (`source` = `manual` / `crm_alert`) |
+| `leave_requests` / `attendance_records` | HR |
+| `store_scores` | Scoruri CRM per magazin/luna |
+| `visits_snapshot` | Agregat vizite sync din SQLite la boot |
+| `error_logs` | Erori backend + frontend cu `seen` flag |
 
-#### VIEW-uri compatibilitate Platforma-Mobiup
-- `v_platforma_dashboard` — agregat lunar pe agent (din `reporting_agent_month` JOIN `stores`)
-- `v_platforma_import_meta` — metadata per luna (din `import_snapshots`)
-- `v_platforma_raw_sales` — tranzactii brute (din `sales_transactions` JOIN `stores`; `bon_nr` alisat ca `nr`)
-- `v_platforma_store_targets` — targete magazin (din `store_targets` JOIN `stores`)
+### VIEW-uri pentru Platforma-Mobiup
+- `v_platforma_dashboard` — agregat agent (`reporting_agent_month` JOIN `stores`)
+- `v_platforma_import_meta` — metadata import
+- `v_platforma_raw_sales` — tranzactii brute (`bon_nr` aliased ca `nr`)
+- `v_platforma_store_targets` — targete JOIN stores
 
-### Acoperire date istorice
+### Acoperire date
 | Perioada | Sursa | Granularitate |
 |----------|-------|---------------|
-| 2022 | `historical_annual_sales` | anual per magazin |
-| 2023 Ian-Aug | `historical_annual_sales` | anual per magazin (derivat: annual - Q4) |
-| 2023 Sep-Dec | `sales_transactions` | tranzactie per tranzactie |
-| 2024 Ian-Dec | `sales_transactions` | tranzactie per tranzactie |
-| 2025 Ian → prezent | `sales_transactions` | tranzactie per tranzactie |
+| 2022 | `historical_annual_sales` | anual/magazin |
+| 2023 Ian-Aug | `historical_annual_sales` | anual/magazin (derivat) |
+| 2023 Sep → prezent | `sales_transactions` | tranzactie |
 
-**Nota import istoric:** fisierele 2023-2024 nu aveau coloana `Agent` (prezenta din 2025).
-Agent = `'-'` pentru toate tranzactiile 2023-2024. Rapoartele per-ASM/magazin sunt corecte.
+2023-2024 nu aveau coloana `Agent` (prezenta din 2025) → `agent = '-'`. Raport per-ASM/magazin ramane corect.
 
-### Integrare Platforma-Mobiup
-- **Date vanzari**: Platforma-Mobiup citeste din PostgreSQL UniHub via VIEW-urile `v_platforma_*`
-  - Importul de vanzari se face **o singura data**, in UniHub
-  - Ruta `/api/v2/intermediate-import` din Platforma-Mobiup returneaza 410 Gone
-- **Vizite**: UniHub este sursa de adevar — `data/visits/visits.db` si `data/visits/images/`
-  - Platforma-Mobiup citeste din acelasi fisier (default hardcodat la `/opt/Mobiup/unihub/data/visits/visits.db`)
-  - Router `visits_report.py` citeste SQLite async via `run_in_executor` (non-blocking)
-  - Endpoint `/api/visits-report/photo/{visit_id}/{filename}` serveste pozele cu auth (`FileResponse`)
-  - Frontend: componenta `AuthImage` face fetch blob cu axios + `URL.createObjectURL` (nu `<img src>` direct)
-  - `hr.py` NU mai citeste SQLite direct — foloseste tabelul PG `visits_snapshot` (sync la boot, upsert)
+## Conventions
 
-### Hub Dashboard — structura tabele
+**Nu citi din `sales_transactions` pentru raportare.** Toate query-urile merg pe agregatele `reporting_*`. Exceptie: lookup-uri administrative.
 
-Sectiunea **Luna in curs** si sectiunea **Istoric** afiseaza ambele 4 tabele: RM, ASM, Magazine, Agenti.
+**Pydantic silent-drop.** Orice camp returnat de endpoint trebuie declarat in modelul Pydantic din `backend/models.py`. Modelele cu `ConfigDict(from_attributes=True)` sunt deosebit susceptibile — SQL poate calcula campul, dar daca nu e in model, dispare din raspuns fara eroare.
 
-- **Coloane Magazine**: Magazin / Firma / Target / Vanzari / Procent / **Incentive** / Cantitate / Nr bonuri / Agenti / Zile active / Medie zilnica
-- **Coloane RM / ASM**: fara `promo_qty` in Istoric (filtrat la render)
-- **Coloane Agenti**: fara `promo_qty` in Istoric
-- `incentive_qty` la Magazine este calculat in `_enrich_store_stats_with_campaign()` din `dashboard.py` — query pe `reporting_item_month` grupat pe `site_code`. Daca lipseste aceasta functie, valorile apar 0.
+**Filtre shared.** `MainLayout` (`hubFilters`) e shared Hub+Focus. Agenti foloseste `agentsFilters` (independent). `SalariiSubtab` primeste `globalFilters: AppFilters` care sunt de fapt `agentsFilters`, nu `hubFilters`.
 
-Pattern enrichment campanie (acelas pentru RM/ASM/Magazine/Agenti):
+**Salarii case-insensitive join.** `salary_records.company_name` (`'Mobicell'`/`'Mobiup'`) difera ca majuscule de `stores.firma` (`'MobiCell'`/`'MobiUp'`) → folosește `LOWER()` la JOIN.
+
+**Salarii LEFT JOIN conditionat.** `LEFT JOIN stores` doar cand `regional` sau `asm` sunt prezente (evita JOIN inutil).
+
+## Integrare Platforma-Mobiup
+
+- Importul de vanzari se face **o singura data**, in UniHub — Platforma citeste via VIEW-uri. Ruta `/api/v2/intermediate-import` din Platforma returneaza 410 Gone.
+- Vizite: sursa = `data/visits/visits.db` + `data/visits/images/`
+  - Platforma citeste acelasi SQLite (hardcoded la `/opt/Mobiup/unihub/data/visits/visits.db`)
+  - `visits_report.py` citeste async via `run_in_executor`
+  - `/api/visits-report/photo/{visit_id}/{filename}` serveste pozele cu auth → `FileResponse`
+  - Frontend: `AuthImage` face fetch blob cu axios + `URL.createObjectURL` (nu `<img src>` direct)
+  - `hr.py` foloseste PG `visits_snapshot` (sync la boot), **nu** SQLite
+
+## Hub Dashboard — structura tabele
+
+**Luna in curs** si **Istoric** afiseaza amandoua 4 tabele: RM, ASM, Magazine, Agenti.
+
+- Magazine: Magazin / Firma / Target / Vanzari / Procent / **Incentive** / Cantitate / Nr bonuri / Agenti / Zile active / Medie zilnica
+- RM / ASM / Agenti: fara `promo_qty` in Istoric (filtrat la render)
+- `incentive_qty` la Magazine calculat in `_enrich_store_stats_with_campaign()` din `dashboard.py` (query pe `reporting_item_month` grupat pe `site_code`). **Daca lipseste functia, valorile apar 0.**
+
+### Pattern enrichment campanie (RM/ASM/Magazine/Agenti)
 1. Incarca `promotion_codes` + `incentive_codes` din config/DB
-2. Daca niciun cod activ → seteaza 0 si returneaza
-3. Query `reporting_item_month` grupat pe cheia relevanta (regional / asm / site_code / agent)
-4. Join pe rows de baza si ataseaza `promo_qty` + `incentive_qty`
+2. Niciun cod activ → seteaza 0 si returneaza
+3. Query `reporting_item_month` grupat pe cheia relevanta
+4. Join pe rows si ataseaza `promo_qty` + `incentive_qty`
 
-### Hub Specials (incentive/promotii)
-- **Incentive**: stocate complet in DB — `incentive_campaigns` + `incentive_products`
-  - `hub_specials.json` contine doar promotii (coduri fixe); sectiunea `incentives` este goala
-  - Logica in `backend/services/incentive_db.py` — `get_incentive_campaign(conn, month)`
-  - Dashboard citeste reward_map din DB, nu din Excel
-  - Pentru a adauga o campanie noua:
-    ```bash
-    cd /opt/Mobiup/unihub/backend
-    source venv/bin/activate
-    python3 scripts/import_incentive_campaign.py \
-        --month 2026-05 \
-        --title "Incentive Mai 2026" \
-        --file "NumeFisier.xlsx" \
-        --sheet Sheet1 \
-        [--header 1]  # daca header-ul nu e pe primul rand
-    ```
-- **Promotii**: configurate in `data/hub_specials.json` (array `promotions` cu `item_codes`, `start_date`, `end_date`)
-- Cardurile inactive se ascund automat in sectiunea Istoric
+### Incentive vs Promotii
+- **Incentive:** stocate complet in DB (`incentive_campaigns` + `incentive_products`). `hub_specials.json` are doar `promotions`, sectiunea `incentives` goala. Logica: `backend/services/incentive_db.py` → `get_incentive_campaign(conn, month)`. Dashboard citeste reward_map din DB, nu Excel.
+- **Promotii:** `data/hub_specials.json` → array `promotions` cu `item_codes`, `start_date`, `end_date`
+- Cardurile inactive se ascund automat in Istoric
 
-### Targete magazine
-- Tabel: `store_targets (site_code, import_month, target_value)`
-- Format fisier nou per luna: `Regional, ASM, Firma, Locatie, Cod, Target` (sheet "target")
-- **Nu** folosi `load_targets_dataframe()` pentru acest format — aceea e pentru `Istoric targete.xlsx`
-- Pattern import: script Python direct cu `upsert_store_targets()`, rulat din `backend/` cu venv activat
-
-### Scripts utile (`backend/scripts/`)
-| Script | Scop |
-|--------|------|
-| `import_historical.py` | Import batch fisiere vechi 2023/2024 (format fara Agent/Categorie) |
-| `import_annual_summary.py` | Import rezumat anual din `vanzari 2022 si 2023.xlsx` |
-| `import_incentive_campaign.py` | Import campanie incentive dintr-un Excel in DB |
-| `rebuild_reporting.py` | Reconstruieste agregatele de reporting (toate lunile sau una anume) |
-| `seed.py` | Seed complet din fisierele din `data/` |
-
-### Backup
-- Locatie unica: `/opt/Mobiup/backups/`
-  - `postgres/` — dump-uri PostgreSQL (format custom pg_dump, `.dump`)
-  - `visits/` — copii SQLite vizite
-  - `platforma-mobiup/` — arhive punctuale Platforma-Mobiup
-  - `backup.log` — log al rularii zilnice
-- Script: `/opt/Mobiup/scripts/backup.sh`
-- Cron: zilnic la 02:00, retentie 30 zile
-- Restore PostgreSQL:
-  ```bash
-  pg_restore -h localhost -U unihub -d unihub --clean /opt/Mobiup/backups/postgres/unihub_YYYYMMDD.dump
-  ```
-
-### Error Tracking intern
-
-Sistem propriu fara dependente externe. Capteaza erori din backend (Python logging) si frontend (JS global hooks + React ErrorBoundary).
-
-**Capturare automata backend:** `DBErrorHandler` in `logging_config.py` — orice `logging.ERROR` sau mai sever ajunge in `error_logs` via `asyncio.create_task` (non-blocking). Atasat la boot in `main.py` dupa `init_db_pool()`.
-
-**Capturare frontend:**
-- `window.onerror` + `window.onunhandledrejection` in `src/main.tsx` — erori JS nehandled
-- `ErrorBoundary.componentDidCatch` — crash-uri React
-- Toate trimit la `POST /api/errors` (fara autentificare, rate limit 10 req/min per IP)
-
-**Vizualizare:** Tab "Erori sistem" in Settings — `ErrorLogsTab.tsx`. Filtre dupa sursa/seen, modal cu traceback complet, buton "Marchează toate ca văzute".
-
-**Badge:** `App.tsx` polleaza `/api/admin/error-logs/unseen-count` la 60s. Badge roșu pe Settings in sidebar desktop + tab bar mobile.
-
-**Cleanup automat:** la boot se sterg intrari mai vechi de 30 zile (`delete_old_logs`).
-
-**Endpoints:**
-- `POST /api/errors` — ingest frontend (public, rate limited)
-- `GET /api/admin/error-logs` — lista cu filtre `?source=&seen=&page_size=`
-- `GET /api/admin/error-logs/unseen-count` — badge count
-- `POST /api/admin/error-logs/mark-seen` — marchează toate ca văzute
-- `DELETE /api/admin/error-logs/cleanup?days=N` — cleanup manual
-
-### JSON Structured Logging
-
-Backend-ul suporta logging structurat JSON via variabila de mediu `LOG_FORMAT=json`.
-
-Implicit: format text uvicorn standard. Cu `LOG_FORMAT=json`: fiecare linie de log e un obiect JSON cu campurile `ts`, `level`, `logger`, `message`, `exc_info` (optional).
-
-Util pentru filtrare cu `jq` sau indexare in Grafana Loki / journald.
-
-### Vitest — frontend unit tests
-
-Setup minimal pentru utilitare pure (fara DOM/React). Fisiere acoperite:
-- `src/lib/formatters.ts` — `formatCurrency`, `formatInt`, `formatPercent`
-- `src/lib/viewCache.ts` — `getCachedView`, `setCachedView`, eviction la MAX_CACHE_SIZE=50
-
-Rulare: `npm run test` din radacina proiectului.
-
----
-
-## Reguli de lucru
-
-### Nu citi din `sales_transactions` pentru raportare
-Toate query-urile de raportare merg pe agregatele `reporting_*`. Exceptie: lookup-uri administrative punctuale.
-
-### Modele Pydantic in `backend/models.py`
-Orice camp returnat de un endpoint trebuie sa fie declarat explicit in modelul Pydantic corespunzator, altfel Pydantic il elimina din raspuns fara eroare (silent drop). Modelele cu `ConfigDict(from_attributes=True)` sunt deosebit de susceptibile — SQL poate calcula campul, dar daca nu e declarat in model, nu apare in raspuns.
-
-### Filtre in frontend
-Filtrul global (firma, regional, asm, magazin) din `MainLayout` este shared intre Hub si Focus.
-Modulul **Agenti** are filtrele sale proprii, independente (`agentsFilters` in `App.tsx`).
-
-`SalariiSubtab` primeste `globalFilters: AppFilters` din `Agents.tsx` — acestea sunt `agentsFilters`, nu `hubFilters`. Butonul flotant de filtru activ pe tab-ul Agenti alimenteaza `agentsFilters`.
-
-Mapping `AppFilters` → parametri backend salarii:
-- `firma` (`!= 'Toate'`) → `company_name` — comparatie **case-insensitive** (`LOWER()`), deoarece `salary_records.company_name` (`'Mobicell'`/`'Mobiup'`) difera ca si majuscule de `stores.firma` (`'MobiCell'`/`'MobiUp'`)
-- `rm` (`!= 'Toti'`) → `regional`
-- `asm` (`!= 'Toti'`) → `asm`
-
-Endpointurile salarii adauga `LEFT JOIN stores` **doar** cand `regional` sau `asm` sunt prezente (evita JOIN inutil).
-
----
-
-## Cum sa incepi o sesiune noua
-
-1. Citeste acest fisier
-2. Intreaba-l pe Andrei ce vrea sa lucreze azi
-
----
-
-## Verificare end-to-end dupa modificari backend
-
-Dupa orice import de date sau modificare backend (coloane noi, enrichment, logica noua):
-1. Query direct in DB — confirma ca valorile sunt corecte
-2. Apeleaza endpoint-ul API corespunzator — confirma ca returneaza valorile din DB
-3. Confirma ca frontend-ul citeste din sursa corecta (DB vs fisier JSON)
-
-Nu declara task-ul terminat inainte de aceasta verificare. Erorile de tipul `incentive_qty = 0` sau date lipsa apar exact din cauza ca pasul 3 e sarit.
-
----
-
-## CSS / Layout
-
-La orice modificare de CSS sau layout:
-- Testeaza atat pe mobile cat si pe desktop
-- Cand un element nu se redimensioneaza corect, verifica: `box-sizing`, `overflow`, constrangerile containerului parinte — nu doar elementul tinta
-- Daca utilizatorul raporteaza ca problema e inca vizibila, cere descrierea exacta sau un screenshot inainte de urmatorul fix
-
----
-
-## Graphify (skill `/graphify`)
-
-Skill versionat in `.claude/skills/graphify/SKILL.md` — calatoreste cu repo-ul, disponibil pe orice masina unde clonezi proiectul. Transforma codul + docs intr-un knowledge graph (HTML + JSON + `GRAPH_REPORT.md`).
-
-**Dependenta**: necesita `graphifyy` (Python 3.10+) instalat pe masina respectiva pentru utilitarele CLI (path / explain / query / update / cluster-only):
+### Import campanie incentive noua
 ```bash
-python3 -m venv ~/.venvs/graphify && ~/.venvs/graphify/bin/pip install graphifyy
+cd /opt/Mobiup/unihub/backend
+source venv/bin/activate
+python3 scripts/import_incentive_campaign.py \
+    --month 2026-05 \
+    --title "Incentive Mai 2026" \
+    --file "NumeFisier.xlsx" \
+    --sheet Sheet1 \
+    [--header 1]
 ```
 
-Invocare din Claude Code: `/graphify .` (prima data — full pipeline) sau `/graphify . --update` (incremental, doar AST). Output-ul merge in `graphify-out/` care e in `.gitignore`.
+## Targete magazine
 
----
+- Tabel: `store_targets (site_code, import_month, target_value)`
+- Format fisier nou per luna: coloane `Regional, ASM, Firma, Locatie, Cod, Target` (sheet `target`)
+- **Nu** folosi `load_targets_dataframe()` pentru acest format (aceea e pentru `Istoric targete.xlsx`)
+- Import: script Python direct cu `upsert_store_targets()`, din `backend/` cu venv activat
+
+## Scripts utile (`backend/scripts/`)
+| Script | Scop |
+|--------|------|
+| `import_historical.py` | Import batch fisiere vechi 2023/2024 (fara Agent/Categorie) |
+| `import_annual_summary.py` | Import rezumat anual `vanzari 2022 si 2023.xlsx` |
+| `import_incentive_campaign.py` | Import campanie incentive din Excel in DB |
+| `rebuild_reporting.py` | Reconstruieste agregatele reporting (toate lunile / una anume) |
+| `seed.py` | Seed complet din `data/` |
+
+## Backup
+
+- Locatie unica: `/opt/Mobiup/backups/` — `postgres/`, `visits/`, `platforma-mobiup/`, `backup.log`
+- Script: `/opt/Mobiup/scripts/backup.sh`
+- Timer: `mobiup-backup.timer` (zilnic 03:00, retentie 30 zile)
+- Restore PG: `pg_restore -h localhost -U unihub -d unihub --clean <dump>`
+
+## Error Tracking intern
+
+**Backend:** `DBErrorHandler` in `logging_config.py` — `logging.ERROR+` → `error_logs` via `asyncio.create_task` (non-blocking). Atasat in `main.py` dupa `init_db_pool()`.
+
+**Frontend:**
+- `window.onerror` + `window.onunhandledrejection` in `src/main.tsx`
+- `ErrorBoundary.componentDidCatch` pentru crash-uri React
+- Toate → `POST /api/errors` (public, rate limit 10 req/min/IP)
+
+**Vizualizare:** Settings → "Erori sistem" (`ErrorLogsTab.tsx`). Filtre sursa/seen, modal traceback, buton "Marcheaza toate ca vazute".
+
+**Badge:** `App.tsx` poll `/api/admin/error-logs/unseen-count` la 60s.
+
+**Cleanup auto:** la boot, intrari > 30 zile sterse (`delete_old_logs`).
+
+## JSON structured logging
+
+`LOG_FORMAT=json` → fiecare linie log = obiect JSON cu `ts`, `level`, `logger`, `message`, `exc_info`. Implicit: format text uvicorn. Util pentru `jq` / Grafana Loki.
+
+## Skills
+
+- `/graphify` — knowledge graph din cod + docs (HTML + JSON + `GRAPH_REPORT.md`). Versiunat in `.claude/skills/graphify/SKILL.md`. Necesita `graphifyy` (Python 3.10+): `python3 -m venv ~/.venvs/graphify && ~/.venvs/graphify/bin/pip install graphifyy`. Output → `graphify-out/` (gitignored).
+
+## Gotchas
+
+- **UniAI bridge session partitioning:** `BRIDGE_USER_ID = "default"` (constanta in `ai.py`) — nu exista auth per-user
+- **Mobile address-bar jump fix:** tabul AI are `overflow-hidden` (nu `overflow-y-auto`) in `MainLayout.tsx` — scroll-ul e gestionat intern de messages area
+- **Promo_qty calculat dar neafisat:** SQL-ul returneaza `promo_qty` si pentru Istoric, dar componenta filtreaza la render pe RM/ASM/Agenti
+- **2023-2024 `agent = '-'`:** nu e bug, e lipsa coloana Agent in fisierele sursa
 
 ## Ce sa nu faci
 
-- Nu crea fisiere temporare in radacina proiectului (`fix.py`, `patch.txt`, etc.) — curata-le dupa
-- Nu modifica schema direct in DB
+- Nu crea fisiere temporare in radacina (`fix.py`, `patch.txt`) — curata-le
+- Nu modifica schema direct in DB — editeaza `schema_v2.sql`
 - Nu importa campanii incentive din Excel manual — foloseste `import_incentive_campaign.py`
-- Nu aplica fix-uri speculative in cascada fara sa diagnostichezi root cause-ul mai intai

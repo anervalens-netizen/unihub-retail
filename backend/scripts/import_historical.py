@@ -134,7 +134,6 @@ async def import_one(
         import_month=import_month,
         filename=path.name,
         rows_in_file=rows_total,
-        imported_by=None,
     )
 
     try:

@@ -148,9 +148,7 @@ export function MainLayout({
         <main
           className={cn(
             'flex-1 min-h-0',
-            activeTab === 'ai'
-              ? 'overflow-hidden pb-[4.75rem] lg:pb-0'
-              : 'overflow-y-auto pb-24 lg:pb-6'
+            'overflow-y-auto pb-24 lg:pb-6'
           )}
         >
           {children}

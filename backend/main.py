@@ -12,6 +12,15 @@ setup_logging()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+import sentry_sdk
+
+sentry_dsn = os.getenv("VITE_GLITCHTIP_DSN", os.getenv("SENTRY_DSN"))
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        traces_sample_rate=0.1,
+    )
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -25,7 +34,7 @@ from db.connection import (
     init_db_pool,
     prewarm_pool,
 )
-from routers import agents, ai, campaigns, crm, dashboard, errors, filters, hr, imports, salarii, stores, tasks, visits_report
+from routers import agents, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.visits_sync import sync_visits_snapshot
 
@@ -51,11 +60,6 @@ async def lifespan(_: FastAPI):
         synced = await sync_visits_snapshot(conn)
         logger.info("visits_snapshot synced at boot: %d rows", synced)
     prewarm_special_cards_cache()
-    from routers.errors import delete_old_logs
-    async with current_pool.acquire() as conn:
-        deleted_errors = await delete_old_logs(conn, days=30)
-        if deleted_errors:
-            logger.info("error_logs cleanup: %d rows deleted (>30 days)", deleted_errors)
     yield
     await close_db_pool()
 
@@ -78,7 +82,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(ai.router)
 app.include_router(agents.router)
 app.include_router(campaigns.router)
 app.include_router(dashboard.router)
@@ -90,7 +93,6 @@ app.include_router(visits_report.router)
 app.include_router(tasks.router)
 app.include_router(hr.router)
 app.include_router(crm.router)
-app.include_router(errors.router)
 
 
 @app.get("/health")

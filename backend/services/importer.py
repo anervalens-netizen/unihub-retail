@@ -154,20 +154,18 @@ async def insert_snapshot(
     import_month: str,
     filename: str,
     rows_in_file: int,
-    imported_by: int | None = None,
 ) -> int:
     row = await conn.fetchrow(
         """
         INSERT INTO import_snapshots (
-            import_month, filename, rows_in_file, status, imported_by, is_month_final
+            import_month, filename, rows_in_file, status, is_month_final
         )
-        VALUES ($1, $2, $3, 'processing', $4, $5)
+        VALUES ($1, $2, $3, 'processing', $4)
         RETURNING id
         """,
         import_month,
         filename,
         rows_in_file,
-        imported_by,
         is_month_final(import_month),
     )
     if row is None:
@@ -294,7 +292,6 @@ async def import_sales_dataframe(
     conn: asyncpg.Connection,
     df: pd.DataFrame,
     filename: str,
-    imported_by: int | None = None,
 ) -> ImportResult:
     rows_in_file_total = len(df)
 
@@ -311,7 +308,6 @@ async def import_sales_dataframe(
         import_month=import_month,
         filename=filename,
         rows_in_file=rows_in_file_total,
-        imported_by=imported_by,
     )
     try:
         async with conn.transaction():
@@ -366,10 +362,9 @@ async def import_sales_file(
     conn: asyncpg.Connection,
     source: str | Path | bytes,
     filename: str,
-    imported_by: int | None = None,
 ) -> ImportResult:
     df = load_sales_dataframe(source)
-    return await import_sales_dataframe(conn, df, filename=filename, imported_by=imported_by)
+    return await import_sales_dataframe(conn, df, filename=filename)
 
 
 def load_targets_dataframe(source: str | Path) -> list[dict[str, Any]]:

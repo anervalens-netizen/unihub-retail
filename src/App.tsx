@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
-import { getUnseenCount } from './api/errors';
+
 import { getAvailableMonths } from './api/filters';
 import { defaultAppFilters } from './lib/filterValues';
 import type { ManagementTab } from './lib/tabs';
@@ -14,7 +14,6 @@ const Dashboard = lazy(() =>
 const Agents = lazy(() =>
   import('./components/Agents').then((module) => ({ default: module.Agents }))
 );
-const AIChat = lazy(() => import('./components/AIChat'));
 const Settings = lazy(() =>
   import('./components/Settings').then((module) => ({ default: module.Settings }))
 );
@@ -22,13 +21,12 @@ const Management = lazy(() =>
   import('./components/Management').then((module) => ({ default: module.Management }))
 );
 
-type ActiveTab = 'hub' | 'focus' | 'agents' | 'management' | 'ai' | 'settings';
+type ActiveTab = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
 type CampaignsSection = 'campaigns' | 'focus';
 
 const defaultFilters: AppFilters = defaultAppFilters();
 
 export default function App() {
-  const [errorCount, setErrorCount] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const saved = localStorage.getItem('unihub_active_tab');
     return (saved as ActiveTab) || 'hub';
@@ -105,20 +103,7 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    async function poll() {
-      try {
-        const count = await getUnseenCount();
-        setErrorCount(count);
-      } catch {
-        // silent
-      }
-    }
 
-    void poll();
-    const interval = setInterval(() => { void poll(); }, 60_000);
-    return () => clearInterval(interval);
-  }, []);
 
   const activeFilters =
     activeTab === 'focus'
@@ -160,7 +145,6 @@ export default function App() {
       showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
       mgmtSubTab={mgmtSubTab}
       setMgmtSubTab={setMgmtSubTab}
-      errorCount={errorCount}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
@@ -184,7 +168,6 @@ export default function App() {
             setActiveSubTab={setMgmtSubTab}
           />
         )}
-        {activeTab === 'ai' && <AIChat />}
         {activeTab === 'settings' && (
           <Settings
             theme={theme}
@@ -196,7 +179,6 @@ export default function App() {
               });
               setCurrentMonth(month);
             }}
-            onUnseenCountChange={setErrorCount}
           />
         )}
       </Suspense>

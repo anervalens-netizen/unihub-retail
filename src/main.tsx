@@ -1,31 +1,34 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import {postFrontendError} from './api/errors';
 import App from './App.tsx';
 import './index.css';
 
-window.onerror = (message, _source, lineno, colno, error) => {
-  postFrontendError({
-    message: String(message),
-    traceback: error?.stack ?? null,
-    path: window.location.pathname,
-    extra: { lineno, colno },
-  });
-};
+import * as Sentry from '@sentry/react';
 
-window.onunhandledrejection = (event: PromiseRejectionEvent) => {
-  const reason = event.reason as { message?: string; stack?: string } | string | undefined;
-  postFrontendError({
-    message: reason && typeof reason === 'object' && reason.message
-      ? reason.message
-      : String(reason ?? 'Unhandled rejection'),
-    traceback: reason && typeof reason === 'object' ? reason.stack ?? null : null,
-    path: window.location.pathname,
+const sentryDsn = import.meta.env.VITE_GLITCHTIP_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: import.meta.env.MODE,
+    tracesSampleRate: 0.1,
   });
-};
+}
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </StrictMode>,
 );
