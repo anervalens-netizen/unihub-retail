@@ -4,6 +4,8 @@ import { MainLayout, type AppFilters } from './components/MainLayout';
 import { getAvailableMonths } from './api/filters';
 import { defaultAppFilters } from './lib/filterValues';
 import type { ManagementTab } from './lib/tabs';
+import { useAuth } from './auth/AuthContext';
+import { setAccessTokenProvider } from './api/client';
 
 const Campaigns = lazy(() =>
   import('./components/Campaigns').then((module) => ({ default: module.Campaigns }))
@@ -27,6 +29,12 @@ type CampaignsSection = 'campaigns' | 'focus';
 const defaultFilters: AppFilters = defaultAppFilters();
 
 export default function App() {
+  const { isAuthenticated, isLoading: isAuthLoading, login, getAccessToken } = useAuth();
+
+  useEffect(() => {
+    setAccessTokenProvider(getAccessToken);
+  }, [getAccessToken]);
+
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const saved = localStorage.getItem('unihub_active_tab');
     return (saved as ActiveTab) || 'hub';
@@ -123,10 +131,19 @@ export default function App() {
     </div>
   );
 
-  if (bootstrapping) {
+  if (isAuthLoading || bootstrapping) {
     return (
       <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">
         Se incarca...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex h-full items-center justify-center flex-col gap-4">
+        <p className="text-sm font-semibold text-slate-500">Nu ești autentificat.</p>
+        <button onClick={login} className="px-4 py-2 bg-blue-600 text-white rounded">Login</button>
       </div>
     );
   }

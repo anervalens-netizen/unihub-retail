@@ -10,7 +10,7 @@ from logging_config import attach_db_error_handler, setup_logging
 setup_logging()
 
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 import sentry_sdk
@@ -34,6 +34,7 @@ from db.connection import (
     init_db_pool,
     prewarm_pool,
 )
+from auth import require_auth
 from routers import agents, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.visits_sync import sync_visits_snapshot
@@ -82,17 +83,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(agents.router)
-app.include_router(campaigns.router)
-app.include_router(dashboard.router)
-app.include_router(filters.router)
-app.include_router(imports.router)
-app.include_router(stores.router)
-app.include_router(salarii.router)
-app.include_router(visits_report.router)
-app.include_router(tasks.router)
-app.include_router(hr.router)
-app.include_router(crm.router)
+_auth = [Depends(require_auth)]
+
+app.include_router(agents.router, dependencies=_auth)
+app.include_router(campaigns.router, dependencies=_auth)
+app.include_router(dashboard.router, dependencies=_auth)
+app.include_router(filters.router, dependencies=_auth)
+app.include_router(imports.router, dependencies=_auth)
+app.include_router(stores.router, dependencies=_auth)
+app.include_router(salarii.router, dependencies=_auth)
+app.include_router(visits_report.router, dependencies=_auth)
+app.include_router(tasks.router, dependencies=_auth)
+app.include_router(hr.router, dependencies=_auth)
+app.include_router(crm.router, dependencies=_auth)
 
 
 @app.get("/health")

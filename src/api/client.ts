@@ -9,6 +9,20 @@ function resolveApiBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
+let getAccessTokenFn: (() => string | null) | null = null;
+
+export const setAccessTokenProvider = (fn: () => string | null) => {
+  getAccessTokenFn = fn;
+};
+
+function getAuthHeaders(existingHeaders: Record<string, string> = {}): Record<string, string> {
+  const token = getAccessTokenFn?.();
+  if (token) {
+    return { ...existingHeaders, Authorization: `Bearer ${token}` };
+  }
+  return existingHeaders;
+}
+
 export const client = {
   get: async <T = any>(url: string, options?: { params?: Record<string, any>; responseType?: 'blob' | 'json' }): Promise<{ data: T }> => {
     let fullUrl = API_BASE_URL === '/' ? url : `${API_BASE_URL}${url}`;
@@ -26,11 +40,11 @@ export const client = {
       }
     }
 
+    const headers = getAuthHeaders({ 'Content-Type': 'application/json' });
+
     const response = await fetch(fullUrl, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     });
 
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -62,10 +76,11 @@ export const client = {
     
     // Auto-detect FormData so we don't set Content-Type to JSON
     const isFormData = data instanceof FormData;
-    const headers: Record<string, string> = { ...options?.headers };
+    let headers: Record<string, string> = { ...options?.headers };
     if (!isFormData && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
+    headers = getAuthHeaders(headers);
 
     const response = await fetch(fullUrl, {
       method: 'POST',
@@ -80,9 +95,10 @@ export const client = {
 
   put: async <T = any>(url: string, data?: any): Promise<{ data: T }> => {
     const fullUrl = API_BASE_URL === '/' ? url : `${API_BASE_URL}${url}`;
+    const headers = getAuthHeaders({ 'Content-Type': 'application/json' });
     const response = await fetch(fullUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: data ? JSON.stringify(data) : undefined,
     });
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -92,9 +108,10 @@ export const client = {
 
   patch: async <T = any>(url: string, data?: any): Promise<{ data: T }> => {
     const fullUrl = API_BASE_URL === '/' ? url : `${API_BASE_URL}${url}`;
+    const headers = getAuthHeaders({ 'Content-Type': 'application/json' });
     const response = await fetch(fullUrl, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: data ? JSON.stringify(data) : undefined,
     });
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -104,8 +121,10 @@ export const client = {
 
   delete: async <T = any>(url: string): Promise<{ data: T }> => {
     const fullUrl = API_BASE_URL === '/' ? url : `${API_BASE_URL}${url}`;
+    const headers = getAuthHeaders();
     const response = await fetch(fullUrl, {
       method: 'DELETE',
+      headers,
     });
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     const responseData = await response.json();

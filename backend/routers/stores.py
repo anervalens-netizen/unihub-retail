@@ -1,40 +1,34 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from db.connection import get_pool
 from models import StoreOption, StoreTargetInput
+from repositories.stores import StoresRepository
 from routers.filters import clear_filter_options_cache
-from services.importer import upsert_store_targets
+from services.stores import StoresService
 
 router = APIRouter(prefix="/api/stores", tags=["stores"])
 
 
-@router.get("", response_model=list[StoreOption])
-async def list_stores() -> list[StoreOption]:
+async def get_stores_service() -> StoresService:
     pool = await get_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT site_code, locatie, firma, regional, asm
-            FROM stores
-            WHERE is_active = true
-            ORDER BY locatie
-            """,
-        )
-    return [StoreOption(**dict(row)) for row in rows]
+    repo = StoresRepository(pool)
+    return StoresService(repo, pool)
+
+
+@router.get("", response_model=list[StoreOption])
+async def list_stores(
+    svc: StoresService = Depends(get_stores_service),
+) -> list[StoreOption]:
+    return await svc.get_active_stores()
 
 
 @router.post("/targets")
 async def save_targets(
     payload: list[StoreTargetInput],
+    svc: StoresService = Depends(get_stores_service),
 ) -> dict[str, int]:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        inserted = await upsert_store_targets(
-            conn,
-            [item.model_dump() for item in payload],
-            source_file="manual-api",
-        )
+    inserted = await svc.save_targets([item.model_dump() for item in payload])
     clear_filter_options_cache()
     return {"inserted": inserted}
