@@ -21,6 +21,10 @@ backend/data/
 # Backend virtual environment
 backend/venv/
 
+# Playwright
+playwright-report/
+test-results/
+
 # graphify tooling internals
 graphify-out/.graphify_*
 entities.json

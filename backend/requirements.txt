@@ -13,3 +13,4 @@ xlrd==2.0.2
 sentry-sdk==2.19.2
 prometheus-client==0.25.0
 structlog==25.5.0
+arq==0.28.0

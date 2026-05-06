@@ -1,0 +1,19 @@
+[Unit]
+Description=UniHub Retail background job worker (arq)
+After=network.target valkey.service mobiup-dwh-postgres.service
+Requires=valkey.service
+
+[Service]
+Type=simple
+User=andrei
+WorkingDirectory=/opt/Mobiup/unihub-retail/backend
+Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
+ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=unihub-worker
+
+[Install]
+WantedBy=multi-user.target

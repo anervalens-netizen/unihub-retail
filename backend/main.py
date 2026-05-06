@@ -44,6 +44,7 @@ from auth import require_auth
 from routers import agents, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.visits_sync import sync_visits_snapshot
+from services.jobs import close_arq_pool, get_arq_pool
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,10 @@ async def lifespan(_: FastAPI):
         synced = await sync_visits_snapshot(conn)
         logger.info("visits_snapshot synced at boot: %d rows", synced)
     prewarm_special_cards_cache()
+    await get_arq_pool()
+    logger.info("arq worker pool initialized")
     yield
+    await close_arq_pool()
     await close_db_pool()
 
 

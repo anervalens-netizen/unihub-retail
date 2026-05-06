@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 
 from db.connection import get_pool
-from models import ImportHistoryEntry, ImportResponse
+from models import ImportHistoryEntry, ImportJobStatus, ImportResponse
 from repositories.imports import ImportsRepository
 from services.imports import ImportsService
 
@@ -15,12 +15,21 @@ async def get_imports_service() -> ImportsService:
     return ImportsService(repo, pool)
 
 
-@router.post("/sales", response_model=ImportResponse)
+@router.post("/sales", response_model=ImportResponse | ImportJobStatus)
 async def upload_sales_file(
     file: UploadFile = File(...),
+    background: bool = Query(False, description="Process import asynchronously in background"),
     svc: ImportsService = Depends(get_imports_service),
-) -> ImportResponse:
-    return await svc.import_sales(file)
+) -> ImportResponse | ImportJobStatus:
+    return await svc.import_sales(file, background=background)
+
+
+@router.get("/jobs/{job_id}", response_model=ImportJobStatus)
+async def get_import_job_status(
+    job_id: str,
+    svc: ImportsService = Depends(get_imports_service),
+) -> ImportJobStatus:
+    return await svc.get_import_job_status(job_id)
 
 
 @router.get("/history", response_model=list[ImportHistoryEntry])

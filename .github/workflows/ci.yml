@@ -24,7 +24,7 @@ jobs:
 
       - name: Backend tests
         run: |
-          venv/bin/pytest . -v --tb=short
+          venv/bin/pytest . -v --tb=short --cov=. --cov-report=term-missing
         env:
           DATABASE_URL: postgresql://unihub_retail_app:${{ secrets.DB_PASSWORD }}@127.0.0.1:5433/unihub_retail
 
@@ -42,5 +42,43 @@ jobs:
           npx tsc --noEmit
           echo "TypeScript: OK"
 
+      - name: Unit tests
+        run: npm run test
+
       - name: Build
         run: npm run build
+
+      - name: Upload source maps to GlitchTip
+        if: success()
+        env:
+          GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
+        run: |
+          if [ -n "$GLITCHTIP_DSN" ]; then
+            npx @sentry/cli sourcemaps upload \
+              --url "${GLITCHTIP_DSN}" \
+              --org unihub \
+              --project retail \
+              ./dist 2>/dev/null || echo "Source maps upload skipped (GlitchTip CLI not configured)"
+          else
+            echo "No SENTRY_DSN set, skipping source maps upload"
+          fi
+
+  e2e-tests:
+    runs-on: [self-hosted, unihub-server]
+    needs: [backend-check, frontend-check]
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+        env:
+          CI: 'true'

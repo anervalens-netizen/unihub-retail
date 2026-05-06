@@ -1,6 +1,6 @@
 # CLAUDE.md — UniHub Retail
 
-**Phase: C3.7 (Modernization) — 2026-05-06**
+**Phase: C3 Complete (11/11) — 2026-05-06 | Pending: E2E tests, source maps, coverage**
 
 ## Overview
 
@@ -134,7 +134,7 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 
 ## Observability
 
-- **Error tracking:** GlitchTip via `sentry-sdk` (backend) / `@sentry/react` (frontend). DSN in `.env` (`SENTRY_DSN` / `VITE_SENTRY_DSN`).
+- **Error tracking:** GlitchTip via `sentry-sdk` (backend) / `@sentry/react` (frontend). DSN in `.env` (`SENTRY_DSN` / `VITE_SENTRY_DSN`). Source maps upload in CI post-build.
 - **Metrics:** `/metrics` endpoint with `prometheus_client`. Scraped by Prometheus.
 - **Structured logging:** `LOG_FORMAT=json` for JSON lines, `LOG_FORMAT=structlog` for structlog.
 - **DB error logging:** `DBErrorHandler` in `logging_config.py` (optional).
@@ -143,8 +143,24 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 
 Workflow: `.github/workflows/ci.yml`
 - Runner: `unihub-server-runner` (self-hosted)
-- Backend: mypy typecheck + pytest
-- Frontend: tsc --noEmit + npm run build
+- Backend: mypy typecheck + pytest + coverage
+- Frontend: tsc --noEmit + vitest + build
+- E2E: playwright tests (chromium)
+- Source maps: upload to GlitchTip post-build
+
+**Runner startup:**
+```bash
+cd /opt/Mobiup/gh-runner
+./run.sh
+```
+
+**Background worker (arq + Valkey):**
+```bash
+sudo systemctl enable --now valkey
+sudo cp /opt/Mobiup/unihub-retail/unihub-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now unihub-worker
+```
 
 ## Conventions
 
@@ -167,7 +183,7 @@ Workflow: `.github/workflows/ci.yml`
 - **Promo_qty calculat dar neafisat:** SQL returneaza promo_qty si pentru Istoric, componenta filtreaza la render pe RM/ASM/Agenti
 - **Auth routes public:** `/health`, `/metrics`, `/auth/callback` (frontend), SPA static files — nu necesita authentik
 - **Import Excel:** maintain `import_sales_file()` in `services/importer.py`; nu introduce axios back
-- **Doua baze de date PG separate:** `unihub_postgres` (port 5432, DB `unihub`) = retail production cu 33 luni date; `mobiup-dwh-postgres` (port 5433) = DWH + Academy + Faza A4 DB-uri. NU confunda — `.env` DATABASE_URL TREBUIE sa pointeze la 5432/unihub
+- **O singura baza de date PG:** `mobiup-dwh-postgres` (port 5433, DB `unihub_retail`) = retail production (C3.7 migrated). NU mai exista DB-ul vechi pe 5432.
 - **`get_dashboard_all` trebuie sa includa `special_cards`:** fara ele, Hub tab arata "Incentive neconfigurat". Apelul la `_get_special_cards_data()` e in `asyncio.gather` alaturi de celelalte query-uri
 - **Campaigns tab `promoMonth` state:** permite selectia lunii pentru promo/incentive, independent de `currentMonth`. `loadCurrentFocus` foloseste `promoMonth`, nu `currentMonth`
 - **`get_promotions_incentives` response:** TREBUIE sa returneze `top_agents`, `incentive_categories`, `incentive_product_count`, `promo_category_qty` — frontend-ul le acceseaza direct (ex: `promoData.top_agents.length`)
@@ -179,5 +195,5 @@ Workflow: `.github/workflows/ci.yml`
 - Nu readauga axios — foloseste fetch wrapper-ul din `api/client.ts`
 - Nu reintroduce auth local — doar OIDC via authentik
 - Nu scoate stratul de service/repository din routere
-- Nu schimba DATABASE_URL la alt port/DB — retail e pe 5432/unihub, NU pe 5433/unihub_retail
+- Nu schimba DATABASE_URL la alt port/DB — retail e pe 5433/unihub_retail (mobiup-dwh-postgres)
 - Nu returna raspunsuri partiale din `get_promotions_incentives` — frontend-ul crashuieste pe `undefined.length`

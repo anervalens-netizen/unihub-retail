@@ -309,6 +309,11 @@ class ImportResponse(BaseModel):
     is_month_final: bool
 
 
+class ImportJobStatus(BaseModel):
+    job_id: str
+    status: str
+
+
 class VisitReportRow(BaseModel):
     magazin: str
     asm: str | None
