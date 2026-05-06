@@ -1,6 +1,6 @@
-"""Structured JSON logging configuration.
+"""Structured JSON/structlog logging configuration.
 
-Activat cu LOG_FORMAT=json în environment.
+Activat cu LOG_FORMAT=json sau LOG_FORMAT=structlog în environment.
 Fără această variabilă, comportamentul e identic cu stdlib default (text plain).
 
 Usage în main.py (top-level, înainte de FastAPI()):
@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from typing import Any
 
 # Câmpuri interne Python LogRecord care nu au valoare în JSON output
 _SKIP_FIELDS = frozenset(
@@ -75,11 +76,16 @@ def setup_logging(fmt: str | None = None) -> None:
     """Configurează logging-ul aplicației.
 
     Args:
-        fmt: "json" pentru JSON structurat, altceva/None pentru text plain.
+        fmt: "json" pentru JSON structurat, "structlog" pentru structlog,
+             altceva/None pentru text plain.
              Dacă nu e specificat, citește din LOG_FORMAT env var.
     """
     if fmt is None:
         fmt = os.getenv("LOG_FORMAT", "text")
+
+    if fmt == "structlog":
+        _setup_structlog()
+        return
 
     if fmt != "json":
         # Comportament default — nu modificăm nimic
@@ -97,6 +103,51 @@ def setup_logging(fmt: str | None = None) -> None:
 
     # uvicorn creează loggerii proprii cu propagate=False —
     # trebuie configurați explicit
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.addHandler(handler)
+        uvicorn_logger.propagate = False
+
+
+def _setup_structlog() -> None:
+    import structlog
+
+    timestamper = structlog.processors.TimeStamper(fmt="iso")
+    shared_processors: list[Any] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        timestamper,
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+    ]
+
+    structlog.configure(
+        processors=shared_processors
+        + [structlog.stdlib.ProcessorFormatter.remove_processors_meta],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processor=structlog.processors.JSONRenderer(),
+        foreign_pre_chain=shared_processors,
+    )
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers.clear()
@@ -147,7 +198,7 @@ class DBErrorHandler(logging.Handler):
             message = record.getMessage()
             traceback_text: str | None = None
             if record.exc_info:
-                traceback_text = self.formatException(record.exc_info)
+                traceback_text = self.formatException(record.exc_info)  # type: ignore[attr-defined]
 
             extra_data = {
                 k: v for k, v in record.__dict__.items()

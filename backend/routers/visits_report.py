@@ -1,115 +1,23 @@
 from __future__ import annotations
 
-import asyncio
 import mimetypes
-import os
-import sqlite3
-from collections import defaultdict
-from functools import partial
-from pathlib import Path
-from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from models import (
-    AsmGroup,
-    VisitDayGroup,
     VisitDetail,
-    VisitMonthGroup,
     VisitReportResponse,
-    VisitReportRow,
-    VisitSummaryItem,
     VisitTreeResponse,
 )
-from services.filters import normalize_filter
-
-VISITS_DB = Path(os.getenv("VISITS_DB_PATH", "/opt/Mobiup/unihub/data/visits/visits.db"))
-IMAGES_DIR = Path(os.getenv("VISITS_IMAGES_DIR", "/opt/Mobiup/unihub/data/visits/images"))
+from repositories.visits_report import VisitsReportRepository
+from services.visits_report import VisitsReportService
 
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
 
-
-def _build_clauses(
-    filters: dict[str, str | None],
-    month: str | None = None,
-) -> tuple[list[str], list[Any]]:
-    clauses: list[str] = ["status != 'draft'"]
-    params: list[Any] = []
-
-    if month:
-        clauses.append("strftime('%Y-%m', data_raport) = ?")
-        params.append(month)
-    if filters.get("firma"):
-        clauses.append("firma = ?")
-        params.append(filters["firma"])
-    if filters.get("rm"):
-        clauses.append("regional = ?")
-        params.append(filters["rm"])
-    if filters.get("asm"):
-        clauses.append("asm = ?")
-        params.append(filters["asm"])
-    if filters.get("magazin"):
-        clauses.append("magazin = ?")
-        params.append(filters["magazin"])
-
-    return clauses, params
-
-
-def _photo_filenames(visit_id: str) -> list[str]:
-    folder = IMAGES_DIR / visit_id
-    if not folder.exists():
-        return []
-    return sorted(p.name for p in folder.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"})
-
-
-def _query_sqlite(month: str, filters: dict[str, str | None]) -> dict:
-    if not VISITS_DB.exists():
-        return {"total": 0, "magazine_unice": 0, "avg_completion": 0.0, "rows": []}
-
-    clauses, params = _build_clauses(filters, month=month)
-    where = " AND ".join(clauses)
-
-    con = sqlite3.connect(f"file:{VISITS_DB}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
-    try:
-        cur = con.cursor()
-        summary = cur.execute(
-            f"""
-            SELECT COUNT(*) AS total_vizite,
-                   COUNT(DISTINCT magazin) AS magazine_unice,
-                   ROUND(AVG(completion_pct), 1) AS avg_completion
-            FROM visits WHERE {where}
-            """,
-            params,
-        ).fetchone()
-
-        rows = cur.execute(
-            f"""
-            SELECT magazin, asm, regional, firma,
-                   COUNT(*) AS nr_vizite,
-                   ROUND(AVG(completion_pct), 1) AS avg_completion,
-                   ROUND(100.0 * SUM(curatenie)     / COUNT(*), 1) AS curatenie_pct,
-                   ROUND(100.0 * SUM(imagine)       / COUNT(*), 1) AS imagine_pct,
-                   ROUND(100.0 * SUM(uniforma)      / COUNT(*), 1) AS uniforma_pct,
-                   ROUND(100.0 * SUM(afise)         / COUNT(*), 1) AS afise_pct,
-                   ROUND(100.0 * SUM(produse_promo) / COUNT(*), 1) AS produse_promo_pct,
-                   MAX(data_raport) AS last_visit
-            FROM visits WHERE {where}
-            GROUP BY magazin, asm, regional, firma
-            ORDER BY nr_vizite DESC, magazin ASC
-            """,
-            params,
-        ).fetchall()
-    finally:
-        con.close()
-
-    return {
-        "total": summary["total_vizite"] if summary else 0,
-        "magazine_unice": summary["magazine_unice"] if summary else 0,
-        "avg_completion": float(summary["avg_completion"]) if summary and summary["avg_completion"] else 0.0,
-        "rows": [dict(r) for r in rows],
-    }
+async def get_visits_service() -> VisitsReportService:
+    repo = VisitsReportRepository()
+    return VisitsReportService(repo)
 
 
 @router.get("", response_model=VisitReportResponse)
@@ -119,70 +27,9 @@ async def get_visits_report(
     rm: str | None = None,
     asm: str | None = None,
     magazin: str | None = None,
+    svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitReportResponse:
-    if not VISITS_DB.exists():
-        raise HTTPException(status_code=503, detail="Baza de date vizite nu este disponibila.")
-
-    filters = {
-        "firma": normalize_filter(firma),
-        "rm": normalize_filter(rm),
-        "asm": normalize_filter(asm),
-        "magazin": normalize_filter(magazin),
-    }
-
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, partial(_query_sqlite, month, filters))
-
-    report_rows = [
-        VisitReportRow(
-            magazin=r["magazin"] or "",
-            asm=r["asm"],
-            regional=r["regional"],
-            firma=r["firma"],
-            nr_vizite=r["nr_vizite"],
-            avg_completion=float(r["avg_completion"]) if r["avg_completion"] else 0.0,
-            curatenie_pct=float(r["curatenie_pct"]) if r["curatenie_pct"] else 0.0,
-            imagine_pct=float(r["imagine_pct"]) if r["imagine_pct"] else 0.0,
-            uniforma_pct=float(r["uniforma_pct"]) if r["uniforma_pct"] else 0.0,
-            afise_pct=float(r["afise_pct"]) if r["afise_pct"] else 0.0,
-            produse_promo_pct=float(r["produse_promo_pct"]) if r["produse_promo_pct"] else 0.0,
-            last_visit=r["last_visit"],
-        )
-        for r in result["rows"]
-    ]
-
-    return VisitReportResponse(
-        month=month,
-        total_vizite=result["total"],
-        magazine_unice=result["magazine_unice"],
-        avg_completion=result["avg_completion"],
-        rows=report_rows,
-    )
-
-
-def _query_tree(filters: dict[str, str | None]) -> list[dict]:
-    if not VISITS_DB.exists():
-        return []
-
-    clauses, params = _build_clauses(filters)
-    where = " AND ".join(clauses)
-
-    con = sqlite3.connect(f"file:{VISITS_DB}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
-    try:
-        rows = con.execute(
-            f"""
-            SELECT id, data_raport, ora_trimitere, asm, magazin, firma,
-                   completion_pct, foto1, foto2, foto3, foto4
-            FROM visits WHERE {where}
-            ORDER BY asm ASC, data_raport DESC, ora_trimitere DESC
-            """,
-            params,
-        ).fetchall()
-    finally:
-        con.close()
-
-    return [dict(r) for r in rows]
+    return await svc.get_visits_report(month, firma, rm, asm, magazin)
 
 
 @router.get("/tree", response_model=VisitTreeResponse)
@@ -191,132 +38,31 @@ async def get_visits_tree(
     rm: str | None = None,
     asm: str | None = None,
     magazin: str | None = None,
+    svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitTreeResponse:
-    if not VISITS_DB.exists():
-        raise HTTPException(status_code=503, detail="Baza de date vizite nu este disponibila.")
-
-    filters = {
-        "firma": normalize_filter(firma),
-        "rm": normalize_filter(rm),
-        "asm": normalize_filter(asm),
-        "magazin": normalize_filter(magazin),
-    }
-
-    loop = asyncio.get_running_loop()
-    rows = await loop.run_in_executor(None, partial(_query_tree, filters))
-
-    asm_map: dict[str, dict[str, dict[str, list[VisitSummaryItem]]]] = defaultdict(
-        lambda: defaultdict(lambda: defaultdict(list))
-    )
-
-    for r in rows:
-        asm_key = r["asm"] or "—"
-        month_key = r["data_raport"][:7] if r["data_raport"] else "—"
-        day_key = r["data_raport"] or "—"
-        has_photos = any(r[f"foto{i}"] for i in range(1, 5))
-        asm_map[asm_key][month_key][day_key].append(
-            VisitSummaryItem(
-                id=r["id"],
-                magazin=r["magazin"] or "",
-                ora=r["ora_trimitere"],
-                completion_pct=r["completion_pct"],
-                firma=r["firma"],
-                has_photos=has_photos,
-            )
-        )
-
-    asms: list[AsmGroup] = []
-    for asm_key in sorted(asm_map):
-        months: list[VisitMonthGroup] = []
-        for month_key in sorted(asm_map[asm_key], reverse=True):
-            days: list[VisitDayGroup] = []
-            for day_key in sorted(asm_map[asm_key][month_key], reverse=True):
-                visits = asm_map[asm_key][month_key][day_key]
-                days.append(VisitDayGroup(date=day_key, nr_vizite=len(visits), visits=visits))
-            total_month = sum(d.nr_vizite for d in days)
-            months.append(VisitMonthGroup(month=month_key, nr_vizite=total_month, days=days))
-        total_asm = sum(m.nr_vizite for m in months)
-        asms.append(AsmGroup(asm=asm_key, nr_vizite=total_asm, months=months))
-
-    return VisitTreeResponse(asms=asms)
-
-
-def _query_visit(visit_id: str) -> dict | None:
-    if not VISITS_DB.exists():
-        return None
-    con = sqlite3.connect(f"file:{VISITS_DB}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
-    try:
-        row = con.execute("SELECT * FROM visits WHERE id = ?", [visit_id]).fetchone()
-    finally:
-        con.close()
-    return dict(row) if row else None
+    return await svc.get_visits_tree(firma, rm, asm, magazin)
 
 
 @router.get("/visit/{visit_id}", response_model=VisitDetail)
 async def get_visit_detail(
     visit_id: str,
+    svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitDetail:
-    loop = asyncio.get_running_loop()
-    row = await loop.run_in_executor(None, partial(_query_visit, visit_id))
-    if row is None:
-        raise HTTPException(status_code=404, detail="Vizita nu a fost gasita.")
-
-    photos = _photo_filenames(visit_id)
-
-    def _b(v: Any) -> bool:
-        return bool(v) if v is not None else False
-
-    return VisitDetail(
-        id=row["id"],
-        data_raport=row["data_raport"],
-        ora_trimitere=row["ora_trimitere"],
-        firma=row["firma"],
-        regional=row["regional"],
-        asm=row["asm"],
-        magazin=row["magazin"],
-        durata_vizita_ore=row["durata_vizita_ore"],
-        curatenie=_b(row["curatenie"]),
-        imagine=_b(row["imagine"]),
-        uniforma=_b(row["uniforma"]),
-        afise=_b(row["afise"]),
-        produse_promo=_b(row["produse_promo"]),
-        tpu=row["tpu"],
-        sticla=row["sticla"],
-        altele=row["altele"],
-        avizat=_b(row["avizat"]),
-        charisma=row["charisma"],
-        casa=row["casa"],
-        incarcari_epay=row["incarcari_epay"],
-        incarcari_charisma=row["incarcari_charisma"],
-        agent1_nume=row["agent1_nume"],
-        agent1_perf=row["agent1_perf"],
-        agent1_doi_pe_bon=row["agent1_doi_pe_bon"],
-        agent1_focus=row["agent1_focus"],
-        agent1_analiza=row["agent1_analiza"],
-        agent1_plan=row["agent1_plan"],
-        agent2_nume=row["agent2_nume"],
-        agent2_perf=row["agent2_perf"],
-        agent2_doi_pe_bon=row["agent2_doi_pe_bon"],
-        agent2_focus=row["agent2_focus"],
-        agent2_analiza=row["agent2_analiza"],
-        agent2_plan=row["agent2_plan"],
-        photos=photos,
-        completion_pct=row["completion_pct"],
-        notes=row["notes"],
-    )
+    return await svc.get_visit_detail(visit_id)
 
 
 @router.get("/photo/{visit_id}/{filename}")
 async def get_visit_photo(
     visit_id: str,
     filename: str,
+    svc: VisitsReportService = Depends(get_visits_service),
 ) -> FileResponse:
     if "/" in filename or "\\" in filename or ".." in visit_id or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid path.")
 
-    photo_path = (IMAGES_DIR / visit_id / filename).resolve()
-    if not str(photo_path).startswith(str(IMAGES_DIR.resolve())):
+    photo_path = svc.repo.photo_path(visit_id, filename).resolve()
+    images_dir = svc.repo.images_dir_path().resolve()
+    if not str(photo_path).startswith(str(images_dir)):
         raise HTTPException(status_code=400, detail="Invalid path.")
     if not photo_path.exists():
         raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")

@@ -49,7 +49,10 @@ class DashboardRepository:
                     GROUP BY stg.import_month
                 ),
                 month_meta AS (
-                    SELECT import_month, is_month_final, days_in_month
+                    SELECT 
+                        import_month, 
+                        is_month_final,
+                        EXTRACT(DAY FROM (DATE(import_month || '-01') + INTERVAL '1 month' - INTERVAL '1 day'))::INT AS days_in_month
                     FROM import_snapshots
                     WHERE import_month = $1
                       AND status = 'completed'
@@ -63,8 +66,9 @@ class DashboardRepository:
                 cartele_summary AS (
                     SELECT
                         COALESCE(SUM(c.quantity), 0)::INT AS cartele_qty
-                    FROM cartela_sales c
+                    FROM sales_transactions c
                     WHERE c.import_month = $1
+                      AND c.is_cartela = true
                       AND EXISTS (
                           SELECT 1
                           FROM filtered_days fd
@@ -146,20 +150,19 @@ class DashboardRepository:
             return await conn.fetch(
                 f"""
                 WITH recent_months AS (
-                    SELECT import_month
-                    FROM (
-                        SELECT import_month
-                        FROM import_snapshots
-                        WHERE import_month <= $1
-                          AND status = 'completed'
-                        ORDER BY import_month DESC
-                        LIMIT $2
-                    ) months
+                    SELECT TO_CHAR(m, 'YYYY-MM') AS import_month
+                    FROM GENERATE_SERIES(
+                        ($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month',
+                        ($1 || '-01')::DATE,
+                        '1 month'::INTERVAL
+                    ) m
                 ),
                 filtered_days AS MATERIALIZED (
                     SELECT *
                     FROM reporting_agent_day agg
-                    WHERE {" AND ".join(sales_clauses)}
+                    WHERE agg.import_month >= TO_CHAR(($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month', 'YYYY-MM')
+                      AND agg.import_month <= $1
+                      {" AND " + " AND ".join(sales_clauses) if sales_clauses else ""}
                 ),
                 sales_summary AS (
                     SELECT
@@ -189,35 +192,32 @@ class DashboardRepository:
                         stg.import_month AS month,
                         COALESCE(SUM(stg.target_value), 0) AS total_target
                     FROM store_targets stg
+                    JOIN stores s ON s.site_code = stg.site_code
                     WHERE stg.import_month IN (SELECT import_month FROM recent_months)
-                      AND EXISTS (
-                          SELECT 1
-                          FROM filtered_days fd
-                          WHERE fd.import_month = stg.import_month
-                            AND fd.site_code = stg.site_code
-                      )
+                      {" AND " + " AND ".join(clause.replace('agg.', 's.') for clause in sales_clauses) if sales_clauses else ""}
                     GROUP BY stg.import_month
                 )
                 SELECT
-                    ss.month,
-                    ss.total_sales,
+                    rm.import_month AS month,
+                    COALESCE(ss.total_sales, 0) AS total_sales,
                     COALESCE(ts.total_target, 0) AS total_target,
                     CASE
                         WHEN COALESCE(ts.total_target, 0) > 0
-                        THEN ROUND(ss.total_sales * 100.0 / ts.total_target, 2)
+                        THEN ROUND(COALESCE(ss.total_sales, 0) * 100.0 / ts.total_target, 2)
                         ELSE NULL
                     END AS target_progress_pct,
-                    ss.total_quantity,
-                    ss.total_receipts,
-                    ss.proc_bon2acc,
-                    ss.prc_focus_acc_qty,
-                    ss.total_stores,
-                    ss.total_agents,
-                    ss.working_days,
-                    ss.daily_average
-                FROM sales_summary ss
-                LEFT JOIN target_summary ts ON ts.month = ss.month
-                ORDER BY ss.month ASC
+                    COALESCE(ss.total_quantity, 0) AS total_quantity,
+                    COALESCE(ss.total_receipts, 0) AS total_receipts,
+                    COALESCE(ss.proc_bon2acc, 0) AS proc_bon2acc,
+                    COALESCE(ss.prc_focus_acc_qty, 0) AS prc_focus_acc_qty,
+                    COALESCE(ss.total_stores, 0) AS total_stores,
+                    COALESCE(ss.total_agents, 0) AS total_agents,
+                    COALESCE(ss.working_days, 0) AS working_days,
+                    COALESCE(ss.daily_average, 0) AS daily_average
+                FROM recent_months rm
+                LEFT JOIN sales_summary ss ON ss.month = rm.import_month
+                LEFT JOIN target_summary ts ON ts.month = rm.import_month
+                ORDER BY rm.import_month ASC
                 """,
                 *params,
             )
@@ -238,10 +238,19 @@ class DashboardRepository:
 
     async def fetch_year_history_monthly(self, rep_clauses: list[str], rep_params: list[Any]) -> list[asyncpg.Record]:
         where_rep = f"AND {' AND '.join(rep_clauses)}" if rep_clauses else ""
+        where_store = where_rep.replace("agg.", "s.") if where_rep else ""
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
-                WITH sales_agg AS (
+                WITH all_months AS (
+                    SELECT TO_CHAR(m, 'YYYY-MM') AS import_month
+                    FROM GENERATE_SERIES(
+                        ($1 || '-01')::DATE,
+                        ($2 || '-01')::DATE,
+                        '1 month'::INTERVAL
+                    ) m
+                ),
+                sales_agg AS (
                     SELECT agg.import_month, agg.site_code,
                            SUM(agg.total_sales)    AS total_sales,
                            SUM(agg.total_quantity) AS total_quantity
@@ -261,21 +270,19 @@ class DashboardRepository:
                 month_targets AS (
                     SELECT st.import_month, SUM(st.target_value) AS total_target
                     FROM store_targets st
+                    JOIN stores s ON s.site_code = st.site_code
                     WHERE st.import_month >= $1 AND st.import_month <= $2
-                      AND EXISTS (
-                          SELECT 1 FROM sales_agg sa
-                          WHERE sa.import_month = st.import_month
-                            AND sa.site_code = st.site_code
-                      )
+                      {where_store}
                     GROUP BY st.import_month
                 )
-                SELECT ms.import_month,
-                       ms.total_sales,
+                SELECT am.import_month,
+                       COALESCE(ms.total_sales, 0) AS total_sales,
                        COALESCE(mt.total_target, 0) AS total_target,
-                       ms.total_quantity
-                FROM month_sales ms
-                LEFT JOIN month_targets mt ON mt.import_month = ms.import_month
-                ORDER BY ms.import_month
+                       COALESCE(ms.total_quantity, 0) AS total_quantity
+                FROM all_months am
+                LEFT JOIN month_sales ms ON ms.import_month = am.import_month
+                LEFT JOIN month_targets mt ON mt.import_month = am.import_month
+                ORDER BY am.import_month
                 """,
                 *rep_params,
             )

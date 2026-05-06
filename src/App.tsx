@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
 
 import { getAvailableMonths } from './api/filters';
@@ -29,7 +29,7 @@ type CampaignsSection = 'campaigns' | 'focus';
 const defaultFilters: AppFilters = defaultAppFilters();
 
 export default function App() {
-  const { isAuthenticated, isLoading: isAuthLoading, login, getAccessToken } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
 
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);
@@ -75,7 +75,21 @@ export default function App() {
     }
   }, [theme]);
 
+  const bootstrapRan = useRef(false);
+
   useEffect(() => {
+    // Don't start anything until auth loading is done
+    if (isAuthLoading) return;
+    // If already ran bootstrap, skip
+    if (bootstrapRan.current) return;
+    bootstrapRan.current = true;
+
+    // If not authenticated, mark bootstrapping as done immediately
+    if (!isAuthenticated) {
+      setBootstrapping(false);
+      return;
+    }
+
     let mounted = true;
     async function bootstrap() {
       try {
@@ -109,7 +123,7 @@ export default function App() {
       mounted = false;
       window.removeEventListener('unihub:navigate', handleNavigate as EventListener);
     };
-  }, []);
+  }, [isAuthenticated, isAuthLoading]);
 
 
 
@@ -162,6 +176,8 @@ export default function App() {
       showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
       mgmtSubTab={mgmtSubTab}
       setMgmtSubTab={setMgmtSubTab}
+      userEmail={user?.profile.email ?? undefined}
+      onLogout={logout}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (

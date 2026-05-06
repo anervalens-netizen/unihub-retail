@@ -160,7 +160,7 @@ async def sync_focus_products(
             [
                 (
                     row["item_code"],
-                    row["item_name"] or latest_names.get(row["item_code"]),
+                    row["item_name"] or latest_names.get(str(row["item_code"])),
                 )
                 for row in rows
             ],

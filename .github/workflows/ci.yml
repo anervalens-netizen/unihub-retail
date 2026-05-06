@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  backend-check:
+    runs-on: [self-hosted, unihub-server]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python lint & typecheck
+        run: |
+          python -m venv venv
+          venv/bin/pip install -r requirements.txt -r requirements-dev.txt 2>/dev/null
+          venv/bin/pip install mypy 2>/dev/null
+          venv/bin/mypy . --ignore-missing-imports --explicit-package-bases
+          echo "Mypy: OK"
+
+      - name: Backend tests
+        run: |
+          venv/bin/pytest . -v --tb=short
+        env:
+          DATABASE_URL: postgresql://unihub_retail_app:${{ secrets.DB_PASSWORD }}@127.0.0.1:5433/unihub_retail
+
+  frontend-check:
+    runs-on: [self-hosted, unihub-server]
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install & typecheck
+        run: |
+          npm install
+          npx tsc --noEmit
+          echo "TypeScript: OK"
+
+      - name: Build
+        run: npm run build

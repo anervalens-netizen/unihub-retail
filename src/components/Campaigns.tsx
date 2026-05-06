@@ -68,6 +68,7 @@ export function Campaigns({
 }: CampaignsProps) {
   const [activeSection, setActiveSection] = useState<'campaigns' | 'focus'>(preferredSection);
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
+  const [promoMonth, setPromoMonth] = useState(currentMonth);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(emptySnapshot);
   const [focusHistory, setFocusHistory] = useState<FocusHistoryPoint[]>([]);
   const [promoData, setPromoData] = useState<CampaignsPromotionsResponse | null>(null);
@@ -79,6 +80,7 @@ export function Campaigns({
 
   useEffect(() => {
     setHistoryMonth((previous) => (months.includes(previous) ? previous : currentMonth));
+    setPromoMonth((previous) => (months.includes(previous) ? previous : currentMonth));
   }, [months, currentMonth]);
 
   useEffect(() => {
@@ -95,8 +97,8 @@ export function Campaigns({
   );
 
   const currentCacheKey = useMemo(
-    () => `campaigns:current:${currentMonth}:${JSON.stringify(buildQuery(currentMonth))}`,
-    [buildQuery, currentMonth]
+    () => `campaigns:current:${promoMonth}:${JSON.stringify(buildQuery(promoMonth))}`,
+    [buildQuery, promoMonth]
   );
   const historyCacheKey = useMemo(
     () => `campaigns:history:${historyMonth}:${JSON.stringify({ ...buildQuery(historyMonth), months_back: 12 })}`,
@@ -122,8 +124,8 @@ export function Campaigns({
     setLoading(true);
     setError('');
     Promise.all([
-      getCampaignSnapshot(buildQuery(currentMonth)),
-      getPromotionsIncentives(`${currentMonth}-01`, (() => { const [yr, mo] = currentMonth.split('-').map(Number); return `${currentMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), {
+      getCampaignSnapshot(buildQuery(promoMonth)),
+      getPromotionsIncentives(`${promoMonth}-01`, (() => { const [yr, mo] = promoMonth.split('-').map(Number); return `${promoMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), {
         firma: filters.firma,
         regional: filters.rm,
         asm: filters.asm,
@@ -149,7 +151,7 @@ export function Campaigns({
       .finally(() => {
         if (isMountedRef.current) setLoading(false);
       });
-  }, [buildQuery, currentCacheKey, currentMonth, filters]);
+  }, [buildQuery, currentCacheKey, promoMonth, filters]);
 
   const loadFocusHistory = useCallback(() => {
     if (!isMountedRef.current) return;
@@ -221,18 +223,18 @@ export function Campaigns({
 
   const headline = useMemo(() => {
     if (snapshot.products.length === 0) {
-      return 'Nu exista inca focus products vandute in luna in curs pentru filtrarea selectata.';
+      return `Nu exista inca focus products vandute in ${promoMonth} pentru filtrarea selectata.`;
     }
     const leader = snapshot.products[0];
-    return `${leader.item_name} conduce luna curenta cu ${formatInt(leader.qty_total)} bucati si ${formatCurrency(leader.sales_total)}.`;
-  }, [snapshot.products]);
+    return `${leader.item_name} conduce ${promoMonth} cu ${formatInt(leader.qty_total)} bucati si ${formatCurrency(leader.sales_total)}.`;
+  }, [snapshot.products, promoMonth]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Focus</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Campaniile folosesc luna curenta {currentMonth}, iar istoricul focus se analizeaza separat.
+          Campaniile folosesc luna {promoMonth}, iar istoricul focus se analizeaza separat.
         </p>
       </div>
 
@@ -266,15 +268,28 @@ export function Campaigns({
       ) : activeSection === 'campaigns' ? (
         <>
           <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-            <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
-              <Sparkles size={16} />
-              <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Campanii in curs</span>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <Sparkles size={16} />
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Campanii</span>
+              </div>
+              <select
+                value={promoMonth}
+                onChange={(e) => setPromoMonth(e.target.value)}
+                className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-slate-800 dark:text-amber-300"
+              >
+                {months.map((m) => (
+                  <option key={m} value={m}>
+                    {m}{m === currentMonth ? ' (curent)' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="text-lg font-black">Promotii si incentive</div>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
               {promoData && promoData.promo_qty > 0
                 ? `${promoData.promo_qty} promotie activ${promoData.promo_qty === 1 ? 'a' : 'i'} in curs`
-                : 'Nu exista promotii active in luna curenta.'}
+                : `Nu exista promotii active in ${promoMonth}.`}
             </p>
           </div>
 

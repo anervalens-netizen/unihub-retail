@@ -87,10 +87,10 @@ class DashboardSpecialCardsResponse(BaseModel):
 
 class PromoIncentiveSummary(BaseModel):
     promo_qty: int = 0
-    promo_sales: Decimal = 0
-    promo_impact: Decimal = 0
+    promo_sales: Decimal = Decimal(0)
+    promo_impact: Decimal = Decimal(0)
     incentive_qty: int = 0
-    incentive_value: Decimal = 0
+    incentive_value: Decimal = Decimal(0)
     incentive_qualified_stores: int = 0
     incentive_qualified_agents: int = 0
 

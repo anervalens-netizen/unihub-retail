@@ -1,4 +1,4 @@
-import { Filter } from 'lucide-react';
+import { Filter, LogOut } from 'lucide-react';
 import type { AppFilters } from './MainLayout';
 import { TAB_LABELS, MGMT_SUBTAB_LABELS, type ManagementTab } from '../lib/tabs';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
@@ -10,11 +10,13 @@ interface Props {
   showFilterButton: boolean;
   onOpenFilter: () => void;
   filters: AppFilters;
+  userEmail?: string;
+  onLogout?: () => void;
 }
 
 const FILTER_TABS = new Set(['hub', 'focus', 'agents']);
 
-export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenFilter, filters }: Props) {
+export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenFilter, filters, userEmail, onLogout }: Props) {
   const breadcrumb =
     activeTab === 'management'
       ? `Management › ${MGMT_SUBTAB_LABELS[mgmtSubTab] ?? ''}`
@@ -33,6 +35,11 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
       </span>
 
       <div className="flex items-center gap-3">
+        {userEmail && (
+          <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[180px]">
+            {userEmail}
+          </span>
+        )}
         {showFilter && (
           <button
             onClick={onOpenFilter}
@@ -50,6 +57,15 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
                 {activeFilterCount}
               </span>
             )}
+          </button>
+        )}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors dark:border-red-800 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-800/40"
+          >
+            <LogOut size={13} />
+            Logout
           </button>
         )}
       </div>

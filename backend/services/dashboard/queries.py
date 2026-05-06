@@ -802,12 +802,13 @@ async def _fetch_asm_stats(
 async def _fetch_period_comparison(
     conn: Any,
     month: str,
-    cutoff_day: int,
     firma: str | None,
     regional: str | None,
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    cutoff_day: int = 31,
+    target_metric: str = "sales",
 ) -> PeriodComparisonPayload:
     previous_month = _shift_month(month, -1)
     year_over_year_month = _shift_month(month, -12)

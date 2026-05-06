@@ -5,13 +5,18 @@ import pathlib
 from contextlib import asynccontextmanager
 import logging
 
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+
 from logging_config import attach_db_error_handler, setup_logging
 
 setup_logging()
 
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+import httpx
 
 import sentry_sdk
 
@@ -21,9 +26,10 @@ if sentry_dsn:
         dsn=sentry_dsn,
         traces_sample_rate=0.1,
     )
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from prometheus_client import REGISTRY, generate_latest
 
 from config import validate_required_env_vars
 from db.connection import (
@@ -120,6 +126,78 @@ async def health() -> JSONResponse:
     return JSONResponse(content={"status": "ok"})
 
 
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Prometheus-compatible metrics endpoint."""
+    return Response(
+        content=generate_latest(REGISTRY),
+        media_type="text/plain; version=0.0.4",
+    )
+
+
+@app.api_route("/auth/proxy/{path:path}", methods=["GET", "POST"])
+async def auth_proxy(path: str, request: Request) -> Response:
+    """Proxy requests to authentik.
+
+    For token endpoint requests, injects the client_secret (confidential
+    client) since SPAs cannot safely store secrets.
+    """
+    target = f"https://auth.unihub.ro/{path}"
+    params = dict(request.query_params)
+    headers = {k: v for k, v in request.headers.items()
+               if k.lower() not in ("host", "origin", "referer")}
+    body = await request.body()
+
+    # Inject client_secret for token endpoint (confidential client)
+    if path == "application/o/token/" and request.method == "POST":
+        from urllib.parse import parse_qs, urlencode
+        body_str = body.decode("utf-8")
+        body_params = parse_qs(body_str)
+        body_params["client_secret"] = ["FgcKWZkNfwfAMlZJQMIT6jPoXDzAaFCXJwLGvA5G5nRYZaos5Q5MnBf2qyFbHvpGoGX5JR7dPjSVG59BW7Vbyawd2COy1cdT1d1zvfFd2TAkuOaIsA35Bn1L0D63nS9K"]
+        body = urlencode(body_params, doseq=True).encode("utf-8")
+        headers["content-type"] = "application/x-www-form-urlencoded"
+        headers["content-length"] = str(len(body))
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+        resp = await client.request(
+            method=request.method,
+            url=target,
+            params=params if params else None,
+            headers=headers,
+            content=body if body else None,
+        )
+    content = resp.content
+    # Rewrite discovery response to route API calls through the proxy
+    # (token/userinfo/etc — avoids CORS + injects client_secret)
+    if path.endswith("/.well-known/openid-configuration"):
+        raw = content.decode("utf-8")
+        # Determine the client-facing origin (must be HTTPS in production)
+        origin = request.headers.get("origin")
+        if not origin:
+            host = request.headers.get("host", request.url.netloc)
+            # CloudFlare forwards internally over HTTP — always use HTTPS for public URLs
+            scheme = "http" if host.startswith("localhost") or host.startswith("127.") else "https"
+            origin = f"{scheme}://{host}"
+        # ALWAYS rewrite token and userinfo to use the proxy
+        raw = raw.replace("https://auth.unihub.ro/application/o/token/", f"{origin}/auth/proxy/application/o/token/")
+        raw = raw.replace("https://auth.unihub.ro/application/o/userinfo/", f"{origin}/auth/proxy/application/o/userinfo/")
+        # Do NOT rewrite authorization_endpoint — browser must redirect there directly
+        content = raw.encode("utf-8")
+    response_headers = {
+        k: v for k, v in resp.headers.items()
+        if k.lower() not in ("transfer-encoding", "content-encoding", "content-length")
+    }
+    if resp.is_redirect and "location" in resp.headers:
+        response_headers["location"] = resp.headers["location"]
+    else:
+        response_headers["content-type"] = resp.headers.get("content-type", "application/json")
+    return Response(
+        content=content,
+        status_code=resp.status_code,
+        headers=response_headers,
+    )
+
+
 # Serve React SPA static files (production build)
 _dist = pathlib.Path(__file__).parent.parent / "dist"
 _NO_CACHE = "no-cache, no-store, must-revalidate"
@@ -140,6 +218,11 @@ if _dist.exists():
                 raise
             # sw.js and index.html must never be cached (browser + CDN)
             if path in ("sw.js", "index.html", "", "registerSW.js", "manifest.webmanifest"):
+                resp.headers["Cache-Control"] = _NO_CACHE
+                resp.headers["CDN-Cache-Control"] = "no-store"
+                resp.headers["Surrogate-Control"] = "no-store"
+            # HTML pages should also not be cached
+            elif resp.headers.get("content-type", "").startswith("text/html"):
                 resp.headers["Cache-Control"] = _NO_CACHE
                 resp.headers["CDN-Cache-Control"] = "no-store"
                 resp.headers["Surrogate-Control"] = "no-store"

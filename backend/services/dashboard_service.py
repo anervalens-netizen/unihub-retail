@@ -172,7 +172,7 @@ class DashboardService:
                 params.append(value)
                 positions[key] = len(params)
 
-        sales_clauses: list[str] = ["agg.import_month IN (SELECT import_month FROM recent_months)"]
+        sales_clauses: list[str] = []
         sales_clauses.extend(
             scoped_clauses(
                 positions,
@@ -268,7 +268,7 @@ class DashboardService:
                 )
             )
 
-        return YearHistoryResponse(history=points)
+        return YearHistoryResponse(points=points)
 
     async def get_dashboard_all(
         self,
@@ -304,8 +304,21 @@ class DashboardService:
                     site_code=site_code,
                     agent=agent,
                 )
-            stats = [StoreStats(**dict(row)) for row in rows]
-            return await _enrich_store_stats_with_campaign(self.pool, month, stats)
+                stats = [StoreStats(**dict(row)) for row in rows]
+                # convert back to dict for the enrich function since it expects list[dict]
+                # wait, _enrich_store_stats_with_campaign returns list[dict] and takes list[dict]
+                # let's look at the type signature of StoreStats, we should return list[StoreStats]
+                enriched_dicts = await _enrich_store_stats_with_campaign(
+                    conn, 
+                    [dict(row) for row in rows], 
+                    month, 
+                    firma, 
+                    regional, 
+                    asm, 
+                    site_code, 
+                    agent
+                )
+                return [StoreStats(**d) for d in enriched_dicts]
 
         async def get_daily_data() -> list[DailySalesPoint]:
             return await self.get_daily_sales(
@@ -393,6 +406,10 @@ class DashboardService:
                     conn,
                     month=month,
                     firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
                 )
 
         async def get_asm_data() -> list[AsmStats]:
@@ -402,6 +419,9 @@ class DashboardService:
                     month=month,
                     firma=firma,
                     regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
                 )
 
         (
@@ -417,6 +437,7 @@ class DashboardService:
             promo_incentive,
             regional_stats,
             asm_stats,
+            special_cards,
         ) = await asyncio.gather(
             self.get_summary(month, firma, regional, asm, site_code, agent),
             get_agents_data(),
@@ -430,19 +451,21 @@ class DashboardService:
             get_promo_incentive_data(),
             get_regional_data(),
             get_asm_data(),
+            _get_special_cards_data(month, firma, regional, asm, site_code, agent),
         )
 
         return DashboardAllResponse(
             summary=summary,
             agents=agents_stats,
             stores=stores_stats,
-            daily_sales=daily_sales,
+            daily=daily_sales,
+            special_cards=special_cards,
             period_comparison=period_comparison,
             category_mix=category_mix,
             receipt_bucket_mix=receipt_bucket_mix,
             focus_subcategory_mix=focus_subcategory_mix,
             brand_mix=brand_mix,
             promo_incentive=promo_incentive,
-            regional=regional_stats,
-            asm=asm_stats,
+            regionals=regional_stats,
+            asms=asm_stats,
         )

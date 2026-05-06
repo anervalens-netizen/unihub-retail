@@ -11,7 +11,7 @@ import {
 import { UserManager, type User } from 'oidc-client-ts';
 
 // ── OIDC config ──────────────────────────────────────────────────────
-const OIDC_AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY ?? 'https://auth.unihub.ro/application/o/unihub-retail/';
+const OIDC_AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY ?? `${window.location.origin}/auth/proxy/application/o/unihub-retail/`;
 const OIDC_CLIENT_ID = import.meta.env.VITE_OIDC_CLIENT_ID ?? '4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t';
 const OIDC_REDIRECT_URI = import.meta.env.VITE_OIDC_REDIRECT_URI ?? `${window.location.origin}/auth/callback`;
 const OIDC_POST_LOGOUT_URI = import.meta.env.VITE_OIDC_POST_LOGOUT_URI ?? window.location.origin;
@@ -68,15 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(existingUser);
           setIsLoading(false);
         } else {
-          // No valid session — redirect to authentik
           setIsLoading(false);
-          await userManager.signinRedirect();
+          // Only redirect if this is NOT a callback page
+          // (otherwise we might loop on callback errors)
         }
       } catch (err) {
         console.error('OIDC init error:', err);
         setIsLoading(false);
-        // On any error during callback processing, redirect to login
-        await userManager.signinRedirect();
+        // Don't auto-redirect on error — let the user see the login button
       }
     };
 

@@ -37,6 +37,8 @@ interface MainLayoutProps {
   mgmtSubTab: ManagementTab;
   setMgmtSubTab: (tab: ManagementTab) => void;
   errorCount?: number;
+  userEmail?: string;
+  onLogout?: () => void;
 }
 
 const emptyOptions: FilterOptions = {
@@ -62,6 +64,8 @@ export function MainLayout({
   mgmtSubTab,
   setMgmtSubTab,
   errorCount = 0,
+  userEmail,
+  onLogout,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
 
@@ -143,6 +147,8 @@ export function MainLayout({
           showFilterButton={showFilterButton}
           onOpenFilter={() => setIsFilterOpen(true)}
           filters={filters}
+          userEmail={userEmail}
+          onLogout={onLogout}
         />
 
         <main

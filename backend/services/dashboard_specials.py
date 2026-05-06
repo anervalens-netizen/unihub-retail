@@ -71,6 +71,7 @@ def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
     if cache_key in _special_config_cache:
         return _special_config_cache[cache_key]
 
+    result: tuple[dict[str, Any] | None, str | None]
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
     except Exception as exc:  # pragma: no cover
@@ -81,7 +82,7 @@ def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
     if not isinstance(payload, dict):
         result = {}, f"Config invalid in {config_path.name}: root must be a JSON object."
         _special_config_cache[cache_key] = result
-        return result
+        return result  # type: ignore[return-value]
     result = payload, None
     _special_config_cache[cache_key] = result
     return result
@@ -237,13 +238,14 @@ def load_incentive_codes(
         return result
 
     codes = [str(row["item_code"]) for row in rows if row.get("item_code")]
+    codes_result: tuple[list[str] | None, str | None]
     if not codes:
-        result = None, f"Fisierul `{source_path.name}` nu contine coduri eligibile."
-        _special_codes_cache[cache_key] = result
-        return result
-    result = codes, None
-    _special_codes_cache[cache_key] = result
-    return result
+        codes_result = None, f"Fisierul `{source_path.name}` nu contine coduri eligibile."
+        _special_codes_cache[cache_key] = codes_result
+        return codes_result  # type: ignore[return-value]
+    codes_result = codes, None
+    _special_codes_cache[cache_key] = codes_result
+    return codes_result  # type: ignore[return-value]
 
 
 def load_incentive_reward_map(
@@ -528,13 +530,14 @@ def build_incentive_card(
         description = definition["description"] or "Bonusul variaza per cod de produs."
     else:
         estimated_bonus = net_quantity * float(reward_per_unit)  # type: ignore[arg-type]
+        rpu = float(reward_per_unit)  # type: ignore[arg-type]
         coverage = (
             f"Magazine active: {format_int(active_stores)}. "
             f"Bonusul este calculat pe cantitate neta (retururile scad cate "
-            f"{format_currency(reward_per_unit)} per unitate)."
+            f"{format_currency(rpu)} per unitate)."
         )
         description = definition["description"] or (
-            f"Fiecare unitate neta eligibila aduce {format_currency(reward_per_unit)} agentului."
+            f"Fiecare unitate neta eligibila aduce {format_currency(rpu)} agentului."
         )
 
     if per_product_mode:
