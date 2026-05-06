@@ -25,8 +25,6 @@ async def import_sales_background(ctx: dict, file_content: bytes, filename: str)
 
 
 async def startup(ctx: dict) -> None:
-    from dotenv import find_dotenv, load_dotenv
-    load_dotenv(find_dotenv())
     from db.connection import init_db_pool, get_pool
     await init_db_pool()
     pool = await get_pool()
@@ -38,13 +36,18 @@ async def shutdown(ctx: dict) -> None:
     await close_db_pool()
 
 
+
 async def main() -> None:
-    worker = create_worker(
-        get_valkey_settings(),
-        functions=[import_sales_background],
-        on_startup=startup,
-        on_shutdown=shutdown,
-    )
+    from dotenv import find_dotenv, load_dotenv
+    load_dotenv(find_dotenv())
+
+    worker_settings = {
+        "redis_settings": get_valkey_settings(),
+        "functions": [import_sales_background],
+        "on_startup": startup,
+        "on_shutdown": shutdown,
+    }
+    worker = create_worker(worker_settings)
     await worker.async_run()
 
 

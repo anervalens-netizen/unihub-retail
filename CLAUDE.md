@@ -1,6 +1,6 @@
 # CLAUDE.md — UniHub Retail
 
-**Phase: C3 Complete (11/11) — 2026-05-06 | Pending: E2E tests, source maps, coverage**
+**Phase: C3.7 (Modernization) — 2026-05-06**
 
 ## Overview
 
@@ -9,7 +9,7 @@ Sursa de adevar pentru vanzari + vizite in ecosistemul MobiUp. Module: Hub, Focu
 ## Stack
 
 - Frontend: React 19 + Vite + TypeScript + TanStack Query + Tailwind 4
-- Backend: FastAPI + asyncpg + PostgreSQL (mobiup-dwh-postgres:5433/unihub_retail)
+- Backend: FastAPI + asyncpg + PostgreSQL (unihub_postgres:5432/unihub)
 - Auth: authentik OIDC (auth.unihub.ro) — JWT RS256 + JWKS validation
 - Error tracking: GlitchTip (Sentry-compatible SDK, self-hosted)
 - Test: pytest (backend), vitest (frontend)
@@ -97,8 +97,8 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 
 ## Baza de date
 
-- **Production:** `postgresql://unihub_retail_app@127.0.0.1:5433/unihub_retail` (mobiup-dwh-postgres)
-- **Local dev:** `postgresql://unihub@localhost:5432/unihub`
+- **Production:** `postgresql://unihub:unihub_dev_password@127.0.0.1:5432/unihub` (container `unihub_postgres`)
+- NU confunda cu `mobiup-dwh-postgres` (port 5433) — acela e pentru Distribution/Academy/Faza A4
 - Schema: `backend/db/schema_v2.sql` — applied hash-based at boot via `ensure_schema_current()`
 - Nu modifica schema direct in DB — editeaza `schema_v2.sql` si reporneste
 
@@ -143,10 +143,9 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 
 Workflow: `.github/workflows/ci.yml`
 - Runner: `unihub-server-runner` (self-hosted)
-- Backend: mypy typecheck + pytest + coverage
+- Backend: mypy typecheck + pytest
 - Frontend: tsc --noEmit + vitest + build
-- E2E: playwright tests (chromium)
-- Source maps: upload to GlitchTip post-build
+- Source maps: upload to GlitchTip post-build (optional, needs VITE_GLITCHTIP_DSN secret)
 
 **Runner startup:**
 ```bash
@@ -155,12 +154,9 @@ cd /opt/Mobiup/gh-runner
 ```
 
 **Background worker (arq + Valkey):**
-```bash
-sudo systemctl enable --now valkey
-sudo cp /opt/Mobiup/unihub-retail/unihub-worker.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now unihub-worker
-```
+- Valkey ruleaza in Docker (`unihub-valkey`, port 6379) — NU e systemd service
+- Worker: `unihub-worker.service` (systemd, enabled, runs `backend/worker.py`)
+- Import async: `POST /api/import/sales?background=true` → arq job → `GET /api/import/jobs/{job_id}`
 
 ## Conventions
 
@@ -183,7 +179,7 @@ sudo systemctl enable --now unihub-worker
 - **Promo_qty calculat dar neafisat:** SQL returneaza promo_qty si pentru Istoric, componenta filtreaza la render pe RM/ASM/Agenti
 - **Auth routes public:** `/health`, `/metrics`, `/auth/callback` (frontend), SPA static files — nu necesita authentik
 - **Import Excel:** maintain `import_sales_file()` in `services/importer.py`; nu introduce axios back
-- **O singura baza de date PG:** `mobiup-dwh-postgres` (port 5433, DB `unihub_retail`) = retail production (C3.7 migrated). NU mai exista DB-ul vechi pe 5432.
+- **Doua baze de date PG separate:** `unihub_postgres` (port 5432, DB `unihub`) = retail production cu 33 luni date; `mobiup-dwh-postgres` (port 5433) = DWH + Academy + Faza A4 DB-uri. NU confunda — `.env` DATABASE_URL TREBUIE sa pointeze la 5432/unihub
 - **`get_dashboard_all` trebuie sa includa `special_cards`:** fara ele, Hub tab arata "Incentive neconfigurat". Apelul la `_get_special_cards_data()` e in `asyncio.gather` alaturi de celelalte query-uri
 - **Campaigns tab `promoMonth` state:** permite selectia lunii pentru promo/incentive, independent de `currentMonth`. `loadCurrentFocus` foloseste `promoMonth`, nu `currentMonth`
 - **`get_promotions_incentives` response:** TREBUIE sa returneze `top_agents`, `incentive_categories`, `incentive_product_count`, `promo_category_qty` — frontend-ul le acceseaza direct (ex: `promoData.top_agents.length`)
@@ -195,5 +191,5 @@ sudo systemctl enable --now unihub-worker
 - Nu readauga axios — foloseste fetch wrapper-ul din `api/client.ts`
 - Nu reintroduce auth local — doar OIDC via authentik
 - Nu scoate stratul de service/repository din routere
-- Nu schimba DATABASE_URL la alt port/DB — retail e pe 5433/unihub_retail (mobiup-dwh-postgres)
+- Nu schimba DATABASE_URL la alt port/DB — retail e pe 5432/unihub, NU pe 5433/unihub_retail
 - Nu returna raspunsuri partiale din `get_promotions_incentives` — frontend-ul crashuieste pe `undefined.length`

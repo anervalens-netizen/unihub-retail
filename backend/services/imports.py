@@ -25,8 +25,8 @@ class ImportsService:
 
         if background:
             content = await file.read()
-            job_id = await enqueue_sales_import(content, filename=file.filename)
-            return ImportJobStatus(job_id=job_id, status=JobStatus.QUEUED.value)
+            job = await enqueue_sales_import(content, filename=file.filename)
+            return ImportJobStatus(job_id=job.job_id, status=JobStatus.QUEUED.value)
 
         content = await file.read()
         async with self.pool.acquire() as conn:

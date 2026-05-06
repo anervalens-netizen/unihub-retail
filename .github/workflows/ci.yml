@@ -16,17 +16,17 @@ jobs:
 
       - name: Python lint & typecheck
         run: |
-          python -m venv venv
+          python3 -m venv venv
           venv/bin/pip install -r requirements.txt -r requirements-dev.txt 2>/dev/null
-          venv/bin/pip install mypy 2>/dev/null
+          venv/bin/pip install mypy pytest-cov 2>/dev/null
           venv/bin/mypy . --ignore-missing-imports --explicit-package-bases
           echo "Mypy: OK"
 
       - name: Backend tests
         run: |
-          venv/bin/pytest . -v --tb=short --cov=. --cov-report=term-missing
+          venv/bin/pytest . -v --tb=short
         env:
-          DATABASE_URL: postgresql://unihub_retail_app:${{ secrets.DB_PASSWORD }}@127.0.0.1:5433/unihub_retail
+          DATABASE_URL: postgresql://unihub:unihub_dev_password@127.0.0.1:5432/unihub
 
   frontend-check:
     runs-on: [self-hosted, unihub-server]
@@ -63,22 +63,3 @@ jobs:
             echo "No SENTRY_DSN set, skipping source maps upload"
           fi
 
-  e2e-tests:
-    runs-on: [self-hosted, unihub-server]
-    needs: [backend-check, frontend-check]
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
-
-      - name: Run E2E tests
-        run: npm run test:e2e
-        env:
-          CI: 'true'

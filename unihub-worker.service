@@ -1,13 +1,17 @@
 [Unit]
 Description=UniHub Retail background job worker (arq)
-After=network.target valkey.service mobiup-dwh-postgres.service
-Requires=valkey.service
+After=network.target docker.service mobiup-dwh-postgres.service
+Wants=docker.service
 
 [Service]
 Type=simple
 User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
+Environment="VALKEY_URL=redis://:oevmgAl9zjpYz3rnZ6ye4KcyrxmqjjbluqYEwX6I@127.0.0.1:6379"
+Environment="VALKEY_HOST=127.0.0.1"
+Environment="VALKEY_PORT=6379"
+Environment="VALKEY_PASSWORD=oevmgAl9zjpYz3rnZ6ye4KcyrxmqjjbluqYEwX6I"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5
