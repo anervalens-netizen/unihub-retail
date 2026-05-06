@@ -51,14 +51,13 @@ jobs:
       - name: Upload source maps to GlitchTip
         if: success()
         env:
-          GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
+          SENTRY_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
+          SENTRY_URL: https://errors.unihub.ro
+          SENTRY_ORG: unihub
+          SENTRY_PROJECT: retail
         run: |
-          if [ -n "$GLITCHTIP_DSN" ]; then
-            npx @sentry/cli sourcemaps upload \
-              --url "${GLITCHTIP_DSN}" \
-              --org unihub \
-              --project retail \
-              ./dist 2>/dev/null || echo "Source maps upload skipped (GlitchTip CLI not configured)"
+          if [ -n "$SENTRY_DSN" ]; then
+            npx @sentry/cli sourcemaps upload ./dist 2>/dev/null || echo "Source maps upload skipped"
           else
             echo "No SENTRY_DSN set, skipping source maps upload"
           fi

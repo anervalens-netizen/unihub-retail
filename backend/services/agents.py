@@ -124,7 +124,7 @@ class AgentsService:
         avg_seniority = row["avg_seniority"] if row else 0
 
         retention_rate = None
-        if prev_active_count > 0:
+        if prev_active_count > 0 and row is not None:
             retention_rate = (
                 Decimal(row["stayed_count"]) / Decimal(prev_active_count) * 100
             ).quantize(Decimal("0.1"))

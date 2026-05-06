@@ -63,7 +63,10 @@ async def close_arq_pool() -> None:
 
 async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
     pool = await get_arq_pool()
-    return await pool.enqueue_job("import_sales_background", file_content, filename)
+    job = await pool.enqueue_job("import_sales_background", file_content, filename)
+    if job is None:
+        raise RuntimeError("Failed to enqueue import job")
+    return job
 
 
 async def get_job_status(job_id: str) -> JobResult:

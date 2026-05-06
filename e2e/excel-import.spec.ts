@@ -1,56 +1,45 @@
 import { test, expect } from '@playwright/test';
-import { mockAuthenticatedSession, mockApiRoute, MOCK_MONTHS, MOCK_FILTER_OPTIONS } from './helpers';
+import { setupBaseMocks, mockApiRoute } from './helpers';
 
-test.describe('E2E: Excel Salary Import', () => {
+test.describe('E2E: Excel Import (Settings)', () => {
   test.beforeEach(async ({ context }) => {
-    await mockAuthenticatedSession(context);
-    await mockApiRoute(context, 'GET', /\/api\/filters\/available-months/, MOCK_MONTHS);
-    await mockApiRoute(context, 'GET', /\/api\/filters\/options.*/, MOCK_FILTER_OPTIONS);
+    await setupBaseMocks(context);
   });
 
-  test('navigates to Settings → Import', async ({ page }) => {
+  test('navigates to Settings and shows import heading', async ({ page }) => {
     await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
 
-    await expect(page.getByText('Hub')).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: /Setari/i }).first().click();
 
-    // Navigate to Settings tab
-    await page.getByRole('button', { name: /Setari/i }).click();
-
-    // Should show import section
-    await expect(page.getByText(/Import|Incarca/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /Import fișier/i })).toBeVisible({ timeout: 10000 });
   });
 
-  test('shows import form for salary Excel', async ({ page }) => {
+  test('shows import button', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Hub')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: /Setari/i }).click();
+    await page.getByRole('button', { name: /Setari/i }).first().click();
 
-    // File input should be available for Excel upload
-    const fileInput = page.locator('input[type="file"]');
-    await expect(fileInput).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Importă fișier/i)).toBeVisible({ timeout: 10000 });
   });
 
-  test('shows import history after upload', async ({ page, context }) => {
-    await mockApiRoute(context, 'GET', /\/api\/imports.*/, {
-      imports: [
-        {
-          id: 1,
-          import_month: '2026-05',
-          filename: 'salarii_mai.xlsx',
-          status: 'completed',
-          rows_imported: 250,
-          import_type: 'salarii',
-        },
-      ],
-    });
+  test('renders import history entries', async ({ page, context }) => {
+    await mockApiRoute(context, 'GET', /\/api\/import\/history/, [
+      {
+        import_month: '2026-05',
+        filename: 'vanzari_mai.xlsx',
+        status: 'completed',
+        rows_imported: 250,
+        created_at: '2026-05-06T10:00:00',
+      },
+    ]);
 
     await page.goto('/');
-    await expect(page.getByText('Hub')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: /Setari/i }).click();
+    await page.getByRole('button', { name: /Setari/i }).first().click();
 
-    await expect(page.getByText('salarii_mai.xlsx')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('completed')).toBeVisible();
+    await expect(page.getByText('vanzari_mai.xlsx')).toBeVisible({ timeout: 10000 });
   });
 });

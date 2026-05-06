@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from typing import Any
 
 import asyncpg
@@ -82,7 +83,7 @@ class CampaignsService:
             if data["overview"]
             else CampaignOverview(
                 month=month,
-                total_focus_sales=0,
+                total_focus_sales=Decimal(0),
                 total_focus_qty=0,
                 focus_share_pct=None,
                 active_focus_products=0,
@@ -195,6 +196,7 @@ class CampaignsService:
             has_active_promotion = promotion_definition is not None and promotion_error is None
 
             if has_active_promotion:
+                assert promotion_definition is not None
                 promo_month = start_date[:7]
                 promo_params: list[Any] = [
                     start,

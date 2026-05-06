@@ -10,6 +10,7 @@ from models import (
     DashboardSummary,
     DashboardAllResponse,
     DailySalesPoint,
+    DashboardSpecialCard,
     DashboardSpecialCardsResponse,
     DashboardHistoryResponse,
     MonthlyHistoryPoint,
@@ -85,8 +86,8 @@ class DashboardService:
         if row is None:
             return DashboardSummary(
                 month=month,
-                total_sales=0,
-                total_target=0,
+                total_sales=Decimal(0),
+                total_target=Decimal(0),
                 target_progress_pct=None,
                 forecast_sales=None,
                 forecast_target_progress_pct=None,
@@ -402,7 +403,7 @@ class DashboardService:
 
         async def get_regional_data() -> list[RegionalStats]:
             async with self.pool.acquire() as conn:
-                return await _fetch_regional_stats(
+                rows = await _fetch_regional_stats(
                     conn,
                     month=month,
                     firma=firma,
@@ -411,10 +412,11 @@ class DashboardService:
                     site_code=site_code,
                     agent=agent,
                 )
+            return [RegionalStats(**r) for r in rows]
 
         async def get_asm_data() -> list[AsmStats]:
             async with self.pool.acquire() as conn:
-                return await _fetch_asm_stats(
+                rows = await _fetch_asm_stats(
                     conn,
                     month=month,
                     firma=firma,
@@ -423,22 +425,9 @@ class DashboardService:
                     site_code=site_code,
                     agent=agent,
                 )
+            return [AsmStats(**r) for r in rows]
 
-        (
-            summary,
-            agents_stats,
-            stores_stats,
-            daily_sales,
-            period_comparison,
-            category_mix,
-            receipt_bucket_mix,
-            focus_subcategory_mix,
-            brand_mix,
-            promo_incentive,
-            regional_stats,
-            asm_stats,
-            special_cards,
-        ) = await asyncio.gather(
+        results = await asyncio.gather(
             self.get_summary(month, firma, regional, asm, site_code, agent),
             get_agents_data(),
             get_stores_data(),
@@ -453,6 +442,19 @@ class DashboardService:
             get_asm_data(),
             _get_special_cards_data(month, firma, regional, asm, site_code, agent),
         )
+        summary: DashboardSummary = results[0]  # type: ignore[assignment]
+        agents_stats: list[AgentStats] = results[1]  # type: ignore[assignment]
+        stores_stats: list[StoreStats] = results[2]  # type: ignore[assignment]
+        daily_sales: list[DailySalesPoint] = results[3]  # type: ignore[assignment]
+        period_comparison: PeriodComparisonPayload | None = results[4]  # type: ignore[assignment]
+        category_mix: list[CategoryMixItem] = results[5]  # type: ignore[assignment]
+        receipt_bucket_mix: list[ReceiptBucketItem] = results[6]  # type: ignore[assignment]
+        focus_subcategory_mix: list[CategoryMixItem] = results[7]  # type: ignore[assignment]
+        brand_mix: list[BrandMixItem] = results[8]  # type: ignore[assignment]
+        promo_incentive: PromoIncentiveSummary = results[9]  # type: ignore[assignment]
+        regional_stats: list[RegionalStats] = results[10]  # type: ignore[assignment]
+        asm_stats: list[AsmStats] = results[11]  # type: ignore[assignment]
+        special_cards: list[DashboardSpecialCard] = results[12]  # type: ignore[assignment]
 
         return DashboardAllResponse(
             summary=summary,

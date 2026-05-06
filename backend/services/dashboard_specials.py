@@ -5,7 +5,7 @@ import json
 import os
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from models import DashboardSpecialCard, DashboardSpecialCardMetric
 from services.product_lists import (
@@ -408,7 +408,7 @@ def build_promotion_card(
     active_stores = int(normalized_stats.get("active_stores") or 0)
     active_agents = int(normalized_stats.get("active_agents") or 0)
     total_receipts = int(normalized_stats.get("total_receipts") or 0)
-    status = "ready" if total_sales > 0 or total_quantity > 0 else "no_data"
+    status: Literal["ready", "no_data"] = "ready" if total_sales > 0 or total_quantity > 0 else "no_data"
 
     return DashboardSpecialCard(
         key="promotion",
@@ -518,7 +518,7 @@ def build_incentive_card(
     active_stores = int(normalized_stats.get("active_stores") or 0)
     active_agents = int(normalized_stats.get("active_agents") or 0)
     active_codes = int(normalized_stats.get("active_codes") or 0)
-    status = "ready" if positive_quantity > 0 or return_quantity > 0 else "no_data"
+    status: Literal["ready", "no_data"] = "ready" if positive_quantity > 0 or return_quantity > 0 else "no_data"
 
     if per_product_mode:
         # incentive_value pre-calculated in stats as weighted sum

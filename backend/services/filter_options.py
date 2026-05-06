@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from models import FilterOptions
+from models import AgentOption, FilterOptions, StoreOption
 from repositories.filters import FiltersRepository
 from services.filters import normalize_filter
 
@@ -42,32 +42,32 @@ class FilterOptionsService:
         asmi = sorted({row["asm"] for row in rows if normalize_filter(row["asm"])})
         magazine = list(
             {
-                item["site_code"]: {
-                    "site_code": item["site_code"],
-                    "locatie": item["locatie"],
-                    "firma": item["firma"],
-                    "regional": item["regional"],
-                    "asm": item["asm"],
-                }
+                item["site_code"]: StoreOption(
+                    site_code=item["site_code"],
+                    locatie=item["locatie"],
+                    firma=item["firma"],
+                    regional=item["regional"],
+                    asm=item["asm"],
+                )
                 for item in [dict(row) for row in rows]
             }.values()
         )
-        magazine.sort(key=lambda item: item["locatie"])
+        magazine.sort(key=lambda item: item.locatie)
         agenti = list(
             {
-                (item["agent"], item["site_code"]): {
-                    "agent": item["agent"],
-                    "site_code": item["site_code"],
-                    "locatie": item["locatie"],
-                    "firma": item["firma"],
-                    "regional": item["regional"],
-                    "asm": item["asm"],
-                }
+                (item["agent"], item["site_code"]): AgentOption(
+                    agent=item["agent"],
+                    site_code=item["site_code"],
+                    locatie=item["locatie"],
+                    firma=item["firma"],
+                    regional=item["regional"],
+                    asm=item["asm"],
+                )
                 for item in [dict(row) for row in rows]
                 if normalize_filter(item["agent"])
             }.values()
         )
-        agenti.sort(key=lambda item: (item["agent"], item["locatie"]))
+        agenti.sort(key=lambda item: (item.agent, item.locatie))
         
         result = FilterOptions(
             firme=firme,

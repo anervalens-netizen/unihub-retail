@@ -1,5 +1,7 @@
 import { Page, BrowserContext } from '@playwright/test';
 
+const CLIENT_ID = '4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t';
+
 export const MOCK_USER = {
   sub: 'test-user-123',
   email: 'test@mobiup.ro',
@@ -8,34 +10,20 @@ export const MOCK_USER = {
 };
 
 export async function mockAuthenticatedSession(context: BrowserContext) {
-  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
-  const tokenPayload = {
-    iss: 'https://auth.unihub.ro/application/o/unihub-retail/',
-    sub: MOCK_USER.sub,
-    aud: '4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t',
-    exp: expiresAt,
-    iat: Math.floor(Date.now() / 1000),
-    email: MOCK_USER.email,
-    name: MOCK_USER.name,
-    groups: MOCK_USER.groups,
-  };
-  const base64Encode = (obj: Record<string, unknown>) =>
-    Buffer.from(JSON.stringify(obj)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const fakeToken = `${base64Encode({ alg: 'RS256', typ: 'JWT' })}.${base64Encode(tokenPayload)}.fake_signature`;
+  const fakeToken = 'e2e-fake-access-token';
 
-  await context.addInitScript((token) => {
-    localStorage.setItem(
-      'oidc.user:https://auth.unihub.ro/application/o/unihub-retail/:4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t',
-      JSON.stringify({
-        id_token: token,
-        access_token: token,
-        token_type: 'Bearer',
-        scope: 'openid profile email',
-        profile: { sub: 'test-user-123', email: 'test@mobiup.ro', name: 'Test User' },
-        expires_at: Math.floor(Date.now() / 1000) + 3600,
-      })
-    );
+  await context.addInitScript((token: string) => {
+    (window as Record<string, unknown>).__E2E_USER__ = {
+      access_token: token,
+      token_type: 'Bearer',
+      scope: 'openid profile email',
+      profile: { sub: 'test-user-123', email: 'test@mobiup.ro', name: 'Test User' },
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      expired: false,
+    };
   }, fakeToken);
+
+  await context.route('**/auth/proxy/**', (route) => route.abort());
 }
 
 export async function mockApiRoute(context: BrowserContext, method: string, urlPattern: string | RegExp, response: unknown) {
@@ -62,48 +50,104 @@ export const MOCK_FILTER_OPTIONS = {
 };
 
 export const MOCK_DASHBOARD_ALL = {
-  daily: [],
-  regionals: [],
-  asms: [],
   summary: {
+    month: '2026-05',
     total_sales: 150000,
     total_target: 200000,
-    achievement_pct: 75.0,
-    liquidations_count: 45,
-    promotion_qty: 120,
-    average_receipt: 85.5,
-    store_count: 30,
-    agent_count: 120,
-    best_store: 'Magazin Central',
-    best_store_sales: 25000,
+    target_progress_pct: 75.0,
+    forecast_sales: 180000,
+    forecast_target_progress_pct: 90.0,
+    total_quantity: 500,
+    total_receipts: 300,
+    proc_bon2acc: 60.0,
+    prc_focus_acc_qty: 25.0,
+    total_stores: 30,
+    total_agents: 120,
+    working_days: 22,
+    daily_average: 6818.18,
+    is_month_final: false,
+    last_sale_date: '2026-05-06',
+    imported_day_of_month: 6,
+    days_in_month: 31,
+    cartele_qty: 10,
   },
+  agents: [],
   stores: [],
-  categories: [],
-  brands: [],
-  receipt_buckets: [],
+  daily: [],
   special_cards: [],
+  period_comparison: null,
+  category_mix: [],
+  receipt_bucket_mix: [],
+  focus_subcategory_mix: [],
+  brand_mix: [],
+  promo_incentive: {
+    promo_qty: 0,
+    promo_impact: 0,
+    incentive_qty: 0,
+    incentive_value: 0,
+  },
+  regionals: [],
+  asms: [],
 };
 
 export const MOCK_DASHBOARD_HISTORY = {
   history: MOCK_MONTHS.map((month) => ({
-    import_month: month,
-    total_sales: 120000 + Math.random() * 30000,
+    month,
+    total_sales: 120000,
     total_target: 180000,
-    achievement_pct: 65 + Math.random() * 20,
-    liquidation_count: 35,
-    promo_qty: 90,
-    agent_count: 110,
+    target_progress_pct: 66.7,
+    total_quantity: 450,
+    total_receipts: 280,
+    proc_bon2acc: 62.0,
+    prc_focus_acc_qty: 22.0,
+    total_stores: 28,
+    total_agents: 110,
+    working_days: 22,
+    daily_average: 5454.5,
   })),
 };
 
 export const MOCK_DASHBOARD_YEAR_HISTORY = {
-  points: MOCK_MONTHS.map((month) => ({
-    import_month: month,
-    total_sales: 120000 + Math.random() * 30000,
-    total_target: 180000,
-    achievement_pct: 65 + Math.random() * 20,
-    liquidations_count: 35,
-    promo_qty: 90,
-    agent_count: 110,
-  })),
+  points: [
+    {
+      label: '2026',
+      sort_key: '2026-00',
+      total_sales: 600000,
+      total_target: 900000,
+      total_quantity: 2500,
+      is_aggregate: false,
+    },
+  ],
 };
+
+export async function setupBaseMocks(context: BrowserContext) {
+  await mockAuthenticatedSession(context);
+
+  await context.route((url) => url.pathname.startsWith('/api/'), (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({}),
+    });
+  });
+
+  await mockApiRoute(context, 'GET', /\/api\/filters\/months$/, MOCK_MONTHS);
+  await mockApiRoute(context, 'GET', /\/api\/filters\/options/, MOCK_FILTER_OPTIONS);
+  await mockApiRoute(context, 'GET', /\/api\/dashboard\/all/, MOCK_DASHBOARD_ALL);
+  await mockApiRoute(context, 'GET', /\/api\/dashboard\/history\b/, MOCK_DASHBOARD_HISTORY);
+  await mockApiRoute(context, 'GET', /\/api\/dashboard\/history-year/, MOCK_DASHBOARD_YEAR_HISTORY);
+  await mockApiRoute(context, 'GET', /\/api\/stores$/, []);
+  await mockApiRoute(context, 'GET', /\/api\/campaigns\/overview/, {
+    snapshot: null, focus_products: [], promo_products: [],
+    has_active_promotion: false, has_active_incentive: false,
+  });
+  await mockApiRoute(context, 'GET', /\/api\/campaigns\/history/, { history: [] });
+  await mockApiRoute(context, 'GET', /\/api\/campaigns\/promotions-incentives/, {
+    has_active_promotion: false, promo_title: null,
+    promo_total_qty: 0, promo_category_qty: 0,
+    top_stores: [], top_agents: [],
+    incentive_title: null, incentive_categories: [],
+    incentive_product_count: 0,
+  });
+  await mockApiRoute(context, 'GET', /\/api\/import\/history/, []);
+}

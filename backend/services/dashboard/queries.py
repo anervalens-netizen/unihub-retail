@@ -874,7 +874,7 @@ async def _fetch_period_comparison(
                 label=label,
                 month=period_month,
                 day_range=day_range,
-                total_sales=row["total_sales"] if row else 0,
+                total_sales=Decimal(row["total_sales"]) if row else Decimal(0),
                 total_quantity=row["total_quantity"] if row else 0,
                 total_receipts=row["total_receipts"] if row else 0,
                 working_days=row["working_days"] if row else 0,

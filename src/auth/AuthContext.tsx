@@ -46,13 +46,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const initRef = useRef(false);
 
   useEffect(() => {
-    // Prevent double init in StrictMode
     if (initRef.current) return;
     initRef.current = true;
 
     const init = async () => {
       try {
-        // Check if this is a callback from authentik
+        // E2E testing bypass — set window.__E2E_USER__ before page load
+        const e2eUser = (window as Record<string, unknown>).__E2E_USER__ as User | undefined;
+        if (e2eUser) {
+          setUser(e2eUser);
+          setIsLoading(false);
+          return;
+        }
+
         if (window.location.pathname === '/auth/callback') {
           const callbackUser = await userManager.signinRedirectCallback();
           setUser(callbackUser);

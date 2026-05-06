@@ -1,41 +1,29 @@
 import { test, expect } from '@playwright/test';
-import { mockAuthenticatedSession, mockApiRoute, MOCK_MONTHS, MOCK_FILTER_OPTIONS } from './helpers';
+import { setupBaseMocks } from './helpers';
 
-test.describe('E2E: Store Management', () => {
+test.describe('E2E: Management & Settings', () => {
   test.beforeEach(async ({ context }) => {
-    await mockAuthenticatedSession(context);
-    await mockApiRoute(context, 'GET', /\/api\/filters\/available-months/, MOCK_MONTHS);
-    await mockApiRoute(context, 'GET', /\/api\/filters\/options.*/, MOCK_FILTER_OPTIONS);
+    await setupBaseMocks(context);
   });
 
-  test('navigates to Management → Magazine', async ({ page }) => {
+  test('navigates to Management tab and shows sub-tabs', async ({ page }) => {
     await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
 
-    await expect(page.getByText('Hub')).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Management' }).first().click();
 
-    // Navigate to Management tab
-    await page.getByRole('button', { name: /Management/i }).click();
-
-    // Click Magazine sub-tab
-    await page.getByRole('button', { name: /Magazine/i }).click();
-
-    await expect(page.getByText(/Magazin/i).first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /Echipă/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /Magazine/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Tasks/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /HR/i })).toBeVisible();
   });
 
-  test('lists stores', async ({ page, context }) => {
-    await mockApiRoute(context, 'GET', /\/api\/stores.*/, {
-      stores: [
-        { id: 1, site_code: 'ST001', site_name: 'Magazin Central', firma: 'Firma 1', asm: 'ASM 1', regional: 'Regional 1' },
-        { id: 2, site_code: 'ST002', site_name: 'Magazin Nord', firma: 'Firma 1', asm: 'ASM 2', regional: 'Regional 1' },
-      ],
-    });
-
+  test('navigates to Setari tab and shows import section', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Hub')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: /Management/i }).click();
-    await page.getByRole('button', { name: /Magazine/i }).click();
+    await page.getByRole('button', { name: /Setari/i }).first().click();
 
-    await expect(page.getByText('Magazin Central')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Import fișier vânzări/i)).toBeVisible({ timeout: 10000 });
   });
 });

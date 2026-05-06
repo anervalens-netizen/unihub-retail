@@ -11,7 +11,7 @@ export default defineConfig({
   expect: { timeout: 10000 },
 
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000',
+    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3333',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -27,8 +27,8 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: 'npm run dev',
-          url: 'http://localhost:3000',
+          command: 'npx vite --port 3333 --host 0.0.0.0',
+          url: 'http://localhost:3333',
           reuseExistingServer: !process.env.CI,
           timeout: 30000,
         },
