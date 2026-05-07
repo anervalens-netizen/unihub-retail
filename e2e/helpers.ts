@@ -13,7 +13,7 @@ export async function mockAuthenticatedSession(context: BrowserContext) {
   const fakeToken = 'e2e-fake-access-token';
 
   await context.addInitScript((token: string) => {
-    (window as Record<string, unknown>).__E2E_USER__ = {
+    (window as unknown as Record<string, unknown>).__E2E_USER__ = {
       access_token: token,
       token_type: 'Bearer',
       scope: 'openid profile email',

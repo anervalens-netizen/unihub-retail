@@ -95,6 +95,13 @@ def test_parse_incentive_definition_returns_none_for_wrong_month() -> None:
 
 
 def test_load_incentive_codes_reads_real_file() -> None:
+    from services.product_lists import get_data_dir
+
+    source = get_data_dir() / "Incentiv Mobiup-Mobicell Aprilie 2026.xlsx"
+    if not source.exists():
+        import pytest
+
+        pytest.skip(f"External fixture not present: {source}")
     codes, error = load_incentive_codes(
         {"source_file": "Incentiv Mobiup-Mobicell Aprilie 2026.xlsx"}
     )

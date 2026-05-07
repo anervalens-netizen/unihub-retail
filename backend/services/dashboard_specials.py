@@ -23,6 +23,7 @@ _special_codes_cache: dict[tuple[str, float], tuple[list[str] | None, str | None
 _reward_map_cache: dict[tuple[str, float], tuple[dict[str, float] | None, str | None]] = {}
 
 _REWARD_COLUMN_ALIASES = {"incentive", "valoare", "reward", "bonus", "incentiv"}
+EMPTY_SPECIAL_CARDS_CONFIG: dict[str, Any] = {"promotions": [], "incentives": []}
 
 
 def format_currency(value: float | int) -> str:
@@ -64,7 +65,7 @@ def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
         else get_data_dir() / "hub_specials.json"
     )
     if not config_path.exists():
-        return {}, None
+        return EMPTY_SPECIAL_CARDS_CONFIG.copy(), None
 
     mtime = config_path.stat().st_mtime
     cache_key = (str(config_path), mtime)

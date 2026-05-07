@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const init = async () => {
       try {
         // E2E testing bypass — set window.__E2E_USER__ before page load
-        const e2eUser = (window as Record<string, unknown>).__E2E_USER__ as User | undefined;
+        const e2eUser = (window as unknown as Record<string, unknown>).__E2E_USER__ as User | undefined;
         if (e2eUser) {
           setUser(e2eUser);
           setIsLoading(false);

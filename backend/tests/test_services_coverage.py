@@ -92,10 +92,17 @@ async def test_imports_history_service():
 
 
 @pytest.mark.anyio
-async def test_imports_job_status_not_found():
+async def test_imports_job_status_not_found(monkeypatch):
     from services.imports import ImportsService
     from repositories.imports import ImportsRepository
     from db.connection import get_pool
+    import services.imports as imports_service
+    from services.jobs import JobResult, JobStatus
+
+    async def fake_get_job_status(job_id: str) -> JobResult:
+        return JobResult(job_id=job_id, status=JobStatus.NOT_FOUND)
+
+    monkeypatch.setattr(imports_service, "get_job_status", fake_get_job_status)
 
     pool = await get_pool()
     repo = ImportsRepository(pool)

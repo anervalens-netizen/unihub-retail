@@ -8,7 +8,6 @@ from fastapi import UploadFile
 
 from models import ImportHistoryEntry, ImportJobStatus, ImportResponse
 from repositories.imports import ImportsRepository
-from routers.filters import clear_filter_options_cache
 from services.importer import import_sales_file
 from services.jobs import JobStatus, enqueue_sales_import, get_job_status
 import asyncpg
@@ -31,6 +30,8 @@ class ImportsService:
         content = await file.read()
         async with self.pool.acquire() as conn:
             result = await import_sales_file(conn, content, filename=file.filename)
+        from routers.filters import clear_filter_options_cache
+
         clear_filter_options_cache()
         return ImportResponse(**asdict(result))
 

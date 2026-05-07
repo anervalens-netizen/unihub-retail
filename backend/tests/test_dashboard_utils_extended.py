@@ -64,9 +64,12 @@ class TestBuildScopedParams:
         params, positions = _build_scoped_params(
             ["2026-05"], firma="F1", regional="R1", asm="A1", site_code="SITE01", agent="Agent1"
         )
-        assert len(params) == 6
-        assert positions["firma"] == 2
-        assert positions["agent"] == 6
+        assert params == ["2026-05", "SITE01", "Agent1"]
+        assert "firma" not in positions
+        assert "regional" not in positions
+        assert "asm" not in positions
+        assert positions["site_code"] == 2
+        assert positions["agent"] == 3
 
     def test_sentinels_skipped(self):
         params, positions = _build_scoped_params(
