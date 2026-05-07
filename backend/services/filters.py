@@ -15,6 +15,8 @@ _FILTER_SENTINELS = {
     "To\u00c3\u02c6\u20ac\u203aI",
 }
 
+_DISTRIBUTION_LOCATION_PREFIX = "TR "
+
 
 def normalize_filter(value: Any) -> str | None:
     if value is None:
@@ -35,11 +37,12 @@ def base_filter_values(
 ) -> tuple[list[Any], dict[str, int]]:
     params: list[Any] = [month]
     positions: dict[str, int] = {}
+    normalized_site_code = normalize_filter(site_code)
     for key, value in [
-        ("firma", normalize_filter(firma)),
-        ("regional", normalize_filter(regional)),
-        ("asm", normalize_filter(asm)),
-        ("site_code", normalize_filter(site_code)),
+        ("firma", None if normalized_site_code else normalize_filter(firma)),
+        ("regional", None if normalized_site_code else normalize_filter(regional)),
+        ("asm", None if normalized_site_code else normalize_filter(asm)),
+        ("site_code", normalized_site_code),
         ("agent", normalize_filter(agent)),
     ]:
         if value is not None:
@@ -62,20 +65,23 @@ def scoped_clauses(
     def col(alias: str, name: str) -> str:
         return f"{alias}.{name}" if alias else name
 
+    clauses.append(f"{col(store_alias, 'locatie')} NOT ILIKE '{_DISTRIBUTION_LOCATION_PREFIX}%'")
     if month_alias and month_position:
         clauses.append(f"{month_alias} = ${month_position}")
     if include_cartela_filter:
         clauses.append(f"NOT {col(site_alias, 'is_cartela')}")
-    if "firma" in positions:
-        clauses.append(f"{col(store_alias, 'firma')} = ${positions['firma']}")
-    if "regional" in positions:
-        clauses.append(f"{col(store_alias, 'regional')} = ${positions['regional']}")
-    if "asm" in positions:
-        clauses.append(f"{col(store_alias, 'asm')} = ${positions['asm']}")
+    has_site_scope = "site_code" in positions
+
+    if "firma" in positions and not has_site_scope:
+        clauses.append(f"{col(store_alias, 'firma')} = ANY(string_to_array(${positions['firma']}::TEXT, ','))")
+    if "regional" in positions and not has_site_scope:
+        clauses.append(f"{col(store_alias, 'regional')} = ANY(string_to_array(${positions['regional']}::TEXT, ','))")
+    if "asm" in positions and not has_site_scope:
+        clauses.append(f"{col(store_alias, 'asm')} = ANY(string_to_array(${positions['asm']}::TEXT, ','))")
     if "site_code" in positions:
-        clauses.append(f"{col(site_alias, 'site_code')} = ${positions['site_code']}")
+        clauses.append(f"{col(site_alias, 'site_code')} = ANY(string_to_array(${positions['site_code']}::TEXT, ','))")
     if "agent" in positions and agent_alias is not None:
-        clauses.append(f"{col(agent_alias, 'agent')} = ${positions['agent']}")
+        clauses.append(f"{col(agent_alias, 'agent')} = ANY(string_to_array(${positions['agent']}::TEXT, ','))")
 
     return clauses
 

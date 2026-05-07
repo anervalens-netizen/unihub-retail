@@ -87,8 +87,10 @@ async def rebuild_reporting_month(
                 0
             )::INT AS qty_positive
         FROM sales_transactions st
+        JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
           AND NOT st.is_cartela
+          AND s.locatie NOT ILIKE 'TR %'
         GROUP BY st.import_month, st.sale_date, st.site_code, st.agent, st.bon_nr
         """,
         import_month,
@@ -156,6 +158,7 @@ async def rebuild_reporting_month(
             AND tr.bon_nr = st.bon_nr
         WHERE st.import_month = $1
           AND NOT st.is_cartela
+          AND s.locatie NOT ILIKE 'TR %'
         GROUP BY
             st.import_month,
             st.sale_date,
@@ -254,6 +257,7 @@ async def rebuild_reporting_month(
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
           AND NOT st.is_cartela
+          AND s.locatie NOT ILIKE 'TR %'
         GROUP BY
             st.import_month,
             st.sale_date,
@@ -309,6 +313,7 @@ async def rebuild_reporting_month(
         JOIN focus_products fp ON fp.item_code = st.item_code
         WHERE st.import_month = $1
           AND NOT st.is_cartela
+          AND s.locatie NOT ILIKE 'TR %'
         GROUP BY
             st.import_month,
             st.site_code,
@@ -410,6 +415,7 @@ async def rebuild_reporting_month(
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
           AND NOT st.is_cartela
+          AND s.locatie NOT ILIKE 'TR %'
         GROUP BY
             st.import_month,
             st.site_code,

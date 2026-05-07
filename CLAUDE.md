@@ -1,6 +1,6 @@
 # CLAUDE.md — UniHub Retail
 
-**Phase: C3.7 (Modernization) — 2026-05-06**
+**Phase: C3 COMPLETED + Hub filter/reporting fixes — 2026-05-07**
 
 ## Overview
 
@@ -74,10 +74,11 @@ sudo journalctl -u unihub-backend -f   # logs live
 **Auth:** `backend/auth.py` — JWT RS256 validation via JWKS from authentik. All API routers are protected by `require_auth` dependency in `main.py`. Health and metrics endpoints are public.
 
 **Core services:**
-- `services/filters.py` — normalizare + where clauses for SQL filtering
+- `services/filters.py` — normalizare + where clauses for SQL filtering; suporta multi-select prin valori comma-separated si exclude locatiile de distributie `TR %`
 - `services/forecast.py` — forecast factor calculation (shared by CRM/HR)
-- `services/dashboard/` — queries.py, specials_data.py, utils.py
+- `services/dashboard/` — queries.py, specials_data.py, utils.py; include comparatie perioade, mixuri Hub si builder comun `_build_scoped_params`
 - `services/dashboard_specials.py` — hub_specials.json config parsing
+- `services/dashboard/specials_data.py` — cardurile speciale Hub (promo + incentive), folosind aceleasi reguli de filtre ca dashboard-ul
 - `services/incentive_db.py` — incentive campaigns from DB
 
 ## Auth (authentik OIDC)
@@ -161,6 +162,14 @@ cd /opt/Mobiup/gh-runner
 ## Conventions
 
 - Nu citi din `sales_transactions` pentru raportare — foloseste agregatele `reporting_*`
+- Exceptie controlata: cardurile care afiseaza explicit `Cartele` citesc cantitatea din `sales_transactions` cu `is_cartela=true`, dar KPI-urile de vanzari/cantitate/bonuri raman excluse de cartela.
+- Reporting-ul operational exclude categoria `Cartele` din agregatele `reporting_*`; nu reintroduce `is_cartela` in totaluri, medii sau procente.
+- Locatiile de distributie cu `stores.locatie ILIKE 'TR %'` sunt excluse din calculele Retail si din optiunile de filtre; regula este centralizata in `services/filters.py` si trebuie pastrata si in rebuild-ul reporting.
+- Filtrele Hub/Focus accepta multi-select pentru magazine si agenti; frontend-ul trimite valori comma-separated, iar SQL foloseste `= ANY(string_to_array($n::TEXT, ','))`.
+- Cand `site_code` este prezent, el domina scope-ul: backend-ul ignora `firma`, `regional` si `asm` pentru dashboard/history/comparatii/special_cards, ca istoricul unui magazin sa ramana vizibil chiar daca magazinul si-a schimbat RM/firma in timp.
+- ASM a fost scos din filtrele si cardurile Hub; Hub ramane pe layer RM + magazine + agenti. Nu reintroduce cardul ASM pana cand structura DB nu este actualizata.
+- Comparatia perioade din Hub foloseste aceeasi fereastra de zile: luna curenta pana la ultima zi importata daca luna e partiala, aceeasi perioada din luna trecuta si aceeasi perioada din anul trecut.
+- Cardul `Comparatie perioade` afiseaza delte pentru vanzari, medie zilnica, bonuri si cantitate, fiecare cu valoare absoluta si procent.
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate
 - Salarii LEFT JOIN stores conditionat (doar cand regional/asm sunt prezente)
 - Salarii company_name case-insensitive la JOIN (`LOWER()` pe ambele parti)
@@ -176,7 +185,11 @@ cd /opt/Mobiup/gh-runner
 ## Gotchas
 
 - **2023-2024 `agent = '-'`:** lipsa coloana Agent in fisierele sursa — nu e bug
-- **Promo_qty calculat dar neafisat:** SQL returneaza promo_qty si pentru Istoric, componenta filtreaza la render pe RM/ASM/Agenti
+- **Promo_qty calculat dar neafisat:** SQL returneaza promo_qty si pentru Istoric, componenta filtreaza la render pe RM/Agenti
+- **Magazin selectat + RM curent:** daca API primeste `firma=MobiCell&regional=Elena...&site_code=CRELECTROP`, istoricul trebuie calculat dupa `site_code`, nu dupa RM-ul curent. Altfel lunile istorice pot iesi 0 daca magazinul era la alt RM.
+- **Parametri SQL fara clauze:** cand `site_code` domina scope-ul, nu pastra `firma/regional/asm` in lista de parametri. Asyncpg poate arunca `IndeterminateDatatypeError: could not determine data type of parameter $n`.
+- **Silent renew authentik in iframe:** authentik seteaza `X-Frame-Options: deny`; frontend-ul are `automaticSilentRenew: false` si pe 401 face redirect/login controlat prin handler-ul din `api/client.ts`.
+- **Recharts ResponsiveContainer:** graficele au `minWidth={1}` / `minHeight={1}` ca sa evite warning-ul width/height `-1` in containere ascunse sau tranzitionate.
 - **Auth routes public:** `/health`, `/metrics`, `/auth/callback` (frontend), SPA static files — nu necesita authentik
 - **Import Excel:** maintain `import_sales_file()` in `services/importer.py`; nu introduce axios back
 - **Doua baze de date PG separate:** `unihub_postgres` (port 5432, DB `unihub`) = retail production cu 33 luni date; `mobiup-dwh-postgres` (port 5433) = DWH + Academy + Faza A4 DB-uri. NU confunda — `.env` DATABASE_URL TREBUIE sa pointeze la 5432/unihub

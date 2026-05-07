@@ -94,7 +94,7 @@ class TestGetSummary:
         result = await service.get_summary("2026-05", "FirmaA", "R1", "A1", "SITE01", "Agent1")
         assert result.total_sales == Decimal("5000")
         call = mock_repo.fetch_summary.call_args
-        assert len(call[0][1]) == 6
+        assert call[0][1] == ["2026-05", "SITE01", "Agent1"]
 
 
 class TestGetDailySales:
@@ -142,6 +142,14 @@ class TestGetMonthlyHistory:
         assert result.history == []
         call = mock_repo.fetch_monthly_history.call_args
         assert len(call[0][1]) >= 4
+
+    @pytest.mark.asyncio
+    async def test_history_with_site_filter_ignores_parent_scope(self, service, mock_repo):
+        mock_repo.fetch_monthly_history.return_value = []
+        result = await service.get_monthly_history("2026-05", 12, "FirmaA", "R1", None, "SITE01", None)
+        assert result.history == []
+        call = mock_repo.fetch_monthly_history.call_args
+        assert call[0][1] == ["2026-05", 12, "SITE01"]
 
 
 class TestGetHistoryByYear:

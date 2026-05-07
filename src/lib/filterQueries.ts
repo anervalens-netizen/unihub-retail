@@ -10,7 +10,6 @@ export function buildScopedMonthQuery(
     month,
     firma: filters.firma === ALL_FIRMS ? undefined : filters.firma,
     regional: filters.rm === ALL_SCOPE ? undefined : filters.rm,
-    asm: filters.asm === ALL_SCOPE ? undefined : filters.asm,
     site_code: filters.magazin === ALL_STORES ? undefined : filters.magazin,
     agent: filters.agent === ALL_SCOPE ? undefined : filters.agent,
   };

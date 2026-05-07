@@ -14,6 +14,7 @@ from services.dashboard.queries import (
     _fetch_category_mix,
     _fetch_focus_subcategory_mix,
     _fetch_period_comparison,
+    _fetch_period_comparison_cutoff_day,
     _fetch_promo_incentive_summary,
     _fetch_receipt_bucket_mix,
     _fetch_regional_stats,
@@ -199,10 +200,31 @@ class TestFetchAsmStats:
 
 class TestFetchPeriodComparison:
     @pytest.mark.asyncio
+    async def test_cutoff_uses_last_sale_day_for_partial_month(self, mock_conn):
+        mock_conn.fetchrow.return_value = FakeRow(
+            is_final=False,
+            last_sale_day=6,
+            days_in_month=31,
+        )
+        result = await _fetch_period_comparison_cutoff_day(mock_conn, "2026-05")
+        assert result == 6
+
+    @pytest.mark.asyncio
+    async def test_cutoff_uses_full_month_for_final_month(self, mock_conn):
+        mock_conn.fetchrow.return_value = FakeRow(
+            is_final=True,
+            last_sale_day=6,
+            days_in_month=31,
+        )
+        result = await _fetch_period_comparison_cutoff_day(mock_conn, "2026-05")
+        assert result == 31
+
+    @pytest.mark.asyncio
     async def test_no_data_returns_default(self, mock_conn):
         result = await _fetch_period_comparison(mock_conn, target_metric="sales",
                                                  month="2026-05", firma=None, regional=None,
-                                                 asm=None, site_code=None, agent=None)
+                                                 asm=None, site_code=None, agent=None,
+                                                 cutoff_day=31)
         assert result is not None
         assert result.current.total_sales == Decimal(0)
         assert result.previous.month == "2026-04"
@@ -212,14 +234,36 @@ class TestFetchPeriodComparison:
     async def test_with_data(self, mock_conn):
         row = FakeRow(
             total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
+            cartele_qty=12,
             working_days=22, daily_average=Decimal("4545"), avg_receipt_value=Decimal("333"),
             proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
         )
         mock_conn.fetchrow.return_value = row
         result = await _fetch_period_comparison(mock_conn, target_metric="sales",
                                                  month="2026-05", firma=None, regional=None,
-                                                 asm=None, site_code=None, agent=None)
+                                                 asm=None, site_code=None, agent=None,
+                                                 cutoff_day=31)
         assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_partial_month_limits_previous_periods_to_same_day_range(self, mock_conn):
+        meta_row = FakeRow(is_final=False, last_sale_day=6, days_in_month=31)
+        data_row = FakeRow(
+            total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
+            cartele_qty=12,
+            working_days=6, daily_average=Decimal("16666.67"), avg_receipt_value=Decimal("333.33"),
+            proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
+        )
+        mock_conn.fetchrow.side_effect = [meta_row, data_row, data_row, data_row]
+
+        result = await _fetch_period_comparison(mock_conn, target_metric="sales",
+                                                month="2026-05", firma=None, regional=None,
+                                                asm=None, site_code=None, agent=None)
+
+        assert result.current.day_range == "01-06"
+        assert result.previous.day_range == "01-06"
+        assert result.year_over_year.day_range == "01-06"
+        assert result.current.cartele_qty == 12
 
 
 class TestFetchCategoryMix:

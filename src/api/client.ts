@@ -10,9 +10,15 @@ function resolveApiBaseUrl(): string {
 const API_BASE_URL = resolveApiBaseUrl();
 
 let getAccessTokenFn: (() => string | null) | null = null;
+let onUnauthorizedFn: (() => void) | null = null;
+let unauthorizedRedirectStarted = false;
 
 export const setAccessTokenProvider = (fn: () => string | null) => {
   getAccessTokenFn = fn;
+};
+
+export const setUnauthorizedHandler = (fn: () => void) => {
+  onUnauthorizedFn = fn;
 };
 
 function getAuthHeaders(existingHeaders: Record<string, string> = {}): Record<string, string> {
@@ -21,6 +27,14 @@ function getAuthHeaders(existingHeaders: Record<string, string> = {}): Record<st
     return { ...existingHeaders, Authorization: `Bearer ${token}` };
   }
   return existingHeaders;
+}
+
+async function handleResponse(response: Response): Promise<void> {
+  if (response.status === 401 && onUnauthorizedFn && !unauthorizedRedirectStarted) {
+    unauthorizedRedirectStarted = true;
+    onUnauthorizedFn();
+  }
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
 }
 
 export const client = {
@@ -47,7 +61,7 @@ export const client = {
       headers,
     });
 
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    await handleResponse(response);
 
     if (options?.responseType === 'blob') {
       const blob = await response.blob();
@@ -74,10 +88,11 @@ export const client = {
       }
     }
     
-    // Auto-detect FormData so we don't set Content-Type to JSON
     const isFormData = data instanceof FormData;
     let headers: Record<string, string> = { ...options?.headers };
-    if (!isFormData && !headers['Content-Type']) {
+    if (isFormData) {
+      delete headers['Content-Type'];
+    } else if (!headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
     headers = getAuthHeaders(headers);
@@ -88,7 +103,7 @@ export const client = {
       body: isFormData ? data : (data ? JSON.stringify(data) : undefined),
     });
 
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    await handleResponse(response);
     const responseData = await response.json();
     return { data: responseData };
   },
@@ -101,7 +116,7 @@ export const client = {
       headers,
       body: data ? JSON.stringify(data) : undefined,
     });
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    await handleResponse(response);
     const responseData = await response.json();
     return { data: responseData };
   },
@@ -114,7 +129,7 @@ export const client = {
       headers,
       body: data ? JSON.stringify(data) : undefined,
     });
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    await handleResponse(response);
     const responseData = await response.json();
     return { data: responseData };
   },
@@ -126,7 +141,7 @@ export const client = {
       method: 'DELETE',
       headers,
     });
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    await handleResponse(response);
     const responseData = await response.json();
     return { data: responseData };
   }

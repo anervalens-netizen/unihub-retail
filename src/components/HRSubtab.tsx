@@ -168,7 +168,7 @@ export function HRSubtab() {
                   <div className="text-center text-slate-400 text-xs py-4">Date indisponibile</div>
                 ) : (
                   <div className="h-40">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <AreaChart data={perfData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                         <defs>
                           <linearGradient id="perfGrad" x1="0" y1="0" x2="0" y2="1">

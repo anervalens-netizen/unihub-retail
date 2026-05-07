@@ -192,7 +192,7 @@ function ASMRow({ row }: { row: AsmPerformance }) {
           ) : (
             <>
             <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <ComposedChart
                   data={history.map((p) => ({
                     ...p,

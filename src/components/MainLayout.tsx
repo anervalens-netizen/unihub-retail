@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Filter, X } from 'lucide-react';
+import { Check, ChevronDown, Filter, Search, X } from 'lucide-react';
 import { getFilterOptions } from '../api/filters';
 import type { FilterOptions } from '../api/types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES, defaultAppFilters } from '../lib/filterValues';
@@ -49,6 +49,15 @@ const emptyOptions: FilterOptions = {
   agenti: [],
 };
 
+function selectedValues(value: string, allValue: string): string[] {
+  if (!value || value === allValue) return [];
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function joinedSelection(values: string[], allValue: string): string {
+  return values.length > 0 ? values.join(',') : allValue;
+}
+
 export function MainLayout({
   children,
   activeTab,
@@ -89,32 +98,24 @@ export function MainLayout({
     ).sort();
   }, [filterOptions, filters.firma]);
 
-  const filteredAsms = useMemo(() => {
-    return Array.from(
-      new Set(
-        filterOptions.magazine
-          .filter((item) => (filters.firma === ALL_FIRMS || item.firma === filters.firma))
-          .filter((item) => (filters.rm === ALL_SCOPE || item.regional === filters.rm))
-          .map((item) => item.asm)
-      )
-    ).sort();
-  }, [filterOptions, filters.firma, filters.rm]);
+  const selectedStores = useMemo(
+    () => selectedValues(filters.magazin, ALL_STORES),
+    [filters.magazin]
+  );
 
   const filteredStores = useMemo(() => {
     return filterOptions.magazine
       .filter((item) => (filters.firma === ALL_FIRMS || item.firma === filters.firma))
       .filter((item) => (filters.rm === ALL_SCOPE || item.regional === filters.rm))
-      .filter((item) => (filters.asm === ALL_SCOPE || item.asm === filters.asm))
       .sort((a, b) => a.locatie.localeCompare(b.locatie));
-  }, [filterOptions, filters.firma, filters.rm, filters.asm]);
+  }, [filterOptions, filters.firma, filters.rm]);
 
   const filteredAgents = useMemo(() => {
     const uniqueAgents = new Map<string, (typeof filterOptions.agenti)[number]>();
     filterOptions.agenti
       .filter((item) => (filters.firma === ALL_FIRMS || item.firma === filters.firma))
       .filter((item) => (filters.rm === ALL_SCOPE || item.regional === filters.rm))
-      .filter((item) => (filters.asm === ALL_SCOPE || item.asm === filters.asm))
-      .filter((item) => (filters.magazin === ALL_STORES || item.site_code === filters.magazin))
+      .filter((item) => (selectedStores.length === 0 || selectedStores.includes(item.site_code)))
       .forEach((item) => {
         uniqueAgents.set(item.agent, item);
       });
@@ -122,7 +123,7 @@ export function MainLayout({
     return Array.from(uniqueAgents.values())
       .map((item) => item.agent)
       .sort((a, b) => a.localeCompare(b));
-  }, [filterOptions, filters.firma, filters.rm, filters.asm, filters.magazin]);
+  }, [filterOptions, filters.firma, filters.rm, selectedStores]);
 
   const resetFilters = () => {
     setFilters(defaultAppFilters());
@@ -225,27 +226,13 @@ export function MainLayout({
                     })
                   }
                 />
-                <FilterSelect
-                  label="ASM"
-                  value={filters.asm}
-                  values={[
-                    { label: ALL_SCOPE, value: ALL_SCOPE },
-                    ...filteredAsms.map((item) => ({ label: item, value: item })),
-                  ]}
-                  onChange={(value) =>
-                    setFilters({
-                      ...filters,
-                      asm: value,
-                      magazin: ALL_STORES,
-                      agent: ALL_SCOPE,
-                    })
-                  }
-                />
-                <FilterSelect
+                <FilterMultiSelect
                   label="Magazin"
+                  selectedSummaryLabel="magazine selectate"
                   value={filters.magazin}
+                  allLabel={ALL_STORES}
+                  allValue={ALL_STORES}
                   values={[
-                    { label: ALL_STORES, value: ALL_STORES },
                     ...filteredStores.map((item) => ({
                       label: `${item.locatie} (${item.site_code})`,
                       value: item.site_code,
@@ -259,11 +246,13 @@ export function MainLayout({
                     })
                   }
                 />
-                <FilterSelect
+                <FilterMultiSelect
                   label="Agent"
+                  selectedSummaryLabel="agenti selectati"
                   value={filters.agent}
+                  allLabel={ALL_SCOPE}
+                  allValue={ALL_SCOPE}
                   values={[
-                    { label: ALL_SCOPE, value: ALL_SCOPE },
                     ...filteredAgents.map((item) => ({ label: item, value: item })),
                   ]}
                   onChange={(value) => setFilters({ ...filters, agent: value })}
@@ -363,5 +352,113 @@ function FilterSelect({
         ))}
       </select>
     </label>
+  );
+}
+
+function FilterMultiSelect({
+  label,
+  selectedSummaryLabel,
+  value,
+  values,
+  allLabel,
+  allValue,
+  onChange,
+}: {
+  label: string;
+  selectedSummaryLabel: string;
+  value: string;
+  values: FilterValueOption[];
+  allLabel: string;
+  allValue: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const selected = selectedValues(value, allValue);
+  const filteredValues = values.filter((item) =>
+    item.label.toLowerCase().includes(search.trim().toLowerCase())
+  );
+  const selectedSet = new Set(selected);
+  const summary =
+    selected.length === 0
+      ? allLabel
+      : selected.length === 1
+        ? values.find((item) => item.value === selected[0])?.label ?? selected[0]
+        : `${selected.length} ${selectedSummaryLabel}`;
+
+  const updateSelection = (next: string[]) => {
+    onChange(joinedSelection(next, allValue));
+  };
+
+  const toggleValue = (itemValue: string) => {
+    const next = selectedSet.has(itemValue)
+      ? selected.filter((entry) => entry !== itemValue)
+      : [...selected, itemValue];
+    updateSelection(next);
+  };
+
+  return (
+    <div className="block">
+      <span className="mb-1.5 block text-xs font-bold">{label}</span>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs outline-none dark:border-slate-700 dark:bg-slate-800"
+      >
+        <span className="truncate">{summary}</span>
+        <ChevronDown size={14} className={cn('shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+            <Search size={14} className="text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={`Cauta ${label.toLowerCase()}...`}
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto py-1">
+            <button
+              type="button"
+              onClick={() => updateSelection([])}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <span className="flex h-4 w-4 items-center justify-center rounded border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900">
+                {selected.length === 0 && <Check size={12} />}
+              </span>
+              {allLabel}
+            </button>
+            {filteredValues.map((item) => {
+              const checked = selectedSet.has(item.value);
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => toggleValue(item.value)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  <span
+                    className={cn(
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                      checked
+                        ? 'border-indigo-500 bg-indigo-500 text-white'
+                        : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900'
+                    )}
+                  >
+                    {checked && <Check size={12} />}
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+            {filteredValues.length === 0 && (
+              <div className="px-3 py-3 text-xs text-slate-500">Niciun rezultat.</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

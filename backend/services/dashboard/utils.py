@@ -35,11 +35,12 @@ def _build_scoped_params(
 ) -> tuple[list[Any], dict[str, int]]:
     params = list(initial_params)
     positions: dict[str, int] = {}
+    normalized_site_code = normalize_filter(site_code)
     for key, value in [
-        ("firma", normalize_filter(firma)),
-        ("regional", normalize_filter(regional)),
-        ("asm", normalize_filter(asm)),
-        ("site_code", normalize_filter(site_code)),
+        ("firma", None if normalized_site_code else normalize_filter(firma)),
+        ("regional", None if normalized_site_code else normalize_filter(regional)),
+        ("asm", None if normalized_site_code else normalize_filter(asm)),
+        ("site_code", normalized_site_code),
         ("agent", normalize_filter(agent)),
     ]:
         if value is not None:

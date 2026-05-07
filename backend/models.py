@@ -478,6 +478,7 @@ class PeriodComparisonPoint(BaseModel):
     total_sales: Decimal
     total_quantity: int
     total_receipts: int
+    cartele_qty: int = 0
     working_days: int
     daily_average: Decimal | None
     avg_receipt_value: Decimal | None

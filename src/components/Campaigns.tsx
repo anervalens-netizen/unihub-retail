@@ -125,13 +125,7 @@ export function Campaigns({
     setError('');
     Promise.all([
       getCampaignSnapshot(buildQuery(promoMonth)),
-      getPromotionsIncentives(`${promoMonth}-01`, (() => { const [yr, mo] = promoMonth.split('-').map(Number); return `${promoMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), {
-        firma: filters.firma,
-        regional: filters.rm,
-        asm: filters.asm,
-        site_code: filters.magazin,
-        agent: filters.agent,
-      }),
+      getPromotionsIncentives(`${promoMonth}-01`, (() => { const [yr, mo] = promoMonth.split('-').map(Number); return `${promoMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), buildQuery(promoMonth)),
     ])
       .then(([snapshotData, promoResponse]) => {
         if (!isMountedRef.current) return;
@@ -577,7 +571,7 @@ export function Campaigns({
                   </div>
                 </div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <AreaChart data={focusHistoryChart}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -681,7 +675,7 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
           <h5 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Distributie pe tier</h5>
           <div className="flex items-center gap-4">
             <div className="h-[120px] w-[120px] shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -952,4 +946,3 @@ function FirmaBadge({ firma }: { firma: string }) {
     </span>
   );
 }
-

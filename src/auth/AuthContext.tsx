@@ -23,7 +23,7 @@ const userManager = new UserManager({
   post_logout_redirect_uri: OIDC_POST_LOGOUT_URI,
   response_type: 'code',
   scope: 'openid profile email',
-  automaticSilentRenew: true,
+  automaticSilentRenew: false,
   monitorSession: false, // authentik session monitoring not needed
 });
 

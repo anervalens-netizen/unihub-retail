@@ -5,7 +5,7 @@ import { getAvailableMonths } from './api/filters';
 import { defaultAppFilters } from './lib/filterValues';
 import type { ManagementTab } from './lib/tabs';
 import { useAuth } from './auth/AuthContext';
-import { setAccessTokenProvider } from './api/client';
+import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
 
 const Campaigns = lazy(() =>
   import('./components/Campaigns').then((module) => ({ default: module.Campaigns }))
@@ -33,7 +33,10 @@ export default function App() {
 
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);
-  }, [getAccessToken]);
+    setUnauthorizedHandler(() => {
+      void login();
+    });
+  }, [getAccessToken, login]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const saved = localStorage.getItem('unihub_active_tab');

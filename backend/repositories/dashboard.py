@@ -9,6 +9,16 @@ class DashboardRepository:
         self.pool = pool
 
     async def fetch_summary(self, clauses: list[str], params: list[Any]) -> asyncpg.Record | None:
+        cartela_clauses = [
+            clause.replace("agg.import_month", "c.import_month")
+            .replace("agg.site_code", "c.site_code")
+            .replace("agg.locatie", "cs.locatie")
+            .replace("agg.agent", "c.agent")
+            .replace("agg.firma", "cs.firma")
+            .replace("agg.regional", "cs.regional")
+            .replace("agg.asm", "cs.asm")
+            for clause in clauses
+        ]
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 f"""
@@ -67,15 +77,10 @@ class DashboardRepository:
                     SELECT
                         COALESCE(SUM(c.quantity), 0)::INT AS cartele_qty
                     FROM sales_transactions c
+                    JOIN stores cs ON cs.site_code = c.site_code
                     WHERE c.import_month = $1
                       AND c.is_cartela = true
-                      AND EXISTS (
-                          SELECT 1
-                          FROM filtered_days fd
-                          WHERE fd.site_code = c.site_code
-                            AND fd.agent = c.agent
-                            AND fd.import_month = c.import_month
-                      )
+                      AND {" AND ".join(cartela_clauses)}
                 )
                 SELECT
                     ss.month,

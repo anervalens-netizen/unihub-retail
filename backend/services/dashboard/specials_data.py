@@ -6,13 +6,14 @@ from typing import Any
 from db.connection import get_pool
 from models import DashboardSpecialCard
 from services.dashboard.queries import _get_store_incentive_multipliers
+from services.dashboard.utils import _build_scoped_params
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
     load_special_cards_config,
     parse_promotion_definition,
 )
-from services.filters import normalize_filter, scoped_clauses
+from services.filters import scoped_clauses
 from services.incentive_db import get_incentive_campaign
 
 
@@ -35,23 +36,19 @@ async def _get_special_cards_data(
         incentive_campaign = await get_incentive_campaign(_conn_ic, month)
 
     if promotion_definition is not None and promotion_error is None:
-        params: list[Any] = [
-            month,
-            promotion_definition["start_date"],
-            promotion_definition["end_date"],
-            promotion_definition["item_codes"],
-        ]
-        positions: dict[str, int] = {}
-        for key, value in [
-            ("firma", normalize_filter(firma)),
-            ("regional", normalize_filter(regional)),
-            ("asm", normalize_filter(asm)),
-            ("site_code", normalize_filter(site_code)),
-            ("agent", normalize_filter(agent)),
-        ]:
-            if value is not None:
-                params.append(value)
-                positions[key] = len(params)
+        params, positions = _build_scoped_params(
+            [
+                month,
+                promotion_definition["start_date"],
+                promotion_definition["end_date"],
+                promotion_definition["item_codes"],
+            ],
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
 
         clauses = [
             "agg.import_month = $1",
@@ -108,18 +105,14 @@ async def _get_special_cards_data(
         reward_map = incentive_campaign["reward_map"]
         if reward_map:
             incentive_codes = list(reward_map.keys())
-            params = [month, incentive_codes]
-            positions = {}
-            for key, value in [
-                ("firma", normalize_filter(firma)),
-                ("regional", normalize_filter(regional)),
-                ("asm", normalize_filter(asm)),
-                ("site_code", normalize_filter(site_code)),
-                ("agent", normalize_filter(agent)),
-            ]:
-                if value is not None:
-                    params.append(value)
-                    positions[key] = len(params)
+            params, positions = _build_scoped_params(
+                [month, incentive_codes],
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
+            )
 
             clauses = [
                 "agg.import_month = $1",

@@ -17,7 +17,7 @@ class FakeRow(dict):
 
 def test_campaign_clauses_no_filters():
     clauses, params = _campaign_clauses("2026-05", None, None, None, None, None, alias="agg")
-    assert clauses == ["agg.import_month = $1"]
+    assert clauses == ["agg.locatie NOT ILIKE 'TR %'", "agg.import_month = $1"]
     assert params == ["2026-05"]
 
 
@@ -25,17 +25,19 @@ def test_campaign_clauses_all_filters():
     clauses, params = _campaign_clauses(
         "2026-05", "FirmaA", "RegionalB", "AsmC", "SITE01", "Agent1", alias="t"
     )
-    assert len(clauses) == 6
-    assert params == ["2026-05", "FirmaA", "RegionalB", "AsmC", "SITE01", "Agent1"]
-    assert "t.firma = $2" in clauses
-    assert "t.agent = $6" in clauses
+    assert len(clauses) == 4
+    assert params == ["2026-05", "SITE01", "Agent1"]
+    assert not any("t.firma" in clause for clause in clauses)
+    assert not any("t.regional" in clause for clause in clauses)
+    assert "t.site_code = ANY(string_to_array($2::TEXT, ','))" in clauses
+    assert "t.agent = ANY(string_to_array($3::TEXT, ','))" in clauses
 
 
 def test_campaign_clauses_skips_toate():
     clauses, params = _campaign_clauses(
         "2026-05", "Toate", None, "Toti", None, None, alias="x"
     )
-    assert clauses == ["x.import_month = $1"]
+    assert clauses == ["x.locatie NOT ILIKE 'TR %'", "x.import_month = $1"]
     assert params == ["2026-05"]
 
 
@@ -44,7 +46,9 @@ def test_campaign_clauses_partial_filters():
         "2026-04", None, "Regional1", None, "SITE99", None, alias="agg"
     )
     assert len(clauses) == 3
-    assert params == ["2026-04", "Regional1", "SITE99"]
+    assert params == ["2026-04", "SITE99"]
+    assert not any("agg.regional" in clause for clause in clauses)
+    assert "agg.site_code = ANY(string_to_array($2::TEXT, ','))" in clauses
 
 
 class TestCampaignsServiceOverview:

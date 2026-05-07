@@ -160,18 +160,14 @@ class DashboardService:
         site_code: str | None,
         agent: str | None,
     ) -> DashboardHistoryResponse:
-        params: list[Any] = [month, months_back]
-        positions: dict[str, int] = {}
-        for key, value in [
-            ("firma", normalize_filter(firma)),
-            ("regional", normalize_filter(regional)),
-            ("asm", normalize_filter(asm)),
-            ("site_code", normalize_filter(site_code)),
-            ("agent", normalize_filter(agent)),
-        ]:
-            if value is not None:
-                params.append(value)
-                positions[key] = len(params)
+        params, positions = _build_scoped_params(
+            [month, months_back],
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
 
         sales_clauses: list[str] = []
         sales_clauses.extend(
@@ -212,14 +208,15 @@ class DashboardService:
             if year == 2023:
                 hist_clauses.append("has.is_partial_year = TRUE")
             p = 2
+            has_site_scope = _site_code is not None
             for val, col in [
-                (_firma, "has.firma"),
-                (_regional, "s.regional"),
-                (_asm, "s.asm"),
+                (None if has_site_scope else _firma, "has.firma"),
+                (None if has_site_scope else _regional, "s.regional"),
+                (None if has_site_scope else _asm, "s.asm"),
                 (_site_code, "has.site_code"),
             ]:
                 if val is not None:
-                    hist_clauses.append(f"{col} = ${p}")
+                    hist_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
                     hist_params.append(val)
                     p += 1
 
@@ -242,15 +239,16 @@ class DashboardService:
         rep_params: list[Any] = [start_month, end_month]
         rep_clauses: list[str] = []
         p = 3
+        has_site_scope = _site_code is not None
         for val, col in [
-            (_firma, "agg.firma"),
-            (_regional, "agg.regional"),
-            (_asm, "agg.asm"),
+            (None if has_site_scope else _firma, "agg.firma"),
+            (None if has_site_scope else _regional, "agg.regional"),
+            (None if has_site_scope else _asm, "agg.asm"),
             (_site_code, "agg.site_code"),
             (_agent, "agg.agent"),
         ]:
             if val is not None:
-                rep_clauses.append(f"{col} = ${p}")
+                rep_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
                 rep_params.append(val)
                 p += 1
 

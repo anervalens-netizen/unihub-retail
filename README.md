@@ -23,6 +23,15 @@ Expune:
 - panou agenti
 - istoric pe mai multe luni
 
+Reguli importante in Hub:
+- comparatia perioade foloseste aceeasi fereastra calendaristica pentru luna curenta, luna trecuta si aceeasi luna anul trecut; daca luna curenta este partiala, cutoff-ul este ultima zi cu vanzari importate
+- KPI-urile de vanzari, cantitate, bonuri si medii exclud categoria `Cartele`
+- randul `Cartele` este informativ si este calculat separat din tranzactiile brute
+- magazinele/locatiile de distributie cu nume `TR ...` sunt excluse din calculele Retail
+- filtrul ASM nu mai este afisat in Hub; nivelul operational ramas este RM -> magazine -> agenti
+- filtrele de magazin si agent suporta selectie multipla
+- cand este selectat un magazin, filtrul de magazin are prioritate peste firma/RM, astfel istoricul ramane corect chiar daca magazinul a fost mutat intre RM-uri
+
 ### Focus
 Focus este separat in:
 - campanii active
@@ -117,6 +126,13 @@ Acesta este stratul principal folosit de dashboard-uri:
 
 Scopul lui este sa evite raportarea direct din `sales_transactions` pentru fiecare request.
 
+Agregatele de reporting sunt construite pentru analiza Retail:
+- exclud `is_cartela = true` din totaluri
+- exclud locatiile de distributie `stores.locatie ILIKE 'TR %'`
+- trebuie regenerate cu `backend/scripts/rebuild_reporting.py` dupa schimbari de reguli de raportare
+
+Exceptie: cardurile care afiseaza explicit volumul de `Cartele` citesc separat din `sales_transactions`, fara sa contamineze totalurile Retail.
+
 ### 3. Stratul de date istorice
 Pentru perioadele fara tranzactii individuale (2022, 2023 Jan–Aug):
 - `historical_annual_sales` — agregate anuale per magazin/firma, importate din `vanzari 2022 si 2023.xlsx`
@@ -200,6 +216,12 @@ Rezultatul practic:
 - `campaigns/history` este rapid
 - `filters/months` si `filters/options` sunt foarte rapide
 - `dashboard/all` are un prim request mai lent dupa restart, apoi se stabilizeaza
+
+Reguli de filtrare pentru dashboard:
+- frontend-ul trimite multi-select ca lista comma-separated (`site_code=A,B`, `agent=X,Y`)
+- backend-ul traduce filtrele in SQL cu `ANY(string_to_array(...))`
+- daca `site_code` este prezent, acesta ignora filtrele parinte `firma`, `regional`, `asm`
+- aceeasi regula se aplica in summary, daily, history, period comparison, mixuri, promo/incentive si special cards
 
 ## Bootstrap utilizatori
 

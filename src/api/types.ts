@@ -294,6 +294,7 @@ export interface PeriodComparisonPoint {
   total_sales: number;
   total_quantity: number;
   total_receipts: number;
+  cartele_qty: number;
   working_days: number;
   daily_average: number | null;
   avg_receipt_value: number | null;

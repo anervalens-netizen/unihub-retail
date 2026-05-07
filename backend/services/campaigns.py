@@ -38,18 +38,19 @@ def _campaign_clauses(
     *,
     alias: str,
 ) -> tuple[list[str], list[Any]]:
-    clauses = [f"{alias}.import_month = $1"]
+    clauses = [f"{alias}.locatie NOT ILIKE 'TR %'", f"{alias}.import_month = $1"]
     params: list[Any] = [month]
+    site_scope = normalize_filter(site_code)
     for column, value in [
-        (f"{alias}.firma", normalize_filter(firma)),
-        (f"{alias}.regional", normalize_filter(regional)),
-        (f"{alias}.asm", normalize_filter(asm)),
-        (f"{alias}.site_code", normalize_filter(site_code)),
+        (f"{alias}.firma", None if site_scope else normalize_filter(firma)),
+        (f"{alias}.regional", None if site_scope else normalize_filter(regional)),
+        (f"{alias}.asm", None if site_scope else normalize_filter(asm)),
+        (f"{alias}.site_code", site_scope),
         (f"{alias}.agent", normalize_filter(agent)),
     ]:
         if value:
             params.append(value)
-            clauses.append(f"{column} = ${len(params)}")
+            clauses.append(f"{column} = ANY(string_to_array(${len(params)}::TEXT, ','))")
     return clauses, params
 
 

@@ -13,6 +13,7 @@ class FiltersRepository:
                 SELECT DISTINCT agg.firma, agg.regional, agg.asm, agg.site_code, agg.locatie, agg.agent
                 FROM reporting_agent_month agg
                 WHERE agg.import_month = $1
+                  AND agg.locatie NOT ILIKE 'TR %'
                 ORDER BY agg.firma, agg.regional, agg.asm, agg.locatie, agg.agent
                 """,
                 month,

@@ -144,7 +144,7 @@ function AgentDetails({ agent, currentMonth, onBack }: AgentDetailsProps) {
         <h3 className="mb-4 text-sm font-bold">Istoric Vanzari</h3>
         <div className="h-64 w-full">
           {history && history.history.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <ComposedChart data={history.history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
                 <XAxis 
@@ -325,7 +325,6 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     const p: AgentsQuery = { selected_month: currentMonth };
     if (filters.firma !== 'Toate') p.firma = filters.firma;
     if (filters.rm !== 'Toti') p.regional = filters.rm;
-    if (filters.asm !== 'Toti') p.asm = filters.asm;
     if (filters.magazin !== 'Toate') p.site_code = filters.magazin;
     if (filters.agent !== 'Toti') p.agent = filters.agent;
     return p;
@@ -400,7 +399,6 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
   const filterLabel = useMemo(() => {
     if (filters.agent !== 'Toti') return `Agent: ${filters.agent}`;
     if (filters.magazin !== 'Toate') return `Magazin: ${filters.magazin}`;
-    if (filters.asm !== 'Toti') return `ASM: ${filters.asm}`;
     if (filters.rm !== 'Toti') return `Regional: ${filters.rm}`;
     if (filters.firma !== 'Toate') return `Firma: ${filters.firma}`;
     return 'Toata selectia activa';
@@ -572,7 +570,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
         
         <div className="h-64 w-full">
           {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <ComposedChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
                 <XAxis 

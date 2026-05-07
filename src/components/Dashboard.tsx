@@ -657,6 +657,12 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     const currentAvg = Number(periodComparison.current.daily_average ?? 0);
     const previousAvg = Number(periodComparison.previous.daily_average ?? 0);
     const yearOverYearAvg = Number(periodComparison.year_over_year.daily_average ?? 0);
+    const currentReceipts = Number(periodComparison.current.total_receipts);
+    const previousReceipts = Number(periodComparison.previous.total_receipts);
+    const yearOverYearReceipts = Number(periodComparison.year_over_year.total_receipts);
+    const currentQuantity = Number(periodComparison.current.total_quantity);
+    const previousQuantity = Number(periodComparison.previous.total_quantity);
+    const yearOverYearQuantity = Number(periodComparison.year_over_year.total_quantity);
     const pct = (delta: number, base: number) => base > 0 ? Math.round((delta / base) * 100) : null;
 
     return {
@@ -664,10 +670,18 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
       previousSalesPct: pct(current - previous, previous),
       previousDaily: currentAvg - previousAvg,
       previousDailyPct: pct(currentAvg - previousAvg, previousAvg),
+      previousReceipts: currentReceipts - previousReceipts,
+      previousReceiptsPct: pct(currentReceipts - previousReceipts, previousReceipts),
+      previousQuantity: currentQuantity - previousQuantity,
+      previousQuantityPct: pct(currentQuantity - previousQuantity, previousQuantity),
       yearSales: current - yearOverYear,
       yearSalesPct: pct(current - yearOverYear, yearOverYear),
       yearDaily: currentAvg - yearOverYearAvg,
       yearDailyPct: pct(currentAvg - yearOverYearAvg, yearOverYearAvg),
+      yearReceipts: currentReceipts - yearOverYearReceipts,
+      yearReceiptsPct: pct(currentReceipts - yearOverYearReceipts, yearOverYearReceipts),
+      yearQuantity: currentQuantity - yearOverYearQuantity,
+      yearQuantityPct: pct(currentQuantity - yearOverYearQuantity, yearOverYearQuantity),
     };
   }, [periodComparison]);
 
@@ -976,9 +990,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
   const regionalColumnsVisible = hasActivePromotion
     ? REGIONAL_COLUMNS
     : REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty');
-  const asmColumnsVisible = hasActivePromotion
-    ? ASM_COLUMNS
-    : ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
   const agentColumnsVisible = hasActivePromotion
     ? AGENT_COLUMNS
     : AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
@@ -1169,6 +1180,10 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                       salesPct={comparisonDeltas.previousSalesPct}
                       dailyDelta={comparisonDeltas.previousDaily}
                       dailyPct={comparisonDeltas.previousDailyPct}
+                      receiptsDelta={comparisonDeltas.previousReceipts}
+                      receiptsPct={comparisonDeltas.previousReceiptsPct}
+                      quantityDelta={comparisonDeltas.previousQuantity}
+                      quantityPct={comparisonDeltas.previousQuantityPct}
                     />
                     <DeltaCard
                       title="Vs anul trecut"
@@ -1176,6 +1191,10 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                       salesPct={comparisonDeltas.yearSalesPct}
                       dailyDelta={comparisonDeltas.yearDaily}
                       dailyPct={comparisonDeltas.yearDailyPct}
+                      receiptsDelta={comparisonDeltas.yearReceipts}
+                      receiptsPct={comparisonDeltas.yearReceiptsPct}
+                      quantityDelta={comparisonDeltas.yearQuantity}
+                      quantityPct={comparisonDeltas.yearQuantityPct}
                     />
                   </div>
                 </div>
@@ -1236,7 +1255,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                 <h3 className="text-sm font-bold">Evolutie zilnica pentru {currentMonth}</h3>
               </div>
               <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                   <ComposedChart data={dailyChartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                     <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -1329,59 +1348,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                       <td className="px-3 py-2">{formatCurrency(regional.medie_zilnica ?? 0)}</td>
                       <td className="px-3 py-2">{formatPercent(regional.proc_bon2acc)}</td>
                       <td className="px-3 py-2">{formatPercent(regional.prc_focus_acc_qty)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="glass rounded-3xl p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <MapPin size={16} className="text-indigo-500" />
-                  <h3 className="text-sm font-bold">ASM — Area Sales Manager</h3>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Filtrare: {filterScopeLabel} · Sortare: {asmColumnsVisible.find((column) => column.key === asmSort.key)?.label} ({asmSort.direction}) · {asms.length} ASM
-                </p>
-              </div>
-            </div>
-            <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-              <table className="min-w-370 w-full border-collapse text-xs">
-                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {asmColumnsVisible.map((column, i) => (
-                      <React.Fragment key={column.key}>
-                        <SortableHeader
-                          label={column.label}
-                          active={asmSort.key === column.key}
-                          direction={asmSort.direction}
-                          onClick={() => handleSortAsms(column.key)}
-                          className={i === 0 ? 'w-24' : ''}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedAsms.map((asm, index) => (
-                    <tr
-                      key={`${asm.asm}-${asm.regional}`}
-                      className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                    >
-                      <td className="max-w-0 w-24 truncate px-3 py-2 font-semibold">{asm.asm}</td>
-                      <td className="px-3 py-2">{formatCurrency(asm.target)}</td>
-                      <td className="px-3 py-2">{formatCurrency(asm.total_vanzari)}</td>
-                      <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(asm.proc_realizare_target)}</td>
-                      {hasActivePromotion && <td className="px-3 py-2">{formatInt(asm.promo_qty)}</td>}
-                      <td className="px-3 py-2">{formatInt(asm.incentive_qty)}</td>
-                      <td className="px-3 py-2">{formatInt(asm.qty_total)}</td>
-                      <td className="px-3 py-2">{formatInt(asm.nr_bonuri)}</td>
-                      <td className="px-3 py-2">{formatCurrency(asm.medie_zilnica ?? 0)}</td>
-                      <td className="px-3 py-2">{formatPercent(asm.proc_bon2acc)}</td>
-                      <td className="px-3 py-2">{formatPercent(asm.prc_focus_acc_qty)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1535,7 +1501,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                   <div className="flex h-64 items-center justify-center text-xs text-slate-400">Se incarca...</div>
                 ) : historyYearFilter === null ? (
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <ComposedChart data={currentHistoryChartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                         <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -1559,7 +1525,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                   </div>
                 ) : (
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <ComposedChart data={yearHistoryChartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                         <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -1615,7 +1581,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                   <div className="flex h-48 items-center justify-center text-xs text-slate-400">Se incarca...</div>
                 ) : (
                   <div className="h-48">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <AreaChart data={kpiChartData}>
                         <defs>
                           <linearGradient id="kpiTrendArea" x1="0" y1="0" x2="0" y2="1">
@@ -1826,7 +1792,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                     <h3 className="text-sm font-bold">Evolutie zilnica pentru {historyMonth}</h3>
                   </div>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <ComposedChart data={historyDailyChartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                         <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -1873,7 +1839,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                 </div>
               </div>
 
-              {/* Breakdown tables — RM / ASM / Magazine / Agenti */}
+              {/* Breakdown tables — RM / Magazine / Agenti */}
               <div className="glass rounded-3xl p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
@@ -1910,58 +1876,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                           className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                         >
                           <td className="max-w-0 w-28 truncate px-3 py-2 font-semibold">{row.regional}</td>
-                          <td className="px-3 py-2">{formatCurrency(row.target)}</td>
-                          <td className="px-3 py-2">{formatCurrency(row.total_vanzari)}</td>
-                          <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(row.proc_realizare_target)}</td>
-                          <td className="px-3 py-2">{formatInt(row.incentive_qty)}</td>
-                          <td className="px-3 py-2">{formatInt(row.qty_total)}</td>
-                          <td className="px-3 py-2">{formatInt(row.nr_bonuri)}</td>
-                          <td className="px-3 py-2">{formatCurrency(row.medie_zilnica ?? 0)}</td>
-                          <td className="px-3 py-2">{formatPercent(row.proc_bon2acc)}</td>
-                          <td className="px-3 py-2">{formatPercent(row.prc_focus_acc_qty)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Users size={16} className="text-indigo-500" />
-                      <h3 className="text-sm font-bold">ASM</h3>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Sortare: {HIST_ASM_COLUMNS.find((c) => c.key === historyAsmSort.key)?.label} ({historyAsmSort.direction}) · {historyAsms.length} ASM
-                    </p>
-                  </div>
-                </div>
-                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-                  <table className="min-w-330 w-full border-collapse text-xs">
-                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                        {HIST_ASM_COLUMNS.map((column, i) => (
-                          <React.Fragment key={column.key}>
-                            <SortableHeader
-                              label={column.label}
-                              active={historyAsmSort.key === column.key}
-                              direction={historyAsmSort.direction}
-                              onClick={() => handleSortHistoryAsms(column.key)}
-                              className={i === 0 ? 'w-28' : ''}
-                            />
-                          </React.Fragment>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedHistoryAsms.map((row, index) => (
-                        <tr
-                          key={row.asm}
-                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                        >
-                          <td className="max-w-0 w-28 truncate px-3 py-2 font-semibold">{row.asm}</td>
                           <td className="px-3 py-2">{formatCurrency(row.target)}</td>
                           <td className="px-3 py-2">{formatCurrency(row.total_vanzari)}</td>
                           <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(row.proc_realizare_target)}</td>
@@ -2274,7 +2188,7 @@ function DonutLegendChart({
   return (
     <div className={`grid gap-1.5 ${layoutClass} items-center`}>
       <div className={`mx-auto w-full ${compact ? 'h-36 max-w-45' : 'h-48 max-w-55'}`}>
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
               data={data}
@@ -2349,6 +2263,7 @@ function PeriodTable({
     { label: 'Med. bon',     fn: (p) => formatCurrency(p.avg_receipt_value ?? 0) },
     { label: 'Bon2Acc',      fn: (p) => formatPercent(p.proc_bon2acc) },
     { label: 'Focus/Acc',    fn: (p) => formatPercent(p.prc_focus_acc_qty) },
+    { label: 'Cartele',      fn: (p) => formatInt(p.cartele_qty ?? 0) },
   ];
 
   return (
@@ -2406,15 +2321,25 @@ function DeltaCard({
   salesPct,
   dailyDelta,
   dailyPct,
+  receiptsDelta,
+  receiptsPct,
+  quantityDelta,
+  quantityPct,
 }: {
   title: string;
   salesDelta: number;
   salesPct?: number | null;
   dailyDelta: number;
   dailyPct?: number | null;
+  receiptsDelta: number;
+  receiptsPct?: number | null;
+  quantityDelta: number;
+  quantityPct?: number | null;
 }) {
   const salesPositive = salesDelta >= 0;
   const dailyPositive = dailyDelta >= 0;
+  const receiptsPositive = receiptsDelta >= 0;
+  const quantityPositive = quantityDelta >= 0;
   const tone = salesPositive
     ? 'border-emerald-200 bg-emerald-50/80 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'
     : 'border-rose-200 bg-rose-50/80 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300';
@@ -2435,6 +2360,20 @@ function DeltaCard({
           <div className="mt-1 flex items-center gap-2 min-w-0">
             <span className="text-base font-black tabular-nums truncate">{formatDeltaCurrency(dailyDelta)}</span>
             {dailyPct != null && <DeltaPctBadge pct={dailyPct} positive={dailyPositive} />}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta bonuri</div>
+          <div className="mt-1 flex items-center gap-2 min-w-0">
+            <span className="text-base font-black tabular-nums truncate">{formatDeltaInt(receiptsDelta)}</span>
+            {receiptsPct != null && <DeltaPctBadge pct={receiptsPct} positive={receiptsPositive} />}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta cantitate</div>
+          <div className="mt-1 flex items-center gap-2 min-w-0">
+            <span className="text-base font-black tabular-nums truncate">{formatDeltaInt(quantityDelta)}</span>
+            {quantityPct != null && <DeltaPctBadge pct={quantityPct} positive={quantityPositive} />}
           </div>
         </div>
       </div>
@@ -2472,6 +2411,11 @@ function SortableHeader({
 function formatDeltaCurrency(value: number) {
   const prefix = value > 0 ? '+' : '';
   return `${prefix}${formatCurrency(value)}`;
+}
+
+function formatDeltaInt(value: number) {
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${formatInt(value)}`;
 }
 
 function CompactCurrency({ value }: { value: number }) {
@@ -2545,13 +2489,12 @@ function formatCompactDonutValue(value: number): string {
 
 function describeFilterScope(filters: AppFilters): string {
   if (filters.agent !== ALL_SCOPE) {
-    return `Agent ${filters.agent}`;
+    const agents = filters.agent.split(',').filter(Boolean);
+    return agents.length > 1 ? `${agents.length} agenti selectati` : `Agent ${filters.agent}`;
   }
   if (filters.magazin !== ALL_STORES) {
-    return `Magazin ${filters.magazin}`;
-  }
-  if (filters.asm !== ALL_SCOPE) {
-    return `ASM ${filters.asm}`;
+    const stores = filters.magazin.split(',').filter(Boolean);
+    return stores.length > 1 ? `${stores.length} magazine selectate` : `Magazin ${filters.magazin}`;
   }
   if (filters.rm !== ALL_SCOPE) {
     return `Regional ${filters.rm}`;
