@@ -22,8 +22,8 @@ const userManager = new UserManager({
   redirect_uri: OIDC_REDIRECT_URI,
   post_logout_redirect_uri: OIDC_POST_LOGOUT_URI,
   response_type: 'code',
-  scope: 'openid profile email',
-  automaticSilentRenew: false,
+  scope: 'openid profile email offline_access',
+  automaticSilentRenew: true,
   monitorSession: false, // authentik session monitoring not needed
 });
 

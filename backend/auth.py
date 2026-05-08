@@ -190,6 +190,7 @@ async def require_auth(
 
 
 async def optional_auth(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthClaims | None:
     """Like require_auth but returns None if no token is present.
@@ -197,4 +198,4 @@ async def optional_auth(
     anonymous users."""
     if credentials is None:
         return None
-    return await require_auth(credentials)
+    return await require_auth(request, credentials)

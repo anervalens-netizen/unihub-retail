@@ -85,10 +85,11 @@ sudo journalctl -u unihub-backend -f   # logs live
 
 - Provider: `https://auth.unihub.ro/application/o/unihub-retail/`
 - Client ID: `4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t` (from CREDENTIALS.md)
-- Frontend: `oidc-client-ts` with `AuthProvider` + `useAuth()` hook
+- Frontend: `oidc-client-ts` with `AuthProvider` + `useAuth()` hook, scope `openid profile email offline_access`, `automaticSilentRenew: true`
 - Backend: `auth.py` validates JWTs against JWKS, returns `AuthClaims(sub, email, groups, ...)`
 - All API endpoints are protected via `require_auth` FastAPI dependency
 - `api/client.ts` auto-injects `Authorization: Bearer <token>` in all requests
+- Provider session policy: Authentik fields must be `hours=8` for access token validity and `days=180` for refresh token validity.
 
 ## Shared packages (@unihub/*)
 
@@ -188,7 +189,7 @@ cd /opt/Mobiup/gh-runner
 - **Promo_qty calculat dar neafisat:** SQL returneaza promo_qty si pentru Istoric, componenta filtreaza la render pe RM/Agenti
 - **Magazin selectat + RM curent:** daca API primeste `firma=MobiCell&regional=Elena...&site_code=CRELECTROP`, istoricul trebuie calculat dupa `site_code`, nu dupa RM-ul curent. Altfel lunile istorice pot iesi 0 daca magazinul era la alt RM.
 - **Parametri SQL fara clauze:** cand `site_code` domina scope-ul, nu pastra `firma/regional/asm` in lista de parametri. Asyncpg poate arunca `IndeterminateDatatypeError: could not determine data type of parameter $n`.
-- **Silent renew authentik in iframe:** authentik seteaza `X-Frame-Options: deny`; frontend-ul are `automaticSilentRenew: false` si pe 401 face redirect/login controlat prin handler-ul din `api/client.ts`.
+- **OIDC session policy:** pastreaza `offline_access`, `automaticSilentRenew: true` si provider validity `hours=8` / `days=180`. Nu salva in Authentik valori Python de tip `8:00:00`; authorize crapa la parsarea duratei.
 - **Recharts ResponsiveContainer:** graficele au `minWidth={1}` / `minHeight={1}` ca sa evite warning-ul width/height `-1` in containere ascunse sau tranzitionate.
 - **Auth routes public:** `/health`, `/metrics`, `/auth/callback` (frontend), SPA static files — nu necesita authentik
 - **Import Excel:** maintain `import_sales_file()` in `services/importer.py`; nu introduce axios back

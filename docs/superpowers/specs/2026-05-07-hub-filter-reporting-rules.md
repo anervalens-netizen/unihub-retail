@@ -129,12 +129,13 @@ IndeterminateDatatypeError: could not determine data type of parameter $n
 
 ## Auth And Frontend Warnings
 
-OIDC silent renew via hidden iframe is disabled because authentik sends `X-Frame-Options: deny`.
+OIDC must follow the UniHub persistent-session policy.
 
 Current behavior:
-- `automaticSilentRenew: false`
-- API client handles first `401` by invoking the configured unauthorized handler
-- app redirects to login instead of retrying in a loop
+- `automaticSilentRenew: true`
+- scope includes `openid profile email offline_access`
+- Authentik provider validity is `hours=8` for access tokens and `days=180` for refresh tokens
+- app redirects to login only when the OIDC session cannot be renewed
 
 Files:
 - `src/auth/AuthContext.tsx`
