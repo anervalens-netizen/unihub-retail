@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import time
 from contextlib import asynccontextmanager
 import logging
 
@@ -30,7 +31,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from prometheus_client import REGISTRY, generate_latest
+from prometheus_client import REGISTRY, Counter, Histogram, generate_latest
 
 from config import validate_required_env_vars
 from db.connection import (
@@ -48,6 +49,17 @@ from services.visits_sync import sync_visits_snapshot
 from services.jobs import close_arq_pool, get_arq_pool
 
 logger = logging.getLogger(__name__)
+
+HTTP_REQUESTS_TOTAL = Counter(
+    "http_requests_total",
+    "Total HTTP requests grouped by method, status class and handler.",
+    ("method", "status", "handler"),
+)
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency in seconds grouped by method, status class and handler.",
+    ("method", "status", "handler"),
+)
 
 
 @asynccontextmanager
@@ -81,7 +93,15 @@ app = FastAPI(title="UniHub API", lifespan=lifespan)
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        started_at = time.perf_counter()
         response = await call_next(request)
+        if request.url.path != "/metrics":
+            route = request.scope.get("route")
+            handler = getattr(route, "path", request.url.path)
+            status = f"{response.status_code // 100}xx"
+            labels = (request.method, status, handler)
+            HTTP_REQUESTS_TOTAL.labels(*labels).inc()
+            HTTP_REQUEST_DURATION_SECONDS.labels(*labels).observe(time.perf_counter() - started_at)
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
