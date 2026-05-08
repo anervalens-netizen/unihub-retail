@@ -26,5 +26,6 @@ playwright-report/
 test-results/
 
 # graphify tooling internals
+graphify-out/
 graphify-out/.graphify_*
 entities.json
