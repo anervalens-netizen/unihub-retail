@@ -110,10 +110,22 @@ class AuthClaims:
 _bearer = HTTPBearer(auto_error=False)
 
 
+_HUB_INTERNAL_SECRET = os.getenv("HUB_INTERNAL_SECRET", "")
+
+
 async def require_auth(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthClaims:
     """FastAPI dependency — returns verified AuthClaims or raises 401."""
+    if _HUB_INTERNAL_SECRET and request.headers.get("X-Hub-Internal") == _HUB_INTERNAL_SECRET:
+        if request.client and request.client.host in ("127.0.0.1", "::1"):
+            return AuthClaims(
+                sub="hub-service", email="hub@unihub.ro",
+                preferred_username="hub-service", groups=["unihub-admin"],
+                iss="hub-internal", aud="internal", iat=0, exp=0, raw={},
+            )
+
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
