@@ -87,6 +87,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Cross-Origin-Embedder-Policy", "credentialless")
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         response.headers.setdefault(
@@ -103,6 +104,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "form-action 'self'; "
             "upgrade-insecure-requests",
         )
+        path = request.url.path
+        if path.startswith("/assets/"):
+            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        elif path == "/" or path.endswith(".html") or path in ("/sw.js", "/registerSW.js", "/manifest.webmanifest"):
+            response.headers.setdefault("Cache-Control", "no-cache, no-store, must-revalidate")
+            response.headers.setdefault("CDN-Cache-Control", "no-store")
+            response.headers.setdefault("Surrogate-Control", "no-store")
         return response
 
 
