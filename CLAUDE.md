@@ -89,6 +89,7 @@ sudo journalctl -u unihub-backend -f   # logs live
 - Backend: `auth.py` validates JWTs against JWKS, returns `AuthClaims(sub, email, groups, ...)`
 - All API endpoints are protected via `require_auth` FastAPI dependency
 - `api/client.ts` auto-injects `Authorization: Bearer <token>` in all requests
+- `/auth/proxy/application/o/token/` injects the confidential client secret from local `.env` (`OIDC_CLIENT_SECRET`). Do not hardcode this value in code or docs.
 - Provider session policy: Authentik fields must be `hours=8` for access token validity and `days=180` for refresh token validity.
 
 ## Shared packages (@unihub/*)

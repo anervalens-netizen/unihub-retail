@@ -14,7 +14,7 @@ from logging_config import attach_db_error_handler, setup_logging
 setup_logging()
 
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 import httpx
@@ -216,7 +216,11 @@ async def auth_proxy(path: str, request: Request) -> Response:
         from urllib.parse import parse_qs, urlencode
         body_str = body.decode("utf-8")
         body_params = parse_qs(body_str)
-        body_params["client_secret"] = ["FgcKWZkNfwfAMlZJQMIT6jPoXDzAaFCXJwLGvA5G5nRYZaos5Q5MnBf2qyFbHvpGoGX5JR7dPjSVG59BW7Vbyawd2COy1cdT1d1zvfFd2TAkuOaIsA35Bn1L0D63nS9K"]
+        client_secret = os.getenv("OIDC_CLIENT_SECRET") or os.getenv("AUTHENTIK_CLIENT_SECRET")
+        if not client_secret:
+            logger.error("OIDC client secret is not configured")
+            raise HTTPException(status_code=500, detail="OIDC proxy is not configured")
+        body_params["client_secret"] = [client_secret]
         body = urlencode(body_params, doseq=True).encode("utf-8")
         headers["content-type"] = "application/x-www-form-urlencoded"
         headers["content-length"] = str(len(body))
