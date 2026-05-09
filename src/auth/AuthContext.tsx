@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { UserManager, type User } from 'oidc-client-ts';
+import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
 
 // ── OIDC config ──────────────────────────────────────────────────────
 const OIDC_AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY ?? `${window.location.origin}/auth/proxy/application/o/unihub-retail/`;
@@ -25,7 +25,22 @@ const userManager = new UserManager({
   scope: 'openid profile email offline_access',
   automaticSilentRenew: true,
   monitorSession: false, // authentik session monitoring not needed
+  userStore: new WebStorageStateStore({ store: window.localStorage }),
 });
+
+async function getStoredOrRenewedUser(): Promise<User | null> {
+  const existingUser = await userManager.getUser();
+  if (!existingUser) return null;
+  if (!existingUser.expired) return existingUser;
+
+  try {
+    return await userManager.signinSilent();
+  } catch (err) {
+    console.warn('OIDC silent renew on startup failed:', err);
+    await userManager.removeUser();
+    return null;
+  }
+}
 
 // ── Context ──────────────────────────────────────────────────────────
 interface AuthContextValue {
@@ -68,20 +83,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Try to get existing user from storage
-        const existingUser = await userManager.getUser();
-        if (existingUser && !existingUser.expired) {
-          setUser(existingUser);
-          setIsLoading(false);
-        } else {
-          setIsLoading(false);
-          // Only redirect if this is NOT a callback page
-          // (otherwise we might loop on callback errors)
+        // Try to get existing user from storage, refreshing expired access tokens
+        // with the persisted refresh token before redirecting to authentik.
+        const existingUser = await getStoredOrRenewedUser();
+        setUser(existingUser);
+        setIsLoading(false);
+        if (!existingUser) {
+          await userManager.signinRedirect();
         }
       } catch (err) {
         console.error('OIDC init error:', err);
         setIsLoading(false);
-        // Don't auto-redirect on error — let the user see the login button
+        await userManager.signinRedirect();
       }
     };
 
