@@ -45,6 +45,7 @@ from db.connection import (
 from auth import require_auth
 from routers import agents, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
+from services.retail_metrics import update_business_metrics
 from services.visits_sync import sync_visits_snapshot
 from services.jobs import close_arq_pool, get_arq_pool
 
@@ -83,6 +84,8 @@ async def lifespan(_: FastAPI):
     prewarm_special_cards_cache()
     await get_arq_pool()
     logger.info("arq worker pool initialized")
+    current_pool = await get_pool()
+    await update_business_metrics(current_pool)
     yield
     await close_arq_pool()
     await close_db_pool()

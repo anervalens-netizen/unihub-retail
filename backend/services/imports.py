@@ -31,8 +31,10 @@ class ImportsService:
         async with self.pool.acquire() as conn:
             result = await import_sales_file(conn, content, filename=file.filename)
         from routers.filters import clear_filter_options_cache
+        from services.retail_metrics import update_business_metrics
 
         clear_filter_options_cache()
+        await update_business_metrics(self.pool)
         return ImportResponse(**asdict(result))
 
     async def get_import_job_status(self, job_id: str) -> ImportJobStatus:
