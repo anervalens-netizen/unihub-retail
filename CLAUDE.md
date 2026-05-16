@@ -8,7 +8,7 @@ Sursa de adevar pentru vanzari + vizite in ecosistemul MobiUp. Module: Hub, Focu
 
 ## Stack
 
-- Frontend: React 19 + Vite + TypeScript + TanStack Query + Tailwind 4
+- Frontend: React 19 + Vite 8 + TypeScript + TanStack Query + Tailwind 4
 - Backend: FastAPI + asyncpg + PostgreSQL (unihub_postgres:5432/unihub)
 - Auth: authentik OIDC (auth.unihub.ro) — JWT RS256 + JWKS validation
 - Error tracking: GlitchTip (Sentry-compatible SDK, self-hosted)
