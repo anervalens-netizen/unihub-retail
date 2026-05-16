@@ -117,7 +117,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Content-Security-Policy",
             "default-src 'self'; "
             "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "style-src 'self'; "
+            "style-src-elem 'self'; "
+            "style-src-attr 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "font-src 'self' data:; "
             "connect-src 'self' https://auth.unihub.ro; "

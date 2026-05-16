@@ -1,8 +1,47 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { createHash } from 'node:crypto';
 import path from 'path';
+import type { Plugin } from 'vite';
 import {defineConfig} from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
+
+function sriPlugin(): Plugin {
+  return {
+    name: 'vite-sri',
+    enforce: 'post',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        const integrityByPath = new Map<string, string>();
+        for (const [fileName, output] of Object.entries(ctx.bundle ?? {})) {
+          if (!fileName.endsWith('.js') && !fileName.endsWith('.css')) {
+            continue;
+          }
+          const source =
+            output.type === 'chunk'
+              ? output.code
+              : typeof output.source === 'string'
+                ? output.source
+                : Buffer.from(output.source).toString();
+          integrityByPath.set(
+            `/${fileName}`,
+            `sha384-${createHash('sha384').update(source).digest('base64')}`,
+          );
+        }
+        return html.replace(
+          /<(script|link)([^>]+(?:src|href)="([^"]+\.(?:js|css))"[^>]*)>/g,
+          (full, tag, attrs, url) => {
+            const integrity = integrityByPath.get(url);
+            return integrity && !/\sintegrity=/.test(attrs)
+              ? `<${tag}${attrs} integrity="${integrity}"${/\scrossorigin(?:=|\s|$)/.test(attrs) ? '' : ' crossorigin="anonymous"'}>`
+              : full;
+          },
+        );
+      },
+    },
+  };
+}
 
 export default defineConfig(() => {
   const backendTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000';
@@ -23,6 +62,7 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
+      sriPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
