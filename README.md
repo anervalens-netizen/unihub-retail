@@ -180,15 +180,15 @@ VIEW-uri disponibile in `schema_v2.sql`:
 ## Backup
 
 Backup-urile automate sunt configurate in crontab zilnic la ora 02:00:
-- Script: `/opt/Mobiup/scripts/backup.sh`
-- Destinatie: `/opt/Mobiup/backups/`
+- Script: `/opt/Mobiup/ops/scripts/backup.sh`
+- Destinatie: `/opt/Mobiup/ops/backups/`
   - `postgres/` — dump PostgreSQL (`pg_dump -Fc`)
   - `visits/` — copie SQLite visits
 - Retentie: 30 zile
 
 Restore PostgreSQL:
 ```bash
-pg_restore -d unihub /opt/Mobiup/backups/postgres/<fisier.dump>
+pg_restore -d unihub /opt/Mobiup/ops/backups/postgres/<fisier.dump>
 ```
 
 ## Gestionarea schemei DB
@@ -266,7 +266,7 @@ npm run build
 | `backend/scripts/rebuild_reporting.py` | Rebuild agregate reporting |
 | `backend/scripts/reset_default_users.py` | Reset parole utilizatori default |
 | `backend/scripts/smoke_api.py` | Smoke test API |
-| `/opt/Mobiup/scripts/backup.sh` | Backup zilnic PostgreSQL + SQLite |
+| `/opt/Mobiup/ops/scripts/backup.sh` | Backup zilnic PostgreSQL + SQLite |
 
 ## Documente suplimentare
 

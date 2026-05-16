@@ -152,7 +152,7 @@ Workflow: `.github/workflows/ci.yml`
 
 **Runner startup:**
 ```bash
-cd /opt/Mobiup/gh-runner
+cd /opt/Mobiup/ops/runners/retail
 ./run.sh
 ```
 
