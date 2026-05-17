@@ -69,6 +69,7 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     df["Nr"] = df["Nr"].fillna("").map(lambda value: str(value).strip())
     for column in ["SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "ASM", "Regional", "Agent"]:
         df[column] = df[column].fillna("").map(lambda value: str(value).strip())
+    df["Firma"] = df["Firma"].map(normalize_firma)
     for column in ["Brand", "Categorie", "SubCategorie"]:
         df[column] = df[column].where(pd.notna(df[column]), None)
         df[column] = df[column].map(lambda value: str(value).strip() if isinstance(value, str) else value)
@@ -76,6 +77,16 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     df["is_cartela"] = df["Categorie"].isna() | (df["Categorie"].astype(str).str.strip() == "")
     df["is_return"] = df["Cantitate"] < 0
     return df
+
+
+def normalize_firma(value: str) -> str:
+    cleaned = str(value or "").strip()
+    lower = cleaned.lower()
+    if lower == "mobiup":
+        return "Mobiup"
+    if lower == "mobicell":
+        return "MobiCell"
+    return cleaned
 
 
 def filter_asm_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:

@@ -7,17 +7,37 @@ ALTER TABLE IF EXISTS import_snapshots DROP COLUMN IF EXISTS imported_by;
 ALTER TABLE IF EXISTS error_logs DROP COLUMN IF EXISTS user_id;
 DROP TABLE IF EXISTS users CASCADE;
 
+CREATE TABLE IF NOT EXISTS team_leaders (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    asm TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE IF EXISTS team_leaders
+    ADD COLUMN IF NOT EXISTS asm TEXT;
+
 CREATE TABLE IF NOT EXISTS stores (
     site_code TEXT PRIMARY KEY,
     locatie TEXT NOT NULL,
     firma TEXT NOT NULL,
     regional TEXT NOT NULL,
     asm TEXT NOT NULL,
+    team_leader_id TEXT REFERENCES team_leaders(id) ON DELETE SET NULL,
     is_active BOOLEAN NOT NULL DEFAULT true,
     first_seen_month TEXT NOT NULL,
     last_seen_month TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS stores
+    ADD COLUMN IF NOT EXISTS team_leader_id TEXT REFERENCES team_leaders(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_stores_team_leader_id
+    ON stores (team_leader_id);
 
 CREATE TABLE IF NOT EXISTS focus_products (
     item_code TEXT PRIMARY KEY,
