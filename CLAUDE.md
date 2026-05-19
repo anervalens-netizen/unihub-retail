@@ -1,6 +1,6 @@
 # CLAUDE.md — UniHub Retail
 
-**Phase: C3 COMPLETED + Hub filter/reporting fixes — 2026-05-07**
+**Phase: C3 COMPLETED + Hub filter/reporting fixes — 2026-05-07 | Server audit + optimization — 2026-05-19**
 
 ## Overview
 
@@ -50,7 +50,8 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `api/client.ts` | Fetch wrapper (axios-free) cu auto-injectare token OIDC |
 | `auth/AuthContext.tsx` | OIDC auth context (oidc-client-ts + authentik) |
 | `components/MainLayout.tsx` | Shell principal, navigare, filtre globale |
-| `components/Dashboard.tsx` | Tab Hub — Luna curenta + Istoric |
+| `components/Dashboard.tsx` | Tab Hub — Luna curenta + Istoric (2016 linii dupa refactor 2026-05-19) |
+| `components/dashboard/DashboardWidgets.tsx` | Componente prezentare extracte din Dashboard (tabele, sortare, pie charts) |
 | `components/Campaigns.tsx` | Tab Focus — campanii, incentive, Top |
 | `components/Agents.tsx` | Tab Agenti (refactorizat cu useQuery) |
 | `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR | Management |
