@@ -260,7 +260,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 </tr>
               )}
               {summary.map((item) => (
-                <tr key={`${item.site_code}-${item.company_name}`} className="border-b border-slate-100 dark:border-slate-800">
+                <tr key={`${item.locatie ?? item.site_code}-${item.company_name}`} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="py-2 font-medium text-slate-700 dark:text-slate-200">
                     {item.locatie ?? item.site_code}
                   </td>

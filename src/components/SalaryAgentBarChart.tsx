@@ -30,13 +30,29 @@ function formatCurrency(val: any): string {
 const COLOR_MOBICELL = '#6366f1';
 const COLOR_MOBIUP = '#10b981';
 
+function SalaryTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const value = Number(payload[0]?.value ?? 0);
+
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs shadow-xl">
+      <div className="mb-1 text-slate-300">{label}</div>
+      <div className="font-medium text-white">
+        Salariu: {value.toLocaleString('ro-RO')} RON
+      </div>
+    </div>
+  );
+}
+
 export function SalaryAgentBarChart({ data }: Props) {
   const safeData = Array.isArray(data) ? data : [];
-  const chartData = safeData.map((r) => ({
-    label: formatMonth(r.year, r.month),
-    total_salary: r.total_salary,
-    company: r.company_name,
-  }));
+  const chartData = [...safeData]
+    .sort((a, b) => a.year * 100 + a.month - (b.year * 100 + b.month))
+    .map((r) => ({
+      label: formatMonth(r.year, r.month),
+      total_salary: r.total_salary,
+      company: r.company_name,
+    }));
 
   if (!chartData.length) {
     return (
@@ -64,15 +80,8 @@ export function SalaryAgentBarChart({ data }: Props) {
           width={48}
         />
         <Tooltip
-          formatter={(value: number) => [`${value.toLocaleString()} RON`, 'Salariu']}
-          contentStyle={{
-            background: '#1e293b',
-            border: 'none',
-            borderRadius: 8,
-            color: '#fff',
-            fontSize: 12,
-          }}
-          labelStyle={{ color: '#94a3b8', marginBottom: 4 }}
+          content={<SalaryTooltip />}
+          cursor={{ fill: 'rgba(15, 23, 42, 0.08)' }}
         />
         <Bar dataKey="total_salary" radius={[4, 4, 0, 0]}>
           {chartData.map((entry, index) => (

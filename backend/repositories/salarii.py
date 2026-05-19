@@ -135,22 +135,65 @@ class SalariiRepository:
             params2 = params + [import_month]
             return await conn.fetch(
                 f"""
+                WITH salary_rows AS (
+                    SELECT
+                        s.site_code,
+                        s.locatie,
+                        s.company_name,
+                        s.full_name,
+                        s.cnp,
+                        s.total_salary
+                    FROM salary_records s
+                    {join_stores}
+                    WHERE {where_clause}
+                ),
+                salary_display AS (
+                    SELECT
+                        MIN(site_code) AS site_code,
+                        locatie,
+                        company_name,
+                        SUM(total_salary) AS total_salary,
+                        COUNT(DISTINCT COALESCE(NULLIF(cnp, ''), full_name)) AS agent_count
+                    FROM salary_rows
+                    GROUP BY locatie, company_name
+                ),
+                salary_sites AS (
+                    SELECT DISTINCT site_code, locatie, company_name
+                    FROM salary_rows
+                    WHERE site_code IS NOT NULL
+                ),
+                sales_site AS (
+                    SELECT
+                        site_code,
+                        LOWER(firma) AS company_key,
+                        SUM(total_sales) AS total_sales
+                    FROM reporting_agent_month
+                    WHERE import_month = ${len(params2)}
+                    GROUP BY site_code, LOWER(firma)
+                ),
+                sales_display AS (
+                    SELECT
+                        ss.locatie,
+                        ss.company_name,
+                        COALESCE(SUM(sales_site.total_sales), 0) AS total_sales
+                    FROM salary_sites ss
+                    LEFT JOIN sales_site
+                        ON sales_site.site_code = ss.site_code
+                        AND sales_site.company_key = LOWER(ss.company_name)
+                    GROUP BY ss.locatie, ss.company_name
+                )
                 SELECT
-                    s.site_code,
-                    s.locatie,
-                    s.company_name,
-                    SUM(s.total_salary) AS total_salary,
-                    COUNT(DISTINCT s.full_name) AS agent_count,
-                    COALESCE(SUM(r.total_sales), 0) AS total_sales
-                FROM salary_records s
-                {join_stores}
-                LEFT JOIN reporting_agent_month r
-                    ON r.import_month = ${len(params2)}
-                    AND r.site_code = s.site_code
-                    AND LOWER(r.firma) = LOWER(s.company_name)
-                WHERE {where_clause}
-                GROUP BY s.site_code, s.locatie, s.company_name
-                ORDER BY s.locatie ASC NULLS LAST, s.site_code ASC
+                    sd.site_code,
+                    sd.locatie,
+                    sd.company_name,
+                    sd.total_salary,
+                    sd.agent_count,
+                    COALESCE(vd.total_sales, 0) AS total_sales
+                FROM salary_display sd
+                LEFT JOIN sales_display vd
+                    ON vd.locatie IS NOT DISTINCT FROM sd.locatie
+                    AND vd.company_name = sd.company_name
+                ORDER BY sd.locatie ASC NULLS LAST, sd.site_code ASC
                 """,
                 *params2,
             )

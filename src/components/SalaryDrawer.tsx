@@ -139,7 +139,7 @@ export function SalaryDrawer({ cnp, fullName, isOpen, onClose }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {history.records.slice(0, 12).map((r, i) => (
+                      {history.records.map((r, i) => (
                         <tr
                           key={i}
                           className="border-t border-slate-100 dark:border-slate-800 dark:text-slate-700"

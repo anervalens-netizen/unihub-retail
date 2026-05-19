@@ -148,6 +148,54 @@ Acoperirea completa a datelor:
 
 Nota: datele 2023-2024 nu au informatii per-agent individual (campul `agent` este `'-'`).
 
+### Salarii
+
+Salariile afisate in tabul **Agenti -> Salarii** sunt citite din tabela
+`salary_records`.
+
+Sursa operationala pentru salarii este setul de fisiere HR din:
+
+```text
+/opt/Mobiup/docs/comisioane/
+```
+
+Formatul curent este cate un fisier lunar per firma:
+- `MOBIUP COMISIOANE AGENTI <LUNA>.xls`
+- `COMISIOANE AGENTI Mobicell <luna>.xls`
+
+Istoricul initial folosit pentru popularea bazei este arhivat in:
+
+```text
+/opt/Mobiup/docs/comisioane/salarii-istoric.zip
+```
+
+Regula de venit folosita in aplicatie este:
+
+```text
+salary_records.total_salary = TOTAL SALARIU + BONURI MASA
+```
+
+Coloane HR folosite:
+- `CNP` -> `salary_records.cnp`
+- `Nume Prenume` -> `salary_records.full_name`
+- `Denumire locatie` -> `salary_records.locatie` si, cand maparea este sigura, `salary_records.site_code`
+- `TOTAL SALARIU` + `BONURI MASA` -> `salary_records.total_salary`
+
+Acoperire curenta in `salary_records`:
+- 2025 integral
+- 2026 ianuarie-aprilie
+
+Observatii de calitate a datelor:
+- unele randuri Mobiup nu au `site_code` cand locatia HR nu poate fi mapata sigur la un magazin Retail;
+- randurile fara `site_code` intra in totaluri si in istoricul agentilor, dar nu intra corect in filtrele pe magazin/regional/ASM;
+- cateva randuri istorice Mobicell au CNP gol in sursa initiala; acestea sunt pastrate pentru totalurile lunare, dar pot afecta numararea distincta pe agenti.
+
+Cardul **Salarii vs Vanzari** foloseste endpointul `/salarii/summary`.
+Pentru afisare, randurile sunt consolidate pe `locatie + company_name`, nu pe
+`site_code`. Motivul este ca in istoricul HR pot exista contracte duble,
+part-time sau coduri istorice diferite pentru aceeasi locatie. Consolidarea se
+face doar in query-ul de citire; tabela `salary_records` ramane nemodificata.
+
 ## Fluxul de import
 
 La import:

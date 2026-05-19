@@ -80,6 +80,36 @@ Familii de tabele:
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
 
+### Salarii
+
+Tabela `salary_records` este sursa citita de tabul **Agenti -> Salarii**.
+Datele vin din fisierele HR din `/opt/Mobiup/docs/comisioane/`, cate un
+fisier lunar per firma. Istoricul initial este pastrat in
+`/opt/Mobiup/docs/comisioane/salarii-istoric.zip`.
+
+Campul `salary_records.total_salary` reprezinta venitul total folosit in
+raportare si include bonurile de masa:
+
+```text
+TOTAL SALARIU + BONURI MASA
+```
+
+Maparea principala:
+- `CNP` -> `cnp`
+- `Nume Prenume` -> `full_name`
+- `Denumire locatie` -> `locatie` si optional `site_code`
+- numele fisierului -> `year`, `month`, `company_name`
+
+`site_code` este completat doar cand maparea locatiei este sigura. Randurile
+fara `site_code` sunt incluse in totalurile salariale generale, dar nu pot fi
+atribuite corect filtrelor bazate pe `stores` (`regional`, `asm`, magazin).
+
+Endpointul `/salarii/summary`, folosit de cardul **Salarii vs Vanzari**,
+consolideaza afisarea pe `locatie + company_name`. Aceasta evita duplicatele
+vizuale cauzate de contracte duble, part-time sau site_code-uri istorice pentru
+aceeasi locatie. Consolidarea este doar la nivel de query/read model si nu
+modifica randurile din `salary_records`.
+
 ### SQLite shared
 
 - `data/visits/visits.db`
@@ -117,4 +147,3 @@ backend/repositories/
 - Magazinele `TR %` sunt excluse din logica Retail.
 - Cand `site_code` este prezent, domina scope-ul istoric.
 - Vizitele sunt o dependinta istorica sensibila; nu modifica `visits.db` fara sa verifici fluxurile FieldOps/Retail.
-
