@@ -170,10 +170,12 @@ cd /opt/Mobiup/ops/runners/retail
 - Reporting-ul operational exclude categoria `Cartele` din agregatele `reporting_*`; nu reintroduce `is_cartela` in totaluri, medii sau procente.
 - Locatiile de distributie cu `stores.locatie ILIKE 'TR %'` sunt excluse din calculele Retail si din optiunile de filtre; regula este centralizata in `services/filters.py` si trebuie pastrata si in rebuild-ul reporting.
 - Filtrele Hub/Focus accepta multi-select pentru magazine si agenti; frontend-ul trimite valori comma-separated, iar SQL foloseste `= ANY(string_to_array($n::TEXT, ','))`.
+- Filtrele persistate in browser folosesc localStorage keys: `unihub_hub_filters`, `unihub_focus_filters`, `unihub_agents_filters`. Daca utilizatorul raporteaza filtre "blocate" dupa refresh, verifica aceste chei inainte de a schimba logica API.
 - Cand `site_code` este prezent, el domina scope-ul: backend-ul ignora `firma`, `regional` si `asm` pentru dashboard/history/comparatii/special_cards, ca istoricul unui magazin sa ramana vizibil chiar daca magazinul si-a schimbat RM/firma in timp.
 - ASM a fost scos din filtrele si cardurile Hub; Hub ramane pe layer RM + magazine + agenti. Nu reintroduce cardul ASM pana cand structura DB nu este actualizata.
 - Comparatia perioade din Hub foloseste aceeasi fereastra de zile: luna curenta pana la ultima zi importata daca luna e partiala, aceeasi perioada din luna trecuta si aceeasi perioada din anul trecut.
-- Cardul `Comparatie perioade` afiseaza delte pentru vanzari, medie zilnica, bonuri si cantitate, fiecare cu valoare absoluta si procent.
+- Cardul `Comparatie perioade` afiseaza delte pentru vanzari, bonuri si cantitate, fiecare cu valoare absoluta si procent.
+- Tabelele curente Hub `RM` si `Magazine` expun `forecast_target_pct` dupa `proc_realizare_target`; formula proiecteaza vanzarile la luna intreaga cand `import_snapshots.is_month_final=false`.
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate
 - Salarii LEFT JOIN stores conditionat (doar cand regional/asm sunt prezente)
 - Salarii company_name case-insensitive la JOIN (`LOWER()` pe ambele parti)

@@ -53,6 +53,11 @@ flowchart LR
 - Import vanzari si refresh reporting agregat.
 - Exporturi si rapoarte pentru management.
 
+Filtrele principale sunt gestionate in `App.tsx` si persistate in
+`localStorage` separat pe zone: Hub, Focus si Agenti. Hub si Focus pot porni
+cu aceleasi valori initiale, dar fiecare isi pastreaza ultima selectie dupa
+refresh.
+
 ## Arhitectura backend
 
 Backend-ul foloseste modelul `router -> service -> repository`.
@@ -64,6 +69,12 @@ Backend-ul foloseste modelul `router -> service -> repository`.
 | Campanii | `campaigns.py` pe toate cele 3 straturi |
 | HR/CRM/Tasks | straturi separate per domeniu |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
+
+Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
+Tabelele curente RM si Magazine returneaza atat procentul realizat
+(`proc_realizare_target`), cat si proiectia la luna intreaga
+(`forecast_target_pct`) calculata pe baza `import_snapshots.is_month_final` si
+ultimei zile importate.
 
 ## Baze de date
 

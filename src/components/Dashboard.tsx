@@ -85,6 +85,7 @@ type StoreSortKey =
   | 'target'
   | 'total_vanzari'
   | 'proc_realizare_target'
+  | 'forecast_target_pct'
   | 'incentive_qty'
   | 'qty_total'
   | 'nr_bonuri'
@@ -111,6 +112,7 @@ type RegionalSortKey =
   | 'target'
   | 'total_vanzari'
   | 'proc_realizare_target'
+  | 'forecast_target_pct'
   | 'promo_qty'
   | 'incentive_qty'
   | 'qty_total'
@@ -144,6 +146,10 @@ const DEFAULT_PROMO_INCENTIVE: PromoIncentiveSummary = {
 };
 const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
 const TABLE_MAX_HEIGHT_CLASS = 'max-h-[30rem]';
+const COMPACT_TH_CLASS = 'px-2 py-2 whitespace-nowrap';
+const COMPACT_TD_CLASS = 'px-2 py-1.5 whitespace-nowrap';
+const REGIONAL_TABLE_CLASS = 'w-max min-w-[980px] border-collapse text-[11px]';
+const STORE_TABLE_CLASS = 'w-max min-w-[1080px] border-collapse text-[11px]';
 
 const CATEGORY_SHORT: Record<string, string> = {
   'Casti intraauriculare': 'Casti intraaur.',
@@ -158,6 +164,7 @@ const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
   { key: 'target', label: 'Target' },
   { key: 'total_vanzari', label: 'Vanzari' },
   { key: 'proc_realizare_target', label: 'Procent' },
+  { key: 'forecast_target_pct', label: 'Forecast%' },
   { key: 'incentive_qty', label: 'Incentive' },
   { key: 'qty_total', label: 'Cantitate' },
   { key: 'nr_bonuri', label: 'Nr bonuri' },
@@ -187,6 +194,7 @@ const REGIONAL_COLUMNS: Array<{ key: RegionalSortKey; label: string }> = [
   { key: 'target', label: 'Target' },
   { key: 'total_vanzari', label: 'Vanzari' },
   { key: 'proc_realizare_target', label: 'Procent' },
+  { key: 'forecast_target_pct', label: 'Forecast%' },
   { key: 'promo_qty', label: 'Promo' },
   { key: 'incentive_qty', label: 'Incentive' },
   { key: 'qty_total', label: 'Cantitate' },
@@ -210,9 +218,9 @@ const ASM_COLUMNS: Array<{ key: AsmSortKey; label: string }> = [
   { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
 
-const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty');
+const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'forecast_target_pct');
 const HIST_ASM_COLUMNS = ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
-const HIST_STORE_COLUMNS = STORE_COLUMNS; // promo_qty not in STORE_COLUMNS
+const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'forecast_target_pct');
 const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
 
 export function Dashboard({ currentMonth, months, filters, onSectionChange }: DashboardProps) {
@@ -1310,7 +1318,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
               </div>
             </div>
             <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-              <table className="min-w-330 w-full border-collapse text-xs">
+              <table className={REGIONAL_TABLE_CLASS}>
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
                     {regionalColumnsVisible.map((column, i) => (
@@ -1320,7 +1328,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                           active={regionalSort.key === column.key}
                           direction={regionalSort.direction}
                           onClick={() => handleSortRegionals(column.key)}
-                          className={i === 0 ? 'w-24' : ''}
+                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-28' : ''}`}
                         />
                       </React.Fragment>
                     ))}
@@ -1332,17 +1340,18 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                       key={regional.regional}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className="max-w-0 w-24 truncate px-3 py-2 font-semibold">{regional.regional}</td>
-                      <td className="px-3 py-2">{formatCurrency(regional.target)}</td>
-                      <td className="px-3 py-2">{formatCurrency(regional.total_vanzari)}</td>
-                      <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(regional.proc_realizare_target)}</td>
-                      {hasActivePromotion && <td className="px-3 py-2">{formatInt(regional.promo_qty)}</td>}
-                      <td className="px-3 py-2">{formatInt(regional.incentive_qty)}</td>
-                      <td className="px-3 py-2">{formatInt(regional.qty_total)}</td>
-                      <td className="px-3 py-2">{formatInt(regional.nr_bonuri)}</td>
-                      <td className="px-3 py-2">{formatCurrency(regional.medie_zilnica ?? 0)}</td>
-                      <td className="px-3 py-2">{formatPercent(regional.proc_bon2acc)}</td>
-                      <td className="px-3 py-2">{formatPercent(regional.prc_focus_acc_qty)}</td>
+                      <td className={`max-w-28 truncate font-semibold ${COMPACT_TD_CLASS}`}>{regional.regional}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.target)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.total_vanzari)}</td>
+                      <td className={`${COMPACT_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(regional.proc_realizare_target)}</td>
+                      <td className={`${COMPACT_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(regional.forecast_target_pct)}</td>
+                      {hasActivePromotion && <td className={COMPACT_TD_CLASS}>{formatInt(regional.promo_qty)}</td>}
+                      <td className={COMPACT_TD_CLASS}>{formatInt(regional.incentive_qty)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatInt(regional.qty_total)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatInt(regional.nr_bonuri)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.medie_zilnica ?? 0)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatPercent(regional.proc_bon2acc)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatPercent(regional.prc_focus_acc_qty)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1363,7 +1372,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
               </div>
             </div>
             <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-              <table className="min-w-330 w-full border-collapse text-xs">
+              <table className={STORE_TABLE_CLASS}>
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
                     {STORE_COLUMNS.map((column, i) => (
@@ -1373,7 +1382,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                           active={storeSort.key === column.key}
                           direction={storeSort.direction}
                           onClick={() => handleSortStores(column.key)}
-                          className={i === 0 ? 'w-36' : ''}
+                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-36' : ''}`}
                         />
                       </React.Fragment>
                     ))}
@@ -1385,22 +1394,23 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                       key={store.site_code}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className="max-w-0 w-36 truncate px-3 py-2 font-semibold">{store.locatie}</td>
-                      <td className="px-3 py-2 text-center font-bold">
+                      <td className={`max-w-36 truncate font-semibold ${COMPACT_TD_CLASS}`}>{store.locatie}</td>
+                      <td className={`${COMPACT_TD_CLASS} text-center font-bold`}>
                         {store.firma?.toLowerCase().includes('mobiup')
                           ? <span className="text-red-500">MU</span>
                           : <span className="text-blue-500">MC</span>
                         }
                       </td>
-                      <td className="px-3 py-2">{formatCurrency(store.target)}</td>
-                      <td className="px-3 py-2">{formatCurrency(store.total_vanzari)}</td>
-                      <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(store.proc_realizare_target)}</td>
-                      <td className="px-3 py-2">{formatInt(store.incentive_qty ?? 0)}</td>
-                      <td className="px-3 py-2">{formatInt(store.qty_total ?? 0)}</td>
-                      <td className="px-3 py-2">{formatInt(store.nr_bonuri)}</td>
-                      <td className="px-3 py-2">{formatInt(store.nr_agenti)}</td>
-                      <td className="px-3 py-2">{formatInt(store.zile_active)}</td>
-                      <td className="px-3 py-2">{formatCurrency(getStoreDailyAverage(store))}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatCurrency(store.target)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatCurrency(store.total_vanzari)}</td>
+                      <td className={`${COMPACT_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
+                      <td className={`${COMPACT_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(store.forecast_target_pct)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatInt(store.incentive_qty ?? 0)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatInt(store.zile_active)}</td>
+                      <td className={COMPACT_TD_CLASS}>{formatCurrency(getStoreDailyAverage(store))}</td>
                     </tr>
                   ))}
                 </tbody>

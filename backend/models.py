@@ -213,6 +213,7 @@ class StoreStats(BaseModel):
     zile_active: int
     target: Decimal
     proc_realizare_target: Decimal | None
+    forecast_target_pct: Decimal | None = None
     promo_qty: int = 0
     incentive_qty: int = 0
 
@@ -228,6 +229,7 @@ class RegionalStats(BaseModel):
     zile_active: int
     target: Decimal
     proc_realizare_target: Decimal | None
+    forecast_target_pct: Decimal | None = None
     promo_qty: int = 0
     incentive_qty: int = 0
     medie_zilnica: Decimal | None

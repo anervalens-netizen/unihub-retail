@@ -13,6 +13,7 @@ type StoreSortKey =
   | 'target'
   | 'total_vanzari'
   | 'proc_realizare_target'
+  | 'forecast_target_pct'
   | 'incentive_qty'
   | 'qty_total'
   | 'nr_bonuri'
@@ -38,6 +39,7 @@ type RegionalSortKey =
   | 'target'
   | 'total_vanzari'
   | 'proc_realizare_target'
+  | 'forecast_target_pct'
   | 'promo_qty'
   | 'incentive_qty'
   | 'qty_total'
@@ -451,8 +453,10 @@ export function SortableHeader({
   onClick: () => void;
   className?: string;
 }) {
+  const hasCustomSpacing = /\b[pxy]-/.test(className);
+
   return (
-    <th className={`px-3 py-3 font-bold ${className}`}>
+    <th className={`font-bold ${hasCustomSpacing ? '' : 'px-3 py-3'} ${className}`}>
       <button
         type="button"
         onClick={onClick}

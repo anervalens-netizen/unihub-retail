@@ -156,6 +156,7 @@ export interface StoreStat {
   zile_active: number;
   target: number;
   proc_realizare_target: number | null;
+  forecast_target_pct: number | null;
   promo_qty: number;
   incentive_qty: number;
 }
@@ -169,6 +170,7 @@ export interface RegionalStat {
   zile_active: number;
   target: number;
   proc_realizare_target: number | null;
+  forecast_target_pct: number | null;
   promo_qty: number;
   incentive_qty: number;
   medie_zilnica: number | null;

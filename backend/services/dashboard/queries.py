@@ -140,6 +140,27 @@ async def _fetch_store_stats_rows(
             SELECT *
             FROM reporting_agent_day agg
             WHERE {" AND ".join(clauses)}
+        ),
+        forecast_meta AS (
+            SELECT
+                CASE
+                    WHEN COALESCE(bool_and(snap.is_month_final), true) = false
+                        AND EXTRACT(DAY FROM MAX(rid.sale_date)) > 0
+                    THEN
+                        EXTRACT(DAY FROM (
+                            date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
+                            + INTERVAL '1 month - 1 day'
+                        ))::NUMERIC
+                        / EXTRACT(DAY FROM MAX(rid.sale_date))::NUMERIC
+                    ELSE 1::NUMERIC
+                END AS forecast_factor
+            FROM import_snapshots snap
+            LEFT JOIN (
+                SELECT MAX(sale_date) AS sale_date
+                FROM reporting_item_day
+                WHERE import_month = $1
+            ) rid ON true
+            WHERE snap.import_month = $1
         )
         SELECT
             fd.import_month,
@@ -158,8 +179,14 @@ async def _fetch_store_stats_rows(
                 WHEN COALESCE(MAX(stg.target_value), 0) > 0
                 THEN ROUND(COALESCE(SUM(fd.total_sales), 0) * 100.0 / MAX(stg.target_value), 2)
                 ELSE NULL
-            END AS proc_realizare_target
+            END AS proc_realizare_target,
+            CASE
+                WHEN COALESCE(MAX(stg.target_value), 0) > 0
+                THEN ROUND(COALESCE(SUM(fd.total_sales), 0) * MAX(fm.forecast_factor) * 100.0 / MAX(stg.target_value), 2)
+                ELSE NULL
+            END AS forecast_target_pct
         FROM filtered_days fd
+        CROSS JOIN forecast_meta fm
         LEFT JOIN store_targets stg
             ON stg.import_month = fd.import_month
             AND stg.site_code = fd.site_code
@@ -501,6 +528,27 @@ async def _fetch_regional_stats(
                 ON stg.import_month = $1
                 AND stg.site_code = rs.site_code
             GROUP BY rs.regional
+        ),
+        forecast_meta AS (
+            SELECT
+                CASE
+                    WHEN COALESCE(bool_and(snap.is_month_final), true) = false
+                        AND EXTRACT(DAY FROM MAX(rid.sale_date)) > 0
+                    THEN
+                        EXTRACT(DAY FROM (
+                            date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
+                            + INTERVAL '1 month - 1 day'
+                        ))::NUMERIC
+                        / EXTRACT(DAY FROM MAX(rid.sale_date))::NUMERIC
+                    ELSE 1::NUMERIC
+                END AS forecast_factor
+            FROM import_snapshots snap
+            LEFT JOIN (
+                SELECT MAX(sale_date) AS sale_date
+                FROM reporting_item_day
+                WHERE import_month = $1
+            ) rid ON true
+            WHERE snap.import_month = $1
         )
         SELECT
             rb.import_month,
@@ -517,6 +565,11 @@ async def _fetch_regional_stats(
                 ELSE NULL
             END AS proc_realizare_target,
             CASE
+                WHEN COALESCE(rt.target, 0) > 0
+                THEN ROUND(rb.total_vanzari * fm.forecast_factor * 100.0 / rt.target, 2)
+                ELSE NULL
+            END AS forecast_target_pct,
+            CASE
                 WHEN rb.zile_active > 0
                 THEN ROUND(rb.total_vanzari / rb.zile_active, 2)
                 ELSE NULL
@@ -532,6 +585,7 @@ async def _fetch_regional_stats(
                 ELSE NULL
             END AS prc_focus_acc_qty
         FROM regional_base rb
+        CROSS JOIN forecast_meta fm
         LEFT JOIN regional_targets rt ON rt.regional = rb.regional
         ORDER BY rb.total_vanzari DESC, rb.regional ASC
         """,

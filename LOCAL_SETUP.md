@@ -220,6 +220,16 @@ python backend/scripts/import_grile_agent_targets.py --month 2026-05 --apply
 Hub foloseste targetul din `agent_targets` doar pentru agentii mapati; restul
 raman pe fallback-ul vechi `target magazin / agenti activi`.
 
+### Note UI Hub
+
+- Filtrele Hub, Focus si Agenti se salveaza in `localStorage`, ca refresh-ul
+  paginii sa pastreze selectia curenta.
+- Tabelele curente `RM` si `Magazine` afiseaza `Forecast%` dupa `Procent`.
+  Valoarea vine din backend (`forecast_target_pct`) si proiecteaza vanzarile
+  pana la finalul lunii cand luna importata este partiala.
+- Cardul `Comparatie perioade` afiseaza delte doar pentru vanzari, bonuri si
+  cantitate; medie zilnica ramane doar in tabelul de comparatie.
+
 ## 9. Cum sunt gestionate datele
 
 Fluxul standard este:
