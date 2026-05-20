@@ -287,19 +287,22 @@ async def main() -> None:
 
         if unresolved:
             print("\nNEREZOLVATE")
-            for row in unresolved:
-                agents = ", ".join(sorted(retail_agents.get(row.get("site_code", ""), set())))
+            for unresolved_row in unresolved:
+                agents = ", ".join(
+                    sorted(retail_agents.get(unresolved_row.get("site_code", ""), set()))
+                )
                 print(
-                    f"- {row.get('site_code')} | {row.get('store_key')} | "
-                    f"{row.get('agent_name')} | target={row.get('target_value')} | "
-                    f"status={row.get('status')} | retail_agents={agents}"
+                    f"- {unresolved_row.get('site_code')} | {unresolved_row.get('store_key')} | "
+                    f"{unresolved_row.get('agent_name')} | target={unresolved_row.get('target_value')} | "
+                    f"status={unresolved_row.get('status')} | retail_agents={agents}"
                 )
 
         print("\nREZOLVATE")
-        for row in resolved:
+        for resolved_row in resolved:
             print(
-                f"- {row.site_code} | {row.source_agent_name} -> {row.agent} | "
-                f"target={row.target_value} | {row.match_method}"
+                f"- {resolved_row.site_code} | "
+                f"{resolved_row.source_agent_name} -> {resolved_row.agent} | "
+                f"target={resolved_row.target_value} | {resolved_row.match_method}"
             )
 
         if args.apply:
