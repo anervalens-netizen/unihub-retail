@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from db.connection import get_pool
 from models import (
     AsmGroup,
     VisitDayGroup,
@@ -17,6 +18,13 @@ from models import (
 )
 from repositories.visits_report import VisitsReportRepository
 from services.filters import normalize_filter
+
+
+def _split_filter_values(value: str | None) -> list[str]:
+    normalized = normalize_filter(value)
+    if normalized is None:
+        return []
+    return [item.strip() for item in normalized.split(",") if item.strip()]
 
 
 class VisitsReportService:
@@ -40,9 +48,19 @@ class VisitsReportService:
             "asm": normalize_filter(asm),
             "magazin": normalize_filter(magazin),
         }
+        store_metadata, site_codes = await self._resolve_store_scope(filters)
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, partial(self.repo.query_sqlite, month, filters))
+        result = await loop.run_in_executor(
+            None,
+            partial(
+                self.repo.query_sqlite,
+                month,
+                filters,
+                store_metadata=store_metadata,
+                site_codes=site_codes,
+            ),
+        )
 
         report_rows = [
             VisitReportRow(
@@ -86,9 +104,13 @@ class VisitsReportService:
             "asm": normalize_filter(asm),
             "magazin": normalize_filter(magazin),
         }
+        store_metadata, site_codes = await self._resolve_store_scope(filters)
 
         loop = asyncio.get_running_loop()
-        rows = await loop.run_in_executor(None, partial(self.repo.query_tree, filters))
+        rows = await loop.run_in_executor(
+            None,
+            partial(self.repo.query_tree, filters, store_metadata=store_metadata, site_codes=site_codes),
+        )
 
         asm_map: dict[str, dict[str, dict[str, list[VisitSummaryItem]]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
@@ -124,6 +146,52 @@ class VisitsReportService:
             asms.append(AsmGroup(asm=asm_key, nr_vizite=total_asm, months=months))
 
         return VisitTreeResponse(asms=asms)
+
+    async def _resolve_store_scope(
+        self,
+        filters: dict[str, str | None],
+    ) -> tuple[dict[str, dict[str, str]], list[str] | None]:
+        firma_values = _split_filter_values(filters.get("firma"))
+        regional_values = _split_filter_values(filters.get("rm"))
+        asm_values = _split_filter_values(filters.get("asm"))
+        site_values = _split_filter_values(filters.get("magazin"))
+
+        clauses = ["locatie NOT ILIKE 'TR %'"]
+        params: list[object] = []
+
+        def add_any_clause(column: str, values: list[str]) -> None:
+            if not values:
+                return
+            params.append(values)
+            clauses.append(f"{column} = ANY(${len(params)}::text[])")
+
+        add_any_clause("firma", firma_values)
+        add_any_clause("regional", regional_values)
+        add_any_clause("asm", asm_values)
+        add_any_clause("site_code", site_values)
+
+        has_scope_filter = bool(firma_values or regional_values or asm_values or site_values)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT site_code, firma, regional, asm, locatie
+                FROM stores
+                WHERE {" AND ".join(clauses)}
+                """,
+                *params,
+            )
+
+        metadata = {
+            row["site_code"]: {
+                "firma": row["firma"] or "",
+                "regional": row["regional"] or "",
+                "asm": row["asm"] or "",
+                "locatie": row["locatie"] or "",
+            }
+            for row in rows
+        }
+        return metadata, list(metadata) if has_scope_filter else None
 
     async def get_visit_detail(self, visit_id: str) -> VisitDetail:
         loop = asyncio.get_running_loop()

@@ -230,6 +230,14 @@ raman pe fallback-ul vechi `target magazin / agenti activi`.
 - Cardul `Comparatie perioade` afiseaza delte doar pentru vanzari, bonuri si
   cantitate; medie zilnica ramane doar in tabelul de comparatie.
 
+### Note Vizite
+
+- FieldOps scrie vizitele in `data/visits/visits.db`, cu codul magazinului in
+  coloana `magazin`.
+- Retail imbogateste vizitele cu mapping-ul curent din `stores`; filtrele RM
+  si firma nu trebuie aplicate direct pe coloanele `regional`/`firma` din
+  SQLite, pentru ca randurile istorice pot avea valori vechi sau goale.
+
 ## 9. Cum sunt gestionate datele
 
 Fluxul standard este:

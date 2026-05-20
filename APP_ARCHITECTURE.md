@@ -134,6 +134,10 @@ fallback-ul istoric `store_targets.target_value / numar agenti activi`.
 
 - `data/visits/visits.db`
 - Retail citeste raportarea vizitelor; FieldOps este noul flux operational pentru vizite.
+- In Retail, filtrarea si gruparea din meniul Vizite folosesc mapping-ul curent
+  `stores.site_code -> firma/regional/asm`, nu valorile istorice salvate in
+  randurile SQLite. Vizitele FieldOps pastreaza codul magazinului in
+  `visits.magazin`.
 
 ## Integrari
 

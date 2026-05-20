@@ -12,59 +12,55 @@ class VisitsReportRepository:
         self.db_path = db_path or VISITS_DB
         self.images_dir = images_dir or IMAGES_DIR
 
-    def query_sqlite(self, month: str, filters: dict[str, str | None]) -> dict:
+    def query_sqlite(
+        self,
+        month: str,
+        filters: dict[str, str | None],
+        *,
+        store_metadata: dict[str, dict[str, str]] | None = None,
+        site_codes: list[str] | None = None,
+    ) -> dict:
         if not self.db_path.exists():
             return {"total": 0, "magazine_unice": 0, "avg_completion": 0.0, "rows": []}
 
-        clauses, params = self._build_clauses(filters, month=month)
+        clauses, params = self._build_clauses(filters, month=month, site_codes=site_codes)
         where = " AND ".join(clauses)
 
         con = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
         con.row_factory = sqlite3.Row
         try:
-            cur = con.cursor()
-            summary = cur.execute(
+            raw_rows = con.execute(
                 f"""
-                SELECT COUNT(*) AS total_vizite,
-                       COUNT(DISTINCT magazin) AS magazine_unice,
-                       ROUND(AVG(completion_pct), 1) AS avg_completion
+                SELECT magazin, asm, regional, firma, completion_pct,
+                       curatenie, imagine, uniforma, afise, produse_promo, data_raport
                 FROM visits WHERE {where}
-                """,
-                params,
-            ).fetchone()
-
-            rows = cur.execute(
-                f"""
-                SELECT magazin, asm, regional, firma,
-                       COUNT(*) AS nr_vizite,
-                       ROUND(AVG(completion_pct), 1) AS avg_completion,
-                       ROUND(100.0 * SUM(curatenie)     / COUNT(*), 1) AS curatenie_pct,
-                       ROUND(100.0 * SUM(imagine)       / COUNT(*), 1) AS imagine_pct,
-                       ROUND(100.0 * SUM(uniforma)      / COUNT(*), 1) AS uniforma_pct,
-                       ROUND(100.0 * SUM(afise)         / COUNT(*), 1) AS afise_pct,
-                       ROUND(100.0 * SUM(produse_promo) / COUNT(*), 1) AS produse_promo_pct,
-                       MAX(data_raport) AS last_visit
-                FROM visits WHERE {where}
-                GROUP BY magazin, asm, regional, firma
-                ORDER BY nr_vizite DESC, magazin ASC
                 """,
                 params,
             ).fetchall()
         finally:
             con.close()
 
+        rows = self._aggregate_report_rows(raw_rows, store_metadata or {})
+        total = len(raw_rows)
+        completion_values = [float(row["completion_pct"] or 0) for row in raw_rows]
         return {
-            "total": summary["total_vizite"] if summary else 0,
-            "magazine_unice": summary["magazine_unice"] if summary else 0,
-            "avg_completion": float(summary["avg_completion"]) if summary and summary["avg_completion"] else 0.0,
-            "rows": [dict(r) for r in rows],
+            "total": total,
+            "magazine_unice": len({row["magazin"] for row in raw_rows if row["magazin"]}),
+            "avg_completion": round(sum(completion_values) / total, 1) if total else 0.0,
+            "rows": rows,
         }
 
-    def query_tree(self, filters: dict[str, str | None]) -> list[dict]:
+    def query_tree(
+        self,
+        filters: dict[str, str | None],
+        *,
+        store_metadata: dict[str, dict[str, str]] | None = None,
+        site_codes: list[str] | None = None,
+    ) -> list[dict]:
         if not self.db_path.exists():
             return []
 
-        clauses, params = self._build_clauses(filters)
+        clauses, params = self._build_clauses(filters, site_codes=site_codes)
         where = " AND ".join(clauses)
 
         con = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
@@ -82,7 +78,7 @@ class VisitsReportRepository:
         finally:
             con.close()
 
-        return [dict(r) for r in rows]
+        return [self._enrich_visit_row(dict(r), store_metadata or {}) for r in rows]
 
     def query_visit(self, visit_id: str) -> dict | None:
         if not self.db_path.exists():
@@ -114,6 +110,7 @@ class VisitsReportRepository:
         self,
         filters: dict[str, str | None],
         month: str | None = None,
+        site_codes: list[str] | None = None,
     ) -> tuple[list[str], list[Any]]:
         clauses: list[str] = ["status != 'draft'"]
         params: list[Any] = []
@@ -121,6 +118,15 @@ class VisitsReportRepository:
         if month:
             clauses.append("strftime('%Y-%m', data_raport) = ?")
             params.append(month)
+        if site_codes is not None:
+            if not site_codes:
+                clauses.append("1 = 0")
+            else:
+                placeholders = ",".join("?" for _ in site_codes)
+                clauses.append(f"magazin IN ({placeholders})")
+                params.extend(site_codes)
+            return clauses, params
+
         if filters.get("firma"):
             clauses.append("firma = ?")
             params.append(filters["firma"])
@@ -135,3 +141,71 @@ class VisitsReportRepository:
             params.append(filters["magazin"])
 
         return clauses, params
+
+    def _enrich_visit_row(
+        self,
+        row: dict[str, Any],
+        store_metadata: dict[str, dict[str, str]],
+    ) -> dict[str, Any]:
+        store = store_metadata.get(str(row.get("magazin") or ""))
+        if not store:
+            return row
+
+        enriched = dict(row)
+        enriched["firma"] = store.get("firma") or enriched.get("firma")
+        enriched["regional"] = store.get("regional") or enriched.get("regional")
+        enriched["asm"] = store.get("asm") or enriched.get("asm")
+        return enriched
+
+    def _aggregate_report_rows(
+        self,
+        raw_rows: list[sqlite3.Row],
+        store_metadata: dict[str, dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        grouped: dict[tuple[str, str | None, str | None, str | None], dict[str, Any]] = {}
+        bool_fields = ["curatenie", "imagine", "uniforma", "afise", "produse_promo"]
+
+        for raw in raw_rows:
+            row = self._enrich_visit_row(dict(raw), store_metadata)
+            key = (row.get("magazin") or "", row.get("asm"), row.get("regional"), row.get("firma"))
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "magazin": key[0],
+                    "asm": key[1],
+                    "regional": key[2],
+                    "firma": key[3],
+                    "nr_vizite": 0,
+                    "completion_sum": 0.0,
+                    "last_visit": None,
+                    **{f"{field}_sum": 0 for field in bool_fields},
+                },
+            )
+            bucket["nr_vizite"] += 1
+            bucket["completion_sum"] += float(row.get("completion_pct") or 0)
+            if row.get("data_raport") and (bucket["last_visit"] is None or row["data_raport"] > bucket["last_visit"]):
+                bucket["last_visit"] = row["data_raport"]
+            for field in bool_fields:
+                bucket[f"{field}_sum"] += 1 if row.get(field) else 0
+
+        rows: list[dict[str, Any]] = []
+        for bucket in grouped.values():
+            count = bucket["nr_vizite"] or 1
+            rows.append(
+                {
+                    "magazin": bucket["magazin"],
+                    "asm": bucket["asm"],
+                    "regional": bucket["regional"],
+                    "firma": bucket["firma"],
+                    "nr_vizite": bucket["nr_vizite"],
+                    "avg_completion": round(bucket["completion_sum"] / count, 1),
+                    "curatenie_pct": round(100.0 * bucket["curatenie_sum"] / count, 1),
+                    "imagine_pct": round(100.0 * bucket["imagine_sum"] / count, 1),
+                    "uniforma_pct": round(100.0 * bucket["uniforma_sum"] / count, 1),
+                    "afise_pct": round(100.0 * bucket["afise_sum"] / count, 1),
+                    "produse_promo_pct": round(100.0 * bucket["produse_promo_sum"] / count, 1),
+                    "last_visit": bucket["last_visit"],
+                }
+            )
+
+        return sorted(rows, key=lambda row: (-row["nr_vizite"], row["magazin"]))

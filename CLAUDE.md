@@ -187,6 +187,7 @@ cd /opt/Mobiup/ops/runners/retail
 
 - SQLite DB: `data/visits/visits.db` + `data/visits/images/`
 - `visits_report.py` reads via `run_in_executor` (async wrapper)
+- Meniul Retail `Vizite` citeste randurile din SQLite, dar filtrele firma/RM/ASM/magazin si afisarea ierarhiei se rezolva prin tabela curenta `stores` dupa `visits.magazin = stores.site_code`. Nu filtra direct pe `visits.regional`/`visits.asm`: FieldOps poate avea valori istorice sau goale in randurile vechi.
 - Photos served via `/api/visits-report/photo/{visit_id}/{filename}`
 - `visits_snapshot` table in PG synced at boot for HR/CRM use
 
