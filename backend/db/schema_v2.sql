@@ -87,6 +87,24 @@ CREATE TABLE IF NOT EXISTS store_targets (
     PRIMARY KEY (import_month, site_code)
 );
 
+CREATE TABLE IF NOT EXISTS agent_targets (
+    import_month TEXT NOT NULL,
+    site_code TEXT NOT NULL REFERENCES stores(site_code),
+    agent TEXT NOT NULL,
+    target_value NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    source_agent_name TEXT,
+    source_store_key TEXT,
+    source_file TEXT,
+    manager TEXT,
+    match_method TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (import_month, site_code, agent)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_targets_month_manager
+    ON agent_targets (import_month, manager);
+
 CREATE TABLE IF NOT EXISTS incentive_campaigns (
     id SERIAL PRIMARY KEY,
     month TEXT NOT NULL UNIQUE,

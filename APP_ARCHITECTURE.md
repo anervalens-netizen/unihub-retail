@@ -77,7 +77,7 @@ Familii de tabele:
 | Tranzactii | `sales_transactions`, `historical_annual_sales` |
 | Campanii | `incentive_campaigns`, `incentive_products` |
 | Reporting | `reporting_agent_*`, `reporting_item_*`, `reporting_focus_item_month`, `reporting_category_month` |
-| Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records` |
+| Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_targets` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
 
 ### Salarii
@@ -109,6 +109,15 @@ consolideaza afisarea pe `locatie + company_name`. Aceasta evita duplicatele
 vizuale cauzate de contracte duble, part-time sau site_code-uri istorice pentru
 aceeasi locatie. Consolidarea este doar la nivel de query/read model si nu
 modifica randurile din `salary_records`.
+
+### Targete agent
+
+Tabela `agent_targets` este un override optional pentru targetele reale per
+agent. Pilotul curent importa targete din Grile Salarii pentru managerul
+Andrei Stancu, mapand `store_metadata.cod_locatie` la `stores.site_code` si
+numele agentului din grila la codul agentului Retail. Cand exista override,
+tabelul Hub pe agent foloseste `agent_targets.target_value`; altfel ramane
+fallback-ul istoric `store_targets.target_value / numar agenti activi`.
 
 ### SQLite shared
 

@@ -205,6 +205,21 @@ Coloane Excel detectate automat (alias-uri acceptate):
 - Valoare incentive: `Incentive`, `Valoare`, `Bonus`, `Reward`, `valoare_incentive`
 - Nume produs (optional): `ItemName`, `Denumire`, `name`
 
+### Import targete reale per agent din Grile Salarii
+
+Pilotul curent importa targete per agent din `/opt/Mobiup/grile-salarii`,
+doar pentru managerul Andrei Stancu. Scriptul citeste
+`store_metadata.json` si `outputs/monitor_output.json`, apoi scrie in tabela
+`agent_targets`. Implicit ruleaza dry-run:
+
+```bash
+python backend/scripts/import_grile_agent_targets.py --month 2026-05
+python backend/scripts/import_grile_agent_targets.py --month 2026-05 --apply
+```
+
+Hub foloseste targetul din `agent_targets` doar pentru agentii mapati; restul
+raman pe fallback-ul vechi `target magazin / agenti activi`.
+
 ## 9. Cum sunt gestionate datele
 
 Fluxul standard este:

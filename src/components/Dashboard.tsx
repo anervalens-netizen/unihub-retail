@@ -660,9 +660,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     const current = Number(periodComparison.current.total_sales);
     const previous = Number(periodComparison.previous.total_sales);
     const yearOverYear = Number(periodComparison.year_over_year.total_sales);
-    const currentAvg = Number(periodComparison.current.daily_average ?? 0);
-    const previousAvg = Number(periodComparison.previous.daily_average ?? 0);
-    const yearOverYearAvg = Number(periodComparison.year_over_year.daily_average ?? 0);
     const currentReceipts = Number(periodComparison.current.total_receipts);
     const previousReceipts = Number(periodComparison.previous.total_receipts);
     const yearOverYearReceipts = Number(periodComparison.year_over_year.total_receipts);
@@ -674,16 +671,12 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     return {
       previousSales: current - previous,
       previousSalesPct: pct(current - previous, previous),
-      previousDaily: currentAvg - previousAvg,
-      previousDailyPct: pct(currentAvg - previousAvg, previousAvg),
       previousReceipts: currentReceipts - previousReceipts,
       previousReceiptsPct: pct(currentReceipts - previousReceipts, previousReceipts),
       previousQuantity: currentQuantity - previousQuantity,
       previousQuantityPct: pct(currentQuantity - previousQuantity, previousQuantity),
       yearSales: current - yearOverYear,
       yearSalesPct: pct(current - yearOverYear, yearOverYear),
-      yearDaily: currentAvg - yearOverYearAvg,
-      yearDailyPct: pct(currentAvg - yearOverYearAvg, yearOverYearAvg),
       yearReceipts: currentReceipts - yearOverYearReceipts,
       yearReceiptsPct: pct(currentReceipts - yearOverYearReceipts, yearOverYearReceipts),
       yearQuantity: currentQuantity - yearOverYearQuantity,
@@ -1184,8 +1177,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                       title="Vs luna trecuta"
                       salesDelta={comparisonDeltas.previousSales}
                       salesPct={comparisonDeltas.previousSalesPct}
-                      dailyDelta={comparisonDeltas.previousDaily}
-                      dailyPct={comparisonDeltas.previousDailyPct}
                       receiptsDelta={comparisonDeltas.previousReceipts}
                       receiptsPct={comparisonDeltas.previousReceiptsPct}
                       quantityDelta={comparisonDeltas.previousQuantity}
@@ -1195,8 +1186,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                       title="Vs anul trecut"
                       salesDelta={comparisonDeltas.yearSales}
                       salesPct={comparisonDeltas.yearSalesPct}
-                      dailyDelta={comparisonDeltas.yearDaily}
-                      dailyPct={comparisonDeltas.yearDailyPct}
                       receiptsDelta={comparisonDeltas.yearReceipts}
                       receiptsPct={comparisonDeltas.yearReceiptsPct}
                       quantityDelta={comparisonDeltas.yearQuantity}
@@ -2013,4 +2002,3 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     </div>
   );
 }
-

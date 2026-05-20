@@ -125,6 +125,7 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 | `store_scores` | Scoruri CRM per magazin/luna |
 | `store_targets` | Targete lunare magazin |
 | `salary_records` | Salarii angajati |
+| `agent_targets` | Override optional target real per agent, importat pilot din Grile Salarii |
 | `import_snapshots` | Metadata import fisiere Excel |
 | `visits_snapshot` | Agregat vizite sync din SQLite la boot |
 | `error_logs` | Legacy error table (inactiv — replaced by GlitchTip) |
@@ -176,6 +177,8 @@ cd /opt/Mobiup/ops/runners/retail
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate
 - Salarii LEFT JOIN stores conditionat (doar cand regional/asm sunt prezente)
 - Salarii company_name case-insensitive la JOIN (`LOWER()` pe ambele parti)
+- Targetele din tabelul Hub pe agent folosesc `agent_targets` daca exista override pentru `(import_month, site_code, agent)`; altfel raman pe fallback-ul vechi `store_targets / agenti activi`.
+- Importul pilot din Grile Salarii se ruleaza cu `python backend/scripts/import_grile_agent_targets.py --month YYYY-MM [--apply]` si este limitat implicit la managerul `Andrei Stancu`.
 - Filtre: `MainLayout.hubFilters` shared Hub+Focus; `Agents` uses `agentsFilters` independent
 
 ## Vizite

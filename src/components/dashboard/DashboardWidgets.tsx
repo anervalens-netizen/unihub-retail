@@ -379,8 +379,6 @@ export function DeltaCard({
   title,
   salesDelta,
   salesPct,
-  dailyDelta,
-  dailyPct,
   receiptsDelta,
   receiptsPct,
   quantityDelta,
@@ -389,15 +387,12 @@ export function DeltaCard({
   title: string;
   salesDelta: number;
   salesPct?: number | null;
-  dailyDelta: number;
-  dailyPct?: number | null;
   receiptsDelta: number;
   receiptsPct?: number | null;
   quantityDelta: number;
   quantityPct?: number | null;
 }) {
   const salesPositive = salesDelta >= 0;
-  const dailyPositive = dailyDelta >= 0;
   const receiptsPositive = receiptsDelta >= 0;
   const quantityPositive = quantityDelta >= 0;
   const tone = salesPositive
@@ -409,28 +404,30 @@ export function DeltaCard({
       <div className="mb-3 text-[11px] font-bold uppercase tracking-wide">{title}</div>
       <div className="space-y-2">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta vanzari</div>
+          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
+            <span className="text-base font-normal leading-none">Δ</span>
+            <span className="opacity-60">vanzari</span>
+          </div>
           <div className="mt-1 flex items-center gap-2 min-w-0">
             <span className="text-base font-black tabular-nums truncate">{formatDeltaCurrency(salesDelta)}</span>
             {salesPct != null && <DeltaPctBadge pct={salesPct} positive={salesPositive} />}
           </div>
         </div>
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta medie zilnica</div>
-          <div className="mt-1 flex items-center gap-2 min-w-0">
-            <span className="text-base font-black tabular-nums truncate">{formatDeltaCurrency(dailyDelta)}</span>
-            {dailyPct != null && <DeltaPctBadge pct={dailyPct} positive={dailyPositive} />}
+          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
+            <span className="text-base font-normal leading-none">Δ</span>
+            <span className="opacity-60">bonuri</span>
           </div>
-        </div>
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta bonuri</div>
           <div className="mt-1 flex items-center gap-2 min-w-0">
             <span className="text-base font-black tabular-nums truncate">{formatDeltaInt(receiptsDelta)}</span>
             {receiptsPct != null && <DeltaPctBadge pct={receiptsPct} positive={receiptsPositive} />}
           </div>
         </div>
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide opacity-60">Delta cantitate</div>
+          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
+            <span className="text-base font-normal leading-none">Δ</span>
+            <span className="opacity-60">cantitate</span>
+          </div>
           <div className="mt-1 flex items-center gap-2 min-w-0">
             <span className="text-base font-black tabular-nums truncate">{formatDeltaInt(quantityDelta)}</span>
             {quantityPct != null && <DeltaPctBadge pct={quantityPct} positive={quantityPositive} />}

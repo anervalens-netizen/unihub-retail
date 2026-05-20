@@ -300,6 +300,28 @@ async def _fetch_agent_stats_rows(
             FROM reporting_agent_month
             WHERE import_month = $1
             GROUP BY import_month, site_code
+        ),
+        agent_base AS (
+            SELECT
+                agg.*,
+                COALESCE(
+                    atg.target_value,
+                    CASE
+                        WHEN sac.active_agents > 0 THEN ROUND(stg.target_value / sac.active_agents, 2)
+                        ELSE NULL
+                    END
+                ) AS effective_target
+            FROM reporting_agent_month agg
+            LEFT JOIN store_targets stg
+                ON stg.import_month = agg.import_month
+                AND stg.site_code = agg.site_code
+            LEFT JOIN store_agent_counts sac
+                ON sac.import_month = agg.import_month
+                AND sac.site_code = agg.site_code
+            LEFT JOIN agent_targets atg
+                ON atg.import_month = agg.import_month
+                AND atg.site_code = agg.site_code
+                AND atg.agent = agg.agent
         )
         SELECT
             agg.import_month,
@@ -330,22 +352,13 @@ async def _fetch_agent_stats_rows(
                 THEN ROUND(agg.focus_quantity * 100.0 / agg.total_quantity, 2)
                 ELSE NULL
             END AS prc_focus_acc_qty,
+            agg.effective_target AS target,
             CASE
-                WHEN sac.active_agents > 0 THEN ROUND(stg.target_value / sac.active_agents, 2)
-                ELSE NULL
-            END AS target,
-            CASE
-                WHEN sac.active_agents > 0 AND stg.target_value > 0
-                THEN ROUND(agg.total_sales * 100.0 / (stg.target_value / sac.active_agents), 2)
+                WHEN agg.effective_target > 0
+                THEN ROUND(agg.total_sales * 100.0 / agg.effective_target, 2)
                 ELSE NULL
             END AS proc_realizare_target
-        FROM reporting_agent_month agg
-        LEFT JOIN store_targets stg
-            ON stg.import_month = agg.import_month
-            AND stg.site_code = agg.site_code
-        LEFT JOIN store_agent_counts sac
-            ON sac.import_month = agg.import_month
-            AND sac.site_code = agg.site_code
+        FROM agent_base agg
         WHERE {" AND ".join(agent_clauses)}
         ORDER BY agg.total_sales DESC, agg.agent ASC
         """,
