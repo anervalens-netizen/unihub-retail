@@ -26,7 +26,21 @@ const Management = lazy(() =>
 type ActiveTab = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
 type CampaignsSection = 'campaigns' | 'focus';
 
-const defaultFilters: AppFilters = defaultAppFilters();
+const FILTER_STORAGE_KEYS = {
+  hub: 'unihub_hub_filters',
+  focus: 'unihub_focus_filters',
+  agents: 'unihub_agents_filters',
+} as const;
+
+function loadSavedFilters(key: string): AppFilters {
+  const saved = localStorage.getItem(key);
+  if (!saved) return defaultAppFilters();
+  try {
+    return { ...defaultAppFilters(), ...JSON.parse(saved) };
+  } catch {
+    return defaultAppFilters();
+  }
+}
 
 export default function App() {
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
@@ -49,9 +63,9 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('unihub_theme') ?? 'light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [hubSection, setHubSection] = useState<'current' | 'history' | 'visits'>('current');
-  const [hubFilters, setHubFilters] = useState<AppFilters>(defaultFilters);
-  const [focusFilters, setFocusFilters] = useState<AppFilters>(defaultFilters);
-  const [agentsFilters, setAgentsFilters] = useState<AppFilters>(defaultFilters);
+  const [hubFilters, setHubFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.hub));
+  const [focusFilters, setFocusFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.focus));
+  const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.agents));
   const [currentMonth, setCurrentMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
@@ -64,6 +78,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('unihub_campaigns_section', campaignsSection);
   }, [campaignsSection]);
+
+  useEffect(() => {
+    localStorage.setItem(FILTER_STORAGE_KEYS.hub, JSON.stringify(hubFilters));
+  }, [hubFilters]);
+
+  useEffect(() => {
+    localStorage.setItem(FILTER_STORAGE_KEYS.focus, JSON.stringify(focusFilters));
+  }, [focusFilters]);
+
+  useEffect(() => {
+    localStorage.setItem(FILTER_STORAGE_KEYS.agents, JSON.stringify(agentsFilters));
+  }, [agentsFilters]);
 
   useEffect(() => {
     localStorage.setItem('unihub_theme', theme);
