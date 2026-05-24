@@ -1,9 +1,25 @@
 """Tests for config validation (fail-fast la startup)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from config import ConfigError, validate_required_env_vars
+from config import ConfigError, validate_required_env_vars, _is_production
+
+
+def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    assert _is_production() is True
+
+    monkeypatch.setenv("UNIHUB_ENV", " PRODUCTION ")
+    assert _is_production() is True
+
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    assert _is_production() is False
+
+    monkeypatch.delenv("UNIHUB_ENV", raising=False)
+    assert _is_production() is False
 
 
 def test_config_passes_with_valid_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,3 +82,25 @@ def test_config_accumulates_all_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     # ambele erori trebuie raportate într-un singur ridicat
     assert "DATABASE_URL" in str(exc_info.value)
     assert "JWT_SECRET" in str(exc_info.value)
+
+
+def test_config_rejects_empty_visits_db_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
+    monkeypatch.setenv("JWT_SECRET", "x" * 32)
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("VISITS_DB_PATH", "   ")
+    with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
+        validate_required_env_vars()
+
+
+def test_config_rejects_directory_as_visits_db_in_production(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
+    monkeypatch.setenv("JWT_SECRET", "x" * 32)
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    dir_path = tmp_path / "a_directory"
+    dir_path.mkdir()
+    monkeypatch.setenv("VISITS_DB_PATH", str(dir_path))
+    with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
+        validate_required_env_vars()

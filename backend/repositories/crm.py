@@ -65,20 +65,16 @@ class CrmRepository:
     async def upsert_scores(self, month: str, scores: list[dict]) -> None:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                for s in scores:
-                    await conn.execute(
-                        """
-                        INSERT INTO store_scores (site_code, score_month, score, breakdown)
-                        VALUES ($1, $2, $3, $4::jsonb)
-                        ON CONFLICT (site_code, score_month)
-                        DO UPDATE SET score = EXCLUDED.score, breakdown = EXCLUDED.breakdown,
-                                      calculated_at = now()
-                        """,
-                        s["site_code"],
-                        month,
-                        s["score"],
-                        json.dumps(s["breakdown"]),
-                    )
+                await conn.executemany(
+                    """
+                    INSERT INTO store_scores (site_code, score_month, score, breakdown)
+                    VALUES ($1, $2, $3, $4::jsonb)
+                    ON CONFLICT (site_code, score_month)
+                    DO UPDATE SET score = EXCLUDED.score, breakdown = EXCLUDED.breakdown,
+                                  calculated_at = now()
+                    """,
+                    [(s["site_code"], month, s["score"], json.dumps(s["breakdown"])) for s in scores],
+                )
 
     async def get_alerts_data(self, month: str, prev_month: str) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
