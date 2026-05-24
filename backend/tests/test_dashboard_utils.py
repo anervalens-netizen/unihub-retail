@@ -1,8 +1,7 @@
 """Tests for dashboard specials and utility functions."""
 from __future__ import annotations
 
-import pytest
-from datetime import date, timedelta
+from datetime import date
 
 
 def test_format_currency():
