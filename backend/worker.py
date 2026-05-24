@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import asyncio
 from arq.worker import create_worker
 

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from models import DashboardSummary, DailySalesPoint, MonthlyHistoryPoint, YearHistoryPoint
+from models import DashboardSummary, DailySalesPoint
 from services.dashboard_service import DashboardService
 
 

@@ -5,11 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from db.connection import get_pool
 from models import (
     CampaignSnapshot,
-    CampaignsPromotionsResponse,
     FocusHistoryResponse,
-    IncentiveCategory,
-    IncentiveTopAgent,
-    PromoTopStore,
 )
 from repositories.campaigns import CampaignsRepository
 from services.campaigns import CampaignsService

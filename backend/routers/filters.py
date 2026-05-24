@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-import asyncpg
 
 from db.connection import get_pool
 from models import FilterOptions

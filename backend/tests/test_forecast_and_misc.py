@@ -1,8 +1,7 @@
 """Tests for forecast.py, visits_report.py, and misc coverage gaps."""
 from __future__ import annotations
 
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
