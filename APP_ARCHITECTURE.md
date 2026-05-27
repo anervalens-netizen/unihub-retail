@@ -144,7 +144,8 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
 `/api/target-calculator` si urmeaza fluxul:
 
 1. Creeaza sau recalculeaza unicul `draft` al lunii tinta; recalcularea nu
-   creeaza versiuni paralele.
+   creeaza versiuni paralele. Panoul parametrilor de calcul este afisat numai
+   proprietarului configurat.
 2. Stabileste cohorta din magazinele cu vanzari in ultima luna disponibila
    anterior lunii tinta; datele de apartenenta RM/firma sunt snapshot in
    randurile draftului.
@@ -156,9 +157,12 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    forecastata cu regula comuna Hub/CRM si salvata in snapshot impreuna cu
    realizatul importat.
 4. Permite ajustarea valorii `final_target` pe fiecare locatie si exportul
-   Excel al draftului sau rezultatului final.
+   Excel al draftului sau rezultatului final; coloana `Final manager` este
+   evidentiata in UI ca actiune de completat.
 5. La finalizare inlocuieste targetele oficiale ale lunii din `store_targets`
-   cu exact cohorta aprobata; Hub si CRM consuma apoi noile valori.
+   cu exact cohorta aprobata; Hub si CRM consuma apoi noile valori. Endpointul
+   precum si actiunea de calcul/recalculare sunt rezervate emailurilor din
+   `TARGET_CALCULATOR_FINALIZER_EMAILS`.
 
 Separarea dintre draftul de calcul si `store_targets` previne modificarea targetelor
 oficiale in timpul simularilor si pastreaza contextul necesar pentru audit sau

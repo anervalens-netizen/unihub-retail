@@ -9,6 +9,7 @@ export interface TargetCalculatorContext {
   default_previous_month_floor_pct: number;
   active_store_count: number;
   regionals: string[];
+  can_finalize: boolean;
 }
 
 export interface TargetSourceMonth {

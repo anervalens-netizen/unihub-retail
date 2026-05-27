@@ -27,7 +27,13 @@ Excel-ul furnizat initial este referinta functionala, nu o dependinta runtime.
 - rezumatul `Calculator si Final manager` este tabelar: finalul sub propunere
   este rosu, finalul egal sau pana la `+5%` este verde, iar finalul peste
   `+5%` este galben;
-- utilizatorul editeaza separat `Target final`, fara a suprascrie propunerea.
+- utilizatorul editeaza separat `Final manager`, fara a suprascrie propunerea;
+  coloana si cardul ei sunt evidentiate ca zona care trebuie completata sau
+  confirmata de manager.
+- cardul superior `Calculator Target`, cu parametrii si actiunea de calcul,
+  este vizibil numai proprietarului configurat; managerii incep direct cu
+  documentul rezultat si completarile `Final manager`, iar singura lor
+  actiune manuala asupra draftului este `Salveaza acum`.
 - sub-tab-ul Management selectat este restaurat dupa refresh, astfel incat
   utilizatorul sa revina direct in `Calculator Target`.
 
@@ -111,6 +117,9 @@ locale ramase in draftul curent inainte de navigare.
 La finalizare, aplicatia inlocuieste setul de `store_targets` pentru luna tinta
 cu exact randurile documentului finalizat. Astfel magazinele care nu mai sunt
 active nu raman in targetul oficial al lunii.
+Managerii pot salva valorile finale, dar actiunile de calcul/recalculare si
+`Finalizeaza` sunt disponibile si autorizate server-side numai pentru emailurile OIDC configurate in
+`TARGET_CALCULATOR_FINALIZER_EMAILS` (implicit `aner.valens@gmail.com`).
 
 Consecinta asumata a regulii de cohorta: un magazin nou, fara vanzari in luna
 cohortei, nu este inclus automat in targetul final. Daca apare necesitatea de
@@ -122,12 +131,12 @@ exceptie explicita de includere, nu prin targete introduse separat in
 
 | Metoda | Endpoint | Scop |
 | --- | --- | --- |
-| GET | `/api/target-calculator/context` | Sugestii de luna, cohorta si parametri initiali |
+| GET | `/api/target-calculator/context` | Sugestii de luna, cohorta, parametri initiali si permisiunea `can_finalize` |
 | GET | `/api/target-calculator/scenarios` | Lista documentelor de target per luna, folosita la incarcare |
-| POST | `/api/target-calculator/scenarios/calculate` | Creeaza sau recalculeaza draftul lunii |
+| POST | `/api/target-calculator/scenarios/calculate` | Creeaza sau recalculeaza draftul lunii, numai pentru proprietarul configurat |
 | GET | `/api/target-calculator/scenarios/{id}` | Detalii, randuri si agregari pentru grafice |
 | PATCH | `/api/target-calculator/scenarios/{id}/rows` | Salveaza targetele finale editate |
-| POST | `/api/target-calculator/scenarios/{id}/finalize` | Publica valorile in `store_targets` |
+| POST | `/api/target-calculator/scenarios/{id}/finalize` | Publica valorile in `store_targets`, numai pentru finalizatorii configurati |
 | GET | `/api/target-calculator/scenarios/{id}/export` | Export Excel |
 
 ## Export

@@ -4,6 +4,7 @@ import {
   Calculator,
   CheckCircle2,
   Download,
+  PencilLine,
   RefreshCw,
   RotateCcw,
   Save,
@@ -33,6 +34,7 @@ import {
 import { formatCurrency, formatPercent } from '../lib/formatters';
 
 const inputCls = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+const finalInputCls = 'rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-600 dark:bg-amber-950/30 dark:text-slate-100';
 
 function monthLabel(month: string): string {
   const [year, monthNumber] = month.split('-');
@@ -79,15 +81,20 @@ function SummaryCard({ label, value, detail, emphasis }: {
   label: string;
   value: string;
   detail?: string;
-  emphasis?: 'good' | 'warning';
+  emphasis?: 'good' | 'warning' | 'attention';
 }) {
   const color = emphasis === 'good'
     ? 'text-emerald-600 dark:text-emerald-400'
     : emphasis === 'warning'
       ? 'text-amber-600 dark:text-amber-400'
+      : emphasis === 'attention'
+        ? 'text-amber-700 dark:text-amber-300'
       : 'text-slate-900 dark:text-slate-100';
+  const surface = emphasis === 'attention'
+    ? 'rounded-2xl border border-amber-300 bg-amber-50/80 p-4 min-w-0 dark:border-amber-700 dark:bg-amber-950/20'
+    : 'glass rounded-2xl p-4 min-w-0';
   return (
-    <div className="glass rounded-2xl p-4 min-w-0">
+    <div className={surface}>
       <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
       <p className={`mt-1 text-xl font-bold tabular-nums ${color}`}>{value}</p>
       {detail && <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{detail}</p>}
@@ -443,64 +450,64 @@ export function TargetCalculatorSubtab() {
 
   return (
     <div className="p-4 lg:p-6 space-y-4">
-      <div className="glass rounded-2xl p-4 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
-              <Calculator size={18} className="text-indigo-500" />
-              Calculator Target
-            </h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Propunerea se calculeaza si se salveaza ca draft comun pentru magazinele cu vanzari in ultima luna disponibila anterior targetului.
-              Daca referinta curenta este partiala, vanzarile utilizate sunt forecastate din importul disponibil.
-            </p>
-          </div>
-          <button
-            onClick={() => void loadInitial()}
-            disabled={busy}
-            className="rounded-xl bg-slate-100 p-2 text-slate-500 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:hover:bg-slate-700"
-            title="Reincarca"
-          >
-            <RefreshCw size={15} className={busy ? 'animate-spin' : ''} />
-          </button>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <label className="space-y-1 text-xs text-slate-500">
-            Luna target
-            <input className={`w-full ${inputCls}`} type="month" value={targetMonth} onChange={(event) => setTargetMonth(event.target.value)} />
-          </label>
-          <label className="space-y-1 text-xs text-slate-500">
-            Target total (RON)
-            <input className={`w-full ${inputCls}`} type="number" min="1" value={totalTarget} onChange={(event) => setTotalTarget(event.target.value)} />
-          </label>
-          <label className="space-y-1 text-xs text-slate-500">
-            Prag minim (RON)
-            <input className={`w-full ${inputCls}`} type="number" min="0" value={minFloor} onChange={(event) => setMinFloor(event.target.value)} />
-          </label>
-          <label className="space-y-1 text-xs text-slate-500">
-            Floor vs luna anterioara (%)
-            <input className={`w-full ${inputCls}`} type="number" min="0" max="200" step="0.1" value={floorPct} onChange={(event) => setFloorPct(event.target.value)} />
-          </label>
-          <div className="flex items-end">
+      {context?.can_finalize && (
+        <div className="glass rounded-2xl p-4 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
+                <Calculator size={18} className="text-indigo-500" />
+                Calculator Target
+              </h2>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Propunerea se calculeaza si se salveaza ca draft comun pentru magazinele cu vanzari in ultima luna disponibila anterior targetului.
+                Daca referinta curenta este partiala, vanzarile utilizate sunt forecastate din importul disponibil.
+              </p>
+            </div>
             <button
-              onClick={handleCalculate}
+              onClick={() => void loadInitial()}
               disabled={busy}
-              className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-xl bg-slate-100 p-2 text-slate-500 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:hover:bg-slate-700"
+              title="Reincarca"
             >
-              {busy ? 'Se proceseaza...' : 'Calculeaza propunerea'}
+              <RefreshCw size={15} className={busy ? 'animate-spin' : ''} />
             </button>
           </div>
-        </div>
 
-        {context && (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <label className="space-y-1 text-xs text-slate-500">
+              Luna target
+              <input className={`w-full ${inputCls}`} type="month" value={targetMonth} onChange={(event) => setTargetMonth(event.target.value)} />
+            </label>
+            <label className="space-y-1 text-xs text-slate-500">
+              Target total (RON)
+              <input className={`w-full ${inputCls}`} type="number" min="1" value={totalTarget} onChange={(event) => setTotalTarget(event.target.value)} />
+            </label>
+            <label className="space-y-1 text-xs text-slate-500">
+              Prag minim (RON)
+              <input className={`w-full ${inputCls}`} type="number" min="0" value={minFloor} onChange={(event) => setMinFloor(event.target.value)} />
+            </label>
+            <label className="space-y-1 text-xs text-slate-500">
+              Floor vs luna anterioara (%)
+              <input className={`w-full ${inputCls}`} type="number" min="0" max="200" step="0.1" value={floorPct} onChange={(event) => setFloorPct(event.target.value)} />
+            </label>
+            <div className="flex items-end">
+              <button
+                onClick={handleCalculate}
+                disabled={busy}
+                className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {busy ? 'Se proceseaza...' : 'Calculeaza propunerea'}
+              </button>
+            </div>
+          </div>
+
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Ultima luna cu vanzari: <strong>{monthLabel(context.latest_sales_month)}</strong>.
             Pentru noul target, cohorta curenta contine <strong>{context.active_store_count}</strong> magazine active.
             Magazinele fara vanzari in luna cohortei nu vor fi publicate in targetul final.
           </p>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">
@@ -564,10 +571,12 @@ export function TargetCalculatorSubtab() {
             <SummaryCard label="Target total" value={formatCurrency(scenario.total_target)} detail={monthLabel(scenario.target_month)} />
             <SummaryCard label="Calculat" value={formatCurrency(scenario.proposed_total)} detail={`${scenario.store_count} magazine active`} />
             <SummaryCard
-              label="Target final"
+              label="Final manager"
               value={formatCurrency(scenario.final_total)}
-              detail={`${scenario.manual_adjustments_count} ajustari manuale`}
-              emphasis={Math.abs(scenario.remaining_difference) <= 0.01 ? 'good' : 'warning'}
+              detail={scenario.status === 'draft'
+                ? `De completat / confirmat · ${scenario.manual_adjustments_count} ajustari`
+                : 'Publicat in targetele oficiale'}
+              emphasis="attention"
             />
             <SummaryCard
               label="Ramas de distribuit"
@@ -652,26 +661,32 @@ export function TargetCalculatorSubtab() {
               <div>
                 <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Target per locatie</h3>
                 <p className="text-xs text-slate-500">
-                  {filteredRows.length} locatii afisate · targetul final este editabil si se salveaza automat pentru toti managerii
+                  {filteredRows.length} locatii afisate · <span className="font-semibold text-amber-700 dark:text-amber-300">Final manager</span> este decizia de completat si se salveaza automat pentru toti managerii
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {scenario.status === 'draft' && (
                   <>
-                    <button onClick={resetToProposal} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
-                      <RotateCcw size={13} /> {regionalFilter === 'all' ? 'Reset propunere' : 'Reset manager'}
-                    </button>
+                    {context?.can_finalize && (
+                      <button onClick={resetToProposal} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+                        <RotateCcw size={13} /> {regionalFilter === 'all' ? 'Reset propunere' : 'Reset manager'}
+                      </button>
+                    )}
                     <button onClick={handleSave} disabled={busy || !dirty} className="flex items-center gap-1.5 rounded-xl bg-indigo-100 px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-200 disabled:opacity-50 dark:bg-indigo-900/30 dark:text-indigo-300">
                       <Save size={13} /> Salveaza acum
                     </button>
-                    <button onClick={handleFinalize} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-                      <CheckCircle2 size={13} /> Finalizeaza
-                    </button>
+                    {context?.can_finalize && (
+                      <button onClick={handleFinalize} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                        <CheckCircle2 size={13} /> Finalizeaza
+                      </button>
+                    )}
                   </>
                 )}
-                <button onClick={handleExport} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900">
-                  <Download size={13} /> Export Excel
-                </button>
+                {context?.can_finalize && (
+                  <button onClick={handleExport} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900">
+                    <Download size={13} /> Export Excel
+                  </button>
+                )}
               </div>
             </div>
 
@@ -693,7 +708,15 @@ export function TargetCalculatorSubtab() {
                       </th>
                     ))}
                     <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Calculat</th>
-                    <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Final</th>
+                    <th rowSpan={2} className="border-x border-amber-200 bg-amber-100/80 px-3 py-2 text-right font-semibold text-amber-800 align-bottom dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                      <span className="flex items-center justify-end gap-1">
+                        <PencilLine size={12} />
+                        Final manager
+                      </span>
+                      <span className="mt-1 block text-[9px] uppercase tracking-wide">
+                        {scenario.status === 'draft' ? 'De completat' : 'Finalizat'}
+                      </span>
+                    </th>
                     <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Delta</th>
                     <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Observatii</th>
                   </tr>
@@ -753,12 +776,12 @@ export function TargetCalculatorSubtab() {
                         </Fragment>
                       ))}
                       <td className="px-3 py-2 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">{formatCurrency(row.proposed_target)}</td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="border-x border-amber-100 bg-amber-50/50 px-3 py-2 text-right dark:border-amber-900 dark:bg-amber-950/10">
                         <input
                           type="number"
                           min="0"
                           disabled={scenario.status === 'finalized'}
-                          className={`${inputCls} w-32 text-right font-semibold tabular-nums disabled:opacity-70`}
+                          className={`${finalInputCls} w-32 text-right tabular-nums disabled:opacity-70`}
                           value={row.final_target}
                           onChange={(event) => updateRow(row.site_code, 'final_target', Number(event.target.value || 0))}
                         />

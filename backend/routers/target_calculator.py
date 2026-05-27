@@ -1,18 +1,39 @@
 from __future__ import annotations
 
+import os
 import re
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from auth import AuthClaims, require_auth
 from db.connection import get_pool
 from repositories.target_calculator import TargetCalculatorRepository
 from services.target_calculator import TargetCalculatorService
 
 router = APIRouter(prefix="/api/target-calculator", tags=["target-calculator"])
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+DEFAULT_FINALIZER_EMAILS = "aner.valens@gmail.com"
+
+
+def can_finalize_targets(claims: AuthClaims) -> bool:
+    allowed_emails = {
+        email.strip().casefold()
+        for email in os.getenv("TARGET_CALCULATOR_FINALIZER_EMAILS", DEFAULT_FINALIZER_EMAILS).split(",")
+        if email.strip()
+    }
+    return claims.email.strip().casefold() in allowed_emails
+
+
+def require_target_owner(claims: AuthClaims = Depends(require_auth)) -> AuthClaims:
+    if not can_finalize_targets(claims):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Doar proprietarul calculatorului poate calcula sau publica targetele finale.",
+        )
+    return claims
 
 
 class TargetCalculationRequest(BaseModel):
@@ -54,8 +75,12 @@ async def get_target_calculator_service() -> TargetCalculatorService:
 @router.get("/context")
 async def get_context(
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
+    claims: AuthClaims = Depends(require_auth),
 ):
-    return await svc.get_context()
+    return {
+        **await svc.get_context(),
+        "can_finalize": can_finalize_targets(claims),
+    }
 
 
 @router.get("/scenarios")
@@ -69,6 +94,7 @@ async def list_scenarios(
 async def calculate_scenario(
     body: TargetCalculationRequest,
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
+    _claims: AuthClaims = Depends(require_target_owner),
 ):
     return await svc.calculate(body.model_dump())
 
@@ -89,6 +115,7 @@ async def update_final_targets(
 async def finalize_scenario(
     scenario_id: int,
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
+    _claims: AuthClaims = Depends(require_target_owner),
 ):
     return await svc.finalize(scenario_id)
 

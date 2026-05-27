@@ -181,6 +181,8 @@ cd /opt/Mobiup/ops/runners/retail
 - Calculator Target stabileste cohorta din magazinele cu vanzari in ultima luna disponibila anterioara lunii tinta; la finalizare, `store_targets` pentru luna tinta este inlocuit strict cu cohorta aprobata.
 - Formula curenta Calculator Target este `weighted_floor_forecast_v2`: surse `M-13`, `M-12`, `M-1`, cu forecast pentru referintele partiale prin `services/forecast.py`. Excel-ul initial este numai referinta de business, nu sursa runtime.
 - Interfata Calculator Target afiseaza coloana `Calculat`; floor-ul ramane in algoritm si export, dar nu este expus ca un card sau o coloana operationala.
+- Coloana `Final manager` este campul evidentiat/editabil pentru manageri; salvarea ramane colaborativa, dar calculul/recalcularea si `Finalizeaza` trebuie protejate server-side prin `TARGET_CALCULATOR_FINALIZER_EMAILS` (implicit `aner.valens@gmail.com`).
+- Cardul cu parametrii `Calculator Target` nu se afiseaza utilizatorilor fara aceasta permisiune; ei lucreaza numai in documentul pregatit si au ca actiune manuala vizibila `Salveaza acum` pentru `Final manager`.
 - Tabelele curente Hub `RM` si `Magazine` expun `forecast_target_pct` dupa `proc_realizare_target`; formula proiecteaza vanzarile la luna intreaga cand `import_snapshots.is_month_final=false`.
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate
 - Salarii LEFT JOIN stores conditionat (doar cand regional/asm sunt prezente)

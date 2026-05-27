@@ -97,6 +97,14 @@ Excel contine targetele finale, rezumatul pe manager si parametrii documentului.
 Crearea propunerii salveaza imediat un draft comun, iar modificarile de
 `Target final` sunt salvate automat per locatie si devin vizibile celorlalti
 manageri care deschid sau reincarca acelasi draft.
+Coloana `Final manager` este evidentiata ca zona de completat de manageri.
+Calculul/recalcularea propunerii si butonul `Finalizeaza`, care publica
+targetele oficiale, sunt afisate si acceptate de backend numai pentru
+emailurile configurate in
+`TARGET_CALCULATOR_FINALIZER_EMAILS` (implicit `aner.valens@gmail.com`).
+Cardul superior cu parametrii de calcul este ascuns integral pentru ceilalti
+manageri; acestia vad documentul calculat, completeaza `Final manager` si au
+ca actiune operationala numai `Salveaza acum`.
 Prin regula actuala, un magazin fara vanzari in luna cohortei nu intra in
 targetul final; o viitoare exceptie pentru magazine planificate inainte de
 deschidere trebuie modelata explicit in calculator.

@@ -4,8 +4,11 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 
+from auth import AuthClaims
 from repositories.target_calculator import TargetCalculatorRepository
+from routers.target_calculator import can_finalize_targets, require_target_owner
 from services.target_calculator import (
     CALCULATION_METHOD,
     allocate_with_floors,
@@ -13,6 +16,20 @@ from services.target_calculator import (
     shift_month,
     source_month_configuration,
 )
+
+
+def auth_claims(email: str) -> AuthClaims:
+    return AuthClaims(
+        sub=email,
+        email=email,
+        preferred_username=email,
+        groups=[],
+        iss="test",
+        aud="test",
+        iat=0,
+        exp=0,
+        raw={},
+    )
 
 
 def test_source_months_are_derived_from_target_month() -> None:
@@ -23,6 +40,24 @@ def test_source_months_are_derived_from_target_month() -> None:
     ]
     assert shift_month("2026-01", -1) == "2025-12"
     assert CALCULATION_METHOD == "weighted_floor_forecast_v2"
+
+
+def test_only_owner_can_finalize_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TARGET_CALCULATOR_FINALIZER_EMAILS", raising=False)
+
+    assert can_finalize_targets(auth_claims("aner.valens@gmail.com")) is True
+    assert can_finalize_targets(auth_claims("elena.minca@example.com")) is False
+
+    with pytest.raises(HTTPException) as exc_info:
+        require_target_owner(auth_claims("elena.minca@example.com"))
+    assert exc_info.value.status_code == 403
+
+
+def test_finalizer_allowlist_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_EMAILS", "owner@example.com, backup@example.com")
+
+    assert can_finalize_targets(auth_claims("BACKUP@example.com")) is True
+    assert can_finalize_targets(auth_claims("aner.valens@gmail.com")) is False
 
 
 def test_partial_reference_sales_are_projected_for_calculation() -> None:
