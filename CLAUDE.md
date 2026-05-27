@@ -174,6 +174,7 @@ cd /opt/Mobiup/ops/runners/retail
 - Cand `site_code` este prezent, el domina scope-ul: backend-ul ignora `firma`, `regional` si `asm` pentru dashboard/history/comparatii/special_cards, ca istoricul unui magazin sa ramana vizibil chiar daca magazinul si-a schimbat RM/firma in timp.
 - ASM a fost scos din filtrele si cardurile Hub; Hub ramane pe layer RM + magazine + agenti. Nu reintroduce cardul ASM pana cand structura DB nu este actualizata.
 - Comparatia perioade din Hub foloseste aceeasi fereastra de zile: luna curenta pana la ultima zi importata daca luna e partiala, aceeasi perioada din luna trecuta si aceeasi perioada din anul trecut.
+- Comparatia perioade din Hub este like-for-like: cohorta este lista magazinelor cu vanzari Retail in luna analizata. Pentru luna trecuta/anul trecut se filtreaza dupa aceleasi `site_code`, fara reaplicarea RM/firma/ASM istorice, deoarece magazinele pot fi mutate.
 - Cardul `Comparatie perioade` afiseaza delte pentru vanzari, bonuri si cantitate, fiecare cu valoare absoluta si procent.
 - Tabelele curente Hub `RM` si `Magazine` expun `forecast_target_pct` dupa `proc_realizare_target`; formula proiecteaza vanzarile la luna intreaga cand `import_snapshots.is_month_final=false`.
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate

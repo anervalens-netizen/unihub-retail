@@ -864,6 +864,32 @@ async def _fetch_period_comparison(
     if cutoff_day is None:
         cutoff_day = await _fetch_period_comparison_cutoff_day(conn, month)
 
+    baseline_params, baseline_positions = _build_scoped_params(
+        [month],
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+    baseline_clauses = scoped_clauses(
+        baseline_positions,
+        site_alias="agg",
+        store_alias="agg",
+        agent_alias="agg",
+        month_alias="agg.import_month",
+        month_position=1,
+    )
+    active_rows = await conn.fetch(
+        f"""
+        SELECT DISTINCT agg.site_code
+        FROM reporting_agent_day agg
+        WHERE {" AND ".join(baseline_clauses)}
+        """,
+        *baseline_params,
+    )
+    active_store_codes = [r["site_code"] for r in active_rows]
+
     previous_month = _shift_month(month, -1)
     year_over_year_month = _shift_month(month, -12)
     periods = [
@@ -875,12 +901,15 @@ async def _fetch_period_comparison(
 
     for label, period_month in periods:
         start_date, end_date, day_range = _month_day_range(period_month, cutoff_day)
+        is_current_period = period_month == month
         params, positions = _build_scoped_params(
             [period_month, start_date, end_date],
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
+            # Historical columns follow the current-store cohort. Applying
+            # historical ownership again would drop stores moved between RMs.
+            firma=firma if is_current_period else None,
+            regional=regional if is_current_period else None,
+            asm=asm if is_current_period else None,
+            site_code=site_code if is_current_period else None,
             agent=agent,
         )
 
@@ -896,6 +925,11 @@ async def _fetch_period_comparison(
             store_alias="cs",
             agent_alias="c",
         )
+        if not is_current_period:
+            store_pos = len(params) + 1
+            params.append(active_store_codes)
+            query_clauses.append(f"agg.site_code = ANY(${store_pos}::TEXT[])")
+            cartela_query_clauses.append(f"c.site_code = ANY(${store_pos}::TEXT[])")
         clauses = [
             "agg.import_month = $1",
             "agg.sale_date BETWEEN $2 AND $3",

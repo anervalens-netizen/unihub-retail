@@ -76,6 +76,13 @@ Tabelele curente RM si Magazine returneaza atat procentul realizat
 (`forecast_target_pct`) calculata pe baza `import_snapshots.is_month_final` si
 ultimei zile importate.
 
+Cardul Hub `Comparatie perioade` foloseste o cohorta like-for-like: magazinele
+cu vanzari Retail in luna analizata sunt considerate deschise pentru acel card,
+iar luna trecuta si aceeasi luna din anul anterior sunt agregate numai pentru
+aceleasi `site_code`. Cand selectia curenta este pe RM/firma, cohorta se
+stabileste din apartenenta curenta; istoricul magazinelor ramane inclus chiar
+daca acestea au fost mutate ulterior intre RM-uri sau firme.
+
 ## Baze de date
 
 ### PostgreSQL `unihub`
@@ -170,4 +177,5 @@ backend/repositories/
 - Reporting-ul operational se citeste din tabelele `reporting_*`, nu direct din `sales_transactions`, cu exceptii controlate.
 - Magazinele `TR %` sunt excluse din logica Retail.
 - Cand `site_code` este prezent, domina scope-ul istoric.
+- In `Comparatie perioade`, RM/firma selecteaza cohorta curenta; coloanele istorice filtreaza dupa codurile magazinelor din cohorta, nu dupa apartenenta istorica.
 - Vizitele sunt o dependinta istorica sensibila; nu modifica `visits.db` fara sa verifici fluxurile FieldOps/Retail.

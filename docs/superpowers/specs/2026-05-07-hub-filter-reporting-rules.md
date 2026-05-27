@@ -18,6 +18,15 @@ The main issues fixed:
 - current selected month, from day 1 to the latest imported sale day when the month is partial
 - the same day range in the previous month
 - the same day range in the same month last year
+- only the store cohort with Retail sales in the current selected month; a store
+  without sales in that reference month is treated as closed for this card
+
+The cohort is anchored to the current selected scope. For example, when the
+selected month is `2026-05` and RM `Elena Minca` is selected, first resolve the
+stores with sales in `2026-05` in Elena's current scope, then calculate previous
+month and previous-year values for those same `site_code` values. Do not
+reapply historical RM/firma ownership to the historical columns: stores may
+have moved between managers or companies.
 
 Implementation:
 - cutoff logic: `backend/services/dashboard/queries.py::_fetch_period_comparison_cutoff_day`
@@ -121,6 +130,11 @@ site_code=CRELECTROP
 
 `CRELECTROP` may have historical rows under a different RM. If the backend applies both `regional` and `site_code`, history and period comparison return zero. The correct behavior is to scope by `site_code` only, plus `agent` if selected.
 
+The same rule applies to the automatically derived current-store cohort in
+`Comparatie perioade`: once current RM/firma scope has selected the store codes,
+the previous-month and previous-year columns use those store codes instead of
+historical parent ownership.
+
 Use `_build_scoped_params` or `base_filter_values`; do not manually append filter parameters unless you also implement the site-scope rule. Leaving skipped parent filters in the parameter list can cause asyncpg errors such as:
 
 ```text
@@ -173,3 +187,16 @@ Expected behavior:
 - current month has current CRELECTROP totals
 - history includes previous-month CRELECTROP totals even if previous rows belonged to another RM
 - period comparison uses day range `01-06` for current, previous month and previous year when May 2026 is partial
+
+Manual cohort check for the period-comparison fix:
+
+```text
+month=2026-05
+regional=Elena Minca
+cutoff_day=26
+```
+
+Expected behavior:
+- the cohort is the `5` stores with Retail sales in `2026-05` under Elena's current scope
+- previous month includes `170651.80` RON for those same stores
+- previous year includes `173828.81` RON for those same stores, including stores assigned to a different RM in `2025-05`

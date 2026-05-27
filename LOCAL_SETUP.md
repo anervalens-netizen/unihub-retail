@@ -229,6 +229,13 @@ raman pe fallback-ul vechi `target magazin / agenti activi`.
   pana la finalul lunii cand luna importata este partiala.
 - Cardul `Comparatie perioade` afiseaza delte doar pentru vanzari, bonuri si
   cantitate; medie zilnica ramane doar in tabelul de comparatie.
+- Cardul `Comparatie perioade` este like-for-like: pentru luna analizata,
+  magazinele cu vanzari Retail sunt tratate ca magazine deschise, iar
+  comparatia cu luna trecuta/anul trecut foloseste strict aceleasi
+  `site_code`.
+- Daca este selectat un RM sau o firma, acea selectie stabileste cohorta din
+  luna analizata; vanzarile istorice ale acelor magazine se pastreaza chiar
+  daca magazinul apartinea anterior altui RM sau altei firme.
 
 ### Note Vizite
 

@@ -265,6 +265,54 @@ class TestFetchPeriodComparison:
         assert result.year_over_year.day_range == "01-06"
         assert result.current.cartele_qty == 12
 
+    @pytest.mark.asyncio
+    async def test_historical_periods_are_limited_to_current_store_cohort(self, mock_conn):
+        data_row = FakeRow(
+            total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
+            cartele_qty=12,
+            working_days=22, daily_average=Decimal("4545"), avg_receipt_value=Decimal("333"),
+            proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
+        )
+        mock_conn.fetch.return_value = [FakeRow(site_code="OPEN01"), FakeRow(site_code="OPEN02")]
+        mock_conn.fetchrow.return_value = data_row
+
+        await _fetch_period_comparison(mock_conn, target_metric="sales",
+                                       month="2026-05", firma=None, regional=None,
+                                       asm=None, site_code=None, agent=None,
+                                       cutoff_day=26)
+
+        previous_call = mock_conn.fetchrow.call_args_list[1]
+        yoy_call = mock_conn.fetchrow.call_args_list[2]
+        assert "agg.site_code = ANY($4::TEXT[])" in previous_call.args[0]
+        assert "c.site_code = ANY($4::TEXT[])" in previous_call.args[0]
+        assert previous_call.args[4] == ["OPEN01", "OPEN02"]
+        assert yoy_call.args[4] == ["OPEN01", "OPEN02"]
+
+    @pytest.mark.asyncio
+    async def test_historical_cohort_does_not_reapply_current_regional_scope(self, mock_conn):
+        data_row = FakeRow(
+            total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
+            cartele_qty=12,
+            working_days=22, daily_average=Decimal("4545"), avg_receipt_value=Decimal("333"),
+            proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
+        )
+        mock_conn.fetch.return_value = [FakeRow(site_code="MOVED01")]
+        mock_conn.fetchrow.return_value = data_row
+
+        await _fetch_period_comparison(mock_conn, target_metric="sales",
+                                       month="2026-05", firma="Retail", regional="RM curent",
+                                       asm=None, site_code=None, agent="AG01",
+                                       cutoff_day=26)
+
+        current_sql = mock_conn.fetchrow.call_args_list[0].args[0]
+        previous_call = mock_conn.fetchrow.call_args_list[1]
+        previous_sql = previous_call.args[0]
+        assert "agg.regional = ANY" in current_sql
+        assert "agg.regional = ANY" not in previous_sql
+        assert "agg.firma = ANY" not in previous_sql
+        assert "agg.agent = ANY" in previous_sql
+        assert previous_call.args[4:] == ("AG01", ["MOVED01"])
+
 
 class TestFetchCategoryMix:
     @pytest.mark.asyncio
