@@ -1,6 +1,12 @@
 # Management Tab Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Nota ulterioara (2026-05-27):** acest document ramane planul istoric pentru
+> primele patru sub-module. Implementarea curenta include si
+> `Management -> Calculator Target`; regulile actuale sunt in
+> `docs/superpowers/specs/2026-05-27-target-calculator-design.md`,
+> `README.md` si `APP_ARCHITECTURE.md`.
 
 **Goal:** Adaugă tab-ul `Management` cu patru sub-module (Echipă/ASM, Magazine/CRM, Tasks, HR) vizibil exclusiv pentru rolurile `admin` și `management`.
 

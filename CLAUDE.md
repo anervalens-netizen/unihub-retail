@@ -1,10 +1,10 @@
 # CLAUDE.md — UniHub Retail
 
-**Phase: C3 COMPLETED + Hub filter/reporting fixes — 2026-05-07 | Server audit + optimization — 2026-05-19**
+**Phase: C3 COMPLETED + Hub filter/reporting fixes — 2026-05-07 | Server audit + optimization — 2026-05-19 | Calculator Target — 2026-05-27**
 
 ## Overview
 
-Sursa de adevar pentru vanzari + vizite in ecosistemul MobiUp. Module: Hub, Focus, Agenti (+Salarii), Vizite, Management (Echipa/Magazine/Tasks/HR), Setari.
+Sursa de adevar pentru vanzari + vizite in ecosistemul MobiUp. Module: Hub, Focus, Agenti (+Salarii), Vizite, Management (Echipa/Magazine/Tasks/HR/Calculator Target), Setari.
 
 ## Stack
 
@@ -54,7 +54,7 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `components/dashboard/DashboardWidgets.tsx` | Componente prezentare extracte din Dashboard (tabele, sortare, pie charts) |
 | `components/Campaigns.tsx` | Tab Focus — campanii, incentive, Top |
 | `components/Agents.tsx` | Tab Agenti (refactorizat cu useQuery) |
-| `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR | Management |
+| `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR/TargetCalculator | Management |
 
 ### Backend `backend/` — Architecture: router → service → repository (3-tier)
 
@@ -70,13 +70,14 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `routers/salarii.py` | `services/salarii.py` | `repositories/salarii.py` |
 | `routers/stores.py` | `services/stores.py` | `repositories/stores.py` |
 | `routers/tasks.py` | `services/tasks.py` | `repositories/tasks.py` |
+| `routers/target_calculator.py` | `services/target_calculator.py` | `repositories/target_calculator.py` |
 | `routers/visits_report.py` | `services/visits_report.py` | `repositories/visits_report.py` |
 
 **Auth:** `backend/auth.py` — JWT RS256 validation via JWKS from authentik. All API routers are protected by `require_auth` dependency in `main.py`. Health and metrics endpoints are public.
 
 **Core services:**
 - `services/filters.py` — normalizare + where clauses for SQL filtering; suporta multi-select prin valori comma-separated si exclude locatiile de distributie `TR %`
-- `services/forecast.py` — forecast factor calculation (shared by CRM/HR)
+- `services/forecast.py` — forecast factor calculation (shared by CRM/HR/Calculator Target)
 - `services/dashboard/` — queries.py, specials_data.py, utils.py; include comparatie perioade, mixuri Hub si builder comun `_build_scoped_params`
 - `services/dashboard_specials.py` — hub_specials.json config parsing
 - `services/dashboard/specials_data.py` — cardurile speciale Hub (promo + incentive), folosind aceleasi reguli de filtre ca dashboard-ul
@@ -123,7 +124,7 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 | `tasks` | Task-uri per agent/magazin |
 | `leave_requests` | Cereri concediu |
 | `store_scores` | Scoruri CRM per magazin/luna |
-| `store_targets` | Targete lunare magazin |
+| `target_scenarios` / `target_scenario_rows` | Documentul lunar Calculator Target si randurile editabile inainte de publicare |
 | `salary_records` | Salarii angajati |
 | `agent_targets` | Override optional target real per agent, importat pilot din Grile Salarii |
 | `import_snapshots` | Metadata import fisiere Excel |
@@ -176,6 +177,10 @@ cd /opt/Mobiup/ops/runners/retail
 - Comparatia perioade din Hub foloseste aceeasi fereastra de zile: luna curenta pana la ultima zi importata daca luna e partiala, aceeasi perioada din luna trecuta si aceeasi perioada din anul trecut.
 - Comparatia perioade din Hub este like-for-like: cohorta este lista magazinelor cu vanzari Retail in luna analizata. Pentru luna trecuta/anul trecut se filtreaza dupa aceleasi `site_code`, fara reaplicarea RM/firma/ASM istorice, deoarece magazinele pot fi mutate.
 - Cardul `Comparatie perioade` afiseaza delte pentru vanzari, bonuri si cantitate, fiecare cu valoare absoluta si procent.
+- Calculator Target foloseste un singur draft per luna tinta; recalcularea actualizeaza documentul existent si reseteaza valorile finale/observatiile numai dupa confirmare. Nu adauga selector de scenarii sau versiuni paralele.
+- Calculator Target stabileste cohorta din magazinele cu vanzari in ultima luna disponibila anterioara lunii tinta; la finalizare, `store_targets` pentru luna tinta este inlocuit strict cu cohorta aprobata.
+- Formula curenta Calculator Target este `weighted_floor_forecast_v2`: surse `M-13`, `M-12`, `M-1`, cu forecast pentru referintele partiale prin `services/forecast.py`. Excel-ul initial este numai referinta de business, nu sursa runtime.
+- Interfata Calculator Target afiseaza coloana `Calculat`; floor-ul ramane in algoritm si export, dar nu este expus ca un card sau o coloana operationala.
 - Tabelele curente Hub `RM` si `Magazine` expun `forecast_target_pct` dupa `proc_realizare_target`; formula proiecteaza vanzarile la luna intreaga cand `import_snapshots.is_month_final=false`.
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate
 - Salarii LEFT JOIN stores conditionat (doar cand regional/asm sunt prezente)

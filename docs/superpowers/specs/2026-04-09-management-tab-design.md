@@ -1,8 +1,12 @@
-# Design: Tab Management (HR + CRM + Tasks)
+# Design: Tab Management (Echipa + Magazine + Tasks + HR + Calculator Target)
 
 **Data:** 2026-04-09
 **Status:** Aprobat de utilizator
 **Audiență:** Manager / Proprietar (roluri `admin`, `management`)
+
+> **Extindere ulterioara:** din 2026-05-27, Management include si sub-tab-ul
+> `Calculator Target`. Designul si regulile lui sunt documentate in
+> `docs/superpowers/specs/2026-05-27-target-calculator-design.md`.
 
 ---
 
@@ -10,7 +14,10 @@
 
 UniHub acoperă bine vânzările, targetele, campaniile și vizitele. Lipsesc trei domenii esențiale pentru un manager care vrea tot în același tool: gestiunea oamenilor (HR), sănătatea relației cu magazinele (CRM extins) și urmărirea task-urilor operaționale.
 
-Soluția aleasă: un tab nou `Management` cu trei sub-tab-uri — HR, Magazine, Tasks — vizibil exclusiv pentru `admin` și `management`.
+Soluția curenta: un tab `Management` cu cinci sub-tab-uri — Echipa, Magazine,
+Tasks, HR si Calculator Target — vizibil exclusiv pentru `admin` si
+`management`. Sectiunile originale de mai jos descriu primele patru sub-tab-uri;
+Calculator Target este detaliat in specificatia dedicata mentionata mai sus.
 
 ---
 
@@ -18,13 +25,13 @@ Soluția aleasă: un tab nou `Management` cu trei sub-tab-uri — HR, Magazine, 
 
 ### Frontend
 - Tab nou `Management` adăugat în `MainLayout.tsx`, afișat condiționat pe rol
-- Componentă nouă `Management.tsx` cu routing intern pe **4 sub-tab-uri**: `Echipă | Magazine | Tasks | HR`
-- Sub-componente: `ASMSubtab.tsx`, `CRMSubtab.tsx`, `TasksSubtab.tsx`, `HRSubtab.tsx`
+- Componentă `Management.tsx` cu routing intern pe **5 sub-tab-uri**: `Echipă | Magazine | Tasks | HR | Calculator Target`
+- Sub-componente: `ASMSubtab.tsx`, `CRMSubtab.tsx`, `TasksSubtab.tsx`, `HRSubtab.tsx`, `TargetCalculatorSubtab.tsx`
 
 ### Backend
-- 3 routere noi: `backend/routers/hr.py`, `backend/routers/crm.py`, `backend/routers/tasks.py`
-- Înregistrate în `main.py` cu prefixele `/api/hr`, `/api/crm`, `/api/tasks`
-- 4 tabele noi în `schema_v2.sql` — aplicate automat la restart via `ensure_schema_current()`
+- Routerele Management: `backend/routers/hr.py`, `backend/routers/crm.py`, `backend/routers/tasks.py`, `backend/routers/target_calculator.py`
+- Înregistrate în `main.py` cu prefixele `/api/hr`, `/api/crm`, `/api/tasks`, `/api/target-calculator`
+- Tabelele Management si Calculator Target din `schema_v2.sql` sunt aplicate automat la restart via `ensure_schema_current()`
 - Endpoint ASM performance citește din **două surse**: PostgreSQL (vânzări, targete) + SQLite `visits.db` (vizite) combinate server-side via `run_in_executor`
 
 ---
@@ -322,7 +329,7 @@ tasks (
 
 1. Schema SQL (4 tabele noi) + `ensure_schema_current()`
 2. Router + endpointuri Tasks (cel mai simplu, fără dependențe)
-3. Frontend TasksSubtab + Management shell (4 sub-tab-uri: Echipă | Magazine | Tasks | HR)
+3. Frontend TasksSubtab + Management shell initial (extins ulterior la cele 5 sub-tab-uri documentate mai sus)
 4. Router + endpointuri HR (leave_requests + attendance)
 5. Frontend HRSubtab (concedii + aprobare)
 6. Logică scoring CRM + router

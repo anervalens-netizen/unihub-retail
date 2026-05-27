@@ -2,7 +2,7 @@
 
 ## Rol
 
-UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard operational, campanii focus, agenti, management de magazine, task-uri, HR, salarii si raportare de vizite.
+UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard operational, campanii focus, agenti, management de magazine, task-uri, HR, planificare target, salarii si raportare de vizite.
 
 ## Stack si runtime
 
@@ -39,7 +39,7 @@ flowchart LR
 | Hub | KPI-uri, comparatii perioade, carduri speciale |
 | Focus | campanii, incentive, produse focus |
 | Agenti | overview agenti, stabilitate, miscari, salarii |
-| Management | `Echipa`, `Magazine`, `Tasks`, `HR` |
+| Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target` |
 | Setari | setari aplicatie si erori |
 
 ## Functionalitati majore
@@ -48,7 +48,7 @@ flowchart LR
 - Filtre globale firma / regional / magazin / agent.
 - Campanii promo si incentive.
 - Analiza agentilor, lifecycle, salarii.
-- Management magazine, scoruri CRM, task-uri, concedii.
+- Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
 - Import vanzari si refresh reporting agregat.
 - Exporturi si rapoarte pentru management.
@@ -67,7 +67,7 @@ Backend-ul foloseste modelul `router -> service -> repository`.
 | Dashboard | `routers/dashboard.py` -> `services/dashboard_service.py` -> `repositories/dashboard.py` |
 | Agenti | `agents.py` pe toate cele 3 straturi |
 | Campanii | `campaigns.py` pe toate cele 3 straturi |
-| HR/CRM/Tasks | straturi separate per domeniu |
+| HR/CRM/Tasks/Calculator Target | straturi separate per domeniu |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
 
 Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
@@ -96,6 +96,7 @@ Familii de tabele:
 | Campanii | `incentive_campaigns`, `incentive_products` |
 | Reporting | `reporting_agent_*`, `reporting_item_*`, `reporting_focus_item_month`, `reporting_category_month` |
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_targets` |
+| Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
 
 ### Salarii
@@ -136,6 +137,32 @@ Andrei Stancu, mapand `store_metadata.cod_locatie` la `stores.site_code` si
 numele agentului din grila la codul agentului Retail. Cand exista override,
 tabelul Hub pe agent foloseste `agent_targets.target_value`; altfel ramane
 fallback-ul istoric `store_targets.target_value / numar agenti activi`.
+
+### Calculator Target
+
+Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
+`/api/target-calculator` si urmeaza fluxul:
+
+1. Creeaza sau recalculeaza unicul `draft` al lunii tinta; recalcularea nu
+   creeaza versiuni paralele.
+2. Stabileste cohorta din magazinele cu vanzari in ultima luna disponibila
+   anterior lunii tinta; datele de apartenenta RM/firma sunt snapshot in
+   randurile draftului.
+3. Calculeaza propunerea `weighted_floor_forecast_v2` din lunile `M-13` si `M-12`
+   (doua luni consecutive din anul anterior) si luna `M-1` curenta, aplicand
+   pragul minim si floor-ul procentual configurat. Pentru targetul din iunie
+   2026, referintele sunt mai 2025, iunie 2025 si mai 2026.
+   Daca o referinta este partiala, valoarea realizata folosita in ponderi este
+   forecastata cu regula comuna Hub/CRM si salvata in snapshot impreuna cu
+   realizatul importat.
+4. Permite ajustarea valorii `final_target` pe fiecare locatie si exportul
+   Excel al draftului sau rezultatului final.
+5. La finalizare inlocuieste targetele oficiale ale lunii din `store_targets`
+   cu exact cohorta aprobata; Hub si CRM consuma apoi noile valori.
+
+Separarea dintre draftul de calcul si `store_targets` previne modificarea targetelor
+oficiale in timpul simularilor si pastreaza contextul necesar pentru audit sau
+extinderea formulei.
 
 ### SQLite shared
 

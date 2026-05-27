@@ -3,7 +3,7 @@ import { MainLayout, type AppFilters } from './components/MainLayout';
 
 import { getAvailableMonths } from './api/filters';
 import { defaultAppFilters } from './lib/filterValues';
-import type { ManagementTab } from './lib/tabs';
+import { MGMT_SUBTABS, type ManagementTab } from './lib/tabs';
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
 
@@ -31,6 +31,13 @@ const FILTER_STORAGE_KEYS = {
   focus: 'unihub_focus_filters',
   agents: 'unihub_agents_filters',
 } as const;
+const MANAGEMENT_SUBTAB_STORAGE_KEY = 'unihub_management_subtab';
+
+function loadManagementSubTab(): ManagementTab {
+  const saved = localStorage.getItem(MANAGEMENT_SUBTAB_STORAGE_KEY);
+  const isKnownSubTab = MGMT_SUBTABS.some((tab) => tab.id === saved);
+  return isKnownSubTab ? saved as ManagementTab : 'asm';
+}
 
 function loadSavedFilters(key: string): AppFilters {
   const saved = localStorage.getItem(key);
@@ -69,7 +76,7 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
-  const [mgmtSubTab, setMgmtSubTab] = useState<ManagementTab>('asm');
+  const [mgmtSubTab, setMgmtSubTab] = useState<ManagementTab>(loadManagementSubTab);
 
   useEffect(() => {
     localStorage.setItem('unihub_active_tab', activeTab);
@@ -78,6 +85,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('unihub_campaigns_section', campaignsSection);
   }, [campaignsSection]);
+
+  useEffect(() => {
+    localStorage.setItem(MANAGEMENT_SUBTAB_STORAGE_KEY, mgmtSubTab);
+  }, [mgmtSubTab]);
 
   useEffect(() => {
     localStorage.setItem(FILTER_STORAGE_KEYS.hub, JSON.stringify(hubFilters));
@@ -138,12 +149,15 @@ export default function App() {
     void bootstrap();
 
     const handleNavigate = (event: Event) => {
-      const detail = (event as CustomEvent<{ tab?: ActiveTab; section?: CampaignsSection }>).detail;
+      const detail = (event as CustomEvent<{ tab?: ActiveTab; section?: CampaignsSection; subtab?: ManagementTab }>).detail;
       if (detail?.tab) {
         setActiveTab(detail.tab);
       }
       if (detail?.section) {
         setCampaignsSection(detail.section);
+      }
+      if (detail?.subtab) {
+        setMgmtSubTab(detail.subtab);
       }
     };
 

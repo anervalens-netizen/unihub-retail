@@ -3,6 +3,7 @@ import { ASMSubtab } from './ASMSubtab';
 import { CRMSubtab } from './CRMSubtab';
 import { TasksSubtab } from './TasksSubtab';
 import { HRSubtab } from './HRSubtab';
+import { TargetCalculatorSubtab } from './TargetCalculatorSubtab';
 import type { ManagementTab } from '../lib/tabs';
 
 const TABS: { id: ManagementTab; label: string }[] = [
@@ -10,6 +11,7 @@ const TABS: { id: ManagementTab; label: string }[] = [
   { id: 'crm', label: 'Magazine' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'hr', label: 'HR' },
+  { id: 'target-calculator', label: 'Calculator Target' },
 ];
 
 interface Props {
@@ -29,7 +31,7 @@ export function Management({ activeSubTab, setActiveSubTab }: Props) {
   return (
     <div className="flex flex-col h-full">
       {/* Sub-navigare — vizibilă doar pe mobile (pe desktop controlată din sidebar) */}
-      <div className="lg:hidden flex gap-1 px-4 pt-4 pb-2 border-b border-slate-200 dark:border-slate-700">
+      <div className="lg:hidden flex gap-1 overflow-x-auto px-4 pt-4 pb-2 border-b border-slate-200 dark:border-slate-700">
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -51,6 +53,7 @@ export function Management({ activeSubTab, setActiveSubTab }: Props) {
         {activeTab === 'crm' && <CRMSubtab />}
         {activeTab === 'tasks' && <TasksSubtab />}
         {activeTab === 'hr' && <HRSubtab />}
+        {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
       </div>
     </div>
   );

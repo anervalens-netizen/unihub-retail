@@ -1,7 +1,7 @@
-import { Briefcase, CheckSquare, LayoutDashboard, Settings, Sparkles, UserCog, Users, Building2 } from 'lucide-react';
+import { Briefcase, Calculator, CheckSquare, LayoutDashboard, Settings, Sparkles, UserCog, Users, Building2 } from 'lucide-react';
 
 export type TabId = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
-export type ManagementTab = 'asm' | 'crm' | 'tasks' | 'hr';
+export type ManagementTab = 'asm' | 'crm' | 'tasks' | 'hr' | 'target-calculator';
 
 export const ALL_TABS = [
   { id: 'hub', icon: LayoutDashboard, label: 'Hub' },
@@ -16,6 +16,7 @@ export const MGMT_SUBTABS = [
   { id: 'crm' as ManagementTab, label: 'Magazine', icon: Building2 },
   { id: 'tasks' as ManagementTab, label: 'Tasks', icon: CheckSquare },
   { id: 'hr' as ManagementTab, label: 'HR', icon: UserCog },
+  { id: 'target-calculator' as ManagementTab, label: 'Calculator Target', icon: Calculator },
 ];
 
 export const TAB_LABELS: Record<TabId, string> = {
@@ -31,4 +32,5 @@ export const MGMT_SUBTAB_LABELS: Record<ManagementTab, string> = {
   crm: 'Magazine',
   tasks: 'Tasks',
   hr: 'HR',
+  'target-calculator': 'Calculator Target',
 };

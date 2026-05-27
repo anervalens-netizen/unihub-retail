@@ -1,6 +1,6 @@
 # UniHub
 
-UniHub este o aplicatie de operare comerciala pentru retail, construita pentru monitorizarea vanzarilor, a targetelor, a focus products, a promotiilor, a fiselor de vizita din magazine si a operatiunilor de management (echipa, CRM, tasks, HR).
+UniHub este o aplicatie de operare comerciala pentru retail, construita pentru monitorizarea vanzarilor, a targetelor, a focus products, a promotiilor, a fiselor de vizita din magazine si a operatiunilor de management (echipa, CRM, tasks, HR, calculator target).
 
 Aplicatia este gandita pentru lucru local, fara Docker, cu:
 - frontend React + Vite
@@ -50,16 +50,56 @@ Permite inregistrarea si urmarirea vizitelor in magazine:
 Geolocatia a fost eliminata complet din arhitectura aplicatiei.
 
 ### Management
-Tab dedicat rolurilor `admin` si `management`, cu 4 sub-taburi:
+Tab dedicat rolurilor `admin` si `management`, cu 5 sub-taburi:
 
 - **Echipa (ASM)** — performanta ASM combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM. Router: `/api/hr`
 - **Magazine (CRM)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
 - **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
 - **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
+- **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
 
-**Dependenta cross-router:** `hr.py` importa `get_forecast_factor` din `crm.py`.
+**Serviciu comun:** CRM, HR si Calculator Target folosesc `services/forecast.py`
+pentru calculul unitar al forecast-ului pe lunile partiale.
 
-Tabele noi in `schema_v2.sql`: `tasks`, `leave_requests`, `attendance_records`, `store_scores`.
+Tabele Management in `schema_v2.sql`: `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `target_scenarios`, `target_scenario_rows`.
+
+#### Calculator Target
+
+Calculatorul este implementat nativ in aplicatie; fisierul Excel initial este doar
+referinta de business, nu sursa de executie. Pentru fiecare luna tinta exista
+un singur draft, care retine:
+
+- luna pentru care se pregateste targetul;
+- cohorta de magazine active, determinata din ultima luna cu vanzari disponibila inaintea lunii tinta;
+- targetul total, pragul minim absolut si floor-ul procentual fata de luna anterioara;
+- propunerea automata si targetul final editabil per locatie.
+
+Formula `weighted_floor_forecast_v2` foloseste trei perioade de referinta derivate automat
+din luna tinta: luna anterioara din anul trecut, aceeasi luna din anul trecut
+si luna anterioara curenta. Pentru un target din iunie 2026, acestea sunt
+mai 2025, iunie 2025 si mai 2026. Targetul este distribuit dupa ponderile istorice, apoi
+redistribuit iterativ pana cand toate magazinele respecta floor-ul. Daca
+bugetul este mai mic decat suma floor-urilor, documentul ramane draft si
+afiseaza o avertizare.
+
+Daca ultima referinta este o luna neinchisa, calculatorul foloseste forecast-ul
+derivat din importul live (`realizat * zile_luna / ultima_zi_importata`), la
+fel ca Hub si CRM. Draftul si exportul pastreaza separat realizatul importat
+si forecast-ul efectiv folosit la calcul.
+Recalcularea unei luni actualizeaza draftul acesteia si reseteaza ajustarile
+manuale dupa confirmarea utilizatorului; nu sunt create versiuni alternative
+in interfata.
+
+`target_scenarios` si `target_scenario_rows` pastreaza documentul de lucru si
+auditul calculului per luna. Doar actiunea de finalizare inlocuieste targetele oficiale ale
+lunii din `store_targets`, strict cu magazinele din cohorta aprobata. Exportul
+Excel contine targetele finale, rezumatul pe manager si parametrii documentului.
+Crearea propunerii salveaza imediat un draft comun, iar modificarile de
+`Target final` sunt salvate automat per locatie si devin vizibile celorlalti
+manageri care deschid sau reincarca acelasi draft.
+Prin regula actuala, un magazin fara vanzari in luna cohortei nu intra in
+targetul final; o viitoare exceptie pentru magazine planificate inainte de
+deschidere trebuie modelata explicit in calculator.
 
 ### UniAI
 Asistent de analiză vânzări integrat, alimentat de Hermes AI Agent:
@@ -117,7 +157,7 @@ Tabelele brute sunt sursa de adevar pentru audit si import:
 - `stores`, `users`, `tl_store_assignments`, `focus_products`
 - `import_snapshots`, `sales_transactions`, `store_targets`
 - `incentive_campaigns`, `incentive_products` — campanii incentive per-produs (importate cu `import_incentive_campaign.py`)
-- `tasks`, `leave_requests`, `attendance_records`, `store_scores` — date operationale Management tab
+- `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `target_scenarios`, `target_scenario_rows` — date operationale Management tab
 
 ### 2. Stratul agregat de reporting
 Acesta este stratul principal folosit de dashboard-uri:

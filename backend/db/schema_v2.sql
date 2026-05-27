@@ -87,6 +87,50 @@ CREATE TABLE IF NOT EXISTS store_targets (
     PRIMARY KEY (import_month, site_code)
 );
 
+-- Target Calculator keeps editable planning scenarios separate from official targets.
+CREATE TABLE IF NOT EXISTS target_scenarios (
+    id SERIAL PRIMARY KEY,
+    target_month TEXT NOT NULL,
+    cohort_month TEXT NOT NULL,
+    total_target NUMERIC(14, 2) NOT NULL,
+    min_floor NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    previous_month_floor_pct NUMERIC(7, 4) NOT NULL DEFAULT 0.9,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'finalized')),
+    calculation_method TEXT NOT NULL DEFAULT 'weighted_floor_forecast_v2',
+    source_months JSONB NOT NULL DEFAULT '[]'::jsonb,
+    warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finalized_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_target_scenarios_month_created
+    ON target_scenarios (target_month, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_target_scenarios_target_month
+    ON target_scenarios (target_month);
+
+CREATE TABLE IF NOT EXISTS target_scenario_rows (
+    scenario_id INTEGER NOT NULL REFERENCES target_scenarios(id) ON DELETE CASCADE,
+    site_code TEXT NOT NULL REFERENCES stores(site_code),
+    locatie TEXT NOT NULL,
+    firma TEXT NOT NULL,
+    regional TEXT NOT NULL,
+    asm TEXT NOT NULL,
+    calculated_weight NUMERIC(16, 10) NOT NULL DEFAULT 0,
+    floor_target NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    proposed_target NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    final_target NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    is_floor_limited BOOLEAN NOT NULL DEFAULT false,
+    history JSONB NOT NULL DEFAULT '[]'::jsonb,
+    note TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (scenario_id, site_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_target_scenario_rows_regional
+    ON target_scenario_rows (scenario_id, regional);
+
 CREATE TABLE IF NOT EXISTS agent_targets (
     import_month TEXT NOT NULL,
     site_code TEXT NOT NULL REFERENCES stores(site_code),
