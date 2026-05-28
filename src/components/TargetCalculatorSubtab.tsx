@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Calculator,
   CheckCircle2,
+  ChevronDown,
   Download,
   PencilLine,
   RefreshCw,
@@ -311,6 +312,7 @@ export function TargetCalculatorSubtab() {
   const [floorPct, setFloorPct] = useState('');
   const [locationSearch, setLocationSearch] = useState('');
   const [selectedLocationCodes, setSelectedLocationCodes] = useState<string[]>([]);
+  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [detailSiteCode, setDetailSiteCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -320,6 +322,7 @@ export function TargetCalculatorSubtab() {
   const scenarioRef = useRef<TargetScenario | null>(null);
   const dirtyRowsRef = useRef<Set<string>>(new Set());
   const editVersionsRef = useRef<Map<string, number>>(new Map());
+  const locationFilterRef = useRef<HTMLDivElement>(null);
   const dirty = dirtyRows.size > 0;
 
   const replaceScenario = (next: TargetScenario | null) => {
@@ -429,12 +432,35 @@ export function TargetCalculatorSubtab() {
     setSelectedLocationCodes((current) => current.filter((siteCode) => available.has(siteCode)));
   }, [locationOptions]);
 
-  const addLocationFilter = (siteCode: string) => {
+  useEffect(() => {
+    if (!locationDropdownOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!locationFilterRef.current?.contains(event.target as Node)) {
+        setLocationDropdownOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setLocationDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [locationDropdownOpen]);
+
+  const toggleLocationFilter = (siteCode: string) => {
     if (!siteCode) return;
     setSelectedLocationCodes((current) => (
-      current.includes(siteCode) ? current : [...current, siteCode]
+      current.includes(siteCode)
+        ? current.filter((item) => item !== siteCode)
+        : [...current, siteCode]
     ));
-    setLocationSearch('');
   };
 
   const removeLocationFilter = (siteCode: string) => {
@@ -753,28 +779,6 @@ export function TargetCalculatorSubtab() {
 
       {scenario && (
         <>
-          <div className="glass rounded-2xl p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="mr-1 text-xs font-medium text-slate-500 dark:text-slate-400">Manager</span>
-              {['all', ...regionals].map((regional) => {
-                const active = regionalFilter === regional;
-                return (
-                  <button
-                    key={regional}
-                    onClick={() => setRegionalFilter(regional)}
-                    className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${
-                      active
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {regional === 'all' ? 'Toti managerii' : regional}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {scenario.warnings.length > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300">
               {scenario.warnings.map((warning) => <p key={warning}>{warning}</p>)}
@@ -806,7 +810,40 @@ export function TargetCalculatorSubtab() {
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                 Rosu = sub calculator · Verde = egal sau pana la +5% · Galben = peste +5%
               </p>
-              <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="mt-3 space-y-2 md:hidden">
+                {regionalChart.map((manager) => {
+                  const difference = manager.final_total - manager.proposed_total;
+                  const status = managerTargetStatus(manager.proposed_total, manager.final_total);
+                  return (
+                    <div key={manager.regional} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/60">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-800 dark:text-slate-100">{manager.regional}</p>
+                          <p className="text-[11px] text-slate-400">{manager.store_count} magazine</p>
+                        </div>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${status.badgeClass}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+                        <div className="rounded-lg bg-indigo-50 p-2 dark:bg-indigo-900/20">
+                          <p className="uppercase tracking-wide text-indigo-400">Calculator</p>
+                          <p className="mt-1 font-semibold tabular-nums text-indigo-700 dark:text-indigo-300">{formatCurrency(manager.proposed_total)}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800">
+                          <p className="uppercase tracking-wide text-slate-400">Final</p>
+                          <p className={`mt-1 font-semibold tabular-nums ${status.valueClass}`}>{formatCurrency(manager.final_total)}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800">
+                          <p className="uppercase tracking-wide text-slate-400">Diferenta</p>
+                          <p className={`mt-1 font-semibold tabular-nums ${status.valueClass}`}>{difference > 0 ? '+' : ''}{formatCurrency(difference)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 hidden overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 md:block">
                 <div className="min-w-[585px]">
                   <div className="grid grid-cols-[minmax(130px,1fr)_120px_120px_105px_110px] bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:bg-slate-800">
                     <span>Manager</span>
@@ -854,7 +891,34 @@ export function TargetCalculatorSubtab() {
                   Forecast = valoare proiectata din importul partial si folosita in calcul.
                 </p>
               )}
-              <div className="mt-3 h-64">
+              <div className="mt-3 space-y-2 md:hidden">
+                {sourceChart.map((period) => (
+                  <div key={period.month} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-800 dark:text-slate-100">{period.month}</p>
+                      {period.isForecast && (
+                        <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+                          Forecast
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                      <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800">
+                        <p className="uppercase tracking-wide text-slate-400">Target istoric</p>
+                        <p className="mt-1 font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(period.target)}</p>
+                      </div>
+                      <div className="rounded-lg bg-sky-50 p-2 dark:bg-sky-900/20">
+                        <p className="uppercase tracking-wide text-sky-500">{period.isForecast ? 'Forecast folosit' : 'Realizat'}</p>
+                        <p className="mt-1 font-semibold tabular-nums text-sky-700 dark:text-sky-300">{formatCurrency(period.realized)}</p>
+                        {period.isForecast && (
+                          <p className="mt-1 text-[10px] text-slate-400">Importat: {formatCurrency(period.actualRealized)}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 hidden h-64 md:block">
                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                   <BarChart data={sourceChart} margin={{ top: 4, right: 4, left: 4, bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.15)" />
@@ -867,6 +931,28 @@ export function TargetCalculatorSubtab() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+          </div>
+
+          <div className="glass rounded-2xl p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-xs font-medium text-slate-500 dark:text-slate-400">Manager</span>
+              {['all', ...regionals].map((regional) => {
+                const active = regionalFilter === regional;
+                return (
+                  <button
+                    key={regional}
+                    onClick={() => setRegionalFilter(regional)}
+                    className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${
+                      active
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {regional === 'all' ? 'Toti managerii' : regional}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -905,7 +991,7 @@ export function TargetCalculatorSubtab() {
             </div>
 
             <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <div ref={locationFilterRef} className="flex flex-col gap-3 lg:flex-row lg:items-end">
                 <label className="flex-1 space-y-1 text-xs font-medium text-slate-500">
                   Filtru locatie
                   <div className="relative">
@@ -918,23 +1004,59 @@ export function TargetCalculatorSubtab() {
                     />
                   </div>
                 </label>
-                <label className="min-w-0 flex-1 space-y-1 text-xs font-medium text-slate-500 lg:max-w-sm">
-                  Selecteaza locatie
-                  <select
-                    value=""
-                    onChange={(event) => addLocationFilter(event.target.value)}
-                    className={`${inputCls} w-full`}
+                <div className="relative min-w-0 flex-1 space-y-1 text-xs font-medium text-slate-500 lg:max-w-sm">
+                  <span>Selecteaza locatie</span>
+                  <button
+                    type="button"
+                    onClick={() => setLocationDropdownOpen((current) => !current)}
+                    className={`${inputCls} flex w-full items-center justify-between gap-2 text-left`}
                   >
-                    <option value="">Adauga locatie...</option>
-                    {searchedLocationOptions
-                      .filter((row) => !selectedLocationSet.has(row.site_code))
-                      .map((row) => (
-                        <option key={row.site_code} value={row.site_code}>
-                          {row.locatie} · {row.site_code}
-                        </option>
-                      ))}
-                  </select>
-                </label>
+                    <span className="truncate">
+                      {selectedLocationCodes.length > 0
+                        ? `${selectedLocationCodes.length} locatii selectate`
+                        : 'Adauga locatie...'}
+                    </span>
+                    <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${locationDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {locationDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                        <span className="text-[11px] text-slate-400">{selectedLocationCodes.length} selectate</span>
+                        {selectedLocationCodes.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLocationCodes([])}
+                            className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-300"
+                          >
+                            Goleste
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-72 overflow-y-auto p-1">
+                        {searchedLocationOptions.length === 0 && (
+                          <p className="px-3 py-3 text-xs text-slate-400">Nu exista locatii pentru cautarea curenta.</p>
+                        )}
+                        {searchedLocationOptions.map((row) => (
+                          <label
+                            key={row.site_code}
+                            className="flex cursor-pointer items-start gap-2 rounded-xl px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedLocationSet.has(row.site_code)}
+                              onChange={() => toggleLocationFilter(row.site_code)}
+                              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate font-semibold text-slate-700 dark:text-slate-200">{row.locatie}</span>
+                              <span className="block truncate text-[10px] text-slate-400">{row.site_code} · {row.firma}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {selectedLocationCodes.length > 0 && (
                   <button
                     onClick={() => setSelectedLocationCodes([])}
