@@ -156,10 +156,14 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    Daca o referinta este partiala, valoarea realizata folosita in ponderi este
    forecastata cu regula comuna Hub/CRM si salvata in snapshot impreuna cu
    realizatul importat.
-4. Permite ajustarea valorii `final_target` pe fiecare locatie si exportul
-   Excel al draftului sau rezultatului final; coloana `Final manager` este
-   evidentiata in UI ca actiune de completat.
-5. La finalizare inlocuieste targetele oficiale ale lunii din `store_targets`
+4. Permite completarea valorii `final_target` pe fiecare locatie si exportul
+   Excel al draftului sau rezultatului final. In drafturile noi, `Final manager`
+   este `NULL`/gol pana la completarea explicita de catre manager; UI-ul il
+   evidentiaza, iar finalizarea este blocata cat timp exista randuri goale.
+5. Tabelul de lucru permite filtru multi-select pe locatie. Click pe numele
+   locatiei deschide un drawer cu 16 luni de vanzari versus target, KPI-uri
+   Retail si ponderea agentilor din luna cohortei.
+6. La finalizare inlocuieste targetele oficiale ale lunii din `store_targets`
    cu exact cohorta aprobata; Hub si CRM consuma apoi noile valori. Endpointul
    precum si actiunea de calcul/recalculare sunt rezervate emailurilor din
    `TARGET_CALCULATOR_FINALIZER_EMAILS`.

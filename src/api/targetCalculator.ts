@@ -37,7 +37,7 @@ export interface TargetScenarioRow {
   calculated_weight: number;
   floor_target: number;
   proposed_target: number;
-  final_target: number;
+  final_target: number | null;
   is_floor_limited: boolean;
   history: TargetHistoryValue[];
   note: string | null;
@@ -84,6 +84,7 @@ export interface TargetScenarioSummary {
 
 export interface TargetScenario extends TargetScenarioSummary {
   remaining_difference: number;
+  pending_final_count: number;
   floor_limited_count: number;
   manual_adjustments_count: number;
   rows: TargetScenarioRow[];
@@ -120,9 +121,61 @@ export async function calculateTargetScenario(input: TargetCalculationInput): Pr
 
 export async function saveTargetFinalValues(
   id: number,
-  rows: Array<{ site_code: string; final_target: number; note: string | null }>,
+  rows: Array<{ site_code: string; final_target: number | null; note: string | null }>,
 ): Promise<TargetScenario> {
   const { data } = await client.patch<TargetScenario>(`/api/target-calculator/scenarios/${id}/rows`, { rows });
+  return data;
+}
+
+export interface TargetStoreHistoryPoint {
+  month: string;
+  total_sales: number;
+  target_value: number;
+  target_pct: number | null;
+  total_quantity: number;
+  receipt_count: number;
+  cartele_qty: number;
+  avg_receipt: number | null;
+  bon2acc_pct: number | null;
+  focus_pct: number | null;
+  active_agents: number;
+  working_days: number;
+}
+
+export interface TargetStoreAgent {
+  agent: string;
+  total_sales: number;
+  sales_share_pct: number;
+  total_quantity: number;
+  receipt_count: number;
+  avg_receipt: number | null;
+  bon2acc_pct: number | null;
+  focus_pct: number | null;
+  active_months_16: number;
+  sales_16m: number;
+}
+
+export interface TargetStoreDetail {
+  site_code: string;
+  locatie: string;
+  firma: string;
+  regional: string;
+  asm: string;
+  target_month: string;
+  cohort_month: string;
+  proposed_target: number;
+  final_target: number | null;
+  history: TargetStoreHistoryPoint[];
+  latest: TargetStoreHistoryPoint | null;
+  best_month: TargetStoreHistoryPoint | null;
+  avg_sales_16m: number;
+  agents: TargetStoreAgent[];
+}
+
+export async function fetchTargetStoreDetail(scenarioId: number, siteCode: string): Promise<TargetStoreDetail> {
+  const { data } = await client.get<TargetStoreDetail>(
+    `/api/target-calculator/scenarios/${scenarioId}/stores/${encodeURIComponent(siteCode)}`,
+  );
   return data;
 }
 

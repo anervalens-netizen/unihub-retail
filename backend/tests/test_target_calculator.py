@@ -144,6 +144,7 @@ async def test_recalculation_replaces_the_single_draft_for_target_month() -> Non
     delete_sql = conn.execute.await_args.args[0]
     assert "ON CONFLICT (target_month) DO UPDATE" in insert_sql
     assert "WHERE target_scenarios.status = 'draft'" in insert_sql
+    assert "final_target" not in insert_sql
     assert "DELETE FROM target_scenario_rows" in delete_sql
     conn.executemany.assert_awaited_once()
 
@@ -177,7 +178,7 @@ async def test_finalize_replaces_official_targets_with_exact_approved_cohort() -
         "total_target": Decimal("100.00"),
         "status": "draft",
     }
-    conn.fetchval.return_value = Decimal("100.00")
+    conn.fetchval.side_effect = [Decimal("100.00"), 0]
 
     assert await repo.finalize_scenario(8) is True
 
@@ -196,7 +197,21 @@ async def test_finalize_does_not_publish_or_delete_when_final_total_changed() ->
         "total_target": Decimal("100.00"),
         "status": "draft",
     }
-    conn.fetchval.return_value = Decimal("99.00")
+    conn.fetchval.side_effect = [Decimal("99.00"), 0]
+
+    assert await repo.finalize_scenario(8) is False
+    conn.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_finalize_does_not_publish_when_final_targets_are_blank() -> None:
+    repo, conn = make_repository_connection()
+    conn.fetchrow.return_value = {
+        "target_month": "2026-06",
+        "total_target": Decimal("100.00"),
+        "status": "draft",
+    }
+    conn.fetchval.side_effect = [Decimal("100.00"), 1]
 
     assert await repo.finalize_scenario(8) is False
     conn.execute.assert_not_awaited()

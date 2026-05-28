@@ -29,7 +29,14 @@ Excel-ul furnizat initial este referinta functionala, nu o dependinta runtime.
   `+5%` este galben;
 - utilizatorul editeaza separat `Final manager`, fara a suprascrie propunerea;
   coloana si cardul ei sunt evidentiate ca zona care trebuie completata sau
-  confirmata de manager.
+  confirmata de manager. In drafturile noi, campul porneste gol si finalizarea
+  este blocata pana cand toate locatiile au `Final manager` completat.
+- zona `Target per locatie` are filtru multi-select pe locatie: cautare dupa
+  nume/cod, adaugare una sau mai multe locatii si reset rapid la toate
+  locatiile vizibile.
+- click pe numele unei locatii deschide un drawer lateral cu 16 luni de
+  vanzari versus target, KPI-uri Retail si ponderea agentilor activi in luna
+  cohortei.
 - cardul superior `Calculator Target`, cu parametrii si actiunea de calcul,
   este vizibil numai proprietarului configurat; managerii incep direct cu
   documentul rezultat si completarile `Final manager`, iar singura lor
@@ -99,13 +106,15 @@ alinierea valorilor finale la totalul bugetat.
 parametrii, lunile sursa, avertizarile si statusul `draft` sau `finalized`.
 
 `target_scenario_rows` retine snapshot-ul locatiei, istoricul folosit,
-propunerea calculata, floor-ul si targetul final editabil.
+propunerea calculata, floor-ul si targetul final editabil. Coloana
+`final_target` este nullable: un `NULL` inseamna ca managerul nu a completat
+inca valoarea finala.
 
 Primul calcul pentru o luna creeaza imediat un `draft` in baza de date.
 Recalcularea aceleiasi luni actualizeaza draftul existent si reseteaza
-valorile finale/observatiile la noul rezultat, dupa confirmarea utilizatorului.
+valorile finale/observatiile, dupa confirmarea utilizatorului.
 O luna deja finalizata nu mai poate fi recalculata. Editarile
-de `Target final` si `Observatii` se salveaza automat numai pentru randurile
+de `Final manager` si `Observatii` se salveaza automat numai pentru randurile
 modificate; astfel doi manageri pot ajusta magazine diferite in acelasi draft
 fara ca o salvare sa suprascrie randurile celuilalt. Clientul reincarca
 periodic documentul cand nu are modificari locale nesalvate.
@@ -116,7 +125,9 @@ locale ramase in draftul curent inainte de navigare.
 
 La finalizare, aplicatia inlocuieste setul de `store_targets` pentru luna tinta
 cu exact randurile documentului finalizat. Astfel magazinele care nu mai sunt
-active nu raman in targetul oficial al lunii.
+active nu raman in targetul oficial al lunii. Finalizarea este respinsa daca
+exista macar o locatie cu `final_target IS NULL` sau daca suma valorilor finale
+nu este egala cu targetul total al documentului.
 Managerii pot salva valorile finale, dar actiunile de calcul/recalculare si
 `Finalizeaza` sunt disponibile si autorizate server-side numai pentru emailurile OIDC configurate in
 `TARGET_CALCULATOR_FINALIZER_EMAILS` (implicit `aner.valens@gmail.com`).
@@ -136,6 +147,7 @@ exceptie explicita de includere, nu prin targete introduse separat in
 | POST | `/api/target-calculator/scenarios/calculate` | Creeaza sau recalculeaza draftul lunii, numai pentru proprietarul configurat |
 | GET | `/api/target-calculator/scenarios/{id}` | Detalii, randuri si agregari pentru grafice |
 | PATCH | `/api/target-calculator/scenarios/{id}/rows` | Salveaza targetele finale editate |
+| GET | `/api/target-calculator/scenarios/{id}/stores/{site_code}` | Drawer detaliu locatie: 16 luni, KPI-uri si agenti |
 | POST | `/api/target-calculator/scenarios/{id}/finalize` | Publica valorile in `store_targets`, numai pentru finalizatorii configurati |
 | GET | `/api/target-calculator/scenarios/{id}/export` | Export Excel |
 
@@ -143,7 +155,7 @@ exceptie explicita de includere, nu prin targete introduse separat in
 
 Workbook-ul exportat are trei foi:
 
-- `Targete finale`: istoric per locatie, floor, propunere, target final,
+- `Targete finale`: istoric per locatie, floor, propunere, Final manager,
   diferenta si observatii;
 - `Rezumat manageri`: totaluri propuse si finale pe regional;
 - `Parametri`: cohorta, formula, parametri si avertizari.

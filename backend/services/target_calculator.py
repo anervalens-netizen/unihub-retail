@@ -297,17 +297,19 @@ class TargetCalculatorService:
         header = self._serialize_header(dict(scenario))
         serialized_rows = [self._serialize_row(dict(row)) for row in rows]
         proposed_total = sum(row["proposed_target"] for row in serialized_rows)
-        final_total = sum(row["final_target"] for row in serialized_rows)
+        final_total = sum((row["final_target"] or 0) for row in serialized_rows)
+        pending_final_count = sum(1 for row in serialized_rows if row["final_target"] is None)
         return {
             **header,
             "store_count": len(serialized_rows),
             "proposed_total": proposed_total,
             "final_total": final_total,
             "remaining_difference": header["total_target"] - final_total,
+            "pending_final_count": pending_final_count,
             "floor_limited_count": sum(1 for row in serialized_rows if row["is_floor_limited"]),
             "manual_adjustments_count": sum(
                 1 for row in serialized_rows
-                if abs(row["final_target"] - row["proposed_target"]) > 0.01
+                if row["final_target"] is not None and abs(row["final_target"] - row["proposed_target"]) > 0.01
             ),
             "rows": serialized_rows,
             "regional_summary": self._regional_summary(serialized_rows),
@@ -337,6 +339,11 @@ class TargetCalculatorService:
             raise HTTPException(
                 status_code=409,
                 detail="Scenariul a fost calculat cu o formula veche. Genereaza o propunere noua inainte de finalizare.",
+            )
+        if scenario["pending_final_count"] > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Toate locatiile trebuie sa aiba target final completat inainte de finalizare.",
             )
         if money(scenario["final_total"]) != money(scenario["total_target"]):
             raise HTTPException(
@@ -391,8 +398,10 @@ class TargetCalculatorService:
                 ])
             values.extend([
                 row["floor_target"], row["calculated_weight"], row["proposed_target"],
-                row["final_target"], row["final_target"] - row["proposed_target"],
-                "Da" if abs(row["final_target"] - row["proposed_target"]) > 0.01 else "Nu",
+                row["final_target"],
+                None if row["final_target"] is None else row["final_target"] - row["proposed_target"],
+                "Necompletat" if row["final_target"] is None
+                else "Da" if abs(row["final_target"] - row["proposed_target"]) > 0.01 else "Nu",
                 row["note"] or "",
             ])
             sheet.append(values)
@@ -445,6 +454,36 @@ class TargetCalculatorService:
         stamp = datetime.now().strftime("%Y%m%d")
         return output, f"targete_{scenario['target_month']}_scenariu_{scenario_id}_{stamp}.xlsx"
 
+    async def get_store_detail(self, scenario_id: int, site_code: str) -> dict[str, Any]:
+        data = await self.repo.get_store_detail(scenario_id, site_code)
+        if not data:
+            raise HTTPException(status_code=404, detail="Locatia nu exista in documentul de target.")
+
+        scenario = dict(data["scenario"])
+        history = [self._serialize_store_history(dict(row)) for row in data["history"]]
+        agents = [self._serialize_store_agent(dict(row)) for row in data["agents"]]
+        latest = next((row for row in reversed(history) if row["total_sales"] > 0 or row["target_value"] > 0), None)
+        sales_values = [row["total_sales"] for row in history]
+        best_month = max(history, key=lambda row: row["total_sales"]) if history else None
+        avg_sales = sum(sales_values) / len(sales_values) if sales_values else 0
+
+        return {
+            "site_code": scenario["site_code"],
+            "locatie": scenario["locatie"],
+            "firma": scenario["firma"],
+            "regional": scenario["regional"],
+            "asm": scenario["asm"],
+            "target_month": scenario["target_month"],
+            "cohort_month": scenario["cohort_month"],
+            "proposed_target": float(scenario["proposed_target"] or 0),
+            "final_target": float(scenario["final_target"]) if scenario["final_target"] is not None else None,
+            "history": history,
+            "latest": latest,
+            "best_month": best_month,
+            "avg_sales_16m": round(avg_sales, 2),
+            "agents": agents,
+        }
+
     def _serialize_header(self, row: dict[str, Any]) -> dict[str, Any]:
         for key in ("total_target", "min_floor", "previous_month_floor_pct", "proposed_total", "final_total"):
             if key in row:
@@ -456,11 +495,13 @@ class TargetCalculatorService:
         row.setdefault("warnings", [])
         if "store_count" in row:
             row["store_count"] = int(row["store_count"])
+        row["pending_final_count"] = int(row.get("pending_final_count") or 0)
         return row
 
     def _serialize_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        for key in ("calculated_weight", "floor_target", "proposed_target", "final_target"):
+        for key in ("calculated_weight", "floor_target", "proposed_target"):
             row[key] = float(row[key] or 0)
+        row["final_target"] = float(row["final_target"]) if row.get("final_target") is not None else None
         if isinstance(row.get("history"), str):
             row["history"] = json.loads(row["history"])
         return row
@@ -474,7 +515,7 @@ class TargetCalculatorService:
             data["store_count"] += 1
             data["floor_total"] += row["floor_target"]
             data["proposed_total"] += row["proposed_target"]
-            data["final_total"] += row["final_target"]
+            data["final_total"] += row["final_target"] or 0
         return [
             {"regional": regional, **values}
             for regional, values in sorted(summary.items())
@@ -509,3 +550,44 @@ class TargetCalculatorService:
             }
             for month, values in summary.items()
         ]
+
+    def _serialize_store_history(self, row: dict[str, Any]) -> dict[str, Any]:
+        total_sales = float(row["total_sales"] or 0)
+        target = float(row["target_value"] or 0)
+        total_quantity = int(row["total_quantity"] or 0)
+        receipt_count = int(row["receipt_count"] or 0)
+        receipt_2plus = int(row["receipt_2plus_count"] or 0)
+        focus_quantity = int(row["focus_quantity"] or 0)
+        return {
+            "month": row["import_month"],
+            "total_sales": total_sales,
+            "target_value": target,
+            "target_pct": total_sales / target * 100 if target else None,
+            "total_quantity": total_quantity,
+            "receipt_count": receipt_count,
+            "cartele_qty": int(row["cartele_qty"] or 0),
+            "avg_receipt": total_sales / receipt_count if receipt_count else None,
+            "bon2acc_pct": receipt_2plus / receipt_count * 100 if receipt_count else None,
+            "focus_pct": focus_quantity / total_quantity * 100 if total_quantity else None,
+            "active_agents": int(row["active_agents"] or 0),
+            "working_days": int(row["working_days"] or 0),
+        }
+
+    def _serialize_store_agent(self, row: dict[str, Any]) -> dict[str, Any]:
+        total_sales = float(row["total_sales"] or 0)
+        total_quantity = int(row["total_quantity"] or 0)
+        receipt_count = int(row["receipt_count"] or 0)
+        receipt_2plus = int(row["receipt_2plus_count"] or 0)
+        focus_quantity = int(row["focus_quantity"] or 0)
+        return {
+            "agent": row["agent"],
+            "total_sales": total_sales,
+            "sales_share_pct": float(row["sales_share_pct"] or 0),
+            "total_quantity": total_quantity,
+            "receipt_count": receipt_count,
+            "avg_receipt": total_sales / receipt_count if receipt_count else None,
+            "bon2acc_pct": receipt_2plus / receipt_count * 100 if receipt_count else None,
+            "focus_pct": focus_quantity / total_quantity * 100 if total_quantity else None,
+            "active_months_16": int(row["active_months_16"] or 0),
+            "sales_16m": float(row["sales_16m"] or 0),
+        }

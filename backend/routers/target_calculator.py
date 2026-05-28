@@ -57,7 +57,7 @@ class TargetFinalRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     site_code: str
-    final_target: Decimal = Field(ge=0)
+    final_target: Decimal | None = Field(default=None, ge=0)
     note: str | None = Field(default=None, max_length=500)
 
 
@@ -131,6 +131,15 @@ async def export_scenario(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/scenarios/{scenario_id}/stores/{site_code}")
+async def get_store_detail(
+    scenario_id: int,
+    site_code: str,
+    svc: TargetCalculatorService = Depends(get_target_calculator_service),
+):
+    return await svc.get_store_detail(scenario_id, site_code)
 
 
 @router.get("/scenarios/{scenario_id}")

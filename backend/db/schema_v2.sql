@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS target_scenario_rows (
     calculated_weight NUMERIC(16, 10) NOT NULL DEFAULT 0,
     floor_target NUMERIC(12, 2) NOT NULL DEFAULT 0,
     proposed_target NUMERIC(12, 2) NOT NULL DEFAULT 0,
-    final_target NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    final_target NUMERIC(12, 2),
     is_floor_limited BOOLEAN NOT NULL DEFAULT false,
     history JSONB NOT NULL DEFAULT '[]'::jsonb,
     note TEXT,

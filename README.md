@@ -91,11 +91,14 @@ manuale dupa confirmarea utilizatorului; nu sunt create versiuni alternative
 in interfata.
 
 `target_scenarios` si `target_scenario_rows` pastreaza documentul de lucru si
-auditul calculului per luna. Doar actiunea de finalizare inlocuieste targetele oficiale ale
-lunii din `store_targets`, strict cu magazinele din cohorta aprobata. Exportul
-Excel contine targetele finale, rezumatul pe manager si parametrii documentului.
+auditul calculului per luna. Randurile noi pornesc cu `Final manager` gol:
+managerii trebuie sa completeze explicit valorile finale, iar finalizarea este
+blocata pana cand toate locatiile au o valoare. Doar actiunea de finalizare
+inlocuieste targetele oficiale ale lunii din `store_targets`, strict cu
+magazinele din cohorta aprobata. Exportul Excel contine targetele finale,
+rezumatul pe manager si parametrii documentului.
 Crearea propunerii salveaza imediat un draft comun, iar modificarile de
-`Target final` sunt salvate automat per locatie si devin vizibile celorlalti
+`Final manager` sunt salvate automat per locatie si devin vizibile celorlalti
 manageri care deschid sau reincarca acelasi draft.
 Coloana `Final manager` este evidentiata ca zona de completat de manageri.
 Calculul/recalcularea propunerii si butonul `Finalizeaza`, care publica
@@ -105,6 +108,10 @@ emailurile configurate in
 Cardul superior cu parametrii de calcul este ascuns integral pentru ceilalti
 manageri; acestia vad documentul calculat, completeaza `Final manager` si au
 ca actiune operationala numai `Salveaza acum`.
+Tabelul per locatie are filtru multi-select pe locatie. Click pe numele unei
+locatii deschide un drawer lateral cu 16 luni de vanzari versus target, KPI-uri
+Retail (cantitate, bonuri, Bon2Acc, Focus/Acc, cartele, agenti activi) si
+ponderea agentilor din luna cohortei.
 Prin regula actuala, un magazin fara vanzari in luna cohortei nu intra in
 targetul final; o viitoare exceptie pentru magazine planificate inainte de
 deschidere trebuie modelata explicit in calculator.

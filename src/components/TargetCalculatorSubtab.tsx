@@ -8,12 +8,18 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
+  Store,
+  Users,
+  X,
 } from 'lucide-react';
 import {
   Bar,
   BarChart,
+  ComposedChart,
   CartesianGrid,
   Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -25,11 +31,13 @@ import {
   fetchTargetCalculatorContext,
   fetchTargetScenario,
   fetchTargetScenarios,
+  fetchTargetStoreDetail,
   finalizeTargetScenario,
   saveTargetFinalValues,
   type TargetCalculatorContext,
   type TargetScenario,
   type TargetScenarioRow,
+  type TargetStoreDetail,
 } from '../api/targetCalculator';
 import { formatCurrency, formatPercent } from '../lib/formatters';
 
@@ -50,6 +58,10 @@ function sum(values: number[]): number {
   return Math.round(values.reduce((total, value) => total + value, 0) * 100) / 100;
 }
 
+function formatOptionalCurrency(value: number | null): string {
+  return value == null ? 'Necompletat' : formatCurrency(value);
+}
+
 function recalculateVisibleScenario(scenario: TargetScenario, rows: TargetScenarioRow[]): TargetScenario {
   const regional = new Map<string, { regional: string; store_count: number; floor_total: number; proposed_total: number; final_total: number }>();
   rows.forEach((row) => {
@@ -63,16 +75,17 @@ function recalculateVisibleScenario(scenario: TargetScenario, rows: TargetScenar
     item.store_count += 1;
     item.floor_total += row.floor_target;
     item.proposed_total += row.proposed_target;
-    item.final_total += row.final_target;
+    item.final_total += row.final_target ?? 0;
     regional.set(row.regional, item);
   });
-  const finalTotal = sum(rows.map((row) => row.final_target));
+  const finalTotal = sum(rows.map((row) => row.final_target ?? 0));
   return {
     ...scenario,
     rows,
     final_total: finalTotal,
     remaining_difference: Math.round((scenario.total_target - finalTotal) * 100) / 100,
-    manual_adjustments_count: rows.filter((row) => Math.abs(row.final_target - row.proposed_target) > 0.01).length,
+    pending_final_count: rows.filter((row) => row.final_target == null).length,
+    manual_adjustments_count: rows.filter((row) => row.final_target != null && Math.abs(row.final_target - row.proposed_target) > 0.01).length,
     regional_summary: Array.from(regional.values()).sort((left, right) => left.regional.localeCompare(right.regional)),
   };
 }
@@ -130,6 +143,164 @@ function managerTargetStatus(proposed: number, finalValue: number): {
   };
 }
 
+function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
+  scenarioId: number;
+  siteCode: string | null;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<TargetStoreDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!siteCode) return;
+    setLoading(true);
+    setError(null);
+    void fetchTargetStoreDetail(scenarioId, siteCode)
+      .then(setDetail)
+      .catch((err) => {
+        console.error(err);
+        setError('Nu am putut incarca detaliile locatiei.');
+      })
+      .finally(() => setLoading(false));
+  }, [scenarioId, siteCode]);
+
+  if (!siteCode) return null;
+
+  const latest = detail?.latest;
+  const best = detail?.best_month;
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={(event) => {
+        if (event.target === overlayRef.current) onClose();
+      }}
+      className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm"
+    >
+      <div
+        className="flex h-full w-full flex-col bg-white shadow-2xl dark:bg-slate-950 sm:max-w-2xl"
+        style={{ animation: 'slideInRight 250ms ease-out' }}
+      >
+        <div className="flex items-start justify-between border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-6">
+          <div>
+            <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
+              <Store size={14} /> Detalii locatie
+            </p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+              {detail?.locatie ?? siteCode}
+            </h2>
+            {detail && (
+              <p className="text-xs text-slate-500">
+                {detail.site_code} · {detail.firma} · {detail.regional}
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {loading && <div className="py-12 text-center text-sm text-slate-500">Se incarca detaliile...</div>}
+          {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+          {!loading && detail && (
+            <div className="space-y-4 pb-8">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <SummaryCard label="Vanzari ultima luna" value={formatCurrency(latest?.total_sales ?? 0)} detail={detail.cohort_month} />
+                <SummaryCard label="% target" value={formatPercent(latest?.target_pct ?? null)} detail={formatCurrency(latest?.target_value ?? 0)} />
+                <SummaryCard label="Bon mediu" value={latest?.avg_receipt == null ? '-' : formatCurrency(latest.avg_receipt)} detail={`${latest?.receipt_count ?? 0} bonuri`} />
+                <SummaryCard label="Agenti activi" value={`${latest?.active_agents ?? 0}`} detail={`${detail.agents.length} in lista`} />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Vanzari vs target - 16 luni</h3>
+                    <p className="text-xs text-slate-500">
+                      Media: {formatCurrency(detail.avg_sales_16m)}
+                      {best ? ` · Varf: ${monthLabel(best.month)} (${formatCurrency(best.total_sales)})` : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                    <ComposedChart data={detail.history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
+                      <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Legend />
+                      <Bar dataKey="total_sales" name="Vanzari" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                      <Line type="monotone" dataKey="target_value" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">KPI ultima luna</h3>
+                  <div className="mt-3 space-y-2 text-xs">
+                    <KpiRow label="Cantitate" value={(latest?.total_quantity ?? 0).toLocaleString('ro-RO')} />
+                    <KpiRow label="Cartele" value={(latest?.cartele_qty ?? 0).toLocaleString('ro-RO')} />
+                    <KpiRow label="Bon2Acc" value={formatPercent(latest?.bon2acc_pct ?? null)} />
+                    <KpiRow label="Focus/Acc" value={formatPercent(latest?.focus_pct ?? null)} />
+                    <KpiRow label="Zile active" value={`${latest?.working_days ?? 0}`} />
+                    <KpiRow label="Target calculat" value={formatCurrency(detail.proposed_target)} />
+                    <KpiRow label="Final manager" value={formatOptionalCurrency(detail.final_target)} />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    <Users size={15} /> Pondere agenti
+                  </h3>
+                  <div className="mt-3 space-y-3">
+                    {detail.agents.length === 0 && <p className="text-xs text-slate-500">Nu exista agenti activi in luna cohortei.</p>}
+                    {detail.agents.slice(0, 8).map((agent) => (
+                      <div key={agent.agent}>
+                        <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                          <span className="font-medium text-slate-700 dark:text-slate-200">{agent.agent}</span>
+                          <span className="font-semibold text-indigo-600 dark:text-indigo-300">{formatPercent(agent.sales_share_pct)}</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                          <div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.min(agent.sales_share_pct, 100)}%` }} />
+                        </div>
+                        <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+                          <span>{formatCurrency(agent.total_sales)}</span>
+                          <span>{agent.active_months_16}/16 luni active</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes slideInRight {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function KpiRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-900/60">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{value}</span>
+    </div>
+  );
+}
+
 export function TargetCalculatorSubtab() {
   const [context, setContext] = useState<TargetCalculatorContext | null>(null);
   const [scenario, setScenario] = useState<TargetScenario | null>(null);
@@ -138,6 +309,9 @@ export function TargetCalculatorSubtab() {
   const [totalTarget, setTotalTarget] = useState('');
   const [minFloor, setMinFloor] = useState('');
   const [floorPct, setFloorPct] = useState('');
+  const [locationSearch, setLocationSearch] = useState('');
+  const [selectedLocationCodes, setSelectedLocationCodes] = useState<string[]>([]);
+  const [detailSiteCode, setDetailSiteCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirtyRows, setDirtyRows] = useState<Set<string>>(() => new Set());
@@ -200,9 +374,28 @@ export function TargetCalculatorSubtab() {
     () => scenario?.regional_summary.map((item) => item.regional) ?? context?.regionals ?? [],
     [scenario, context],
   );
-  const filteredRows = useMemo(
+  const baseRows = useMemo(
     () => scenario?.rows.filter((row) => regionalFilter === 'all' || row.regional === regionalFilter) ?? [],
     [scenario, regionalFilter],
+  );
+  const locationOptions = useMemo(
+    () => baseRows
+      .slice()
+      .sort((left, right) => left.locatie.localeCompare(right.locatie)),
+    [baseRows],
+  );
+  const searchedLocationOptions = useMemo(() => {
+    const needle = locationSearch.trim().toLocaleLowerCase('ro-RO');
+    if (!needle) return locationOptions;
+    return locationOptions.filter((row) => (
+      row.locatie.toLocaleLowerCase('ro-RO').includes(needle)
+      || row.site_code.toLocaleLowerCase('ro-RO').includes(needle)
+    ));
+  }, [locationOptions, locationSearch]);
+  const selectedLocationSet = useMemo(() => new Set(selectedLocationCodes), [selectedLocationCodes]);
+  const filteredRows = useMemo(
+    () => baseRows.filter((row) => selectedLocationSet.size === 0 || selectedLocationSet.has(row.site_code)),
+    [baseRows, selectedLocationSet],
   );
   const forecastMonths = useMemo(() => {
     const months = new Set<string>();
@@ -230,6 +423,23 @@ export function TargetCalculatorSubtab() {
     () => scenario?.regional_summary.filter((item) => regionalFilter === 'all' || item.regional === regionalFilter) ?? [],
     [scenario, regionalFilter],
   );
+
+  useEffect(() => {
+    const available = new Set(locationOptions.map((row) => row.site_code));
+    setSelectedLocationCodes((current) => current.filter((siteCode) => available.has(siteCode)));
+  }, [locationOptions]);
+
+  const addLocationFilter = (siteCode: string) => {
+    if (!siteCode) return;
+    setSelectedLocationCodes((current) => (
+      current.includes(siteCode) ? current : [...current, siteCode]
+    ));
+    setLocationSearch('');
+  };
+
+  const removeLocationFilter = (siteCode: string) => {
+    setSelectedLocationCodes((current) => current.filter((item) => item !== siteCode));
+  };
 
   const handleCalculate = async () => {
     const parsedTarget = Number(totalTarget);
@@ -273,7 +483,7 @@ export function TargetCalculatorSubtab() {
     }
   };
 
-  const updateRow = (siteCode: string, field: 'final_target' | 'note', value: number | string) => {
+  const updateRow = (siteCode: string, field: 'final_target' | 'note', value: number | string | null) => {
     const current = scenarioRef.current;
     if (!current || current.status === 'finalized') return;
     const rows = current.rows.map((row) => (
@@ -409,6 +619,10 @@ export function TargetCalculatorSubtab() {
       }
       const latest = await fetchTargetScenario(scenario.id);
       replaceScenario(latest);
+      if (latest.pending_final_count > 0) {
+        setError(`Mai sunt ${latest.pending_final_count} locatii fara Final manager completat.`);
+        return;
+      }
       if (Math.abs(latest.remaining_difference) > 0.01) {
         setError('Pentru finalizare, suma targetelor finale trebuie sa fie egala cu targetul total.');
         return;
@@ -574,7 +788,7 @@ export function TargetCalculatorSubtab() {
               label="Final manager"
               value={formatCurrency(scenario.final_total)}
               detail={scenario.status === 'draft'
-                ? `De completat / confirmat · ${scenario.manual_adjustments_count} ajustari`
+                ? `${scenario.pending_final_count} necompletate · ${scenario.manual_adjustments_count} ajustari`
                 : 'Publicat in targetele oficiale'}
               emphasis="attention"
             />
@@ -690,7 +904,133 @@ export function TargetCalculatorSubtab() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                <label className="flex-1 space-y-1 text-xs font-medium text-slate-500">
+                  Filtru locatie
+                  <div className="relative">
+                    <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={locationSearch}
+                      onChange={(event) => setLocationSearch(event.target.value)}
+                      className={`${inputCls} w-full pl-9`}
+                      placeholder="Cauta dupa nume sau cod locatie"
+                    />
+                  </div>
+                </label>
+                <label className="min-w-0 flex-1 space-y-1 text-xs font-medium text-slate-500 lg:max-w-sm">
+                  Selecteaza locatie
+                  <select
+                    value=""
+                    onChange={(event) => addLocationFilter(event.target.value)}
+                    className={`${inputCls} w-full`}
+                  >
+                    <option value="">Adauga locatie...</option>
+                    {searchedLocationOptions
+                      .filter((row) => !selectedLocationSet.has(row.site_code))
+                      .map((row) => (
+                        <option key={row.site_code} value={row.site_code}>
+                          {row.locatie} · {row.site_code}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {selectedLocationCodes.length > 0 && (
+                  <button
+                    onClick={() => setSelectedLocationCodes([])}
+                    className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    Toate locatiile
+                  </button>
+                )}
+              </div>
+              {selectedLocationCodes.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedLocationCodes.map((siteCode) => {
+                    const row = locationOptions.find((item) => item.site_code === siteCode);
+                    if (!row) return null;
+                    return (
+                      <button
+                        key={siteCode}
+                        onClick={() => removeLocationFilter(siteCode)}
+                        className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300"
+                      >
+                        {row.locatie}
+                        <X size={12} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 p-3 md:hidden">
+              {filteredRows.map((row) => (
+                <div key={row.site_code} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                  <button
+                    onClick={() => setDetailSiteCode(row.site_code)}
+                    className="text-left"
+                  >
+                    <p className="font-semibold text-slate-800 underline decoration-dotted underline-offset-4 dark:text-slate-100">{row.locatie}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">{row.site_code} · {row.firma} · {row.regional}</p>
+                  </button>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/60">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Calculat</p>
+                      <p className="font-semibold text-indigo-600 dark:text-indigo-300">{formatCurrency(row.proposed_target)}</p>
+                    </div>
+                    <label className="rounded-xl border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950/20">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Final manager</span>
+                      <input
+                        type="number"
+                        min="0"
+                        disabled={scenario.status === 'finalized'}
+                        className={`${finalInputCls} mt-1 w-full text-right tabular-nums disabled:opacity-70`}
+                        value={row.final_target ?? ''}
+                        placeholder="Completeaza"
+                        onChange={(event) => updateRow(row.site_code, 'final_target', event.target.value === '' ? null : Number(event.target.value))}
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+                    {row.history.map((period) => (
+                      <div key={period.month} className={`rounded-xl p-2 ${
+                        isPreviousYearPeriod(period.role)
+                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
+                          : 'bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300'
+                      }`}>
+                        <p className="font-semibold">{monthLabel(period.month)}</p>
+                        <p>{formatCurrency(period.target)}</p>
+                        <p className="text-slate-400">{formatCurrency(period.realized)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-400">Delta</span>
+                    <span className={`font-semibold ${
+                      row.final_target == null
+                        ? 'text-amber-600'
+                        : row.final_target - row.proposed_target > 0.01
+                          ? 'text-emerald-600'
+                          : row.final_target - row.proposed_target < -0.01
+                            ? 'text-red-600'
+                            : 'text-slate-400'
+                    }`}>
+                      {row.final_target == null ? 'Necompletat' : formatCurrency(row.final_target - row.proposed_target)}
+                    </span>
+                  </div>
+                  <input
+                    disabled={scenario.status === 'finalized'}
+                    className={`${inputCls} mt-2 w-full disabled:opacity-70`}
+                    placeholder="Observatii"
+                    value={row.note ?? ''}
+                    onChange={(event) => updateRow(row.site_code, 'note', event.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-[1380px] w-full text-xs">
                 <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
                   <tr>
@@ -745,7 +1085,12 @@ export function TargetCalculatorSubtab() {
                   {filteredRows.map((row) => (
                     <tr key={row.site_code}>
                       <td className="px-3 py-2">
-                        <p className="font-medium text-slate-800 dark:text-slate-200">{row.locatie}</p>
+                        <button
+                          onClick={() => setDetailSiteCode(row.site_code)}
+                          className="text-left font-medium text-slate-800 underline decoration-dotted underline-offset-4 hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
+                        >
+                          {row.locatie}
+                        </button>
                         <p className="text-[10px] text-slate-400">{row.site_code} · {row.firma}</p>
                       </td>
                       <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.regional}</td>
@@ -782,18 +1127,21 @@ export function TargetCalculatorSubtab() {
                           min="0"
                           disabled={scenario.status === 'finalized'}
                           className={`${finalInputCls} w-32 text-right tabular-nums disabled:opacity-70`}
-                          value={row.final_target}
-                          onChange={(event) => updateRow(row.site_code, 'final_target', Number(event.target.value || 0))}
+                          value={row.final_target ?? ''}
+                          placeholder="Completeaza"
+                          onChange={(event) => updateRow(row.site_code, 'final_target', event.target.value === '' ? null : Number(event.target.value))}
                         />
                       </td>
                       <td className={`px-3 py-2 text-right font-semibold tabular-nums ${
-                        row.final_target - row.proposed_target > 0.01
+                        row.final_target == null
+                          ? 'text-amber-600'
+                          : row.final_target - row.proposed_target > 0.01
                           ? 'text-emerald-600'
                           : row.final_target - row.proposed_target < -0.01
                             ? 'text-red-600'
                             : 'text-slate-400'
                       }`}>
-                        {formatCurrency(row.final_target - row.proposed_target)}
+                        {row.final_target == null ? 'Necompletat' : formatCurrency(row.final_target - row.proposed_target)}
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -811,6 +1159,13 @@ export function TargetCalculatorSubtab() {
             </div>
           </div>
         </>
+      )}
+      {scenario && (
+        <StoreDetailDrawer
+          scenarioId={scenario.id}
+          siteCode={detailSiteCode}
+          onClose={() => setDetailSiteCode(null)}
+        />
       )}
     </div>
   );
