@@ -111,7 +111,10 @@ ca actiune operationala numai `Salveaza acum`.
 Tabelul per locatie are filtru multi-select pe locatie. Click pe numele unei
 locatii deschide un drawer lateral cu 16 luni de vanzari versus target, KPI-uri
 Retail (cantitate, bonuri, Bon2Acc, Focus/Acc, cartele, agenti activi) si
-ponderea agentilor din luna cohortei.
+ponderea agentilor din luna cohortei. Graficul din drawer comuta intre
+`Vanzari`, `Bon2Acc` si `Focus/Acc`. KPI-ul `Zile cu vanzari` este numarat din
+datele distincte din `reporting_agent_day.sale_date`, nu din maximul pe agent,
+pentru ca zilele active per agent pot subestima zilele reale ale magazinului.
 Prin regula actuala, un magazin fara vanzari in luna cohortei nu intra in
 targetul final; o viitoare exceptie pentru magazine planificate inainte de
 deschidere trebuie modelata explicit in calculator.

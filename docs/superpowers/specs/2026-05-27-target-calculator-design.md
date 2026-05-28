@@ -31,12 +31,15 @@ Excel-ul furnizat initial este referinta functionala, nu o dependinta runtime.
   coloana si cardul ei sunt evidentiate ca zona care trebuie completata sau
   confirmata de manager. In drafturile noi, campul porneste gol si finalizarea
   este blocata pana cand toate locatiile au `Final manager` completat.
-- zona `Target per locatie` are filtru multi-select pe locatie: cautare dupa
-  nume/cod, adaugare una sau mai multe locatii si reset rapid la toate
-  locatiile vizibile.
+- zona `Target per locatie` are filtru multi-select pe locatie: dropdown cu
+  bife, selectie/deselectie pentru una sau mai multe locatii si reset rapid la
+  toate locatiile vizibile. Nu exista camp separat de cautare manuala.
 - click pe numele unei locatii deschide un drawer lateral cu 16 luni de
-  vanzari versus target, KPI-uri Retail si ponderea agentilor activi in luna
-  cohortei.
+  istoric. Graficul comuta intre `Vanzari`, `Bon2Acc` si `Focus/Acc`, iar
+  drawer-ul include KPI-uri Retail si ponderea agentilor activi in luna
+  cohortei. `Zile cu vanzari` se calculeaza din datele distincte
+  `reporting_agent_day.sale_date`, cu fallback la agregatul lunar numai daca
+  lipsesc randurile zilnice.
 - cardul superior `Calculator Target`, cu parametrii si actiunea de calcul,
   este vizibil numai proprietarului configurat; managerii incep direct cu
   documentul rezultat si completarile `Final manager`, iar singura lor

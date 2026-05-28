@@ -161,8 +161,11 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    este `NULL`/gol pana la completarea explicita de catre manager; UI-ul il
    evidentiaza, iar finalizarea este blocata cat timp exista randuri goale.
 5. Tabelul de lucru permite filtru multi-select pe locatie. Click pe numele
-   locatiei deschide un drawer cu 16 luni de vanzari versus target, KPI-uri
-   Retail si ponderea agentilor din luna cohortei.
+   locatiei deschide un drawer cu 16 luni de istoric. Graficul din drawer
+   comuta intre vanzari versus target, Bon2Acc si Focus/Acc; KPI-ul
+   `Zile cu vanzari` este numarat din datele distincte
+   `reporting_agent_day.sale_date`, iar overview-ul agentilor foloseste luna
+   cohortei.
 6. La finalizare inlocuieste targetele oficiale ale lunii din `store_targets`
    cu exact cohorta aprobata; Hub si CRM consuma apoi noile valori. Endpointul
    precum si actiunea de calcul/recalculare sunt rezervate emailurilor din

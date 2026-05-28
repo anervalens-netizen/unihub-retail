@@ -329,9 +329,13 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
                           <span className="font-medium text-slate-700 dark:text-slate-200">{agent.agent}</span>
                           <span className="font-semibold text-indigo-600 dark:text-indigo-300">{formatPercent(agent.sales_share_pct)}</span>
                         </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                          <div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.min(agent.sales_share_pct, 100)}%` }} />
-                        </div>
+                        <progress
+                          className="target-agent-share"
+                          max={100}
+                          value={Math.min(Math.max(agent.sales_share_pct, 0), 100)}
+                        >
+                          {formatPercent(agent.sales_share_pct)}
+                        </progress>
                         <div className="mt-1 flex justify-between text-[10px] text-slate-400">
                           <span>{formatCurrency(agent.total_sales)}</span>
                           <span>{agent.active_months_16}/16 luni active</span>

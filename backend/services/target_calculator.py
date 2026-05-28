@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
-from typing import Any
+from typing import Any, TypedDict
 
 from fastapi import HTTPException
 from openpyxl import Workbook
@@ -19,6 +19,19 @@ MONEY = Decimal("0.01")
 DEFAULT_MIN_FLOOR = Decimal("35000")
 DEFAULT_PREVIOUS_MONTH_FLOOR_PCT = Decimal("0.90")
 CALCULATION_METHOD = "weighted_floor_forecast_v2"
+
+
+class SourceMetric(TypedDict):
+    target: Decimal
+    actual_realized: Decimal
+    realized: Decimal
+    forecast_factor: Decimal
+    is_forecast: bool
+
+
+class PeriodTotals(TypedDict):
+    target: Decimal
+    realized: Decimal
 
 
 def money(value: Decimal | int | str | float) -> Decimal:
@@ -173,7 +186,7 @@ class TargetCalculatorService:
                 month: Decimal(str(await get_forecast_factor(conn, month)))
                 for month in months
             }
-        metric_map = {
+        metric_map: dict[tuple[str, str], SourceMetric] = {
             (row["site_code"], row["import_month"]): {
                 "target": Decimal(row["target"] or 0),
                 "actual_realized": money(Decimal(row["realized"] or 0)),
@@ -186,7 +199,7 @@ class TargetCalculatorService:
             }
             for row in metrics
         }
-        totals = {
+        totals: dict[str, PeriodTotals] = {
             month: {
                 "target": sum((metric_map[(site_code, month)]["target"] for site_code in site_codes), Decimal("0")),
                 "realized": sum((metric_map[(site_code, month)]["realized"] for site_code in site_codes), Decimal("0")),
