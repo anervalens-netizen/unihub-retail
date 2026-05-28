@@ -195,17 +195,6 @@ export interface AsmStat {
   prc_focus_acc_qty: number | null;
 }
 
-export interface StoreAgentStats {
-  agent_name: string;
-  acc_qty_realizat: number;
-  nr_bonuri: number;
-  proc_bon2acc: number | null;
-  total_vanzari: number;
-  medie_zilnica: number | null;
-  acc_focus_qty: number;
-  prc_focus_acc_qty: number | null;
-}
-
 export interface AgentOption {
   agent: string;
   site_code: string;

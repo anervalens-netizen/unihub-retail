@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import {
   fetchSalariiOverview,
@@ -17,6 +17,18 @@ import type {
 import type { AppFilters } from './MainLayout';
 import { SalaryAreaChart } from './SalaryAreaChart';
 import { SalaryDrawer } from './SalaryDrawer';
+import { SortableHeader } from './dashboard/DashboardWidgets';
+
+type SortDir = 'asc' | 'desc';
+interface SortState<K extends string> { key: K; dir: SortDir }
+
+type SummarySort = 'locatie' | 'company_name' | 'total_salary' | 'total_sales' | 'ratio';
+type TrendSort = 'month' | 'total_salary' | 'total_sales' | 'ratio';
+
+function toggleSort<K extends string>(prev: SortState<K>, key: K): SortState<K> {
+  if (prev.key === key) return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+  return { key, dir: 'desc' };
+}
 
 const MONTHS = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
 
@@ -64,7 +76,15 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const [summaryMonth, setSummaryMonth] = useState<string | null>(null);
   const [selectedSummaryMonth, setSelectedSummaryMonth] = useState<string>('');
   const [loadingCards, setLoadingCards] = useState(false);
+
+  const [summarySort, setSummarySort] = useState<SortState<SummarySort>>({ key: 'total_salary', dir: 'desc' });
+  const [trendSort, setTrendSort] = useState<SortState<TrendSort>>({ key: 'month', dir: 'desc' });
+
   const PAGE_SIZE = 50;
+
+  const filterCompany = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
+  const filterRegional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
+  const filterAsm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -73,32 +93,26 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
   const loadOverview = useCallback(async () => {
     try {
-      const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
-      const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
-      const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
       const [ov, ev] = await Promise.all([
-        fetchSalariiOverview({ company_name: firma, regional, asm }),
-        fetchSalaryEvolution({ company_name: firma, regional, asm }),
+        fetchSalariiOverview({ company_name: filterCompany, regional: filterRegional, asm: filterAsm }),
+        fetchSalaryEvolution({ company_name: filterCompany, regional: filterRegional, asm: filterAsm }),
       ]);
       setOverview(ov);
       setEvolution(ev);
     } catch (e) {
       console.error('Failed to load overview:', e);
     }
-  }, [globalFilters]);
+  }, [filterCompany, filterRegional, filterAsm]);
 
   const loadSummary = useCallback(async () => {
     setLoadingCards(true);
     try {
-      const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
-      const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
-      const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
       let year: number | undefined;
       let month: number | undefined;
       if (selectedSummaryMonth && /^\d{4}-\d{2}$/.test(selectedSummaryMonth)) {
         [year, month] = selectedSummaryMonth.split('-').map(Number);
       }
-      const data = await fetchSalarySummary({ company_name: firma, regional, asm, year, month });
+      const data = await fetchSalarySummary({ company_name: filterCompany, regional: filterRegional, asm: filterAsm, year, month });
       setSummary(data.items || []);
       setSummaryMonth(data.month);
     } catch (e) {
@@ -106,35 +120,29 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     } finally {
       setLoadingCards(false);
     }
-  }, [globalFilters, selectedSummaryMonth]);
+  }, [filterCompany, filterRegional, filterAsm, selectedSummaryMonth]);
 
   const loadTrend = useCallback(async () => {
     setLoadingCards(true);
     try {
-      const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
-      const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
-      const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
-      const data = await fetchSalaryTrend({ company_name: firma, regional, asm });
+      const data = await fetchSalaryTrend({ company_name: filterCompany, regional: filterRegional, asm: filterAsm });
       setTrend(data || []);
     } catch (e) {
       console.error('Failed to load trend:', e);
     } finally {
       setLoadingCards(false);
     }
-  }, [globalFilters]);
+  }, [filterCompany, filterRegional, filterAsm]);
 
   const loadAgents = useCallback(
     async (offset = 0) => {
       setLoading(true);
       try {
-        const firma = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
-        const regional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
-        const asm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
         const res = await fetchSalaryAgents({
           q: debouncedSearch || undefined,
-          company_name: firma,
-          regional,
-          asm,
+          company_name: filterCompany,
+          regional: filterRegional,
+          asm: filterAsm,
           limit: PAGE_SIZE,
           offset,
         });
@@ -146,7 +154,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         setLoading(false);
       }
     },
-    [debouncedSearch, globalFilters]
+    [debouncedSearch, filterCompany, filterRegional, filterAsm]
   );
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
@@ -166,6 +174,35 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   }
 
   const hasMore = (page + 1) * PAGE_SIZE < totalAgents;
+
+  const sortedSummary = useMemo(() => {
+    if (!summary.length) return summary;
+    const { key, dir } = summarySort;
+    const sorted = [...summary].sort((a, b) => {
+      let cmp: number;
+      if (key === 'locatie') cmp = (a.locatie ?? a.site_code).localeCompare(b.locatie ?? b.site_code);
+      else if (key === 'company_name') cmp = a.company_name.localeCompare(b.company_name);
+      else cmp = (a[key] as number) - (b[key] as number);
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [summary, summarySort]);
+
+  const sortedTrend = useMemo(() => {
+    if (!trend.length) return trend;
+    const { key, dir } = trendSort;
+    const sorted = [...trend].sort((a, b) => {
+      let cmp: number;
+      if (key === 'month') cmp = a.month.localeCompare(b.month);
+      else if (key === 'ratio') {
+        const rA = a.total_sales > 0 ? a.total_salary / a.total_sales : 0;
+        const rB = b.total_sales > 0 ? b.total_salary / b.total_sales : 0;
+        cmp = rA - rB;
+      } else cmp = (a[key] as number) - (b[key] as number);
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [trend, trendSort]);
 
   const mobicellTotal = overview?.by_company?.find((c) => c.name === 'Mobicell')?.total ?? 0;
   const mobiupTotal = overview?.by_company?.find((c) => c.name === 'Mobiup')?.total ?? 0;
@@ -246,20 +283,20 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white dark:bg-slate-900">
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-700">
-                <th className="pb-2 text-left">Locatie</th>
-                <th className="pb-2 text-left">Firma</th>
-                <th className="pb-2 text-right">Salariu</th>
-                <th className="pb-2 text-right">Vanzari</th>
-                <th className="pb-2 text-right">%</th>
+                <SortableHeader label="Locatie" active={summarySort.key === 'locatie'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'locatie'))} className="pb-2 text-left text-xs" />
+                <SortableHeader label="Firma" active={summarySort.key === 'company_name'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'company_name'))} className="pb-2 text-left text-xs" />
+                <SortableHeader label="Salariu" active={summarySort.key === 'total_salary'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_salary'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="Vanzari" active={summarySort.key === 'total_sales'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_sales'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="%" active={summarySort.key === 'ratio'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
               </tr>
             </thead>
             <tbody>
-              {summary.length === 0 && !loadingCards && (
+              {sortedSummary.length === 0 && !loadingCards && (
                 <tr>
                   <td colSpan={5} className="py-6 text-center text-xs text-slate-400">Fara date</td>
                 </tr>
               )}
-              {summary.map((item) => (
+              {sortedSummary.map((item) => (
                 <tr key={`${item.locatie ?? item.site_code}-${item.company_name}`} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="py-2 font-medium text-slate-700 dark:text-slate-200">
                     {item.locatie ?? item.site_code}
@@ -293,19 +330,19 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-700">
-                <th className="pb-2 text-left">Luna</th>
-                <th className="pb-2 text-right">Salarii</th>
-                <th className="pb-2 text-right">Vanzari</th>
-                <th className="pb-2 text-right">%</th>
+                <SortableHeader label="Luna" active={trendSort.key === 'month'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'month'))} className="pb-2 text-left text-xs" />
+                <SortableHeader label="Salarii" active={trendSort.key === 'total_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_salary'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="Vanzari" active={trendSort.key === 'total_sales'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_sales'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="%" active={trendSort.key === 'ratio'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
               </tr>
             </thead>
             <tbody>
-              {trend.length === 0 && !loadingCards && (
+              {sortedTrend.length === 0 && !loadingCards && (
                 <tr>
                   <td colSpan={4} className="py-6 text-center text-xs text-slate-400">Fara date</td>
                 </tr>
               )}
-              {trend.map((t) => {
+              {sortedTrend.map((t) => {
                 const ratio = t.total_sales > 0 ? (t.total_salary / t.total_sales) * 100 : 0;
                 return (
                   <tr key={t.month} className="border-b border-slate-100 dark:border-slate-800">
@@ -365,10 +402,11 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         </div>
 
         {/* Table Header */}
-        <div className="grid grid-cols-5 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-800">
+        <div className="grid grid-cols-6 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-800">
           <div className="col-span-2">Nume</div>
           <div>Magazin</div>
           <div className="text-right">Nr Luni</div>
+          <div className="text-right">Medie/Luna</div>
           <div className="text-right">Total</div>
         </div>
 
@@ -383,7 +421,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             <div
               key={`${agent.cnp}-${agent.company_name}`}
               onClick={() => setDrawer({ cnp: agent.cnp ?? '', fullName: agent.full_name })}
-              className="grid grid-cols-5 cursor-pointer items-center px-4 py-3 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              className="grid grid-cols-6 cursor-pointer items-center px-4 py-3 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
             >
               <div className="col-span-2 font-semibold text-slate-800 dark:text-white">
                 {agent.full_name}
@@ -392,6 +430,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 {agent.locatie ?? agent.company_name}
               </div>
               <div className="text-right text-slate-500">{agent.month_count}</div>
+              <div className="text-right font-mono text-slate-500">
+                {formatCurrency(agent.avg_salary)} RON
+              </div>
               <div className="text-right font-bold text-slate-800 dark:text-white">
                 {formatCurrency(agent.total_salary)} RON
               </div>

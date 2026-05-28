@@ -86,6 +86,24 @@ Daca ultima referinta este o luna neinchisa, calculatorul foloseste forecast-ul
 derivat din importul live (`realizat * zile_luna / ultima_zi_importata`), la
 fel ca Hub si CRM. Draftul si exportul pastreaza separat realizatul importat
 si forecast-ul efectiv folosit la calcul.
+
+Procedura lunara recomandata este:
+
+1. Spre finalul lunii curente, se alege luna tinta urmatoare si se introduce
+   targetul total.
+2. `Calculeaza propunerea` creeaza sau actualizeaza draftul unic al lunii.
+   Cohorta se ia din ultima luna cu vanzari disponibila inaintea lunii tinta.
+3. Managerii completeaza `Final manager`; valorile se salveaza automat si sunt
+   vizibile pentru toti utilizatorii autentificati care deschid documentul.
+4. Inainte de publicare, `Ramas de distribuit` trebuie sa fie `0`, iar toate
+   locatiile trebuie sa aiba `Final manager` completat.
+5. `Finalizeaza` scrie targetele oficiale in `store_targets` pentru luna tinta.
+   Din acel moment Hub si CRM le folosesc cand apar importuri pentru luna
+   respectiva.
+
+Exemplu: pentru targetul din iulie 2026, calculul foloseste `2025-06`,
+`2025-07` si `2026-06`. Daca in 27 iunie 2026 luna `2026-06` este inca
+partiala, referinta `2026-06` este forecastata automat.
 Recalcularea unei luni actualizeaza draftul acesteia si reseteaza ajustarile
 manuale dupa confirmarea utilizatorului; nu sunt create versiuni alternative
 in interfata.
@@ -108,6 +126,12 @@ emailurile configurate in
 Cardul superior cu parametrii de calcul este ascuns integral pentru ceilalti
 manageri; acestia vad documentul calculat, completeaza `Final manager` si au
 ca actiune operationala numai `Salveaza acum`.
+
+Modelul curent de securitate este autentificare OIDC plus control explicit
+doar pentru actiunile de finalizare din Calculator Target. Majoritatea
+modulelor nu au inca RBAC pe grupuri sau scope per manager; conturile din
+Authentik trebuie acordate doar utilizatorilor interni de incredere. Tabul
+Salarii expune CNP si valori salariale utilizatorilor autentificati.
 Tabelul per locatie are filtru multi-select pe locatie. Click pe numele unei
 locatii deschide un drawer lateral cu 16 luni de vanzari versus target, KPI-uri
 Retail (cantitate, bonuri, Bon2Acc, Focus/Acc, cartele, agenti activi) si

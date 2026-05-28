@@ -256,19 +256,6 @@ class AsmStats(BaseModel):
     prc_focus_acc_qty: Decimal | None
 
 
-class StoreAgentStats(BaseModel):
-    """Per-agent stats for a specific store — used for Card D auto-population."""
-
-    agent_name: str
-    acc_qty_realizat: int
-    nr_bonuri: int
-    proc_bon2acc: Decimal | None
-    total_vanzari: Decimal
-    medie_zilnica: Decimal | None
-    acc_focus_qty: int
-    prc_focus_acc_qty: Decimal | None
-
-
 class AgentOption(BaseModel):
     agent: str
     site_code: str
@@ -423,19 +410,6 @@ class StoreTargetInput(BaseModel):
     site_code: str
     import_month: str
     target_value: Decimal
-
-
-class FocusProductCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    item_code: str
-    item_name: str | None = None
-
-
-class FocusProductResponse(BaseModel):
-    item_code: str
-    item_name: str | None = None
-    added_at: datetime
 
 
 class DashboardAllResponse(BaseModel):
@@ -601,67 +575,6 @@ class AgentHistoryPoint(BaseModel):
 
 class AgentHistoryResponse(BaseModel):
     history: list[AgentHistoryPoint]
-
-
-# ---- Salarii DB Models ----
-
-
-class SalaryRecordResponse(BaseModel):
-    id: int
-    year: int
-    month: int
-    full_name: str
-    cnp: str | None
-    total_salary: Decimal
-    company_name: str
-    site_code: str | None
-    locatie: str | None
-
-
-class SalaryAgentSummary(BaseModel):
-    full_name: str
-    cnp: str | None
-    company_name: str
-    locatie: str | None = None
-    month_count: int
-    total_salary: Decimal
-    avg_salary: Decimal
-
-
-class SalaryAgentHistoryRecord(BaseModel):
-    year: int
-    month: int
-    company_name: str
-    total_salary: Decimal
-    site_code: str | None
-    locatie: str | None
-
-
-class SalaryAgentHistoryResponse(BaseModel):
-    records: list[SalaryAgentHistoryRecord]
-    total: float
-    avg: float
-    month_count: int
-
-
-class SalariiOverviewResponse(BaseModel):
-    total: float
-    by_company: list[dict]
-    record_count: int
-    agent_count: int
-    months_span: list[int]  # [min_year, min_month, max_year, max_month]
-
-
-class SalaryEvolutionPoint(BaseModel):
-    month: str
-    total: float
-    mobicell: float
-    mobiup: float
-
-
-class SalaryAgentsSummaryResponse(BaseModel):
-    items: list[SalaryAgentSummary]
-    total: int
 
 
 class PromoTopStore(BaseModel):

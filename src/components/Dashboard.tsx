@@ -42,7 +42,6 @@ import type {
   YearHistoryPoint,
 } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
-import { ALL_SCOPE } from '../lib/filterValues';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
 import type { AppFilters } from './MainLayout';
@@ -658,11 +657,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     [history, historyMonth]
   );
 
-  const bestHistoryMonth = useMemo(() => {
-    if (history.length === 0) return null;
-    return [...history].sort((a, b) => Number(b.total_sales) - Number(a.total_sales))[0];
-  }, [history]);
-
   const comparisonDeltas = useMemo(() => {
     if (!periodComparison) return null;
     const current = Number(periodComparison.current.total_sales);
@@ -798,22 +792,6 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
       })),
     [historyBrandMix]
   );
-
-  const historyComparisonDeltas = useMemo(() => {
-    if (!historyPeriodComparison) return null;
-    const current = Number(historyPeriodComparison.current.total_sales);
-    const previous = Number(historyPeriodComparison.previous.total_sales);
-    const yearOverYear = Number(historyPeriodComparison.year_over_year.total_sales);
-    const currentAvg = Number(historyPeriodComparison.current.daily_average ?? 0);
-    const previousAvg = Number(historyPeriodComparison.previous.daily_average ?? 0);
-    const yearOverYearAvg = Number(historyPeriodComparison.year_over_year.daily_average ?? 0);
-    return {
-      previousSales: current - previous,
-      previousDaily: currentAvg - previousAvg,
-      yearSales: current - yearOverYear,
-      yearDaily: currentAvg - yearOverYearAvg,
-    };
-  }, [historyPeriodComparison]);
 
   const historyPromoSummary = useMemo(() => {
     const promotion = historySpecialCards.find((card) => card.key === 'promotion');

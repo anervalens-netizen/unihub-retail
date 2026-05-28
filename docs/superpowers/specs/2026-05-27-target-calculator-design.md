@@ -77,6 +77,8 @@ Perioadele folosite sunt derivate automat:
 Exemplu: pentru targetul din `2026-06`, tabelul si calculul folosesc
 `2025-05`, `2025-06` si `2026-05`. Aceasta combinatie permite compararea
 evolutiei mai-iunie din anul anterior cu nivelul disponibil din mai curent.
+Pentru targetul din `2026-07`, perioadele devin `2025-06`, `2025-07` si
+`2026-06`.
 
 Daca o perioada folosita la calcul este inca partiala, valoarea de vanzari
 utilizata este forecastata din baza live cu aceeasi regula folosita in
@@ -102,6 +104,29 @@ mai putin decat floor-ul sunt fixate la floor, iar diferenta ramasa se
 redistribuie iterativ celorlalte magazine. Daca suma floor-urilor depaseste
 bugetul, documentul avertizeaza utilizatorul si nu poate fi finalizat fara
 alinierea valorilor finale la totalul bugetat.
+
+## Procedura lunara
+
+Fluxul operational este unul singur, fara scenarii paralele:
+
+1. Spre finalul lunii curente, utilizatorul finalizator alege luna tinta
+   urmatoare si introduce targetul total.
+2. Apasa `Calculeaza propunerea`. Backend-ul creeaza sau actualizeaza draftul
+   unic pentru luna tinta, cu cohorta din ultima luna disponibila inaintea
+   lunii tinta.
+3. Daca ultima luna disponibila este partiala, valorile acesteia intra in
+   calcul ca forecast, dar UI-ul pastreaza separat realizatul importat,
+   forecast-ul si factorul folosit.
+4. Managerii completeaza `Final manager`. Salvarea este colaborativa si se
+   face per rand, astfel incat valorile devin vizibile celorlalti manageri.
+5. Inainte de finalizare, toate randurile trebuie sa aiba `final_target`
+   completat, iar suma finala trebuie sa fie egala cu `total_target`.
+6. `Finalizeaza` publica exact cohorta aprobata in `store_targets` pentru luna
+   tinta. Orice target existent pentru acea luna in afara cohortei este eliminat.
+
+Exemplu operational: pe `2026-06-27`, pentru targetul `2026-07`, cohorta este
+lista magazinelor cu vanzari in `2026-06`; calculul foloseste `2025-06`,
+`2025-07` si forecast/realizat `2026-06`, in functie de stadiul importului.
 
 ## Date si publicare
 

@@ -187,15 +187,3 @@ async def require_auth(
         exp=payload.get("exp", 0),
         raw=payload,
     )
-
-
-async def optional_auth(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> AuthClaims | None:
-    """Like require_auth but returns None if no token is present.
-    Useful for endpoints that behave differently for authenticated vs
-    anonymous users."""
-    if credentials is None:
-        return None
-    return await require_auth(request, credentials)

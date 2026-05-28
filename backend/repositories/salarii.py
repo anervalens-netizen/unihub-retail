@@ -83,28 +83,74 @@ class SalariiRepository:
                 *params,
             )
 
-    async def fetch_agents_summary(self, join_sql: str, where_sql: str, params: list[Any], limit: int, offset: int) -> dict:
+    async def fetch_agents_summary(
+        self,
+        join_sql: str,
+        where_sql: str,
+        params: list[Any],
+        limit: int,
+        offset: int,
+    ) -> dict:
+        agent_months_cte = f"""
+                WITH salary_dedup AS (
+                    SELECT DISTINCT
+                        sr.year,
+                        sr.month,
+                        sr.full_name,
+                        sr.cnp,
+                        sr.company_name,
+                        sr.site_code,
+                        sr.locatie,
+                        sr.total_salary
+                    FROM salary_records sr
+                    {join_sql}
+                    {where_sql}
+                ),
+                agent_months AS (
+                    SELECT
+                        full_name,
+                        cnp,
+                        company_name,
+                        locatie,
+                        year,
+                        month,
+                        SUM(total_salary) AS month_salary
+                    FROM salary_dedup
+                    GROUP BY full_name, cnp, company_name, locatie, year, month
+                )
+                """
         async with self.pool.acquire() as conn:
             total = await conn.fetchval(
-                f"SELECT COUNT(DISTINCT sr.full_name) FROM salary_records sr {join_sql} {where_sql}",
+                f"""
+                {agent_months_cte}
+                SELECT COUNT(*)
+                FROM (
+                    SELECT 1
+                    FROM agent_months
+                    GROUP BY full_name, cnp, company_name, locatie
+                ) grouped_agents
+                """,
                 *params,
             )
             params2 = params + [limit, offset]
             rows = await conn.fetch(
                 f"""
+                {agent_months_cte}
                 SELECT
-                    sr.full_name,
-                    sr.cnp,
-                    sr.company_name,
-                    sr.locatie,
+                    full_name,
+                    cnp,
+                    company_name,
+                    locatie,
                     COUNT(*) AS month_count,
-                    SUM(sr.total_salary) AS total_salary,
-                    AVG(sr.total_salary) AS avg_salary
-                FROM salary_records sr
-                {join_sql}
-                {where_sql}
-                GROUP BY sr.full_name, sr.cnp, sr.company_name, sr.locatie
-                ORDER BY total_salary DESC
+                    SUM(month_salary) AS total_salary,
+                    SUM(month_salary) / NULLIF(COUNT(*), 0) AS avg_salary
+                FROM agent_months
+                GROUP BY full_name, cnp, company_name, locatie
+                ORDER BY total_salary DESC NULLS LAST,
+                         full_name ASC NULLS LAST,
+                         company_name ASC NULLS LAST,
+                         locatie ASC NULLS LAST,
+                         cnp ASC NULLS LAST
                 LIMIT ${len(params2) - 1} OFFSET ${len(params2)}
                 """,
                 *params2,
@@ -115,10 +161,22 @@ class SalariiRepository:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 """
-                SELECT year, month, company_name, total_salary, site_code, locatie
-                FROM salary_records
-                WHERE cnp = $1
-                ORDER BY year DESC, month DESC
+                WITH salary_dedup AS (
+                    SELECT DISTINCT
+                        year, month, company_name, site_code, locatie, total_salary
+                    FROM salary_records
+                    WHERE cnp = $1
+                )
+                SELECT
+                    year,
+                    month,
+                    company_name,
+                    SUM(total_salary) AS total_salary,
+                    site_code,
+                    locatie
+                FROM salary_dedup
+                GROUP BY year, month, company_name, site_code, locatie
+                ORDER BY year DESC, month DESC, company_name, locatie
                 """,
                 cnp,
             )

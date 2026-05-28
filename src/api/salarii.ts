@@ -41,11 +41,6 @@ export interface SalaryAgentHistory {
   month_count: number;
 }
 
-export interface SalaryStore {
-  site_code: string;
-  locatie: string | null;
-}
-
 export interface SalaryComparisonPoint {
   site_code: string;
   locatie: string | null;

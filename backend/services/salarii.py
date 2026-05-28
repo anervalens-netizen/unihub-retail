@@ -125,7 +125,7 @@ class SalariiService:
         if not rows:
             return {"records": [], "total": 0.0, "avg": 0.0, "month_count": 0}
         total = sum(float(r["total_salary"]) for r in rows)
-        month_count = len(rows)
+        month_count = len({(r["year"], r["month"]) for r in rows})
         avg = total / month_count
         return {
             "records": [dict(r) for r in rows],

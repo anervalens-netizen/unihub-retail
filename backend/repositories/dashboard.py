@@ -163,7 +163,16 @@ class DashboardRepository:
                     ) m
                 ),
                 filtered_days AS MATERIALIZED (
-                    SELECT *
+                    SELECT
+                        agg.import_month,
+                        agg.sale_date,
+                        agg.site_code,
+                        agg.agent,
+                        agg.total_sales,
+                        agg.total_quantity,
+                        agg.receipt_count,
+                        agg.receipt_2plus_count,
+                        agg.focus_quantity
                     FROM reporting_agent_day agg
                     WHERE agg.import_month >= TO_CHAR(($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month', 'YYYY-MM')
                       AND agg.import_month <= $1

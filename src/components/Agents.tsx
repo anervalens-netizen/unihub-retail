@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronLeft, ChevronDown, ChevronUp, Award, LayoutGrid, Store, X } from 'lucide-react';
+import { Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronDown, ChevronUp, Award, LayoutGrid, Store, X } from 'lucide-react';
 import {
   Bar,
   CartesianGrid,

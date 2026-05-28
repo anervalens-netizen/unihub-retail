@@ -90,6 +90,9 @@ sudo journalctl -u unihub-backend -f   # logs live
 - Frontend: `oidc-client-ts` with `AuthProvider` + `useAuth()` hook, scope `openid profile email offline_access`, `automaticSilentRenew: true`
 - Backend: `auth.py` validates JWTs against JWKS, returns `AuthClaims(sub, email, groups, ...)`
 - All API endpoints are protected via `require_auth` FastAPI dependency
+- Current deploy has authentication-only access control for most modules: `groups` are extracted but not used as RBAC. Grant Authentik access only to trusted internal users until per-role/per-manager scope is implemented.
+- Salary endpoints expose CNP and salary data to authenticated users. Treat the Salarii tab as HR/internal-only at the Authentik app assignment level.
+- Target Calculator is the only module with a narrower server-side owner gate today: calculate/recalculate/finalize are limited by `TARGET_CALCULATOR_FINALIZER_EMAILS`; saving `Final manager` rows remains intentionally collaborative for authenticated managers.
 - `api/client.ts` auto-injects `Authorization: Bearer <token>` in all requests
 - `/auth/proxy/application/o/token/` injects the confidential client secret from local `.env` (`OIDC_CLIENT_SECRET`). Do not hardcode this value in code or docs.
 - Provider session policy: Authentik fields must be `hours=8` for access token validity and `days=180` for refresh token validity.
@@ -129,7 +132,7 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 | `agent_targets` | Override optional target real per agent, importat pilot din Grile Salarii |
 | `import_snapshots` | Metadata import fisiere Excel |
 | `visits_snapshot` | Agregat vizite sync din SQLite la boot |
-| `error_logs` | Legacy error table (inactiv — replaced by GlitchTip) |
+| `error_logs` | Backend ERROR+ logs scrise de `DBErrorHandler`; GlitchTip ramane error tracking principal |
 
 ### Acoperire date
 | Perioada | Sursa | Granularitate |
@@ -143,7 +146,7 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 - **Error tracking:** GlitchTip via `sentry-sdk` (backend) / `@sentry/react` (frontend). DSN in `.env` (`SENTRY_DSN` / `VITE_SENTRY_DSN`). Source maps upload in CI post-build.
 - **Metrics:** `/metrics` endpoint with `prometheus_client`. Scraped by Prometheus.
 - **Structured logging:** `LOG_FORMAT=json` for JSON lines, `LOG_FORMAT=structlog` for structlog.
-- **DB error logging:** `DBErrorHandler` in `logging_config.py` (optional).
+- **DB error logging:** `DBErrorHandler` in `logging_config.py` scrie ERROR+ in `error_logs` dupa atasarea pool-ului la startup; GlitchTip ramane error tracking principal.
 
 ## CI/CD
 
@@ -180,6 +183,7 @@ cd /opt/Mobiup/ops/runners/retail
 - Calculator Target foloseste un singur draft per luna tinta; recalcularea actualizeaza documentul existent si reseteaza valorile finale/observatiile numai dupa confirmare. Nu adauga selector de scenarii sau versiuni paralele.
 - Calculator Target stabileste cohorta din magazinele cu vanzari in ultima luna disponibila anterioara lunii tinta; la finalizare, `store_targets` pentru luna tinta este inlocuit strict cu cohorta aprobata.
 - Formula curenta Calculator Target este `weighted_floor_forecast_v2`: surse `M-13`, `M-12`, `M-1`, cu forecast pentru referintele partiale prin `services/forecast.py`. Excel-ul initial este numai referinta de business, nu sursa runtime.
+- Procedura lunara: spre finalul lunii se alege luna tinta urmatoare, se introduce targetul total, se calculeaza propunerea, managerii completeaza `Final manager`, iar finalizatorul publica doar cand toate randurile sunt completate si `Ramas de distribuit` este 0. Exemplu: target `2026-07` foloseste `2025-06`, `2025-07`, `2026-06`; daca `2026-06` este partiala, intra forecastul.
 - Interfata Calculator Target afiseaza coloana `Calculat`; floor-ul ramane in algoritm si export, dar nu este expus ca un card sau o coloana operationala.
 - Coloana `Final manager` este campul evidentiat/editabil pentru manageri si porneste goala in drafturile noi; finalizarea trebuie blocata cat timp exista randuri necompletate. Salvarea ramane colaborativa, dar calculul/recalcularea si `Finalizeaza` trebuie protejate server-side prin `TARGET_CALCULATOR_FINALIZER_EMAILS` (implicit `aner.valens@gmail.com`).
 - Cardul cu parametrii `Calculator Target` nu se afiseaza utilizatorilor fara aceasta permisiune; ei lucreaza numai in documentul pregatit si au ca actiune manuala vizibila `Salveaza acum` pentru `Final manager`.
