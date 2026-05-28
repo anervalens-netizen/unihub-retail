@@ -225,10 +225,7 @@ function AgentDrawer({ agent, currentMonth, isOpen, onClose }: AgentDrawerProps)
       onClick={handleOverlayClick}
       className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm transition-opacity"
     >
-      <div
-        className="flex h-full w-full max-w-md flex-col bg-white/95 dark:bg-slate-900/95 shadow-2xl"
-        style={{ animation: 'slideInRight 300ms ease-out' }}
-      >
+      <div className="animate-slide-in-right flex h-full w-full max-w-md flex-col bg-white/95 dark:bg-slate-900/95 shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-700">
           <div>
@@ -253,12 +250,6 @@ function AgentDrawer({ agent, currentMonth, isOpen, onClose }: AgentDrawerProps)
         </div>
       </div>
 
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); }
-          to { transform: translateX(0); }
-        }
-      `}</style>
     </div>
   );
 }

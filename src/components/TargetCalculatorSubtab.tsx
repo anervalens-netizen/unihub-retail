@@ -9,7 +9,6 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
-  Search,
   Store,
   Users,
   X,
@@ -61,6 +60,28 @@ function sum(values: number[]): number {
 
 function formatOptionalCurrency(value: number | null): string {
   return value == null ? 'Necompletat' : formatCurrency(value);
+}
+
+type StoreChartMode = 'sales' | 'bon2acc' | 'focus';
+
+const STORE_CHART_MODES: Array<{ mode: StoreChartMode; label: string }> = [
+  { mode: 'sales', label: 'Vanzari' },
+  { mode: 'bon2acc', label: 'Bon2Acc' },
+  { mode: 'focus', label: 'Focus/Acc' },
+];
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    setMatches(media.matches);
+    const listener = (event: MediaQueryListEvent) => setMatches(event.matches);
+    media.addEventListener('change', listener);
+    return () => media.removeEventListener('change', listener);
+  }, [query]);
+
+  return matches;
 }
 
 function recalculateVisibleScenario(scenario: TargetScenario, rows: TargetScenarioRow[]): TargetScenario {
@@ -152,10 +173,12 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
   const [detail, setDetail] = useState<TargetStoreDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [chartMode, setChartMode] = useState<StoreChartMode>('sales');
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!siteCode) return;
+    setChartMode('sales');
     setLoading(true);
     setError(null);
     void fetchTargetStoreDetail(scenarioId, siteCode)
@@ -171,6 +194,11 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
 
   const latest = detail?.latest;
   const best = detail?.best_month;
+  const percentageMetric = chartMode === 'bon2acc' ? 'bon2acc_pct' : 'focus_pct';
+  const percentageLabel = chartMode === 'bon2acc' ? 'Bon2Acc' : 'Focus/Acc';
+  const chartTitle = chartMode === 'sales'
+    ? 'Vanzari vs target - 16 luni'
+    : `${percentageLabel} - 16 luni`;
 
   return (
     <div
@@ -180,10 +208,7 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
       }}
       className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm"
     >
-      <div
-        className="flex h-full w-full flex-col bg-white shadow-2xl dark:bg-slate-950 sm:max-w-2xl"
-        style={{ animation: 'slideInRight 250ms ease-out' }}
-      >
+      <div className="animate-slide-in-right flex h-full w-full flex-col bg-white shadow-2xl dark:bg-slate-950 sm:max-w-2xl">
         <div className="flex items-start justify-between border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-6">
           <div>
             <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
@@ -218,25 +243,63 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
               <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Vanzari vs target - 16 luni</h3>
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{chartTitle}</h3>
                     <p className="text-xs text-slate-500">
-                      Media: {formatCurrency(detail.avg_sales_16m)}
-                      {best ? ` · Varf: ${monthLabel(best.month)} (${formatCurrency(best.total_sales)})` : ''}
+                      {chartMode === 'sales'
+                        ? `Media: ${formatCurrency(detail.avg_sales_16m)}${best ? ` · Varf: ${monthLabel(best.month)} (${formatCurrency(best.total_sales)})` : ''}`
+                        : 'Evolutie procentuala pe aceleasi 16 luni'}
                     </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STORE_CHART_MODES.map((item) => (
+                      <button
+                        key={item.mode}
+                        type="button"
+                        onClick={() => setChartMode(item.mode)}
+                        className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                          chartMode === item.mode
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                    <ComposedChart data={detail.history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
-                      <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
-                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Legend />
-                      <Bar dataKey="total_sales" name="Vanzari" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                      <Line type="monotone" dataKey="target_value" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  {chartMode === 'sales' ? (
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                      <ComposedChart data={detail.history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
+                        <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
+                        <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+                        <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
+                        <Legend />
+                        <Bar dataKey="total_sales" name="Vanzari" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                        <Line type="monotone" dataKey="target_value" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                      <ComposedChart data={detail.history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
+                        <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
+                        <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
+                        <Tooltip formatter={(value: number | string) => formatPercent(Number(value))} />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey={percentageMetric}
+                          name={percentageLabel}
+                          stroke={chartMode === 'bon2acc' ? '#10b981' : '#8b5cf6'}
+                          strokeWidth={2.5}
+                          dot={{ r: 3 }}
+                          connectNulls
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
 
@@ -248,7 +311,7 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
                     <KpiRow label="Cartele" value={(latest?.cartele_qty ?? 0).toLocaleString('ro-RO')} />
                     <KpiRow label="Bon2Acc" value={formatPercent(latest?.bon2acc_pct ?? null)} />
                     <KpiRow label="Focus/Acc" value={formatPercent(latest?.focus_pct ?? null)} />
-                    <KpiRow label="Zile active" value={`${latest?.working_days ?? 0}`} />
+                    <KpiRow label="Zile cu vanzari" value={`${latest?.working_days ?? 0}`} />
                     <KpiRow label="Target calculat" value={formatCurrency(detail.proposed_target)} />
                     <KpiRow label="Final manager" value={formatOptionalCurrency(detail.final_target)} />
                   </div>
@@ -283,12 +346,6 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
         </div>
       </div>
 
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); }
-          to { transform: translateX(0); }
-        }
-      `}</style>
     </div>
   );
 }
@@ -310,7 +367,6 @@ export function TargetCalculatorSubtab() {
   const [totalTarget, setTotalTarget] = useState('');
   const [minFloor, setMinFloor] = useState('');
   const [floorPct, setFloorPct] = useState('');
-  const [locationSearch, setLocationSearch] = useState('');
   const [selectedLocationCodes, setSelectedLocationCodes] = useState<string[]>([]);
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [detailSiteCode, setDetailSiteCode] = useState<string | null>(null);
@@ -324,6 +380,7 @@ export function TargetCalculatorSubtab() {
   const editVersionsRef = useRef<Map<string, number>>(new Map());
   const locationFilterRef = useRef<HTMLDivElement>(null);
   const dirty = dirtyRows.size > 0;
+  const isDesktop = useMediaQuery('(min-width: 768px)');
 
   const replaceScenario = (next: TargetScenario | null) => {
     scenarioRef.current = next;
@@ -387,14 +444,6 @@ export function TargetCalculatorSubtab() {
       .sort((left, right) => left.locatie.localeCompare(right.locatie)),
     [baseRows],
   );
-  const searchedLocationOptions = useMemo(() => {
-    const needle = locationSearch.trim().toLocaleLowerCase('ro-RO');
-    if (!needle) return locationOptions;
-    return locationOptions.filter((row) => (
-      row.locatie.toLocaleLowerCase('ro-RO').includes(needle)
-      || row.site_code.toLocaleLowerCase('ro-RO').includes(needle)
-    ));
-  }, [locationOptions, locationSearch]);
   const selectedLocationSet = useMemo(() => new Set(selectedLocationCodes), [selectedLocationCodes]);
   const filteredRows = useMemo(
     () => baseRows.filter((row) => selectedLocationSet.size === 0 || selectedLocationSet.has(row.site_code)),
@@ -918,19 +967,21 @@ export function TargetCalculatorSubtab() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 hidden h-64 md:block">
-                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                  <BarChart data={sourceChart} margin={{ top: 4, right: 4, left: 4, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.15)" />
-                    <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                    <Legend />
-                    <Bar dataKey="target" name="Target istoric" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="realized" name="Realizat / Forecast folosit" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {isDesktop && (
+                <div className="mt-3 h-64">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                    <BarChart data={sourceChart} margin={{ top: 4, right: 4, left: 4, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.15)" />
+                      <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Legend />
+                      <Bar dataKey="target" name="Target istoric" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="realized" name="Realizat / Forecast folosit" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
           </div>
 
@@ -992,18 +1043,6 @@ export function TargetCalculatorSubtab() {
 
             <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
               <div ref={locationFilterRef} className="flex flex-col gap-3 lg:flex-row lg:items-end">
-                <label className="flex-1 space-y-1 text-xs font-medium text-slate-500">
-                  Filtru locatie
-                  <div className="relative">
-                    <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      value={locationSearch}
-                      onChange={(event) => setLocationSearch(event.target.value)}
-                      className={`${inputCls} w-full pl-9`}
-                      placeholder="Cauta dupa nume sau cod locatie"
-                    />
-                  </div>
-                </label>
                 <div className="relative min-w-0 flex-1 space-y-1 text-xs font-medium text-slate-500 lg:max-w-sm">
                   <span>Selecteaza locatie</span>
                   <button
@@ -1033,10 +1072,10 @@ export function TargetCalculatorSubtab() {
                         )}
                       </div>
                       <div className="max-h-72 overflow-y-auto p-1">
-                        {searchedLocationOptions.length === 0 && (
-                          <p className="px-3 py-3 text-xs text-slate-400">Nu exista locatii pentru cautarea curenta.</p>
+                        {locationOptions.length === 0 && (
+                          <p className="px-3 py-3 text-xs text-slate-400">Nu exista locatii disponibile.</p>
                         )}
-                        {searchedLocationOptions.map((row) => (
+                        {locationOptions.map((row) => (
                           <label
                             key={row.site_code}
                             className="flex cursor-pointer items-start gap-2 rounded-xl px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800"

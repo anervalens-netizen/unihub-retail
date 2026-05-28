@@ -366,6 +366,15 @@ class TargetCalculatorRepository:
                       AND import_month IN (SELECT import_month FROM month_axis)
                       AND is_cartela = true
                     GROUP BY import_month
+                ),
+                daily_days AS (
+                    SELECT
+                        import_month,
+                        COUNT(DISTINCT sale_date)::INT AS working_days
+                    FROM reporting_agent_day
+                    WHERE site_code = $1
+                      AND import_month IN (SELECT import_month FROM month_axis)
+                    GROUP BY import_month
                 )
                 SELECT
                     ma.import_month,
@@ -375,12 +384,13 @@ class TargetCalculatorRepository:
                     COALESCE(ms.receipt_count, 0) AS receipt_count,
                     COALESCE(ms.receipt_2plus_count, 0) AS receipt_2plus_count,
                     COALESCE(ms.active_agents, 0)::INT AS active_agents,
-                    COALESCE(ms.working_days, 0)::INT AS working_days,
+                    COALESCE(dd.working_days, ms.working_days, 0)::INT AS working_days,
                     COALESCE(c.cartele_qty, 0)::INT AS cartele_qty,
                     COALESCE(st.target_value, 0) AS target_value
                 FROM month_axis ma
                 LEFT JOIN monthly_sales ms ON ms.import_month = ma.import_month
                 LEFT JOIN cartele c ON c.import_month = ma.import_month
+                LEFT JOIN daily_days dd ON dd.import_month = ma.import_month
                 LEFT JOIN store_targets st ON st.import_month = ma.import_month AND st.site_code = $1
                 ORDER BY ma.import_month
                 """,
