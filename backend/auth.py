@@ -24,6 +24,7 @@ import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt.types import Options
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ async def require_auth(
     jwks = await _fetch_jwks()
     signing_key = _get_signing_key(jwks, token)
 
-    decode_options: dict[str, Any] = {
+    decode_options: Options = {
         "verify_exp": True,
         "verify_iss": True,
         "verify_aud": bool(OIDC_AUDIENCE),
