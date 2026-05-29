@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from jose import jwt
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -70,11 +70,11 @@ async def _fetch_jwks() -> dict[str, Any]:
         )
 
 
-def _get_signing_key(jwks: dict[str, Any], token: str) -> dict[str, Any]:
+def _get_signing_key(jwks: dict[str, Any], token: str) -> jwt.PyJWK:
     """Find the correct key in JWKS for the token's kid header."""
     try:
         header = jwt.get_unverified_header(token)
-    except jwt.JWTError as exc:
+    except jwt.DecodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Malformed token header",
@@ -83,7 +83,7 @@ def _get_signing_key(jwks: dict[str, Any], token: str) -> dict[str, Any]:
     kid = header.get("kid")
     for key_data in jwks.get("keys", []):
         if key_data.get("kid") == kid:
-            return key_data
+            return jwt.PyJWK(key_data)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -146,7 +146,7 @@ async def require_auth(
     try:
         payload = jwt.decode(
             token,
-            signing_key,
+            signing_key.key,
             algorithms=["RS256"],
             issuer=OIDC_ISSUER,
             audience=OIDC_AUDIENCE if OIDC_AUDIENCE else None,
@@ -158,23 +158,26 @@ async def require_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expired",
         ) from exc
-    except jwt.JWTClaimsError as exc:
-        logger.warning("JWT validation failed (claims error): %s", exc)
+    except jwt.InvalidIssuerError as exc:
+        logger.warning("JWT validation failed (invalid issuer): %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token claims",
+            detail="Invalid token issuer",
         ) from exc
-    except jwt.JWTError as exc:
+    except jwt.InvalidAudienceError as exc:
+        logger.warning("JWT validation failed (invalid audience): %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token audience",
+        ) from exc
+    except jwt.PyJWTError as exc:
         logger.warning("JWT validation failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         ) from exc
 
-    # Ensure python-jose returns lists correctly or fallback to empty
     groups = payload.get("groups", [])
-    if isinstance(groups, str):
-        groups = [groups]
 
     return AuthClaims(
         sub=payload.get("sub", ""),
