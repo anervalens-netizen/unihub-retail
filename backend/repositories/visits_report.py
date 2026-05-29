@@ -68,10 +68,10 @@ class VisitsReportRepository:
         try:
             rows = con.execute(
                 f"""
-                SELECT id, data_raport, ora_trimitere, asm, magazin, firma,
+                SELECT id, data_raport, ora_trimitere, asm, team_leader_name, magazin, firma,
                        completion_pct, foto1, foto2, foto3, foto4
                 FROM visits WHERE {where}
-                ORDER BY asm ASC, data_raport DESC, ora_trimitere DESC
+                ORDER BY team_leader_name ASC, data_raport DESC, ora_trimitere DESC
                 """,
                 params,
             ).fetchall()

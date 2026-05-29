@@ -46,14 +46,14 @@ export interface VisitMonthGroup {
   days: VisitDayGroup[];
 }
 
-export interface AsmGroup {
-  asm: string;
+export interface TeamLeaderGroup {
+  team_leader: string;
   nr_vizite: number;
   months: VisitMonthGroup[];
 }
 
 export interface VisitTreeResponse {
-  asms: AsmGroup[];
+  team_leaders: TeamLeaderGroup[];
 }
 
 export interface VisitDetail {
@@ -63,6 +63,7 @@ export interface VisitDetail {
   firma: string | null;
   regional: string | null;
   asm: string | null;
+  team_leader: string | null;
   magazin: string | null;
   durata_vizita_ore: number | null;
   curatenie: boolean;

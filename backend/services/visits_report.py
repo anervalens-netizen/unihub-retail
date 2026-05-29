@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from db.connection import get_pool
 from models import (
-    AsmGroup,
+    TeamLeaderGroup,
     VisitDayGroup,
     VisitDetail,
     VisitMonthGroup,
@@ -112,16 +112,18 @@ class VisitsReportService:
             partial(self.repo.query_tree, filters, store_metadata=store_metadata, site_codes=site_codes),
         )
 
-        asm_map: dict[str, dict[str, dict[str, list[VisitSummaryItem]]]] = defaultdict(
+        # Group by the team leader who made the visit (snapshot `team_leader_name`),
+        # not by the store's current ASM.
+        tl_map: dict[str, dict[str, dict[str, list[VisitSummaryItem]]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
         )
 
         for r in rows:
-            asm_key = r["asm"] or "—"
+            tl_key = r["team_leader_name"] or "Fără TL atribuit"
             month_key = r["data_raport"][:7] if r["data_raport"] else "—"
             day_key = r["data_raport"] or "—"
             has_photos = any(r[f"foto{i}"] for i in range(1, 5))
-            asm_map[asm_key][month_key][day_key].append(
+            tl_map[tl_key][month_key][day_key].append(
                 VisitSummaryItem(
                     id=r["id"],
                     magazin=r["magazin"] or "",
@@ -132,20 +134,22 @@ class VisitsReportService:
                 )
             )
 
-        asms: list[AsmGroup] = []
-        for asm_key in sorted(asm_map):
+        team_leaders: list[TeamLeaderGroup] = []
+        for tl_key in sorted(tl_map):
             months: list[VisitMonthGroup] = []
-            for month_key in sorted(asm_map[asm_key], reverse=True):
+            for month_key in sorted(tl_map[tl_key], reverse=True):
                 days: list[VisitDayGroup] = []
-                for day_key in sorted(asm_map[asm_key][month_key], reverse=True):
-                    visits = asm_map[asm_key][month_key][day_key]
+                for day_key in sorted(tl_map[tl_key][month_key], reverse=True):
+                    visits = tl_map[tl_key][month_key][day_key]
                     days.append(VisitDayGroup(date=day_key, nr_vizite=len(visits), visits=visits))
                 total_month = sum(d.nr_vizite for d in days)
                 months.append(VisitMonthGroup(month=month_key, nr_vizite=total_month, days=days))
-            total_asm = sum(m.nr_vizite for m in months)
-            asms.append(AsmGroup(asm=asm_key, nr_vizite=total_asm, months=months))
+            total_tl = sum(m.nr_vizite for m in months)
+            team_leaders.append(
+                TeamLeaderGroup(team_leader=tl_key, nr_vizite=total_tl, months=months)
+            )
 
-        return VisitTreeResponse(asms=asms)
+        return VisitTreeResponse(team_leaders=team_leaders)
 
     async def _resolve_store_scope(
         self,
@@ -211,6 +215,7 @@ class VisitsReportService:
             firma=row["firma"],
             regional=row["regional"],
             asm=row["asm"],
+            team_leader=row["team_leader_name"],
             magazin=row["magazin"],
             durata_vizita_ore=row["durata_vizita_ore"],
             curatenie=_b(row["curatenie"]),

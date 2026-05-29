@@ -347,14 +347,14 @@ class VisitMonthGroup(BaseModel):
     days: list[VisitDayGroup]
 
 
-class AsmGroup(BaseModel):
-    asm: str
+class TeamLeaderGroup(BaseModel):
+    team_leader: str
     nr_vizite: int
     months: list[VisitMonthGroup]
 
 
 class VisitTreeResponse(BaseModel):
-    asms: list[AsmGroup]
+    team_leaders: list[TeamLeaderGroup]
 
 
 class VisitDetail(BaseModel):
@@ -364,6 +364,7 @@ class VisitDetail(BaseModel):
     firma: str | None
     regional: str | None
     asm: str | None
+    team_leader: str | None
     magazin: str | None
     durata_vizita_ore: float | None
     curatenie: bool

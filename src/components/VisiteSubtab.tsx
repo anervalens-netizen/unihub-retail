@@ -13,7 +13,7 @@ import {
   getVisitPhotoUrl,
   getVisitsReport,
   getVisitsTree,
-  type AsmGroup,
+  type TeamLeaderGroup,
   type VisitDetail,
   type VisitReportResponse,
   type VisitSummaryItem,
@@ -209,6 +209,22 @@ function VisitDrawer({
                 <CompletionBadge pct={detail.completion_pct} />
               </div>
               <div className="space-y-0">
+                {detail.team_leader && (
+                  <div className="flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-800">
+                    <span className="text-xs text-slate-500">Team Leader</span>
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      {detail.team_leader}
+                    </span>
+                  </div>
+                )}
+                {detail.asm && (
+                  <div className="flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-800">
+                    <span className="text-xs text-slate-500">ASM</span>
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      {detail.asm}
+                    </span>
+                  </div>
+                )}
                 <NumRow label="Durata (ore)" value={detail.durata_vizita_ore} />
                 {detail.ora_trimitere && (
                   <div className="flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-800">
@@ -413,13 +429,13 @@ function MonthRow({
   );
 }
 
-// ── ASM accordion ─────────────────────────────────────────────────────────────
+// ── Team Leader accordion ─────────────────────────────────────────────────────
 
-function AsmRow({
+function TeamLeaderRow({
   group,
   onOpenVisit,
 }: {
-  group: AsmGroup;
+  group: TeamLeaderGroup;
   onOpenVisit: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -438,10 +454,10 @@ function AsmRow({
               : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300'
           )}
         >
-          {group.asm.charAt(0).toUpperCase()}
+          {group.team_leader.charAt(0).toUpperCase()}
         </div>
         <span className="flex-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
-          {group.asm}
+          {group.team_leader}
         </span>
         <span className="text-xs text-slate-400">{group.nr_vizite} viz.</span>
         {open ? (
@@ -505,7 +521,7 @@ function MonthPicker({
 
 export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
   const [summary, setSummary] = useState<VisitReportResponse | null>(null);
-  const [asms, setAsms] = useState<AsmGroup[]>([]);
+  const [groups, setGroups] = useState<TeamLeaderGroup[]>([]);
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [loadingTree, setLoadingTree] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -515,9 +531,9 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
   // extract sorted months from tree data
   const availableMonths = useMemo(() => {
     const set = new Set<string>();
-    asms.forEach((a) => a.months.forEach((m) => set.add(m.month)));
+    groups.forEach((g) => g.months.forEach((m) => set.add(m.month)));
     return Array.from(set).sort().reverse();
-  }, [asms]);
+  }, [groups]);
 
   // when tree loads, default to the latest month with visits
   useEffect(() => {
@@ -538,24 +554,24 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
   useEffect(() => {
     setLoadingTree(true);
     getVisitsTree(filters)
-      .then((r) => setAsms(r.asms))
-      .catch(() => setAsms([]))
+      .then((r) => setGroups(r.team_leaders))
+      .catch(() => setGroups([]))
       .finally(() => setLoadingTree(false));
   }, [filters]);
 
   // filter tree client-side to selected month
-  const filteredAsms = useMemo(() => {
-    return asms
-      .map((a) => ({
-        ...a,
-        months: a.months.filter((m) => m.month === selectedMonth),
+  const filteredGroups = useMemo(() => {
+    return groups
+      .map((g) => ({
+        ...g,
+        months: g.months.filter((m) => m.month === selectedMonth),
       }))
-      .filter((a) => a.months.length > 0)
-      .map((a) => ({
-        ...a,
-        nr_vizite: a.months.reduce((s, m) => s + m.nr_vizite, 0),
+      .filter((g) => g.months.length > 0)
+      .map((g) => ({
+        ...g,
+        nr_vizite: g.months.reduce((s, m) => s + m.nr_vizite, 0),
       }));
-  }, [asms, selectedMonth]);
+  }, [groups, selectedMonth]);
 
   if (loadingTree && loadingSummary) {
     return (
@@ -659,25 +675,25 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
         </div>
       )}
 
-      {/* ASM accordion */}
+      {/* Team Leader accordion */}
       <div className="glass overflow-hidden rounded-2xl">
         <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-700">
           <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
-            Vizite pe ASM
+            Vizite pe Team Leader
           </h3>
         </div>
         {loadingTree ? (
           <div className="flex h-16 items-center justify-center text-xs text-slate-400">
             Se incarca...
           </div>
-        ) : filteredAsms.length === 0 ? (
+        ) : filteredGroups.length === 0 ? (
           <div className="flex h-16 items-center justify-center text-xs text-slate-400">
             Nicio vizita pentru luna selectata
           </div>
         ) : (
           <div>
-            {filteredAsms.map((g) => (
-              <AsmRow key={g.asm} group={g} onOpenVisit={setOpenVisitId} />
+            {filteredGroups.map((g) => (
+              <TeamLeaderRow key={g.team_leader} group={g} onOpenVisit={setOpenVisitId} />
             ))}
           </div>
         )}
