@@ -14,6 +14,7 @@ JWKS is fetched once at first request and cached for JWKS_CACHE_TTL seconds.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import time
@@ -114,12 +115,20 @@ _bearer = HTTPBearer(auto_error=False)
 _HUB_INTERNAL_SECRET = os.getenv("HUB_INTERNAL_SECRET", "")
 
 
+def _hub_secret_matches(header_value: str, secret: str) -> bool:
+    return hmac.compare_digest(
+        header_value.encode("utf-8", "surrogateescape"),
+        secret.encode("utf-8", "surrogateescape"),
+    )
+
+
 async def require_auth(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthClaims:
     """FastAPI dependency — returns verified AuthClaims or raises 401."""
-    if _HUB_INTERNAL_SECRET and request.headers.get("X-Hub-Internal") == _HUB_INTERNAL_SECRET:
+    _hub_header = request.headers.get("X-Hub-Internal", "")
+    if _HUB_INTERNAL_SECRET and _hub_secret_matches(_hub_header, _HUB_INTERNAL_SECRET):
         if request.client and request.client.host in ("127.0.0.1", "::1"):
             return AuthClaims(
                 sub="hub-service", email="hub@unihub.ro",
