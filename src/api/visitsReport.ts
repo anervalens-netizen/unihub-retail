@@ -28,6 +28,7 @@ export interface VisitReportResponse {
 export interface VisitSummaryItem {
   id: string;
   magazin: string;
+  locatie: string | null;
   ora: string | null;
   completion_pct: number;
   firma: string | null;

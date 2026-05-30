@@ -1023,7 +1023,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
       </div>
 
       {activeSection === 'visits' ? (
-        <VisiteSubtab currentMonth={currentMonth} filters={filters} />
+        <VisiteSubtab currentMonth={currentMonth} />
       ) : loading ? (
         <LoadingCard label="Se incarca luna in curs..." />
       ) : error || !summary ? (

@@ -127,6 +127,7 @@ class VisitsReportService:
                 VisitSummaryItem(
                     id=r["id"],
                     magazin=r["magazin"] or "",
+                    locatie=r.get("locatie"),
                     ora=r["ora_trimitere"],
                     completion_pct=r["completion_pct"],
                     firma=r["firma"],

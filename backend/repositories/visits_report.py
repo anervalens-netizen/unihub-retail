@@ -155,6 +155,7 @@ class VisitsReportRepository:
         enriched["firma"] = store.get("firma") or enriched.get("firma")
         enriched["regional"] = store.get("regional") or enriched.get("regional")
         enriched["asm"] = store.get("asm") or enriched.get("asm")
+        enriched["locatie"] = store.get("locatie") or enriched.get("locatie")
         return enriched
 
     def _aggregate_report_rows(

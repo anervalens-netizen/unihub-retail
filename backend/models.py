@@ -329,6 +329,7 @@ class VisitReportResponse(BaseModel):
 class VisitSummaryItem(BaseModel):
     id: str
     magazin: str
+    locatie: str | None
     ora: str | None
     completion_pct: int
     firma: str | None

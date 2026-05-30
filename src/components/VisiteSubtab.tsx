@@ -19,7 +19,9 @@ import {
   type VisitSummaryItem,
 } from '../api/visitsReport';
 import { client } from '../api/client';
+import { FirmaBadge } from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
+import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { cn } from '../lib/utils';
 
 // ── AuthImage — fetch cu token, afișează blob URL ─────────────────────────────
@@ -47,8 +49,17 @@ function AuthImage({ src, alt, className }: { src: string; alt: string; classNam
 
 interface VisiteSubtabProps {
   currentMonth: string;
-  filters: AppFilters;
 }
+
+// Vizite ignoră filtrul global (firma/RM/ASM/magazin) — gruparea e pe team leader,
+// filtrele celorlalte taburi nu se aplică aici. Mereu se cere setul complet.
+const ALL_FILTERS: AppFilters = {
+  firma: ALL_FIRMS,
+  rm: ALL_SCOPE,
+  asm: ALL_SCOPE,
+  magazin: ALL_STORES,
+  agent: ALL_SCOPE,
+};
 
 // ── small helpers ─────────────────────────────────────────────────────────────
 
@@ -150,7 +161,8 @@ function VisitDrawer({
               Detalii Vizita
             </p>
             {detail && (
-              <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+              <p className="flex items-center text-sm font-bold text-slate-800 dark:text-slate-100">
+                <FirmaBadge firma={detail.firma || ''} />
                 {detail.magazin} · {detail.data_raport}
               </p>
             )}
@@ -326,61 +338,63 @@ function VisitDrawer({
   );
 }
 
-// ── visit row inside a day ────────────────────────────────────────────────────
+// ── leaf: a single visit (date + time + completion) ────────────────────────────
 
-function VisitRow({ visit, onOpen }: { visit: VisitSummaryItem; onOpen: (id: string) => void }) {
+type FlatVisit = VisitSummaryItem & { date: string };
+
+function VisitLeaf({ visit, onOpen }: { visit: FlatVisit; onOpen: (id: string) => void }) {
+  const dayLabel =
+    visit.date && visit.date !== '—'
+      ? new Date(visit.date + 'T12:00:00').toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })
+      : null;
   return (
     <button
       onClick={() => onOpen(visit.id)}
-      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
     >
-      <MapPin size={14} className="shrink-0 text-indigo-400" />
-      <span className="flex-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
-        {visit.magazin || '—'}
+      <span className="flex-1 text-xs text-slate-500 dark:text-slate-400">
+        {dayLabel ?? '—'}{visit.ora ? ` · ${visit.ora.slice(0, 5)}` : ''}
       </span>
-      {visit.ora && (
-        <span className="text-[10px] text-slate-400">{visit.ora.slice(0, 5)}</span>
-      )}
-      {visit.has_photos && <Camera size={12} className="text-slate-400" />}
+      {visit.has_photos && <Camera size={12} className="shrink-0 text-slate-400" />}
       <CompletionBadge pct={visit.completion_pct} />
     </button>
   );
 }
 
-// ── day accordion ─────────────────────────────────────────────────────────────
+// ── store group: one row per store, expands to that store's visits ─────────────
 
-function DayRow({
-  day,
-  onOpenVisit,
-}: {
-  day: import('../api/visitsReport').VisitDayGroup;
-  onOpenVisit: (id: string) => void;
-}) {
+interface StoreVisits {
+  magazin: string;
+  locatie: string | null;
+  firma: string | null;
+  visits: FlatVisit[];
+}
+
+function StoreRow({ store, onOpenVisit }: { store: StoreVisits; onOpenVisit: (id: string) => void }) {
   const [open, setOpen] = useState(false);
-  const label = day.date === '—' ? '—' : new Date(day.date + 'T12:00:00').toLocaleDateString('ro-RO', { day: 'numeric', month: 'long' });
-
   return (
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
       >
+        <FirmaBadge firma={store.firma || ''} />
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700 dark:text-slate-200">
+          {store.locatie || store.magazin}
+        </span>
+        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-700">
+          {store.visits.length} viz.
+        </span>
         {open ? (
           <ChevronDown size={13} className="shrink-0 text-slate-400" />
         ) : (
           <ChevronRight size={13} className="shrink-0 text-slate-400" />
         )}
-        <span className="flex-1 text-xs font-medium text-slate-600 dark:text-slate-300">
-          {label}
-        </span>
-        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-700">
-          {day.nr_vizite}
-        </span>
       </button>
       {open && (
         <div className="ml-5 space-y-0.5 pb-1">
-          {day.visits.map((v) => (
-            <VisitRow key={v.id} visit={v} onOpen={onOpenVisit} />
+          {store.visits.map((v) => (
+            <VisitLeaf key={v.id} visit={v} onOpen={onOpenVisit} />
           ))}
         </div>
       )}
@@ -388,44 +402,25 @@ function DayRow({
   );
 }
 
-// ── month accordion ───────────────────────────────────────────────────────────
-
-function MonthRow({
-  month,
-  onOpenVisit,
-}: {
-  month: import('../api/visitsReport').VisitMonthGroup;
-  onOpenVisit: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const label = month.month === '—' ? '—' : new Date(month.month + '-01').toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-      >
-        {open ? (
-          <ChevronDown size={14} className="shrink-0 text-indigo-400" />
-        ) : (
-          <ChevronRight size={14} className="shrink-0 text-indigo-400" />
-        )}
-        <span className="flex-1 text-sm font-semibold capitalize text-slate-700 dark:text-slate-200">
-          {label}
-        </span>
-        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">
-          {month.nr_vizite} viz.
-        </span>
-      </button>
-      {open && (
-        <div className="ml-4 space-y-0.5 border-l border-slate-100 pl-2 dark:border-slate-800">
-          {month.days.map((d) => (
-            <DayRow key={d.date} day={d} onOpenVisit={onOpenVisit} />
-          ))}
-        </div>
-      )}
-    </div>
+// Flatten the selected month into per-store groups (firm → store name), newest first.
+function storesOfGroup(group: TeamLeaderGroup): StoreVisits[] {
+  const flat: FlatVisit[] = group.months.flatMap((m) =>
+    m.days.flatMap((d) => d.visits.map((v) => ({ ...v, date: d.date })))
+  );
+  const map = new Map<string, StoreVisits>();
+  for (const v of flat) {
+    const key = v.magazin || '—';
+    const g = map.get(key) ?? { magazin: key, locatie: v.locatie, firma: v.firma, visits: [] };
+    g.visits.push(v);
+    map.set(key, g);
+  }
+  for (const g of map.values()) {
+    g.visits.sort((a, b) => b.date.localeCompare(a.date) || (b.ora || '').localeCompare(a.ora || ''));
+  }
+  return Array.from(map.values()).sort(
+    (a, b) =>
+      (a.firma || '').localeCompare(b.firma || '') ||
+      (a.locatie || a.magazin).localeCompare(b.locatie || b.magazin)
   );
 }
 
@@ -468,8 +463,8 @@ function TeamLeaderRow({
       </button>
       {open && (
         <div className="space-y-0.5 pb-2 pl-4 pr-2">
-          {group.months.map((m) => (
-            <MonthRow key={m.month} month={m} onOpenVisit={onOpenVisit} />
+          {storesOfGroup(group).map((s) => (
+            <StoreRow key={s.magazin} store={s} onOpenVisit={onOpenVisit} />
           ))}
         </div>
       )}
@@ -519,7 +514,7 @@ function MonthPicker({
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
+export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
   const [summary, setSummary] = useState<VisitReportResponse | null>(null);
   const [groups, setGroups] = useState<TeamLeaderGroup[]>([]);
   const [loadingSummary, setLoadingSummary] = useState(true);
@@ -545,19 +540,19 @@ export function VisiteSubtab({ currentMonth, filters }: VisiteSubtabProps) {
   useEffect(() => {
     setLoadingSummary(true);
     setError(null);
-    getVisitsReport(selectedMonth, filters)
+    getVisitsReport(selectedMonth, ALL_FILTERS)
       .then(setSummary)
       .catch((e: Error) => setError(e.message || 'Eroare la incarcare'))
       .finally(() => setLoadingSummary(false));
-  }, [selectedMonth, filters]);
+  }, [selectedMonth]);
 
   useEffect(() => {
     setLoadingTree(true);
-    getVisitsTree(filters)
+    getVisitsTree(ALL_FILTERS)
       .then((r) => setGroups(r.team_leaders))
       .catch(() => setGroups([]))
       .finally(() => setLoadingTree(false));
-  }, [filters]);
+  }, []);
 
   // filter tree client-side to selected month
   const filteredGroups = useMemo(() => {
