@@ -30,3 +30,7 @@ test-results/
 graphify-out/
 graphify-out/.graphify_*
 entities.json
+
+# Grile — Google service account (secret, read-only Sheets)
+backend/config/google/
+backend/config/google/*.json

@@ -4,7 +4,7 @@
 
 ## Overview
 
-Sursa de adevar pentru vanzari + vizite in ecosistemul MobiUp. Module: Hub, Focus, Agenti (+Salarii), Vizite, Management (Echipa/Magazine/Tasks/HR/Calculator Target), Setari.
+Sursa de adevar pentru vanzari + vizite in ecosistemul MobiUp. Module: Hub, Focus, Agenti (+Salarii), Vizite, Management (Echipa/Magazine/Tasks/HR/Calculator Target/Grile), Setari.
 
 ## Stack
 
@@ -55,7 +55,8 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `components/Campaigns.tsx` | Tab Focus — 4 sub-sectiuni: **Incentive · Promo · Concurs · Focus** (split din vechiul "Campanii"). Concurs = leaderboard agenti (`ContestView`) |
 | `api/contests.ts` | Fetch `/api/contests/active?month=` (leaderboard concurs, scoped server-side) |
 | `components/Agents.tsx` | Tab Agenti (refactorizat cu useQuery) |
-| `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR/TargetCalculator | Management |
+| `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR/TargetCalculator/**Grile** | Management |
+| `components/GrileSubtab.tsx` + `api/grile.ts` | Subtab Grile — verificare K5/L5 grile vs target+vanzari DB, buton unic rulare + status + filtre locale independente. Vezi `docs/grile-integration-plan.md` |
 
 ### Backend `backend/` — Architecture: router → service → repository (3-tier)
 
@@ -74,6 +75,7 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `routers/tasks.py` | `services/tasks.py` | `repositories/tasks.py` |
 | `routers/target_calculator.py` | `services/target_calculator.py` | `repositories/target_calculator.py` |
 | `routers/visits_report.py` | `services/visits_report.py` | `repositories/visits_report.py` |
+| `routers/grile.py` | `services/grile.py` (+ `services/grile_sheets.py` client Google read-only) | `repositories/grile.py` |
 
 **Auth:** `backend/auth.py` — JWT RS256 validation via JWKS from authentik. All API routers are protected by `require_auth` dependency in `main.py`. Health and metrics endpoints are public.
 
@@ -138,6 +140,9 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 | `import_snapshots` | Metadata import fisiere Excel |
 | `visits_snapshot` | Agregat vizite sync din SQLite la boot |
 | `error_logs` | Backend ERROR+ logs scrise de `DBErrorHandler`; GlitchTip ramane error tracking principal |
+| `grile_sheets` | Maparea read-only `site_code` → `sheet_id` Google (copie din grile-salarii registry; seed cu `backend/scripts/seed_grile_sheets.py`) |
+| `grile_runs` | Istoric rulari verificare grile (status, progres, ok/problem/error, source manual/auto, `source_snapshot_id`) |
+| `grile_store_status` | Rezultat per magazin per run: K5/L5 grila vs target+vanzari MTD DB, completare %, fill/target/sales status |
 
 ### Acoperire date
 | Perioada | Sursa | Granularitate |
@@ -171,6 +176,8 @@ cd /opt/Mobiup/ops/runners/retail
 - Valkey ruleaza in Docker (`unihub-valkey`, port 6379) — NU e systemd service
 - Worker: `unihub-worker.service` (systemd, enabled, runs `backend/worker.py`)
 - Import async: `POST /api/import/sales?background=true` → arq job → `GET /api/import/jobs/{job_id}`
+- **Grile check async:** `grile_check_background(month, source, snapshot_id, email)` — verifica K5/L5 toate grilele vs DB. Declansat manual (`POST /api/grile/run`) sau **automat dupa fiecare import de vanzari reusit** (best-effort, `trigger_grile_check_after_import` in `services/imports.py` + `worker.py`; NU poate strica importul). La modificarea jobului, restart `unihub-worker`.
+- **Secret Google:** `backend/config/google/service-account.json` (chmod 600, gitignored). Scope-uri READ-ONLY (`spreadsheets.readonly` + `drive.metadata.readonly`).
 
 ## Conventions
 
@@ -240,6 +247,9 @@ cd /opt/Mobiup/ops/runners/retail
 - **`get_dashboard_all` trebuie sa includa `special_cards`:** fara ele, Hub tab arata "Incentive neconfigurat". Apelul la `_get_special_cards_data()` e in `asyncio.gather` alaturi de celelalte query-uri
 - **Campaigns tab `promoMonth` state:** permite selectia lunii pentru promo/incentive, independent de `currentMonth`. `loadCurrentFocus` foloseste `promoMonth`, nu `currentMonth`
 - **`get_promotions_incentives` response:** TREBUIE sa returneze `top_agents`, `incentive_categories`, `incentive_product_count`, `promo_category_qty` — frontend-ul le acceseaza direct (ex: `promoData.top_agents.length`)
+- **Grile — Google client NU e thread-safe:** `googleapiclient`/`httplib2` da `free(): invalid next size` (corupere memorie) daca un `build()` service e folosit din mai multe thread-uri. In `services/grile.py` fiecare thread isi construieste propriile servicii (thread-local) pe un `ThreadPoolExecutor` dedicat dimensionat la `concurrency` (default 3). NU partaja un service intre thread-uri.
+- **Grile — quota Google read:** ~60 req/min/user. La `concurrency=3` + retry backoff, 75 magazine ruleaza ~2 min fara 429. Crescand concurrency apar 429 (apar ca `error_code=GOOGLE_ERROR` per magazin, se rezolva la urmatoarea rulare — nu silent failure).
+- **Grile — luna interna `YYYY-MM`** (nu "Mai 2026"). Expected = `store_targets` + `SUM(reporting_item_month.total_sales)` pe `site_code`; comparat cu K5(target)/L5(realizat) din grila. Diferentele de vanzari sunt asteptate cand grila e completata inainte de ultimul import (status `IN_URMA`).
 
 ## Ce sa nu faci
 

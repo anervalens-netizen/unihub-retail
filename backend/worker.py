@@ -7,20 +7,23 @@ from services.jobs import get_valkey_settings
 
 
 async def import_sales_background(ctx: dict, file_content: bytes, filename: str) -> dict:
+    from dataclasses import asdict
+    from services.importer import import_sales_file
+
     conn = ctx.get("db_conn")
     if conn is None:
         from db.connection import get_pool
         pool = await get_pool()
         async with pool.acquire() as conn:
-            from services.importer import import_sales_file
-            from dataclasses import asdict
             result = await import_sales_file(conn, file_content, filename=filename)
-            return asdict(result)
     else:
-        from services.importer import import_sales_file
-        from dataclasses import asdict
         result = await import_sales_file(conn, file_content, filename=filename)
-        return asdict(result)
+
+    # Best-effort: dupa import reusit + reporting rebuild (in tranzactia din
+    # import_sales_file), declanseaza verificarea grilelor. Nu propaga erori.
+    from services.imports import trigger_grile_check_after_import
+    await trigger_grile_check_after_import(result.import_month, result.snapshot_id)
+    return asdict(result)
 
 
 async def startup(ctx: dict) -> None:
@@ -28,6 +31,29 @@ async def startup(ctx: dict) -> None:
     await init_db_pool()
     pool = await get_pool()
     ctx["db_pool"] = pool
+
+
+async def grile_check_background(
+    ctx: dict,
+    month: str,
+    source: str = "manual",
+    source_snapshot_id: int | None = None,
+    triggered_by_email: str | None = None,
+) -> dict:
+    from services.grile import run_grile_check
+
+    pool = ctx.get("db_pool")
+    if pool is None:
+        from db.connection import get_pool
+        pool = await get_pool()
+    run_id = await run_grile_check(
+        pool,
+        month=month,
+        source=source,
+        source_snapshot_id=source_snapshot_id,
+        triggered_by_email=triggered_by_email,
+    )
+    return {"run_id": run_id, "month": month}
 
 
 async def shutdown(ctx: dict) -> None:
@@ -42,7 +68,7 @@ async def main() -> None:
 
     worker_settings = {
         "redis_settings": get_valkey_settings(),
-        "functions": [import_sales_background],
+        "functions": [import_sales_background, grile_check_background],
         "on_startup": startup,
         "on_shutdown": shutdown,
     }

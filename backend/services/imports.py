@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 
 from fastapi import HTTPException, status
@@ -8,8 +9,25 @@ from fastapi import UploadFile
 from models import ImportHistoryEntry, ImportJobStatus, ImportResponse
 from repositories.imports import ImportsRepository
 from services.importer import import_sales_file
-from services.jobs import JobStatus, enqueue_sales_import, get_job_status
+from services.jobs import JobStatus, enqueue_grile_check, enqueue_sales_import, get_job_status
 import asyncpg
+
+logger = logging.getLogger(__name__)
+
+
+async def trigger_grile_check_after_import(import_month: str, snapshot_id: int | None) -> None:
+    """Best-effort: enqueue verificarea grilelor dupa un import reusit.
+
+    NU propaga niciodata exceptii — importul de vanzari nu trebuie sa fie
+    afectat daca enqueue-ul esueaza (Valkey down etc.).
+    """
+    try:
+        await enqueue_grile_check(
+            month=import_month, source="auto", source_snapshot_id=snapshot_id
+        )
+        logger.info("grile check enqueued (auto) for %s snapshot=%s", import_month, snapshot_id)
+    except Exception:  # noqa: BLE001 — best-effort, nu strica importul
+        logger.exception("enqueue grile check (auto) esuat pentru %s", import_month)
 
 
 class ImportsService:
@@ -34,6 +52,7 @@ class ImportsService:
 
         clear_filter_options_cache()
         await update_business_metrics(self.pool)
+        await trigger_grile_check_after_import(result.import_month, result.snapshot_id)
         return ImportResponse(**asdict(result))
 
     async def get_import_job_status(self, job_id: str) -> ImportJobStatus:

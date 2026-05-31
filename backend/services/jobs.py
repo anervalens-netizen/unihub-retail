@@ -69,6 +69,22 @@ async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
     return job
 
 
+async def enqueue_grile_check(
+    *,
+    month: str,
+    source: str = "manual",
+    source_snapshot_id: int | None = None,
+    triggered_by_email: str | None = None,
+) -> Job:
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "grile_check_background", month, source, source_snapshot_id, triggered_by_email
+    )
+    if job is None:
+        raise RuntimeError("Failed to enqueue grile check job")
+    return job
+
+
 async def get_job_status(job_id: str) -> JobResult:
     pool = await get_arq_pool()
     try:

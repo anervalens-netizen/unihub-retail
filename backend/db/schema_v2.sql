@@ -833,3 +833,62 @@ CREATE TABLE IF NOT EXISTS error_logs (
 
 CREATE INDEX IF NOT EXISTS idx_error_logs_ts   ON error_logs(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_error_logs_seen ON error_logs(seen) WHERE seen = false;
+
+-- =====================================================================
+-- GRILE — verificare grile salariale (K5/L5 Google Sheets vs DB target/vanzari)
+-- Integrare nativa retail (strangler). Read-only la Google. Vezi
+-- docs/grile-integration-plan.md.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS grile_sheets (
+    site_code    TEXT PRIMARY KEY REFERENCES stores(site_code),
+    sheet_id     TEXT NOT NULL UNIQUE,
+    registry_key TEXT,                              -- "Company/Store" original (audit)
+    is_active    BOOLEAN NOT NULL DEFAULT true,
+    source_hash  TEXT,                              -- hash registry -> detectie drift la reseed
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS grile_runs (
+    id                 SERIAL PRIMARY KEY,
+    run_month          TEXT NOT NULL,               -- YYYY-MM
+    source_snapshot_id INT REFERENCES import_snapshots(id) ON DELETE SET NULL,
+    status             TEXT NOT NULL DEFAULT 'queued'
+                         CHECK (status IN ('queued', 'running', 'completed', 'failed')),
+    source             TEXT NOT NULL DEFAULT 'manual'
+                         CHECK (source IN ('manual', 'auto')),
+    progress_current   INT NOT NULL DEFAULT 0,
+    progress_total     INT NOT NULL DEFAULT 0,
+    ok_count           INT NOT NULL DEFAULT 0,
+    problem_count      INT NOT NULL DEFAULT 0,
+    error_count        INT NOT NULL DEFAULT 0,
+    duration_ms        INT,
+    triggered_by_email TEXT,
+    error_message      TEXT,
+    started_at         TIMESTAMPTZ,
+    finished_at        TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_grile_runs_month ON grile_runs(run_month, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS grile_store_status (
+    run_id           INT NOT NULL REFERENCES grile_runs(id) ON DELETE CASCADE,
+    site_code        TEXT NOT NULL,
+    completion_pct   NUMERIC(5,1),
+    last_edit        TIMESTAMPTZ,
+    grila_target     NUMERIC(12,2),                 -- K5
+    grila_sales      NUMERIC(12,2),                 -- L5
+    db_target        NUMERIC(12,2),                 -- store_targets.target_value
+    db_sales_mtd     NUMERIC(12,2),                 -- SUM(reporting_item_month.total_sales)
+    db_max_sale_date DATE,                          -- ultima zi din DB (status IN_URMA)
+    fill_status      TEXT,                          -- NECOMPLETAT | COMPLETAT
+    target_status    TEXT,                          -- OK | DIFERENTA
+    sales_status     TEXT,                          -- OK | DIFERENTA | IN_URMA
+    tolerance        NUMERIC(12,2),
+    error_code       TEXT,
+    error_message    TEXT,
+    raw_summary      JSONB,
+    PRIMARY KEY (run_id, site_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_grile_store_status_run ON grile_store_status(run_id);

@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import asyncpg
+
+
+class GrileRepository:
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    # ---------- grile_sheets (maparea read-only site_code -> sheet_id) ----------
+
+    async def get_active_sheets(self) -> list[asyncpg.Record]:
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                SELECT gs.site_code, gs.sheet_id, gs.registry_key
+                FROM grile_sheets gs
+                JOIN stores s ON s.site_code = gs.site_code
+                WHERE gs.is_active = true
+                ORDER BY gs.site_code
+                """
+            )
+
+    async def count_active_sheets(self) -> int:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT count(*) FROM grile_sheets WHERE is_active = true"
+            )
+
+    async def get_sheet_map(self) -> dict[str, str]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT site_code, sheet_id FROM grile_sheets")
+            return {r["site_code"]: r["sheet_id"] for r in rows}
+
+    # ---------- expected din retail DB (target + vanzari MTD) ----------
+
+    async def get_expected_by_site(self, month: str) -> dict[str, dict[str, Any]]:
+        """site_code -> {db_target, db_sales_mtd, db_max_sale_date} pentru luna."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    st.site_code,
+                    st.target_value AS db_target,
+                    COALESCE(sales.sales_mtd, 0) AS db_sales_mtd,
+                    sales_days.max_sale_date AS db_max_sale_date
+                FROM store_targets st
+                LEFT JOIN (
+                    SELECT site_code, SUM(total_sales) AS sales_mtd
+                    FROM reporting_item_month
+                    WHERE import_month = $1
+                    GROUP BY site_code
+                ) sales ON sales.site_code = st.site_code
+                LEFT JOIN (
+                    SELECT site_code, MAX(sale_date) AS max_sale_date
+                    FROM reporting_item_day
+                    WHERE import_month = $1
+                    GROUP BY site_code
+                ) sales_days ON sales_days.site_code = st.site_code
+                WHERE st.import_month = $1
+                """,
+                month,
+            )
+            out: dict[str, dict[str, Any]] = {}
+            for r in rows:
+                out[r["site_code"]] = {
+                    "db_target": r["db_target"],
+                    "db_sales_mtd": r["db_sales_mtd"],
+                    "db_max_sale_date": r["db_max_sale_date"],
+                }
+            return out
+
+    # ---------- ierarhia (din DB live, fara sidecar) ----------
+
+    async def get_hierarchy(self) -> dict[str, dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT s.site_code, s.locatie, s.firma, s.regional, s.asm,
+                       tl.name AS team_leader_name
+                FROM stores s
+                LEFT JOIN team_leaders tl ON tl.id = s.team_leader_id
+                """
+            )
+            return {
+                r["site_code"]: {
+                    "locatie": r["locatie"],
+                    "firma": r["firma"],
+                    "regional": r["regional"],
+                    "asm": r["asm"],
+                    "team_leader_name": r["team_leader_name"] or "Fara Team Leader",
+                }
+                for r in rows
+            }
+
+    # ---------- runs ----------
+
+    async def create_run(
+        self,
+        *,
+        run_month: str,
+        source: str,
+        source_snapshot_id: int | None,
+        triggered_by_email: str | None,
+        progress_total: int,
+    ) -> int:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                INSERT INTO grile_runs
+                    (run_month, source, source_snapshot_id, triggered_by_email,
+                     status, progress_total, started_at)
+                VALUES ($1, $2, $3, $4, 'running', $5, now())
+                RETURNING id
+                """,
+                run_month, source, source_snapshot_id, triggered_by_email, progress_total,
+            )
+
+    async def set_run_progress(self, run_id: int, current: int) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE grile_runs SET progress_current = $2 WHERE id = $1",
+                run_id, current,
+            )
+
+    async def finalize_run(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        ok_count: int,
+        problem_count: int,
+        error_count: int,
+        duration_ms: int,
+        error_message: str | None = None,
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE grile_runs
+                SET status = $2, ok_count = $3, problem_count = $4, error_count = $5,
+                    duration_ms = $6, error_message = $7,
+                    progress_current = progress_total, finished_at = now()
+                WHERE id = $1
+                """,
+                run_id, status, ok_count, problem_count, error_count, duration_ms, error_message,
+            )
+
+    async def upsert_store_status(self, run_id: int, row: dict[str, Any]) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO grile_store_status
+                    (run_id, site_code, completion_pct, last_edit,
+                     grila_target, grila_sales, db_target, db_sales_mtd, db_max_sale_date,
+                     fill_status, target_status, sales_status, tolerance,
+                     error_code, error_message, raw_summary)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                ON CONFLICT (run_id, site_code) DO UPDATE SET
+                    completion_pct = EXCLUDED.completion_pct,
+                    last_edit = EXCLUDED.last_edit,
+                    grila_target = EXCLUDED.grila_target,
+                    grila_sales = EXCLUDED.grila_sales,
+                    db_target = EXCLUDED.db_target,
+                    db_sales_mtd = EXCLUDED.db_sales_mtd,
+                    db_max_sale_date = EXCLUDED.db_max_sale_date,
+                    fill_status = EXCLUDED.fill_status,
+                    target_status = EXCLUDED.target_status,
+                    sales_status = EXCLUDED.sales_status,
+                    tolerance = EXCLUDED.tolerance,
+                    error_code = EXCLUDED.error_code,
+                    error_message = EXCLUDED.error_message,
+                    raw_summary = EXCLUDED.raw_summary
+                """,
+                run_id,
+                row["site_code"],
+                row.get("completion_pct"),
+                row.get("last_edit"),
+                row.get("grila_target"),
+                row.get("grila_sales"),
+                row.get("db_target"),
+                row.get("db_sales_mtd"),
+                row.get("db_max_sale_date"),
+                row.get("fill_status"),
+                row.get("target_status"),
+                row.get("sales_status"),
+                row.get("tolerance"),
+                row.get("error_code"),
+                row.get("error_message"),
+                json.dumps(row.get("raw_summary")) if row.get("raw_summary") is not None else None,
+            )
+
+    async def get_latest_run(self, month: str) -> asyncpg.Record | None:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                SELECT * FROM grile_runs
+                WHERE run_month = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                month,
+            )
+
+    async def get_run(self, run_id: int) -> asyncpg.Record | None:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow("SELECT * FROM grile_runs WHERE id = $1", run_id)
+
+    async def get_running_run(self, month: str) -> asyncpg.Record | None:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                SELECT * FROM grile_runs
+                WHERE run_month = $1 AND status IN ('queued', 'running')
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                month,
+            )
+
+    async def get_run_statuses(self, run_id: int) -> list[asyncpg.Record]:
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                "SELECT * FROM grile_store_status WHERE run_id = $1",
+                run_id,
+            )

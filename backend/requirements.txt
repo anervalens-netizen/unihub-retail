@@ -16,3 +16,6 @@ sentry-sdk==2.19.2
 prometheus-client==0.25.0
 structlog==25.5.0
 arq==0.28.0
+
+google-api-python-client==2.196.0
+google-auth==2.53.0

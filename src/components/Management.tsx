@@ -4,6 +4,7 @@ import { CRMSubtab } from './CRMSubtab';
 import { TasksSubtab } from './TasksSubtab';
 import { HRSubtab } from './HRSubtab';
 import { TargetCalculatorSubtab } from './TargetCalculatorSubtab';
+import { GrileSubtab } from './GrileSubtab';
 import type { ManagementTab } from '../lib/tabs';
 
 const TABS: { id: ManagementTab; label: string }[] = [
@@ -12,6 +13,7 @@ const TABS: { id: ManagementTab; label: string }[] = [
   { id: 'tasks', label: 'Tasks' },
   { id: 'hr', label: 'HR' },
   { id: 'target-calculator', label: 'Calculator Target' },
+  { id: 'grile', label: 'Grile' },
 ];
 
 interface Props {
@@ -54,6 +56,7 @@ export function Management({ activeSubTab, setActiveSubTab }: Props) {
         {activeTab === 'tasks' && <TasksSubtab />}
         {activeTab === 'hr' && <HRSubtab />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
+        {activeTab === 'grile' && <GrileSubtab />}
       </div>
     </div>
   );

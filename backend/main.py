@@ -43,7 +43,7 @@ from db.connection import (
     prewarm_pool,
 )
 from auth import require_auth
-from routers import agents, campaigns, contests, crm, dashboard, filters, hr, imports, salarii, stores, target_calculator, tasks, visits_report
+from routers import agents, campaigns, contests, crm, dashboard, filters, grile, hr, imports, salarii, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
 from services.visits_sync import sync_visits_snapshot
@@ -172,6 +172,7 @@ app.include_router(tasks.router, dependencies=_auth)
 app.include_router(hr.router, dependencies=_auth)
 app.include_router(crm.router, dependencies=_auth)
 app.include_router(target_calculator.router, dependencies=_auth)
+app.include_router(grile.router, dependencies=_auth)
 
 
 @app.get("/health")
