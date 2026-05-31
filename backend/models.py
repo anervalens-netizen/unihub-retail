@@ -609,6 +609,11 @@ class CampaignsPromotionsResponse(BaseModel):
     promo_total_qty: int = 0
     promo_category_qty: int | None = None
     promo_impact: float = 0.0
+    # Metrici co-purchase (regula campaniei) — consistente cu cardul Hub:
+    promo_qualifying_bons: int = 0
+    promo_discounted_units: int = 0
+    promo_active_stores: int = 0
+    promo_active_agents: int = 0
     incentive_title: str = ""
     incentive_description: str = ""
     incentive_qty: int = 0
@@ -618,3 +623,44 @@ class CampaignsPromotionsResponse(BaseModel):
     has_active_promotion: bool = False
     top_stores: list[PromoTopStore] = Field(default_factory=list)
     top_agents: list[IncentiveTopAgent] = Field(default_factory=list)
+
+
+# --- Concurs (contest leaderboard, config-driven) ---
+
+class ContestRuleInfo(BaseModel):
+    type: str
+    points: int
+    label: str
+    threshold: float | None = None
+
+
+class ContestPrizeInfo(BaseModel):
+    rank_from: int
+    rank_to: int
+    label: str
+
+
+class ContestLeaderboardRow(BaseModel):
+    rank: int
+    agent: str
+    focus_units: int = 0
+    promo_bonuri: int = 0
+    price_units: int = 0
+    focus_points: int = 0
+    promo_points: int = 0
+    price_points: int = 0
+    total_points: int = 0
+    prize: str | None = None
+
+
+class ContestResponse(BaseModel):
+    key: str
+    title: str
+    subtitle: str = ""
+    month: str
+    start_date: str
+    end_date: str
+    store_count: int = 0
+    rules: list[ContestRuleInfo] = Field(default_factory=list)
+    prizes: list[ContestPrizeInfo] = Field(default_factory=list)
+    leaderboard: list[ContestLeaderboardRow] = Field(default_factory=list)

@@ -697,7 +697,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
   const handleOpenFocus = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent('unihub:navigate', {
-        detail: { tab: 'focus', section: 'campaigns' },
+        detail: { tab: 'focus', section: 'promo' },
       })
     );
   }, []);

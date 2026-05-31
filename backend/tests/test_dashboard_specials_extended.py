@@ -287,14 +287,14 @@ class TestBuildPromotionCard:
             "end_date": date(2026, 5, 31),
         }
         stats = {
-            "total_sales": 10000, "total_quantity": 100,
+            "qualifying_bons": 80, "discounted_units": 80,
             "active_stores": 10, "active_agents": 5,
-            "total_receipts": 80,
         }
         card = build_promotion_card("2026-05", definition, stats)
         assert card.status == "ready"
-        assert len(card.metrics) == 4
+        assert len(card.metrics) == 3
         assert card.coverage_note == "Coverage note"
+        assert card.highlight_value == "80"
 
     def test_out_of_period(self):
         definition = {
@@ -313,7 +313,7 @@ class TestBuildPromotionCard:
             "item_codes": ["C1", "C2"], "start_date": date(2026, 5, 1),
             "end_date": date(2026, 5, 31),
         }
-        stats = {"total_sales": 5000, "total_quantity": 50, "active_stores": 5, "active_agents": 3, "total_receipts": 40}
+        stats = {"qualifying_bons": 40, "discounted_units": 40, "active_stores": 5, "active_agents": 3}
         card = build_promotion_card("2026-05", definition, stats)
         assert "2" in card.description or "coduri" in card.description.lower()
 

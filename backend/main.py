@@ -43,7 +43,7 @@ from db.connection import (
     prewarm_pool,
 )
 from auth import require_auth
-from routers import agents, campaigns, crm, dashboard, filters, hr, imports, salarii, stores, target_calculator, tasks, visits_report
+from routers import agents, campaigns, contests, crm, dashboard, filters, hr, imports, salarii, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
 from services.visits_sync import sync_visits_snapshot
@@ -161,6 +161,7 @@ _auth = [Depends(require_auth)]
 
 app.include_router(agents.router, dependencies=_auth)
 app.include_router(campaigns.router, dependencies=_auth)
+app.include_router(contests.router, dependencies=_auth)
 app.include_router(dashboard.router, dependencies=_auth)
 app.include_router(filters.router, dependencies=_auth)
 app.include_router(imports.router, dependencies=_auth)

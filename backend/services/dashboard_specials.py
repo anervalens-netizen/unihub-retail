@@ -404,34 +404,30 @@ def build_promotion_card(
         )
 
     normalized_stats = stats or {}
-    total_sales = float(normalized_stats.get("total_sales") or 0)
-    total_quantity = int(normalized_stats.get("total_quantity") or 0)
+    qualifying_bons = int(normalized_stats.get("qualifying_bons") or 0)
+    discounted_units = int(normalized_stats.get("discounted_units") or 0)
     active_stores = int(normalized_stats.get("active_stores") or 0)
     active_agents = int(normalized_stats.get("active_agents") or 0)
-    total_receipts = int(normalized_stats.get("total_receipts") or 0)
-    status: Literal["ready", "no_data"] = "ready" if total_sales > 0 or total_quantity > 0 else "no_data"
+    status: Literal["ready", "no_data"] = "ready" if qualifying_bons > 0 else "no_data"
 
     return DashboardSpecialCard(
         key="promotion",
         title=definition["title"],
         subtitle=definition["subtitle"],
         status=status,
-        status_label="Activa in selectie" if status == "ready" else "Fara vanzari",
-        highlight_value=format_currency(total_sales),
+        status_label="Bonuri calificate" if status == "ready" else "Fara bonuri calificate",
+        highlight_value=format_int(qualifying_bons),
         description=definition["description"]
         or f"Perioada {start_date.isoformat()} - {end_date.isoformat()} pentru {format_int(len(definition['item_codes']))} coduri.",
         coverage_note=definition.get("coverage_note"),
         metrics=[
             DashboardSpecialCardMetric(
-                label="Cantitate", value=format_int(total_quantity)
+                label="Produse reduse", value=format_int(discounted_units)
             ),
             DashboardSpecialCardMetric(
                 label="Magazine", value=format_int(active_stores)
             ),
             DashboardSpecialCardMetric(label="Agenti", value=format_int(active_agents)),
-            DashboardSpecialCardMetric(
-                label="Bonuri", value=format_int(total_receipts)
-            ),
         ],
     )
 

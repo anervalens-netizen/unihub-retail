@@ -24,6 +24,7 @@ from services.dashboard_specials import (
     parse_promotion_definition,
 )
 from services.incentive_db import get_incentive_campaign
+from services.promo_copurchase import compute_promo_copurchase
 
 
 def _campaign_clauses(
@@ -194,6 +195,53 @@ class CampaignsService:
 
             has_active_promotion = promotion_definition is not None and promotion_error is None
 
+            # Regula co-purchase: unitatile reduse (1 per bon calificat) nu se incentiveaza.
+            promo_excluded_ag: dict[tuple[str, str, str], int] = {}
+            promo_excluded_si: dict[tuple[str, str], int] = {}
+            promo_qualifying_bons = 0
+            promo_discounted_units = 0
+            promo_active_stores = 0
+            promo_active_agents = 0
+            promo_bonuri_by_store: dict[str, int] = {}
+            if has_active_promotion:
+                assert promotion_definition is not None
+                promo_cp = await compute_promo_copurchase(
+                    conn,
+                    month=month,
+                    start_date=promotion_definition["start_date"],
+                    end_date=promotion_definition["end_date"],
+                    item_codes=promotion_definition["item_codes"],
+                    firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
+                )
+                promo_excluded_ag = promo_cp.excluded_units
+                promo_excluded_si = promo_cp.excluded_by_site_item()
+                promo_qualifying_bons = promo_cp.qualifying_bons
+                promo_discounted_units = promo_cp.discounted_units
+                promo_active_stores = promo_cp.active_stores
+                promo_active_agents = promo_cp.active_agents
+                for (site, _ag, _item), units in promo_excluded_ag.items():
+                    promo_bonuri_by_store[site] = promo_bonuri_by_store.get(site, 0) + units
+                if incentive_campaign is not None:
+                    reward_map_hdr = incentive_campaign["reward_map"]
+                    excluded_value = sum(
+                        units
+                        * reward_map_hdr.get(item, 0)
+                        * store_multipliers.get(site, 0)
+                        for (site, _ag, item), units in promo_excluded_ag.items()
+                    )
+                    # Doar unitatile care sunt si produse incentive scad din qty.
+                    excluded_inc_units = sum(
+                        units
+                        for (_site, _ag, item), units in promo_excluded_ag.items()
+                        if item in reward_map_hdr
+                    )
+                    incentive_value = max(0.0, incentive_value - float(excluded_value))
+                    incentive_qty = max(0, incentive_qty - excluded_inc_units)
+
             if has_active_promotion:
                 assert promotion_definition is not None
                 promo_month = start_date[:7]
@@ -235,8 +283,9 @@ class CampaignsService:
                 store_rows = await self.repo.fetch_promo_store_rows(promo_clauses, promo_params)
                 top_stores = [
                     PromoTopStore(
+                        # qty = bonuri promo calificate (co-purchase) per magazin, nu cantitate simpla
                         store_name=f"{row['site_code']} - {row['locatie']}",
-                        qty=row["qty"],
+                        qty=promo_bonuri_by_store.get(row["site_code"], 0),
                         total_qty=row["total_qty"],
                         category_qty=0,
                         incentive_value=0.0,
@@ -277,7 +326,8 @@ class CampaignsService:
                         sc = row["site_code"]
                         loc = row["locatie"]
                         firma_val = row["firma"] or ""
-                        val = max(0, int(row["qty"])) * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
+                        excluded = promo_excluded_si.get((sc, row["item_code"]), 0)
+                        val = max(0, int(row["qty"]) - excluded) * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
                         if sc not in store_inc:
                             store_inc[sc] = [loc, 0.0, firma_val]
                         store_inc[sc][1] += val
@@ -356,10 +406,12 @@ class CampaignsService:
                     for row in agent_item_rows:
                         ag = row["agent"]
                         sc = row["site_code"]
-                        q = max(0, int(row["qty"]))
+                        excluded = promo_excluded_ag.get((sc, ag, row["item_code"]), 0)
+                        adj_net = int(row["qty"]) - excluded
+                        q = max(0, adj_net)
                         val = q * reward_map.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
                         agent_inc[ag] = agent_inc.get(ag, 0.0) + val
-                        agent_qty[ag] = agent_qty.get(ag, 0) + int(row["qty"])
+                        agent_qty[ag] = agent_qty.get(ag, 0) + adj_net
                         agent_sites[ag] = sc
 
                     top_agents = sorted(
@@ -383,7 +435,8 @@ class CampaignsService:
                         if reward_val <= 0:
                             continue
                         label = f"{int(reward_val)} RON" if reward_val == int(reward_val) else f"{reward_val} RON"
-                        q = max(0, int(row["qty"]))
+                        excluded = promo_excluded_ag.get((row["site_code"], row["agent"], row["item_code"]), 0)
+                        q = max(0, int(row["qty"]) - excluded)
                         tier_qty[label] = tier_qty.get(label, 0) + q
                         tier_value[label] = tier_value.get(label, 0.0) + q * reward_val
                     incentive_categories = sorted(
@@ -402,6 +455,10 @@ class CampaignsService:
                 "promo_qty": promo_qty,
                 "promo_category_qty": None,
                 "promo_impact": promo_impact,
+                "promo_qualifying_bons": promo_qualifying_bons,
+                "promo_discounted_units": promo_discounted_units,
+                "promo_active_stores": promo_active_stores,
+                "promo_active_agents": promo_active_agents,
                 "has_active_promotion": has_active_promotion,
                 "top_stores": top_stores,
                 "top_agents": top_agents,

@@ -343,6 +343,10 @@ export interface CampaignsPromotionsResponse {
   promo_total_qty: number;
   promo_category_qty: number | null;
   promo_impact: number;
+  promo_qualifying_bons: number;
+  promo_discounted_units: number;
+  promo_active_stores: number;
+  promo_active_agents: number;
   incentive_title: string;
   incentive_description: string;
   incentive_qty: number;
@@ -352,4 +356,43 @@ export interface CampaignsPromotionsResponse {
   has_active_promotion: boolean;
   top_stores: PromoTopStore[];
   top_agents: IncentiveTopAgent[];
+}
+
+export interface ContestRuleInfo {
+  type: string;
+  points: number;
+  label: string;
+  threshold: number | null;
+}
+
+export interface ContestPrizeInfo {
+  rank_from: number;
+  rank_to: number;
+  label: string;
+}
+
+export interface ContestLeaderboardRow {
+  rank: number;
+  agent: string;
+  focus_units: number;
+  promo_bonuri: number;
+  price_units: number;
+  focus_points: number;
+  promo_points: number;
+  price_points: number;
+  total_points: number;
+  prize: string | null;
+}
+
+export interface ContestResponse {
+  key: string;
+  title: string;
+  subtitle: string;
+  month: string;
+  start_date: string;
+  end_date: string;
+  store_count: number;
+  rules: ContestRuleInfo[];
+  prizes: ContestPrizeInfo[];
+  leaderboard: ContestLeaderboardRow[];
 }

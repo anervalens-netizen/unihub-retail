@@ -37,7 +37,7 @@ flowchart LR
 | Meniu principal | Scop |
 | --- | --- |
 | Hub | KPI-uri, comparatii perioade, carduri speciale |
-| Focus | campanii, incentive, produse focus |
+| Focus | Incentive, Promo, Concurs, produse focus |
 | Agenti | overview agenti, stabilitate, miscari, salarii |
 | Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target` |
 | Setari | setari aplicatie si erori |
@@ -46,7 +46,7 @@ flowchart LR
 
 - KPI retail si istoric lunar.
 - Filtre globale firma / regional / magazin / agent.
-- Campanii promo si incentive.
+- Campanii promo, incentive si concursuri config-driven.
 - Analiza agentilor, lifecycle, salarii.
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
@@ -67,6 +67,7 @@ Backend-ul foloseste modelul `router -> service -> repository`.
 | Dashboard | `routers/dashboard.py` -> `services/dashboard_service.py` -> `repositories/dashboard.py` |
 | Agenti | `agents.py` pe toate cele 3 straturi |
 | Campanii | `campaigns.py` pe toate cele 3 straturi |
+| Concursuri | `routers/contests.py` -> `services/contests.py` -> `repositories/contests.py` |
 | HR/CRM/Tasks/Calculator Target | straturi separate per domeniu |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
 
@@ -98,6 +99,33 @@ Familii de tabele:
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_targets` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
+
+### Campanii si concursuri
+
+Campaniile incentive per-produs sunt persistate in PostgreSQL:
+`incentive_campaigns` si `incentive_products`. Valorile per cod pot fi
+importate din Excel cu `backend/scripts/import_incentive_campaign.py`.
+
+Promotiile speciale si concursurile sunt configurate prin JSON-uri
+operationale din `data/`, care sunt gitignored pe server:
+
+- `data/hub_specials.json` — promotii speciale pentru cardurile Hub si tabul
+  Focus -> Promo.
+- `data/contests.json` — concursuri config-driven, cu perioada, scope,
+  reguli de punctaj si premii.
+
+Pentru campania iunie 2026, regula promo comuna este in
+`services/promo_copurchase.py`. Helperul este folosit de:
+
+- cardul Hub special pentru promotie;
+- Focus -> Promo (`promo_qualifying_bons`, `promo_discounted_units`,
+  `promo_active_stores`, `promo_active_agents`);
+- excluderea unitatii reduse din incentive;
+- punctajul de concurs pentru bonurile promo.
+
+`promo_qty` din summary/tabelele Hub ramane agregatul simplu din
+`reporting_item_day`; nu trebuie folosit ca headline pentru campanii
+co-purchase.
 
 ### Salarii
 
@@ -214,6 +242,9 @@ backend/repositories/
 - DB-ul Retail este pe port `5432`, nu clusterul DWH de pe `5433`.
 - Reporting-ul operational se citeste din tabelele `reporting_*`, nu direct din `sales_transactions`, cu exceptii controlate.
 - Magazinele `TR %` sunt excluse din logica Retail.
+- Selectorul de luni include doar luni cu importuri finalizate
+  (`import_snapshots.status='completed'`). Lunile planificate/configurate fara
+  vanzari importate nu se forteaza in UI.
 - Cand `site_code` este prezent, domina scope-ul istoric.
 - In `Comparatie perioade`, RM/firma selecteaza cohorta curenta; coloanele istorice filtreaza dupa codurile magazinelor din cohorta, nu dupa apartenenta istorica.
 - Vizitele sunt o dependinta istorica sensibila; nu modifica `visits.db` fara sa verifici fluxurile FieldOps/Retail.

@@ -1,6 +1,6 @@
 # CLAUDE.md — UniHub Retail
 
-**Phase: C3 COMPLETED + Hub filter/reporting fixes — 2026-05-07 | Server audit + optimization — 2026-05-19 | Calculator Target — 2026-05-27**
+**Phase: C3 COMPLETED + Hub filter/reporting fixes — 2026-05-07 | Server audit + optimization — 2026-05-19 | Calculator Target — 2026-05-27 | Campanii Iunie 2026 (promo co-purchase + excludere incentive + Concurs config-driven) — 2026-05-30**
 
 ## Overview
 
@@ -52,7 +52,8 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `components/MainLayout.tsx` | Shell principal, navigare, filtre globale |
 | `components/Dashboard.tsx` | Tab Hub — Luna curenta + Istoric (2016 linii dupa refactor 2026-05-19) |
 | `components/dashboard/DashboardWidgets.tsx` | Componente prezentare extracte din Dashboard (tabele, sortare, pie charts) |
-| `components/Campaigns.tsx` | Tab Focus — campanii, incentive, Top |
+| `components/Campaigns.tsx` | Tab Focus — 4 sub-sectiuni: **Incentive · Promo · Concurs · Focus** (split din vechiul "Campanii"). Concurs = leaderboard agenti (`ContestView`) |
+| `api/contests.ts` | Fetch `/api/contests/active?month=` (leaderboard concurs, scoped server-side) |
 | `components/Agents.tsx` | Tab Agenti (refactorizat cu useQuery) |
 | `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR/TargetCalculator | Management |
 
@@ -62,6 +63,7 @@ sudo journalctl -u unihub-backend -f   # logs live
 |--------|---------|------------|
 | `routers/agents.py` | `services/agents.py` | `repositories/agents.py` |
 | `routers/campaigns.py` | `services/campaigns.py` | `repositories/campaigns.py` |
+| `routers/contests.py` | `services/contests.py` (+ `services/contests_config.py`) | `repositories/contests.py` |
 | `routers/crm.py` | `services/crm.py` | `repositories/crm.py` |
 | `routers/dashboard.py` | `services/dashboard_service.py` | `repositories/dashboard.py` |
 | `routers/filters.py` | `services/filter_options.py` | `repositories/filters.py` |
@@ -82,6 +84,8 @@ sudo journalctl -u unihub-backend -f   # logs live
 - `services/dashboard_specials.py` — hub_specials.json config parsing
 - `services/dashboard/specials_data.py` — cardurile speciale Hub (promo + incentive), folosind aceleasi reguli de filtre ca dashboard-ul
 - `services/incentive_db.py` — incentive campaigns from DB
+- `services/promo_copurchase.py` — **regula co-purchase** (campania -20%): bon calificat + unitate redusa per bon, scoped. Helper partajat de cardul Hub, tab Focus si Concurs
+- `services/contests_config.py` — loader + parser `data/contests.json` (concursuri config-driven: scope, reguli, premii)
 
 ## Auth (authentik OIDC)
 
@@ -124,6 +128,7 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 | `reporting_agent_profile` | Profil agregat per agent |
 | `reporting_category_month` | Agregate per categorie produs |
 | `reporting_focus_item_month` | Focus products agregate |
+| `focus_products` | Lista produse focus (item_code) — sursa pentru focus_quantity + punctaj Concurs |
 | `tasks` | Task-uri per agent/magazin |
 | `leave_requests` | Cereri concediu |
 | `store_scores` | Scoruri CRM per magazin/luna |
@@ -197,6 +202,17 @@ cd /opt/Mobiup/ops/runners/retail
 - Targetele din tabelul Hub pe agent folosesc `agent_targets` daca exista override pentru `(import_month, site_code, agent)`; altfel raman pe fallback-ul vechi `store_targets / agenti activi`.
 - Importul pilot din Grile Salarii se ruleaza cu `python backend/scripts/import_grile_agent_targets.py --month YYYY-MM [--apply]` si este limitat implicit la managerul `Andrei Stancu`.
 - Filtre: `MainLayout.hubFilters` shared Hub+Focus; `Agents` uses `agentsFilters` independent
+
+### Campania Iunie 2026 — promo co-purchase, excludere incentive, Concurs (2026-05-30)
+- **Promotia** (`data/hub_specials.json`, gitignored) = campania "-20% la produsele selectate" (47 coduri, 01–30 iunie). Cardul Hub si tab Focus folosesc **regula co-purchase** din `services/promo_copurchase.py`.
+- **Bon calificat** = cheie `(sale_date, site_code, agent, bon_nr)` cu ≥1 produs din lista promo SI ≥2 unitati pozitive totale; se exclud cartele + locatii `TR %` (identic cu `reporting_refresh.py`). Unitatea redusa = produsul din lista cu cel mai mic `unit_price` pe bon (tie-break determinist `unit_price, item_code, id`), 1 per bon.
+- **Cardul promo Hub**: highlight = Bonuri calificate; metrici = Produse reduse / Magazine / Agenti (NU mai e currency). Vezi `build_promotion_card` in `dashboard_specials.py`.
+- **Tab Focus → sub-sectiunea Promo** afiseaza ACELEASI metrici co-purchase (`campaigns.py` populeaza `promo_qualifying_bons/discounted_units/active_stores/active_agents` din `promo_cp`; Top Magazine arata bonuri calificate per magazin, nu cantitate simpla). NU folosi `promo_qty` simplu (din `_fetch_promo_incentive_summary`, ramas pentru KPI Hub-summary + coloane Hub) ca headline promo — supraestimeaza fata de regula co-purchase.
+- **Excludere incentive**: unitatea redusa (vanduta in promo) NU se incentiveaza. `specials_data.py` (card Hub) + `campaigns.py` (top_agents/top_stores/incentive_categories + headline `incentive_value`/`incentive_qty`) scad `excluded_units` din `net_quantity`. Se aplica DOAR cand exista promo activ pe luna; lunile fara promo raman neschimbate. Coloanele Hub `promo_qty`/`incentive_qty` din tabele raman pe agregatul simplu (neajustate, intentionat).
+- **Incentive iunie = clona EXACTA a lunii mai** (967 produse, tiere 5/10/25 RON, total 5945 RON). Clonata in DB (`incentive_campaigns`/`incentive_products`, month `2026-06`). Lista/valorile NU se schimba — singura "modificare" e regula de excludere de mai sus.
+- **Concursul** (`data/contests.json`, gitignored, config-driven) = leaderboard agenti, scope `asm='Andrei Stancu'` (23 magazine non-TR), iunie. Punctaj **per agent**, fara gate de target: +1/unitate produs focus, +1/bon promo calificat, +1/unitate cu `unit_price > 150`. Premii top 6 (M7 Plus / BoomX / Macaron). Endpoint `/api/contests/active?month=` ignora filtrul global (scoped server-side din config). Reguli/scope/premii parametrizabile in JSON.
+- **Invariant luni UI:** `/api/filters/months` listeaza doar importuri `completed`. Nu forta `2026-06` in selector cat timp nu exista import de vanzari iunie; acesta a fost finding Codex #1 si este by-design.
+- **Audit Codex final:** cu config temporar pe mai, calea completa Focus intoarce `promo_qty=710` simplu, dar `promo_qualifying_bons=314` co-purchase si top magazin 17 bonuri. Fixul corect este sa folosesti campurile co-purchase dedicate in UI, nu sa modifici `_fetch_promo_incentive_summary`.
 
 ## Vizite
 

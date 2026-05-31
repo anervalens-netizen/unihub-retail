@@ -34,10 +34,23 @@ Reguli importante in Hub:
 - cand este selectat un magazin, filtrul de magazin are prioritate peste firma/RM, astfel istoricul ramane corect chiar daca magazinul a fost mutat intre RM-uri
 
 ### Focus
-Focus este separat in:
-- campanii active
-- indicator permanent de focus products
-- istoric focus
+Focus este separat in 4 sub-sectiuni:
+- **Incentive** — campanii incentive per-produs din DB (`incentive_campaigns`, `incentive_products`), cu target multipliers si excluderi specifice campaniilor active.
+- **Promo** — promotii speciale definite in `data/hub_specials.json`; pentru campania iunie 2026 se masoara bonuri co-purchase, nu cantitate simpla.
+- **Concurs** — leaderboard config-driven din `data/contests.json`, scoped server-side si independent de filtrele globale.
+- **Focus** — indicator permanent de focus products si istoric focus.
+
+Regula curenta pentru promotia iunie 2026 este implementata in
+`backend/services/promo_copurchase.py`: bon calificat =
+`(sale_date, site_code, agent, bon_nr)` cu cel putin un produs din lista promo
+si cel putin doua unitati pozitive non-cartela pe acelasi bon. Unitatea redusa
+este produsul din lista cu cel mai mic `unit_price`, maxim una per bon.
+
+Atentie la metrici: `promo_qty` din summary/tabele Hub ramane agregatul simplu
+din reporting, folosit pentru compatibilitate operationala. Tabul **Focus ->
+Promo**, cardul Hub special si concursul folosesc campurile co-purchase
+dedicate (`promo_qualifying_bons`, `promo_discounted_units`,
+`promo_active_stores`, `promo_active_agents`).
 
 ### Fisa de vizita
 Permite inregistrarea si urmarirea vizitelor in magazine:
@@ -353,6 +366,7 @@ Reguli de filtrare pentru dashboard:
 - backend-ul traduce filtrele in SQL cu `ANY(string_to_array(...))`
 - daca `site_code` este prezent, acesta ignora filtrele parinte `firma`, `regional`, `asm`
 - aceeasi regula se aplica in summary, daily, history, period comparison, mixuri, promo/incentive si special cards
+- selectorul global de luni listeaza doar `import_snapshots.status='completed'`; lunile configurate dar fara import de vanzari nu apar in UI pana la primul import finalizat
 
 ## Bootstrap utilizatori
 
@@ -402,3 +416,6 @@ npm run build
 ## Documente suplimentare
 
 - setup local: [LOCAL_SETUP.md](./LOCAL_SETUP.md)
+- arhitectura: [APP_ARCHITECTURE.md](./APP_ARCHITECTURE.md)
+- note Codex/agent: [CODEX.md](./CODEX.md)
+- handover campanii iunie 2026: [docs/HANDOVER-campanii-iunie-2026.md](./docs/HANDOVER-campanii-iunie-2026.md)

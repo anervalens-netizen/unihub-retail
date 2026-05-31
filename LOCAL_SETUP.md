@@ -205,6 +205,35 @@ Coloane Excel detectate automat (alias-uri acceptate):
 - Valoare incentive: `Incentive`, `Valoare`, `Bonus`, `Reward`, `valoare_incentive`
 - Nume produs (optional): `ItemName`, `Denumire`, `name`
 
+### Configurare promo si concursuri
+
+Promotiile speciale si concursurile live sunt in JSON-uri din `data/`, iar
+directorul `data/` este gitignored. Asta inseamna ca aceste fisiere trebuie
+pastrate/sincronizate operational pe server, separat de commit:
+
+- `data/hub_specials.json` — promotii speciale folosite de cardurile Hub si
+  tabul Focus -> Promo.
+- `data/contests.json` — concursuri config-driven folosite de
+  `/api/contests/active?month=YYYY-MM`.
+
+Pentru campania iunie 2026, `hub_specials.json` contine 47 coduri si perioada
+`2026-06-01` - `2026-06-30`. Regula de masurare este co-purchase, implementata
+in `backend/services/promo_copurchase.py`: bon calificat = acelasi
+`(sale_date, site_code, agent, bon_nr)` cu cel putin un produs din lista promo
+si cel putin doua unitati pozitive non-cartela.
+
+Metrici importante:
+- `promo_qty` ramane agregatul simplu din reporting pentru KPI-uri/tabele Hub.
+- `promo_qualifying_bons`, `promo_discounted_units`, `promo_active_stores` si
+  `promo_active_agents` sunt metricile corecte pentru tabul Focus -> Promo si
+  trebuie sa corespunda cardului Hub special.
+- unitatea redusa co-purchase se exclude din incentive doar cand exista promo
+  activa pe luna respectiva.
+
+Lunile afisate in UI vin exclusiv din `import_snapshots.status='completed'`.
+Nu forta luni configurate dar fara import in `/api/filters/months`; iunie 2026
+apare automat dupa primul import de vanzari iunie.
+
 ### Import targete reale per agent din Grile Salarii
 
 Pilotul curent importa targete per agent din `/opt/Mobiup/grile-salarii`,
@@ -316,3 +345,10 @@ npm run build
 - verifica ca exista campanie importata: `SELECT * FROM incentive_campaigns;`
 - luna din request trebuie sa coincida cu `month` din campanie (ex: `2026-04`)
 - reimporta cu `import_incentive_campaign.py` daca e nevoie
+
+### Promo/concurs iunie nu apar in selector
+- verifica `SELECT import_month, status FROM import_snapshots ORDER BY import_month DESC LIMIT 5;`
+- daca `2026-06` nu are import `completed`, comportamentul este corect: luna nu
+  apare in selector pana la primul import
+- verifica separat config-urile live: `data/hub_specials.json` si
+  `data/contests.json`

@@ -24,7 +24,8 @@ const Management = lazy(() =>
 );
 
 type ActiveTab = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
-type CampaignsSection = 'campaigns' | 'focus';
+type CampaignsSection = 'incentive' | 'promo' | 'concurs' | 'focus';
+const CAMPAIGNS_SECTIONS: CampaignsSection[] = ['incentive', 'promo', 'concurs', 'focus'];
 
 const FILTER_STORAGE_KEYS = {
   hub: 'unihub_hub_filters',
@@ -65,7 +66,10 @@ export default function App() {
   });
   const [campaignsSection, setCampaignsSection] = useState<CampaignsSection>(() => {
     const saved = localStorage.getItem('unihub_campaigns_section');
-    return (saved as CampaignsSection) || 'campaigns';
+    if (saved === 'campaigns') return 'incentive'; // migrare din vechea grupare Campanii
+    return CAMPAIGNS_SECTIONS.includes(saved as CampaignsSection)
+      ? (saved as CampaignsSection)
+      : 'incentive';
   });
   const [theme, setTheme] = useState(() => localStorage.getItem('unihub_theme') ?? 'light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);

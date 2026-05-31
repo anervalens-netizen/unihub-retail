@@ -15,6 +15,7 @@ from services.dashboard_specials import (
 )
 from services.filters import scoped_clauses
 from services.incentive_db import get_incentive_campaign
+from services.promo_copurchase import compute_promo_copurchase
 
 
 async def _get_special_cards_data(
@@ -35,71 +36,29 @@ async def _get_special_cards_data(
     async with pool.acquire() as _conn_ic:
         incentive_campaign = await get_incentive_campaign(_conn_ic, month)
 
+    promo_excluded: dict[tuple[str, str], int] = {}
     if promotion_definition is not None and promotion_error is None:
-        params, positions = _build_scoped_params(
-            [
-                month,
-                promotion_definition["start_date"],
-                promotion_definition["end_date"],
-                promotion_definition["item_codes"],
-            ],
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-        )
-
-        clauses = [
-            "agg.import_month = $1",
-            "agg.sale_date BETWEEN $2 AND $3",
-            "agg.item_code = ANY($4::TEXT[])",
-        ]
-        query_clauses = scoped_clauses(
-            positions,
-            site_alias="agg",
-            store_alias="agg",
-            agent_alias="agg",
-        )
-        clauses.extend(query_clauses)
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"""
-                SELECT
-                    COALESCE(SUM(agg.total_sales), 0) AS total_sales,
-                    COALESCE(SUM(agg.positive_quantity), 0) AS total_quantity,
-                    COUNT(DISTINCT agg.site_code) FILTER (WHERE agg.positive_quantity > 0) AS active_stores,
-                    COUNT(DISTINCT agg.agent) FILTER (WHERE agg.positive_quantity > 0) AS active_agents
-                FROM reporting_item_day agg
-                WHERE {" AND ".join(clauses)}
-                """,
-                *params,
+            promo_result = await compute_promo_copurchase(
+                conn,
+                month=month,
+                start_date=promotion_definition["start_date"],
+                end_date=promotion_definition["end_date"],
+                item_codes=promotion_definition["item_codes"],
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
             )
-            receipt_query_clauses = scoped_clauses(
-                positions,
-                site_alias="st",
-                store_alias="s",
-                agent_alias="st",
-                include_cartela_filter=True,
-            )
-            receipt_row = await conn.fetchrow(
-                f"""
-                SELECT
-                    COUNT(DISTINCT st.bon_nr) AS total_receipts
-                FROM sales_transactions st
-                JOIN stores s ON s.site_code = st.site_code
-                WHERE st.import_month = $1
-                  AND st.sale_date BETWEEN $2 AND $3
-                  AND st.item_code = ANY($4::TEXT[])
-                  {" ".join(f"AND {clause}" for clause in receipt_query_clauses)}
-                """,
-                *params,
-            )
-        promotion_stats = dict(row) if row else None
-        if promotion_stats is not None:
-            promotion_stats["total_receipts"] = int(
-                (receipt_row["total_receipts"] if receipt_row else 0) or 0
-            )
+        promotion_stats = {
+            "qualifying_bons": promo_result.qualifying_bons,
+            "discounted_units": promo_result.discounted_units,
+            "active_stores": promo_result.active_stores,
+            "active_agents": promo_result.active_agents,
+        }
+        # Unitatile reduse (1 per bon calificat) sunt excluse din incentive.
+        promo_excluded = promo_result.excluded_by_site_item()
 
     if incentive_campaign is not None:
         reward_map = incentive_campaign["reward_map"]
@@ -154,15 +113,25 @@ async def _get_special_cards_data(
                 store_multipliers, _ = await _get_store_incentive_multipliers(
                     conn, month, firma, regional, asm, site_code
                 )
-            net_qty = sum(int(r["net_quantity"]) for r in item_rows)
-            pos_qty = sum(int(r["positive_quantity"]) for r in item_rows)
-            ret_qty = sum(int(r["return_quantity"]) for r in item_rows)
-            incentive_value = sum(
-                max(0, int(r["net_quantity"]))
-                * reward_map.get(r["item_code"], 0)
-                * store_multipliers.get(r["site_code"], 0)
-                for r in item_rows
-            )
+            net_qty = 0
+            pos_qty = 0
+            ret_qty = 0
+            incentive_value = 0.0
+            for r in item_rows:
+                site = r["site_code"]
+                code = r["item_code"]
+                # Unitatile vandute in promo (cu reducere co-purchase) nu se incentiveaza.
+                excluded = promo_excluded.get((site, code), 0)
+                adj_net = int(r["net_quantity"]) - excluded
+                adj_pos = max(0, int(r["positive_quantity"]) - excluded)
+                net_qty += adj_net
+                pos_qty += adj_pos
+                ret_qty += int(r["return_quantity"])
+                incentive_value += (
+                    max(0, adj_net)
+                    * reward_map.get(code, 0)
+                    * store_multipliers.get(site, 0)
+                )
             incentive_stats = {
                 "net_quantity": net_qty,
                 "positive_quantity": pos_qty,

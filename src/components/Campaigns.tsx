@@ -5,10 +5,12 @@ import {
   BadgePercent,
   Building2,
   Gift,
+  Medal,
   PackageSearch,
   RefreshCw,
   Sparkles,
   Tag,
+  Trophy,
 } from 'lucide-react';
 import {
   Area,
@@ -25,18 +27,21 @@ import {
   YAxis,
 } from 'recharts';
 import { getCampaignSnapshot, getFocusHistory, getPromotionsIncentives } from '../api/campaigns';
-import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryPoint, IncentiveCategory, IncentiveTopAgent, PromoTopStore } from '../api/types';
+import { getActiveContest } from '../api/contests';
+import type { CampaignSnapshot, CampaignsPromotionsResponse, ContestResponse, FocusHistoryPoint, IncentiveCategory, IncentiveTopAgent, PromoTopStore } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
 import type { AppFilters } from './MainLayout';
 
+type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'focus';
+
 interface CampaignsProps {
   currentMonth: string;
   months: string[];
   filters: AppFilters;
-  preferredSection: 'campaigns' | 'focus';
-  onSectionChange: (section: 'campaigns' | 'focus') => void;
+  preferredSection: CampaignSection;
+  onSectionChange: (section: CampaignSection) => void;
 }
 
 const emptySnapshot: CampaignSnapshot = {
@@ -60,6 +65,13 @@ const STAT_ACCENT_CLASSES: Record<string, string> = {
   rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20',
 };
 
+const SECTION_TABS: [CampaignSection, string][] = [
+  ['incentive', 'Incentive'],
+  ['promo', 'Promo'],
+  ['concurs', 'Concurs'],
+  ['focus', 'Focus'],
+];
+
 export function Campaigns({
   currentMonth,
   months,
@@ -67,12 +79,15 @@ export function Campaigns({
   preferredSection,
   onSectionChange,
 }: CampaignsProps) {
-  const [activeSection, setActiveSection] = useState<'campaigns' | 'focus'>(preferredSection);
+  const [activeSection, setActiveSection] = useState<CampaignSection>(preferredSection);
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [promoMonth, setPromoMonth] = useState(currentMonth);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(emptySnapshot);
   const [focusHistory, setFocusHistory] = useState<FocusHistoryPoint[]>([]);
   const [promoData, setPromoData] = useState<CampaignsPromotionsResponse | null>(null);
+  const [contest, setContest] = useState<ContestResponse | null>(null);
+  const [contestLoading, setContestLoading] = useState(false);
+  const [contestError, setContestError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -181,6 +196,25 @@ export function Campaigns({
       });
   }, [buildQuery, historyCacheKey, historyMonth]);
 
+  const loadContest = useCallback(() => {
+    if (!isMountedRef.current) return;
+    setContestLoading(true);
+    setContestError('');
+    getActiveContest(promoMonth)
+      .then((data) => {
+        if (!isMountedRef.current) return;
+        setContest(data);
+      })
+      .catch(() => {
+        if (!isMountedRef.current) return;
+        setContest(null);
+        setContestError('Concursul nu a putut fi incarcat.');
+      })
+      .finally(() => {
+        if (isMountedRef.current) setContestLoading(false);
+      });
+  }, [promoMonth]);
+
   useEffect(() => {
     isMountedRef.current = true;
     loadCurrentFocus();
@@ -196,6 +230,12 @@ export function Campaigns({
       loadFocusHistory();
     }
   }, [activeSection, historyMonth, loadFocusHistory]);
+
+  useEffect(() => {
+    if (activeSection === 'concurs') {
+      loadContest();
+    }
+  }, [activeSection, loadContest]);
 
   const selectedHistoryPoint = useMemo(
     () =>
@@ -229,157 +269,151 @@ export function Campaigns({
       <div>
         <h1 className="text-xl font-bold tracking-tight">Focus</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Campaniile folosesc luna {promoMonth}, iar istoricul focus se analizeaza separat.
+          Incentive, promo si concurs folosesc luna {promoMonth}; istoricul focus se analizeaza separat.
         </p>
       </div>
 
       <div className="glass flex rounded-2xl p-1">
-        <button
-          onClick={() => setActiveSection('campaigns')}
-          className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            activeSection === 'campaigns'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-              : 'text-slate-500'
-          }`}
-        >
-          Campanii
-        </button>
-        <button
-          onClick={() => setActiveSection('focus')}
-          className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            activeSection === 'focus'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-              : 'text-slate-500'
-          }`}
-        >
-          Focus
-        </button>
+        {SECTION_TABS.map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setActiveSection(key)}
+            className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+              activeSection === key
+                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
+                : 'text-slate-500'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {loading ? (
+      {activeSection === 'concurs' ? (
+        contestLoading ? (
+          <LoadingCard label="Se incarca concursul..." />
+        ) : contestError ? (
+          <ErrorCard message={contestError} onRetry={loadContest} />
+        ) : (
+          <>
+            <CampaignMonthBar title="Concurs" icon={Trophy} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={currentMonth} />
+            {contest ? (
+              <ContestView contest={contest} />
+            ) : (
+              <EmptyCard message={`Nu exista concurs activ in ${promoMonth}.`} />
+            )}
+          </>
+        )
+      ) : loading ? (
         <LoadingCard label="Se incarca datele de focus..." />
       ) : error ? (
         <ErrorCard message={error} onRetry={loadCurrentFocus} />
-      ) : activeSection === 'campaigns' ? (
+      ) : activeSection === 'promo' ? (
         <>
-          <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                <Sparkles size={16} />
-                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Campanii</span>
-              </div>
-              <select
-                value={promoMonth}
-                onChange={(e) => setPromoMonth(e.target.value)}
-                className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-slate-800 dark:text-amber-300"
-              >
-                {months.map((m) => (
-                  <option key={m} value={m}>
-                    {m}{m === currentMonth ? ' (curent)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="text-lg font-black">Promotii si incentive</div>
-            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-              {promoData && promoData.promo_qty > 0
-                ? `${promoData.promo_qty} promotie activ${promoData.promo_qty === 1 ? 'a' : 'i'} in curs`
-                : `Nu exista promotii active in ${promoMonth}.`}
-            </p>
-          </div>
+          <CampaignMonthBar title="Promotie" icon={BadgePercent} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={currentMonth} />
+          {!promoData?.has_active_promotion ? (
+            <EmptyCard message={`Nu exista promotie activa in ${promoMonth}.`} />
+          ) : (
+            <>
+              <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <BadgePercent size={16} />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Promotii</span>
+                </div>
+                <div className="mb-1">
+                  <h4 className="text-base font-black tracking-tight">{promoData.promo_title || 'Promotie'}</h4>
+                  {promoData.promo_description && (
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.promo_description}</p>
+                  )}
+                </div>
 
-          {/* Card Promotii — ascuns daca nu exista promotie activa */}
-          {promoData?.has_active_promotion && (
-            <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-              <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                <BadgePercent size={16} />
-                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Promotii</span>
-              </div>
-              <div className="mb-1">
-                <h4 className="text-base font-black tracking-tight">{promoData.promo_title || 'Promotie'}</h4>
-                {promoData.promo_description && (
-                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.promo_description}</p>
-                )}
-              </div>
-
-              <div className="mb-3">
-                <div className="text-3xl font-black">{formatInt(promoData.promo_qty)}</div>
-                <div className="text-[11px] text-slate-500">bucati vandute</div>
-              </div>
-
-              {promoData.promo_total_qty > 0 && (
                 <div className="mb-3">
-                  <div className="mb-1 flex justify-between text-[10px] text-slate-500">
-                    <span>Progres</span>
-                    <span>{formatInt(promoData.promo_qty)} / {formatInt(promoData.promo_total_qty)}</span>
+                  <div className="text-3xl font-black">{formatInt(promoData.promo_qualifying_bons)}</div>
+                  <div className="text-[11px] text-slate-500">bonuri calificate (accesoriu + produs din lista pe acelasi bon)</div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="text-lg font-black text-amber-600">{formatInt(promoData.promo_discounted_units)}</div>
+                    <div className="text-[10px] text-slate-500">Produse reduse</div>
                   </div>
-                  <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">
-                    <div
-                      className="h-2 rounded-full bg-amber-500"
-                      style={{ width: `${Math.min((promoData.promo_qty / promoData.promo_total_qty) * 100, 100)}%` }}
-                    />
+                  <div>
+                    <div className="text-lg font-black">{formatInt(promoData.promo_active_stores)}</div>
+                    <div className="text-[10px] text-slate-500">Magazine</div>
                   </div>
+                  <div>
+                    <div className="text-lg font-black">{formatInt(promoData.promo_active_agents)}</div>
+                    <div className="text-[10px] text-slate-500">Agenti</div>
+                  </div>
+                </div>
+              </div>
+
+              {promoData.top_stores.length > 0 && (
+                <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                  <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                    <Building2 size={16} />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine — Promo</span>
+                  </div>
+                  <SortableTable<PromoTopStore & Record<string, unknown>>
+                    rows={promoData.top_stores as (PromoTopStore & Record<string, unknown>)[]}
+                    defaultSortKey="qty"
+                    columns={[
+                      {
+                        key: 'rank',
+                        label: '#',
+                        sortable: false,
+                        render: (_row, index) => (
+                          <span className="font-bold text-slate-400">{index + 1}</span>
+                        ),
+                      },
+                      {
+                        key: 'store_name',
+                        label: 'Magazin',
+                        render: (row) => {
+                          const store = row as unknown as PromoTopStore;
+                          const displayName = store.store_name.includes(' - ')
+                            ? store.store_name.split(' - ').slice(1).join(' - ')
+                            : store.store_name;
+                          return (
+                            <span className="flex items-center">
+                              <FirmaBadge firma={store.firma} />
+                              <span className="max-w-[90px] truncate font-semibold" title={store.store_name}>
+                                {displayName}
+                              </span>
+                            </span>
+                          );
+                        },
+                      },
+                      {
+                        key: 'achievement',
+                        label: '%Prev.',
+                        align: 'right',
+                        render: (row) => {
+                          const ach = (row as unknown as PromoTopStore).achievement;
+                          return <span className={achievementColor(ach)}>{achievementLabel(ach)}</span>;
+                        },
+                      },
+                      {
+                        key: 'qty',
+                        label: 'Bonuri',
+                        align: 'right',
+                        render: (row) => (
+                          <span className="font-black text-amber-600">{formatInt((row as unknown as PromoTopStore).qty)}</span>
+                        ),
+                      },
+                    ]}
+                  />
                 </div>
               )}
-
-              {promoData.promo_impact > 0 && (
-                <div className="mb-3 text-sm">
-                  <span className="text-slate-500">Impact: </span>
-                  <span className="font-black text-amber-600">{formatCurrency(promoData.promo_impact)}</span>
-                  <span className="text-[10px] text-slate-400"> (20% din vanzari)</span>
-                </div>
-              )}
-            </div>
+            </>
           )}
+        </>
+      ) : activeSection === 'incentive' ? (
+        <>
+          <CampaignMonthBar title="Incentive" icon={Gift} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={currentMonth} />
 
-          {/* Card Magazine — doar cand exista promotie activa (combina promo + incentive) */}
-          {promoData && promoData.has_active_promotion && promoData.top_stores.length > 0 && (
-            <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-              <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                <Building2 size={16} />
-                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine</span>
-              </div>
-              <div className="space-y-1">
-                <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                  <div className="col-span-1">#</div>
-                  <div className={promoData.has_active_promotion ? 'col-span-4' : 'col-span-6'}>Magazin</div>
-                  <div className="col-span-2 text-right">Target%</div>
-                  {promoData.has_active_promotion && <div className="col-span-2 text-right">Promo</div>}
-                  <div className="col-span-3 text-right">Incentive</div>
-                </div>
-                {promoData.top_stores.slice(0, 10).map((store, index) => {
-                  const ach = store.achievement;
-                  const achPct = ach !== null && ach !== undefined ? Math.round(ach * 100) : null;
-                  const achColor = ach === null || ach === undefined
-                    ? 'text-slate-400'
-                    : ach >= 0.99 ? 'text-emerald-600 font-black'
-                    : ach >= 0.89 ? 'text-amber-500 font-semibold'
-                    : 'text-red-500';
-                  return (
-                    <div
-                      key={store.store_name}
-                      className={`grid grid-cols-12 gap-1 rounded-xl p-2 text-xs ${index % 2 === 0 ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}
-                    >
-                      <div className="col-span-1 font-bold text-slate-400">{index + 1}</div>
-                      <div className={`truncate font-semibold ${promoData.has_active_promotion ? 'col-span-4' : 'col-span-6'}`}>{store.store_name}</div>
-                      <div className={`col-span-2 text-right ${achColor}`}>
-                        {achPct !== null ? `${achPct}%` : '-'}
-                      </div>
-                      {promoData.has_active_promotion && (
-                        <div className="col-span-2 text-right font-black text-amber-600">{formatInt(store.qty)}</div>
-                      )}
-                      <div className="col-span-3 text-right font-black text-indigo-600">{store.incentive_value > 0 ? formatCurrency(store.incentive_value) : '-'}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Card Incentive — stats + pie chart */}
           <IncentiveCard promoData={promoData} />
 
-          {/* Top Agenti — card separat, sortabil, scroll */}
           {promoData && promoData.top_agents.length > 0 && (
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
@@ -440,12 +474,11 @@ export function Campaigns({
             </div>
           )}
 
-          {/* Top Magazine Incentive — card separat, sortabil, scroll, doar fara promotie activa */}
-          {promoData && !promoData.has_active_promotion && promoData.top_stores.length > 0 && (
+          {promoData && promoData.top_stores.length > 0 && (
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Building2 size={16} />
-                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine</span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine — Incentive</span>
               </div>
               <SortableTable<PromoTopStore & Record<string, unknown>>
                 rows={promoData.top_stores as (PromoTopStore & Record<string, unknown>)[]}
@@ -720,6 +753,169 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
   );
 }
 
+function CampaignMonthBar({
+  title,
+  icon: Icon,
+  months,
+  value,
+  onChange,
+  currentMonth,
+}: {
+  title: string;
+  icon: ComponentType<{ size?: number; className?: string }>;
+  months: string[];
+  value: string;
+  onChange: (month: string) => void;
+  currentMonth: string;
+}) {
+  return (
+    <div className="glass flex items-center justify-between rounded-3xl p-3">
+      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+        <Icon size={16} />
+        <span className="text-[11px] font-bold uppercase tracking-[0.22em]">{title}</span>
+      </div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-slate-800 dark:text-amber-300"
+      >
+        {months.map((m) => (
+          <option key={m} value={m}>
+            {m}{m === currentMonth ? ' (curent)' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function EmptyCard({ message }: { message: string }) {
+  return <div className="glass rounded-3xl p-6 text-sm font-semibold text-slate-500">{message}</div>;
+}
+
+function ContestView({ contest }: { contest: ContestResponse }) {
+  return (
+    <>
+      <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+        <div className="mb-2 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+          <Trophy size={16} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Concurs</span>
+        </div>
+        <h4 className="text-base font-black tracking-tight">{contest.title}</h4>
+        {contest.subtitle && <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{contest.subtitle}</p>}
+        <p className="mt-1 text-[11px] text-slate-400">
+          {contest.start_date} – {contest.end_date} · {formatInt(contest.store_count)} magazine
+        </p>
+        {contest.rules.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {contest.rules.map((rule) => (
+              <span
+                key={rule.type}
+                className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+              >
+                {rule.label} = {rule.points}p
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {contest.prizes.length > 0 && (
+        <div className="glass rounded-3xl p-4">
+          <div className="mb-2 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <Gift size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Premii</span>
+          </div>
+          <div className="space-y-1">
+            {contest.prizes.map((prize) => (
+              <div
+                key={`${prize.rank_from}-${prize.rank_to}`}
+                className="flex items-center justify-between rounded-xl bg-amber-50/60 px-3 py-1.5 text-xs dark:bg-amber-900/10"
+              >
+                <span className="font-bold text-slate-500">
+                  {prize.rank_from === prize.rank_to
+                    ? `Locul ${prize.rank_from}`
+                    : `Locurile ${prize.rank_from}–${prize.rank_to}`}
+                </span>
+                <span className="font-black text-amber-700 dark:text-amber-300">{prize.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+        <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+          <Trophy size={16} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Clasament agenti</span>
+        </div>
+        {contest.leaderboard.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-4 text-xs font-semibold text-slate-500 dark:bg-slate-800/60">
+            Nu exista inca vanzari punctate in {contest.month}.
+          </div>
+        ) : (
+          <div
+            className="max-h-[480px] overflow-y-auto rounded-xl"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#c7d2fe transparent' }}
+          >
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  {['#', 'Agent', 'Focus', 'Promo', '>150', 'Total', 'Premiu'].map((label, index) => (
+                    <th
+                      key={label}
+                      className={`sticky top-0 z-10 bg-indigo-50/80 px-2 py-2 text-[9px] font-bold uppercase tracking-wide text-slate-500 backdrop-blur-sm dark:bg-indigo-950/60 ${
+                        index >= 2 && index <= 5 ? 'text-right' : 'text-left'
+                      }`}
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contest.leaderboard.map((row) => (
+                  <tr
+                    key={row.agent}
+                    className={
+                      row.prize
+                        ? 'bg-amber-50/50 dark:bg-amber-900/10'
+                        : row.rank % 2 === 0
+                          ? 'bg-indigo-50/30 dark:bg-indigo-900/10'
+                          : ''
+                    }
+                  >
+                    <td className="px-2 py-1.5">
+                      <span className={`font-bold ${row.rank <= 3 ? 'text-amber-500' : 'text-slate-400'}`}>{row.rank}</span>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <span className="truncate font-semibold" title={row.agent}>{row.agent}</span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-slate-500">{formatInt(row.focus_points)}</td>
+                    <td className="px-2 py-1.5 text-right text-slate-500">{formatInt(row.promo_points)}</td>
+                    <td className="px-2 py-1.5 text-right text-slate-500">{formatInt(row.price_points)}</td>
+                    <td className="px-2 py-1.5 text-right font-black text-indigo-600">{formatInt(row.total_points)}</td>
+                    <td className="px-2 py-1.5">
+                      {row.prize ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                          <Medal size={11} />
+                          {row.prize}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function StatCard({
   icon: Icon,
   label,
@@ -931,4 +1127,3 @@ function achievementLabel(ach: number | null): string {
   if (ach === null || ach === undefined) return '—';
   return `${Math.round(ach * 100)}%`;
 }
-
