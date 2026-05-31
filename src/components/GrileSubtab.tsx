@@ -75,82 +75,130 @@ function relTime(iso: string | null): string {
   return days === 1 ? 'ieri' : `${days}z`;
 }
 
-// ── Status pill pentru target/vanzari ─────────────────────────────────────────
-function StatusPill({ status }: { status: string | null }) {
-  if (!status) return <span className="text-slate-400">—</span>;
-  const map: Record<string, { label: string; cls: string }> = {
-    OK: { label: 'OK', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
-    DIFERENTA: { label: 'Diferență', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' },
-    IN_URMA: { label: 'În urmă', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-    NECOMPLETAT: { label: 'Necompletat', cls: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
-  };
-  const m = map[status] ?? { label: status, cls: 'bg-slate-200 text-slate-600' };
-  return <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', m.cls)}>{m.label}</span>;
+const ROW_GRID = 'grid grid-cols-[minmax(170px,1.5fr)_96px_84px_1.2fr_1.2fr_120px] gap-2';
+
+// ── Celula diferenta (target/vanzari): OK badge sau breakdown ca app veche ─────
+function DiffCell({
+  status,
+  grila,
+  db,
+  diff,
+}: {
+  status: string | null;
+  grila: number | null;
+  db: number | null;
+  diff: number | null;
+}) {
+  if (status === null || status === 'NECOMPLETAT') {
+    return <span className="text-xs text-slate-400">—</span>;
+  }
+  if (status === 'OK') {
+    return (
+      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+        OK
+      </span>
+    );
+  }
+  const r = diff === null ? null : Math.round(diff);
+  return (
+    <div className="text-xs leading-tight">
+      <div className={cn('font-bold', status === 'IN_URMA' ? 'text-amber-600' : 'text-rose-500')}>
+        {r === null ? '—' : `${r > 0 ? '+' : ''}${NUMBER.format(r)}`}
+      </div>
+      <div className="text-[11px] text-slate-400">Raport {fmt(db)}</div>
+      <div className="text-[11px] text-slate-400">Grilă {fmt(grila)}</div>
+    </div>
+  );
 }
 
-// ── Rând magazin ──────────────────────────────────────────────────────────────
+// ── Status combinat (Target / Realizat / Target + Realizat / OK ...) ──────────
+function statusInfo(s: GrileStore): { label: string; cls: string } {
+  const rose = 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300';
+  const amber = 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+  const slate = 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+  const emerald = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+  if (s.error_code) return { label: 'Eroare', cls: rose };
+  if (s.fill_status === 'NECOMPLETAT') return { label: 'Necompletat', cls: slate };
+  const t = s.target_status === 'DIFERENTA';
+  const sl = s.sales_status === 'DIFERENTA';
+  const inUrma = s.sales_status === 'IN_URMA';
+  if (t && (sl || inUrma)) return { label: 'Target + Realizat', cls: rose };
+  if (t) return { label: 'Target', cls: rose };
+  if (sl) return { label: 'Realizat', cls: rose };
+  if (inUrma) return { label: 'În urmă', cls: amber };
+  return { label: 'OK', cls: emerald };
+}
+
+// ── Rând magazin (nume = link la grila; completare expandabila cu zile lipsa) ──
 function StoreRow({ s }: { s: GrileStore }) {
+  const [open, setOpen] = useState(false);
   const url = s.sheet_id ? `https://docs.google.com/spreadsheets/d/${s.sheet_id}` : null;
+  const st = statusInfo(s);
+  const missing = s.missing_days ?? [];
+  const hasDetail = missing.length > 0 || !!s.error_message;
+
   return (
-    <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_60px_1.3fr_1.3fr_90px] items-center gap-2 border-t border-slate-100 px-3 py-1.5 text-sm dark:border-slate-800">
-      <div className="flex items-center gap-1 truncate">
-        <FirmaBadge firma={s.firma} />
-        <span className="truncate font-medium text-slate-700 dark:text-slate-200">{s.locatie}</span>
-      </div>
-      <div className="text-center">
-        {s.completion_pct === null ? (
-          <span className="text-slate-400">—</span>
-        ) : (
-          <span
-            className={cn(
-              'rounded px-1.5 py-0.5 text-[11px] font-semibold',
-              s.completion_pct >= 80
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                : s.completion_pct >= 50
-                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                  : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-            )}
-          >
-            {s.completion_pct}%
-          </span>
-        )}
-      </div>
-      <div className="text-center text-xs text-slate-400">{relTime(s.last_edit)}</div>
-      {/* Target: grila vs db */}
-      <div className="flex items-center justify-between gap-2 pr-2">
-        <div className="text-xs leading-tight">
-          <div className="text-slate-700 dark:text-slate-200">{fmt(s.grila_target)}</div>
-          <div className="text-slate-400">DB {fmt(s.db_target)}</div>
+    <div className="border-t border-slate-100 dark:border-slate-800">
+      <div className={cn(ROW_GRID, 'items-center px-3 py-1.5 text-sm')}>
+        {/* Nume = link grila */}
+        <div className="flex items-center gap-1 truncate">
+          <FirmaBadge firma={s.firma} />
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              title="Deschide grila"
+              className="group inline-flex items-center gap-1 truncate font-medium text-slate-700 hover:text-indigo-600 hover:underline dark:text-slate-200 dark:hover:text-indigo-400"
+            >
+              <span className="truncate">{s.locatie}</span>
+              <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-0 group-hover:opacity-100" />
+            </a>
+          ) : (
+            <span className="truncate font-medium text-slate-700 dark:text-slate-200">{s.locatie}</span>
+          )}
         </div>
-        <StatusPill status={s.target_status} />
-      </div>
-      {/* Vanzari: grila vs db */}
-      <div className="flex items-center justify-between gap-2 pr-2">
-        <div className="text-xs leading-tight">
-          <div className="text-slate-700 dark:text-slate-200">{fmt(s.grila_sales)}</div>
-          <div className="text-slate-400">DB {fmt(s.db_sales_mtd)}</div>
+        {/* Completare + toggle detalii */}
+        <div className="flex items-center justify-center gap-1">
+          {s.completion_pct === null ? (
+            <span className="text-slate-400">—</span>
+          ) : (
+            <button
+              onClick={() => hasDetail && setOpen((v) => !v)}
+              className={cn(
+                'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-semibold',
+                hasDetail && 'cursor-pointer hover:ring-1 hover:ring-slate-300',
+                s.completion_pct >= 80
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : s.completion_pct >= 50
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                    : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+              )}
+            >
+              {s.completion_pct}%
+              {hasDetail && (open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />)}
+            </button>
+          )}
         </div>
-        <StatusPill status={s.sales_status} />
+        <div className="text-center text-xs text-slate-400">{relTime(s.last_edit)}</div>
+        <div><DiffCell status={s.target_status} grila={s.grila_target} db={s.db_target} diff={s.target_diff} /></div>
+        <div><DiffCell status={s.sales_status} grila={s.grila_sales} db={s.db_sales_mtd} diff={s.sales_diff} /></div>
+        <div>
+          <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', st.cls)}>{st.label}</span>
+        </div>
       </div>
-      <div className="text-right">
-        {s.error_code ? (
-          <span title={s.error_message ?? ''} className="text-[11px] font-semibold text-rose-500">
-            Eroare
-          </span>
-        ) : url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-0.5 text-[11px] text-indigo-500 hover:underline"
-            title="Deschide grila"
-          >
-            Sheet <ExternalLink className="h-3 w-3" />
-          </a>
-        ) : (
-          <span className="text-slate-400">—</span>
-        )}
-      </div>
+      {/* Detaliu expandat: zile necompletate + eroare */}
+      {open && hasDetail && (
+        <div className="bg-slate-50 px-3 py-2 pl-9 text-xs text-slate-600 dark:bg-slate-800/40 dark:text-slate-300">
+          {missing.length > 0 && (
+            <div>
+              <span className="font-semibold">Zile necompletate ({missing.length}):</span>{' '}
+              {missing.join(', ')}
+            </div>
+          )}
+          {s.error_message && <div className="mt-1 text-rose-500">Eroare Google: {s.error_message}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -198,8 +246,16 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
               <div className="bg-slate-100/60 px-3 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800/40 dark:text-slate-400">
                 Team Leader · {tl.name}
               </div>
-              {tl.firms.flatMap((f) => f.stores).map((s) => (
-                <StoreRow key={s.site_code} s={s} />
+              {tl.firms.map((f) => (
+                <div key={f.name}>
+                  <div className="flex items-center gap-1 px-3 py-1 pl-6 text-[11px] font-medium text-slate-400">
+                    <FirmaBadge firma={f.name} />
+                    {f.name} · {f.stores.length} magazine
+                  </div>
+                  {f.stores.map((s) => (
+                    <StoreRow key={s.site_code} s={s} />
+                  ))}
+                </div>
               ))}
             </div>
           ))}
@@ -334,13 +390,13 @@ export function GrileSubtab() {
       </div>
 
       {/* ── Header coloane ── */}
-      <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_60px_1.3fr_1.3fr_90px] gap-2 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <div className={cn(ROW_GRID, 'px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400')}>
         <span>Magazin</span>
-        <span className="text-center">Compl.</span>
+        <span className="text-center">Completare</span>
         <span className="text-center">Editat</span>
-        <span>Target (grilă/DB)</span>
-        <span>Vânzări (grilă/DB)</span>
-        <span className="text-right">Link</span>
+        <span>Target</span>
+        <span>Realizat</span>
+        <span>Status</span>
       </div>
 
       {/* ── Arbore ── */}

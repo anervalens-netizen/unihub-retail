@@ -33,10 +33,14 @@ export interface GrileStore {
   grila_sales: number | null;
   db_target: number | null;
   db_sales_mtd: number | null;
+  target_diff: number | null;
+  sales_diff: number | null;
   db_max_sale_date: string | null;
   fill_status: string | null;
   target_status: string | null;
   sales_status: string | null;
+  missing_days: number[] | null;
+  days_elapsed: number | null;
   error_code: string | null;
   error_message: string | null;
 }

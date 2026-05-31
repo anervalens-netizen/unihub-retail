@@ -8,6 +8,7 @@ doar din DB (rapid), grupat ASM(regional) -> Team Leader -> Firma -> Magazin.
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -202,6 +203,10 @@ async def run_grile_check(
                 db_max_sale_date=exp.get("db_max_sale_date"),
                 tolerance=tolerance,
             )
+            row["raw_summary"] = {
+                "missing_days": reading.missing_days,
+                "days_elapsed": reading.days_elapsed,
+            }
             cls = row["_class"]
         except Exception as exc:  # noqa: BLE001 — eroare per magazin, nu opreste runul
             row = {
@@ -255,6 +260,16 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
         statuses = await repo.get_run_statuses(latest["id"])
         for st in statuses:
             h = hierarchy.get(st["site_code"], {})
+            grila_target = _f(st["grila_target"])
+            grila_sales = _f(st["grila_sales"])
+            db_target = _f(st["db_target"])
+            db_sales = _f(st["db_sales_mtd"])
+            raw = st["raw_summary"]
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except (ValueError, TypeError):
+                    raw = None
             stores.append({
                 "site_code": st["site_code"],
                 "sheet_id": sheet_map.get(st["site_code"]),
@@ -265,14 +280,19 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
                 "team_leader_name": h.get("team_leader_name", "Fara Team Leader"),
                 "completion_pct": _f(st["completion_pct"]),
                 "last_edit": st["last_edit"].isoformat() if st["last_edit"] else None,
-                "grila_target": _f(st["grila_target"]),
-                "grila_sales": _f(st["grila_sales"]),
-                "db_target": _f(st["db_target"]),
-                "db_sales_mtd": _f(st["db_sales_mtd"]),
+                "grila_target": grila_target,
+                "grila_sales": grila_sales,
+                "db_target": db_target,
+                "db_sales_mtd": db_sales,
+                # diff = grila - DB (Raport), ca in aplicatia veche (ex: +960)
+                "target_diff": (grila_target - db_target) if (grila_target is not None and db_target is not None) else None,
+                "sales_diff": (grila_sales - db_sales) if (grila_sales is not None and db_sales is not None) else None,
                 "db_max_sale_date": st["db_max_sale_date"].isoformat() if st["db_max_sale_date"] else None,
                 "fill_status": st["fill_status"],
                 "target_status": st["target_status"],
                 "sales_status": st["sales_status"],
+                "missing_days": (raw or {}).get("missing_days") if isinstance(raw, dict) else None,
+                "days_elapsed": (raw or {}).get("days_elapsed") if isinstance(raw, dict) else None,
                 "error_code": st["error_code"],
                 "error_message": st["error_message"],
             })

@@ -119,10 +119,12 @@ class GrilaReading:
     grila_target: float | None
     grila_sales: float | None
     completion_pct: float | None
+    missing_days: list[int]
+    days_elapsed: int
 
 
 def analyze_grila(value_ranges: list[dict[str, Any]]) -> GrilaReading:
-    """Extrage target/realizat (K5/L5) + % completare dintr-un batchGet.
+    """Extrage target/realizat (K5/L5) + % completare + zilele lipsa dintr-un batchGet.
 
     Model completare ("acoperire zi", portat din monitor_grile.py): o zi e
     acoperita daca P[zi] sau U[zi] are valoare, sau ziua apare in sectiunea
@@ -145,15 +147,24 @@ def analyze_grila(value_ranges: list[dict[str, Any]]) -> GrilaReading:
     today = datetime.now()
     today_day = today.day
     covered = 0
+    missing_days: list[int] = []
     for d in range(1, today_day + 1):
         idx = d - 1
         has_a1 = _to_number(a1_daily[idx] if idx < len(a1_daily) else None) is not None
         has_a2 = _to_number(a2_daily[idx] if idx < len(a2_daily) else None) is not None
         if has_a1 or has_a2 or d in days_from_supl:
             covered += 1
+        else:
+            missing_days.append(d)
     completion_pct = round(covered / today_day * 100, 1) if today_day > 0 else None
 
-    return GrilaReading(grila_target=grila_target, grila_sales=grila_sales, completion_pct=completion_pct)
+    return GrilaReading(
+        grila_target=grila_target,
+        grila_sales=grila_sales,
+        completion_pct=completion_pct,
+        missing_days=missing_days,
+        days_elapsed=today_day,
+    )
 
 
 def fetch_grila(sheets_svc: Any, sheet_id: str) -> list[dict[str, Any]]:
