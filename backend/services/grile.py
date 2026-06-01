@@ -246,6 +246,14 @@ async def run_grile_check(
 
 # ---------- overview (citeste doar din DB) ----------
 
+async def resolve_month(pool: asyncpg.Pool, month: str | None) -> str:
+    """Daca month e None, foloseste ultima luna cu vanzari importate."""
+    if month:
+        return month
+    repo = GrileRepository(pool)
+    return await repo.get_latest_data_month() or datetime.now().strftime("%Y-%m")
+
+
 async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
     repo = GrileRepository(pool)
     total_sheets = await repo.count_active_sheets()

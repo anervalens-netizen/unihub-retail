@@ -35,6 +35,15 @@ class GrileRepository:
             rows = await conn.fetch("SELECT site_code, sheet_id FROM grile_sheets")
             return {r["site_code"]: r["sheet_id"] for r in rows}
 
+    async def get_latest_data_month(self) -> str | None:
+        """Ultima luna cu vanzari importate (reporting_item_month); fallback
+        pe store_targets. Default UI/run, nu luna calendaristica bruta."""
+        async with self.pool.acquire() as conn:
+            month = await conn.fetchval("SELECT max(import_month) FROM reporting_item_month")
+            if month:
+                return month
+            return await conn.fetchval("SELECT max(import_month) FROM store_targets")
+
     # ---------- expected din retail DB (target + vanzari MTD) ----------
 
     async def get_expected_by_site(self, month: str) -> dict[str, dict[str, Any]]:

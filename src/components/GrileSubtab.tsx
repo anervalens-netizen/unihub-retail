@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -20,10 +20,6 @@ import {
 } from '../api/grile';
 import { FirmaBadge } from './FirmaBadge';
 import { cn } from '../lib/utils';
-
-function currentMonth(): string {
-  return new Date().toISOString().slice(0, 7);
-}
 
 const NUMBER = new Intl.NumberFormat('ro-RO');
 
@@ -266,18 +262,24 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
 }
 
 export function GrileSubtab() {
-  const [month, setMonth] = useState(currentMonth);
+  // month gol = lasa backend-ul sa aleaga ultima luna cu vanzari importate
+  const [month, setMonth] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const qc = useQueryClient();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['grile-overview', month],
-    queryFn: () => getGrileOverview(month),
+    queryFn: () => getGrileOverview(month || undefined),
     refetchInterval: (q) => {
       const run = (q.state.data as Awaited<ReturnType<typeof getGrileOverview>> | undefined)?.run;
       return run && (run.status === 'running' || run.status === 'queued') ? 3000 : false;
     },
   });
+
+  // La prima incarcare, sincronizeaza picker-ul cu luna rezolvata de backend
+  useEffect(() => {
+    if (!month && data?.month) setMonth(data.month);
+  }, [data?.month, month]);
 
   const runMut = useMutation({
     mutationFn: () => runGrileCheck(month),

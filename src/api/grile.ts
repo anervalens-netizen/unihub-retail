@@ -71,25 +71,27 @@ export interface GrileOverview {
   managers: GrileManager[];
 }
 
-export async function getGrileOverview(month: string): Promise<GrileOverview> {
-  const { data } = await client.get<GrileOverview>('/api/grile/overview', { params: { month } });
+export async function getGrileOverview(month?: string): Promise<GrileOverview> {
+  const { data } = await client.get<GrileOverview>('/api/grile/overview', {
+    params: month ? { month } : {},
+  });
   return data;
 }
 
 export async function runGrileCheck(
-  month: string,
-): Promise<{ status: 'enqueued' | 'already_running'; run?: GrileRun }> {
-  const { data } = await client.post<{ status: 'enqueued' | 'already_running'; run?: GrileRun }>(
+  month?: string,
+): Promise<{ status: 'enqueued' | 'already_running'; run?: GrileRun; month?: string }> {
+  const { data } = await client.post<{ status: 'enqueued' | 'already_running'; run?: GrileRun; month?: string }>(
     '/api/grile/run',
     {},
-    { params: { month } },
+    { params: month ? { month } : {} },
   );
   return data;
 }
 
-export async function getGrileRunStatus(month: string): Promise<{ run: GrileRun | null }> {
+export async function getGrileRunStatus(month?: string): Promise<{ run: GrileRun | null }> {
   const { data } = await client.get<{ run: GrileRun | null }>('/api/grile/run-status', {
-    params: { month },
+    params: month ? { month } : {},
   });
   return data;
 }
