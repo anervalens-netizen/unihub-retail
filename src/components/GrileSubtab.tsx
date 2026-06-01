@@ -290,7 +290,7 @@ export function GrileSubtab() {
     run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
+    <div className="mx-auto max-w-6xl space-y-4 p-3 pb-24 pt-2">
       {/* ── Card status + actiune ── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -400,7 +400,7 @@ export function GrileSubtab() {
       </div>
 
       {/* ── Arbore ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div>
         {isLoading && <div className="p-8 text-center text-slate-400">Se încarcă…</div>}
         {isError && <div className="p-8 text-center text-rose-500">Eroare la încărcare.</div>}
         {!isLoading && data && data.managers.length === 0 && (
