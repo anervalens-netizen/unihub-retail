@@ -1,11 +1,12 @@
 # Plan: Integrare Grile native în retail.unihub.ro
 
 > Status: **Faza 1 + Faza 2 IMPLEMENTATE și deployate (2026-05-31).** Read-only, în paralel cu aplicația veche.
-> Rămâne: Faza 3 (validare paralelă câteva zile) + Faza 4 (cutover). Finalize/archive/reset NU s-au mutat.
+> Update 2026-06-01: closeout-ul Mai 2026 s-a făcut în aplicația veche `grile-salarii`: finalize + arhivă completă + reset live spre Iunie 2026, fără schimbare de linkuri.
+> Rămâne: Faza 3 (validare paralelă câteva zile) + Faza 4 (cutover read/verify). Finalize/archive/reset NU s-au mutat.
 > Autori: server-Claude + review Codex. Data: 2026-05-31.
 >
 > **Implementat în Faza 1+2:** schema `grile_sheets`/`grile_runs`/`grile_store_status`; backend `routers/grile.py` + `services/grile.py` + `services/grile_sheets.py` + `repositories/grile.py`; job arq `grile_check_background` (concurrency 3, thread-local Google client); auto-trigger best-effort după import (`services/imports.py` + `worker.py`); subtab `GrileSubtab.tsx` în Management; seed `backend/scripts/seed_grile_sheets.py` (75 magazine). Validat end-to-end prin coada arq (run #4: 0 erori, 75 magazine, ~2 min).
-> Constrângere hard: **1 iunie 2026 se face finalize + reset în aplicația veche `grile-salarii`. Nimic din acest plan nu se deployează înainte și nu atinge fluxul vechi.**
+> Constrângere hard rămasă: `finalize_month.py`, `archive_month.py`, `reset_month.py`, `add_store.py` și operațiile de mentenanță Google Sheets rămân în `grile-salarii` până la o decizie explicită de portare.
 
 ---
 
@@ -21,7 +22,7 @@ Strategie: **strangler / paralel, read-only**. Construim în retail lângă apli
 ## 2. Constrângeri hard (nenegociabile)
 
 - **Nu se schimbă linkurile magazinelor.** Fiecare magazin are un Google Sheet permanent (`grile-salarii/AGENTS.md` l.24). Copiem Sheet ID-urile read-only; nu rescriem `sheets_registry.json`, nu recreăm linkuri.
-- **Nu se atinge `finalize_month` / `archive_month` / `reset_month` / `add_store` / `generate_missing_grile` / `unlock_agent_name_cells`** — rămân în `grile-salarii`. 1 iunie rulează ca acum.
+- **Nu se atinge `finalize_month` / `archive_month` / `reset_month` / `add_store` / `generate_missing_grile` / `unlock_agent_name_cells` / `repair_agent1_extra_section`** — rămân în `grile-salarii`. 1 iunie 2026 a fost executat acolo.
 - **Google read-only din retail:** scope-uri `spreadsheets.readonly` + `drive.metadata.readonly`, chiar dacă service account-ul are Editor. Codul retail nu are capabilitate de scriere → nu poate strica grilele.
 - Cod nou în retail respectă pattern-ul 3-tier (router → service → repository) și convențiile din `CLAUDE.md`.
 
@@ -134,13 +135,25 @@ grile_store_status(
 
 | Fază | Conținut | Risc |
 |------|----------|------|
-| 0 (acum) | Nimic deployat care atinge grile-salarii. 1 iunie finalize+reset = ca acum. | 0 |
+| 0 | Închis pe 2026-06-01: finalize + arhivă + reset Mai→Iunie în `grile-salarii`, fără schimbare de linkuri. | 0 |
 | 1 | Migrație 3 tabele + seed `grile_sheets` din registry (read-only) + 3-tier + job + subtab. Buton manual. | mic (read-only) |
 | 2 | Auto-trigger după commit import (sync + worker), cu `snapshot_id`. | mic |
-| 3 | Rulare paralelă câteva zile; diff retail vs grile-salarii (trebuie identice). | 0 |
+| 3 (curent) | Rulare paralelă câteva zile; diff retail vs grile-salarii (trebuie identice). | 0 |
 | 4 | Cutover read/verify pe retail. `finalize/archive/reset/...` rămân în grile-salarii. | mediu (decizie) |
 
 Retragere completă `grile-salarii` = ulterioară, doar după ce decidem să portăm și mașinăria de payroll (sau o declarăm out-of-scope).
+
+## 9.1. Stare operațională 2026-06-01
+
+În `grile-salarii` s-au executat operațiile de final de lună pentru Mai 2026:
+
+- `outputs/Tabel Salarii - Mai 2026.xlsx` generat cu `--skip-monitor-necompletat`; au intrat cei 4 ASM cu grile completate, iar Bogdan Radu + Bogdana Costan au fost ignorați pentru salarii.
+- Arhiva completă standard refăcută: `75/75` grile, `0` erori, ZIP complet + ZIP-uri pe toți cei 6 ASM.
+- Export suplimentar pentru handoff: `ASM-completate/` cu 4 ZIP-uri pentru managerii completați și `Pontaj-ASM-completate/` cu `49` fișiere values-only, câte un sheet `Pontaj`, împărțite pe ASM.
+- `model grila` oficial (`1TNuz_PX5AYVOQQVxLG_5nORxC34Ia504a52yG_1RsrI`) și toate cele 75 grile au fost reparate pentru Agent 1 `B11:G14` (`D11/G11/G12:G14` formule + etichete lipsă).
+- Reset live spre Iunie 2026: `75/75` grile, `0` erori; verificare separată Google: `0` valori rămase în range-urile resetate. Linkurile permanente nu au fost schimbate.
+
+Documentație operațională detaliată: `/opt/Mobiup/grile-salarii/RUNBOOK.md`.
 
 ## 10. Riscuri / de confirmat la implementare
 

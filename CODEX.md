@@ -95,3 +95,20 @@ iunie.
 - `src/components/Campaigns.tsx` — sub-sectiunile Focus si `ContestView`.
 - `src/api/contests.ts` — client pentru `/api/contests/active`.
 - `docs/HANDOVER-campanii-iunie-2026.md` — handover complet.
+
+## Grile In Retail
+
+Subtab-ul `Management -> Grile` este read-only/check-only. Nu muta operatiile
+write aici fara decizie explicita:
+
+- finalizare salarii;
+- arhiva XLSX/ZIP;
+- reset lunar;
+- creare grile noi;
+- reparatii template/protected ranges.
+
+Acestea raman in `/opt/Mobiup/grile-salarii`. Closeout-ul Mai 2026 si resetul
+spre Iunie 2026 au fost executate acolo pe `2026-06-01`, fara schimbare de
+linkuri. Runbook-ul operational este
+`/opt/Mobiup/grile-salarii/RUNBOOK.md`, iar planul de integrare este
+`docs/grile-integration-plan.md`.

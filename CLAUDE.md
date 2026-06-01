@@ -56,7 +56,8 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `api/contests.ts` | Fetch `/api/contests/active?month=` (leaderboard concurs, scoped server-side) |
 | `components/Agents.tsx` | Tab Agenti (refactorizat cu useQuery) |
 | `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR/TargetCalculator/**Grile** | Management |
-| `components/GrileSubtab.tsx` + `api/grile.ts` | Subtab Grile — verificare K5/L5 grile vs target+vanzari DB, buton unic rulare + status + filtre locale independente. Vezi `docs/grile-integration-plan.md` |
+| `components/GrileSubtab.tsx` + `api/grile.ts` | Subtab Grile — verificare K5/L5 vs target+vanzari DB; layout responsive (card pe mobil, grid pe desktop); captions integrate in barele ASM+TL (pliabile); TL fara nume nu afiseaza rand. Vezi `docs/grile-integration-plan.md` |
+| `components/GrileMonthlyPanel.tsx` | Card "Inchidere luna" (proxy catre grile-salarii): Finalizeaza / Exporta arhiva / Reset simulare / Reset LIVE + download final/arhiva. Vizibil doar admin (`/api/grile/monthly/permissions`); poll job arq |
 
 ### Backend `backend/` — Architecture: router → service → repository (3-tier)
 
@@ -178,6 +179,9 @@ cd /opt/Mobiup/ops/runners/retail
 - Import async: `POST /api/import/sales?background=true` → arq job → `GET /api/import/jobs/{job_id}`
 - **Grile check async:** `grile_check_background(month, source, snapshot_id, email)` — verifica K5/L5 toate grilele vs DB. Declansat manual (`POST /api/grile/run`) sau **automat dupa fiecare import de vanzari reusit** (best-effort, `trigger_grile_check_after_import` in `services/imports.py` + `worker.py`; NU poate strica importul). La modificarea jobului, restart `unihub-worker`.
 - **Secret Google:** `backend/config/google/service-account.json` (chmod 600, gitignored). Scope-uri READ-ONLY (`spreadsheets.readonly` + `drive.metadata.readonly`).
+- **Inchidere luna async (PROXY, nu port):** `grile_monthly_background(op, month, only, dry_run, email)` deleaga `finalize`/`archive`/`reset` la **grile-salarii** pe localhost (`services/grile_monthly.py` → `http://127.0.0.1:47000/api/{op}`, header `X-Grile-Internal`). Ruleaza in worker fiindca dureaza minute (peste timeout-ul edge Cloudflare). UI: `GrileMonthlyPanel.tsx`, vizibil doar pentru admin. Endpoints: `POST /api/grile/monthly/run` (gate `require_grile_admin`), `GET /api/grile/monthly/job/{id}` (poll arq), `GET /api/grile/monthly/permissions`, `GET /api/grile/monthly/download/{final|archive}/{YYYY-MM}`. Retail **NU** capata write-capability pe Google — doar deleaga; scripturile + SA Editor raman in grile-salarii.
+- **Env proxy Grile** (in `.env` din root — incarcat si de backend prin `EnvironmentFile`+`load_dotenv`, si de worker prin `load_dotenv(find_dotenv())`): `GRILE_BASE_URL` (default `http://127.0.0.1:47000`), `GRILE_INTERNAL_SECRET` (acelasi ca drop-in systemd `unihub-grile`), `GRILE_FINALIZER_EMAILS` (default `aner.valens@gmail.com`). Fara secret, proxy-ul e dezactivat (fail-closed). Luna `YYYY-MM` → label RO (`Mai 2026`) in `services/grile_monthly.py`.
+- **Limita Grile in Retail:** verificarea K5/L5 ramane read-only (scope Google read-only). Operatiile WRITE se fac DOAR prin proxy-ul de mai sus catre grile-salarii — nu reimplementa `reset_month.py`/`finalize_month.py`/`archive_month.py` in retail. Pe 2026-06-01, closeout Mai 2026 + reset spre Iunie 2026 a fost finalizat in `grile-salarii` fara schimbare de linkuri.
 
 ## Conventions
 
@@ -250,6 +254,7 @@ cd /opt/Mobiup/ops/runners/retail
 - **Grile — Google client NU e thread-safe:** `googleapiclient`/`httplib2` da `free(): invalid next size` (corupere memorie) daca un `build()` service e folosit din mai multe thread-uri. In `services/grile.py` fiecare thread isi construieste propriile servicii (thread-local) pe un `ThreadPoolExecutor` dedicat dimensionat la `concurrency` (default 3). NU partaja un service intre thread-uri.
 - **Grile — quota Google read:** ~60 req/min/user. La `concurrency=3` + retry backoff, 75 magazine ruleaza ~2 min fara 429. Crescand concurrency apar 429 (apar ca `error_code=GOOGLE_ERROR` per magazin, se rezolva la urmatoarea rulare — nu silent failure).
 - **Grile — luna interna `YYYY-MM`** (nu "Mai 2026"). Expected = `store_targets` + `SUM(reporting_item_month.total_sales)` pe `site_code`; comparat cu K5(target)/L5(realizat) din grila. Diferentele de vanzari sunt asteptate cand grila e completata inainte de ultimul import (status `IN_URMA`).
+- **Grile — nu reimplementa operatiile write in Retail:** `reset_month.py`, `archive_month.py`, `finalize_month.py`, `add_store.py`, `generate_missing_grile.py`, `unlock_agent_name_cells.py`, `repair_agent1_extra_section.py` raman in grile-salarii. Retail le declanseaza DOAR prin proxy (`services/grile_monthly.py` → `unihub-grile` localhost cu `X-Grile-Internal`); pastreaza scope-uri Google read-only. `Reset LIVE` e ireversibil — UI cere confirmare; nu adauga cai care sar peste ea.
 
 ## Ce sa nu faci
 

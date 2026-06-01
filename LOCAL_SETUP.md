@@ -249,6 +249,14 @@ python backend/scripts/import_grile_agent_targets.py --month 2026-05 --apply
 Hub foloseste targetul din `agent_targets` doar pentru agentii mapati; restul
 raman pe fallback-ul vechi `target magazin / agenti activi`.
 
+### Management -> Grile
+
+Integrarea Grile din Retail este read-only/check-only. Pentru operatii write
+asupra Google Sheets foloseste in continuare `/opt/Mobiup/grile-salarii`:
+finalizare salarii, arhiva, reset lunar, creare grile noi si reparatii de
+template/protected ranges. Runbook operational:
+`/opt/Mobiup/grile-salarii/RUNBOOK.md`.
+
 ### Note UI Hub
 
 - Filtrele Hub, Focus si Agenti se salveaza in `localStorage`, ca refresh-ul

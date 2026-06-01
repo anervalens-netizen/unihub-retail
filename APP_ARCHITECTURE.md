@@ -166,6 +166,19 @@ numele agentului din grila la codul agentului Retail. Cand exista override,
 tabelul Hub pe agent foloseste `agent_targets.target_value`; altfel ramane
 fallback-ul istoric `store_targets.target_value / numar agenti activi`.
 
+### Grile salariale in Management
+
+Sub-tab-ul `Management -> Grile` este o integrare read-only/check-only cu
+Google Sheets permanente din `/opt/Mobiup/grile-salarii`. Retail pastreaza
+copii ale Sheet ID-urilor in `grile_sheets`, ruleaza verificari async in
+`grile_runs` si salveaza rezultatul per magazin in `grile_store_status`.
+
+Retail compara `K5/L5` din grila cu `store_targets` si
+`reporting_item_month.total_sales` pe `site_code`. Nu executa operatii write
+asupra Google Sheets. Finalizare salarii, arhiva, reset lunar, creare grile noi
+si reparatii de template raman in `grile-salarii` pana la un cutover explicit.
+Runbook: `/opt/Mobiup/grile-salarii/RUNBOOK.md`.
+
 ### Calculator Target
 
 Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
