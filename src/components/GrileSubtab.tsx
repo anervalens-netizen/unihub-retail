@@ -71,7 +71,10 @@ function relTime(iso: string | null): string {
   return days === 1 ? 'ieri' : `${days}z`;
 }
 
-const ROW_GRID = 'grid grid-cols-[minmax(170px,1.5fr)_96px_84px_1.2fr_1.2fr_120px] gap-2';
+// Template coloane desktop. Display-ul (hidden/grid) e separat ca sa nu intre in
+// conflict cu `hidden` la breakpoint (ordinea claselor nu decide display in Tailwind).
+const GRID_COLS = 'grid-cols-[minmax(170px,1.5fr)_96px_84px_1.2fr_1.2fr_120px] gap-2';
+const DESKTOP_ROW = `hidden lg:grid ${GRID_COLS}`;
 
 // ── Celula diferenta (target/vanzari): OK badge sau breakdown ca app veche ─────
 function DiffCell({
@@ -125,67 +128,124 @@ function statusInfo(s: GrileStore): { label: string; cls: string } {
   return { label: 'OK', cls: emerald };
 }
 
-// ── Rând magazin (nume = link la grila; completare expandabila cu zile lipsa) ──
+// ── Badge completare (procent + toggle detalii) — partajat mobil/desktop ───────
+function CompletionBadge({
+  pct,
+  hasDetail,
+  open,
+  onToggle,
+}: {
+  pct: number | null;
+  hasDetail: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  if (pct === null) return <span className="text-slate-400">—</span>;
+  return (
+    <button
+      onClick={() => hasDetail && onToggle()}
+      className={cn(
+        'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-semibold',
+        hasDetail && 'cursor-pointer hover:ring-1 hover:ring-slate-300',
+        pct >= 80
+          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+          : pct >= 50
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+            : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+      )}
+    >
+      {pct}%
+      {hasDetail && (open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />)}
+    </button>
+  );
+}
+
+// ── Camp etichetat (layout mobil: label deasupra valorii) ──────────────────────
+function MobileField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+// ── Rând magazin: card stivuit pe mobil, grid dens pe desktop (lg+) ───────────
 function StoreRow({ s }: { s: GrileStore }) {
   const [open, setOpen] = useState(false);
   const url = s.sheet_id ? `https://docs.google.com/spreadsheets/d/${s.sheet_id}` : null;
   const st = statusInfo(s);
   const missing = s.missing_days ?? [];
   const hasDetail = missing.length > 0 || !!s.error_message;
+  const toggle = () => setOpen((v) => !v);
+
+  // Nume = link la grila (partajat mobil/desktop)
+  const nameEl = url ? (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title="Deschide grila"
+      className="group inline-flex min-w-0 items-center gap-1 truncate font-medium text-slate-700 hover:text-indigo-600 hover:underline dark:text-slate-200 dark:hover:text-indigo-400"
+    >
+      <span className="truncate">{s.locatie}</span>
+      <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60 group-hover:opacity-100" />
+    </a>
+  ) : (
+    <span className="truncate font-medium text-slate-700 dark:text-slate-200">{s.locatie}</span>
+  );
+
+  const targetCell = (
+    <DiffCell status={s.target_status} grila={s.grila_target} db={s.db_target} diff={s.target_diff} />
+  );
+  const salesCell = (
+    <DiffCell status={s.sales_status} grila={s.grila_sales} db={s.db_sales_mtd} diff={s.sales_diff} />
+  );
+  const statusBadge = (
+    <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', st.cls)}>{st.label}</span>
+  );
 
   return (
     <div className="border-t border-slate-100 dark:border-slate-800">
-      <div className={cn(ROW_GRID, 'items-center px-3 py-1.5 text-sm')}>
-        {/* Nume = link grila */}
-        <div className="flex items-center gap-1 truncate">
-          <FirmaBadge firma={s.firma} />
-          {url ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              title="Deschide grila"
-              className="group inline-flex items-center gap-1 truncate font-medium text-slate-700 hover:text-indigo-600 hover:underline dark:text-slate-200 dark:hover:text-indigo-400"
-            >
-              <span className="truncate">{s.locatie}</span>
-              <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-0 group-hover:opacity-100" />
-            </a>
-          ) : (
-            <span className="truncate font-medium text-slate-700 dark:text-slate-200">{s.locatie}</span>
-          )}
+      {/* ── Mobil: card stivuit ── */}
+      <div className="px-3 py-2.5 lg:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
+            <FirmaBadge firma={s.firma} />
+            {nameEl}
+          </div>
+          <div className="flex-shrink-0">{statusBadge}</div>
         </div>
-        {/* Completare + toggle detalii */}
-        <div className="flex items-center justify-center gap-1">
-          {s.completion_pct === null ? (
-            <span className="text-slate-400">—</span>
-          ) : (
-            <button
-              onClick={() => hasDetail && setOpen((v) => !v)}
-              className={cn(
-                'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-semibold',
-                hasDetail && 'cursor-pointer hover:ring-1 hover:ring-slate-300',
-                s.completion_pct >= 80
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                  : s.completion_pct >= 50
-                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                    : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-              )}
-            >
-              {s.completion_pct}%
-              {hasDetail && (open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />)}
-            </button>
-          )}
-        </div>
-        <div className="text-center text-xs text-slate-400">{relTime(s.last_edit)}</div>
-        <div><DiffCell status={s.target_status} grila={s.grila_target} db={s.db_target} diff={s.target_diff} /></div>
-        <div><DiffCell status={s.sales_status} grila={s.grila_sales} db={s.db_sales_mtd} diff={s.sales_diff} /></div>
-        <div>
-          <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', st.cls)}>{st.label}</span>
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+          <MobileField label="Completare">
+            <CompletionBadge pct={s.completion_pct} hasDetail={hasDetail} open={open} onToggle={toggle} />
+          </MobileField>
+          <MobileField label="Editat">
+            <span className="text-xs text-slate-500">{relTime(s.last_edit)}</span>
+          </MobileField>
+          <MobileField label="Target">{targetCell}</MobileField>
+          <MobileField label="Realizat">{salesCell}</MobileField>
         </div>
       </div>
-      {/* Detaliu expandat: zile necompletate + eroare */}
+
+      {/* ── Desktop: grid dens ── */}
+      <div className={cn(DESKTOP_ROW, 'items-center px-3 py-1.5 text-sm')}>
+        <div className="flex items-center gap-1 truncate">
+          <FirmaBadge firma={s.firma} />
+          {nameEl}
+        </div>
+        <div className="flex items-center justify-center gap-1">
+          <CompletionBadge pct={s.completion_pct} hasDetail={hasDetail} open={open} onToggle={toggle} />
+        </div>
+        <div className="text-center text-xs text-slate-400">{relTime(s.last_edit)}</div>
+        <div>{targetCell}</div>
+        <div>{salesCell}</div>
+        <div>{statusBadge}</div>
+      </div>
+
+      {/* ── Detaliu expandat: zile necompletate + eroare (partajat) ── */}
       {open && hasDetail && (
-        <div className="bg-slate-50 px-3 py-2 pl-9 text-xs text-slate-600 dark:bg-slate-800/40 dark:text-slate-300">
+        <div className="bg-slate-50 px-3 py-2 text-xs text-slate-600 lg:pl-9 dark:bg-slate-800/40 dark:text-slate-300">
           {missing.length > 0 && (
             <div>
               <span className="font-semibold">Zile necompletate ({missing.length}):</span>{' '}
@@ -392,7 +452,7 @@ export function GrileSubtab() {
       </div>
 
       {/* ── Header coloane ── */}
-      <div className={cn(ROW_GRID, 'px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400')}>
+      <div className={cn(DESKTOP_ROW, 'px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400')}>
         <span>Magazin</span>
         <span className="text-center">Completare</span>
         <span className="text-center">Editat</span>

@@ -500,7 +500,7 @@ export function CRMSubtab() {
         source: 'crm_alert',
         source_meta: { score: alertItem.score, reasons: alertItem.reasons, month },
       });
-      window.dispatchEvent(new CustomEvent('unihub:navigate', { detail: { tab: 'management', subtab: 'tasks' } }));
+      window.alert(`Task creat pentru ${alertItem.locatie || alertItem.site_code}.`);
     } catch (err) {
       console.error('Failed to create task from alert', err);
     }
