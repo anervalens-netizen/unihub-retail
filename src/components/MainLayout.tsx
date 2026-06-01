@@ -158,7 +158,11 @@ export function MainLayout({
             'overflow-y-auto pb-24 lg:pb-6'
           )}
         >
-          {children}
+          {/* Container centrat — layout desktop consistent pe toate taburile
+              (ca Focus). Pe mobil nu are efect (viewport < max-w-6xl). */}
+          <div className="mx-auto w-full max-w-6xl">
+            {children}
+          </div>
         </main>
       </div>
 
