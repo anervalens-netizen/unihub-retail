@@ -51,7 +51,7 @@ export interface GrileFirm {
 }
 
 export interface GrileTeamLeader {
-  name: string;
+  name: string | null; // null = magazine fara Team Leader (nu se afiseaza bara TL)
   firms: GrileFirm[];
 }
 
@@ -94,4 +94,69 @@ export async function getGrileRunStatus(month?: string): Promise<{ run: GrileRun
     params: month ? { month } : {},
   });
   return data;
+}
+
+// ── Inchidere luna (proxy catre grile-salarii) ─────────────────────────────────
+
+export type GrileMonthlyOp = 'finalize' | 'archive' | 'reset';
+
+export interface GrileMonthlyResult {
+  op: GrileMonthlyOp;
+  month_label: string;
+  status: 'success' | 'failed';
+  output: string;
+  exit_code: number | null;
+  dry_run?: boolean | null;
+  triggered_by_email?: string | null;
+}
+
+export interface GrileMonthlyEnqueue {
+  status: 'enqueued';
+  job_id: string;
+  op: GrileMonthlyOp;
+  month: string;
+  month_label: string;
+  next_month_label?: string;
+  dry_run?: boolean;
+}
+
+export interface GrileMonthlyJob {
+  job_id: string;
+  status: 'queued' | 'in_progress' | 'complete' | 'not_found';
+  result: GrileMonthlyResult | null;
+  error: string | null;
+}
+
+export async function getGrileMonthlyPermissions(): Promise<{ can_run: boolean }> {
+  const { data } = await client.get<{ can_run: boolean }>('/api/grile/monthly/permissions');
+  return data;
+}
+
+export async function runGrileMonthly(body: {
+  op: GrileMonthlyOp;
+  month: string;
+  only?: string | null;
+  dry_run?: boolean;
+}): Promise<GrileMonthlyEnqueue> {
+  const { data } = await client.post<GrileMonthlyEnqueue>('/api/grile/monthly/run', body);
+  return data;
+}
+
+export async function getGrileMonthlyJob(jobId: string): Promise<GrileMonthlyJob> {
+  const { data } = await client.get<GrileMonthlyJob>(`/api/grile/monthly/job/${jobId}`);
+  return data;
+}
+
+export async function downloadGrileMonthly(kind: 'final' | 'archive', month: string): Promise<void> {
+  const { data } = await client.get<Blob>(`/api/grile/monthly/download/${kind}/${month}`, {
+    responseType: 'blob',
+  });
+  const url = URL.createObjectURL(data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = kind === 'final' ? `Tabel Salarii - ${month}.xlsx` : `Arhiva Grile - ${month}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

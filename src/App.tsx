@@ -33,6 +33,16 @@ const FILTER_STORAGE_KEYS = {
   agents: 'unihub_agents_filters',
 } as const;
 const MANAGEMENT_SUBTAB_STORAGE_KEY = 'unihub_management_subtab';
+const HUB_SECTION_STORAGE_KEY = 'unihub_hub_section';
+const CURRENT_MONTH_STORAGE_KEY = 'unihub_current_month';
+
+type HubSection = 'current' | 'history' | 'visits';
+const HUB_SECTIONS: HubSection[] = ['current', 'history', 'visits'];
+
+function loadHubSection(): HubSection {
+  const saved = localStorage.getItem(HUB_SECTION_STORAGE_KEY);
+  return HUB_SECTIONS.includes(saved as HubSection) ? (saved as HubSection) : 'current';
+}
 
 function loadManagementSubTab(): ManagementTab {
   const saved = localStorage.getItem(MANAGEMENT_SUBTAB_STORAGE_KEY);
@@ -73,11 +83,11 @@ export default function App() {
   });
   const [theme, setTheme] = useState(() => localStorage.getItem('unihub_theme') ?? 'light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [hubSection, setHubSection] = useState<'current' | 'history' | 'visits'>('current');
+  const [hubSection, setHubSection] = useState<HubSection>(loadHubSection);
   const [hubFilters, setHubFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.hub));
   const [focusFilters, setFocusFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.focus));
   const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.agents));
-  const [currentMonth, setCurrentMonth] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(() => localStorage.getItem(CURRENT_MONTH_STORAGE_KEY) ?? '');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [mgmtSubTab, setMgmtSubTab] = useState<ManagementTab>(loadManagementSubTab);
@@ -93,6 +103,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(MANAGEMENT_SUBTAB_STORAGE_KEY, mgmtSubTab);
   }, [mgmtSubTab]);
+
+  useEffect(() => {
+    localStorage.setItem(HUB_SECTION_STORAGE_KEY, hubSection);
+  }, [hubSection]);
+
+  useEffect(() => {
+    // Pastreaza luna in care lucram peste refresh (validata in bootstrap fata de lunile disponibile)
+    if (currentMonth) localStorage.setItem(CURRENT_MONTH_STORAGE_KEY, currentMonth);
+  }, [currentMonth]);
 
   useEffect(() => {
     localStorage.setItem(FILTER_STORAGE_KEYS.hub, JSON.stringify(hubFilters));
@@ -140,7 +159,10 @@ export default function App() {
         const availableMonths = await getAvailableMonths();
         if (!mounted) return;
         setMonths(availableMonths);
-        setCurrentMonth((previous) => previous || availableMonths[0] || '');
+        // Pastreaza luna salvata daca inca e valida; altfel cade pe cea mai recenta
+        setCurrentMonth((previous) =>
+          previous && availableMonths.includes(previous) ? previous : availableMonths[0] || '',
+        );
       } catch {
         // ignore — empty state OK
       } finally {

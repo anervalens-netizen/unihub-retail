@@ -17,8 +17,10 @@ import {
   runGrileCheck,
   type GrileManager,
   type GrileStore,
+  type GrileTeamLeader,
 } from '../api/grile';
 import { FirmaBadge } from './FirmaBadge';
+import { GrileMonthlyPanel } from './GrileMonthlyPanel';
 import { cn } from '../lib/utils';
 
 const NUMBER = new Intl.NumberFormat('ro-RO');
@@ -259,6 +261,64 @@ function StoreRow({ s }: { s: GrileStore }) {
   );
 }
 
+// ── Etichetele de coloana (cell 2-6), refolosite in headerele de grup ASM/TL ──
+const CAP = 'text-[10px] font-semibold uppercase tracking-wide text-slate-400';
+function ColCaptions() {
+  return (
+    <>
+      <span className={cn(CAP, 'text-center')}>Completare</span>
+      <span className={cn(CAP, 'text-center')}>Editat</span>
+      <span className={CAP}>Target</span>
+      <span className={CAP}>Realizat</span>
+      <span className={CAP}>Status</span>
+    </>
+  );
+}
+
+// ── Grup Team Leader (pliabil ca managerul; fara bara cand nu exista TL) ──────
+function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
+  const [open, setOpen] = useState(true);
+
+  const firms = tl.firms.map((f) => (
+    <div key={f.name}>
+      <div className="flex items-center gap-1 px-3 py-1 pl-6 text-[11px] font-medium text-slate-400">
+        <FirmaBadge firma={f.name} />
+        {f.name} · {f.stores.length} magazine
+      </div>
+      {f.stores.map((s) => (
+        <StoreRow key={s.site_code} s={s} />
+      ))}
+    </div>
+  ));
+
+  // Magazine fara Team Leader: apar direct sub manager, fara rand/bara TL
+  if (!tl.name) return <>{firms}</>;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full bg-slate-100/60 px-3 py-1 text-left dark:bg-slate-800/40"
+      >
+        {/* Mobil: chevron + nume TL */}
+        <div className="flex items-center gap-1 text-xs font-medium text-slate-500 lg:hidden dark:text-slate-400">
+          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          Team Leader · {tl.name}
+        </div>
+        {/* Desktop: chevron + nume TL in col1 + captions in col2-6 */}
+        <div className={cn(DESKTOP_ROW, 'items-center')}>
+          <span className="flex items-center gap-1 truncate text-xs font-medium text-slate-500 dark:text-slate-400">
+            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Team Leader · {tl.name}
+          </span>
+          <ColCaptions />
+        </div>
+      </button>
+      {open && <div>{firms}</div>}
+    </div>
+  );
+}
+
 // ── Grup manager (ASM) ────────────────────────────────────────────────────────
 function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) {
   const [open, setOpen] = useState(true);
@@ -280,40 +340,42 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
     <div className="mb-2 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between bg-slate-50 px-3 py-2 text-left dark:bg-slate-800/60"
+        className="w-full bg-slate-50 px-3 py-2 text-left dark:bg-slate-800/60"
       >
-        <div className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          <span className="font-semibold text-slate-800 dark:text-slate-100">{m.name}</span>
-          <span className="text-xs text-slate-400">{m.store_count} magazine</span>
+        {/* Mobil: nume + sumar pe doua capete */}
+        <div className="flex items-center justify-between gap-2 lg:hidden">
+          <div className="flex min-w-0 items-center gap-2">
+            {open ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+            <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{m.name}</span>
+            <span className="flex-shrink-0 text-xs text-slate-400">{m.store_count} mag.</span>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2 text-xs">
+            <span className="text-emerald-600 dark:text-emerald-400">{m.ok} OK</span>
+            <span className="text-rose-600 dark:text-rose-400">{m.problems} probl.</span>
+            {m.avg_completion !== null && <span className="text-slate-500">{m.avg_completion}%</span>}
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="text-emerald-600 dark:text-emerald-400">{m.ok} OK</span>
-          <span className="text-rose-600 dark:text-rose-400">{m.problems} probleme</span>
-          {m.avg_completion !== null && (
-            <span className="text-slate-500">compl. {m.avg_completion}%</span>
-          )}
+        {/* Desktop: grid aliniat — nume+sumar in col1, captions in col2-6 */}
+        <div className={cn(DESKTOP_ROW, 'items-center')}>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <span className="font-semibold text-slate-800 dark:text-slate-100">{m.name}</span>
+              <span className="text-xs text-slate-400">{m.store_count} mag.</span>
+            </div>
+            <div className="flex items-center gap-2 pl-6 text-[10px]">
+              <span className="text-emerald-600 dark:text-emerald-400">{m.ok} OK</span>
+              <span className="text-rose-600 dark:text-rose-400">{m.problems} probl.</span>
+              {m.avg_completion !== null && <span className="text-slate-400">compl. {m.avg_completion}%</span>}
+            </div>
+          </div>
+          <ColCaptions />
         </div>
       </button>
       {open && (
         <div className="bg-white dark:bg-slate-900">
-          {filteredTLs.map((tl) => (
-            <div key={tl.name}>
-              <div className="bg-slate-100/60 px-3 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800/40 dark:text-slate-400">
-                Team Leader · {tl.name}
-              </div>
-              {tl.firms.map((f) => (
-                <div key={f.name}>
-                  <div className="flex items-center gap-1 px-3 py-1 pl-6 text-[11px] font-medium text-slate-400">
-                    <FirmaBadge firma={f.name} />
-                    {f.name} · {f.stores.length} magazine
-                  </div>
-                  {f.stores.map((s) => (
-                    <StoreRow key={s.site_code} s={s} />
-                  ))}
-                </div>
-              ))}
-            </div>
+          {filteredTLs.map((tl, i) => (
+            <TeamLeaderGroup key={tl.name ?? `__no_tl_${i}`} tl={tl} />
           ))}
         </div>
       )}
@@ -321,9 +383,12 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
   );
 }
 
+const GRILE_MONTH_KEY = 'unihub_grile_month';
+
 export function GrileSubtab() {
-  // month gol = lasa backend-ul sa aleaga ultima luna cu vanzari importate
-  const [month, setMonth] = useState('');
+  // month gol = lasa backend-ul sa aleaga ultima luna cu vanzari importate;
+  // daca a fost ales explicit, il pastram peste refresh (localStorage)
+  const [month, setMonth] = useState(() => localStorage.getItem(GRILE_MONTH_KEY) ?? '');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const qc = useQueryClient();
 
@@ -340,6 +405,11 @@ export function GrileSubtab() {
   useEffect(() => {
     if (!month && data?.month) setMonth(data.month);
   }, [data?.month, month]);
+
+  // Pastreaza luna selectata peste refresh
+  useEffect(() => {
+    if (month) localStorage.setItem(GRILE_MONTH_KEY, month);
+  }, [month]);
 
   const runMut = useMutation({
     mutationFn: () => runGrileCheck(month),
@@ -433,6 +503,9 @@ export function GrileSubtab() {
         )}
       </div>
 
+      {/* ── Inchidere luna (vizibil doar pentru admin grile) ── */}
+      <GrileMonthlyPanel month={month || data?.month || ''} />
+
       {/* ── Filtre locale (independente de filtrul global) ── */}
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
@@ -451,15 +524,7 @@ export function GrileSubtab() {
         ))}
       </div>
 
-      {/* ── Header coloane ── */}
-      <div className={cn(DESKTOP_ROW, 'px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400')}>
-        <span>Magazin</span>
-        <span className="text-center">Completare</span>
-        <span className="text-center">Editat</span>
-        <span>Target</span>
-        <span>Realizat</span>
-        <span>Status</span>
-      </div>
+      {/* Capul de tabel nu mai e global: captions sunt integrate in fiecare bara ASM + TL */}
 
       {/* ── Arbore ── */}
       <div>

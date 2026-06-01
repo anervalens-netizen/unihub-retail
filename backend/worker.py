@@ -56,6 +56,27 @@ async def grile_check_background(
     return {"run_id": run_id, "month": month}
 
 
+async def grile_monthly_background(
+    ctx: dict,
+    op: str,
+    month: str,
+    only: str | None = None,
+    dry_run: bool = True,
+    triggered_by_email: str | None = None,
+) -> dict:
+    """Inchidere luna grile: deleaga la grile-salarii pe localhost (proxy).
+
+    Ruleaza in worker fiindca operatia poate dura minute (peste timeout-ul de
+    edge Cloudflare). Rezultatul (output + exit_code) e citit din rezultatul
+    jobului arq de catre UI (`/api/grile/monthly/job/{id}`).
+    """
+    from services.grile_monthly import run_monthly_op
+
+    result = await run_monthly_op(op=op, month=month, only=only, dry_run=dry_run)
+    result["triggered_by_email"] = triggered_by_email
+    return result
+
+
 async def shutdown(ctx: dict) -> None:
     from db.connection import close_db_pool
     await close_db_pool()
@@ -68,7 +89,7 @@ async def main() -> None:
 
     worker_settings = {
         "redis_settings": get_valkey_settings(),
-        "functions": [import_sales_background, grile_check_background],
+        "functions": [import_sales_background, grile_check_background, grile_monthly_background],
         "on_startup": startup,
         "on_shutdown": shutdown,
     }

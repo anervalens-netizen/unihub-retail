@@ -285,7 +285,7 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
                 "firma": h.get("firma", ""),
                 "regional": h.get("regional", "Neatribuit"),
                 "asm": h.get("asm", ""),
-                "team_leader_name": h.get("team_leader_name", "Fara Team Leader"),
+                "team_leader_name": h.get("team_leader_name"),
                 "completion_pct": _f(st["completion_pct"]),
                 "last_edit": st["last_edit"].isoformat() if st["last_edit"] else None,
                 "grila_target": grila_target,
@@ -326,11 +326,15 @@ def _group_managers(stores: list[dict[str, Any]]) -> list[dict[str, Any]]:
         firm = tl["firms"].setdefault(s["firma"] or "—", {"name": s["firma"] or "—", "stores": []})
         firm["stores"].append(s)
 
+    def _tl_sort_key(tl: dict[str, Any]) -> tuple[bool, str]:
+        # TL-urile cu nume primele (alfabetic), grupul fara TL ultimul
+        return (tl["name"] is None, (tl["name"] or "").lower())
+
     result = []
     for m in sorted(managers.values(), key=lambda x: -len(x["stores"])):
         tls = [
             {"name": tl["name"], "firms": list(tl["firms"].values())}
-            for tl in m["team_leaders"].values()
+            for tl in sorted(m["team_leaders"].values(), key=_tl_sort_key)
         ]
         agg = _aggregate(m["stores"])
         result.append({"name": m["name"], "store_count": len(m["stores"]), "team_leaders": tls, **agg})

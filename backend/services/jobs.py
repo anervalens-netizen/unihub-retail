@@ -85,6 +85,23 @@ async def enqueue_grile_check(
     return job
 
 
+async def enqueue_grile_monthly(
+    *,
+    op: str,
+    month: str,
+    only: str | None = None,
+    dry_run: bool = True,
+    triggered_by_email: str | None = None,
+) -> Job:
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "grile_monthly_background", op, month, only, dry_run, triggered_by_email
+    )
+    if job is None:
+        raise RuntimeError("Failed to enqueue grile monthly job")
+    return job
+
+
 async def get_job_status(job_id: str) -> JobResult:
     pool = await get_arq_pool()
     try:

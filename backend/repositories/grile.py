@@ -100,7 +100,8 @@ class GrileRepository:
                     "firma": r["firma"],
                     "regional": r["regional"],
                     "asm": r["asm"],
-                    "team_leader_name": r["team_leader_name"] or "Fara Team Leader",
+                    # None cand magazinul nu are TL — UI nu mai afiseaza "Fara Team Leader"
+                    "team_leader_name": r["team_leader_name"],
                 }
                 for r in rows
             }
