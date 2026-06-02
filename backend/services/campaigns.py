@@ -153,6 +153,12 @@ class CampaignsService:
         end = date_cls.fromisoformat(end_date)
         month = start_date[:7]
 
+        # Cand site_code e prezent el domina scope-ul: scoped_clauses() ignora
+        # firma/regional/asm, deci NU trebuie sa-i adaugam ca parametri (altfel
+        # raman parametri orfani -> asyncpg IndeterminateDatatypeError). Mirror
+        # exact al logicii din _campaign_clauses.
+        site_scope = normalize_filter(site_code)
+
         config, _ = load_special_cards_config()
         promotion_definition, promotion_error = parse_promotion_definition(config, month)
 
@@ -253,10 +259,10 @@ class CampaignsService:
                 ]
                 positions: dict[str, int] = {}
                 for key, value in [
-                    ("firma", normalize_filter(firma)),
-                    ("regional", normalize_filter(regional)),
-                    ("asm", normalize_filter(asm)),
-                    ("site_code", normalize_filter(site_code)),
+                    ("firma", None if site_scope else normalize_filter(firma)),
+                    ("regional", None if site_scope else normalize_filter(regional)),
+                    ("asm", None if site_scope else normalize_filter(asm)),
+                    ("site_code", site_scope),
                     ("agent", normalize_filter(agent)),
                 ]:
                     if value is not None:
@@ -303,10 +309,10 @@ class CampaignsService:
                     inc_store_params: list[Any] = [list(reward_map_for_stores.keys()), month]
                     inc_store_positions: dict[str, int] = {}
                     for key, value in [
-                        ("firma", normalize_filter(firma)),
-                        ("regional", normalize_filter(regional)),
-                        ("asm", normalize_filter(asm)),
-                        ("site_code", normalize_filter(site_code)),
+                        ("firma", None if site_scope else normalize_filter(firma)),
+                        ("regional", None if site_scope else normalize_filter(regional)),
+                        ("asm", None if site_scope else normalize_filter(asm)),
+                        ("site_code", site_scope),
                     ]:
                         if value is not None:
                             inc_store_params.append(value)
@@ -371,10 +377,10 @@ class CampaignsService:
                     inc_agent_params: list[Any] = [list(reward_map.keys()), month]
                     inc_agent_positions: dict[str, int] = {}
                     for key, value in [
-                        ("firma", normalize_filter(firma)),
-                        ("regional", normalize_filter(regional)),
-                        ("asm", normalize_filter(asm)),
-                        ("site_code", normalize_filter(site_code)),
+                        ("firma", None if site_scope else normalize_filter(firma)),
+                        ("regional", None if site_scope else normalize_filter(regional)),
+                        ("asm", None if site_scope else normalize_filter(asm)),
+                        ("site_code", site_scope),
                         ("agent", normalize_filter(agent)),
                     ]:
                         if value is not None:
