@@ -59,10 +59,18 @@ class ContestsService:
         self.repo = repo
         self.pool = pool
 
-    async def get_active_contest(self, month: str) -> ContestResponse | None:
+    async def get_active_contest(
+        self, month: str, site_codes_override: list[str] | None = None
+    ) -> ContestResponse | None:
         contest, error = get_active_contest(month)
         if contest is None or error:
             return None
+        if site_codes_override:
+            # Scope per Team Leader (proxy intern FieldOps): leaderboard-ul,
+            # numaratoarea de magazine si calculul promo se restrang la aceste
+            # site_code-uri. site_codes domina restul cheilor de scope (asm/
+            # regional/firma) in tot serviciul de concurs.
+            contest.scope = {**contest.scope, "site_codes": list(site_codes_override)}
         return await self._build(contest, month)
 
     async def _build(self, contest: ContestDefinition, month: str) -> ContestResponse:
