@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
+from auth import AuthClaims, require_auth
 from db.connection import get_pool
 from models import ContestResponse
 from repositories.contests import ContestsRepository
@@ -25,16 +26,23 @@ async def get_active_contest(
         None,
         description=(
             "Optional: lista comma-separated de site_code-uri care suprascrie "
-            "scope-ul din config (folosit de proxy-ul intern FieldOps pentru "
-            "scoping per Team Leader). Ignorat daca lipseste."
+            "scope-ul din config. Onorat DOAR pentru apeluri interne "
+            "(principalul hub via X-Hub-Internal), folosit de proxy-ul FieldOps "
+            "pentru scoping per Team Leader. Ignorat pentru useri normali."
         ),
     ),
+    claims: AuthClaims = Depends(require_auth),
     svc: ContestsService = Depends(get_contests_service),
 ) -> ContestResponse | None:
-    """Concursul activ pentru luna data + clasamentul agentilor. None daca nu exista."""
-    override = (
-        [code.strip() for code in site_codes.split(",") if code.strip()]
-        if site_codes
-        else None
-    )
-    return await svc.get_active_contest(month, site_codes_override=override or None)
+    """Concursul activ pentru luna data + clasamentul agentilor. None daca nu exista.
+
+    `site_codes` este un override de scope sensibil (poate cere clasamentul
+    oricaror magazine), asa ca il acceptam doar de la principalul intern hub
+    (`iss == 'hub-internal'`, setat de require_auth pe X-Hub-Internal de pe
+    loopback). UI-ul Retail nu trimite niciodata acest parametru. Pentru orice
+    alt apelant parametrul este ignorat si scope-ul ramane cel din config.
+    """
+    override: list[str] | None = None
+    if site_codes and claims.iss == "hub-internal":
+        override = [code.strip() for code in site_codes.split(",") if code.strip()] or None
+    return await svc.get_active_contest(month, site_codes_override=override)
