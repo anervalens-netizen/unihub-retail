@@ -168,16 +168,16 @@ fallback-ul istoric `store_targets.target_value / numar agenti activi`.
 
 ### Grile salariale in Management
 
-Sub-tab-ul `Management -> Grile` este o integrare read-only/check-only cu
-Google Sheets permanente din `/opt/Mobiup/grile-salarii`. Retail pastreaza
-copii ale Sheet ID-urilor in `grile_sheets`, ruleaza verificari async in
-`grile_runs` si salveaza rezultatul per magazin in `grile_store_status`.
+Sub-tab-ul `Management -> Grile` administreaza Google Sheets permanente pentru
+grilele salariale. Retail pastreaza Sheet ID-urile in `grile_sheets`, ruleaza
+verificari async in `grile_runs` si salveaza rezultatul per magazin in
+`grile_store_status`.
 
 Retail compara `K5/L5` din grila cu `store_targets` si
-`reporting_item_month.total_sales` pe `site_code`. Nu executa operatii write
-asupra Google Sheets. Finalizare salarii, arhiva, reset lunar, creare grile noi
-si reparatii de template raman in `grile-salarii` pana la un cutover explicit.
-Runbook: `/opt/Mobiup/grile-salarii/RUNBOOK.md`.
+`reporting_item_month.total_sales` pe `site_code`. Inchiderea de luna ruleaza
+nativ in Retail: finalizare salarii, export arhiva XLSX/ZIP si reset lunar
+controlat al range-urilor editabile. Output-urile sunt generate in
+`backend/outputs/grile`.
 
 ### Calculator Target
 

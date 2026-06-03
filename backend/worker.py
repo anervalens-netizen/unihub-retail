@@ -64,7 +64,7 @@ async def grile_monthly_background(
     dry_run: bool = True,
     triggered_by_email: str | None = None,
 ) -> dict:
-    """Inchidere luna grile: deleaga la grile-salarii pe localhost (proxy).
+    """Inchidere luna grile: ruleaza operatiile native din Retail.
 
     Ruleaza in worker fiindca operatia poate dura minute (peste timeout-ul de
     edge Cloudflare). Rezultatul (output + exit_code) e citit din rezultatul

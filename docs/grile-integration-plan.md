@@ -1,30 +1,31 @@
-# Plan: Integrare Grile native în retail.unihub.ro
+# Plan: Integrare Grile native in retail.unihub.ro
 
-> Status: **Faza 1 + Faza 2 IMPLEMENTATE și deployate (2026-05-31).** Read-only, în paralel cu aplicația veche.
-> Update 2026-06-01: closeout-ul Mai 2026 s-a făcut în aplicația veche `grile-salarii`: finalize + arhivă completă + reset live spre Iunie 2026, fără schimbare de linkuri.
-> Rămâne: Faza 3 (validare paralelă câteva zile) + Faza 4 (cutover read/verify). Finalize/archive/reset NU s-au mutat.
+> Status: **CUTOVER COMPLET (2026-06-03).** `Management -> Grile` este fluxul operational curent pentru verificare, finalizare salarii, arhiva si reset lunar.
+> Update 2026-06-03: `grile.unihub.ro` si `unihub-grile.service` au fost dezafectate. Retail ruleaza lunar nativ, fara proxy catre aplicatia veche.
 > Autori: server-Claude + review Codex. Data: 2026-05-31.
 >
-> **Implementat în Faza 1+2:** schema `grile_sheets`/`grile_runs`/`grile_store_status`; backend `routers/grile.py` + `services/grile.py` + `services/grile_sheets.py` + `repositories/grile.py`; job arq `grile_check_background` (concurrency 3, thread-local Google client); auto-trigger best-effort după import (`services/imports.py` + `worker.py`); subtab `GrileSubtab.tsx` în Management; seed `backend/scripts/seed_grile_sheets.py` (75 magazine). Validat end-to-end prin coada arq (run #4: 0 erori, 75 magazine, ~2 min).
-> Constrângere hard rămasă: `finalize_month.py`, `archive_month.py`, `reset_month.py`, `add_store.py` și operațiile de mentenanță Google Sheets rămân în `grile-salarii` până la o decizie explicită de portare.
+> **Implementat:** schema `grile_sheets`/`grile_runs`/`grile_store_status`; verificare async `grile_check_background`; auto-trigger dupa import; subtab `GrileSubtab.tsx`; panou lunar collapsible `GrileMonthlyPanel.tsx`; operatii lunare native in `services/grile_monthly.py`; output-uri in `backend/outputs/grile`.
+> `grile-salarii` ramane doar arhiva/CLI pentru reparatii punctuale de template/protected ranges si referinte istorice.
 
 ---
 
 ## 1. Obiectiv
 
-Mutarea graduală a verificării grilelor salariale în retail, ca subtab nativ în **Management → Grile**, cu:
-- verificare automată zilnică după importul vânzărilor (fără upload separat de target/vânzări);
-- un singur buton „Rulează verificare" + status rulare + progres;
-- nivel tehnic/performanță la standardul retail (job async, rezultate persistate în DB).
+Mutarea grilelor salariale in retail, ca subtab nativ in **Management -> Grile**, cu:
+- verificare automata zilnica dupa importul vanzarilor, fara upload separat de target/vanzari;
+- buton manual "Ruleaza verificare" + status rulare + progres;
+- rezultate persistate in DB;
+- operatii lunare native: finalizare salarii, arhiva XLSX/ZIP, reset lunar dry-run/live.
 
-Strategie: **strangler / paralel, read-only**. Construim în retail lângă aplicația veche; retragem `grile-salarii` (sau doar partea de read/verify) **după** câteva zile cu rezultate identice.
+Strategia initiala a fost strangler/read-only in paralel. Dupa validare,
+cutover-ul a fost facut pe 2026-06-03, iar runtime-ul public vechi a fost scos.
 
-## 2. Constrângeri hard (nenegociabile)
+## 2. Constrangeri hard
 
-- **Nu se schimbă linkurile magazinelor.** Fiecare magazin are un Google Sheet permanent (`grile-salarii/AGENTS.md` l.24). Copiem Sheet ID-urile read-only; nu rescriem `sheets_registry.json`, nu recreăm linkuri.
-- **Nu se atinge `finalize_month` / `archive_month` / `reset_month` / `add_store` / `generate_missing_grile` / `unlock_agent_name_cells` / `repair_agent1_extra_section`** — rămân în `grile-salarii`. 1 iunie 2026 a fost executat acolo.
-- **Google read-only din retail:** scope-uri `spreadsheets.readonly` + `drive.metadata.readonly`, chiar dacă service account-ul are Editor. Codul retail nu are capabilitate de scriere → nu poate strica grilele.
-- Cod nou în retail respectă pattern-ul 3-tier (router → service → repository) și convențiile din `CLAUDE.md`.
+- **Nu se schimba linkurile magazinelor.** Fiecare magazin are un Google Sheet permanent. Retail foloseste Sheet ID-urile salvate in `grile_sheets`.
+- **Verificarea ramane non-distructiva.** Citeste K5/L5 si completarea zilelor; ziua curenta este exclusa din numarul de zile asteptate.
+- **Operatiile write sunt limitate la inchiderea de luna.** `finalize` si `archive` exporta local; `reset` sterge doar range-urile editabile definite in cod si este disponibil admin-only, cu dry-run.
+- Codul retail respecta pattern-ul `router -> service -> repository` si conventiile din `CLAUDE.md`.
 
 ## 3. Constatări validate (pe date reale, 2026-05-31)
 
@@ -41,14 +42,15 @@ Strategie: **strangler / paralel, read-only**. Construim în retail lângă apli
 
 ## 4. Decizii de design
 
-1. **Decuplare citire/rulare.** Buton → enqueue arq job → job face munca lentă Google în background → rezultate în DB. UI citește din DB (sub-100ms), niciodată Google la page load. (Pattern-ul import existent.)
-2. **O singură rulare unificată.** Contopim `monitor` (completare %) + `target_check` (K5/L5) într-un singur job: o citire Google per magazin → calculează ȘI completarea ȘI verificarea target/vânzări.
-3. **Ierarhia + expected din DB live**, fără sidecar `store_metadata.json` → bug-ul de drift ASM (ex. Adrian Badea/Mega Mall) devine **structural imposibil**.
-4. **Trigger după commit, nu mid-import.** Enqueue la apelant, după ce `import_sales_file()` returnează succes — în flow sync (`services/imports.py`) ȘI în `worker.py` `import_sales_background`. Pasează `snapshot_id`.
-5. **Luna intern `YYYY-MM`** (`2026-06`). UI afișează românește, DB/API rămân pe format retail.
-6. **Fără subprocess pe aplicația veche.** Portăm regulile de analiză într-un serviciu retail testabil. `grile-salarii/monitor_grile.py:50` (batch read per sheet) + `target_check.py:237` (comparație cu toleranță) = sursă de reguli, nu runtime.
-7. **Google client e sync** → în job async folosim `asyncio.to_thread` cu pool limitat 5–8 (sau secvențial controlat). Nu blocăm event loop-ul worker-ului.
-8. **Filtre independente** (decizia Andrei): subtab-ul Grile NU primește filtrul global retail; are propriul filtru local (lună + status), ca tab-ul Vizite. Butonul de filtru global se ascunde pe subtab-ul Grile.
+1. **Decuplare citire/rulare.** Buton -> enqueue arq job -> job face munca lenta Google in background -> rezultate in DB. UI citeste din DB, niciodata Google la page load.
+2. **O singura rulare unificata.** `monitor` (completare %) + `target_check` (K5/L5) intr-un singur job.
+3. **Ierarhia + expected din DB live**, fara sidecar operational `store_metadata.json`.
+4. **Trigger dupa commit, nu mid-import.** Enqueue dupa ce `import_sales_file()` returneaza succes, cu `snapshot_id`.
+5. **Luna intern `YYYY-MM`** (`2026-06`). UI afiseaza romaneste, DB/API raman pe format retail.
+6. **Fara proxy pe aplicatia veche.** Regulile ruleaza in servicii retail testabile.
+7. **Google client sync in worker.** Operatiile lente ruleaza in background, nu in request.
+8. **Filtre independente.** Subtab-ul Grile nu primeste filtrul global retail; are propriul filtru local.
+9. **Panou lunar collapsible.** Inchiderea de luna este integrata in cardul principal "Verificare grile salariale", dar ascunsa implicit in sectiune extensibila.
 
 ## 5. Model de date (retail DB, schema_v2.sql)
 
@@ -103,11 +105,15 @@ grile_store_status(
 ## 6. Backend
 
 - `backend/routers/grile.py` → `backend/services/grile.py` → `backend/repositories/grile.py`.
-- `backend/services/grile_sheets_client.py` — client Google read-only (scope minim), batch K5/L5 + metadata `last edit`, `asyncio.to_thread` + semafor 5–8.
+- `backend/services/grile_sheets.py` — client Google pentru verificare K5/L5 + completare, cu scope-uri read-only.
+- `backend/services/grile_monthly.py` — operatii lunare native: finalizare salarii, arhiva XLSX/ZIP, reset guarded.
 - Endpoints:
   - `GET /api/grile/overview?month=YYYY-MM` — ultimul run + arbore ASM→TL→Firmă→Magazin din DB.
   - `POST /api/grile/run?month=YYYY-MM` — enqueue manual, returnează `run_id`.
   - `GET /api/grile/run/{id}` — status + progres (poll).
+  - `POST /api/grile/monthly/run` — enqueue finalize/archive/reset, admin-only.
+  - `GET /api/grile/monthly/job/{id}` — poll job lunar.
+  - `GET /api/grile/monthly/download/{final|archive}/{YYYY-MM}` — descarca artefacte locale.
 - Job arq `grile_check_background(month, snapshot_id, triggered_by)` în `worker.py`: per magazin cu `sheet_id` → citește K5/L5 → compară cu `store_targets` + `Σ reporting_item_month` → upsert `grile_store_status`, update progres pe `grile_runs`.
 - Secrete: `config/google/service-account.json` (copie, chmod 600, gitignored). Share-ul pe cele 75 sheet-uri există deja.
 
@@ -138,10 +144,11 @@ grile_store_status(
 | 0 | Închis pe 2026-06-01: finalize + arhivă + reset Mai→Iunie în `grile-salarii`, fără schimbare de linkuri. | 0 |
 | 1 | Migrație 3 tabele + seed `grile_sheets` din registry (read-only) + 3-tier + job + subtab. Buton manual. | mic (read-only) |
 | 2 | Auto-trigger după commit import (sync + worker), cu `snapshot_id`. | mic |
-| 3 (curent) | Rulare paralelă câteva zile; diff retail vs grile-salarii (trebuie identice). | 0 |
-| 4 | Cutover read/verify pe retail. `finalize/archive/reset/...` rămân în grile-salarii. | mediu (decizie) |
+| 3 | Rulare paralela si validare diferente. | 0 |
+| 4 | Cutover read/verify pe retail. | mediu |
+| 5 | Portare finalize/archive/reset in Retail si dezafectare `grile.unihub.ro`. | mediu |
 
-Retragere completă `grile-salarii` = ulterioară, doar după ce decidem să portăm și mașinăria de payroll (sau o declarăm out-of-scope).
+Fazele 3-5 sunt inchise pe 2026-06-03.
 
 ## 9.1. Stare operațională 2026-06-01
 
@@ -154,6 +161,22 @@ Retragere completă `grile-salarii` = ulterioară, doar după ce decidem să por
 - Reset live spre Iunie 2026: `75/75` grile, `0` erori; verificare separată Google: `0` valori rămase în range-urile resetate. Linkurile permanente nu au fost schimbate.
 
 Documentație operațională detaliată: `/opt/Mobiup/grile-salarii/RUNBOOK.md`.
+
+## 9.2. Cutover 2026-06-03
+
+- `grile.unihub.ro` a fost scos din Caddy si din monitorizarea Prometheus.
+- `unihub-grile.service` a fost oprit si dezactivat.
+- Retail a preluat inchiderea de luna nativ, fara apel HTTP catre portul 47000.
+- Test smoke pe `Park Lake`:
+  - `finalize_month(... only='Park Lake')` a generat tabelul de salarii;
+  - `archive_month(... only='Park Lake')` a generat ZIP complet + ZIP ASM;
+  - `reset_month(... dry_run=True, force=True, only='Park Lake')` a validat resetul.
+- Formatul tabelului salarii curent:
+  `Nr`, `Manager`, `Magazin`, `Agent`, `Salariu baza`, `Comision vanzare`,
+  `Flip`, `Comision vanzare zile suplimentare`, `Incentive lunar`,
+  `Plata ore suplimentare`, `Total salariu`, `Salariu Cash`, `Bonuri`,
+  `Data angajarii`, `Data plecarii`, `Nr. Ore lucrate`,
+  `Zile CO luna in curs`.
 
 ## 10. Riscuri / de confirmat la implementare
 

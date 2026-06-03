@@ -501,10 +501,10 @@ export function GrileSubtab() {
         {run?.status === 'failed' && (
           <p className="mt-2 text-xs text-rose-500">Rulare eșuată: {run.error_message}</p>
         )}
-      </div>
 
-      {/* ── Inchidere luna (vizibil doar pentru admin grile) ── */}
-      <GrileMonthlyPanel month={month || data?.month || ''} />
+        {/* ── Inchidere luna (vizibil doar pentru admin grile) ── */}
+        <GrileMonthlyPanel month={month || data?.month || ''} />
+      </div>
 
       {/* ── Filtre locale (independente de filtrul global) ── */}
       <div className="flex flex-wrap gap-1.5">

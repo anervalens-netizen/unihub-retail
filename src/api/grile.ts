@@ -96,7 +96,7 @@ export async function getGrileRunStatus(month?: string): Promise<{ run: GrileRun
   return data;
 }
 
-// ── Inchidere luna (proxy catre grile-salarii) ─────────────────────────────────
+// ── Inchidere luna ─────────────────────────────────────────────────────────────
 
 export type GrileMonthlyOp = 'finalize' | 'archive' | 'reset';
 
@@ -151,10 +151,16 @@ export async function downloadGrileMonthly(kind: 'final' | 'archive', month: str
   const { data } = await client.get<Blob>(`/api/grile/monthly/download/${kind}/${month}`, {
     responseType: 'blob',
   });
+  const roMonths = [
+    '', 'Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie',
+    'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie',
+  ];
+  const [year, monthNo] = month.split('-');
+  const monthLabel = `${roMonths[Number(monthNo)] ?? monthNo} ${year}`;
   const url = URL.createObjectURL(data);
   const a = document.createElement('a');
   a.href = url;
-  a.download = kind === 'final' ? `Tabel Salarii - ${month}.xlsx` : `Arhiva Grile - ${month}.zip`;
+  a.download = kind === 'final' ? `Tabel Salarii - ${monthLabel}.xlsx` : `Arhiva Grile - ${monthLabel}.zip`;
   document.body.appendChild(a);
   a.click();
   a.remove();

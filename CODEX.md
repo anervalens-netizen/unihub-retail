@@ -98,17 +98,20 @@ iunie.
 
 ## Grile In Retail
 
-Subtab-ul `Management -> Grile` este read-only/check-only. Nu muta operatiile
-write aici fara decizie explicita:
+Subtab-ul `Management -> Grile` este fluxul operational curent pentru grile.
+Include verificarea zilnica si inchiderea de luna:
 
-- finalizare salarii;
-- arhiva XLSX/ZIP;
-- reset lunar;
-- creare grile noi;
-- reparatii template/protected ranges.
+- verificare K5/L5 vs Retail DB si completare zile, cu ziua curenta exclusa;
+- finalizare salarii in formatul nou;
+- export arhiva XLSX/ZIP;
+- reset lunar guarded, cu dry-run si reset live doar pentru admin.
 
-Acestea raman in `/opt/Mobiup/grile-salarii`. Closeout-ul Mai 2026 si resetul
-spre Iunie 2026 au fost executate acolo pe `2026-06-01`, fara schimbare de
-linkuri. Runbook-ul operational este
-`/opt/Mobiup/grile-salarii/RUNBOOK.md`, iar planul de integrare este
-`docs/grile-integration-plan.md`.
+Implementarea lunara ruleaza nativ in `backend/services/grile_monthly.py`,
+prin worker-ul arq, folosind registry-ul `grile_sheets` + `stores` din DB si
+Google scopes `spreadsheets`/`drive`. Artefactele se scriu in
+`backend/outputs/grile` (gitignored).
+
+Repo-ul vechi `/opt/Mobiup/grile-salarii` este dezafectat ca aplicatie publica.
+Ramane doar arhiva/CLI pentru reparatii punctuale de template/protected ranges
+sau pentru referinte istorice. Domeniul `grile.unihub.ro` si serviciul
+`unihub-grile` au fost eliminate din runtime.

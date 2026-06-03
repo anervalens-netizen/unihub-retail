@@ -16,6 +16,7 @@ data/
 backend/__pycache__/
 backend/.pytest_cache/
 backend/data/
+backend/outputs/
 **/__pycache__/
 *.pyc
 

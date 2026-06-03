@@ -8,6 +8,7 @@ doar din DB (rapid), grupat ASM(regional) -> Team Leader -> Firma -> Magazin.
 from __future__ import annotations
 
 import asyncio
+import calendar
 import json
 import threading
 import time
@@ -278,6 +279,15 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
                     raw = json.loads(raw)
                 except (ValueError, TypeError):
                     raw = None
+            completion_pct = _f(st["completion_pct"])
+            missing_days = (raw or {}).get("missing_days") if isinstance(raw, dict) else None
+            days_elapsed = (raw or {}).get("days_elapsed") if isinstance(raw, dict) else None
+            completion_pct, missing_days, days_elapsed = _normalize_completion_window(
+                month=month,
+                completion_pct=completion_pct,
+                missing_days=missing_days,
+                days_elapsed=days_elapsed,
+            )
             stores.append({
                 "site_code": st["site_code"],
                 "sheet_id": sheet_map.get(st["site_code"]),
@@ -286,7 +296,7 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
                 "regional": h.get("regional", "Neatribuit"),
                 "asm": h.get("asm", ""),
                 "team_leader_name": h.get("team_leader_name"),
-                "completion_pct": _f(st["completion_pct"]),
+                "completion_pct": completion_pct,
                 "last_edit": st["last_edit"].isoformat() if st["last_edit"] else None,
                 "grila_target": grila_target,
                 "grila_sales": grila_sales,
@@ -299,8 +309,8 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
                 "fill_status": st["fill_status"],
                 "target_status": st["target_status"],
                 "sales_status": st["sales_status"],
-                "missing_days": (raw or {}).get("missing_days") if isinstance(raw, dict) else None,
-                "days_elapsed": (raw or {}).get("days_elapsed") if isinstance(raw, dict) else None,
+                "missing_days": missing_days,
+                "days_elapsed": days_elapsed,
                 "error_code": st["error_code"],
                 "error_message": st["error_message"],
             })
@@ -353,6 +363,52 @@ def _aggregate(stores: list[dict[str, Any]]) -> dict[str, Any]:
             if stores else None
         ),
     }
+
+
+def _normalize_completion_window(
+    *,
+    month: str,
+    completion_pct: float | None,
+    missing_days: Any,
+    days_elapsed: Any,
+    today: date | None = None,
+) -> tuple[float | None, list[int] | None, int | None]:
+    """Exclude ziua curenta si la afisarea runurilor deja salvate."""
+    if not isinstance(days_elapsed, int) or not isinstance(missing_days, list):
+        return completion_pct, missing_days if isinstance(missing_days, list) else None, days_elapsed
+
+    max_elapsed = _completed_days_for_month(month, today=today)
+    if max_elapsed is None:
+        return completion_pct, missing_days, days_elapsed
+
+    normalized_elapsed = min(days_elapsed, max_elapsed)
+    normalized_missing = [
+        int(day)
+        for day in missing_days
+        if isinstance(day, int) and 1 <= day <= normalized_elapsed
+    ]
+    if normalized_elapsed == days_elapsed and normalized_missing == missing_days:
+        return completion_pct, missing_days, days_elapsed
+    if normalized_elapsed <= 0:
+        return None, [], 0
+
+    covered = normalized_elapsed - len(normalized_missing)
+    normalized_pct = round(max(covered, 0) / normalized_elapsed * 100, 1)
+    return normalized_pct, normalized_missing, normalized_elapsed
+
+
+def _completed_days_for_month(month: str, *, today: date | None = None) -> int | None:
+    try:
+        year, month_num = (int(part) for part in month.split("-"))
+    except (ValueError, TypeError):
+        return None
+
+    today = today or datetime.now().date()
+    if (year, month_num) == (today.year, today.month):
+        return max(today.day - 1, 0)
+    if (year, month_num) > (today.year, today.month):
+        return 0
+    return calendar.monthrange(year, month_num)[1]
 
 
 def _run_to_dict(r: asyncpg.Record) -> dict[str, Any]:

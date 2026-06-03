@@ -123,12 +123,13 @@ class GrilaReading:
     days_elapsed: int
 
 
-def analyze_grila(value_ranges: list[dict[str, Any]]) -> GrilaReading:
+def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None = None) -> GrilaReading:
     """Extrage target/realizat (K5/L5) + % completare + zilele lipsa dintr-un batchGet.
 
     Model completare ("acoperire zi", portat din monitor_grile.py): o zi e
     acoperita daca P[zi] sau U[zi] are valoare, sau ziua apare in sectiunea
-    Suplimentar (D32:D37). % = zile acoperite / zilele scurse din luna curenta.
+    Suplimentar (D32:D37). % = zile acoperite / zilele complete din luna curenta.
+    Ziua curenta nu se cere, pentru ca grilele se completeaza abia seara dupa program.
     """
     vals = [vr.get("values", []) for vr in value_ranges]
     grila_target = _to_number(_cell(vals[0], 0, 0)) if len(vals) > 0 else None
@@ -144,11 +145,11 @@ def analyze_grila(value_ranges: list[dict[str, Any]]) -> GrilaReading:
             if d:
                 days_from_supl.add(d)
 
-    today = datetime.now()
-    today_day = today.day
+    today = as_of or datetime.now()
+    days_elapsed = max(today.day - 1, 0)
     covered = 0
     missing_days: list[int] = []
-    for d in range(1, today_day + 1):
+    for d in range(1, days_elapsed + 1):
         idx = d - 1
         has_a1 = _to_number(a1_daily[idx] if idx < len(a1_daily) else None) is not None
         has_a2 = _to_number(a2_daily[idx] if idx < len(a2_daily) else None) is not None
@@ -156,14 +157,14 @@ def analyze_grila(value_ranges: list[dict[str, Any]]) -> GrilaReading:
             covered += 1
         else:
             missing_days.append(d)
-    completion_pct = round(covered / today_day * 100, 1) if today_day > 0 else None
+    completion_pct = round(covered / days_elapsed * 100, 1) if days_elapsed > 0 else None
 
     return GrilaReading(
         grila_target=grila_target,
         grila_sales=grila_sales,
         completion_pct=completion_pct,
         missing_days=missing_days,
-        days_elapsed=today_day,
+        days_elapsed=days_elapsed,
     )
 
 

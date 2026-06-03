@@ -2,6 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   FolderArchive,
@@ -44,6 +46,7 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
   const [job, setJob] = useState<ActiveJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
   const [downloading, setDownloading] = useState<'final' | 'archive' | null>(null);
 
   const perms = useQuery({
@@ -114,16 +117,26 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
-            Inchidere luna
-          </h3>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Salveaza grilele, genereaza tabelul de salarii si reseteaza pentru luna noua.
-            Ruleaza in <span className="font-medium">grile-salarii</span> (linkurile magazinelor nu se schimba).
-          </p>
+    <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg px-1 py-1 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          {open ? (
+            <ChevronDown className="h-4 w-4 flex-shrink-0 text-slate-400" />
+          ) : (
+            <ChevronRight className="h-4 w-4 flex-shrink-0 text-slate-400" />
+          )}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              Inchidere luna
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Finalizare, arhiva si reset pentru luna noua.
+            </p>
+          </div>
         </div>
         <div className="text-right text-xs">
           <div className="text-slate-400">Luna inchisa</div>
@@ -131,96 +144,111 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
             {month ? roLabel(month) : '—'}
           </div>
         </div>
-      </div>
+      </button>
 
-      {/* Actiuni */}
-      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <ActionButton
-          icon={<FileSpreadsheet className="h-4 w-4" />}
-          label="Finalizeaza salarii"
-          hint="Citeste grilele + genereaza Excel"
-          onClick={() => trigger('finalize', false)}
-          disabled={!month || running}
-        />
-        <ActionButton
-          icon={<FolderArchive className="h-4 w-4" />}
-          label="Exporta arhiva"
-          hint="XLSX per magazin + ZIP complet"
-          onClick={() => trigger('archive', false)}
-          disabled={!month || running}
-        />
-        <ActionButton
-          icon={<RotateCcw className="h-4 w-4" />}
-          label="Reset (simulare)"
-          hint="Verifica resetul fara a atinge grilele"
-          onClick={() => trigger('reset', true)}
-          disabled={!month || running}
-        />
-        <ActionButton
-          icon={<Trash2 className="h-4 w-4" />}
-          label="Reset LIVE"
-          hint={`Curata grilele → ${month ? nextLabel(month) : 'luna noua'}. Ireversibil.`}
-          danger
-          onClick={() => trigger('reset', false)}
-          disabled={!month || running}
-        />
-      </div>
+      {open && (
+        <div className="mt-3">
+          <p className="text-xs text-slate-500">
+            Salveaza grilele, genereaza tabelul de salarii si reseteaza pentru luna noua.
+            Ruleaza direct in Retail (linkurile magazinelor nu se schimba).
+          </p>
 
-      {/* Download */}
-      <div className="mt-3 flex flex-wrap gap-4 text-sm">
-        <button
-          onClick={() => download('final')}
-          disabled={!month || downloading !== null}
-          className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline disabled:opacity-50 dark:text-indigo-400"
-        >
-          {downloading === 'final' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          Descarca Excel final
-        </button>
-        <button
-          onClick={() => download('archive')}
-          disabled={!month || downloading !== null}
-          className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline disabled:opacity-50 dark:text-indigo-400"
-        >
-          {downloading === 'archive' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          Descarca arhiva ZIP
-        </button>
-      </div>
+          {/* Actiuni */}
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <ActionButton
+              icon={<FileSpreadsheet className="h-4 w-4" />}
+              label="Finalizeaza salarii"
+              hint="Citeste grilele + genereaza Excel"
+              onClick={() => trigger('finalize', false)}
+              disabled={!month || running}
+            />
+            <ActionButton
+              icon={<FolderArchive className="h-4 w-4" />}
+              label="Exporta arhiva"
+              hint="XLSX per magazin + ZIP complet"
+              onClick={() => trigger('archive', false)}
+              disabled={!month || running}
+            />
+            <ActionButton
+              icon={<RotateCcw className="h-4 w-4" />}
+              label="Reset (simulare)"
+              hint="Verifica resetul fara a atinge grilele"
+              onClick={() => trigger('reset', true)}
+              disabled={!month || running}
+            />
+            <ActionButton
+              icon={<Trash2 className="h-4 w-4" />}
+              label="Reset LIVE"
+              hint={`Curata grilele → ${month ? nextLabel(month) : 'luna noua'}. Ireversibil.`}
+              danger
+              onClick={() => trigger('reset', false)}
+              disabled={!month || running}
+            />
+          </div>
 
-      {error && (
-        <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-900/30 dark:text-rose-300">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          {error}
+          {/* Download */}
+          <div className="mt-3 flex flex-wrap gap-4 text-sm">
+            <button
+              onClick={() => download('final')}
+              disabled={!month || downloading !== null}
+              className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline disabled:opacity-50 dark:text-indigo-400"
+            >
+              {downloading === 'final' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Descarca Excel final
+            </button>
+            <button
+              onClick={() => download('archive')}
+              disabled={!month || downloading !== null}
+              className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline disabled:opacity-50 dark:text-indigo-400"
+            >
+              {downloading === 'archive' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Descarca arhiva ZIP
+            </button>
+          </div>
+
+          {error && (
+            <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-900/30 dark:text-rose-300">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+
+          {/* Status + log ultima rulare */}
+          {job && (
+            <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-1.5 text-xs dark:border-slate-800">
+                <span className="font-medium text-slate-600 dark:text-slate-300">{opLabel[job.op]}</span>
+                {running ? (
+                  <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Ruleaza…
+                  </span>
+                ) : result ? (
+                  <span
+                    className={cn(
+                      'rounded px-1.5 py-0.5 font-semibold',
+                      result.status === 'success'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                        : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+                    )}
+                  >
+                    {result.status === 'success' ? 'Succes' : 'Esuat'}
+                    {result.dry_run ? ' · simulare' : ''}
+                  </span>
+                ) : null}
+              </div>
+              {result?.output && (
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-snug text-slate-600 dark:text-slate-300">
+                  {result.output}
+                </pre>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Status + log ultima rulare */}
-      {job && (
-        <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-1.5 text-xs dark:border-slate-800">
-            <span className="font-medium text-slate-600 dark:text-slate-300">{opLabel[job.op]}</span>
-            {running ? (
-              <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Ruleaza…
-              </span>
-            ) : result ? (
-              <span
-                className={cn(
-                  'rounded px-1.5 py-0.5 font-semibold',
-                  result.status === 'success'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                    : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-                )}
-              >
-                {result.status === 'success' ? 'Succes' : 'Esuat'}
-                {result.dry_run ? ' · simulare' : ''}
-              </span>
-            ) : null}
-          </div>
-          {result?.output && (
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-snug text-slate-600 dark:text-slate-300">
-              {result.output}
-            </pre>
-          )}
+      {!open && (running || result || error) && (
+        <div className="mt-2 px-1 text-xs text-slate-500">
+          {running ? 'Operatie in curs...' : error ? error : `Ultima operatie: ${opLabel[job!.op]}`}
         </div>
       )}
     </div>

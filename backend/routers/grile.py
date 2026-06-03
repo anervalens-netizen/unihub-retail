@@ -53,7 +53,7 @@ async def grile_run_status(month: str | None = Query(default=None)) -> dict[str,
     return {"run": _run_to_dict(latest) if latest is not None else None}
 
 
-# ── inchidere luna (WRITE — deleaga la grile-salarii, doar admin) ──────────────
+# ── inchidere luna (WRITE Google Sheets — doar admin) ──────────────────────────
 
 def can_grile_admin(claims: AuthClaims) -> bool:
     allowed = {

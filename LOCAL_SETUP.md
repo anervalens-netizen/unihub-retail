@@ -164,6 +164,27 @@ python scripts/rebuild_reporting.py --month 2026-03
 cd ..
 ```
 
+### Grile salariale
+
+Subtab-ul `Management -> Grile` foloseste Google Sheets permanente si datele
+din Retail DB.
+
+Pentru verificari sunt necesare:
+
+- tabela `grile_sheets` populata cu `site_code -> sheet_id`;
+- `backend/config/google/service-account.json` (gitignored), share-uit pe
+  grilele permanente.
+
+Inchiderea de luna ruleaza nativ in Retail, prin worker:
+
+- finalizare salarii;
+- arhiva XLSX/ZIP;
+- reset dry-run/live.
+
+Output-urile locale sunt in `backend/outputs/grile` si sunt gitignored.
+Repo-ul vechi `/opt/Mobiup/grile-salarii` nu mai este runtime public; ramane
+doar pentru CLI-uri istorice si reparatii punctuale.
+
 ### Sync focus products (optional — via coding agent)
 
 Scriptul load_focus_products.py exista dar nu mai este accesibil din UI. Focus products se adauga prin coding agent direct in DB sau via seed.
@@ -251,11 +272,13 @@ raman pe fallback-ul vechi `target magazin / agenti activi`.
 
 ### Management -> Grile
 
-Integrarea Grile din Retail este read-only/check-only. Pentru operatii write
-asupra Google Sheets foloseste in continuare `/opt/Mobiup/grile-salarii`:
-finalizare salarii, arhiva, reset lunar, creare grile noi si reparatii de
-template/protected ranges. Runbook operational:
-`/opt/Mobiup/grile-salarii/RUNBOOK.md`.
+Integrarea Grile din Retail este fluxul activ pentru verificare si inchidere
+de luna. Verificarea citeste Google Sheets si Retail DB; inchiderea de luna
+ruleaza nativ prin worker pentru finalizare salarii, arhiva XLSX/ZIP si reset
+lunar guarded. Output-urile se scriu in `backend/outputs/grile`.
+
+`/opt/Mobiup/grile-salarii` este doar arhiva/CLI pentru reparatii punctuale si
+fallback operational, nu runtime public.
 
 ### Note UI Hub
 
