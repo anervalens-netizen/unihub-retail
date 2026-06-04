@@ -29,9 +29,16 @@ Reguli importante in Hub:
 - KPI-urile de vanzari, cantitate, bonuri si medii exclud categoria `Cartele`
 - randul `Cartele` este informativ si este calculat separat din tranzactiile brute
 - magazinele/locatiile de distributie cu nume `TR ...` sunt excluse din calculele Retail
-- filtrul ASM nu mai este afisat in Hub; nivelul operational ramas este RM -> magazine -> agenti
+- in Hub exista un singur layer operational de management; rapoartele pastreaza
+  coloanele `Regional` si `ASM`, dar pentru magazinele active curente acestea
+  trebuie sa reprezinte acelasi manager
 - filtrele de magazin si agent suporta selectie multipla
 - cand este selectat un magazin, filtrul de magazin are prioritate peste firma/RM, astfel istoricul ramane corect chiar daca magazinul a fost mutat intre RM-uri
+- sectiunea Istoric foloseste magazinele active alocate managerului curent,
+  nu managerul istoric din luna respectiva; magazinele inchise sunt ascunse
+  implicit si pot fi incluse din checkbox-ul `Include magazine inchise`
+- cardul `Evolutie lunara` in modul standard afiseaza ultimele 13 luni
+  finalizate plus luna curenta forecastata, cand luna curenta este partiala
 
 ### Focus
 Focus este separat in 4 sub-sectiuni:

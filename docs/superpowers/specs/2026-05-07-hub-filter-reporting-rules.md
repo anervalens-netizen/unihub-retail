@@ -8,7 +8,10 @@ The main issues fixed:
 - period comparison used full previous months instead of the same partial period
 - cartela quantities could leak into visible KPI expectations
 - distribution agents/stores named `TR ...` appeared in Retail totals
-- ASM was still visible in Hub although the current management layer is RM-only
+- historical views could follow old manager ownership instead of the stores
+  currently allocated to the active manager
+- closed stores were still marked active in `stores`, so they leaked into the
+  current-store scope
 - selecting a store together with its current RM made historical months show zero when the store belonged to another RM in the past
 - authentik iframe silent renew caused 401 loops because the provider denies framing
 
@@ -82,12 +85,22 @@ It is also applied to:
 
 Do not remove this rule from dashboard queries. TR agents are analyzed in another application.
 
-## Hub Filters
+## Hub Filters And Current Manager Scope
 
-Hub no longer exposes ASM filtering or the ASM card. Current Hub hierarchy is:
+Retail currently has a single active management layer. The source reports still
+carry both `regional` and `asm` columns for compatibility, but for active
+stores in the current month the expected model is:
 
 ```text
-Firma -> RM -> Magazin -> Agent
+regional = asm = active manager
+```
+
+Hub exposes both `Regional` and `ASM` filters because other screens and legacy
+data still use both names. In current Retail reporting they must behave as the
+same manager scope. The effective hierarchy is:
+
+```text
+Firma -> Manager -> Magazin -> Agent
 ```
 
 Store and agent filters support multi-select in the frontend. Values are sent comma-separated and interpreted by SQL using:
@@ -111,6 +124,67 @@ Relevant backend files:
 - `backend/services/dashboard/queries.py`
 - `backend/services/dashboard/specials_data.py`
 - `backend/services/campaigns.py`
+
+## Hub History Scope
+
+Hub history must answer this business question:
+
+```text
+For the active manager selected today, show the historical performance of the
+stores currently active under that manager.
+```
+
+It must not follow old historical manager assignments. A store moved from one
+manager to another should move with all of its history to the new active
+manager view.
+
+Implementation rules:
+- `/api/dashboard/history` and `/api/dashboard/history-year` default to
+  `current_scope=true`.
+- History queries join `stores s` and filter by the current `s.regional` /
+  `s.asm` / `s.site_code`, while sales values still come from historical
+  `reporting_*` rows.
+- `s.is_active = true` is applied by default, so closed stores are hidden.
+- The history UI includes `Include magazine inchise`; when checked,
+  `include_closed_stores=true` removes the active-store restriction.
+- The standard `Evolutie lunara` card requests 14 points: the last 13
+  finalized months plus the current-month forecast point when the selected
+  month is open.
+
+Because the current management layer is single-level, when history is scoped
+by a selected `Regional` manager and no explicit `ASM` is selected, backend
+matches the current manager by either current column:
+
+```sql
+s.regional = manager OR s.asm = manager
+```
+
+If `ASM` is explicitly selected, the ASM filter remains strict.
+
+Relevant files:
+- `backend/routers/dashboard.py`
+- `backend/services/dashboard_service.py`
+- `backend/repositories/dashboard.py`
+- `backend/services/dashboard/queries.py`
+- `backend/services/dashboard/utils.py`
+- `src/components/Dashboard.tsx`
+
+## Current Store Master Data
+
+`stores` is the current master-data table used by Hub current-scope history.
+It must represent the latest imported structure, not historical ownership.
+
+Import rules:
+- importing the newest available month updates `stores.locatie`, `firma`,
+  `regional`, `asm`, `last_seen_month` and sets imported stores active;
+- stores not present in the newest month are marked `is_active=false`;
+- importing historical months only updates `first_seen_month` /
+  `last_seen_month`; it must not overwrite the current manager or reactivate
+  closed stores.
+
+Migration `003_repair_current_store_activity.sql` repairs existing data by
+marking active only stores whose `last_seen_month` is the latest month in
+`stores`.
 
 ## Store Scope Dominates Parent Scope
 
@@ -187,6 +261,19 @@ Expected behavior:
 - current month has current CRELECTROP totals
 - history includes previous-month CRELECTROP totals even if previous rows belonged to another RM
 - period comparison uses day range `01-06` for current, previous month and previous year when May 2026 is partial
+
+Manual current-manager history check:
+
+```text
+month=2026-06
+regional=Bogdan Radu
+months_back=14
+```
+
+Expected behavior:
+- history has 14 points, `2025-05` through `2026-06`
+- values are aggregated from Bogdan Radu's currently active stores
+- closed stores are excluded unless `include_closed_stores=true`
 
 Manual cohort check for the period-comparison fix:
 

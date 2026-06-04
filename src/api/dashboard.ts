@@ -12,6 +12,8 @@ export interface DashboardQuery {
   asm?: string;
   site_code?: string;
   agent?: string;
+  current_scope?: boolean;
+  include_closed_stores?: boolean;
 }
 
 export async function getDashboardAll(query: DashboardQuery): Promise<DashboardAllResponse> {

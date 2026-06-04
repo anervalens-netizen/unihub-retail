@@ -47,3 +47,22 @@ def _build_scoped_params(
             params.append(value)
             positions[key] = len(params)
     return params, positions
+
+
+def _expand_current_manager_scope(clauses: list[str], positions: dict[str, int]) -> list[str]:
+    """Treat a current-scope Regional selection as a current manager selection.
+
+    In the Hub history filters, users may select a manager from the Regional field
+    even when that person currently owns stores through the ASM column. When ASM
+    is not explicitly selected, match either current regional or current ASM.
+    """
+    regional_position = positions.get("regional")
+    if not regional_position or "asm" in positions or "site_code" in positions:
+        return clauses
+
+    regional_clause = f"s.regional = ANY(string_to_array(${regional_position}::TEXT, ','))"
+    manager_clause = (
+        f"(s.regional = ANY(string_to_array(${regional_position}::TEXT, ',')) "
+        f"OR s.asm = ANY(string_to_array(${regional_position}::TEXT, ',')))"
+    )
+    return [manager_clause if clause == regional_clause else clause for clause in clauses]

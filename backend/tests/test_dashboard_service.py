@@ -151,6 +151,31 @@ class TestGetMonthlyHistory:
         call = mock_repo.fetch_monthly_history.call_args
         assert call[0][1] == ["2026-05", 12, "SITE01"]
 
+    @pytest.mark.asyncio
+    async def test_current_scope_regional_filter_matches_current_manager(self, service, mock_repo):
+        mock_repo.fetch_monthly_history.return_value = []
+        result = await service.get_monthly_history(
+            "2026-05", 12, None, "Manager1", None, None, None, current_scope=True
+        )
+        assert result.history == []
+        clauses = mock_repo.fetch_monthly_history.call_args[0][0]
+        assert "(s.regional = ANY(string_to_array($3::TEXT, ',')) OR s.asm = ANY(string_to_array($3::TEXT, ',')))" in clauses
+        assert "s.regional = ANY(string_to_array($3::TEXT, ','))" not in [
+            clause for clause in clauses if not clause.startswith("(")
+        ]
+
+    @pytest.mark.asyncio
+    async def test_current_scope_explicit_asm_stays_strict(self, service, mock_repo):
+        mock_repo.fetch_monthly_history.return_value = []
+        result = await service.get_monthly_history(
+            "2026-05", 12, None, "Regional1", "Asm1", None, None, current_scope=True
+        )
+        assert result.history == []
+        clauses = mock_repo.fetch_monthly_history.call_args[0][0]
+        assert "s.regional = ANY(string_to_array($3::TEXT, ','))" in clauses
+        assert "s.asm = ANY(string_to_array($4::TEXT, ','))" in clauses
+        assert not any(clause.startswith("(s.regional") for clause in clauses)
+
 
 class TestGetHistoryByYear:
     @pytest.mark.asyncio

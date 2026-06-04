@@ -41,7 +41,7 @@ from services.dashboard.queries import (
     _fetch_store_stats_rows,
 )
 from services.dashboard.specials_data import _get_special_cards_data
-from services.dashboard.utils import _build_scoped_params
+from services.dashboard.utils import _build_scoped_params, _expand_current_manager_scope
 from services.filters import normalize_filter, scoped_clauses
 
 
@@ -64,6 +64,8 @@ class DashboardService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> DashboardSummary:
         params, positions = _build_scoped_params(
             [month],
@@ -76,13 +78,17 @@ class DashboardService:
         clauses = scoped_clauses(
             positions,
             site_alias="agg",
-            store_alias="agg",
+            store_alias="s" if current_scope else "agg",
             agent_alias="agg",
             month_alias="agg.import_month",
             month_position=1,
         )
+        if current_scope:
+            clauses = _expand_current_manager_scope(clauses, positions)
+        if current_scope and not include_closed_stores:
+            clauses.append("s.is_active = true")
 
-        row = await self.repo.fetch_summary(clauses, params)
+        row = await self.repo.fetch_summary(clauses, params, current_scope)
         if row is None:
             return DashboardSummary(
                 month=month,
@@ -115,6 +121,8 @@ class DashboardService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> list[DailySalesPoint]:
         params, positions = _build_scoped_params(
             [month],
@@ -127,13 +135,17 @@ class DashboardService:
         clauses = scoped_clauses(
             positions,
             site_alias="agg",
-            store_alias="agg",
+            store_alias="s" if current_scope else "agg",
             agent_alias="agg",
             month_alias="agg.import_month",
             month_position=1,
         )
+        if current_scope:
+            clauses = _expand_current_manager_scope(clauses, positions)
+        if current_scope and not include_closed_stores:
+            clauses.append("s.is_active = true")
 
-        rows = await self.repo.fetch_daily_sales(clauses, params)
+        rows = await self.repo.fetch_daily_sales(clauses, params, current_scope)
         return [DailySalesPoint(**dict(row)) for row in rows]
 
     async def get_special_cards(
@@ -159,6 +171,8 @@ class DashboardService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> DashboardHistoryResponse:
         params, positions = _build_scoped_params(
             [month, months_back],
@@ -174,13 +188,17 @@ class DashboardService:
             scoped_clauses(
                 positions,
                 site_alias="agg",
-                store_alias="agg",
+                store_alias="s" if current_scope else "agg",
                 agent_alias="agg",
                 month_alias=None,
             )
         )
+        if current_scope:
+            sales_clauses = _expand_current_manager_scope(sales_clauses, positions)
+        if current_scope and not include_closed_stores:
+            sales_clauses.append("s.is_active = true")
 
-        rows = await self.repo.fetch_monthly_history(sales_clauses, params)
+        rows = await self.repo.fetch_monthly_history(sales_clauses, params, current_scope)
         return DashboardHistoryResponse(
             history=[MonthlyHistoryPoint(**dict(row)) for row in rows]
         )
@@ -193,6 +211,8 @@ class DashboardService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> YearHistoryResponse:
         _firma = normalize_filter(firma)
         _regional = normalize_filter(regional)
@@ -210,7 +230,7 @@ class DashboardService:
             p = 2
             has_site_scope = _site_code is not None
             for val, col in [
-                (None if has_site_scope else _firma, "has.firma"),
+                (None if has_site_scope else _firma, "s.firma" if current_scope else "has.firma"),
                 (None if has_site_scope else _regional, "s.regional"),
                 (None if has_site_scope else _asm, "s.asm"),
                 (_site_code, "has.site_code"),
@@ -219,6 +239,23 @@ class DashboardService:
                     hist_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
                     hist_params.append(val)
                     p += 1
+
+            if current_scope:
+                hist_positions: dict[str, int] = {}
+                offset = 2
+                for key, val in [
+                    ("firma", None if has_site_scope else _firma),
+                    ("regional", None if has_site_scope else _regional),
+                    ("asm", None if has_site_scope else _asm),
+                    ("site_code", _site_code),
+                ]:
+                    if val is not None:
+                        hist_positions[key] = offset
+                        offset += 1
+                hist_clauses = _expand_current_manager_scope(hist_clauses, hist_positions)
+
+            if current_scope and not include_closed_stores:
+                hist_clauses.append("s.is_active = TRUE")
 
             row = await self.repo.fetch_year_history_agg(year, hist_clauses, hist_params)
             if row and row["total_sales"] > 0:
@@ -241,9 +278,9 @@ class DashboardService:
         p = 3
         has_site_scope = _site_code is not None
         for val, col in [
-            (None if has_site_scope else _firma, "agg.firma"),
-            (None if has_site_scope else _regional, "agg.regional"),
-            (None if has_site_scope else _asm, "agg.asm"),
+            (None if has_site_scope else _firma, "s.firma" if current_scope else "agg.firma"),
+            (None if has_site_scope else _regional, "s.regional" if current_scope else "agg.regional"),
+            (None if has_site_scope else _asm, "s.asm" if current_scope else "agg.asm"),
             (_site_code, "agg.site_code"),
             (_agent, "agg.agent"),
         ]:
@@ -251,6 +288,24 @@ class DashboardService:
                 rep_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
                 rep_params.append(val)
                 p += 1
+
+        if current_scope:
+            rep_positions: dict[str, int] = {}
+            offset = 3
+            for key, val in [
+                ("firma", None if has_site_scope else _firma),
+                ("regional", None if has_site_scope else _regional),
+                ("asm", None if has_site_scope else _asm),
+                ("site_code", _site_code),
+                ("agent", _agent),
+            ]:
+                if val is not None:
+                    rep_positions[key] = offset
+                    offset += 1
+            rep_clauses = _expand_current_manager_scope(rep_clauses, rep_positions)
+
+        if current_scope and not include_closed_stores:
+            rep_clauses.append("s.is_active = TRUE")
 
         rows = await self.repo.fetch_year_history_monthly(rep_clauses, rep_params)
 
@@ -277,8 +332,9 @@ class DashboardService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> DashboardAllResponse:
-        
         async def get_agents_data() -> list[AgentStats]:
             async with self.pool.acquire() as conn:
                 rows = await _fetch_agent_stats_rows(
@@ -289,6 +345,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
             return [AgentStats(**dict(row)) for row in rows]
 
@@ -302,26 +360,37 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
                 stats = [StoreStats(**dict(row)) for row in rows]
                 # convert back to dict for the enrich function since it expects list[dict]
                 # wait, _enrich_store_stats_with_campaign returns list[dict] and takes list[dict]
                 # let's look at the type signature of StoreStats, we should return list[StoreStats]
                 enriched_dicts = await _enrich_store_stats_with_campaign(
-                    conn, 
-                    [dict(row) for row in rows], 
-                    month, 
-                    firma, 
-                    regional, 
-                    asm, 
-                    site_code, 
-                    agent
+                    conn,
+                    [dict(row) for row in rows],
+                    month,
+                    firma,
+                    regional,
+                    asm,
+                    site_code,
+                    agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
                 return [StoreStats(**d) for d in enriched_dicts]
 
         async def get_daily_data() -> list[DailySalesPoint]:
             return await self.get_daily_sales(
-                month, firma, regional, asm, site_code, agent
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
             )
 
         async def get_period_comparison_data(
@@ -337,6 +406,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         async def get_category_mix_data() -> list[CategoryMixItem]:
@@ -349,6 +420,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         async def get_receipt_bucket_mix_data() -> list[ReceiptBucketItem]:
@@ -361,6 +434,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         async def get_focus_subcategory_mix_data() -> list[CategoryMixItem]:
@@ -373,6 +448,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         async def get_brand_mix_data() -> list[BrandMixItem]:
@@ -385,6 +462,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         async def get_promo_incentive_data() -> PromoIncentiveSummary:
@@ -397,6 +476,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         async def get_regional_data() -> list[RegionalStats]:
@@ -409,6 +490,8 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
             return [RegionalStats(**r) for r in rows]
 
@@ -422,11 +505,22 @@ class DashboardService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
             return [AsmStats(**r) for r in rows]
 
         results = await asyncio.gather(
-            self.get_summary(month, firma, regional, asm, site_code, agent),
+            self.get_summary(
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
+            ),
             get_agents_data(),
             get_stores_data(),
             get_daily_data(),

@@ -14,6 +14,7 @@ from models import (
 )
 from services.dashboard.utils import (
     _build_scoped_params,
+    _expand_current_manager_scope,
     _month_day_range,
     _shift_month,
 )
@@ -26,6 +27,38 @@ from services.filters import scoped_clauses
 from services.incentive_db import get_incentive_campaign
 
 
+def _scope_join(current_scope: bool, source_alias: str = "agg") -> str:
+    return f"JOIN stores s ON s.site_code = {source_alias}.site_code" if current_scope else ""
+
+
+def _scope_clauses(
+    positions: dict[str, int],
+    *,
+    current_scope: bool,
+    include_closed_stores: bool,
+    source_alias: str = "agg",
+    month_alias: str | None = None,
+    month_position: int | None = None,
+) -> list[str]:
+    clauses = scoped_clauses(
+        positions,
+        site_alias=source_alias,
+        store_alias="s" if current_scope else source_alias,
+        agent_alias=source_alias,
+        month_alias=month_alias,
+        month_position=month_position,
+    )
+    if current_scope:
+        clauses = _expand_current_manager_scope(clauses, positions)
+    if current_scope and not include_closed_stores:
+        clauses.append("s.is_active = true")
+    return clauses
+
+
+def _store_field(field: str, current_scope: bool, source_alias: str = "agg") -> str:
+    return f"s.{field}" if current_scope else f"{source_alias}.{field}"
+
+
 async def _get_store_incentive_multipliers(
     conn: Any,
     month: str,
@@ -33,6 +66,8 @@ async def _get_store_incentive_multipliers(
     regional: str | None,
     asm: str | None,
     site_code: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> tuple[dict[str, float], dict[str, float | None]]:
     """Returns (multipliers, achievements) keyed by site_code."""
     params, positions = _build_scoped_params(
@@ -43,11 +78,11 @@ async def _get_store_incentive_multipliers(
         site_code=site_code,
         agent=None,
     )
-    query_clauses = scoped_clauses(
+    query_clauses = _scope_clauses(
         positions,
-        site_alias="ram",
-        store_alias="ram",
-        agent_alias="ram",
+        source_alias="ram",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="ram.import_month",
         month_position=1,
     )
@@ -86,6 +121,7 @@ async def _get_store_incentive_multipliers(
             COALESCE(SUM(ram.total_sales), 0) AS store_sales,
             COALESCE(MAX(st.target_value), 0) AS target
         FROM reporting_agent_month ram
+        {_scope_join(current_scope, "ram")}
         LEFT JOIN store_targets st
             ON st.site_code = ram.site_code AND st.import_month = $1
         WHERE {" AND ".join(clauses)}
@@ -116,6 +152,8 @@ async def _fetch_store_stats_rows(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[Any]:
     params, positions = _build_scoped_params(
         [month],
@@ -125,11 +163,10 @@ async def _fetch_store_stats_rows(
         site_code=site_code,
         agent=agent,
     )
-    query_clauses = scoped_clauses(
+    query_clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -137,8 +174,20 @@ async def _fetch_store_stats_rows(
     return await conn.fetch(
         f"""
         WITH filtered_days AS (
-            SELECT *
+            SELECT
+                agg.import_month,
+                agg.sale_date,
+                agg.site_code,
+                {_store_field("locatie", current_scope)} AS locatie,
+                {_store_field("firma", current_scope)} AS firma,
+                {_store_field("regional", current_scope)} AS regional,
+                {_store_field("asm", current_scope)} AS asm,
+                agg.agent,
+                agg.total_sales,
+                agg.total_quantity,
+                agg.receipt_count
             FROM reporting_agent_day agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
         ),
         forecast_meta AS (
@@ -212,6 +261,8 @@ async def _enrich_store_stats_with_campaign(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
     """Attach promo_qty and incentive_qty to each store stats row."""
     if not base_rows:
@@ -239,11 +290,10 @@ async def _enrich_store_stats_with_campaign(
         agent=agent,
     )
 
-    metric_query_clauses = scoped_clauses(
+    metric_query_clauses = _scope_clauses(
         metric_positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -276,6 +326,7 @@ async def _enrich_store_stats_with_campaign(
                 0
             ) AS incentive_qty
         FROM reporting_item_month agg
+        {_scope_join(current_scope)}
         WHERE {" AND ".join(metric_clauses)}
         GROUP BY agg.import_month, agg.site_code
         """,
@@ -300,6 +351,8 @@ async def _fetch_agent_stats_rows(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
     params, positions = _build_scoped_params(
         [month],
@@ -309,14 +362,15 @@ async def _fetch_agent_stats_rows(
         site_code=site_code,
         agent=agent,
     )
-    agent_clauses = scoped_clauses(
+    agent_clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=False,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
+    if current_scope and not include_closed_stores:
+        agent_clauses.append("agg.is_active = true")
     rows = await conn.fetch(
         f"""
         WITH store_agent_counts AS (
@@ -330,7 +384,20 @@ async def _fetch_agent_stats_rows(
         ),
         agent_base AS (
             SELECT
-                agg.*,
+                agg.import_month,
+                agg.site_code,
+                {_store_field("locatie", current_scope)} AS locatie,
+                {_store_field("firma", current_scope)} AS firma,
+                {_store_field("regional", current_scope)} AS regional,
+                {_store_field("asm", current_scope)} AS asm,
+                {"s.is_active" if current_scope else "true"} AS is_active,
+                agg.agent,
+                agg.total_sales,
+                agg.total_quantity,
+                agg.focus_quantity,
+                agg.receipt_count,
+                agg.receipt_2plus_count,
+                agg.working_days,
                 COALESCE(
                     atg.target_value,
                     CASE
@@ -339,6 +406,7 @@ async def _fetch_agent_stats_rows(
                     END
                 ) AS effective_target
             FROM reporting_agent_month agg
+            {_scope_join(current_scope)}
             LEFT JOIN store_targets stg
                 ON stg.import_month = agg.import_month
                 AND stg.site_code = agg.site_code
@@ -415,11 +483,10 @@ async def _fetch_agent_stats_rows(
         agent=agent,
     )
 
-    metric_query_clauses = scoped_clauses(
+    metric_query_clauses = _scope_clauses(
         metric_positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -453,6 +520,7 @@ async def _fetch_agent_stats_rows(
                 0
             ) AS incentive_qty
         FROM reporting_item_month agg
+        {_scope_join(current_scope)}
         WHERE {" AND ".join(metric_clauses)}
         GROUP BY agg.import_month, agg.site_code, agg.agent
         """,
@@ -479,6 +547,8 @@ async def _fetch_regional_stats(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
     params, positions = _build_scoped_params(
         [month],
@@ -488,11 +558,10 @@ async def _fetch_regional_stats(
         site_code=site_code,
         agent=agent,
     )
-    query_clauses = scoped_clauses(
+    query_clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -502,7 +571,7 @@ async def _fetch_regional_stats(
         WITH regional_base AS (
             SELECT
                 agg.import_month,
-                agg.regional,
+                {_store_field("regional", current_scope)} AS regional,
                 COALESCE(SUM(agg.total_sales), 0) AS total_vanzari,
                 COALESCE(SUM(agg.total_quantity), 0)::INT AS qty_total,
                 COALESCE(SUM(agg.receipt_count), 0)::INT AS nr_bonuri,
@@ -511,12 +580,14 @@ async def _fetch_regional_stats(
                 COALESCE(SUM(agg.receipt_2plus_count), 0)::INT AS receipt_2plus_count,
                 COALESCE(SUM(agg.focus_quantity), 0)::INT AS focus_quantity
             FROM reporting_agent_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
-            GROUP BY agg.import_month, agg.regional
+            GROUP BY agg.import_month, {_store_field("regional", current_scope)}
         ),
         regional_stores AS (
-            SELECT DISTINCT agg.regional, agg.site_code
+            SELECT DISTINCT {_store_field("regional", current_scope)} AS regional, agg.site_code
             FROM reporting_agent_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
         ),
         regional_targets AS (
@@ -618,11 +689,10 @@ async def _fetch_regional_stats(
         agent=agent,
     )
 
-    metric_query_clauses = scoped_clauses(
+    metric_query_clauses = _scope_clauses(
         metric_positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -631,7 +701,7 @@ async def _fetch_regional_stats(
         f"""
         SELECT
             agg.import_month,
-            agg.regional,
+            {_store_field("regional", current_scope)} AS regional,
             COALESCE(
                 SUM(
                     CASE
@@ -655,8 +725,9 @@ async def _fetch_regional_stats(
                 0
             ) AS incentive_qty
         FROM reporting_item_month agg
+        {_scope_join(current_scope)}
         WHERE {" AND ".join(metric_clauses)}
-        GROUP BY agg.import_month, agg.regional
+        GROUP BY agg.import_month, {_store_field("regional", current_scope)}
         """,
         *metric_params,
     )
@@ -679,6 +750,8 @@ async def _fetch_asm_stats(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
     params, positions = _build_scoped_params(
         [month],
@@ -688,11 +761,10 @@ async def _fetch_asm_stats(
         site_code=site_code,
         agent=agent,
     )
-    query_clauses = scoped_clauses(
+    query_clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -702,8 +774,8 @@ async def _fetch_asm_stats(
         WITH asm_base AS (
             SELECT
                 agg.import_month,
-                agg.regional,
-                agg.asm,
+                {_store_field("regional", current_scope)} AS regional,
+                {_store_field("asm", current_scope)} AS asm,
                 COALESCE(SUM(agg.total_sales), 0) AS total_vanzari,
                 COALESCE(SUM(agg.total_quantity), 0)::INT AS qty_total,
                 COALESCE(SUM(agg.receipt_count), 0)::INT AS nr_bonuri,
@@ -712,12 +784,17 @@ async def _fetch_asm_stats(
                 COALESCE(SUM(agg.receipt_2plus_count), 0)::INT AS receipt_2plus_count,
                 COALESCE(SUM(agg.focus_quantity), 0)::INT AS focus_quantity
             FROM reporting_agent_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
-            GROUP BY agg.import_month, agg.regional, agg.asm
+            GROUP BY agg.import_month, {_store_field("regional", current_scope)}, {_store_field("asm", current_scope)}
         ),
         asm_stores AS (
-            SELECT DISTINCT agg.regional, agg.asm, agg.site_code
+            SELECT DISTINCT
+                {_store_field("regional", current_scope)} AS regional,
+                {_store_field("asm", current_scope)} AS asm,
+                agg.site_code
             FROM reporting_agent_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
         ),
         asm_targets AS (
@@ -794,11 +871,10 @@ async def _fetch_asm_stats(
         agent=agent,
     )
 
-    metric_query_clauses = scoped_clauses(
+    metric_query_clauses = _scope_clauses(
         metric_positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -807,8 +883,8 @@ async def _fetch_asm_stats(
         f"""
         SELECT
             agg.import_month,
-            agg.regional,
-            agg.asm,
+            {_store_field("regional", current_scope)} AS regional,
+            {_store_field("asm", current_scope)} AS asm,
             COALESCE(
                 SUM(
                     CASE
@@ -832,8 +908,9 @@ async def _fetch_asm_stats(
                 0
             ) AS incentive_qty
         FROM reporting_item_month agg
+        {_scope_join(current_scope)}
         WHERE {" AND ".join(metric_clauses)}
-        GROUP BY agg.import_month, agg.regional, agg.asm
+        GROUP BY agg.import_month, {_store_field("regional", current_scope)}, {_store_field("asm", current_scope)}
         """,
         *metric_params,
     )
@@ -860,6 +937,8 @@ async def _fetch_period_comparison(
     agent: str | None,
     cutoff_day: int | None = None,
     target_metric: str = "sales",
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PeriodComparisonPayload:
     if cutoff_day is None:
         cutoff_day = await _fetch_period_comparison_cutoff_day(conn, month)
@@ -872,11 +951,10 @@ async def _fetch_period_comparison(
         site_code=site_code,
         agent=agent,
     )
-    baseline_clauses = scoped_clauses(
+    baseline_clauses = _scope_clauses(
         baseline_positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -884,6 +962,7 @@ async def _fetch_period_comparison(
         f"""
         SELECT DISTINCT agg.site_code
         FROM reporting_agent_day agg
+        {_scope_join(current_scope)}
         WHERE {" AND ".join(baseline_clauses)}
         """,
         *baseline_params,
@@ -913,11 +992,10 @@ async def _fetch_period_comparison(
             agent=agent,
         )
 
-        query_clauses = scoped_clauses(
+        query_clauses = _scope_clauses(
             positions,
-            site_alias="agg",
-            store_alias="agg",
-            agent_alias="agg",
+            current_scope=current_scope and is_current_period,
+            include_closed_stores=include_closed_stores,
         )
         cartela_query_clauses = scoped_clauses(
             positions,
@@ -925,6 +1003,8 @@ async def _fetch_period_comparison(
             store_alias="cs",
             agent_alias="c",
         )
+        if current_scope and is_current_period and not include_closed_stores:
+            cartela_query_clauses.append("cs.is_active = true")
         if not is_current_period:
             store_pos = len(params) + 1
             params.append(active_store_codes)
@@ -946,6 +1026,7 @@ async def _fetch_period_comparison(
             WITH filtered_days AS (
                 SELECT *
                 FROM reporting_agent_day agg
+                {_scope_join(current_scope and is_current_period)}
                 WHERE {" AND ".join(clauses)}
             ),
             cartele_summary AS (
@@ -1048,6 +1129,8 @@ async def _fetch_receipt_bucket_mix(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[ReceiptBucketItem]:
     params, positions = _build_scoped_params(
         [month],
@@ -1057,11 +1140,10 @@ async def _fetch_receipt_bucket_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses = scoped_clauses(
+    clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -1070,6 +1152,7 @@ async def _fetch_receipt_bucket_mix(
         WITH filtered_month AS (
             SELECT *
             FROM reporting_agent_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
         )
         SELECT
@@ -1107,6 +1190,8 @@ async def _fetch_focus_subcategory_mix(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[CategoryMixItem]:
     params, positions = _build_scoped_params(
         [month],
@@ -1116,11 +1201,10 @@ async def _fetch_focus_subcategory_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses = scoped_clauses(
+    clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -1132,6 +1216,7 @@ async def _fetch_focus_subcategory_mix(
                 COALESCE(SUM(agg.total_sales), 0) AS sales_total,
                 COALESCE(SUM(agg.total_quantity), 0)::INT AS quantity_total
             FROM reporting_focus_item_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
             GROUP BY agg.focus_subcategory
         ),
@@ -1173,6 +1258,8 @@ async def _fetch_brand_mix(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[BrandMixItem]:
     params, positions = _build_scoped_params(
         [month],
@@ -1182,11 +1269,10 @@ async def _fetch_brand_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses = scoped_clauses(
+    clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -1198,6 +1284,7 @@ async def _fetch_brand_mix(
                 COALESCE(SUM(agg.total_sales), 0) AS sales_total,
                 COALESCE(SUM(agg.total_quantity), 0)::INT AS quantity_total
             FROM reporting_category_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
               AND LOWER(TRIM(agg.category)) IN ('stil si protectie', 'folii sticla')
             GROUP BY agg.brand_group
@@ -1224,6 +1311,8 @@ async def _fetch_promo_incentive_summary(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PromoIncentiveSummary:
     config, _ = load_special_cards_config()
     promotion_definition, promotion_error = parse_promotion_definition(config, month)
@@ -1255,11 +1344,10 @@ async def _fetch_promo_incentive_summary(
             "agg.sale_date BETWEEN $2 AND $3",
             "agg.item_code = ANY($4::TEXT[])",
         ]
-        promo_query_clauses = scoped_clauses(
+        promo_query_clauses = _scope_clauses(
             promo_positions,
-            site_alias="agg",
-            store_alias="agg",
-            agent_alias="agg",
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
         promo_clauses.extend(promo_query_clauses)
         promo_row = await conn.fetchrow(
@@ -1268,6 +1356,7 @@ async def _fetch_promo_incentive_summary(
                 COALESCE(SUM(agg.positive_quantity), 0) AS promo_qty,
                 COALESCE(SUM(agg.total_sales), 0) AS promo_sales
             FROM reporting_item_day agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(promo_clauses)}
             """,
             *promo_params,
@@ -1292,11 +1381,10 @@ async def _fetch_promo_incentive_summary(
                 "agg.import_month = $1",
                 "agg.item_code = ANY($2::TEXT[])",
             ]
-            incentive_query_clauses = scoped_clauses(
+            incentive_query_clauses = _scope_clauses(
                 incentive_positions,
-                site_alias="agg",
-                store_alias="agg",
-                agent_alias="agg",
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
             )
             incentive_clauses.extend(incentive_query_clauses)
             item_rows = await conn.fetch(
@@ -1304,13 +1392,21 @@ async def _fetch_promo_incentive_summary(
                 SELECT agg.site_code, agg.item_code,
                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
                 FROM reporting_item_month agg
+                {_scope_join(current_scope)}
                 WHERE {" AND ".join(incentive_clauses)}
                 GROUP BY agg.site_code, agg.item_code
                 """,
                 *incentive_params,
             )
             store_multipliers, achievements = await _get_store_incentive_multipliers(
-                conn, month, firma, regional, asm, site_code
+                conn,
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
             )
             incentive_qty = sum(int(r["qty"]) for r in item_rows)
             incentive_value = Decimal(str(
@@ -1358,6 +1454,8 @@ async def _fetch_category_mix(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> list[CategoryMixItem]:
     params, positions = _build_scoped_params(
         [month],
@@ -1367,11 +1465,10 @@ async def _fetch_category_mix(
         site_code=site_code,
         agent=agent,
     )
-    clauses = scoped_clauses(
+    clauses = _scope_clauses(
         positions,
-        site_alias="agg",
-        store_alias="agg",
-        agent_alias="agg",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         month_alias="agg.import_month",
         month_position=1,
     )
@@ -1383,6 +1480,7 @@ async def _fetch_category_mix(
                 COALESCE(SUM(agg.total_sales), 0) AS sales_total,
                 COALESCE(SUM(agg.total_quantity), 0)::INT AS quantity_total
             FROM reporting_category_month agg
+            {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
             GROUP BY agg.category
         ),

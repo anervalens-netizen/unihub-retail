@@ -117,6 +117,15 @@ def is_month_final(import_month: str) -> bool:
 
 
 async def upsert_stores(conn: asyncpg.Connection, df: pd.DataFrame, import_month: str) -> None:
+    latest_completed_month = await conn.fetchval(
+        """
+        SELECT MAX(import_month)
+        FROM import_snapshots
+        WHERE status = 'completed'
+        """
+    )
+    updates_current_structure = latest_completed_month is None or import_month >= latest_completed_month
+
     records = []
     deduped = (
         df[["SiteCode", "Locatie", "Firma", "Regional", "ASM"]]
@@ -133,27 +142,40 @@ async def upsert_stores(conn: asyncpg.Connection, df: pd.DataFrame, import_month
                 row.ASM,
                 import_month,
                 import_month,
+                updates_current_structure,
             )
         )
 
     await conn.executemany(
         """
         INSERT INTO stores (
-            site_code, locatie, firma, regional, asm, first_seen_month, last_seen_month
+            site_code, locatie, firma, regional, asm, first_seen_month, last_seen_month, is_active
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (site_code) DO UPDATE
-        SET locatie = EXCLUDED.locatie,
-            firma = EXCLUDED.firma,
-            regional = EXCLUDED.regional,
-            asm = EXCLUDED.asm,
-            is_active = true,
+        SET locatie = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.locatie ELSE stores.locatie END,
+            firma = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.firma ELSE stores.firma END,
+            regional = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.regional ELSE stores.regional END,
+            asm = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.asm ELSE stores.asm END,
+            is_active = CASE WHEN EXCLUDED.is_active THEN true ELSE stores.is_active END,
             first_seen_month = LEAST(stores.first_seen_month, EXCLUDED.first_seen_month),
             last_seen_month = GREATEST(stores.last_seen_month, EXCLUDED.last_seen_month),
             updated_at = now()
         """,
         records,
     )
+    if updates_current_structure:
+        current_site_codes = [record[0] for record in records]
+        await conn.execute(
+            """
+            UPDATE stores
+            SET is_active = false,
+                updated_at = now()
+            WHERE is_active = true
+              AND NOT (site_code = ANY($1::TEXT[]))
+            """,
+            current_site_codes,
+        )
 
 
 async def replace_month_snapshot(conn: asyncpg.Connection, import_month: str) -> None:

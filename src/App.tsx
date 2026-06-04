@@ -250,7 +250,13 @@ export default function App() {
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
-          <Dashboard currentMonth={currentMonth} months={months} filters={hubFilters} onSectionChange={setHubSection} />
+          <Dashboard
+            currentMonth={currentMonth}
+            months={months}
+            filters={hubFilters}
+            initialSection={hubSection}
+            onSectionChange={setHubSection}
+          />
         )}
         {activeTab === 'focus' && currentMonth && (
           <Campaigns

@@ -77,6 +77,12 @@ Tabelele curente RM si Magazine returneaza atat procentul realizat
 (`forecast_target_pct`) calculata pe baza `import_snapshots.is_month_final` si
 ultimei zile importate.
 
+Istoricul Hub ruleaza pe structura curenta de magazine. Cand un manager activ
+este selectat, istoricul centralizeaza vanzarile istorice ale magazinelor
+active alocate acum acelui manager, chiar daca in lunile vechi magazinele erau
+sub alt manager. Magazinele inchise sunt excluse implicit; UI-ul are optiune
+dedicata pentru includerea lor.
+
 Cardul Hub `Comparatie perioade` foloseste o cohorta like-for-like: magazinele
 cu vanzari Retail in luna analizata sunt considerate deschise pentru acel card,
 iar luna trecuta si aceeasi luna din anul anterior sunt agregate numai pentru
@@ -99,6 +105,15 @@ Familii de tabele:
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_targets` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
+
+`stores` este master data curenta pentru apartenenta magazinelor. In Retail
+exista un singur layer activ de management; coloanele `regional` si `asm` sunt
+pastrate pentru compatibilitate cu rapoartele, dar pentru magazinele active din
+ultima luna ele trebuie sa indice acelasi manager. Importul celei mai noi luni
+actualizeaza structura curenta si marcheaza inactive magazinele care nu mai
+apar. Importurile istorice actualizeaza doar intervalul
+`first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent
+sau sa reactiveze magazine inchise.
 
 ### Campanii si concursuri
 

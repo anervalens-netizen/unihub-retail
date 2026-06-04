@@ -31,6 +31,11 @@ describe('buildScopedMonthQuery', () => {
     expect(q.regional).toBe('Elena Popescu');
   });
 
+  it('includes asm when set', () => {
+    const q = buildScopedMonthQuery('2026-05', makeFilters({ asm: 'Mihai Condorateanu' }));
+    expect(q.asm).toBe('Mihai Condorateanu');
+  });
+
   it('includes site_code when magazin is set', () => {
     const q = buildScopedMonthQuery('2026-05', makeFilters({ magazin: 'CRELECTROP' }));
     expect(q.site_code).toBe('CRELECTROP');
@@ -45,11 +50,13 @@ describe('buildScopedMonthQuery', () => {
     const q = buildScopedMonthQuery('2026-05', makeFilters({
       firma: 'Mobiup',
       rm: 'Maria',
+      asm: 'Mihai',
       magazin: 'STORE01',
       agent: 'Agent1',
     }));
     expect(q.firma).toBe('Mobiup');
     expect(q.regional).toBe('Maria');
+    expect(q.asm).toBe('Mihai');
     expect(q.site_code).toBe('STORE01');
     expect(q.agent).toBe('Agent1');
     expect(q.month).toBe('2026-05');

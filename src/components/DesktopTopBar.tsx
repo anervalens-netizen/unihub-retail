@@ -22,7 +22,7 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
       ? `Management › ${MGMT_SUBTAB_LABELS[mgmtSubTab] ?? ''}`
       : (TAB_LABELS[activeTab] ?? activeTab);
 
-  const activeFilterCount = [filters.firma, filters.rm, filters.magazin, filters.agent].filter(
+  const activeFilterCount = [filters.firma, filters.rm, filters.asm, filters.magazin, filters.agent].filter(
     (v) => v !== ALL_FIRMS && v !== ALL_SCOPE && v !== ALL_STORES
   ).length;
 

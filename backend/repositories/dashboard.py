@@ -8,23 +8,34 @@ class DashboardRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def fetch_summary(self, clauses: list[str], params: list[Any]) -> asyncpg.Record | None:
-        cartela_clauses = [
-            clause.replace("agg.import_month", "c.import_month")
-            .replace("agg.site_code", "c.site_code")
-            .replace("agg.locatie", "cs.locatie")
-            .replace("agg.agent", "c.agent")
-            .replace("agg.firma", "cs.firma")
-            .replace("agg.regional", "cs.regional")
-            .replace("agg.asm", "cs.asm")
-            for clause in clauses
-        ]
+    async def fetch_summary(
+        self, clauses: list[str], params: list[Any], current_scope: bool = False
+    ) -> asyncpg.Record | None:
+        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+        cartela_clauses = []
+        for clause in clauses:
+            cartela_clause = (
+                clause.replace("s.locatie", "cs.locatie")
+                .replace("s.firma", "cs.firma")
+                .replace("s.regional", "cs.regional")
+                .replace("s.asm", "cs.asm")
+                .replace("s.is_active", "cs.is_active")
+                .replace("agg.import_month", "c.import_month")
+                .replace("agg.site_code", "c.site_code")
+                .replace("agg.locatie", "cs.locatie")
+                .replace("agg.agent", "c.agent")
+                .replace("agg.firma", "cs.firma")
+                .replace("agg.regional", "cs.regional")
+                .replace("agg.asm", "cs.asm")
+            )
+            cartela_clauses.append(cartela_clause)
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 f"""
                 WITH filtered_days AS (
-                    SELECT *
+                    SELECT agg.*
                     FROM reporting_agent_day agg
+                    {store_join}
                     WHERE {" AND ".join(clauses)}
                 ),
                 sales_summary AS (
@@ -133,7 +144,10 @@ class DashboardRepository:
                 *params,
             )
 
-    async def fetch_daily_sales(self, clauses: list[str], params: list[Any]) -> list[asyncpg.Record]:
+    async def fetch_daily_sales(
+        self, clauses: list[str], params: list[Any], current_scope: bool = False
+    ) -> list[asyncpg.Record]:
+        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -143,6 +157,7 @@ class DashboardRepository:
                     COALESCE(SUM(agg.total_quantity), 0)::INT AS total_quantity,
                     COALESCE(SUM(agg.receipt_count), 0)::INT AS receipt_count
                 FROM reporting_agent_day agg
+                {store_join}
                 WHERE {" AND ".join(clauses)}
                 GROUP BY agg.sale_date
                 ORDER BY agg.sale_date ASC
@@ -150,7 +165,15 @@ class DashboardRepository:
                 *params,
             )
 
-    async def fetch_monthly_history(self, sales_clauses: list[str], params: list[Any]) -> list[asyncpg.Record]:
+    async def fetch_monthly_history(
+        self, sales_clauses: list[str], params: list[Any], current_scope: bool = False
+    ) -> list[asyncpg.Record]:
+        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+        target_store_clauses = [
+            clause.replace("agg.", "s.").replace("s.agent", "agg.agent")
+            for clause in sales_clauses
+            if ".agent" not in clause
+        ]
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -174,6 +197,7 @@ class DashboardRepository:
                         agg.receipt_2plus_count,
                         agg.focus_quantity
                     FROM reporting_agent_day agg
+                    {store_join}
                     WHERE agg.import_month >= TO_CHAR(($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month', 'YYYY-MM')
                       AND agg.import_month <= $1
                       {" AND " + " AND ".join(sales_clauses) if sales_clauses else ""}
@@ -208,7 +232,7 @@ class DashboardRepository:
                     FROM store_targets stg
                     JOIN stores s ON s.site_code = stg.site_code
                     WHERE stg.import_month IN (SELECT import_month FROM recent_months)
-                      {" AND " + " AND ".join(clause.replace('agg.', 's.') for clause in sales_clauses) if sales_clauses else ""}
+                      {" AND " + " AND ".join(target_store_clauses) if target_store_clauses else ""}
                     GROUP BY stg.import_month
                 )
                 SELECT
@@ -252,7 +276,12 @@ class DashboardRepository:
 
     async def fetch_year_history_monthly(self, rep_clauses: list[str], rep_params: list[Any]) -> list[asyncpg.Record]:
         where_rep = f"AND {' AND '.join(rep_clauses)}" if rep_clauses else ""
-        where_store = where_rep.replace("agg.", "s.") if where_rep else ""
+        store_clauses = [
+            clause.replace("agg.", "s.").replace("s.agent", "agg.agent")
+            for clause in rep_clauses
+            if ".agent" not in clause
+        ]
+        where_store = f"AND {' AND '.join(store_clauses)}" if store_clauses else ""
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""

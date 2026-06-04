@@ -73,6 +73,7 @@ interface DashboardProps {
   currentMonth: string;
   months: string[];
   filters: AppFilters;
+  initialSection?: DashboardSection;
   onSectionChange?: (section: DashboardSection) => void;
 }
 
@@ -222,8 +223,8 @@ const HIST_ASM_COLUMNS = ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
 const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'forecast_target_pct');
 const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
 
-export function Dashboard({ currentMonth, months, filters, onSectionChange }: DashboardProps) {
-  const [activeSection, setActiveSection] = useState<DashboardSection>('current');
+export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
+  const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [agents, setAgents] = useState<AgentStat[]>([]);
@@ -261,6 +262,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
   const [error, setError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [includeClosedStores, setIncludeClosedStores] = useState(false);
   const [storeSort, setStoreSort] = useState<{ key: StoreSortKey; direction: SortDirection }>({
     key: 'proc_realizare_target',
     direction: 'desc',
@@ -289,9 +291,21 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     setHistoryMonth((previous) => (months.includes(previous) ? previous : currentMonth));
   }, [months, currentMonth]);
 
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
+
   const buildQuery = useCallback(
     (month: string) => buildScopedMonthQuery(month, filters),
     [filters]
+  );
+  const buildHistoryQuery = useCallback(
+    (month: string) => ({
+      ...buildQuery(month),
+      current_scope: true,
+      include_closed_stores: includeClosedStores,
+    }),
+    [buildQuery, includeClosedStores]
   );
 
   const currentCacheKey = useMemo(
@@ -299,17 +313,17 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     [buildQuery, currentMonth]
   );
   const historyCacheKey = useMemo(
-    () => `dashboard:history:${historyMonth}:${JSON.stringify({ ...buildQuery(historyMonth), months_back: 12 })}`,
-    [buildQuery, historyMonth]
+    () => `dashboard:history:${historyMonth}:${JSON.stringify({ ...buildHistoryQuery(historyMonth), months_back: 12 })}`,
+    [buildHistoryQuery, historyMonth]
   );
   const historyDetailCacheKey = useMemo(
-    () => `dashboard:history-detail:${historyMonth}:${JSON.stringify(buildQuery(historyMonth))}`,
-    [buildQuery, historyMonth]
+    () => `dashboard:history-detail:${historyMonth}:${JSON.stringify(buildHistoryQuery(historyMonth))}`,
+    [buildHistoryQuery, historyMonth]
   );
 
   const prefetchHistory = useCallback(
     (monthToPrefetch: string) => {
-      const query = { ...buildQuery(monthToPrefetch), months_back: 12 };
+      const query = { ...buildHistoryQuery(monthToPrefetch), months_back: 12 };
       const cacheKey = `dashboard:history:${monthToPrefetch}:${JSON.stringify(query)}`;
       const cached = getCachedView<MonthlyHistoryPoint[]>(cacheKey, DASHBOARD_CACHE_TTL_MS);
       if (cached.isFresh) {
@@ -324,7 +338,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
           // background prefetch stays silent
         });
     },
-    [buildQuery]
+    [buildHistoryQuery]
   );
 
   const fetchCurrentData = useCallback(() => {
@@ -455,8 +469,8 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     setHistoryLoading(true);
     setHistoryError(null);
     Promise.all([
-      getDashboardHistory({ ...buildQuery(historyMonth), months_back: 12 }),
-      getDashboardAll(buildQuery(historyMonth)),
+      getDashboardHistory({ ...buildHistoryQuery(historyMonth), months_back: 12 }),
+      getDashboardAll(buildHistoryQuery(historyMonth)),
     ])
       .then(([histData, allData]) => {
         if (!isMountedRef.current) return;
@@ -502,7 +516,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
       .finally(() => {
         if (isMountedRef.current) setHistoryLoading(false);
       });
-  }, [buildQuery, historyCacheKey, historyDetailCacheKey, historyMonth]);
+  }, [buildHistoryQuery, historyCacheKey, historyDetailCacheKey, historyMonth]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -545,32 +559,32 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
     }
   }, [activeSection, historyMonth, loadHistory]);
 
-  // Reset currentHistory when filters or month change so it reloads with new params
+  // Reset currentHistory when filters, store status scope or month change so it reloads with new params
   useEffect(() => {
     setCurrentHistory([]);
-  }, [buildQuery, currentMonth]);
+  }, [buildHistoryQuery, currentMonth]);
 
   // Load currentHistory when opening Istoric (or after reset above)
   useEffect(() => {
     if (activeSection !== 'history' || currentHistory.length > 0 || currentHistoryLoading) return;
     setCurrentHistoryLoading(true);
-    getDashboardHistory({ ...buildQuery(currentMonth), months_back: 13 })
+    getDashboardHistory({ ...buildHistoryQuery(currentMonth), months_back: 14 })
       .then((data) => { if (isMountedRef.current) setCurrentHistory(data.history); })
       .catch((err: Error) => { if (isMountedRef.current) setCurrentHistory([]); console.warn('currentHistory fetch failed:', err.message); })
       .finally(() => { if (isMountedRef.current) setCurrentHistoryLoading(false); });
-  }, [activeSection, currentHistory.length, currentHistoryLoading, buildQuery, currentMonth]);
+  }, [activeSection, currentHistory.length, currentHistoryLoading, buildHistoryQuery, currentMonth]);
 
   // Load year history when a specific year is selected
   useEffect(() => {
     if (historyYearFilter === null || activeSection !== 'history') return;
     setYearHistoryLoading(true);
     setYearHistory([]);
-    const { month: _month, ...filterParams } = buildQuery(currentMonth);
+    const { month: _month, ...filterParams } = buildHistoryQuery(currentMonth);
     getDashboardHistoryYear({ ...filterParams, year: historyYearFilter })
       .then((data) => { if (isMountedRef.current) setYearHistory(data.points); })
       .catch((err: Error) => { if (isMountedRef.current) setYearHistory([]); console.warn('yearHistory fetch failed:', err.message); })
       .finally(() => { if (isMountedRef.current) setYearHistoryLoading(false); });
-  }, [historyYearFilter, activeSection, buildQuery, currentMonth]);
+  }, [historyYearFilter, activeSection, buildHistoryQuery, currentMonth]);
 
   const availableYears = useMemo(() => {
     const cy = parseInt(currentMonth.slice(0, 4));
@@ -1465,7 +1479,7 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
                     <h3 className="text-sm font-bold">Evolutie lunara</h3>
                     <p className="text-[11px] text-slate-500">
                       {historyYearFilter === null
-                        ? `Ultimele 12 luni finalizate${summary && !summary.is_month_final ? ' + previziune luna in curs' : ''}`
+                        ? `Ultimele 13 luni finalizate${summary && !summary.is_month_final ? ' + previziune luna in curs' : ''}`
                         : `Toate lunile disponibile — ${historyYearFilter}`}
                     </p>
                   </div>
@@ -1588,22 +1602,35 @@ export function Dashboard({ currentMonth, months, filters, onSectionChange }: Da
               </div>
 
               <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-bold">Luna analizata</h3>
-                    <p className="text-[11px] text-slate-500">Selector dedicat doar pentru sectiunea de istoric</p>
+                    <p className="text-[11px] text-slate-500">
+                      Istoricul foloseste managerii si magazinele din structura curenta
+                    </p>
                   </div>
-                  <select
-                    value={historyMonth}
-                    onChange={(event) => setHistoryMonth(event.target.value)}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
-                  >
-                    {months.map((month) => (
-                      <option key={month} value={month}>
-                        {month}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={includeClosedStores}
+                        onChange={(event) => setIncludeClosedStores(event.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Include magazine inchise
+                    </label>
+                    <select
+                      value={historyMonth}
+                      onChange={(event) => setHistoryMonth(event.target.value)}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
+                    >
+                      {months.map((month) => (
+                        <option key={month} value={month}>
+                          {month}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 

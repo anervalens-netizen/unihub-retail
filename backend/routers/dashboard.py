@@ -41,9 +41,13 @@ async def get_dashboard_all(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
+    current_scope: bool = Query(False),
+    include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardAllResponse:
-    return await svc.get_dashboard_all(month, firma, regional, asm, site_code, agent)
+    return await svc.get_dashboard_all(
+        month, firma, regional, asm, site_code, agent, current_scope, include_closed_stores
+    )
 
 @router.get("/daily", response_model=list[DailySalesPoint])
 async def get_daily_sales(
@@ -78,9 +82,21 @@ async def get_monthly_history(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
+    current_scope: bool = Query(True),
+    include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardHistoryResponse:
-    return await svc.get_monthly_history(month, months_back, firma, regional, asm, site_code, agent)
+    return await svc.get_monthly_history(
+        month,
+        months_back,
+        firma,
+        regional,
+        asm,
+        site_code,
+        agent,
+        current_scope,
+        include_closed_stores,
+    )
 
 @router.get("/history-year", response_model=YearHistoryResponse)
 async def get_history_by_year(
@@ -90,6 +106,10 @@ async def get_history_by_year(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
+    current_scope: bool = Query(True),
+    include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> YearHistoryResponse:
-    return await svc.get_history_by_year(year, firma, regional, asm, site_code, agent)
+    return await svc.get_history_by_year(
+        year, firma, regional, asm, site_code, agent, current_scope, include_closed_stores
+    )
