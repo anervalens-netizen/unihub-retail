@@ -16,9 +16,9 @@ def _ranges(
     agent1_days = agent1_days or {}
     agent2_days = agent2_days or {}
     supl_days = supl_days or []
-    a1 = [[agent1_days[d]] if d in agent1_days else [] for d in range(1, 32)]
-    a2 = [[agent2_days[d]] if d in agent2_days else [] for d in range(1, 32)]
-    supl = [[None, None, d] for d in supl_days]
+    a1: list[list[object]] = [[agent1_days[d]] if d in agent1_days else [] for d in range(1, 32)]
+    a2: list[list[object]] = [[agent2_days[d]] if d in agent2_days else [] for d in range(1, 32)]
+    supl: list[list[object]] = [[None, None, d] for d in supl_days]
     supl.extend([] for _ in range(6 - len(supl)))
     return [
         {"values": [[target]]},
