@@ -20,8 +20,14 @@ def test_stores_coverage_response_shape():
         status="covered",
         agent_count=2,
         has_changes=True,
+        previous_agent_count=1,
+        added_agents_count=1,
+        removed_agents_count=0,
+        change_reason="agenti intrati",
     )
     assert item.has_changes is True
+    assert item.added_agents_count == 1
+    assert item.change_reason == "agenti intrati"
 
     response = StoreCoverageResponse(
         active_stores_count=10,

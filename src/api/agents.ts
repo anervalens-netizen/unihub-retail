@@ -34,6 +34,10 @@ export interface StoreCoverageItem {
   status: 'covered' | 'uncovered' | 'closed' | 'inactive';
   agent_count: number;
   has_changes: boolean;
+  previous_agent_count: number;
+  added_agents_count: number;
+  removed_agents_count: number;
+  change_reason: string | null;
 }
 
 export interface StoreCoverageResponse {
@@ -51,6 +55,7 @@ export interface AgentMovementPoint {
   reactivated: number;
   churned: number;
   net_growth: number;
+  is_baseline: boolean;
 }
 
 export interface AgentMovementResponse {

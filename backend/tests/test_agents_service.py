@@ -100,13 +100,14 @@ class TestAgentsMovement:
     @pytest.mark.asyncio
     async def test_movement_with_rows(self, service, mock_repo):
         mock_repo.get_movement.return_value = [
-            FakeRow(month="2026-04", active=10, new=2, reactivated=1),
-            FakeRow(month="2026-05", active=12, new=3, reactivated=0),
+            FakeRow(month="2026-04", active=10, new=2, reactivated=1, churned=0, net_growth=2, is_baseline=False),
+            FakeRow(month="2026-05", active=12, new=3, reactivated=0, churned=1, net_growth=2, is_baseline=False),
         ]
         result = await service.get_agents_movement("2026-05", None, None, None, None, None)
         assert len(result.history) == 2
         assert result.history[0].month == "2026-04"
         assert result.history[1].active == 12
+        assert result.history[1].churned == 1
 
 
 class TestAgentsList:

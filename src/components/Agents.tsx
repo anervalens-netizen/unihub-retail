@@ -264,11 +264,17 @@ interface AgentsProps {
 
 function CustomTooltip({ active, payload, label }: any) {
   if (active && payload && payload.length) {
+    const point = payload[0]?.payload;
     return (
       <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
         <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
           {label}
         </p>
+        {point?.is_baseline && (
+          <p className="mb-2 max-w-56 text-[11px] font-medium leading-snug text-slate-500">
+            Luna de start pentru tracking pe agent. Nu este tratata ca angajare masiva.
+          </p>
+        )}
         <div className="space-y-1">
           {payload.map((entry: any, i: number) => (
             <div key={i} className="flex items-center gap-3">
@@ -280,7 +286,7 @@ function CustomTooltip({ active, payload, label }: any) {
                 {entry.name}:
               </span>
               <span className="text-sm font-bold text-slate-900 dark:text-white">
-                {entry.value}
+                {entry.dataKey === 'churned_negative' ? Math.abs(entry.value) : entry.value}
               </span>
             </div>
           ))}
@@ -298,7 +304,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     if (typeof window !== 'undefined') return localStorage.getItem('agents_selectedAgent') || null;
     return null;
   });
-  const [activeTab, setActiveTab] = useState<'active' | 'movement' | 'inactive' | 'all'>(() => {
+  const [activeTab, setActiveTab] = useState<'active' | 'movement' | 'inactive' | 'churned' | 'all'>(() => {
     if (typeof window !== 'undefined') return (localStorage.getItem('agents_activeTab') as any) || 'active';
     return 'active';
   });
@@ -371,7 +377,8 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     let result = list;
     if (activeTab === 'active') result = result.filter((ag: AgentListItem) => ag.current_status === 'active');
     if (activeTab === 'movement') result = result.filter((ag: AgentListItem) => ag.is_new || ag.is_reactivated);
-    if (activeTab === 'inactive') result = result.filter((ag: AgentListItem) => ag.current_status === 'inactive_recent' || ag.current_status === 'churned');
+    if (activeTab === 'inactive') result = result.filter((ag: AgentListItem) => ag.current_status === 'inactive_recent');
+    if (activeTab === 'churned') result = result.filter((ag: AgentListItem) => ag.current_status === 'churned');
     if (cardFirma !== 'Toate' && filterOptions) {
       const firmaMagazine = filterOptions.magazine.filter((m) => m.firma === cardFirma).map((m) => m.locatie || m.site_code);
       result = result.filter((ag: AgentListItem) => firmaMagazine.includes(ag.store_name || ''));
@@ -382,10 +389,72 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     return result;
   }, [list, activeTab, cardFirma, cardMagazin, filterOptions]);
 
-  const chartData = useMemo(
-    () => (movement?.history ?? []).filter((p) => p.month >= '2025-01'),
-    [movement]
-  );
+  const chartData = useMemo(() => {
+    const points = (movement?.history ?? []).filter((p) => p.month >= '2025-01');
+    return points.map((p, index) => {
+      const isBaseline = p.is_baseline || p.month === '2025-01';
+      const previous = index > 0 ? points[index - 1] : null;
+      const newAgents = isBaseline ? 0 : p.new;
+      const reactivatedAgents = isBaseline ? 0 : p.reactivated;
+      const derivedExited = previous
+        ? Math.max(0, previous.active + newAgents + reactivatedAgents - p.active)
+        : 0;
+      const exited = isBaseline ? 0 : Math.max(p.churned ?? 0, derivedExited);
+      const netGrowth = isBaseline || !previous ? 0 : p.active - previous.active;
+
+      return {
+        ...p,
+        is_baseline: isBaseline,
+        new: newAgents,
+        reactivated: reactivatedAgents,
+        churned: exited,
+        net_growth: netGrowth,
+        churned_negative: -exited,
+      };
+    });
+  }, [movement]);
+
+  const maxMovement = useMemo(() => {
+    const values = chartData.flatMap((p) => [p.new, p.reactivated, p.churned, Math.abs(p.net_growth)]);
+    return Math.max(5, ...values) + 2;
+  }, [chartData]);
+
+  const churnAnalysis = useMemo(() => {
+    const nonBaseline = chartData.filter((p) => !p.is_baseline);
+    const currentPoint = chartData.find((p) => p.month === currentMonth) ?? chartData.at(-1);
+    const currentPrevActive = currentPoint && !currentPoint.is_baseline
+      ? Math.max(0, currentPoint.active - currentPoint.net_growth)
+      : 0;
+    const currentChurnRate = currentPrevActive > 0 && currentPoint
+      ? (currentPoint.churned / currentPrevActive) * 100
+      : null;
+    const lastThree = nonBaseline.slice(-3);
+    const avgChurnRate = lastThree.length > 0
+      ? lastThree.reduce((sum, p) => {
+          const prevActive = Math.max(0, p.active - p.net_growth);
+          return sum + (prevActive > 0 ? (p.churned / prevActive) * 100 : 0);
+        }, 0) / lastThree.length
+      : null;
+    const totalExited = nonBaseline.reduce((sum, p) => sum + p.churned, 0);
+    return {
+      currentChurnRate,
+      avgChurnRate,
+      totalExited,
+      currentExited: currentPoint?.churned ?? 0,
+      currentNetGrowth: currentPoint?.is_baseline ? 0 : currentPoint?.net_growth ?? 0,
+    };
+  }, [chartData, currentMonth]);
+
+  const topFluxStores = useMemo(() => {
+    return (coverage?.items ?? [])
+      .filter((item) => item.has_changes)
+      .map((item) => ({
+        ...item,
+        change_count: item.added_agents_count + item.removed_agents_count,
+      }))
+      .sort((a, b) => b.change_count - a.change_count || b.agent_count - a.agent_count || a.locatie.localeCompare(b.locatie))
+      .slice(0, 5);
+  }, [coverage]);
 
   const filterLabel = useMemo(() => {
     if (filters.agent !== 'Toti') return `Agent: ${filters.agent}`;
@@ -490,10 +559,10 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
           <div className="rounded-2xl bg-rose-50/50 p-3 dark:bg-rose-900/10">
             <div className="mb-2 flex items-center gap-2">
               <UserMinus size={16} className="text-rose-500" />
-              <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Plecati</div>
+              <div className="text-xs font-bold text-slate-600 dark:text-slate-400">Iesiti luna</div>
             </div>
             <div className="text-2xl font-black text-rose-600 dark:text-rose-400">{overview?.left_this_month_count ?? '-'}</div>
-            <div className="mt-1 text-[10px] text-slate-500">fata de luna trecuta</div>
+            <div className="mt-1 text-[10px] text-slate-500">fara vanzari fata de luna trecuta</div>
           </div>
           <div className="rounded-2xl bg-indigo-50/50 p-3 dark:bg-indigo-900/10">
             <div className="mb-2 flex items-center gap-2">
@@ -553,10 +622,80 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="glass rounded-3xl p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-bold">Analiza Churn</h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">Iesiri de personal pentru snapshot {currentMonth}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-rose-50/60 p-3 dark:bg-rose-900/10">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Churn luna</div>
+              <div className="mt-1 text-2xl font-black text-rose-600 dark:text-rose-400">
+                {churnAnalysis.currentChurnRate != null ? `${churnAnalysis.currentChurnRate.toLocaleString('ro-RO', { maximumFractionDigits: 1 })}%` : '-'}
+              </div>
+              <div className="mt-1 text-[10px] text-slate-500">{churnAnalysis.currentExited} iesiti</div>
+            </div>
+            <div className="rounded-2xl bg-indigo-50/60 p-3 dark:bg-indigo-900/10">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Net luna</div>
+              <div className={`mt-1 text-2xl font-black ${churnAnalysis.currentNetGrowth < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {churnAnalysis.currentNetGrowth > 0 ? '+' : ''}{churnAnalysis.currentNetGrowth}
+              </div>
+              <div className="mt-1 text-[10px] text-slate-500">activi vs luna trecuta</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50/80 p-3 dark:bg-slate-800/40">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Churn mediu 3 luni</div>
+              <div className="mt-1 text-2xl font-black">
+                {churnAnalysis.avgChurnRate != null ? `${churnAnalysis.avgChurnRate.toLocaleString('ro-RO', { maximumFractionDigits: 1 })}%` : '-'}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-slate-50/80 p-3 dark:bg-slate-800/40">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Iesiri in trend</div>
+              <div className="mt-1 text-2xl font-black">{churnAnalysis.totalExited}</div>
+              <div className="mt-1 text-[10px] text-slate-500">din 2025-02 incoace</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass rounded-3xl p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-bold">Top Magazine dupa Flux</h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">Magazine cu cele mai multe intrari si iesiri de agenti</p>
+          </div>
+          <div className="space-y-2">
+            {topFluxStores.length === 0 && (
+              <div className="rounded-2xl bg-slate-50 p-4 text-center text-xs text-slate-500 dark:bg-slate-800/40">
+                Nu exista modificari in selectia curenta.
+              </div>
+            )}
+            {topFluxStores.map((item) => (
+              <div key={item.site_code} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-800/40">
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-bold text-slate-700 dark:text-slate-200">{item.locatie || item.site_code}</div>
+                  <div className="mt-0.5 text-[10px] text-slate-500">{item.asm} · {item.change_reason || 'modificat'}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {item.added_agents_count > 0 && (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      +{item.added_agents_count}
+                    </span>
+                  )}
+                  {item.removed_agents_count > 0 && (
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                      -{item.removed_agents_count}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="glass rounded-3xl p-4">
         <div className="mb-4">
           <h3 className="text-sm font-bold">Miscare de personal</h3>
-          <p className="mt-1 text-[11px] text-slate-500">Evolutia lunara a efectivului activ si a achizitiei</p>
+          <p className="mt-1 text-[11px] text-slate-500">Intrari, iesiri si efectiv activ. 01.2025 este baseline de tracking.</p>
         </div>
         
         <div className="h-64 w-full">
@@ -573,9 +712,19 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
                   tickFormatter={(val) => val.split('-').reverse().join('.')}
                 />
                 <YAxis 
+                  yAxisId="movement"
                   axisLine={false} 
                   tickLine={false} 
                   tick={{ fontSize: 10, fill: '#64748b' }} 
+                  domain={[-maxMovement, maxMovement]}
+                  tickFormatter={(val) => `${Math.abs(Number(val))}`}
+                />
+                <YAxis
+                  yAxisId="active"
+                  orientation="right"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fill: '#64748b' }}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend 
@@ -583,10 +732,11 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
                   iconType="circle"
                   iconSize={8}
                 />
-                <Bar dataKey="new" name="Noi" stackId="a" fill="#10b981" barSize={12} radius={[0, 0, 4, 4]} />
-                <Bar dataKey="reactivated" name="Reactivati" stackId="a" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Line type="monotone" dataKey="active" name="Total Activi" stroke="#6366f1" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} />
-                <Line type="monotone" dataKey="net_growth" name="Net Growth" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />
+                <Bar yAxisId="movement" dataKey="new" name="Noi" stackId="in" fill="#10b981" barSize={12} radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="movement" dataKey="reactivated" name="Reactivati" stackId="in" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="movement" dataKey="churned_negative" name="Iesiti" fill="#e11d48" barSize={12} radius={[0, 0, 4, 4]} />
+                <Line yAxisId="active" type="monotone" dataKey="active" name="Total Activi" stroke="#6366f1" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} />
+                <Line yAxisId="movement" type="monotone" dataKey="net_growth" name="Net" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
@@ -611,7 +761,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {/* Active */}
           <button
             onClick={() => setExpandedSection(prev => prev === 'active' ? null : 'active')}
@@ -648,6 +798,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
             <div className="text-2xl font-black text-amber-600 dark:text-amber-400">
               {coverage ? coverage.modified_stores_count : '-'}
             </div>
+            <div className="mt-1 text-[10px] text-slate-500">intrari / iesiri agenti</div>
           </button>
 
           {/* Inactive */}
@@ -700,14 +851,25 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
             {coverage.items
               .filter((item: StoreCoverageItem) => item.has_changes)
               .map((item: StoreCoverageItem) => (
-                <div key={item.site_code} className="flex items-center justify-between rounded-xl bg-amber-50/50 px-3 py-2 dark:bg-amber-900/10">
+                <div key={item.site_code} className="flex items-center justify-between gap-3 rounded-xl bg-amber-50/50 px-3 py-2 dark:bg-amber-900/10">
                   <div className="min-w-0 flex-1">
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">{item.locatie || item.site_code}</span>
-                    <span className="text-[10px] text-slate-400">{item.asm}</span>
+                    <span className="text-[10px] text-slate-400">
+                      {item.asm} · {item.change_reason || 'modificat'} · {item.previous_agent_count} &rarr; {item.agent_count} ag.
+                    </span>
                   </div>
-                  <span className="ml-2 shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                    modificat
-                  </span>
+                  <div className="ml-2 flex shrink-0 items-center gap-1">
+                    {item.added_agents_count > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        +{item.added_agents_count}
+                      </span>
+                    )}
+                    {item.removed_agents_count > 0 && (
+                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                        -{item.removed_agents_count}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
           </div>
@@ -752,7 +914,8 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
           {[
             { key: 'active' as const, label: 'Activi' },
             { key: 'movement' as const, label: 'Miscari' },
-            { key: 'inactive' as const, label: 'Inactiv/Risc' },
+            { key: 'inactive' as const, label: 'Inactiv' },
+            { key: 'churned' as const, label: 'Iesiti' },
             { key: 'all' as const, label: 'Toti' },
           ].map((tab) => (
             <button

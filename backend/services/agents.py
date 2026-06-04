@@ -18,7 +18,7 @@ from models import (
     StoreCoverageItem,
 )
 from repositories.agents import AgentsRepository
-from services.filters import where_clauses
+from services.filters import base_filter_values, scoped_clauses, where_clauses
 
 def month_index_expr(col: str) -> str:
     return f"(CAST(SUBSTRING({col}, 1, 4) AS INTEGER) * 12 + CAST(SUBSTRING({col}, 6, 2) AS INTEGER))"
@@ -151,31 +151,85 @@ class AgentsService:
     async def get_agents_movement(
         self, selected_month: str, firma: str | None, regional: str | None, asm: str | None, site_code: str | None, agent: str | None
     ) -> AgentMovementResponse:
-        clauses, params = where_clauses(
-            selected_month, firma, regional, asm, site_code, agent, include_agent=True
+        params, positions = base_filter_values(
+            selected_month, firma, regional, asm, site_code, agent
         )
-
-        where_sql = "WHERE " + " AND ".join(
-            [
-                c.replace("import_month = $1", "st.import_month <= $1")
-                if "import_month" in c
-                else c
-                for c in clauses
-            ]
+        clauses = scoped_clauses(
+            positions,
+            site_alias="st",
+            store_alias="st",
+            agent_alias="st",
         )
+        clauses.extend(["st.import_month >= '2025-01'", "st.import_month <= $1"])
+        where_sql = "WHERE " + " AND ".join(clauses)
 
         query = f"""
+            WITH scoped_active AS (
+                SELECT DISTINCT st.import_month, st.agent
+                FROM reporting_agent_month st
+                {where_sql}
+                  AND st.agent IS NOT NULL
+                  AND st.agent != '-'
+            ),
+            months AS (
+                SELECT DISTINCT import_month AS month
+                FROM scoped_active
+            ),
+            monthly AS (
+                SELECT import_month AS month, COUNT(*)::INT AS active
+                FROM scoped_active
+                GROUP BY import_month
+            ),
+            flagged AS (
+                SELECT
+                    sa.import_month AS month,
+                    COUNT(DISTINCT sa.agent) FILTER (
+                        WHERE lc.is_new AND sa.import_month != '2025-01'
+                    )::INT AS new,
+                    COUNT(DISTINCT sa.agent) FILTER (
+                        WHERE lc.is_reactivated AND sa.import_month != '2025-01'
+                    )::INT AS reactivated
+                FROM scoped_active sa
+                JOIN reporting_agent_lifecycle_month lc
+                  ON lc.agent = sa.agent AND lc.import_month = sa.import_month
+                GROUP BY sa.import_month
+            ),
+            churned AS (
+                SELECT
+                    m.month,
+                    COUNT(pa.agent) FILTER (WHERE ca.agent IS NULL AND m.month != '2025-01')::INT AS churned
+                FROM months m
+                LEFT JOIN scoped_active pa
+                  ON pa.import_month = to_char((TO_DATE(m.month, 'YYYY-MM') - INTERVAL '1 month'), 'YYYY-MM')
+                LEFT JOIN scoped_active ca
+                  ON ca.import_month = m.month AND ca.agent = pa.agent
+                GROUP BY m.month
+            ),
+            previous_totals AS (
+                SELECT
+                    m.month,
+                    COALESCE(pm.active, 0)::INT AS previous_active
+                FROM months m
+                LEFT JOIN monthly pm
+                  ON pm.month = to_char((TO_DATE(m.month, 'YYYY-MM') - INTERVAL '1 month'), 'YYYY-MM')
+            )
             SELECT
-                st.import_month as month,
-                COUNT(DISTINCT lc.agent)::INT as active,
-                COUNT(DISTINCT lc.agent) FILTER (WHERE lc.is_new)::INT as new,
-                COUNT(DISTINCT lc.agent) FILTER (WHERE lc.is_reactivated)::INT as reactivated
-            FROM reporting_agent_month st
-            JOIN reporting_agent_lifecycle_month lc
-              ON lc.agent = st.agent AND lc.import_month = st.import_month
-            {where_sql}
-            GROUP BY st.import_month
-            ORDER BY st.import_month ASC
+                m.month,
+                COALESCE(mon.active, 0)::INT AS active,
+                COALESCE(f.new, 0)::INT AS new,
+                COALESCE(f.reactivated, 0)::INT AS reactivated,
+                COALESCE(ch.churned, 0)::INT AS churned,
+                CASE
+                    WHEN m.month = '2025-01' THEN 0
+                    ELSE COALESCE(mon.active, 0) - COALESCE(pt.previous_active, 0)
+                END::INT AS net_growth,
+                (m.month = '2025-01') AS is_baseline
+            FROM months m
+            LEFT JOIN monthly mon ON mon.month = m.month
+            LEFT JOIN flagged f ON f.month = m.month
+            LEFT JOIN churned ch ON ch.month = m.month
+            LEFT JOIN previous_totals pt ON pt.month = m.month
+            ORDER BY m.month ASC
         """
         rows = await self.repo.get_movement(query, params)
         history = [
@@ -184,8 +238,9 @@ class AgentsService:
                 active=row["active"],
                 new=row["new"],
                 reactivated=row["reactivated"],
-                churned=0,
-                net_growth=row["new"],
+                churned=row["churned"],
+                net_growth=row["net_growth"],
+                is_baseline=row["is_baseline"],
             )
             for row in rows
         ]
@@ -345,7 +400,7 @@ class AgentsService:
                   AND agent IS NOT NULL AND agent != '-'
                 GROUP BY site_code
             ),
-            store_status AS (
+            store_changes AS (
                 SELECT
                     s.site_code,
                     s.locatie,
@@ -353,6 +408,17 @@ class AgentsService:
                     s.regional,
                     s.asm,
                     COALESCE(sa.agent_count, 0) as agent_count,
+                    COALESCE(array_length(pa.agents, 1), 0)::INT AS previous_agent_count,
+                    (
+                        SELECT COUNT(*)::INT
+                        FROM unnest(COALESCE(ca.agents, ARRAY[]::TEXT[])) AS curr(agent)
+                        WHERE curr.agent <> ALL(COALESCE(pa.agents, ARRAY[]::TEXT[]))
+                    ) AS added_agents_count,
+                    (
+                        SELECT COUNT(*)::INT
+                        FROM unnest(COALESCE(pa.agents, ARRAY[]::TEXT[])) AS prev(agent)
+                        WHERE prev.agent <> ALL(COALESCE(ca.agents, ARRAY[]::TEXT[]))
+                    ) AS removed_agents_count,
                     CASE
                         WHEN s.last_seen_month = $1 THEN
                             CASE WHEN COALESCE(sa.agent_count, 0) > 0 THEN 'covered' ELSE 'uncovered' END
@@ -366,7 +432,18 @@ class AgentsService:
                 LEFT JOIN prev_agents pa ON pa.site_code = s.site_code
                 {where_sql}
             )
-            SELECT * FROM store_status
+            SELECT
+                *,
+                CASE
+                    WHEN NOT has_changes THEN NULL
+                    WHEN previous_agent_count = 0 AND agent_count > 0 THEN 'agenti intrati'
+                    WHEN previous_agent_count > 0 AND agent_count = 0 THEN 'toti agentii au iesit'
+                    WHEN added_agents_count > 0 AND removed_agents_count > 0 THEN 'intrari si iesiri'
+                    WHEN added_agents_count > 0 THEN 'agenti intrati'
+                    WHEN removed_agents_count > 0 THEN 'agenti iesiti'
+                    ELSE 'echipa modificata'
+                END AS change_reason
+            FROM store_changes
             ORDER BY agent_count ASC, locatie ASC
         """
 

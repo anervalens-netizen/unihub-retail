@@ -508,6 +508,10 @@ class StoreCoverageItem(BaseModel):
     status: str  # 'covered', 'uncovered', 'closed', 'inactive'
     agent_count: int
     has_changes: bool = False
+    previous_agent_count: int = 0
+    added_agents_count: int = 0
+    removed_agents_count: int = 0
+    change_reason: str | None = None
 
 
 class StoreCoverageResponse(BaseModel):
@@ -525,6 +529,7 @@ class AgentMovementPoint(BaseModel):
     reactivated: int
     churned: int
     net_growth: int = 0
+    is_baseline: bool = False
 
 
 class AgentMovementResponse(BaseModel):
