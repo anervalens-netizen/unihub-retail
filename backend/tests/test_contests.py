@@ -9,6 +9,7 @@ import pytest
 from services.contests_config import (
     ContestDefinition,
     get_active_contest,
+    get_active_contests,
     parse_contests,
 )
 from services.contests import ContestsService
@@ -89,6 +90,25 @@ class TestContestConfigParsing:
             assert err is None
             assert c is not None and c.key == "iunie-2026-stancu"
 
+    def test_get_active_contests_returns_all_overlaps(self):
+        raw = self._raw()
+        second = dict(raw["contests"][0])
+        second["key"] = "iunie-2026-condorateanu"
+        second["scope"] = {"asm": "Mihai Condorateanu"}
+        second["prizes"] = [
+            {"rank_from": 1, "rank_to": 1, "label": "BoomX"},
+            {"rank_from": 2, "rank_to": 3, "label": "Macaron"},
+        ]
+        raw["contests"].append(second)
+        with patch("services.contests_config.load_contests_config", return_value=(raw, None)):
+            contests, err = get_active_contests("2026-06")
+            assert err is None
+            assert [c.key for c in contests] == [
+                "iunie-2026-stancu",
+                "iunie-2026-condorateanu",
+            ]
+            assert contests[1].scope == {"asm": "Mihai Condorateanu"}
+
     def test_get_active_contest_other_month_none(self):
         with patch("services.contests_config.load_contests_config", return_value=(self._raw(), None)):
             c, err = get_active_contest("2026-08")
@@ -115,6 +135,27 @@ def _contest_def():
             ContestPrize(rank_from=1, rank_to=1, label="M7 Plus"),
             ContestPrize(rank_from=2, rank_to=3, label="BoomX"),
             ContestPrize(rank_from=4, rank_to=6, label="Macaron"),
+        ],
+    )
+
+
+def _contest_def_mihai():
+    from services.contests_config import ContestPrize, ContestRule
+    return ContestDefinition(
+        key="iunie-2026-condorateanu",
+        title="Concurs Iunie",
+        subtitle="sub",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+        scope={"asm": "Mihai Condorateanu"},
+        rules=[
+            ContestRule(type="focus", points=1, label="Focus"),
+            ContestRule(type="promo", points=1, label="Promo"),
+            ContestRule(type="price_above", points=1, label=">150", threshold=150.0),
+        ],
+        prizes=[
+            ContestPrize(rank_from=1, rank_to=1, label="BoomX"),
+            ContestPrize(rank_from=2, rank_to=3, label="Macaron"),
         ],
     )
 
@@ -180,6 +221,25 @@ class TestContestScoring:
     async def test_no_active_contest_returns_none(self, mock_active):
         svc = _service()
         assert await svc.get_active_contest("2026-08") is None
+
+    @pytest.mark.asyncio
+    @patch("services.contests.compute_promo_copurchase", new_callable=AsyncMock)
+    @patch("services.contests.parse_promotion_definition", return_value=(None, None))
+    @patch("services.contests.load_special_cards_config", return_value=({}, None))
+    @patch("services.contests.get_active_contests")
+    async def test_get_active_contests_builds_all_active_configs(
+        self, mock_active, mock_cfg, mock_promo_def, mock_cp
+    ):
+        svc = _service()
+        mock_active.return_value = ([_contest_def(), _contest_def_mihai()], None)
+        responses = await svc.get_active_contests("2026-06")
+        assert [resp.key for resp in responses] == [
+            "iunie-2026-stancu",
+            "iunie-2026-condorateanu",
+        ]
+        assert responses[0].leaderboard[0].prize == "M7 Plus"
+        assert responses[1].leaderboard[0].prize == "BoomX"
+        mock_cp.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("services.contests.compute_promo_copurchase", new_callable=AsyncMock)

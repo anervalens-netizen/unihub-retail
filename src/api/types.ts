@@ -388,6 +388,7 @@ export interface ContestResponse {
   key: string;
   title: string;
   subtitle: string;
+  scope_label: string;
   month: string;
   start_date: string;
   end_date: string;

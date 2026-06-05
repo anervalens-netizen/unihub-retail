@@ -11,7 +11,7 @@ from models import (
     ContestRuleInfo,
 )
 from repositories.contests import ContestsRepository
-from services.contests_config import ContestDefinition, get_active_contest
+from services.contests_config import ContestDefinition, get_active_contest, get_active_contests
 from services.dashboard_specials import load_special_cards_config, parse_promotion_definition
 from services.promo_copurchase import compute_promo_copurchase
 
@@ -54,6 +54,15 @@ def _promo_scope_kwargs(scope: dict[str, Any]) -> dict[str, Any]:
     return kwargs
 
 
+def _scope_label(scope: dict[str, Any]) -> str:
+    for key in ("asm", "regional", "firma"):
+        if scope.get(key):
+            return str(scope[key])
+    if scope.get("site_codes"):
+        return "Magazine selectate"
+    return ""
+
+
 class ContestsService:
     def __init__(self, repo: ContestsRepository, pool: asyncpg.Pool):
         self.repo = repo
@@ -72,6 +81,19 @@ class ContestsService:
             # regional/firma) in tot serviciul de concurs.
             contest.scope = {**contest.scope, "site_codes": list(site_codes_override)}
         return await self._build(contest, month)
+
+    async def get_active_contests(
+        self, month: str, site_codes_override: list[str] | None = None
+    ) -> list[ContestResponse]:
+        contests, error = get_active_contests(month)
+        if error:
+            return []
+        responses: list[ContestResponse] = []
+        for contest in contests:
+            if site_codes_override:
+                contest.scope = {**contest.scope, "site_codes": list(site_codes_override)}
+            responses.append(await self._build(contest, month))
+        return responses
 
     async def _build(self, contest: ContestDefinition, month: str) -> ContestResponse:
         focus_rule = next((r for r in contest.rules if r.type == "focus"), None)
@@ -170,6 +192,7 @@ class ContestsService:
             key=contest.key,
             title=contest.title,
             subtitle=contest.subtitle,
+            scope_label=_scope_label(contest.scope),
             month=month,
             start_date=contest.start_date.isoformat(),
             end_date=contest.end_date.isoformat(),

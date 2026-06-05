@@ -183,12 +183,21 @@ def parse_contests(config: dict[str, Any]) -> list[ContestDefinition]:
     ]
 
 
-def get_active_contest(month: str) -> tuple[ContestDefinition | None, str | None]:
-    """Returneaza primul concurs a carui perioada se suprapune cu luna data."""
+def get_active_contests(month: str) -> tuple[list[ContestDefinition], str | None]:
+    """Returneaza toate concursurile a caror perioada se suprapune cu luna data."""
     config, error = load_contests_config()
     if error:
+        return [], error
+    return [
+        contest
+        for contest in parse_contests(config)
+        if month_overlaps_period(month, contest.start_date, contest.end_date)
+    ], None
+
+
+def get_active_contest(month: str) -> tuple[ContestDefinition | None, str | None]:
+    """Returneaza primul concurs a carui perioada se suprapune cu luna data."""
+    contests, error = get_active_contests(month)
+    if error:
         return None, error
-    for contest in parse_contests(config):
-        if month_overlaps_period(month, contest.start_date, contest.end_date):
-            return contest, None
-    return None, None
+    return (contests[0], None) if contests else (None, None)

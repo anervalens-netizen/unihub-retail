@@ -662,6 +662,7 @@ class ContestResponse(BaseModel):
     key: str
     title: str
     subtitle: str = ""
+    scope_label: str = ""
     month: str
     start_date: str
     end_date: str

@@ -19,6 +19,34 @@ async def get_contests_service() -> ContestsService:
     return ContestsService(repo, pool)
 
 
+def _internal_site_codes_override(site_codes: str | None, claims: AuthClaims) -> list[str] | None:
+    if site_codes and claims.iss == "hub-internal":
+        return [code.strip() for code in site_codes.split(",") if code.strip()] or None
+    return None
+
+
+@router.get("/active/all", response_model=list[ContestResponse])
+async def get_active_contests(
+    month: str = Query(...),
+    site_codes: str | None = Query(
+        None,
+        description=(
+            "Optional: lista comma-separated de site_code-uri care suprascrie "
+            "scope-ul din config. Onorat DOAR pentru apeluri interne "
+            "(principalul hub via X-Hub-Internal), folosit de proxy-ul FieldOps "
+            "pentru scoping per Team Leader. Ignorat pentru useri normali."
+        ),
+    ),
+    claims: AuthClaims = Depends(require_auth),
+    svc: ContestsService = Depends(get_contests_service),
+) -> list[ContestResponse]:
+    """Toate concursurile active pentru luna data + clasamentele agentilor."""
+    return await svc.get_active_contests(
+        month,
+        site_codes_override=_internal_site_codes_override(site_codes, claims),
+    )
+
+
 @router.get("/active", response_model=ContestResponse | None)
 async def get_active_contest(
     month: str = Query(...),
@@ -42,7 +70,7 @@ async def get_active_contest(
     loopback). UI-ul Retail nu trimite niciodata acest parametru. Pentru orice
     alt apelant parametrul este ignorat si scope-ul ramane cel din config.
     """
-    override: list[str] | None = None
-    if site_codes and claims.iss == "hub-internal":
-        override = [code.strip() for code in site_codes.split(",") if code.strip()] or None
-    return await svc.get_active_contest(month, site_codes_override=override)
+    return await svc.get_active_contest(
+        month,
+        site_codes_override=_internal_site_codes_override(site_codes, claims),
+    )
