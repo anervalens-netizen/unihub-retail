@@ -154,6 +154,14 @@ class ContestsService:
         # --- combinare per agent ---
         focus_units_by_agent = {r["agent"]: int(r["focus_units"]) for r in agent_rows}
         price_units_by_agent = {r["agent"]: int(r["price_units"]) for r in agent_rows}
+        store_by_agent = {
+            r["agent"]: {
+                "site_code": r["site_code"],
+                "store_name": r["store_name"],
+                "firma": r["firma"],
+            }
+            for r in agent_rows
+        }
         all_agents = set(focus_units_by_agent) | set(promo_bonuri)
 
         scored: list[ContestLeaderboardRow] = []
@@ -167,10 +175,14 @@ class ContestsService:
             total = f_pts + pr_pts + pc_pts
             if total <= 0:
                 continue
+            store_info = store_by_agent.get(agent, {})
             scored.append(
                 ContestLeaderboardRow(
                     rank=0,
                     agent=agent,
+                    site_code=store_info.get("site_code"),
+                    store_name=store_info.get("store_name"),
+                    firma=store_info.get("firma"),
                     focus_units=f_units,
                     promo_bonuri=b,
                     price_units=p_units,

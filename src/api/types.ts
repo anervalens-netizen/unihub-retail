@@ -374,6 +374,9 @@ export interface ContestPrizeInfo {
 export interface ContestLeaderboardRow {
   rank: number;
   agent: string;
+  site_code: string | null;
+  store_name: string | null;
+  firma: string | null;
   focus_units: number;
   promo_bonuri: number;
   price_units: number;

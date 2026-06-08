@@ -163,9 +163,9 @@ def _contest_def_mihai():
 def _service():
     repo = MagicMock()
     repo.fetch_agent_scores = AsyncMock(return_value=[
-        FakeRow(agent="Agent1", focus_units=5, price_units=3),
-        FakeRow(agent="Agent2", focus_units=2, price_units=2),
-        FakeRow(agent="Agent3", focus_units=0, price_units=0),
+        FakeRow(agent="Agent1", site_code="S1", store_name="Store 1", firma="Mobiup", focus_units=5, price_units=3),
+        FakeRow(agent="Agent2", site_code="S2", store_name="Store 2", firma="MobiCell", focus_units=2, price_units=2),
+        FakeRow(agent="Agent3", site_code="S3", store_name="Store 3", firma="Mobiup", focus_units=0, price_units=0),
     ])
     repo.fetch_scope_store_count = AsyncMock(return_value=23)
     pool = MagicMock()
@@ -204,6 +204,8 @@ class TestContestScoring:
         a1 = resp.leaderboard[0]
         # focus 5 + promo 2 + price 3 = 10
         assert a1.agent == "Agent1"
+        assert a1.store_name == "Store 1"
+        assert a1.firma == "Mobiup"
         assert a1.rank == 1
         assert a1.focus_points == 5 and a1.promo_points == 2 and a1.price_points == 3
         assert a1.total_points == 10

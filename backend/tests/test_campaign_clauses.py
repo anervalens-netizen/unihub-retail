@@ -137,3 +137,13 @@ class TestCampaignsServiceHistory:
         )
         assert len(result.history) == 1
         assert result.history[0].month == "2026-04"
+
+    @pytest.mark.asyncio
+    async def test_history_site_code_scope_supports_comma_lists(self, service):
+        await service.get_focus_history(
+            "2026-06", 12, None, None, None, "CCTCIT,CTAUCH,CTCITYPRK", None
+        )
+        focus_clauses, totals_clauses, params = service.repo.fetch_history.call_args.args
+        assert params == ["2026-06", 12, "CCTCIT,CTAUCH,CTCITYPRK"]
+        assert "agg.site_code = ANY(string_to_array($3::TEXT, ','))" in focus_clauses
+        assert "tot.site_code = ANY(string_to_array($3::TEXT, ','))" in totals_clauses

@@ -33,10 +33,16 @@ Livrabilele sunt:
   `2026-06-30`.
 - Concurs iunie = `data/contests.json`, scope `asm='Andrei Stancu'`, 23
   magazine non-TR, punctaj agent: focus unitati + bonuri promo + unitati
-  `unit_price > 150`.
+  `unit_price > 150`. Leaderboard-ul include magazinul/firma principala a
+  agentului pentru afisarea in FieldOps.
 
 `data/hub_specials.json` si `data/contests.json` sunt gitignored. Nu apar in
 commit si trebuie gestionate operational pe server.
+
+FieldOps foloseste Retail ca sursa pentru Focus. Endpointurile
+`/api/campaigns/*` primesc `site_code` comma-separated pentru scope pe magazinele
+TL-ului, inclusiv istoricul Focus. Endpointul de concurs ramane pe scope-ul din
+`data/contests.json`; nu trimite `site_codes` pentru concursurile de zona/ASM.
 
 ## Regula co-purchase
 

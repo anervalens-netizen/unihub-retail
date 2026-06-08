@@ -44,7 +44,7 @@ Reguli importante in Hub:
 Focus este separat in 4 sub-sectiuni:
 - **Incentive** — campanii incentive per-produs din DB (`incentive_campaigns`, `incentive_products`), cu target multipliers si excluderi specifice campaniilor active.
 - **Promo** — promotii speciale definite in `data/hub_specials.json`; pentru campania iunie 2026 se masoara bonuri co-purchase, nu cantitate simpla.
-- **Concurs** — leaderboard config-driven din `data/contests.json`, scoped server-side si independent de filtrele globale.
+- **Concurs** — leaderboard config-driven din `data/contests.json`, scoped server-side si independent de filtrele globale; raspunsul include magazinul/firma principala a agentului pentru afisarea in FieldOps.
 - **Focus** — indicator permanent de focus products si istoric focus.
 
 Regula curenta pentru promotia iunie 2026 este implementata in
@@ -372,7 +372,7 @@ Reguli de filtrare pentru dashboard:
 - frontend-ul trimite multi-select ca lista comma-separated (`site_code=A,B`, `agent=X,Y`)
 - backend-ul traduce filtrele in SQL cu `ANY(string_to_array(...))`
 - daca `site_code` este prezent, acesta ignora filtrele parinte `firma`, `regional`, `asm`
-- aceeasi regula se aplica in summary, daily, history, period comparison, mixuri, promo/incentive si special cards
+- aceeasi regula se aplica in summary, daily, history, period comparison, mixuri, focus/campaigns history, promo/incentive si special cards
 - selectorul global de luni listeaza doar `import_snapshots.status='completed'`; lunile configurate dar fara import de vanzari nu apar in UI pana la primul import finalizat
 
 ## Bootstrap utilizatori

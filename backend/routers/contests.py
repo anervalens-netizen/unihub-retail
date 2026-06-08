@@ -8,8 +8,9 @@ from models import ContestResponse
 from repositories.contests import ContestsRepository
 from services.contests import ContestsService
 
-# NB: `/active` accepta `site_codes` (comma) ca override de scope, folosit de
-# proxy-ul intern FieldOps (X-Hub-Internal) pentru scoping per Team Leader.
+# NB: `/active` accepta `site_codes` (comma) ca override intern de scope.
+# FieldOps pastreaza in mod normal scope-ul configurat al concursului; nu folosi
+# override-ul pentru concursuri de zona/ASM.
 router = APIRouter(prefix="/api/contests", tags=["contests"])
 
 
@@ -33,8 +34,7 @@ async def get_active_contests(
         description=(
             "Optional: lista comma-separated de site_code-uri care suprascrie "
             "scope-ul din config. Onorat DOAR pentru apeluri interne "
-            "(principalul hub via X-Hub-Internal), folosit de proxy-ul FieldOps "
-            "pentru scoping per Team Leader. Ignorat pentru useri normali."
+            "(principalul hub via X-Hub-Internal). Ignorat pentru useri normali."
         ),
     ),
     claims: AuthClaims = Depends(require_auth),
@@ -55,8 +55,7 @@ async def get_active_contest(
         description=(
             "Optional: lista comma-separated de site_code-uri care suprascrie "
             "scope-ul din config. Onorat DOAR pentru apeluri interne "
-            "(principalul hub via X-Hub-Internal), folosit de proxy-ul FieldOps "
-            "pentru scoping per Team Leader. Ignorat pentru useri normali."
+            "(principalul hub via X-Hub-Internal). Ignorat pentru useri normali."
         ),
     ),
     claims: AuthClaims = Depends(require_auth),
@@ -67,8 +66,9 @@ async def get_active_contest(
     `site_codes` este un override de scope sensibil (poate cere clasamentul
     oricaror magazine), asa ca il acceptam doar de la principalul intern hub
     (`iss == 'hub-internal'`, setat de require_auth pe X-Hub-Internal de pe
-    loopback). UI-ul Retail nu trimite niciodata acest parametru. Pentru orice
-    alt apelant parametrul este ignorat si scope-ul ramane cel din config.
+    loopback). UI-ul Retail si FieldOps nu trimit acest parametru pentru
+    concursurile de zona. Pentru orice alt apelant parametrul este ignorat si
+    scope-ul ramane cel din config.
     """
     return await svc.get_active_contest(
         month,

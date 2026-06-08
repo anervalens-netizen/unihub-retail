@@ -129,8 +129,8 @@ class CampaignsService:
             ("agent", "agg.agent", "tot.agent"),
         ]:
             if key in positions:
-                focus_clauses.append(f"{focus_column} = ${positions[key]}")
-                totals_clauses.append(f"{totals_column} = ${positions[key]}")
+                focus_clauses.append(f"{focus_column} = ANY(string_to_array(${positions[key]}::TEXT, ','))")
+                totals_clauses.append(f"{totals_column} = ANY(string_to_array(${positions[key]}::TEXT, ','))")
 
         rows = await self.repo.fetch_history(focus_clauses, totals_clauses, params)
         return FocusHistoryResponse(

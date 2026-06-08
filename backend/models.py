@@ -648,6 +648,9 @@ class ContestPrizeInfo(BaseModel):
 class ContestLeaderboardRow(BaseModel):
     rank: int
     agent: str
+    site_code: str | None = None
+    store_name: str | None = None
+    firma: str | None = None
     focus_units: int = 0
     promo_bonuri: int = 0
     price_units: int = 0

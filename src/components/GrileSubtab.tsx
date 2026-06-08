@@ -279,20 +279,12 @@ function ColCaptions() {
 function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
   const [open, setOpen] = useState(true);
 
-  const firms = tl.firms.map((f) => (
-    <div key={f.name}>
-      <div className="flex items-center gap-1 px-3 py-1 pl-6 text-[11px] font-medium text-slate-400">
-        <FirmaBadge firma={f.name} />
-        {f.name} · {f.stores.length} magazine
-      </div>
-      {f.stores.map((s) => (
-        <StoreRow key={s.site_code} s={s} />
-      ))}
-    </div>
-  ));
+  const stores = tl.firms.flatMap((f) =>
+    f.stores.map((s) => <StoreRow key={s.site_code} s={s} />),
+  );
 
   // Magazine fara Team Leader: apar direct sub manager, fara rand/bara TL
-  if (!tl.name) return <>{firms}</>;
+  if (!tl.name) return <>{stores}</>;
 
   return (
     <div>
@@ -314,7 +306,7 @@ function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
           <ColCaptions />
         </div>
       </button>
-      {open && <div>{firms}</div>}
+      {open && <div>{stores}</div>}
     </div>
   );
 }
