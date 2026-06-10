@@ -4,6 +4,7 @@ from openpyxl import load_workbook
 
 from services.grile_monthly import (
     ExtractedAgentRow,
+    RESET_RANGES,
     StoreEntry,
     build_store_export_path,
     build_workbook,
@@ -12,6 +13,15 @@ from services.grile_monthly import (
     safe_filename,
     validate_archive_manifest,
 )
+
+
+def test_reset_ranges_clear_manual_pontaj_without_total_column():
+    joined = " ".join(RESET_RANGES)
+
+    assert "Pontaj!C8:AG31" in RESET_RANGES
+    assert "Pontaj!AH" not in joined
+    assert "Grila!G10" not in joined
+    assert "Grila!G24" not in joined
 
 
 def test_ro_month_label_and_safe_filename():

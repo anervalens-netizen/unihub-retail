@@ -53,6 +53,7 @@ RESET_RANGES = [
     "Grila!B32:F37",
     "Grila!F12:F14",
     "Grila!F26:F28",
+    "Pontaj!C8:AG31",
 ]
 GRILA_CELLS = {
     1: {
