@@ -6,6 +6,7 @@
 >
 > **Implementat:** schema `grile_sheets`/`grile_runs`/`grile_store_status`; verificare async `grile_check_background`; auto-trigger dupa import; subtab `GrileSubtab.tsx`; panou lunar collapsible `GrileMonthlyPanel.tsx`; operatii lunare native in `services/grile_monthly.py`; output-uri in `backend/outputs/grile`.
 > `grile-salarii` ramane doar arhiva/CLI pentru reparatii punctuale de template/protected ranges si referinte istorice.
+> Update 2026-06-10: verificarea Grile declanseaza si sync read-only pentru targetele reale per agent in `agent_targets`, numai pentru managerii activati. Zonele excluse sau randurile nemapate raman pe fallback-ul Retail existent.
 
 ---
 
@@ -13,6 +14,7 @@
 
 Mutarea grilelor salariale in retail, ca subtab nativ in **Management -> Grile**, cu:
 - verificare automata zilnica dupa importul vanzarilor, fara upload separat de target/vanzari;
+- sincronizare targete agent din grile pentru zonele activate, cu fallback automat cand lipseste targetul sau mapping-ul;
 - buton manual "Ruleaza verificare" + status rulare + progres;
 - rezultate persistate in DB;
 - operatii lunare native: finalizare salarii, arhiva XLSX/ZIP, reset lunar dry-run/live.
@@ -115,6 +117,9 @@ grile_store_status(
   - `GET /api/grile/monthly/job/{id}` — poll job lunar.
   - `GET /api/grile/monthly/download/{final|archive}/{YYYY-MM}` — descarca artefacte locale.
 - Job arq `grile_check_background(month, snapshot_id, triggered_by)` în `worker.py`: per magazin cu `sheet_id` → citește K5/L5 → compară cu `store_targets` + `Σ reporting_item_month` → upsert `grile_store_status`, update progres pe `grile_runs`.
+- Dupa verificare, `services/grile_agent_targets.py` citeste read-only `Grila!D2/D8/D16/D22` pentru managerii din `GRILE_AGENT_TARGET_ENABLED_MANAGERS` si inlocuieste override-urile `agent_targets` doar pentru sheet-urile citite cu succes. Implicit sunt activati Andrei Stancu, Adrian Badea, Mihai Condorateanu si Elena Minca. Daca targetul lipseste sau agentul nu se mapeaza sigur, randul ramane fara override si UI foloseste fallback-ul `store_targets / agenti activi`.
+- `GRILE_AGENT_TARGET_DISABLED_MANAGERS` are prioritate peste lista activata; implicit Bogdan Radu si Bogdana Costan raman nesincronizati.
+- Sync-ul nu cere ca suma targetelor agentilor sa fie egala cu targetul magazinului; diferentele sunt permise pentru inlocuitori, TL sau agenti suplimentari.
 - Secrete: `config/google/service-account.json` (copie, chmod 600, gitignored). Share-ul pe cele 75 sheet-uri există deja.
 
 ## 7. Frontend

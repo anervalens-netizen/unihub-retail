@@ -175,11 +175,21 @@ modifica randurile din `salary_records`.
 ### Targete agent
 
 Tabela `agent_targets` este un override optional pentru targetele reale per
-agent. Pilotul curent importa targete din Grile Salarii pentru managerul
-Andrei Stancu, mapand `store_metadata.cod_locatie` la `stores.site_code` si
-numele agentului din grila la codul agentului Retail. Cand exista override,
-tabelul Hub pe agent foloseste `agent_targets.target_value`; altfel ramane
-fallback-ul istoric `store_targets.target_value / numar agenti activi`.
+agent. Sync-ul curent este legat de verificarea zilnica Grile si citeste
+read-only celulele `D2/D8` si `D16/D22` din Google Sheets, numai pentru
+managerii activati prin `GRILE_AGENT_TARGET_ENABLED_MANAGERS`. Implicit sunt
+activati Andrei Stancu, Adrian Badea, Mihai Condorateanu si Elena Minca.
+
+Managerii exclusi prin `GRILE_AGENT_TARGET_DISABLED_MANAGERS` (implicit
+Bogdan Radu si Bogdana Costan) nu primesc override-uri si raman pe fallback-ul
+istoric. Cand targetul agentului lipseste din grila sau numele nu se poate
+mapa sigur la codul de agent Retail, randul din `agent_targets` nu se scrie
+sau este scos pentru magazinul citit, deci tabelul Hub revine la
+`store_targets.target_value / numar agenti activi`.
+
+Nu exista validare ca suma targetelor celor doi agenti trebuie sa fie egala cu
+targetul magazinului. Diferentele sunt acceptate deoarece pot exista agenti,
+TL sau inlocuitori suplimentari pe tura.
 
 ### Grile salariale in Management
 

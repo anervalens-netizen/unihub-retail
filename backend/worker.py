@@ -53,7 +53,14 @@ async def grile_check_background(
         source_snapshot_id=source_snapshot_id,
         triggered_by_email=triggered_by_email,
     )
-    return {"run_id": run_id, "month": month}
+    agent_targets: dict | None = None
+    try:
+        from services.grile_agent_targets import sync_agent_targets_from_grile
+        result = await sync_agent_targets_from_grile(pool, month=month, apply=True)
+        agent_targets = result.as_dict()
+    except Exception as exc:  # noqa: BLE001 - sync-ul agentilor nu invalideaza verificarea grilelor
+        agent_targets = {"status": "failed", "error": str(exc)[:500]}
+    return {"run_id": run_id, "month": month, "agent_targets": agent_targets}
 
 
 async def grile_monthly_background(

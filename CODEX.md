@@ -108,9 +108,18 @@ Subtab-ul `Management -> Grile` este fluxul operational curent pentru grile.
 Include verificarea zilnica si inchiderea de luna:
 
 - verificare K5/L5 vs Retail DB si completare zile, cu ziua curenta exclusa;
+- sync read-only al targetelor agentilor in `agent_targets`, doar pentru
+  managerii activati prin `GRILE_AGENT_TARGET_ENABLED_MANAGERS` (implicit:
+  Andrei Stancu, Adrian Badea, Mihai Condorateanu, Elena Minca);
 - finalizare salarii in formatul nou;
 - export arhiva XLSX/ZIP;
 - reset lunar guarded, cu dry-run si reset live doar pentru admin.
+
+Zonele din `GRILE_AGENT_TARGET_DISABLED_MANAGERS` raman pe fallback-ul curent:
+`store_targets.target_value / numar agenti activi`. Acelasi fallback se aplica
+cand un target din grila lipseste sau numele agentului nu se mapeaza sigur.
+Nu valida suma targetelor agentilor contra targetului magazinului; diferentele
+sunt permise pentru inlocuitori, TL sau agenti suplimentari.
 
 Implementarea lunara ruleaza nativ in `backend/services/grile_monthly.py`,
 prin worker-ul arq, folosind registry-ul `grile_sheets` + `stores` din DB si
