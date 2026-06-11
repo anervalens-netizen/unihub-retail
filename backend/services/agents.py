@@ -370,6 +370,7 @@ class AgentsService:
                 SELECT DISTINCT ON (ram.agent)
                     ram.agent,
                     ram.firma,
+                    ram.regional,
                     ram.asm,
                     ram.site_code,
                     ram.locatie
@@ -382,7 +383,7 @@ class AgentsService:
                 ORDER BY ram.agent, ram.working_days DESC, ram.total_sales DESC, ram.site_code
             ),
             scoped AS (
-                SELECT DISTINCT ram.import_month AS month, ca.firma, ca.asm, ca.site_code, ca.locatie
+                SELECT DISTINCT ram.import_month AS month, ca.firma, ca.regional, ca.asm, ca.site_code, ca.locatie
                 FROM reporting_agent_month ram
                 JOIN current_agents ca ON ca.agent = ram.agent
                 WHERE ram.import_month >= '2025-01'
@@ -393,12 +394,15 @@ class AgentsService:
             UNION
             SELECT 'asm' AS type, asm AS value, asm AS label FROM scoped WHERE asm IS NOT NULL AND TRIM(asm) != ''
             UNION
-            SELECT 'store' AS type, site_code AS value, locatie || ' (' || site_code || ')' AS label FROM scoped
+            SELECT 'store' AS type, site_code AS value, locatie || ' (' || site_code || ')' AS label
+            FROM scoped
+            WHERE ($1::TEXT IS NULL OR LOWER(firma) = LOWER($1))
+              AND ($2::TEXT IS NULL OR asm = $2 OR regional = $2)
             ORDER BY type, label
         """
 
         rows = await self.repo.get_agent_evaluation(query, [month_filter, firma, asm, site_code])
-        option_rows = await self.repo.get_agent_evaluation(option_query, [])
+        option_rows = await self.repo.get_agent_evaluation(option_query, [firma, asm])
 
         month_options: list[AgentEvaluationOption] = []
         firmas: list[AgentEvaluationOption] = []

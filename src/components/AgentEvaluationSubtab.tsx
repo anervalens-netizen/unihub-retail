@@ -554,7 +554,10 @@ export function AgentEvaluationSubtab() {
           <FirmSelector options={data.firmas} selected={firma} onChange={setFirma} />
           <select
             value={asm}
-            onChange={(e) => setAsm(e.target.value)}
+            onChange={(e) => {
+              setAsm(e.target.value);
+              setSelectedStores([]);
+            }}
             className="col-span-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 sm:col-span-1"
           >
             <option value="">Manageri</option>
