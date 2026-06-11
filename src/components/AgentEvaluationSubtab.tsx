@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import {
   fetchAgentEvaluation,
@@ -70,11 +70,11 @@ function MechanismCard() {
   const items = [
     {
       label: 'Bază calcul',
-      text: 'Lunile bifate se agregă pe agent. Fără bifă = toate lunile disponibile din ianuarie 2025. Sunt incluși doar agenții activi curent, pe alocarea curentă de firmă, magazin și manager.',
+      text: 'Lunile bifate se agregă pe agent. Fără bifă = din ian. 2025. Sunt incluși agenții activi curent, pe alocarea curentă.',
     },
     {
       label: 'Scor',
-      text: 'Target agent = target locație / zile lucrate locație * zile agent. Scorul are 6 segmente a câte 0-3p; Folii Premium sunt raportate la totalul foliilor eligibile pentru modelele țintă.',
+      text: 'Target agent = target locație / zile locație * zile agent. Scorul are 6 segmente de 0-3p; Folii Premium se raportează la foliile eligibile.',
     },
   ];
   const pointRules = [
@@ -87,11 +87,11 @@ function MechanismCard() {
   ];
 
   return (
-    <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/20 p-3">
+    <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/20 p-2.5 sm:p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Mecanism analiză agenți</h4>
-          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
             Maxim 18 puncte. Bonus: 18p = 300 lei, 16-17p = 200 lei, 14-15p = 100 lei fără segment roșu.
           </p>
         </div>
@@ -99,9 +99,9 @@ function MechanismCard() {
           max 18 pct
         </span>
       </div>
-      <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2">
+      <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-1.5 sm:gap-2">
         {items.map((item) => (
-          <div key={item.label} className="rounded-lg bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 px-3 py-2">
+          <div key={item.label} className="rounded-lg bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 px-2.5 py-1.5 sm:px-3 sm:py-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">{item.label}</div>
             <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">{item.text}</p>
           </div>
@@ -139,14 +139,15 @@ function MechanismCard() {
   );
 }
 
-function FirmBadge({ firma }: { firma: string }) {
+function FirmBadge({ firma, size = 'sm' }: { firma: string; size?: 'sm' | 'md' }) {
   const value = firma.toLowerCase();
   const isMobiup = value.includes('mobiup');
   const isMobicell = value.includes('mobicell');
+  const sizeClass = size === 'md' ? 'h-7 w-7 text-sm' : 'h-4 w-4 text-[10px]';
   return (
     <span
       title={firma}
-      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white ${
+      className={`inline-flex ${sizeClass} shrink-0 items-center justify-center rounded-full font-black text-white ${
         isMobiup ? 'bg-red-600' : isMobicell ? 'bg-blue-600' : 'bg-slate-500'
       }`}
     >
@@ -158,26 +159,33 @@ function FirmBadge({ firma }: { firma: string }) {
 function CompactSummary({
   rows,
   summary,
+  children,
 }: {
   rows: AgentEvaluationRow[];
   summary: { agents: number; avgPoints: number; totalBonus: number; premiumRows: number };
+  children?: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 px-3 py-2">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+      <div className="grid grid-cols-4 gap-2">
         {[
           { label: 'Agenți', value: String(summary.agents), sub: `${rows.length} rânduri` },
-          { label: 'Punctaj mediu', value: summary.avgPoints.toFixed(1), sub: 'din 18 puncte' },
-          { label: 'Bonus estimat', value: `${formatMoney(summary.totalBonus)} lei`, sub: 'total filtrat' },
-          { label: 'Folii premium', value: String(summary.premiumRows), sub: 'rânduri cu 2+ pct' },
+          { label: 'Punctaj', value: summary.avgPoints.toFixed(1), sub: 'din 18 pct' },
+          { label: 'Bonus', value: `${formatMoney(summary.totalBonus)} lei`, sub: 'total filtrat' },
+          { label: 'Folii', value: String(summary.premiumRows), sub: 'cu 2+ pct' },
         ].map((item) => (
           <div key={item.label} className="min-w-0">
             <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 truncate">{item.label}</div>
-            <div className="text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums truncate">{item.value}</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.sub}</div>
+            <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums truncate">{item.value}</div>
+            <div className="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.sub}</div>
           </div>
         ))}
       </div>
+      {children && (
+        <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -200,7 +208,7 @@ function MonthDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen((value) => !value)}
-        className="w-full md:w-40 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
+        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
       >
         <span className="truncate">{label}</span>
         {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -242,30 +250,31 @@ function FirmSelector({
   onChange: (value: string) => void;
 }) {
   const visibleOptions = options
-    .filter((option) => /mobiup|mobicell/i.test(option.label))
+    .filter((option) => /mobiup|mobicell/i.test(`${option.value} ${option.label}`))
     .sort((a, b) => {
-      const aMobiup = a.label.toLowerCase().includes('mobiup') ? 0 : 1;
-      const bMobiup = b.label.toLowerCase().includes('mobiup') ? 0 : 1;
+      const aMobiup = `${a.value} ${a.label}`.toLowerCase().includes('mobiup') ? 0 : 1;
+      const bMobiup = `${b.value} ${b.label}`.toLowerCase().includes('mobiup') ? 0 : 1;
       return aMobiup - bMobiup || a.label.localeCompare(b.label, 'ro');
     });
 
   return (
-    <div className="grid grid-cols-2 gap-1.5">
+    <div className="inline-flex h-9 w-[78px] items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
       {visibleOptions.map((option) => {
         const active = selected === option.value;
         return (
           <button
             key={option.value}
+            type="button"
             onClick={() => onChange(active ? '' : option.value)}
-            className={`min-w-0 rounded-xl border px-2 py-2 text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+            className={`rounded-md p-0.5 transition ${
               active
-                ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                ? 'bg-indigo-100 ring-2 ring-indigo-500 dark:bg-indigo-950/60 dark:ring-indigo-400'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-700'
             }`}
             title={option.label}
+            aria-label={option.label}
           >
-            <FirmBadge firma={option.label} />
-            <span className="truncate">{option.label}</span>
+            <FirmBadge firma={option.label} size="md" />
           </button>
         );
       })}
@@ -291,7 +300,7 @@ function StoreDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen((value) => !value)}
-        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
+        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
       >
         <span className="truncate">{label}</span>
         {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -458,7 +467,6 @@ export function AgentEvaluationSubtab() {
     try {
       setData(await fetchAgentEvaluation({
         months: selectedMonths.length ? selectedMonths.join(',') : undefined,
-        firma: firma || undefined,
         asm: asm || undefined,
         site_code: selectedStores.length ? selectedStores.join(',') : undefined,
       }));
@@ -467,7 +475,7 @@ export function AgentEvaluationSubtab() {
     }
   };
 
-  useEffect(() => { load(); }, [selectedMonths, firma, asm, selectedStores]);
+  useEffect(() => { load(); }, [selectedMonths, asm, selectedStores]);
 
   const toggleMonth = (value: string) => {
     setSelectedMonths((current) => {
@@ -484,7 +492,11 @@ export function AgentEvaluationSubtab() {
   };
 
   const rows = useMemo(() => {
-    return [...data.rows].sort((a, b) => {
+    const filtered = firma
+      ? data.rows.filter((row) => row.firma.toLowerCase() === firma.toLowerCase())
+      : data.rows;
+
+    return [...filtered].sort((a, b) => {
       const av = getSortValue(a, sortKey);
       const bv = getSortValue(b, sortKey);
       let result = 0;
@@ -495,7 +507,7 @@ export function AgentEvaluationSubtab() {
       }
       return sortDirection === 'asc' ? result : -result;
     });
-  }, [data.rows, sortKey, sortDirection]);
+  }, [data.rows, firma, sortKey, sortDirection]);
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -531,28 +543,26 @@ export function AgentEvaluationSubtab() {
 
       <MechanismCard />
 
-      <CompactSummary rows={rows} summary={summary} />
-
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
-        <div className="border-b border-slate-200 dark:border-slate-700 p-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[160px_210px_150px_minmax(260px,1fr)] gap-2">
-            <MonthDropdown
-              months={data.months}
-              selectedMonths={selectedMonths}
-              onToggle={toggleMonth}
-              onClear={() => setSelectedMonths([])}
-            />
-            <FirmSelector options={data.firmas} selected={firma} onChange={setFirma} />
-            <select
-              value={asm}
-              onChange={(e) => setAsm(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            >
-              <option value="">Manageri</option>
-              {data.asms.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+      <CompactSummary rows={rows} summary={summary}>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5 sm:grid-cols-[160px_86px_150px_minmax(260px,1fr)]">
+          <MonthDropdown
+            months={data.months}
+            selectedMonths={selectedMonths}
+            onToggle={toggleMonth}
+            onClear={() => setSelectedMonths([])}
+          />
+          <FirmSelector options={data.firmas} selected={firma} onChange={setFirma} />
+          <select
+            value={asm}
+            onChange={(e) => setAsm(e.target.value)}
+            className="col-span-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 sm:col-span-1"
+          >
+            <option value="">Manageri</option>
+            {data.asms.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <div className="col-span-2 sm:col-span-1">
             <StoreDropdown
               stores={data.stores}
               selectedStores={selectedStores}
@@ -561,6 +571,9 @@ export function AgentEvaluationSubtab() {
             />
           </div>
         </div>
+      </CompactSummary>
+
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
         <div className="max-h-[68vh] overflow-auto">
           <table className="min-w-[1060px] xl:min-w-0 w-full text-left">
             <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500">

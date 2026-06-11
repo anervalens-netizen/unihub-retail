@@ -227,7 +227,7 @@ class AgentsService:
                  AND st.site_code = ram.site_code
                 WHERE ram.import_month >= '2025-01'
                   AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
-                  AND ($2::TEXT IS NULL OR ca.firma = $2)
+                  AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
                   AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
                   AND ram.agent IS NOT NULL
@@ -327,7 +327,7 @@ class AgentsService:
                 JOIN premium_glass_item_models pgm ON pgm.item_code = st.item_code
                 WHERE st.import_month >= '2025-01'
                   AND ($1::TEXT IS NULL OR st.import_month = ANY(string_to_array($1::TEXT, ',')))
-                  AND ($2::TEXT IS NULL OR ca.firma = $2)
+                  AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
                   AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
                   AND LOWER(TRIM(COALESCE(st.category, ''))) = 'folii sticla'
