@@ -9,6 +9,7 @@ from models import (
     DashboardHistoryResponse,
     DashboardSpecialCardsResponse,
     DashboardSummary,
+    PremiumGlassAnalysis,
     YearHistoryResponse,
 )
 from repositories.dashboard import DashboardRepository
@@ -72,6 +73,29 @@ async def get_special_cards(
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardSpecialCardsResponse:
     return await svc.get_special_cards(month, firma, regional, asm, site_code, agent)
+
+@router.get("/premium-glass", response_model=PremiumGlassAnalysis)
+async def get_premium_glass(
+    month: str = Query(...),
+    firma: str | None = None,
+    regional: str | None = None,
+    asm: str | None = None,
+    site_code: str | None = None,
+    agent: str | None = None,
+    current_scope: bool = Query(True),
+    include_closed_stores: bool = Query(False),
+    svc: DashboardService = Depends(get_dashboard_service),
+) -> PremiumGlassAnalysis:
+    return await svc.get_premium_glass(
+        month,
+        firma,
+        regional,
+        asm,
+        site_code,
+        agent,
+        current_scope,
+        include_closed_stores,
+    )
 
 @router.get("/history", response_model=DashboardHistoryResponse)
 async def get_monthly_history(

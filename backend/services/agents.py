@@ -14,6 +14,9 @@ from models import (
     AgentProfileResponse,
     AgentHistoryPoint,
     AgentHistoryResponse,
+    AgentEvaluationOption,
+    AgentEvaluationResponse,
+    AgentEvaluationRow,
     StoreCoverageResponse,
     StoreCoverageItem,
 )
@@ -147,6 +150,329 @@ class AgentsService:
             stability_rate=stability_rate,
             churned_total_count=churn_count,
         )
+
+    async def get_agent_evaluation(
+        self,
+        month: str | None,
+        firma: str | None,
+        asm: str | None,
+        site_code: str | None,
+    ) -> AgentEvaluationResponse:
+        def pct_points(value: Decimal | None, thresholds: tuple[Decimal, Decimal, Decimal]) -> int:
+            if value is None:
+                return 0
+            if value >= thresholds[0]:
+                return 3
+            if value >= thresholds[1]:
+                return 2
+            if value >= thresholds[2]:
+                return 1
+            return 0
+
+        def qualifier(points: int) -> str:
+            if points == 18:
+                return "Excelent"
+            if points >= 14:
+                return "Foarte Bun"
+            if points >= 10:
+                return "Bun"
+            if points >= 6:
+                return "Mediu"
+            return "Scazut"
+
+        query = """
+            WITH current_month AS (
+                SELECT MAX(import_month) AS month
+                FROM reporting_agent_month
+            ),
+            current_agents AS (
+                SELECT DISTINCT ON (ram.agent)
+                    ram.agent,
+                    ram.firma,
+                    ram.site_code,
+                    ram.locatie,
+                    ram.regional,
+                    ram.asm
+                FROM reporting_agent_month ram
+                JOIN current_month cm ON cm.month = ram.import_month
+                WHERE ram.agent IS NOT NULL
+                  AND TRIM(ram.agent) != ''
+                  AND ram.agent != '-'
+                  AND ram.agent NOT ILIKE 'TR%'
+                ORDER BY ram.agent, ram.working_days DESC, ram.total_sales DESC, ram.site_code
+            ),
+            monthly_base AS (
+                SELECT
+                    ram.import_month AS month,
+                    ca.firma,
+                    ca.site_code,
+                    ca.locatie,
+                    ca.regional,
+                    ca.asm,
+                    ram.agent,
+                    ram.total_sales,
+                    ram.total_quantity,
+                    ram.focus_quantity,
+                    ram.receipt_count,
+                    ram.receipt_2plus_count,
+                    ram.working_days,
+                    COALESCE(st.target_value, 0) AS store_target,
+                    SUM(ram.working_days) OVER (PARTITION BY ram.import_month, ram.site_code) AS store_working_days
+                FROM reporting_agent_month ram
+                JOIN current_agents ca ON ca.agent = ram.agent
+                LEFT JOIN store_targets st
+                  ON st.import_month = ram.import_month
+                 AND st.site_code = ram.site_code
+                WHERE ram.import_month BETWEEN '2026-01' AND '2026-05'
+                  AND ($1::TEXT IS NULL OR ram.import_month = $1)
+                  AND ($2::TEXT IS NULL OR ca.firma = $2)
+                  AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
+                  AND ($4::TEXT IS NULL OR ca.site_code = $4)
+                  AND ram.agent IS NOT NULL
+                  AND TRIM(ram.agent) != ''
+                  AND ram.agent != '-'
+                  AND ram.agent NOT ILIKE 'TR%'
+            ),
+            monthly_targets AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN store_working_days > 0
+                        THEN ROUND(store_target * working_days / store_working_days, 2)
+                        ELSE 0
+                    END AS target_value,
+                    CASE WHEN working_days > 0 THEN ROUND(total_sales / working_days, 2) END AS daily_average,
+                    CASE WHEN total_quantity > 0 THEN ROUND(total_sales / total_quantity, 2) END AS value_reper,
+                    CASE WHEN receipt_count > 0 THEN ROUND(receipt_2plus_count * 100.0 / receipt_count, 2) END AS bonuri_pct,
+                    CASE WHEN total_quantity > 0 THEN ROUND(focus_quantity * 100.0 / total_quantity, 2) END AS focus_pct
+                FROM monthly_base
+            ),
+            agent_period AS (
+                SELECT
+                    CASE WHEN $1::TEXT IS NULL THEN '2026-01..2026-05' ELSE month END AS month,
+                    firma,
+                    site_code,
+                    locatie,
+                    regional,
+                    asm,
+                    agent,
+                    COALESCE(SUM(total_sales), 0) AS total_sales,
+                    COALESCE(SUM(total_quantity), 0)::INT AS total_quantity,
+                    COALESCE(SUM(focus_quantity), 0)::INT AS focus_quantity,
+                    COALESCE(SUM(receipt_count), 0)::INT AS receipt_count,
+                    COALESCE(SUM(receipt_2plus_count), 0)::INT AS receipt_2plus_count,
+                    COALESCE(SUM(working_days), 0)::INT AS working_days,
+                    COALESCE(SUM(store_target), 0) AS store_target,
+                    COALESCE(SUM(store_working_days), 0)::INT AS store_working_days,
+                    COALESCE(SUM(target_value), 0) AS target_value
+                FROM monthly_targets
+                GROUP BY
+                    CASE WHEN $1::TEXT IS NULL THEN '2026-01..2026-05' ELSE month END,
+                    firma,
+                    site_code,
+                    locatie,
+                    regional,
+                    asm,
+                    agent
+            ),
+            agent_metrics AS (
+                SELECT
+                    *,
+                    CASE WHEN target_value > 0 THEN ROUND(total_sales * 100.0 / target_value, 2) END AS target_pct,
+                    CASE WHEN working_days > 0 THEN ROUND(total_sales / working_days, 2) END AS daily_average,
+                    CASE WHEN total_quantity > 0 THEN ROUND(total_sales / total_quantity, 2) END AS value_reper,
+                    CASE WHEN receipt_count > 0 THEN ROUND(receipt_2plus_count * 100.0 / receipt_count, 2) END AS bonuri_pct,
+                    CASE WHEN total_quantity > 0 THEN ROUND(focus_quantity * 100.0 / total_quantity, 2) END AS focus_pct
+                FROM agent_period
+            ),
+            peer_metrics AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN COUNT(*) OVER (PARTITION BY month, site_code) > 1
+                        THEN ROUND(
+                            (
+                                SUM(COALESCE(daily_average, 0)) OVER (PARTITION BY month, site_code)
+                                - COALESCE(daily_average, 0)
+                            )
+                            / NULLIF(COUNT(*) OVER (PARTITION BY month, site_code) - 1, 0),
+                            2
+                        )
+                    END AS peer_daily_average
+                FROM agent_metrics
+            ),
+            premium_lines AS (
+                SELECT DISTINCT
+                    st.id,
+                    CASE WHEN $1::TEXT IS NULL THEN '2026-01..2026-05' ELSE st.import_month END AS month,
+                    st.agent,
+                    pgm.is_premium_glass AS is_premium,
+                    st.quantity::INT AS qty
+                FROM sales_transactions st
+                JOIN current_agents ca ON ca.agent = st.agent
+                JOIN v_premium_glass_item_models pgm ON pgm.item_code = st.item_code
+                WHERE st.import_month BETWEEN '2026-01' AND '2026-05'
+                  AND ($1::TEXT IS NULL OR st.import_month = $1)
+                  AND ($2::TEXT IS NULL OR ca.firma = $2)
+                  AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
+                  AND ($4::TEXT IS NULL OR ca.site_code = $4)
+                  AND LOWER(TRIM(COALESCE(st.category, ''))) = 'folii sticla'
+                  AND st.quantity > 0
+                  AND st.agent IS NOT NULL
+                  AND TRIM(st.agent) != ''
+                  AND st.agent != '-'
+                  AND st.agent NOT ILIKE 'TR%'
+            ),
+            premium_by_agent AS (
+                SELECT
+                    month,
+                    agent,
+                    COALESCE(SUM(qty), 0)::INT AS glass_qty,
+                    COALESCE(SUM(qty) FILTER (WHERE is_premium), 0)::INT AS premium_glass_qty
+                FROM premium_lines
+                GROUP BY month, agent
+            )
+            SELECT
+                pm.*,
+                COALESCE(pba.glass_qty, 0)::INT AS glass_qty,
+                COALESCE(pba.premium_glass_qty, 0)::INT AS premium_glass_qty,
+                CASE
+                    WHEN COALESCE(pba.glass_qty, 0) > 0
+                    THEN ROUND(COALESCE(pba.premium_glass_qty, 0) * 100.0 / pba.glass_qty, 2)
+                END AS premium_glass_pct
+            FROM peer_metrics pm
+            LEFT JOIN premium_by_agent pba
+              ON pba.month = pm.month
+             AND pba.agent = pm.agent
+            ORDER BY pm.month DESC, pm.asm, pm.locatie, pm.total_sales DESC, pm.agent
+        """
+
+        option_query = """
+            WITH current_month AS (
+                SELECT MAX(import_month) AS month
+                FROM reporting_agent_month
+            ),
+            current_agents AS (
+                SELECT DISTINCT ON (ram.agent)
+                    ram.agent,
+                    ram.firma,
+                    ram.asm,
+                    ram.site_code,
+                    ram.locatie
+                FROM reporting_agent_month ram
+                JOIN current_month cm ON cm.month = ram.import_month
+                WHERE ram.agent IS NOT NULL
+                  AND TRIM(ram.agent) != ''
+                  AND ram.agent != '-'
+                  AND ram.agent NOT ILIKE 'TR%'
+                ORDER BY ram.agent, ram.working_days DESC, ram.total_sales DESC, ram.site_code
+            ),
+            scoped AS (
+                SELECT DISTINCT ram.import_month AS month, ca.firma, ca.asm, ca.site_code, ca.locatie
+                FROM reporting_agent_month ram
+                JOIN current_agents ca ON ca.agent = ram.agent
+                WHERE ram.import_month BETWEEN '2026-01' AND '2026-05'
+            )
+            SELECT 'month' AS type, month AS value, month AS label FROM scoped
+            UNION
+            SELECT 'firma' AS type, firma AS value, firma AS label FROM scoped WHERE firma IS NOT NULL AND TRIM(firma) != ''
+            UNION
+            SELECT 'asm' AS type, asm AS value, asm AS label FROM scoped WHERE asm IS NOT NULL AND TRIM(asm) != ''
+            UNION
+            SELECT 'store' AS type, site_code AS value, locatie || ' (' || site_code || ')' AS label FROM scoped
+            ORDER BY type, label
+        """
+
+        rows = await self.repo.get_agent_evaluation(query, [month, firma, asm, site_code])
+        option_rows = await self.repo.get_agent_evaluation(option_query, [])
+
+        months: list[AgentEvaluationOption] = []
+        firmas: list[AgentEvaluationOption] = []
+        asms: list[AgentEvaluationOption] = []
+        stores: list[AgentEvaluationOption] = []
+        seen_options: set[tuple[str, str]] = set()
+        for row in option_rows:
+            key = (row["type"], row["value"])
+            if key in seen_options:
+                continue
+            seen_options.add(key)
+            option = AgentEvaluationOption(value=row["value"], label=row["label"])
+            if row["type"] == "month":
+                months.append(option)
+            elif row["type"] == "firma":
+                firmas.append(option)
+            elif row["type"] == "asm":
+                asms.append(option)
+            else:
+                stores.append(option)
+
+        items: list[AgentEvaluationRow] = []
+        for row in rows:
+            target_points = pct_points(row["target_pct"], (Decimal("100"), Decimal("90"), Decimal("80")))
+            daily_points = 3 if row["daily_average"] is not None and row["peer_daily_average"] is not None and row["daily_average"] > row["peer_daily_average"] else 0
+            value_reper_points = pct_points(row["value_reper"], (Decimal("100"), Decimal("95"), Decimal("90")))
+            bonuri_points = pct_points(row["bonuri_pct"], (Decimal("35"), Decimal("30"), Decimal("25")))
+            focus_points = pct_points(row["focus_pct"], (Decimal("8"), Decimal("7"), Decimal("6")))
+            premium_points = pct_points(row["premium_glass_pct"], (Decimal("50"), Decimal("40"), Decimal("30")))
+            segment_points = [
+                target_points,
+                daily_points,
+                value_reper_points,
+                bonuri_points,
+                focus_points,
+                premium_points,
+            ]
+            total_points = sum(segment_points)
+            has_red_segment = any(point == 0 for point in segment_points)
+            bonus_amount = 0
+            if total_points == 18:
+                bonus_amount = 300
+            elif total_points >= 16:
+                bonus_amount = 200
+            elif total_points >= 14 and not has_red_segment:
+                bonus_amount = 100
+
+            items.append(
+                AgentEvaluationRow(
+                    month=row["month"],
+                    firma=row["firma"],
+                    site_code=row["site_code"],
+                    locatie=row["locatie"],
+                    regional=row["regional"],
+                    asm=row["asm"],
+                    agent=row["agent"],
+                    total_sales=row["total_sales"],
+                    total_quantity=row["total_quantity"],
+                    working_days=row["working_days"],
+                    store_target=row["store_target"],
+                    store_working_days=row["store_working_days"],
+                    target_value=row["target_value"],
+                    target_pct=row["target_pct"],
+                    daily_average=row["daily_average"],
+                    peer_daily_average=row["peer_daily_average"],
+                    value_reper=row["value_reper"],
+                    receipt_count=row["receipt_count"],
+                    receipt_2plus_count=row["receipt_2plus_count"],
+                    bonuri_pct=row["bonuri_pct"],
+                    focus_quantity=row["focus_quantity"],
+                    focus_pct=row["focus_pct"],
+                    glass_qty=row["glass_qty"],
+                    premium_glass_qty=row["premium_glass_qty"],
+                    premium_glass_pct=row["premium_glass_pct"],
+                    target_points=target_points,
+                    daily_points=daily_points,
+                    value_reper_points=value_reper_points,
+                    bonuri_points=bonuri_points,
+                    focus_points=focus_points,
+                    premium_glass_points=premium_points,
+                    total_points=total_points,
+                    has_red_segment=has_red_segment,
+                    qualifier=qualifier(total_points),
+                    bonus_amount=bonus_amount,
+                )
+            )
+
+        return AgentEvaluationResponse(months=months, firmas=firmas, asms=asms, stores=stores, rows=items)
 
     async def get_agents_movement(
         self, selected_month: str, firma: str | None, regional: str | None, asm: str | None, site_code: str | None, agent: str | None

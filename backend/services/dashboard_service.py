@@ -23,6 +23,7 @@ from models import (
     ReceiptBucketItem,
     BrandMixItem,
     PromoIncentiveSummary,
+    PremiumGlassAnalysis,
     RegionalStats,
     AsmStats,
 )
@@ -43,6 +44,7 @@ from services.dashboard.queries import (
 from services.dashboard.specials_data import _get_special_cards_data
 from services.dashboard.utils import _build_scoped_params, _expand_current_manager_scope
 from services.filters import normalize_filter, scoped_clauses
+from services.premium_glass import build_premium_glass_card, get_premium_glass_analysis
 
 
 _RO_MONTHS = {
@@ -160,7 +162,44 @@ class DashboardService:
         cards = await _get_special_cards_data(
             month, firma, regional, asm, site_code, agent
         )
+        async with self.pool.acquire() as conn:
+            premium_glass = await get_premium_glass_analysis(
+                conn,
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                current_scope=True,
+                include_closed_stores=False,
+            )
+        cards.append(build_premium_glass_card(premium_glass))
         return DashboardSpecialCardsResponse(cards=cards)
+
+    async def get_premium_glass(
+        self,
+        month: str,
+        firma: str | None,
+        regional: str | None,
+        asm: str | None,
+        site_code: str | None,
+        agent: str | None,
+        current_scope: bool = True,
+        include_closed_stores: bool = False,
+    ) -> PremiumGlassAnalysis:
+        async with self.pool.acquire() as conn:
+            return await get_premium_glass_analysis(
+                conn,
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
+            )
 
     async def get_monthly_history(
         self,
@@ -480,6 +519,18 @@ class DashboardService:
                     include_closed_stores=include_closed_stores,
                 )
 
+        async def get_premium_glass_data() -> PremiumGlassAnalysis:
+            return await self.get_premium_glass(
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                current_scope=True,
+                include_closed_stores=include_closed_stores,
+            )
+
         async def get_regional_data() -> list[RegionalStats]:
             async with self.pool.acquire() as conn:
                 rows = await _fetch_regional_stats(
@@ -533,6 +584,7 @@ class DashboardService:
             get_regional_data(),
             get_asm_data(),
             _get_special_cards_data(month, firma, regional, asm, site_code, agent),
+            get_premium_glass_data(),
         )
         summary: DashboardSummary = results[0]  # type: ignore[assignment]
         agents_stats: list[AgentStats] = results[1]  # type: ignore[assignment]
@@ -547,6 +599,8 @@ class DashboardService:
         regional_stats: list[RegionalStats] = results[10]  # type: ignore[assignment]
         asm_stats: list[AsmStats] = results[11]  # type: ignore[assignment]
         special_cards: list[DashboardSpecialCard] = results[12]  # type: ignore[assignment]
+        premium_glass: PremiumGlassAnalysis = results[13]  # type: ignore[assignment]
+        special_cards = [*special_cards, build_premium_glass_card(premium_glass)]
 
         return DashboardAllResponse(
             summary=summary,
@@ -560,6 +614,7 @@ class DashboardService:
             focus_subcategory_mix=focus_subcategory_mix,
             brand_mix=brand_mix,
             promo_incentive=promo_incentive,
+            premium_glass=premium_glass,
             regionals=regional_stats,
             asms=asm_stats,
         )

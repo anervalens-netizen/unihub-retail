@@ -70,13 +70,29 @@ Permite inregistrarea si urmarirea vizitelor in magazine:
 Geolocatia a fost eliminata complet din arhitectura aplicatiei.
 
 ### Management
-Tab dedicat rolurilor `admin` si `management`, cu 5 sub-taburi:
+Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
 
-- **Echipa (ASM)** — performanta ASM combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM. Router: `/api/hr`
-- **Magazine (CRM)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
+- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM; cardurile expandate includ scorurile magazinelor alocate. Router: `/api/hr`
+- **Agenti** — evaluare agenti ianuarie-mai 2026 pe agentii activi curent, cu alocarea curenta de firma/magazin/manager. Router: `/api/agents/evaluation`
+- **Magazine (CRM, istoric intern)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
 - **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
 - **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
 - **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
+
+Evaluarea din **Management -> Agenti** foloseste 6 segmente, fiecare cu 0-3 puncte:
+Target valoare, Medie zilnica, Valoare reper, % Bonuri, Focus si Folii Premium.
+Pragurile sunt:
+
+- Target valoare: 3p >=100%, 2p 90-99%, 1p 80-89%, 0p <80%.
+- Medie zilnica: 3p peste media colegilor din locatie; 0p sub medie sau fara comparatie.
+- Valoare reper: 3p >=100 lei, 2p 95-99 lei, 1p 90-94 lei, 0p <90 lei.
+- % Bonuri: 3p >=35%, 2p 30-34%, 1p 25-29%, 0p <25%.
+- Focus: 3p >=8%, 2p 7-7,9%, 1p 6-6,9%, 0p <6%.
+- Folii Premium: 3p >=50%, 2p 40-49%, 1p 30-39%, 0p <30%.
+
+Folii Premium sunt calculate pe aceeasi baza ca in Focus: produse din categoria
+`Folii Sticla` cu `SAPPHIRE`, `CERAMIC` sau `CORNING`, raportate la totalul
+foliilor eligibile pentru aceleasi modele tinta din `v_premium_glass_item_models`.
 
 **Serviciu comun:** CRM, HR si Calculator Target folosesc `services/forecast.py`
 pentru calculul unitar al forecast-ului pe lunile partiale.

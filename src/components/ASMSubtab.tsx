@@ -6,6 +6,7 @@ import {
   type AsmPerformance,
   type AsmHistoryPoint,
 } from '../api/hr';
+import { fetchScores, type StoreScore } from '../api/crm';
 import {
   ComposedChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
@@ -62,7 +63,53 @@ function KPIChip({ label, value, status, unit = '%' }: {
   );
 }
 
-function ASMRow({ row }: { row: AsmPerformance }) {
+function StoreScoreBadge({ score }: { score: number }) {
+  const color =
+    score >= 70 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
+    score >= 40 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
+    score === -1 ? 'bg-slate-100 text-slate-400 dark:bg-slate-800' :
+    'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold tabular-nums ${color}`}>
+      {score === -1 ? '-' : score}
+    </span>
+  );
+}
+
+function ManagerStoreCards({ stores }: { stores: StoreScore[] }) {
+  if (!stores.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 px-3 py-3 text-xs text-slate-400">
+        Nu există scoruri de magazin calculate pentru managerul selectat.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+      {stores.map((store) => (
+        <div key={store.site_code} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{store.locatie}</div>
+              <div className="text-[10px] text-slate-400">{store.site_code}</div>
+            </div>
+            <StoreScoreBadge score={store.score} />
+          </div>
+          {store.breakdown && (
+            <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+              <span>Target <strong className="text-slate-700 dark:text-slate-200">{store.breakdown.target_attainment}%</strong></span>
+              <span>Bon2+ <strong className="text-slate-700 dark:text-slate-200">{store.breakdown.kpi_bon2acc}%</strong></span>
+              <span>Focus <strong className="text-slate-700 dark:text-slate-200">{store.breakdown.kpi_focus}%</strong></span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ASMRow({ row, stores }: { row: AsmPerformance; stores: StoreScore[] }) {
   const [expanded, setExpanded] = useState(false);
   const [history, setHistory] = useState<AsmHistoryPoint[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -244,6 +291,13 @@ function ASMRow({ row }: { row: AsmPerformance }) {
             )}
             </>
           )}
+          <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Magazine</h4>
+              <span className="text-[10px] text-slate-400">{stores.length} magazine</span>
+            </div>
+            <ManagerStoreCards stores={stores} />
+          </div>
         </div>
       )}
     </div>
@@ -252,13 +306,19 @@ function ASMRow({ row }: { row: AsmPerformance }) {
 
 export function ASMSubtab() {
   const [data, setData] = useState<AsmPerformance[]>([]);
+  const [storeScores, setStoreScores] = useState<StoreScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(CURRENT_MONTH);
 
   const load = async () => {
     setLoading(true);
     try {
-      setData(await fetchAsmPerformance(month));
+      const [performance, scores] = await Promise.all([
+        fetchAsmPerformance(month),
+        fetchScores(month),
+      ]);
+      setData(performance);
+      setStoreScores(scores);
     } finally {
       setLoading(false);
     }
@@ -269,7 +329,7 @@ export function ASMSubtab() {
   return (
     <div className="p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Performanță ASM</h3>
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Manageri</h3>
         <div className="flex items-center gap-2">
           <input
             type="month"
@@ -288,7 +348,11 @@ export function ASMSubtab() {
           <div className="text-center text-slate-400 py-8 text-sm">Fără date pentru {month}</div>
         )}
         {data.map((row) => (
-          <ASMRow key={row.asm} row={row} />
+          <ASMRow
+            key={row.asm}
+            row={row}
+            stores={storeScores.filter((store) => store.asm === row.asm || store.regional === row.asm)}
+          />
         ))}
       </div>
     </div>

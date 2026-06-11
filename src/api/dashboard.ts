@@ -2,6 +2,7 @@ import { client } from './client';
 import type {
   DashboardAllResponse,
   DashboardHistoryResponse,
+  PremiumGlassAnalysis,
   YearHistoryResponse,
 } from './types';
 
@@ -32,5 +33,10 @@ export async function getDashboardHistoryYear(
   query: Omit<DashboardQuery, 'month'> & { year: number }
 ): Promise<YearHistoryResponse> {
   const { data } = await client.get<YearHistoryResponse>('/api/dashboard/history-year', { params: query });
+  return data;
+}
+
+export async function getPremiumGlassAnalysis(query: DashboardQuery): Promise<PremiumGlassAnalysis> {
+  const { data } = await client.get<PremiumGlassAnalysis>('/api/dashboard/premium-glass', { params: query });
   return data;
 }

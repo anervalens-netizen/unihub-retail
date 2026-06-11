@@ -54,7 +54,7 @@ export interface DashboardSpecialCardMetric {
 }
 
 export interface DashboardSpecialCard {
-  key: 'promotion' | 'incentive';
+  key: 'promotion' | 'incentive' | 'premium_glass';
   title: string;
   subtitle: string | null;
   status: 'ready' | 'inactive' | 'no_data' | 'missing_config' | 'missing_source' | 'limited_scope';
@@ -73,6 +73,95 @@ export interface PromoIncentiveSummary {
   incentive_value: number;
   incentive_qualified_stores: number;
   incentive_qualified_agents: number;
+}
+
+export interface PremiumGlassSummary {
+  month: string;
+  total_qty: number;
+  total_sales: number;
+  premium_qty: number;
+  premium_sales: number;
+  regular_qty: number;
+  regular_sales: number;
+  premium_qty_share_pct: number | null;
+  premium_sales_share_pct: number | null;
+  active_stores: number;
+  active_agents: number;
+  premium_active_stores: number;
+  premium_active_agents: number;
+  target_model_count: number;
+}
+
+export interface PremiumGlassModelStat {
+  model_key: string;
+  model_label: string;
+  premium_qty: number;
+  regular_qty: number;
+  total_qty: number;
+  premium_sales: number;
+  regular_sales: number;
+  total_sales: number;
+  premium_qty_share_pct: number | null;
+  premium_item_count: number;
+  regular_item_count: number;
+}
+
+export interface PremiumGlassStoreStat {
+  site_code: string;
+  locatie: string;
+  firma: string;
+  premium_qty: number;
+  regular_qty: number;
+  total_qty: number;
+  premium_sales: number;
+  regular_sales: number;
+  total_sales: number;
+  premium_qty_share_pct: number | null;
+}
+
+export interface PremiumGlassManagerStat {
+  manager: string;
+  premium_qty: number;
+  regular_qty: number;
+  total_qty: number;
+  premium_sales: number;
+  regular_sales: number;
+  total_sales: number;
+  premium_qty_share_pct: number | null;
+  store_count: number;
+  agent_count: number;
+}
+
+export interface PremiumGlassAgentStat {
+  agent: string;
+  site_code: string;
+  locatie: string;
+  premium_qty: number;
+  regular_qty: number;
+  total_qty: number;
+  premium_sales: number;
+  regular_sales: number;
+  total_sales: number;
+  premium_qty_share_pct: number | null;
+}
+
+export interface PremiumGlassProductStat {
+  item_code: string;
+  item_name: string;
+  is_premium: boolean;
+  model_labels: string[];
+  qty: number;
+  sales: number;
+  store_count: number;
+}
+
+export interface PremiumGlassAnalysis {
+  summary: PremiumGlassSummary;
+  models: PremiumGlassModelStat[];
+  managers: PremiumGlassManagerStat[];
+  stores: PremiumGlassStoreStat[];
+  agents: PremiumGlassAgentStat[];
+  products: PremiumGlassProductStat[];
 }
 
 export interface CampaignOverview {
@@ -259,6 +348,7 @@ export interface DashboardAllResponse {
   focus_subcategory_mix: CategoryMixItem[];
   brand_mix: BrandMixItem[];
   promo_incentive: PromoIncentiveSummary;
+  premium_glass: PremiumGlassAnalysis | null;
 }
 
 export interface DashboardHistoryResponse {

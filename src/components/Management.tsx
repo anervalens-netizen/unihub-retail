@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { ASMSubtab } from './ASMSubtab';
-import { CRMSubtab } from './CRMSubtab';
+import { AgentEvaluationSubtab } from './AgentEvaluationSubtab';
 import { TargetCalculatorSubtab } from './TargetCalculatorSubtab';
 import { GrileSubtab } from './GrileSubtab';
 import type { ManagementTab } from '../lib/tabs';
 
 const TABS: { id: ManagementTab; label: string }[] = [
-  { id: 'asm', label: 'Echipă' },
-  { id: 'crm', label: 'Magazine' },
+  { id: 'asm', label: 'Manageri' },
+  { id: 'crm', label: 'Agenți' },
   { id: 'target-calculator', label: 'Calculator Target' },
   { id: 'grile', label: 'Grile' },
 ];
@@ -48,7 +48,7 @@ export function Management({ activeSubTab, setActiveSubTab }: Props) {
       {/* Conținut */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'asm' && <ASMSubtab />}
-        {activeTab === 'crm' && <CRMSubtab />}
+        {activeTab === 'crm' && <AgentEvaluationSubtab />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
         {activeTab === 'grile' && <GrileSubtab />}
       </div>

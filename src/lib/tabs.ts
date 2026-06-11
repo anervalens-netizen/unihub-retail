@@ -12,8 +12,8 @@ export const ALL_TABS = [
 ] as const;
 
 export const MGMT_SUBTABS = [
-  { id: 'asm' as ManagementTab, label: 'Echipă', icon: Users },
-  { id: 'crm' as ManagementTab, label: 'Magazine', icon: Building2 },
+  { id: 'asm' as ManagementTab, label: 'Manageri', icon: Users },
+  { id: 'crm' as ManagementTab, label: 'Agenți', icon: Building2 },
   { id: 'target-calculator' as ManagementTab, label: 'Calculator Target', icon: Calculator },
   { id: 'grile' as ManagementTab, label: 'Grile', icon: ClipboardCheck },
 ];
@@ -27,8 +27,8 @@ export const TAB_LABELS: Record<TabId, string> = {
 };
 
 export const MGMT_SUBTAB_LABELS: Record<ManagementTab, string> = {
-  asm: 'Echipă',
-  crm: 'Magazine',
+  asm: 'Manageri',
+  crm: 'Agenți',
   'target-calculator': 'Calculator Target',
   grile: 'Grile',
 };

@@ -48,3 +48,7 @@ class AgentsRepository:
     async def get_stores_coverage(self, query: str, params: list[Any]) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(query, *params)
+
+    async def get_agent_evaluation(self, query: str, params: list[Any]) -> list[asyncpg.Record]:
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(query, *params)

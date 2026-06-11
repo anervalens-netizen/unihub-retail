@@ -1,12 +1,15 @@
-# Design: Tab Management (Echipa + Magazine + Tasks + HR + Calculator Target)
+# Design: Tab Management (Manageri + Agenti + CRM + Tasks + HR + Calculator Target)
 
 **Data:** 2026-04-09
 **Status:** Aprobat de utilizator
 **Audiență:** Manager / Proprietar (roluri `admin`, `management`)
 
-> **Extindere ulterioara:** din 2026-05-27, Management include si sub-tab-ul
-> `Calculator Target`. Designul si regulile lui sunt documentate in
-> `docs/superpowers/specs/2026-05-27-target-calculator-design.md`.
+> **Extinderi ulterioare:**
+> - din 2026-05-27, Management include sub-tab-ul `Calculator Target`;
+>   designul si regulile lui sunt documentate in
+>   `docs/superpowers/specs/2026-05-27-target-calculator-design.md`.
+> - din 2026-06-11, sub-tab-ul initial `Echipa` devine `Manageri`, iar
+>   sectiunea vizibila `Magazine` este inlocuita cu `Agenti`.
 
 ---
 
@@ -14,10 +17,11 @@
 
 UniHub acoperă bine vânzările, targetele, campaniile și vizitele. Lipsesc trei domenii esențiale pentru un manager care vrea tot în același tool: gestiunea oamenilor (HR), sănătatea relației cu magazinele (CRM extins) și urmărirea task-urilor operaționale.
 
-Soluția curenta: un tab `Management` cu cinci sub-tab-uri — Echipa, Magazine,
+Soluția curenta: un tab `Management` cu sub-tab-uri — Manageri, Agenti,
 Tasks, HR si Calculator Target — vizibil exclusiv pentru `admin` si
-`management`. Sectiunile originale de mai jos descriu primele patru sub-tab-uri;
-Calculator Target este detaliat in specificatia dedicata mentionata mai sus.
+`management`. Scorurile CRM de magazine raman disponibile ca logica interna si
+sunt integrate in cardurile managerilor. Calculator Target este detaliat in
+specificatia dedicata mentionata mai sus.
 
 ---
 
@@ -25,12 +29,12 @@ Calculator Target este detaliat in specificatia dedicata mentionata mai sus.
 
 ### Frontend
 - Tab nou `Management` adăugat în `MainLayout.tsx`, afișat condiționat pe rol
-- Componentă `Management.tsx` cu routing intern pe **5 sub-tab-uri**: `Echipă | Magazine | Tasks | HR | Calculator Target`
-- Sub-componente: `ASMSubtab.tsx`, `CRMSubtab.tsx`, `TasksSubtab.tsx`, `HRSubtab.tsx`, `TargetCalculatorSubtab.tsx`
+- Componentă `Management.tsx` cu routing intern pe sub-tab-uri: `Manageri | Agenti | Calculator Target | Grile`
+- Sub-componente principale: `ASMSubtab.tsx`, `AgentEvaluationSubtab.tsx`, `TargetCalculatorSubtab.tsx`, `GrileSubtab.tsx`
 
 ### Backend
-- Routerele Management: `backend/routers/hr.py`, `backend/routers/crm.py`, `backend/routers/tasks.py`, `backend/routers/target_calculator.py`
-- Înregistrate în `main.py` cu prefixele `/api/hr`, `/api/crm`, `/api/tasks`, `/api/target-calculator`
+- Routerele Management: `backend/routers/hr.py`, `backend/routers/agents.py`, `backend/routers/crm.py`, `backend/routers/target_calculator.py`
+- Înregistrate în `main.py` cu prefixele `/api/hr`, `/api/agents`, `/api/crm`, `/api/target-calculator`
 - Tabelele Management si Calculator Target din `schema_v2.sql` sunt aplicate automat la restart via `ensure_schema_current()`
 - Endpoint ASM performance citește din **două surse**: PostgreSQL (vânzări, targete) + SQLite `visits.db` (vizite) combinate server-side via `run_in_executor`
 
@@ -163,6 +167,73 @@ Tabel cu rânduri expandabile. Coloane principale vizibile mereu:
 La expand: grafic trend + tabel vizite recente.
 
 Badge-uri colorate pe % target: verde ≥ 90%, galben 70–89%, roșu < 70%.
+
+---
+
+## Sub-tab Agenti
+
+### Context
+
+Analiza agentilor acopera lunile intregi ianuarie-mai 2026 si inlocuieste
+fisierul Excel folosit ca referinta operationala
+`/opt/Mobiup/docs/unihub-docs/Analiza agenti 2026 - Bogdana.xlsx`.
+
+Pentru ca in perioada analizata nu au existat targete reale per agent,
+targetul agentului este derivat din targetul locatiei:
+
+```text
+target_agent_luna = target_locatie_luna / total_zile_lucrate_locatie * zile_lucrate_agent
+```
+
+Cand filtrul este pe `Toate lunile`, randurile sunt agregate pe agent pe
+perioada ianuarie-mai 2026 si procentele sunt recalculate din totaluri, nu
+mediate intre luni.
+
+### Reguli de selectie
+
+- Sunt inclusi doar agentii activi in ultima luna importata.
+- Firma, magazinul si managerul afisate sunt alocarea curenta a agentului.
+- Filtrele disponibile sunt luna, firma, manager si magazin.
+- Sortarea tabelului trateaza procentele si valorile ca numere, inclusiv cand
+  API-ul serializeaza `Decimal` ca string.
+
+### Segmente si punctaj
+
+Scorul maxim este 18 puncte: 6 segmente × 3 puncte.
+
+| Segment | 3 puncte | 2 puncte | 1 punct | 0 puncte |
+|---------|----------|----------|---------|----------|
+| Target valoare | >= 100% | 90-99% | 80-89% | < 80% |
+| Medie zilnica | peste media colegilor din locatie | - | - | sub medie sau fara comparatie |
+| Valoare reper | >= 100 lei | 95-99 lei | 90-94 lei | < 90 lei |
+| % Bonuri | >= 35% | 30-34% | 25-29% | < 25% |
+| Focus | >= 8% | 7-7,9% | 6-6,9% | < 6% |
+| Folii Premium | >= 50% | 40-49% | 30-39% | < 30% |
+
+Bonus estimat:
+
+- 18 puncte: 300 lei.
+- 16-17 puncte: 200 lei.
+- 14-15 puncte: 100 lei doar daca niciun segment nu are 0 puncte.
+
+### Folii Premium
+
+Segmentul Folii Premium foloseste aceeasi logica din `Focus -> Folii Premium`:
+
+- baza este categoria `Folii Sticla`;
+- premium inseamna nume produs care contine `SAPPHIRE`, `CERAMIC` sau
+  `CORNING`;
+- produsele sunt raportate doar la modelele tinta din indicatorul permanent
+  `v_premium_glass_item_models`;
+- procentul este `cantitate premium / cantitate totala folii eligibile pentru
+  aceleasi modele`, cu linii deduplicate dupa tranzactie pentru a evita
+  dublarea produselor compatibile cu mai multe modele.
+
+### Endpoint
+
+| Metodă | Path | Descriere |
+|--------|------|-----------|
+| GET | `/api/agents/evaluation` | Evaluare agenti ianuarie-mai 2026, cu query params optionale `month`, `firma`, `asm`, `site_code` |
 
 ---
 

@@ -110,6 +110,57 @@ export interface AgentHistoryResponse {
   history: AgentHistoryPoint[];
 }
 
+export interface AgentEvaluationOption {
+  value: string;
+  label: string;
+}
+
+export interface AgentEvaluationRow {
+  month: string;
+  firma: string;
+  site_code: string;
+  locatie: string;
+  regional: string;
+  asm: string;
+  agent: string;
+  total_sales: number;
+  total_quantity: number;
+  working_days: number;
+  store_target: number;
+  store_working_days: number;
+  target_value: number;
+  target_pct: number | null;
+  daily_average: number | null;
+  peer_daily_average: number | null;
+  value_reper: number | null;
+  receipt_count: number;
+  receipt_2plus_count: number;
+  bonuri_pct: number | null;
+  focus_quantity: number;
+  focus_pct: number | null;
+  glass_qty: number;
+  premium_glass_qty: number;
+  premium_glass_pct: number | null;
+  target_points: number;
+  daily_points: number;
+  value_reper_points: number;
+  bonuri_points: number;
+  focus_points: number;
+  premium_glass_points: number;
+  total_points: number;
+  has_red_segment: boolean;
+  qualifier: string;
+  bonus_amount: number;
+}
+
+export interface AgentEvaluationResponse {
+  months: AgentEvaluationOption[];
+  firmas: AgentEvaluationOption[];
+  asms: AgentEvaluationOption[];
+  stores: AgentEvaluationOption[];
+  rows: AgentEvaluationRow[];
+}
+
 export async function fetchAgentsOverview(query: AgentsQuery): Promise<AgentsOverviewResponse> {
   const { data } = await client.get<AgentsOverviewResponse>('/api/agents/overview', { params: query });
   return data;
@@ -141,5 +192,15 @@ export async function fetchAgentHistory(agent: string): Promise<AgentHistoryResp
 
 export async function fetchStoreCoverage(query: Partial<AgentsQuery>): Promise<StoreCoverageResponse> {
   const { data } = await client.get<StoreCoverageResponse>('/api/agents/stores-coverage', { params: query });
+  return data;
+}
+
+export async function fetchAgentEvaluation(params: {
+  month?: string;
+  firma?: string;
+  asm?: string;
+  site_code?: string;
+} = {}): Promise<AgentEvaluationResponse> {
+  const { data } = await client.get<AgentEvaluationResponse>('/api/agents/evaluation', { params });
   return data;
 }

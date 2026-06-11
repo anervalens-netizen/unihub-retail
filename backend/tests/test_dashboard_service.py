@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from models import DashboardSummary, DailySalesPoint
+from models import DashboardSummary, DailySalesPoint, PremiumGlassAnalysis, PremiumGlassSummary
 from services.dashboard_service import DashboardService
 
 
@@ -40,6 +40,10 @@ def _make_summary_row(**overrides) -> FakeRow:
     )
     defaults.update(overrides)
     return FakeRow(**defaults)
+
+
+def _empty_premium_glass(month: str = "2026-05") -> PremiumGlassAnalysis:
+    return PremiumGlassAnalysis(summary=PremiumGlassSummary(month=month))
 
 
 @pytest.fixture
@@ -238,10 +242,17 @@ class TestGetHistoryByYear:
 class TestGetSpecialCards:
     @pytest.mark.asyncio
     async def test_special_cards(self, service):
-        with patch("services.dashboard_service._get_special_cards_data", new_callable=AsyncMock) as mock_fn:
+        with (
+            patch("services.dashboard_service._get_special_cards_data", new_callable=AsyncMock) as mock_fn,
+            patch(
+                "services.dashboard_service.get_premium_glass_analysis",
+                new_callable=AsyncMock,
+                return_value=_empty_premium_glass(),
+            ),
+        ):
             mock_fn.return_value = []
             result = await service.get_special_cards("2026-05", None, None, None, None, None)
-            assert result.cards == []
+            assert [card.key for card in result.cards] == ["premium_glass"]
             mock_fn.assert_awaited_once()
 
 
@@ -259,8 +270,9 @@ class TestGetDashboardAll:
     @patch("services.dashboard_service._fetch_promo_incentive_summary", new_callable=AsyncMock)
     @patch("services.dashboard_service._fetch_regional_stats", new_callable=AsyncMock, return_value=[])
     @patch("services.dashboard_service._fetch_asm_stats", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard_service.get_premium_glass_analysis", new_callable=AsyncMock, return_value=_empty_premium_glass())
     async def test_dashboard_all_empty(
-        self, mock_asm, mock_regional, mock_promo, mock_brand, mock_focus_sub,
+        self, mock_premium, mock_asm, mock_regional, mock_promo, mock_brand, mock_focus_sub,
         mock_receipt, mock_cat, mock_period, mock_enrich, mock_stores,
         mock_agents, mock_specials, service, mock_repo
     ):
@@ -273,7 +285,8 @@ class TestGetDashboardAll:
         assert result.agents == []
         assert result.stores == []
         assert result.daily == []
-        assert result.special_cards == []
+        assert [card.key for card in result.special_cards] == ["premium_glass"]
+        assert result.premium_glass is not None
         assert result.regionals == []
         assert result.asms == []
 

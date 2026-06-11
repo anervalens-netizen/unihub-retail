@@ -35,6 +35,7 @@ import type {
   MonthlyHistoryPoint,
   PeriodComparisonPayload,
   PeriodComparisonPoint,
+  PremiumGlassAnalysis,
   PromoIncentiveSummary,
   ReceiptBucketItem,
   RegionalStat,
@@ -238,6 +239,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [brandMix, setBrandMix] = useState<BrandMixItem[]>([]);
   const [promoIncentive, setPromoIncentive] =
     useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
+  const [premiumGlass, setPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
   const [currentHistory, setCurrentHistory] = useState<MonthlyHistoryPoint[]>([]);
   const [currentHistoryLoading, setCurrentHistoryLoading] = useState(false);
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
@@ -253,6 +255,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [historySpecialCards, setHistorySpecialCards] = useState<DashboardSpecialCard[]>([]);
   const [historyPeriodComparison, setHistoryPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
   const [historyPromoIncentive, setHistoryPromoIncentive] = useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
+  const [historyPremiumGlass, setHistoryPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
   const [historyRegionals, setHistoryRegionals] = useState<RegionalStat[]>([]);
   const [historyAsms, setHistoryAsms] = useState<AsmStat[]>([]);
   const [historyStores, setHistoryStores] = useState<StoreStat[]>([]);
@@ -357,6 +360,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       focusSubcategoryMix: CategoryMixItem[];
       brandMix: BrandMixItem[];
       promoIncentive: PromoIncentiveSummary;
+      premiumGlass: PremiumGlassAnalysis | null;
     }>(currentCacheKey, DASHBOARD_CACHE_TTL_MS);
 
     if (cached.value) {
@@ -373,6 +377,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       setFocusSubcategoryMix(cached.value.focusSubcategoryMix);
       setBrandMix(cached.value.brandMix);
       setPromoIncentive(cached.value.promoIncentive);
+      setPremiumGlass(cached.value.premiumGlass);
       setLoading(false);
       setError(null);
       if (cached.isFresh) {
@@ -398,6 +403,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         setFocusSubcategoryMix(data.focus_subcategory_mix);
         setBrandMix(data.brand_mix);
         setPromoIncentive(data.promo_incentive ?? DEFAULT_PROMO_INCENTIVE);
+        setPremiumGlass(data.premium_glass ?? null);
         setCachedView(currentCacheKey, {
           summary: data.summary,
           agents: data.agents,
@@ -412,6 +418,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           focusSubcategoryMix: data.focus_subcategory_mix,
           brandMix: data.brand_mix,
           promoIncentive: data.promo_incentive ?? DEFAULT_PROMO_INCENTIVE,
+          premiumGlass: data.premium_glass ?? null,
         });
       })
       .catch((err: Error) => {
@@ -440,6 +447,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       asms: AsmStat[];
       stores: StoreStat[];
       agents: AgentStat[];
+      premiumGlass: PremiumGlassAnalysis | null;
     }>(historyDetailCacheKey, DASHBOARD_CACHE_TTL_MS);
 
     if (cached.value) {
@@ -455,6 +463,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         setHistorySpecialCards(cachedDetail.value.specialCards);
         setHistoryPeriodComparison(cachedDetail.value.periodComparison);
         setHistoryPromoIncentive(cachedDetail.value.promoIncentive);
+        setHistoryPremiumGlass(cachedDetail.value.premiumGlass);
         setHistoryRegionals(cachedDetail.value.regionals ?? []);
         setHistoryAsms(cachedDetail.value.asms ?? []);
         setHistoryStores(cachedDetail.value.stores ?? []);
@@ -485,6 +494,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         setHistorySpecialCards(allData.special_cards);
         setHistoryPeriodComparison(allData.period_comparison);
         setHistoryPromoIncentive(allData.promo_incentive ?? DEFAULT_PROMO_INCENTIVE);
+        setHistoryPremiumGlass(allData.premium_glass ?? null);
         setHistoryRegionals(allData.regionals ?? []);
         setHistoryAsms(allData.asms ?? []);
         setHistoryStores(allData.stores ?? []);
@@ -499,6 +509,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           specialCards: allData.special_cards,
           periodComparison: allData.period_comparison,
           promoIncentive: allData.promo_incentive ?? DEFAULT_PROMO_INCENTIVE,
+          premiumGlass: allData.premium_glass ?? null,
           regionals: allData.regionals ?? [],
           asms: allData.asms ?? [],
           stores: allData.stores,
@@ -549,6 +560,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     setHistorySpecialCards([]);
     setHistoryPeriodComparison(null);
     setHistoryPromoIncentive(DEFAULT_PROMO_INCENTIVE);
+    setHistoryPremiumGlass(null);
     setHistoryRegionals([]);
     setHistoryAsms([]);
     setHistoryStores([]);
@@ -594,7 +606,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const promoSummary = useMemo(() => {
     const promotion = specialCards.find((card) => card.key === 'promotion');
     const incentive = specialCards.find((card) => card.key === 'incentive');
-    return { promotion, incentive };
+    const premium = specialCards.find((card) => card.key === 'premium_glass');
+    return { promotion, incentive, premium };
   }, [specialCards]);
 
   const dailyChartData = useMemo(
@@ -716,6 +729,14 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     );
   }, []);
 
+  const handleOpenPremiumFocus = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent('unihub:navigate', {
+        detail: { tab: 'focus', section: 'focus' },
+      })
+    );
+  }, []);
+
   const categoryMixChartData = useMemo(
     () =>
       categoryMix.map((item) => ({
@@ -810,7 +831,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const historyPromoSummary = useMemo(() => {
     const promotion = historySpecialCards.find((card) => card.key === 'promotion');
     const incentive = historySpecialCards.find((card) => card.key === 'incentive');
-    return { promotion, incentive };
+    const premium = historySpecialCards.find((card) => card.key === 'premium_glass');
+    return { promotion, incentive, premium };
   }, [historySpecialCards]);
 
   const brandMixChartData = useMemo(
@@ -1242,6 +1264,12 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
               </div>
             </button>
           </div>
+
+          <PremiumGlassHubCard
+            analysis={premiumGlass}
+            card={promoSummary.premium}
+            onOpenFocus={handleOpenPremiumFocus}
+          />
 
           <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
             <div className="glass rounded-3xl p-4">
@@ -1794,6 +1822,12 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 );
               })()}
 
+              <PremiumGlassHubCard
+                analysis={historyPremiumGlass}
+                card={historyPromoSummary.premium}
+                onOpenFocus={handleOpenPremiumFocus}
+              />
+
               {/* Evolutie zilnica + Top categorii si branduri */}
               <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
                 <div className="glass rounded-3xl p-4">
@@ -2015,5 +2049,53 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         </>
       )}
     </div>
+  );
+}
+
+function PremiumGlassHubCard({
+  analysis,
+  card,
+  onOpenFocus,
+}: {
+  analysis: PremiumGlassAnalysis | null;
+  card?: DashboardSpecialCard;
+  onOpenFocus: () => void;
+}) {
+  const summary = analysis?.summary;
+  const topModel = analysis?.models[0] ?? null;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenFocus}
+      className="glass w-full rounded-3xl p-4 text-left transition hover:shadow-xl"
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-indigo-500" />
+          <h3 className="text-sm font-bold">Folii Premium</h3>
+        </div>
+        <div className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600">
+          Detalii in Focus
+          <ArrowRight size={14} />
+        </div>
+      </div>
+      <CampaignMiniCard
+        label={card?.status_label ?? 'Analiza'}
+        title={card?.subtitle ?? 'SAPPHIRE, CERAMIC si CORNING'}
+        status={card?.coverage_note ?? 'Modele tinta verificate din vanzari'}
+        metrics={[
+          { label: 'Total folii', value: formatInt(summary?.total_qty ?? 0) },
+          { label: 'Premium', value: formatInt(summary?.premium_qty ?? 0) },
+          { label: 'Rest', value: formatInt(summary?.regular_qty ?? 0) },
+          { label: 'Share cant.', value: formatPercent(summary?.premium_qty_share_pct ?? null) },
+        ]}
+        footer={
+          topModel
+            ? `Model lider: ${topModel.model_label}, ${formatInt(topModel.premium_qty)} premium vs ${formatInt(topModel.regular_qty)} rest`
+            : 'Nu exista vanzari eligibile pentru filtrarea curenta'
+        }
+      />
+    </button>
   );
 }

@@ -15,6 +15,8 @@ import {
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   Legend,
@@ -28,13 +30,28 @@ import {
 } from 'recharts';
 import { getCampaignSnapshot, getFocusHistory, getPromotionsIncentives } from '../api/campaigns';
 import { getActiveContests } from '../api/contests';
-import type { CampaignSnapshot, CampaignsPromotionsResponse, ContestResponse, FocusHistoryPoint, IncentiveCategory, IncentiveTopAgent, PromoTopStore } from '../api/types';
+import { getPremiumGlassAnalysis } from '../api/dashboard';
+import type {
+  CampaignSnapshot,
+  CampaignsPromotionsResponse,
+  ContestResponse,
+  FocusHistoryPoint,
+  IncentiveCategory,
+  IncentiveTopAgent,
+  PremiumGlassAnalysis,
+  PremiumGlassAgentStat,
+  PremiumGlassManagerStat,
+  PremiumGlassModelStat,
+  PremiumGlassStoreStat,
+  PromoTopStore,
+} from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
 import type { AppFilters } from './MainLayout';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'focus';
+type FocusMode = 'products' | 'premium';
 
 interface CampaignsProps {
   currentMonth: string;
@@ -80,11 +97,13 @@ export function Campaigns({
   onSectionChange,
 }: CampaignsProps) {
   const [activeSection, setActiveSection] = useState<CampaignSection>(preferredSection);
+  const [focusMode, setFocusMode] = useState<FocusMode>('products');
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [promoMonth, setPromoMonth] = useState(currentMonth);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(emptySnapshot);
   const [focusHistory, setFocusHistory] = useState<FocusHistoryPoint[]>([]);
   const [promoData, setPromoData] = useState<CampaignsPromotionsResponse | null>(null);
+  const [premiumGlass, setPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
   const [contests, setContests] = useState<ContestResponse[]>([]);
   const [selectedContestKey, setSelectedContestKey] = useState('');
   const [contestLoading, setContestLoading] = useState(false);
@@ -127,10 +146,12 @@ export function Campaigns({
     const cached = getCachedView<{
       snapshot: CampaignSnapshot;
       promoData: CampaignsPromotionsResponse | null;
+      premiumGlass: PremiumGlassAnalysis | null;
     }>(currentCacheKey, CAMPAIGNS_CACHE_TTL_MS);
     if (cached.value) {
       setSnapshot(cached.value.snapshot);
       setPromoData(cached.value.promoData);
+      setPremiumGlass(cached.value.premiumGlass);
       setLoading(false);
       setError('');
       if (cached.isFresh) {
@@ -143,20 +164,28 @@ export function Campaigns({
     Promise.all([
       getCampaignSnapshot(buildQuery(promoMonth)),
       getPromotionsIncentives(`${promoMonth}-01`, (() => { const [yr, mo] = promoMonth.split('-').map(Number); return `${promoMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), buildQuery(promoMonth)),
+      getPremiumGlassAnalysis({
+        ...buildQuery(promoMonth),
+        current_scope: true,
+        include_closed_stores: false,
+      }),
     ])
-      .then(([snapshotData, promoResponse]) => {
+      .then(([snapshotData, promoResponse, premiumResponse]) => {
         if (!isMountedRef.current) return;
         setSnapshot(snapshotData);
         setPromoData(promoResponse);
+        setPremiumGlass(premiumResponse);
         setCachedView(currentCacheKey, {
           snapshot: snapshotData,
           promoData: promoResponse,
+          premiumGlass: premiumResponse,
         });
       })
       .catch(() => {
         if (!isMountedRef.current) return;
         setSnapshot(emptySnapshot);
         setPromoData(null);
+        setPremiumGlass(null);
         setError('Datele pentru campanii si focus nu au putut fi incarcate.');
       })
       .finally(() => {
@@ -231,10 +260,10 @@ export function Campaigns({
   useEffect(() => {
     setFocusHistory([]);
     setHistoryError('');
-    if (activeSection === 'focus') {
+    if (activeSection === 'focus' && focusMode === 'products') {
       loadFocusHistory();
     }
-  }, [activeSection, historyMonth, loadFocusHistory]);
+  }, [activeSection, focusMode, historyMonth, loadFocusHistory]);
 
   useEffect(() => {
     if (activeSection === 'concurs') {
@@ -566,6 +595,10 @@ export function Campaigns({
         </>
       ) : (
         <>
+          <FocusModeSwitch value={focusMode} onChange={setFocusMode} />
+
+          {focusMode === 'products' ? (
+            <>
           <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
             <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <Sparkles size={16} />
@@ -675,6 +708,10 @@ export function Campaigns({
               />
             </>
           )}
+            </>
+          ) : (
+            <PremiumGlassFocusSection analysis={premiumGlass} />
+          )}
         </>
       )}
     </div>
@@ -682,6 +719,211 @@ export function Campaigns({
 }
 
 const INCENTIVE_TIER_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
+
+function FocusModeSwitch({
+  value,
+  onChange,
+}: {
+  value: FocusMode;
+  onChange: (value: FocusMode) => void;
+}) {
+  return (
+    <div className="glass grid grid-cols-2 gap-1 rounded-2xl p-1">
+      {([
+        ['products', 'Produse focus'],
+        ['premium', 'Folii premium'],
+      ] as const).map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onChange(key)}
+          className={`rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+            value === key
+              ? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-800 dark:text-emerald-300'
+              : 'text-slate-500 hover:bg-white/60 dark:hover:bg-slate-800/60'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PremiumGlassFocusSection({ analysis }: { analysis: PremiumGlassAnalysis | null }) {
+  const summary = analysis?.summary;
+  const modelChartData = (analysis?.models ?? []).slice(0, 8).map((model) => ({
+    model: model.model_label.replace('Samsung ', 'S. '),
+    Premium: model.premium_qty,
+    Rest: model.regular_qty,
+  }));
+
+  return (
+    <div className="space-y-3">
+      <div className="glass rounded-4xl border border-emerald-100 bg-linear-to-br from-emerald-50 via-white to-white p-4 dark:border-emerald-900/30 dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900">
+        <div className="mb-3 flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+          <Sparkles size={16} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Folii Premium</span>
+        </div>
+        <h4 className="text-base font-black tracking-tight">SAPPHIRE, CERAMIC si CORNING</h4>
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+          Categoria Folii Sticla, comparata cu restul foliilor pentru iPhone 15/16/17 normal, Pro, Pro Max si Samsung S26 Ultra.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Metric label="Total folii" value={formatInt(summary?.total_qty ?? 0)} />
+          <Metric label="Premium" value={formatInt(summary?.premium_qty ?? 0)} />
+          <Metric label="Rest modele" value={formatInt(summary?.regular_qty ?? 0)} />
+          <Metric label="Share cant." value={formatPercent(summary?.premium_qty_share_pct ?? null)} />
+        </div>
+      </div>
+
+      {analysis && (
+        <>
+          <div className="glass rounded-3xl p-4">
+            <div className="mb-3">
+              <h3 className="text-sm font-bold">Premium vs rest pe modele</h3>
+              <p className="text-[11px] text-slate-500">Cantitate vanduta pe produsele compatibile</p>
+            </div>
+            <div className="h-56 min-w-0">
+              {modelChartData.length === 0 ? (
+                <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 text-xs font-semibold text-slate-500 dark:bg-slate-800/50">
+                  Nu exista vanzari eligibile pentru filtrarea curenta.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                  <BarChart data={modelChartData} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.15} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis dataKey="model" type="category" width={92} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(value: number) => formatInt(value)} />
+                    <Legend />
+                    <Bar dataKey="Premium" stackId="qty" fill="#059669" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="Rest" stackId="qty" fill="#cbd5e1" radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <PremiumGlassModelTable rows={analysis.models} />
+            <PremiumGlassManagerTable rows={analysis.managers} />
+            <PremiumGlassStoreTable rows={analysis.stores} />
+            <PremiumGlassAgentTable rows={analysis.agents} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PremiumGlassModelTable({ rows }: { rows: PremiumGlassModelStat[] }) {
+  return (
+    <div className="glass rounded-3xl p-4">
+      <div className="mb-3">
+        <h3 className="text-sm font-bold">Comparatie pe modele</h3>
+        <p className="text-[11px] text-slate-500">Premium vs rest pentru acelasi model compatibil</p>
+      </div>
+      <SortableTable<PremiumGlassModelStat & Record<string, unknown>>
+        rows={rows as (PremiumGlassModelStat & Record<string, unknown>)[]}
+        defaultSortKey="total_qty"
+        columns={[
+          { key: 'model_label', label: 'Model', render: (row) => <span className="font-semibold">{(row as PremiumGlassModelStat).model_label}</span> },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassModelStat).premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassModelStat).regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassModelStat).premium_qty_share_pct) },
+        ]}
+      />
+    </div>
+  );
+}
+
+function PremiumGlassManagerTable({ rows }: { rows: PremiumGlassManagerStat[] }) {
+  return (
+    <div className="glass rounded-3xl p-4">
+      <div className="mb-3">
+        <h3 className="text-sm font-bold">Manageri</h3>
+        <p className="text-[11px] text-slate-500">Cei 6 manageri activi, dupa cantitate premium</p>
+      </div>
+      <SortableTable<PremiumGlassManagerStat & Record<string, unknown>>
+        rows={rows as (PremiumGlassManagerStat & Record<string, unknown>)[]}
+        defaultSortKey="premium_qty"
+        columns={[
+          { key: 'manager', label: 'Manager', render: (row) => <span className="font-semibold">{(row as PremiumGlassManagerStat).manager}</span> },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassManagerStat).premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassManagerStat).regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassManagerStat).premium_qty_share_pct) },
+          { key: 'store_count', label: 'Mag.', align: 'right', render: (row) => formatInt((row as PremiumGlassManagerStat).store_count) },
+          { key: 'agent_count', label: 'Ag.', align: 'right', render: (row) => formatInt((row as PremiumGlassManagerStat).agent_count) },
+        ]}
+      />
+    </div>
+  );
+}
+
+function PremiumGlassStoreTable({ rows }: { rows: PremiumGlassStoreStat[] }) {
+  return (
+    <div className="glass rounded-3xl p-4">
+      <div className="mb-3">
+        <h3 className="text-sm font-bold">Magazine</h3>
+        <p className="text-[11px] text-slate-500">Toate magazinele cu vanzari eligibile, dupa cantitate premium</p>
+      </div>
+      <SortableTable<PremiumGlassStoreStat & Record<string, unknown>>
+        rows={rows as (PremiumGlassStoreStat & Record<string, unknown>)[]}
+        defaultSortKey="premium_qty"
+        columns={[
+          {
+            key: 'locatie',
+            label: 'Magazin',
+            render: (row) => {
+              const store = row as PremiumGlassStoreStat;
+              return (
+                <span className="flex items-center">
+                  <FirmaBadge firma={store.firma} />
+                  <span className="max-w-[110px] truncate font-semibold" title={store.locatie}>{store.locatie}</span>
+                </span>
+              );
+            },
+          },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassStoreStat).premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassStoreStat).regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassStoreStat).premium_qty_share_pct) },
+        ]}
+      />
+    </div>
+  );
+}
+
+function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
+  return (
+    <div className="glass rounded-3xl p-4">
+      <div className="mb-3">
+        <h3 className="text-sm font-bold">Agenti</h3>
+        <p className="text-[11px] text-slate-500">Toti agentii cu vanzari eligibile, dupa cantitate premium</p>
+      </div>
+      <SortableTable<PremiumGlassAgentStat & Record<string, unknown>>
+        rows={rows as (PremiumGlassAgentStat & Record<string, unknown>)[]}
+        defaultSortKey="premium_qty"
+        columns={[
+          {
+            key: 'agent',
+            label: 'Agent',
+            render: (row) => {
+              const agent = row as PremiumGlassAgentStat;
+              return (
+                <span className="block max-w-[120px] truncate font-semibold" title={`${agent.agent} - ${agent.locatie}`}>
+                  {agent.agent}
+                </span>
+              );
+            },
+          },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassAgentStat).premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassAgentStat).regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassAgentStat).premium_qty_share_pct) },
+        ]}
+      />
+    </div>
+  );
+}
 
 function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse | null }) {
   const categories: IncentiveCategory[] = promoData?.incentive_categories ?? [];
@@ -1072,6 +1314,23 @@ function DataTable({
 
 type SortDir = 'asc' | 'desc';
 
+function getSortableValue(value: unknown): string | number {
+  if (value === null || value === undefined) return Number.NEGATIVE_INFINITY;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+  if (typeof value === 'string') {
+    const trimmed = value.trim().replace('%', '');
+    const normalized = trimmed.includes(',')
+      ? trimmed.replace(/\./g, '').replace(',', '.')
+      : trimmed;
+    if (normalized !== '') {
+      const numeric = Number(normalized);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+    return value.toLowerCase();
+  }
+  return String(value).toLowerCase();
+}
+
 interface ColDef<T> {
   key: keyof T | 'rank';
   label: string;
@@ -1100,11 +1359,11 @@ function SortableTable<T extends Record<string, unknown>>({
     const col = columns.find((c) => c.key === sortKey);
     if (!col || col.key === 'rank') return rows;
     return [...rows].sort((a, b) => {
-      const av = a[sortKey as keyof T];
-      const bv = b[sortKey as keyof T];
-      if (av === null || av === undefined) return 1;
-      if (bv === null || bv === undefined) return -1;
-      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      const av = getSortableValue(a[sortKey as keyof T]);
+      const bv = getSortableValue(b[sortKey as keyof T]);
+      const cmp = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv), 'ro');
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [rows, columns, sortKey, sortDir]);

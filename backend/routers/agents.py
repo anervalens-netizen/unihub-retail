@@ -9,6 +9,7 @@ from models import (
     AgentListResponse,
     AgentProfileResponse,
     AgentHistoryResponse,
+    AgentEvaluationResponse,
     StoreCoverageResponse,
 )
 from repositories.agents import AgentsRepository
@@ -59,6 +60,17 @@ async def get_agents_list(
     svc: AgentsService = Depends(get_agents_service),
 ):
     return await svc.get_agents_list(selected_month, search, firma, regional, asm, site_code)
+
+
+@router.get("/evaluation", response_model=AgentEvaluationResponse)
+async def get_agent_evaluation(
+    month: str | None = Query(None),
+    firma: str | None = Query(None),
+    asm: str | None = Query(None),
+    site_code: str | None = Query(None),
+    svc: AgentsService = Depends(get_agents_service),
+):
+    return await svc.get_agent_evaluation(month, firma, asm, site_code)
 
 
 @router.get("/profile", response_model=AgentProfileResponse)
