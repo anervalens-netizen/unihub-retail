@@ -225,11 +225,11 @@ class AgentsService:
                 LEFT JOIN store_targets st
                   ON st.import_month = ram.import_month
                  AND st.site_code = ram.site_code
-                WHERE ram.import_month BETWEEN '2026-01' AND '2026-05'
+                WHERE ram.import_month >= '2025-01'
                   AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR ca.firma = $2)
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
-                  AND ($4::TEXT IS NULL OR ca.site_code = $4)
+                  AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
                   AND ram.agent IS NOT NULL
                   AND TRIM(ram.agent) != ''
                   AND ram.agent != '-'
@@ -252,7 +252,7 @@ class AgentsService:
             agent_period AS (
                 SELECT
                     CASE
-                        WHEN $1::TEXT IS NULL THEN '2026-01..2026-05'
+                        WHEN $1::TEXT IS NULL THEN '2025-01..curent'
                         WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
                         ELSE month
                     END AS month,
@@ -274,7 +274,7 @@ class AgentsService:
                 FROM monthly_targets
                 GROUP BY
                     CASE
-                        WHEN $1::TEXT IS NULL THEN '2026-01..2026-05'
+                        WHEN $1::TEXT IS NULL THEN '2025-01..curent'
                         WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
                         ELSE month
                     END,
@@ -315,7 +315,7 @@ class AgentsService:
                 SELECT DISTINCT
                     st.id,
                     CASE
-                        WHEN $1::TEXT IS NULL THEN '2026-01..2026-05'
+                        WHEN $1::TEXT IS NULL THEN '2025-01..curent'
                         WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
                         ELSE st.import_month
                     END AS month,
@@ -325,11 +325,11 @@ class AgentsService:
                 FROM sales_transactions st
                 JOIN current_agents ca ON ca.agent = st.agent
                 JOIN premium_glass_item_models pgm ON pgm.item_code = st.item_code
-                WHERE st.import_month BETWEEN '2026-01' AND '2026-05'
+                WHERE st.import_month >= '2025-01'
                   AND ($1::TEXT IS NULL OR st.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR ca.firma = $2)
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
-                  AND ($4::TEXT IS NULL OR ca.site_code = $4)
+                  AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
                   AND LOWER(TRIM(COALESCE(st.category, ''))) = 'folii sticla'
                   AND st.quantity > 0
                   AND st.agent IS NOT NULL
@@ -385,7 +385,7 @@ class AgentsService:
                 SELECT DISTINCT ram.import_month AS month, ca.firma, ca.asm, ca.site_code, ca.locatie
                 FROM reporting_agent_month ram
                 JOIN current_agents ca ON ca.agent = ram.agent
-                WHERE ram.import_month BETWEEN '2026-01' AND '2026-05'
+                WHERE ram.import_month >= '2025-01'
             )
             SELECT 'month' AS type, month AS value, month AS label FROM scoped
             UNION

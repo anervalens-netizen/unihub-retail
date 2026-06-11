@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, RefreshCw, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import {
   fetchAgentEvaluation,
+  type AgentEvaluationOption,
   type AgentEvaluationRow,
   type AgentEvaluationResponse,
 } from '../api/agents';
@@ -37,8 +38,17 @@ function pointColor(points: number) {
 }
 
 function MonthLabel({ month }: { month: string }) {
-  if (month.includes('..')) return <>Ian-Mai 26</>;
   if (month === 'custom') return <>Selectate</>;
+  const formatShort = (value: string) => {
+    const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
+    const [year, mo] = value.split('-');
+    const label = labels[Number(mo) - 1];
+    return label && year ? `${label} ${year.slice(2)}` : value;
+  };
+  if (month.includes('..')) {
+    const [start, end] = month.split('..');
+    return <>{formatShort(start)} - {end.includes('-') ? formatShort(end) : end}</>;
+  }
   const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
   const [year, mo] = month.split('-');
   return <>{labels[Number(mo) - 1]} {year.slice(2)}</>;
@@ -60,7 +70,7 @@ function MechanismCard() {
   const items = [
     {
       label: 'Bază calcul',
-      text: 'Lunile bifate se agregă pe agent. Fără bifă = ianuarie-mai 2026. Sunt incluși doar agenții activi curent, pe alocarea curentă de firmă, magazin și manager.',
+      text: 'Lunile bifate se agregă pe agent. Fără bifă = toate lunile disponibile din ianuarie 2025. Sunt incluși doar agenții activi curent, pe alocarea curentă de firmă, magazin și manager.',
     },
     {
       label: 'Scor',
@@ -130,12 +140,14 @@ function MechanismCard() {
 }
 
 function FirmBadge({ firma }: { firma: string }) {
-  const isMobiup = firma.toLowerCase().includes('mobiup');
+  const value = firma.toLowerCase();
+  const isMobiup = value.includes('mobiup');
+  const isMobicell = value.includes('mobicell');
   return (
     <span
       title={firma}
       className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white ${
-        isMobiup ? 'bg-blue-600' : 'bg-red-600'
+        isMobiup ? 'bg-red-600' : isMobicell ? 'bg-blue-600' : 'bg-slate-500'
       }`}
     >
       M
@@ -211,6 +223,97 @@ function MonthDropdown({
                   className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                 />
                 <MonthLabel month={option.value} />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FirmSelector({
+  options,
+  selected,
+  onChange,
+}: {
+  options: AgentEvaluationOption[];
+  selected: string;
+  onChange: (value: string) => void;
+}) {
+  const visibleOptions = options
+    .filter((option) => /mobiup|mobicell/i.test(option.label))
+    .sort((a, b) => {
+      const aMobiup = a.label.toLowerCase().includes('mobiup') ? 0 : 1;
+      const bMobiup = b.label.toLowerCase().includes('mobiup') ? 0 : 1;
+      return aMobiup - bMobiup || a.label.localeCompare(b.label, 'ro');
+    });
+
+  return (
+    <div className="grid grid-cols-2 gap-1.5">
+      {visibleOptions.map((option) => {
+        const active = selected === option.value;
+        return (
+          <button
+            key={option.value}
+            onClick={() => onChange(active ? '' : option.value)}
+            className={`min-w-0 rounded-xl border px-2 py-2 text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+              active
+                ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/50 dark:text-indigo-200'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+            }`}
+            title={option.label}
+          >
+            <FirmBadge firma={option.label} />
+            <span className="truncate">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function StoreDropdown({
+  stores,
+  selectedStores,
+  onToggle,
+  onClear,
+}: {
+  stores: AgentEvaluationOption[];
+  selectedStores: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = selectedStores.length ? `${selectedStores.length} magazine` : 'Toate magazinele';
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
+      >
+        <span className="truncate">{label}</span>
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-72 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <button
+            onClick={onClear}
+            className="mb-1 w-full rounded-lg px-2 py-1.5 text-left text-xs font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Toate magazinele
+          </button>
+          <div className="max-h-64 overflow-y-auto">
+            {stores.map((option) => (
+              <label key={option.value} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                <input
+                  type="checkbox"
+                  checked={selectedStores.includes(option.value)}
+                  onChange={() => onToggle(option.value)}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="truncate">{option.label}</span>
               </label>
             ))}
           </div>
@@ -345,8 +448,7 @@ export function AgentEvaluationSubtab() {
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [firma, setFirma] = useState('');
   const [asm, setAsm] = useState('');
-  const [siteCode, setSiteCode] = useState('');
-  const [search, setSearch] = useState('');
+  const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('total_points');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
@@ -358,14 +460,14 @@ export function AgentEvaluationSubtab() {
         months: selectedMonths.length ? selectedMonths.join(',') : undefined,
         firma: firma || undefined,
         asm: asm || undefined,
-        site_code: siteCode || undefined,
+        site_code: selectedStores.length ? selectedStores.join(',') : undefined,
       }));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, [selectedMonths, firma, asm, siteCode]);
+  useEffect(() => { load(); }, [selectedMonths, firma, asm, selectedStores]);
 
   const toggleMonth = (value: string) => {
     setSelectedMonths((current) => {
@@ -374,15 +476,15 @@ export function AgentEvaluationSubtab() {
     });
   };
 
-  const rows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const filtered = term ? data.rows.filter((row) =>
-      row.agent.toLowerCase().includes(term) ||
-      row.locatie.toLowerCase().includes(term) ||
-      row.site_code.toLowerCase().includes(term)
-    ) : data.rows;
+  const toggleStore = (value: string) => {
+    setSelectedStores((current) => {
+      if (current.includes(value)) return current.filter((storeValue) => storeValue !== value);
+      return [...current, value].sort();
+    });
+  };
 
-    return [...filtered].sort((a, b) => {
+  const rows = useMemo(() => {
+    return [...data.rows].sort((a, b) => {
       const av = getSortValue(a, sortKey);
       const bv = getSortValue(b, sortKey);
       let result = 0;
@@ -393,7 +495,7 @@ export function AgentEvaluationSubtab() {
       }
       return sortDirection === 'asc' ? result : -result;
     });
-  }, [data.rows, search, sortKey, sortDirection]);
+  }, [data.rows, sortKey, sortDirection]);
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -417,7 +519,7 @@ export function AgentEvaluationSubtab() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Analiză agenți</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">Ianuarie - mai 2026</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">Din ianuarie 2025</p>
         </div>
         <button
           onClick={load}
@@ -433,23 +535,14 @@ export function AgentEvaluationSubtab() {
 
       <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
         <div className="border-b border-slate-200 dark:border-slate-700 p-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[160px_150px_150px_minmax(210px,1fr)_minmax(210px,1.3fr)] gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[160px_210px_150px_minmax(260px,1fr)] gap-2">
             <MonthDropdown
               months={data.months}
               selectedMonths={selectedMonths}
               onToggle={toggleMonth}
               onClear={() => setSelectedMonths([])}
             />
-            <select
-              value={firma}
-              onChange={(e) => setFirma(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            >
-              <option value="">Toate firmele</option>
-              {data.firmas.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <FirmSelector options={data.firmas} selected={firma} onChange={setFirma} />
             <select
               value={asm}
               onChange={(e) => setAsm(e.target.value)}
@@ -460,25 +553,12 @@ export function AgentEvaluationSubtab() {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-            <select
-              value={siteCode}
-              onChange={(e) => setSiteCode(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            >
-              <option value="">Toate magazinele</option>
-              {data.stores.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-2.5 text-slate-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Caută agent sau magazin"
-                className="w-full rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              />
-            </div>
+            <StoreDropdown
+              stores={data.stores}
+              selectedStores={selectedStores}
+              onToggle={toggleStore}
+              onClear={() => setSelectedStores([])}
+            />
           </div>
         </div>
         <div className="max-h-[68vh] overflow-auto">
