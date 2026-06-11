@@ -65,12 +65,13 @@ async def get_agents_list(
 @router.get("/evaluation", response_model=AgentEvaluationResponse)
 async def get_agent_evaluation(
     month: str | None = Query(None),
+    months: str | None = Query(None),
     firma: str | None = Query(None),
     asm: str | None = Query(None),
     site_code: str | None = Query(None),
     svc: AgentsService = Depends(get_agents_service),
 ):
-    return await svc.get_agent_evaluation(month, firma, asm, site_code)
+    return await svc.get_agent_evaluation(month, months, firma, asm, site_code)
 
 
 @router.get("/profile", response_model=AgentProfileResponse)

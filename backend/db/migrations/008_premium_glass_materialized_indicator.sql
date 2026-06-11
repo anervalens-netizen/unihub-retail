@@ -35,6 +35,8 @@ source_products AS (
         UPPER(COALESCE(st.item_name, '')) AS item_name_upper
     FROM sales_transactions st
     WHERE LOWER(TRIM(COALESCE(st.category, ''))) = 'folii sticla'
+      AND st.item_code IS NOT NULL
+      AND TRIM(st.item_code) != ''
 )
 INSERT INTO premium_glass_item_models (
     item_code,
@@ -73,5 +75,5 @@ SELECT
     BOOL_OR(is_premium_glass) AS is_premium_glass,
     ARRAY_AGG(DISTINCT model_key ORDER BY model_key) AS model_keys,
     ARRAY_AGG(DISTINCT model_label ORDER BY model_label) AS model_labels
-FROM v_premium_glass_item_models
+FROM premium_glass_item_models
 GROUP BY item_code;

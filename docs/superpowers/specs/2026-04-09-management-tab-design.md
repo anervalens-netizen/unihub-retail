@@ -228,6 +228,9 @@ Segmentul Folii Premium foloseste aceeasi logica din `Focus -> Folii Premium`:
 - procentul este `cantitate premium / cantitate totala folii eligibile pentru
   aceleasi modele`, cu linii deduplicate dupa tranzactie pentru a evita
   dublarea produselor compatibile cu mai multe modele.
+- indicatorul este materializat in tabela indexata `premium_glass_item_models`
+  si refresh-uit in `rebuild_reporting_month`; view-urile `v_*` sunt pastrate
+  doar pentru compatibilitate.
 
 ### Endpoint
 

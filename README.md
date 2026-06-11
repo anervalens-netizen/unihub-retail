@@ -93,6 +93,10 @@ Pragurile sunt:
 Folii Premium sunt calculate pe aceeasi baza ca in Focus: produse din categoria
 `Folii Sticla` cu `SAPPHIRE`, `CERAMIC` sau `CORNING`, raportate la totalul
 foliilor eligibile pentru aceleasi modele tinta din `v_premium_glass_item_models`.
+Indicatorul este materializat in tabela indexata `premium_glass_item_models`;
+view-urile `v_premium_glass_item_models` si `v_premium_glass_products` sunt doar
+compatibilitate de citire. Nu reintroduce calculul prin regex direct in
+request-uri, pentru ca produce timeout-uri pe filtre combinate manager+magazin.
 
 **Serviciu comun:** CRM, HR si Calculator Target folosesc `services/forecast.py`
 pentru calculul unitar al forecast-ului pe lunile partiale.

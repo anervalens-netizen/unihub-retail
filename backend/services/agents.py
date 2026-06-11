@@ -154,10 +154,12 @@ class AgentsService:
     async def get_agent_evaluation(
         self,
         month: str | None,
+        months: str | None,
         firma: str | None,
         asm: str | None,
         site_code: str | None,
     ) -> AgentEvaluationResponse:
+        month_filter = months or month
         def pct_points(value: Decimal | None, thresholds: tuple[Decimal, Decimal, Decimal]) -> int:
             if value is None:
                 return 0
@@ -224,7 +226,7 @@ class AgentsService:
                   ON st.import_month = ram.import_month
                  AND st.site_code = ram.site_code
                 WHERE ram.import_month BETWEEN '2026-01' AND '2026-05'
-                  AND ($1::TEXT IS NULL OR ram.import_month = $1)
+                  AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR ca.firma = $2)
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
                   AND ($4::TEXT IS NULL OR ca.site_code = $4)
@@ -249,7 +251,11 @@ class AgentsService:
             ),
             agent_period AS (
                 SELECT
-                    CASE WHEN $1::TEXT IS NULL THEN '2026-01..2026-05' ELSE month END AS month,
+                    CASE
+                        WHEN $1::TEXT IS NULL THEN '2026-01..2026-05'
+                        WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
+                        ELSE month
+                    END AS month,
                     firma,
                     site_code,
                     locatie,
@@ -267,7 +273,11 @@ class AgentsService:
                     COALESCE(SUM(target_value), 0) AS target_value
                 FROM monthly_targets
                 GROUP BY
-                    CASE WHEN $1::TEXT IS NULL THEN '2026-01..2026-05' ELSE month END,
+                    CASE
+                        WHEN $1::TEXT IS NULL THEN '2026-01..2026-05'
+                        WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
+                        ELSE month
+                    END,
                     firma,
                     site_code,
                     locatie,
@@ -304,15 +314,19 @@ class AgentsService:
             premium_lines AS (
                 SELECT DISTINCT
                     st.id,
-                    CASE WHEN $1::TEXT IS NULL THEN '2026-01..2026-05' ELSE st.import_month END AS month,
+                    CASE
+                        WHEN $1::TEXT IS NULL THEN '2026-01..2026-05'
+                        WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
+                        ELSE st.import_month
+                    END AS month,
                     st.agent,
                     pgm.is_premium_glass AS is_premium,
                     st.quantity::INT AS qty
                 FROM sales_transactions st
                 JOIN current_agents ca ON ca.agent = st.agent
-                JOIN v_premium_glass_item_models pgm ON pgm.item_code = st.item_code
+                JOIN premium_glass_item_models pgm ON pgm.item_code = st.item_code
                 WHERE st.import_month BETWEEN '2026-01' AND '2026-05'
-                  AND ($1::TEXT IS NULL OR st.import_month = $1)
+                  AND ($1::TEXT IS NULL OR st.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR ca.firma = $2)
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
                   AND ($4::TEXT IS NULL OR ca.site_code = $4)
@@ -383,10 +397,10 @@ class AgentsService:
             ORDER BY type, label
         """
 
-        rows = await self.repo.get_agent_evaluation(query, [month, firma, asm, site_code])
+        rows = await self.repo.get_agent_evaluation(query, [month_filter, firma, asm, site_code])
         option_rows = await self.repo.get_agent_evaluation(option_query, [])
 
-        months: list[AgentEvaluationOption] = []
+        month_options: list[AgentEvaluationOption] = []
         firmas: list[AgentEvaluationOption] = []
         asms: list[AgentEvaluationOption] = []
         stores: list[AgentEvaluationOption] = []
@@ -398,7 +412,7 @@ class AgentsService:
             seen_options.add(key)
             option = AgentEvaluationOption(value=row["value"], label=row["label"])
             if row["type"] == "month":
-                months.append(option)
+                month_options.append(option)
             elif row["type"] == "firma":
                 firmas.append(option)
             elif row["type"] == "asm":
@@ -472,7 +486,7 @@ class AgentsService:
                 )
             )
 
-        return AgentEvaluationResponse(months=months, firmas=firmas, asms=asms, stores=stores, rows=items)
+        return AgentEvaluationResponse(months=month_options, firmas=firmas, asms=asms, stores=stores, rows=items)
 
     async def get_agents_movement(
         self, selected_month: str, firma: str | None, regional: str | None, asm: str | None, site_code: str | None, agent: str | None

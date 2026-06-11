@@ -197,6 +197,7 @@ export async function fetchStoreCoverage(query: Partial<AgentsQuery>): Promise<S
 
 export async function fetchAgentEvaluation(params: {
   month?: string;
+  months?: string;
   firma?: string;
   asm?: string;
   site_code?: string;

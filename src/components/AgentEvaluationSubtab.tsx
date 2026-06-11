@@ -38,6 +38,7 @@ function pointColor(points: number) {
 
 function MonthLabel({ month }: { month: string }) {
   if (month.includes('..')) return <>Ian-Mai 26</>;
+  if (month === 'custom') return <>Selectate</>;
   const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
   const [year, mo] = month.split('-');
   return <>{labels[Number(mo) - 1]} {year.slice(2)}</>;
@@ -258,7 +259,7 @@ const EMPTY_RESPONSE: AgentEvaluationResponse = { months: [], firmas: [], asms: 
 
 export function AgentEvaluationSubtab() {
   const [data, setData] = useState<AgentEvaluationResponse>(EMPTY_RESPONSE);
-  const [month, setMonth] = useState('');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [firma, setFirma] = useState('');
   const [asm, setAsm] = useState('');
   const [siteCode, setSiteCode] = useState('');
@@ -271,7 +272,7 @@ export function AgentEvaluationSubtab() {
     setLoading(true);
     try {
       setData(await fetchAgentEvaluation({
-        month: month || undefined,
+        months: selectedMonths.length ? selectedMonths.join(',') : undefined,
         firma: firma || undefined,
         asm: asm || undefined,
         site_code: siteCode || undefined,
@@ -281,7 +282,14 @@ export function AgentEvaluationSubtab() {
     }
   };
 
-  useEffect(() => { load(); }, [month, firma, asm, siteCode]);
+  useEffect(() => { load(); }, [selectedMonths, firma, asm, siteCode]);
+
+  const toggleMonth = (value: string) => {
+    setSelectedMonths((current) => {
+      if (current.includes(value)) return current.filter((monthValue) => monthValue !== value);
+      return [...current, value].sort();
+    });
+  };
 
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -346,16 +354,24 @@ export function AgentEvaluationSubtab() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <select
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-        >
-          <option value="">Toate lunile</option>
-          {data.months.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            {selectedMonths.length ? `${selectedMonths.length} luni` : 'Toate lunile'}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {data.months.map((option) => (
+              <label key={option.value} className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={selectedMonths.includes(option.value)}
+                  onChange={() => toggleMonth(option.value)}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <MonthLabel month={option.value} />
+              </label>
+            ))}
+          </div>
+        </div>
         <select
           value={firma}
           onChange={(e) => setFirma(e.target.value)}

@@ -89,7 +89,7 @@ def _premium_base_cte(where_sql: str) -> str:
                 st.total_value AS sales
             FROM sales_transactions st
             JOIN stores s ON s.site_code = st.site_code
-            JOIN v_premium_glass_item_models pgm ON pgm.item_code = st.item_code
+            JOIN premium_glass_item_models pgm ON pgm.item_code = st.item_code
             WHERE {where_sql}
         ),
         matched_lines AS (
@@ -163,7 +163,7 @@ async def get_premium_glass_analysis(
             COUNT(DISTINCT agent)::INT AS active_agents,
             COUNT(DISTINCT site_code) FILTER (WHERE is_premium)::INT AS premium_active_stores,
             COUNT(DISTINCT agent) FILTER (WHERE is_premium)::INT AS premium_active_agents,
-            (SELECT COUNT(DISTINCT model_key)::INT FROM v_premium_glass_item_models) AS target_model_count
+            (SELECT COUNT(DISTINCT model_key)::INT FROM premium_glass_item_models) AS target_model_count
         FROM eligible_lines
         """,
         *params,

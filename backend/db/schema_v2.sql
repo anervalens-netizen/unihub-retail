@@ -112,7 +112,23 @@ CREATE TABLE IF NOT EXISTS sales_transactions (
     snapshot_id INTEGER NOT NULL REFERENCES import_snapshots(id) ON DELETE CASCADE
 );
 
-CREATE OR REPLACE VIEW v_premium_glass_item_models AS
+CREATE TABLE IF NOT EXISTS premium_glass_item_models (
+    item_code TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    is_premium_glass BOOLEAN NOT NULL,
+    model_key TEXT NOT NULL,
+    model_label TEXT NOT NULL,
+    PRIMARY KEY (item_code, model_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_premium_glass_item_models_item
+    ON premium_glass_item_models (item_code);
+
+CREATE INDEX IF NOT EXISTS idx_premium_glass_item_models_premium
+    ON premium_glass_item_models (is_premium_glass);
+
+TRUNCATE premium_glass_item_models;
+
 WITH target_models(model_key, model_label, model_regex, exclude_regex) AS (
     VALUES
         ('iphone_15', 'iPhone 15', 'IPHONE 15', 'IPHONE 15 PRO|IPHONE 15 PLUS -'),
@@ -134,6 +150,13 @@ source_products AS (
     FROM sales_transactions st
     WHERE LOWER(TRIM(COALESCE(st.category, ''))) = 'folii sticla'
 )
+INSERT INTO premium_glass_item_models (
+    item_code,
+    item_name,
+    is_premium_glass,
+    model_key,
+    model_label
+)
 SELECT DISTINCT ON (sp.item_code, tm.model_key)
     sp.item_code,
     sp.item_name,
@@ -146,6 +169,17 @@ JOIN target_models tm
    AND (tm.exclude_regex IS NULL OR sp.item_name_upper !~ tm.exclude_regex)
 ORDER BY sp.item_code, tm.model_key, sp.item_name;
 
+ANALYZE premium_glass_item_models;
+
+CREATE OR REPLACE VIEW v_premium_glass_item_models AS
+SELECT
+    item_code,
+    item_name,
+    is_premium_glass,
+    model_key,
+    model_label
+FROM premium_glass_item_models;
+
 CREATE OR REPLACE VIEW v_premium_glass_products AS
 SELECT
     item_code,
@@ -153,7 +187,7 @@ SELECT
     BOOL_OR(is_premium_glass) AS is_premium_glass,
     ARRAY_AGG(DISTINCT model_key ORDER BY model_key) AS model_keys,
     ARRAY_AGG(DISTINCT model_label ORDER BY model_label) AS model_labels
-FROM v_premium_glass_item_models
+FROM premium_glass_item_models
 GROUP BY item_code;
 
 CREATE TABLE IF NOT EXISTS store_targets (
