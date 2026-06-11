@@ -55,37 +55,16 @@ function MetricCell({ value, points, suffix = '%' }: { value: number | null; poi
   );
 }
 
-function SummaryCard({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 p-3">
-      <div className="text-[11px] uppercase tracking-wider font-bold text-slate-400">{label}</div>
-      <div className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">{value}</div>
-      {sublabel && <div className="text-[11px] text-slate-500 dark:text-slate-400">{sublabel}</div>}
-    </div>
-  );
-}
-
 function MechanismCard() {
+  const [showPoints, setShowPoints] = useState(false);
   const items = [
     {
-      label: 'Perioadă',
-      text: 'Toate lunile agregă ianuarie-mai 2026 pe agent; o lună selectată arată doar luna respectivă.',
+      label: 'Bază calcul',
+      text: 'Lunile bifate se agregă pe agent. Fără bifă = ianuarie-mai 2026. Sunt incluși doar agenții activi curent, pe alocarea curentă de firmă, magazin și manager.',
     },
     {
-      label: 'Alocare',
-      text: 'Sunt incluși doar agenții activi în luna curentă disponibilă, afișați pe firma, magazinul și managerul curent.',
-    },
-    {
-      label: 'Target agent',
-      text: 'Target locație se împarte la totalul zilelor lucrate în locație, apoi se înmulțește cu zilele lucrate de agent.',
-    },
-    {
-      label: 'Punctaj',
-      text: 'Fiecare segment are 0-3 puncte: Target, Medie zilnică, Valoare reper, % Bonuri, Focus și Folii Premium.',
-    },
-    {
-      label: 'Folii Premium',
-      text: 'Premium înseamnă SAPPHIRE, CERAMIC sau CORNING din Folii Sticla, raportate la totalul foliilor pentru aceleași modele țintă ca în Focus.',
+      label: 'Scor',
+      text: 'Target agent = target locație / zile lucrate locație * zile agent. Scorul are 6 segmente a câte 0-3p; Folii Premium sunt raportate la totalul foliilor eligibile pentru modelele țintă.',
     },
   ];
   const pointRules = [
@@ -98,44 +77,145 @@ function MechanismCard() {
   ];
 
   return (
-    <div className="rounded-2xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/20 p-4">
+    <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/20 p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Mecanism analiză agenți</h4>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Scorul final este suma celor 6 segmente, maxim 18 puncte. Bonusul se acordă pe pragurile din analiza sursă.
+          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+            Maxim 18 puncte. Bonus: 18p = 300 lei, 16-17p = 200 lei, 14-15p = 100 lei fără segment roșu.
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-white/80 dark:bg-slate-900/70 px-2.5 py-1 text-xs font-bold text-indigo-600 dark:text-indigo-300">
           max 18 pct
         </span>
       </div>
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+      <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2">
         {items.map((item) => (
-          <div key={item.label} className="rounded-xl bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 p-3">
+          <div key={item.label} className="rounded-lg bg-white/80 dark:bg-slate-900/50 border border-indigo-100 dark:border-indigo-900/40 px-3 py-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">{item.label}</div>
-            <p className="mt-1 text-[11px] leading-4 text-slate-600 dark:text-slate-300">{item.text}</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">{item.text}</p>
           </div>
         ))}
       </div>
-      <div className="mt-3 rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-white/80 dark:bg-slate-900/50 p-3">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">Alocare puncte</div>
-        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-          {pointRules.map((rule) => (
-            <div key={rule.label} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50 p-2">
-              <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">{rule.label}</div>
-              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
-                {rule.rules.map((text) => (
-                  <span key={text} className="text-[10px] text-slate-500 dark:text-slate-400">{text}</span>
-                ))}
-              </div>
+      <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/40 bg-white/80 dark:bg-slate-900/50">
+        <button
+          onClick={() => setShowPoints((value) => !value)}
+          className="w-full flex items-center justify-between px-3 py-2 text-left"
+        >
+          <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">Alocare puncte</span>
+          {showPoints ? <ChevronUp size={14} className="text-indigo-500" /> : <ChevronDown size={14} className="text-indigo-500" />}
+        </button>
+        {showPoints && (
+          <div className="border-t border-indigo-100 dark:border-indigo-900/40 px-3 pb-3 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+              {pointRules.map((rule) => (
+                <div key={rule.label} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50 p-2">
+                  <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">{rule.label}</div>
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                    {rule.rules.map((text) => (
+                      <span key={text} className="text-[10px] text-slate-500 dark:text-slate-400">{text}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
-          Bonus: 18p = 300 lei, 16-17p = 200 lei, 14-15p = 100 lei doar dacă niciun segment nu are 0 puncte.
-        </p>
+            <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+              Bonus: 18p = 300 lei, 16-17p = 200 lei, 14-15p = 100 lei doar dacă niciun segment nu are 0 puncte.
+            </p>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function FirmBadge({ firma }: { firma: string }) {
+  const isMobiup = firma.toLowerCase().includes('mobiup');
+  return (
+    <span
+      title={firma}
+      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white ${
+        isMobiup ? 'bg-blue-600' : 'bg-red-600'
+      }`}
+    >
+      M
+    </span>
+  );
+}
+
+function CompactSummary({
+  rows,
+  summary,
+}: {
+  rows: AgentEvaluationRow[];
+  summary: { agents: number; avgPoints: number; totalBonus: number; premiumRows: number };
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 px-3 py-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {[
+          { label: 'Agenți', value: String(summary.agents), sub: `${rows.length} rânduri` },
+          { label: 'Punctaj mediu', value: summary.avgPoints.toFixed(1), sub: 'din 18 puncte' },
+          { label: 'Bonus estimat', value: `${formatMoney(summary.totalBonus)} lei`, sub: 'total filtrat' },
+          { label: 'Folii premium', value: String(summary.premiumRows), sub: 'rânduri cu 2+ pct' },
+        ].map((item) => (
+          <div key={item.label} className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 truncate">{item.label}</div>
+            <div className="text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums truncate">{item.value}</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.sub}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MonthDropdown({
+  months,
+  selectedMonths,
+  onToggle,
+  onClear,
+}: {
+  months: { value: string; label: string }[];
+  selectedMonths: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = selectedMonths.length ? `${selectedMonths.length} luni` : 'Toate lunile';
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        className="w-full md:w-40 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
+      >
+        <span className="truncate">{label}</span>
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <button
+            onClick={onClear}
+            className="mb-1 w-full rounded-lg px-2 py-1.5 text-left text-xs font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Toate lunile
+          </button>
+          <div className="max-h-52 overflow-y-auto">
+            {months.map((option) => (
+              <label key={option.value} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                <input
+                  type="checkbox"
+                  checked={selectedMonths.includes(option.value)}
+                  onChange={() => onToggle(option.value)}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <MonthLabel month={option.value} />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -146,38 +226,41 @@ function AgentRow({ row }: { row: AgentEvaluationRow }) {
       <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-slate-600 dark:text-slate-300">
         <MonthLabel month={row.month} />
       </td>
-      <td className="px-3 py-2 min-w-[190px]">
-        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{row.agent}</div>
-        <div className="text-[11px] text-slate-400">{row.locatie} · {row.asm}</div>
+      <td className="px-2 py-2 min-w-[135px] max-w-[170px]">
+        <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{row.agent}</div>
+        <div className="mt-0.5 flex items-center gap-1 min-w-0">
+          <FirmBadge firma={row.firma} />
+          <span className="truncate text-[10px] text-slate-400">{row.locatie}</span>
+        </div>
       </td>
-      <td className="px-3 py-2 text-right text-xs text-slate-600 dark:text-slate-300">
+      <td className="px-2 py-2 text-right text-xs text-slate-600 dark:text-slate-300">
         <div className="font-semibold">{formatMoney(row.total_sales)}</div>
         <div className="text-[10px] text-slate-400">{row.working_days} zile</div>
       </td>
-      <td className="px-3 py-2 text-right text-xs text-slate-600 dark:text-slate-300">
+      <td className="px-2 py-2 text-right text-xs text-slate-600 dark:text-slate-300">
         <div>{formatMoney(row.target_value)}</div>
         <div className="text-[10px] text-slate-400">loc. {formatMoney(row.store_target)}</div>
       </td>
-      <td className="px-3 py-2"><MetricCell value={row.target_pct} points={row.target_points} /></td>
-      <td className="px-3 py-2 text-right text-xs">
+      <td className="px-2 py-2"><MetricCell value={row.target_pct} points={row.target_points} /></td>
+      <td className="px-2 py-2 text-right text-xs">
         <div className="font-medium text-slate-700 dark:text-slate-200">{formatNumber(row.daily_average, 0)}</div>
         <div className={`text-[10px] font-semibold ${pointColor(row.daily_points)}`}>{row.daily_points}/3</div>
       </td>
-      <td className="px-3 py-2"><MetricCell value={row.value_reper} points={row.value_reper_points} suffix="lei" /></td>
-      <td className="px-3 py-2"><MetricCell value={row.bonuri_pct} points={row.bonuri_points} /></td>
-      <td className="px-3 py-2"><MetricCell value={row.focus_pct} points={row.focus_points} /></td>
-      <td className="px-3 py-2 text-right text-xs">
+      <td className="px-2 py-2"><MetricCell value={row.value_reper} points={row.value_reper_points} suffix="lei" /></td>
+      <td className="px-2 py-2"><MetricCell value={row.bonuri_pct} points={row.bonuri_points} /></td>
+      <td className="px-2 py-2"><MetricCell value={row.focus_pct} points={row.focus_points} /></td>
+      <td className="px-2 py-2 text-right text-xs">
         <div className="font-medium text-slate-700 dark:text-slate-200">{formatPct(row.premium_glass_pct)}</div>
         <div className="text-[10px] text-slate-400">{row.premium_glass_qty}/{row.glass_qty}</div>
         <div className={`text-[10px] font-semibold ${pointColor(row.premium_glass_points)}`}>{row.premium_glass_points}/3</div>
       </td>
-      <td className="px-3 py-2 text-right whitespace-nowrap">
+      <td className="px-2 py-2 text-right whitespace-nowrap">
         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold tabular-nums ${scoreColor(row.total_points)}`}>
           {row.total_points}/18
         </span>
         <div className="text-[10px] text-slate-400 mt-0.5">{row.qualifier}</div>
       </td>
-      <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700 dark:text-slate-200">
+      <td className="px-2 py-2 text-right text-xs font-semibold text-slate-700 dark:text-slate-200">
         {row.bonus_amount ? `${row.bonus_amount} lei` : '-'}
       </td>
     </tr>
@@ -239,7 +322,7 @@ function SortHeader({
 }) {
   const active = currentKey === sortKey;
   return (
-    <th className={`px-3 py-2 ${align === 'right' ? 'text-right' : ''}`}>
+    <th className={`px-2 py-2 ${align === 'right' ? 'text-right' : ''}`}>
       <button
         onClick={() => onSort(sortKey)}
         className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''} w-full hover:text-slate-700 dark:hover:text-slate-200`}
@@ -322,7 +405,7 @@ export function AgentEvaluationSubtab() {
   };
 
   const summary = useMemo(() => {
-    const agents = new Set(rows.map((row) => `${row.month}:${row.site_code}:${row.agent}`)).size;
+    const agents = new Set(rows.map((row) => row.agent)).size;
     const avgPoints = rows.length ? rows.reduce((sum, row) => sum + row.total_points, 0) / rows.length : 0;
     const totalBonus = rows.reduce((sum, row) => sum + row.bonus_amount, 0);
     const premiumRows = rows.filter((row) => row.premium_glass_points >= 2).length;
@@ -330,7 +413,7 @@ export function AgentEvaluationSubtab() {
   }, [rows]);
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-3 md:p-4 space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Analiză agenți</h3>
@@ -346,76 +429,60 @@ export function AgentEvaluationSubtab() {
 
       <MechanismCard />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        <SummaryCard label="Rânduri" value={String(rows.length)} sublabel={`${summary.agents} agent-lună`} />
-        <SummaryCard label="Punctaj mediu" value={summary.avgPoints.toFixed(1)} sublabel="din 18 puncte" />
-        <SummaryCard label="Bonus estimat" value={`${formatMoney(summary.totalBonus)} lei`} />
-        <SummaryCard label="Folii premium" value={String(summary.premiumRows)} sublabel="rânduri cu 2+ pct" />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            {selectedMonths.length ? `${selectedMonths.length} luni` : 'Toate lunile'}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {data.months.map((option) => (
-              <label key={option.value} className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={selectedMonths.includes(option.value)}
-                  onChange={() => toggleMonth(option.value)}
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <MonthLabel month={option.value} />
-              </label>
-            ))}
-          </div>
-        </div>
-        <select
-          value={firma}
-          onChange={(e) => setFirma(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-        >
-          <option value="">Toate firmele</option>
-          {data.firmas.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <select
-          value={asm}
-          onChange={(e) => setAsm(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-        >
-          <option value="">Manageri</option>
-          {data.asms.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <select
-          value={siteCode}
-          onChange={(e) => setSiteCode(e.target.value)}
-          className="min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-        >
-          <option value="">Toate magazinele</option>
-          {data.stores.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <div className="relative flex-1 min-w-[220px]">
-          <Search size={13} className="absolute left-3 top-2.5 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Caută agent sau magazin"
-            className="w-full rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-          />
-        </div>
-      </div>
+      <CompactSummary rows={rows} summary={summary} />
 
       <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
-        <div className="max-h-[65vh] overflow-auto">
-          <table className="min-w-[1180px] w-full text-left">
+        <div className="border-b border-slate-200 dark:border-slate-700 p-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[160px_150px_150px_minmax(210px,1fr)_minmax(210px,1.3fr)] gap-2">
+            <MonthDropdown
+              months={data.months}
+              selectedMonths={selectedMonths}
+              onToggle={toggleMonth}
+              onClear={() => setSelectedMonths([])}
+            />
+            <select
+              value={firma}
+              onChange={(e) => setFirma(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            >
+              <option value="">Toate firmele</option>
+              {data.firmas.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <select
+              value={asm}
+              onChange={(e) => setAsm(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            >
+              <option value="">Manageri</option>
+              {data.asms.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <select
+              value={siteCode}
+              onChange={(e) => setSiteCode(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            >
+              <option value="">Toate magazinele</option>
+              {data.stores.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <div className="relative">
+              <Search size={13} className="absolute left-3 top-2.5 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Caută agent sau magazin"
+                className="w-full rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="max-h-[68vh] overflow-auto">
+          <table className="min-w-[1060px] xl:min-w-0 w-full text-left">
             <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
                 <SortHeader label="Lună" sortKey="month" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
