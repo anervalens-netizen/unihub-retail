@@ -91,6 +91,32 @@ top magazin = 17 bonuri
 hardcodare. Iunie 2026 apare in UI dupa primul import finalizat de vanzari
 iunie.
 
+## Analize Retail Pe Manageri
+
+Structura manageriala curenta incepe in `2026-05`. Cei 6 manageri activi sunt
+si RM/regional si ASM: Adrian Badea, Andrei Stancu, Bogdan Radu, Bogdana
+Costan, Elena Minca, Mihai Condorateanu.
+
+Default pentru analize comerciale si raspunsuri catre user: foloseste
+view-urile `current_org`, nu coloana istorica `asm` din `reporting_*`.
+
+- `v_retail_store_month_current_org`
+- `v_retail_agent_month_current_org`
+- `v_retail_item_month_current_org`
+- `v_retail_targets_current_org`
+
+Foloseste `historical_org` doar cand userul cere explicit structura istorica:
+
+- `v_retail_store_month_historical_org`
+- `v_retail_agent_month_historical_org`
+- `v_retail_item_month_historical_org`
+
+`site_code` este cheia unica de magazin. Nu deduplica magazine dupa coduri sau
+nume asemanatoare; magazine cu coduri diferite pot fi firme/magazine diferite
+in acelasi centru comercial.
+
+Contract complet: `docs/retail-org-analysis.md`.
+
 ## Fisiere cheie
 
 - `backend/services/promo_copurchase.py` — regula co-purchase.

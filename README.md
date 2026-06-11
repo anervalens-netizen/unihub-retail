@@ -163,15 +163,6 @@ Prin regula actuala, un magazin fara vanzari in luna cohortei nu intra in
 targetul final; o viitoare exceptie pentru magazine planificate inainte de
 deschidere trebuie modelata explicit in calculator.
 
-### UniAI
-Asistent de analiză vânzări integrat, alimentat de Hermes AI Agent:
-- chat cu memorie persistentă cross-sesiune
-- query SQL read-only pe baza de date UniHub
-- grafice interactive (bar, line, pie, area) randare în chat
-- tabele markdown
-- suport atașamente (imagini, PDF, Word, Excel)
-- istoric sesiuni cu posibilitate de ștergere
-
 ### Setari
 Zona administrativa pentru:
 - tema
@@ -212,7 +203,7 @@ Avantaje ale abordarii curente:
 
 ## Cum functioneaza datele
 
-Aplicatia are trei straturi de date:
+Aplicatia are patru straturi de date:
 
 ### 1. Stratul operational brut
 Tabelele brute sunt sursa de adevar pentru audit si import:
@@ -236,7 +227,29 @@ Agregatele de reporting sunt construite pentru analiza Retail:
 
 Exceptie: cardurile care afiseaza explicit volumul de `Cartele` citesc separat din `sales_transactions`, fara sa contamineze totalurile Retail.
 
-### 3. Stratul de date istorice
+### 3. Stratul semantic de organizatie
+
+Structura manageriala curenta este separata de istoricul importat.
+
+- `store_org_assignments` tine asignarile magazinelor la RM/ASM pe intervale lunare.
+- Structura oficiala curenta incepe in `2026-05`.
+- Din `2026-05`, RM/regional si ASM sunt aceiasi 6 manageri activi.
+- `site_code` ramane cheia unica de magazin; nu se deduplica magazine dupa coduri sau nume asemanatoare.
+
+Pentru analize comerciale normale, foloseste view-urile `current_org`:
+- `v_retail_agent_month_current_org`
+- `v_retail_store_month_current_org`
+- `v_retail_item_month_current_org`
+- `v_retail_targets_current_org`
+
+Pentru analize "cum era atunci", foloseste explicit view-urile `historical_org`:
+- `v_retail_agent_month_historical_org`
+- `v_retail_store_month_historical_org`
+- `v_retail_item_month_historical_org`
+
+Contractul complet pentru agenti este in `docs/retail-org-analysis.md`.
+
+### 4. Stratul de date istorice
 Pentru perioadele fara tranzactii individuale (2022, 2023 Jan–Aug):
 - `historical_annual_sales` — agregate anuale per magazin/firma, importate din `vanzari 2022 si 2023.xlsx`
 

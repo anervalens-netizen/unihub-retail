@@ -125,6 +125,7 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 | `incentive_campaigns` + `incentive_products` | Campanii incentive + produse eligibile |
 | `store_targets` | Targete lunare per magazin |
 | `stores` | Magazine: site_code, locatie, firma, asm, regional |
+| `store_org_assignments` | Structura manageriala pe intervale lunare; `current_org` incepe in 2026-05 |
 | `reporting_agent_month` / `reporting_item_month` | Agregate lunare (sursa dashboard) |
 | `reporting_agent_day` / `reporting_item_day` | Agregate zilnice |
 | `reporting_agent_lifecycle_month` | Ciclu viata agent per luna |
@@ -144,6 +145,19 @@ Registry config in `.npmrc`: `@unihub:registry=http://127.0.0.1:4873/`
 | `grile_sheets` | Maparea read-only `site_code` → `sheet_id` Google (copie din grile-salarii registry; seed cu `backend/scripts/seed_grile_sheets.py`) |
 | `grile_runs` | Istoric rulari verificare grile (status, progres, ok/problem/error, source manual/auto, `source_snapshot_id`) |
 | `grile_store_status` | Rezultat per magazin per run: K5/L5 grila vs target+vanzari MTD DB, completare %, fill/target/sales status |
+
+### Analize pe manageri / zone
+
+- Default pentru analize comerciale: foloseste view-urile `*_current_org`
+  (`v_retail_store_month_current_org`, `v_retail_agent_month_current_org`,
+  `v_retail_item_month_current_org`).
+- Foloseste `*_historical_org` doar daca userul cere explicit structura de la
+  momentul respectiv.
+- Reorganizarea oficiala incepe in `2026-05`; cei 6 manageri activi sunt si
+  RM/regional si ASM.
+- `site_code` este cheia unica de magazin. Nu combina magazine dupa coduri sau
+  nume asemanatoare.
+- Detalii: `docs/retail-org-analysis.md`.
 
 ### Acoperire date
 | Perioada | Sursa | Granularitate |
