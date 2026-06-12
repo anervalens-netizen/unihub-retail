@@ -43,15 +43,22 @@ Reguli importante in Hub:
 ### Focus
 Focus este separat in 4 sub-sectiuni:
 - **Incentive** — campanii incentive per-produs din DB (`incentive_campaigns`, `incentive_products`), cu target multipliers si excluderi specifice campaniilor active.
-- **Promo** — promotii speciale definite in `data/hub_specials.json`; pentru campania iunie 2026 se masoara bonuri co-purchase, nu cantitate simpla.
+- **Promo** — promotii speciale definite in `data/hub_specials.json`; tabul poate comuta intre mai multe promotii active prin butoane separate. Pentru campaniile iunie 2026 se masoara bonuri co-purchase, nu cantitate simpla.
 - **Concurs** — leaderboard config-driven din `data/contests.json`, scoped server-side si independent de filtrele globale; raspunsul include magazinul/firma principala a agentului pentru afisarea in FieldOps.
 - **Focus** — indicator permanent de focus products si istoric focus.
 
-Regula curenta pentru promotia iunie 2026 este implementata in
-`backend/services/promo_copurchase.py`: bon calificat =
+Regulile pentru promotiile iunie 2026 sunt implementate in
+`backend/services/promo_copurchase.py`. Promotia actuala foloseste regula
+existenta: bon calificat =
 `(sale_date, site_code, agent, bon_nr)` cu cel putin un produs din lista promo
 si cel putin doua unitati pozitive non-cartela pe acelasi bon. Unitatea redusa
 este produsul din lista cu cel mai mic `unit_price`, maxim una per bon.
+
+In acelasi helper exista si regulile pentru campaniile adaugate pe 10.06.2026:
+- folie ecran + folie camera pentru acelasi model de telefon, cu modelele
+  extrase din anexele Excel;
+- capac Cellara + husa universala Cellara, cu husa cea mai ieftina de pe bon
+  considerata unitate redusa.
 
 Atentie la metrici: `promo_qty` din summary/tabele Hub ramane agregatul simplu
 din reporting, folosit pentru compatibilitate operationala. Tabul **Focus ->

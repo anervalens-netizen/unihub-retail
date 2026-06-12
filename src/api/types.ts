@@ -426,7 +426,14 @@ export interface IncentiveCategory {
   value: number;
 }
 
+export interface CampaignPromotionOption {
+  key: string;
+  label: string;
+}
+
 export interface CampaignsPromotionsResponse {
+  promotions: CampaignPromotionOption[];
+  selected_promotion_key: string;
   promo_title: string;
   promo_description: string;
   promo_qty: number;

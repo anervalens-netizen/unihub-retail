@@ -163,3 +163,250 @@ async def compute_promo_copurchase(
         active_agents=len(agents),
         excluded_units=excluded_units,
     )
+
+
+async def compute_promo_trigger_discounted(
+    conn: asyncpg.Connection,
+    *,
+    month: str,
+    start_date: date,
+    end_date: date,
+    trigger_codes: list[str],
+    discounted_codes: list[str],
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> PromoCoPurchaseResult:
+    """Calculeaza bonuri cu produs declansator + produs redus pe acelasi bon.
+
+    Folosit pentru campanii de tip capac Cellara + husa universala Cellara.
+    Unitatea redusa este cel mai ieftin produs din lista redusa, maxim una per bon.
+    """
+    if not trigger_codes or not discounted_codes:
+        return PromoCoPurchaseResult()
+
+    params, positions = _build_scoped_params(
+        [month, start_date, end_date, trigger_codes, discounted_codes],
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+    scope = scoped_clauses(
+        positions,
+        site_alias="st",
+        store_alias="s",
+        agent_alias="st",
+        include_cartela_filter=True,
+    )
+    scope_sql = "".join(f"\n              AND {clause}" for clause in scope)
+
+    rows = await conn.fetch(
+        f"""
+        WITH lines AS (
+            SELECT
+                st.sale_date,
+                st.site_code,
+                st.agent,
+                st.bon_nr,
+                st.id,
+                st.item_code,
+                st.unit_price,
+                CASE WHEN st.quantity > 0 THEN st.quantity ELSE 0 END AS pos_qty,
+                (st.item_code = ANY($4::TEXT[])) AS is_trigger,
+                (st.item_code = ANY($5::TEXT[])) AS is_discounted
+            FROM sales_transactions st
+            JOIN stores s ON s.site_code = st.site_code
+            WHERE st.import_month = $1
+              AND st.sale_date BETWEEN $2 AND $3
+              AND NOT st.is_return{scope_sql}
+        ),
+        bon_totals AS (
+            SELECT
+                sale_date, site_code, agent, bon_nr,
+                SUM(pos_qty) FILTER (WHERE is_trigger) AS trigger_units,
+                SUM(pos_qty) FILTER (WHERE is_discounted) AS discounted_units
+            FROM lines
+            GROUP BY sale_date, site_code, agent, bon_nr
+        ),
+        qualifying AS (
+            SELECT sale_date, site_code, agent, bon_nr
+            FROM bon_totals
+            WHERE trigger_units >= 1 AND discounted_units >= 1
+        ),
+        discounted AS (
+            SELECT DISTINCT ON (l.sale_date, l.site_code, l.agent, l.bon_nr)
+                l.site_code, l.agent, l.item_code
+            FROM lines l
+            JOIN qualifying q
+              ON q.sale_date = l.sale_date
+             AND q.site_code = l.site_code
+             AND q.agent = l.agent
+             AND q.bon_nr = l.bon_nr
+            WHERE l.is_discounted AND l.pos_qty > 0
+            ORDER BY
+                l.sale_date, l.site_code, l.agent, l.bon_nr,
+                l.unit_price ASC, l.item_code ASC, l.id ASC
+        )
+        SELECT site_code, agent, item_code, COUNT(*)::INT AS units
+        FROM discounted
+        GROUP BY site_code, agent, item_code
+        """,
+        *params,
+    )
+
+    return _result_from_discounted_rows(rows)
+
+
+async def compute_promo_same_model_pair(
+    conn: asyncpg.Connection,
+    *,
+    month: str,
+    start_date: date,
+    end_date: date,
+    screen_code_models: dict[str, set[str]],
+    camera_code_models: dict[str, set[str]],
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> PromoCoPurchaseResult:
+    """Calculeaza bonuri cu folie ecran + folie camera pentru acelasi model.
+
+    Un cod poate participa la mai multe modele compatibile. Bonul se califica
+    daca exista cel putin o intersectie de model intre produsele de ecran si
+    cele de camera de pe bon.
+    """
+    screen_pairs = [
+        (code, model)
+        for code, models in screen_code_models.items()
+        for model in sorted(models)
+    ]
+    camera_pairs = [
+        (code, model)
+        for code, models in camera_code_models.items()
+        for model in sorted(models)
+    ]
+    if not screen_pairs or not camera_pairs:
+        return PromoCoPurchaseResult()
+
+    screen_codes = [code for code, _model in screen_pairs]
+    screen_models = [model for _code, model in screen_pairs]
+    camera_codes = [code for code, _model in camera_pairs]
+    camera_models = [model for _code, model in camera_pairs]
+
+    params, positions = _build_scoped_params(
+        [month, start_date, end_date, screen_codes, screen_models, camera_codes, camera_models],
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+    scope = scoped_clauses(
+        positions,
+        site_alias="st",
+        store_alias="s",
+        agent_alias="st",
+        include_cartela_filter=True,
+    )
+    scope_sql = "".join(f"\n              AND {clause}" for clause in scope)
+
+    rows = await conn.fetch(
+        f"""
+        WITH screen_models AS (
+            SELECT item_code, model_key
+            FROM UNNEST($4::TEXT[], $5::TEXT[]) AS t(item_code, model_key)
+        ),
+        camera_models AS (
+            SELECT item_code, model_key
+            FROM UNNEST($6::TEXT[], $7::TEXT[]) AS t(item_code, model_key)
+        ),
+        lines AS (
+            SELECT
+                st.sale_date,
+                st.site_code,
+                st.agent,
+                st.bon_nr,
+                st.id,
+                st.item_code,
+                st.unit_price,
+                CASE WHEN st.quantity > 0 THEN st.quantity ELSE 0 END AS pos_qty
+            FROM sales_transactions st
+            JOIN stores s ON s.site_code = st.site_code
+            WHERE st.import_month = $1
+              AND st.sale_date BETWEEN $2 AND $3
+              AND NOT st.is_return{scope_sql}
+        ),
+        screen_on_bon AS (
+            SELECT DISTINCT
+                l.sale_date, l.site_code, l.agent, l.bon_nr, sm.model_key
+            FROM lines l
+            JOIN screen_models sm ON sm.item_code = l.item_code
+            WHERE l.pos_qty > 0
+        ),
+        qualifying AS (
+            SELECT DISTINCT
+                l.sale_date, l.site_code, l.agent, l.bon_nr, cm.model_key
+            FROM lines l
+            JOIN camera_models cm ON cm.item_code = l.item_code
+            JOIN screen_on_bon sb
+              ON sb.sale_date = l.sale_date
+             AND sb.site_code = l.site_code
+             AND sb.agent = l.agent
+             AND sb.bon_nr = l.bon_nr
+             AND sb.model_key = cm.model_key
+            WHERE l.pos_qty > 0
+        ),
+        discounted AS (
+            SELECT DISTINCT ON (l.sale_date, l.site_code, l.agent, l.bon_nr)
+                l.site_code, l.agent, l.item_code
+            FROM lines l
+            JOIN camera_models cm ON cm.item_code = l.item_code
+            JOIN qualifying q
+              ON q.sale_date = l.sale_date
+             AND q.site_code = l.site_code
+             AND q.agent = l.agent
+             AND q.bon_nr = l.bon_nr
+             AND q.model_key = cm.model_key
+            WHERE l.pos_qty > 0
+            ORDER BY
+                l.sale_date, l.site_code, l.agent, l.bon_nr,
+                l.unit_price ASC, l.item_code ASC, l.id ASC
+        )
+        SELECT site_code, agent, item_code, COUNT(*)::INT AS units
+        FROM discounted
+        GROUP BY site_code, agent, item_code
+        """,
+        *params,
+    )
+
+    return _result_from_discounted_rows(rows)
+
+
+def _result_from_discounted_rows(rows: list[Any]) -> PromoCoPurchaseResult:
+    excluded_units: dict[tuple[str, str, str], int] = {}
+    stores: set[str] = set()
+    agents: set[str] = set()
+    total = 0
+    for row in rows:
+        units = int(row["units"])
+        site_val = row["site_code"]
+        agent_val = row["agent"]
+        excluded_units[(site_val, agent_val, row["item_code"])] = units
+        total += units
+        stores.add(site_val)
+        if agent_val and agent_val != "-":
+            agents.add(agent_val)
+
+    return PromoCoPurchaseResult(
+        qualifying_bons=total,
+        discounted_units=total,
+        active_stores=len(stores),
+        active_agents=len(agents),
+        excluded_units=excluded_units,
+    )

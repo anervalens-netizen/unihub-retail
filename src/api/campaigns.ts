@@ -35,6 +35,7 @@ export async function getPromotionsIncentives(
     asm?: string;
     site_code?: string;
     agent?: string;
+    promotion_key?: string;
   }
 ): Promise<CampaignsPromotionsResponse> {
   const { data } = await client.get<CampaignsPromotionsResponse>(
@@ -48,6 +49,7 @@ export async function getPromotionsIncentives(
         ...(filters?.asm && { asm: filters.asm }),
         ...(filters?.site_code && { site_code: filters.site_code }),
         ...(filters?.agent && { agent: filters.agent }),
+        ...(filters?.promotion_key && { promotion_key: filters.promotion_key }),
       },
     }
   );

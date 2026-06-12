@@ -20,11 +20,17 @@ from repositories.campaigns import CampaignsRepository
 from services.dashboard.queries import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
 from services.filters import normalize_filter, scoped_clauses
 from services.dashboard_specials import (
+    load_promotion_rule_products,
     load_special_cards_config,
+    parse_promotion_definitions,
     parse_promotion_definition,
 )
 from services.incentive_db import get_incentive_campaign
-from services.promo_copurchase import compute_promo_copurchase
+from services.promo_copurchase import (
+    compute_promo_copurchase,
+    compute_promo_same_model_pair,
+    compute_promo_trigger_discounted,
+)
 
 
 def _campaign_clauses(
@@ -146,6 +152,7 @@ class CampaignsService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        promotion_key: str | None = None,
     ) -> dict:
         from datetime import date as date_cls
 
@@ -160,7 +167,21 @@ class CampaignsService:
         site_scope = normalize_filter(site_code)
 
         config, _ = load_special_cards_config()
-        promotion_definition, promotion_error = parse_promotion_definition(config, month)
+        promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
+        promotion_definition, promotion_error = parse_promotion_definition(
+            config,
+            month,
+            promotion_key=promotion_key,
+        )
+        if promotion_error is None:
+            promotion_error = promotion_list_error
+        promotion_options = [
+            {
+                "key": str(definition.get("key") or ""),
+                "label": str(definition.get("title") or "Promotie"),
+            }
+            for definition in promotion_definitions
+        ]
 
         async with self.pool.acquire() as conn:
             promo_title = (
@@ -209,28 +230,72 @@ class CampaignsService:
             promo_active_stores = 0
             promo_active_agents = 0
             promo_bonuri_by_store: dict[str, int] = {}
+            promotion_item_codes: list[str] = []
+            promotion_rule_type = "selected_item_copurchase"
             if has_active_promotion:
                 assert promotion_definition is not None
-                promo_cp = await compute_promo_copurchase(
-                    conn,
-                    month=month,
-                    start_date=promotion_definition["start_date"],
-                    end_date=promotion_definition["end_date"],
-                    item_codes=promotion_definition["item_codes"],
-                    firma=firma,
-                    regional=regional,
-                    asm=asm,
-                    site_code=site_code,
-                    agent=agent,
-                )
-                promo_excluded_ag = promo_cp.excluded_units
-                promo_excluded_si = promo_cp.excluded_by_site_item()
-                promo_qualifying_bons = promo_cp.qualifying_bons
-                promo_discounted_units = promo_cp.discounted_units
-                promo_active_stores = promo_cp.active_stores
-                promo_active_agents = promo_cp.active_agents
-                for (site, _ag, _item), units in promo_excluded_ag.items():
-                    promo_bonuri_by_store[site] = promo_bonuri_by_store.get(site, 0) + units
+                promotion_products, products_error = load_promotion_rule_products(promotion_definition)
+                if products_error is not None or promotion_products is None:
+                    has_active_promotion = False
+                    promotion_error = products_error
+                    promo_cp = None
+                else:
+                    promotion_rule_type = promotion_definition.get("rule_type") or "selected_item_copurchase"
+                    if promotion_rule_type == "same_model_screen_camera":
+                        promotion_item_codes = list(promotion_products["discounted_codes"])
+                        promo_cp = await compute_promo_same_model_pair(
+                            conn,
+                            month=month,
+                            start_date=promotion_definition["start_date"],
+                            end_date=promotion_definition["end_date"],
+                            screen_code_models=promotion_products["trigger_code_models"],
+                            camera_code_models=promotion_products["discounted_code_models"],
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                    elif promotion_rule_type == "trigger_discounted":
+                        promotion_item_codes = list(promotion_products["discounted_codes"])
+                        promo_cp = await compute_promo_trigger_discounted(
+                            conn,
+                            month=month,
+                            start_date=promotion_definition["start_date"],
+                            end_date=promotion_definition["end_date"],
+                            trigger_codes=promotion_products["trigger_codes"],
+                            discounted_codes=promotion_products["discounted_codes"],
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                    else:
+                        promotion_item_codes = list(promotion_products["item_codes"])
+                        promo_cp = await compute_promo_copurchase(
+                            conn,
+                            month=month,
+                            start_date=promotion_definition["start_date"],
+                            end_date=promotion_definition["end_date"],
+                            item_codes=promotion_item_codes,
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                if promo_cp is None:
+                    promo_cp = None
+                else:
+                    promo_excluded_ag = promo_cp.excluded_units
+                    promo_excluded_si = promo_cp.excluded_by_site_item()
+                    promo_qualifying_bons = promo_cp.qualifying_bons
+                    promo_discounted_units = promo_cp.discounted_units
+                    promo_active_stores = promo_cp.active_stores
+                    promo_active_agents = promo_cp.active_agents
+                    for (site, _ag, _item), units in promo_excluded_ag.items():
+                        promo_bonuri_by_store[site] = promo_bonuri_by_store.get(site, 0) + units
                 if incentive_campaign is not None:
                     reward_map_hdr = incentive_campaign["reward_map"]
                     excluded_value = sum(
@@ -254,7 +319,7 @@ class CampaignsService:
                 promo_params: list[Any] = [
                     start,
                     end,
-                    promotion_definition["item_codes"],
+                    promotion_item_codes,
                     promo_month,
                 ]
                 positions: dict[str, int] = {}
@@ -299,6 +364,10 @@ class CampaignsService:
                         firma=row["firma"] or "",
                     )
                     for row in store_rows
+                    if (
+                        promotion_rule_type == "selected_item_copurchase"
+                        or promo_bonuri_by_store.get(row["site_code"], 0) > 0
+                    )
                 ]
             else:
                 top_stores = []
@@ -455,8 +524,10 @@ class CampaignsService:
                     )
 
             return {
+                "promotions": promotion_options,
+                "selected_promotion_key": promotion_definition.get("key", "") if promotion_definition else "",
                 "promo_title": promo_title,
-                "promo_description": promo_description,
+                "promo_description": promotion_error or promo_description,
                 "promo_total_qty": promo_total_qty,
                 "promo_qty": promo_qty,
                 "promo_category_qty": None,

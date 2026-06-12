@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from services.dashboard_specials import (
     build_incentive_card,
+    extract_phone_model_keys,
     load_incentive_codes,
     parse_incentive_definition,
+    parse_promotion_definitions,
     parse_promotion_definition,
 )
 from services.product_lists import normalize_column_name
@@ -52,6 +54,77 @@ def test_parse_promotion_definition_returns_none_for_wrong_month() -> None:
 
     assert error is None
     assert definition is None
+
+
+def test_parse_promotion_definitions_supports_selectable_rules() -> None:
+    definitions, error = parse_promotion_definitions(
+        {
+            "promotions": [
+                {
+                    "key": "actuala",
+                    "title": "Promo actuala",
+                    "item_codes": ["AA-01"],
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                },
+                {
+                    "key": "folii",
+                    "title": "Folii",
+                    "rule_type": "same_model_screen_camera",
+                    "source_file": "docs/Campanii-promo/folii.xlsx",
+                    "trigger_sheet": "Folii ecran",
+                    "discounted_sheet": "Folii Camera",
+                    "start_date": "2026-06-10",
+                    "end_date": "2026-06-30",
+                },
+            ]
+        },
+        "2026-06",
+    )
+
+    assert error is None
+    assert [definition["key"] for definition in definitions] == ["actuala", "folii"]
+    assert definitions[1]["rule_type"] == "same_model_screen_camera"
+
+
+def test_parse_promotion_definition_can_select_by_key() -> None:
+    definition, error = parse_promotion_definition(
+        {
+            "promotions": [
+                {
+                    "key": "actuala",
+                    "item_codes": ["AA-01"],
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                },
+                {
+                    "key": "huse",
+                    "rule_type": "trigger_discounted",
+                    "source_file": "docs/Campanii-promo/huse.xlsx",
+                    "trigger_sheet": "Capac protectie",
+                    "discounted_sheet": "Husa Universala",
+                    "start_date": "2026-06-10",
+                    "end_date": "2026-06-30",
+                },
+            ]
+        },
+        "2026-06",
+        promotion_key="huse",
+    )
+
+    assert error is None
+    assert definition is not None
+    assert definition["key"] == "huse"
+    assert definition["rule_type"] == "trigger_discounted"
+
+
+def test_extract_phone_model_keys_expands_slash_compatibility() -> None:
+    assert extract_phone_model_keys(
+        "FOLIE PROTECTIE CAMERA CELLARA PENTRU IPHONE 14 PRO/14 PRO MAX - TRANSPARENT"
+    ) == {"IPHONE 14 PRO", "IPHONE 14 PRO MAX"}
+    assert extract_phone_model_keys(
+        "SET FOLII CAMERA CELLARA SAPPHIRE PENTRU SAMSUNG GALAXY S26 5G/S26 PLUS 5G - NEGRU"
+    ) == {"SAMSUNG GALAXY S26 5G", "SAMSUNG GALAXY S26 PLUS 5G"}
 
 
 def test_parse_incentive_definition_requires_month_and_file() -> None:

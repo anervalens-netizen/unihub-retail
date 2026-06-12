@@ -125,12 +125,20 @@ Promotiile speciale si concursurile sunt configurate prin JSON-uri
 operationale din `data/`, care sunt gitignored pe server:
 
 - `data/hub_specials.json` — promotii speciale pentru cardurile Hub si tabul
-  Focus -> Promo.
+  Focus -> Promo. In Focus, mai multe promotii active pe aceeasi luna sunt
+  selectabile prin `promotion_key`; config-ul expune `key`, `rule_type`,
+  perioada si, pentru regulile bazate pe anexe, fisierul Excel + sheet-urile.
 - `data/contests.json` — concursuri config-driven, cu perioada, scope,
   reguli de punctaj si premii.
 
-Pentru campania iunie 2026, regula promo comuna este in
-`services/promo_copurchase.py`. Helperul este folosit de:
+Pentru campaniile iunie 2026, regulile promo comune sunt in
+`services/promo_copurchase.py`. Helperul acopera:
+
+- regula existenta `selected_item_copurchase` pentru promo actuala;
+- `same_model_screen_camera` pentru folie ecran + folie camera acelasi model;
+- `trigger_discounted` pentru capac Cellara + husa universala Cellara.
+
+Helperul este folosit de:
 
 - cardul Hub special pentru promotie;
 - Focus -> Promo (`promo_qualifying_bons`, `promo_discounted_units`,

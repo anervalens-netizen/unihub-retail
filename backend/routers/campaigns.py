@@ -51,7 +51,17 @@ async def get_promotions_incentives(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
+    promotion_key: str | None = None,
     svc: CampaignsService = Depends(get_campaigns_service),
 ):
-    data = await svc.get_promotions_incentives(start_date, end_date, firma, regional, asm, site_code, agent)
+    data = await svc.get_promotions_incentives(
+        start_date,
+        end_date,
+        firma,
+        regional,
+        asm,
+        site_code,
+        agent,
+        promotion_key,
+    )
     return data

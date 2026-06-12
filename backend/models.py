@@ -748,7 +748,14 @@ class IncentiveCategory(BaseModel):
     value: float
 
 
+class CampaignPromotionOption(BaseModel):
+    key: str
+    label: str
+
+
 class CampaignsPromotionsResponse(BaseModel):
+    promotions: list[CampaignPromotionOption] = Field(default_factory=list)
+    selected_promotion_key: str = ""
     promo_title: str = ""
     promo_description: str = ""
     promo_qty: int = 0

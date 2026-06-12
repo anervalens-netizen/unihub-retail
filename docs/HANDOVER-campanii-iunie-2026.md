@@ -51,13 +51,20 @@
 
 ## Ce am făcut
 
-### 1. Promoție iunie — `data/hub_specials.json` (gitignored, live config)
-Adăugată promoția: 47 coduri, `2026-06-01` → `2026-06-30`, text din mail. Cardul promo Hub se hot-reload-ează din acest fișier (nu necesită restart pentru config).
+### 1. Promoții iunie — `data/hub_specials.json` (gitignored, live config)
+Config-ul live are acum promoții selectabile prin `key`/`promotion_key`:
+- `promotie-actuala-mihai` — promoția existentă cu 47 coduri, `2026-06-01` → `2026-06-30`, păstrată pe regula veche.
+- `folii-ecran-camera-iunie` — `2026-06-10` → `2026-06-30`, citește `docs/Campanii-promo/campanie-folii-iunie/Promotie folie ecran si reducere 20% la folie camera.xlsx`, sheet-uri `Folii ecran` și `Folii Camera`.
+- `capace-huse-cellara-iunie` — `2026-06-10` → `2026-06-30`, citește `docs/Campanii-promo/campanie-huse-iunie/Promotie capac protectie si reducere 20% la huse universale de telefoane.xlsx`, sheet-uri `Capac protectie` și `Husa Universala`.
 
-### 2. Regula co-purchase — `backend/services/promo_copurchase.py` (nou, helper partajat)
+Tabul **Focus -> Promo** afișează butoane pentru promoțiile active din lună și reîncarcă datele pentru cheia selectată. Cardul promo Hub rămâne pe prima promoție activă din config.
+
+### 2. Reguli co-purchase — `backend/services/promo_copurchase.py` (helper partajat)
 - **Cheia bonului** = `(sale_date, site_code, agent, bon_nr)` — identică cu logica existentă de bonuri din `reporting_refresh.py`. (`bon_nr` singur NU e unic: ex. „174" apare în 3 magazine — de aceea cheia e compozită.) Coloana de ingest = **„Nr"** (7 cifre).
-- **Bon calificat** = ≥1 produs din lista promo **ȘI** ≥2 unități pozitive totale (a doua poate fi orice alt accesoriu non-cartelă). Se exclud cartele + locații `TR %`.
-- **Unitatea redusă** = produsul din listă cu cel mai mic `unit_price` pe bon (1/bon, tie-break determinist).
+- `selected_item_copurchase`: bon calificat = ≥1 produs din lista promo **ȘI** ≥2 unități pozitive totale (a doua poate fi orice alt accesoriu non-cartelă). Unitatea redusă = produsul din listă cu cel mai mic `unit_price` pe bon.
+- `same_model_screen_camera`: bon calificat = folie ecran + folie cameră pe același bon, cu intersecție de model telefon extrasă din `ItemName`; unitatea redusă = folia de cameră eligibilă cu cel mai mic `unit_price`.
+- `trigger_discounted`: bon calificat = produs declanșator + produs redus pe același bon; unitatea redusă = produsul redus cu cel mai mic `unit_price`. Folosit pentru capac Cellara + husă universală.
+- Toate regulile exclud cartele + locații `TR %` și numără maxim o unitate redusă per bon.
 
 ### 3. Incentive iunie — clonă exactă a lunii mai (în DB)
 - `incentive_campaigns` + `incentive_products`, `month='2026-06'`: **967 produse**, tiere **5/10/25 RON** (total reward 5945) — identic cu mai.
@@ -110,6 +117,7 @@ Adăugată promoția: 47 coduri, `2026-06-01` → `2026-06-30`, text din mail. C
 - Concurs config: `data/contests.json`
 - Co-purchase: `backend/services/promo_copurchase.py`
 - Incentive excludere: `backend/services/dashboard/specials_data.py`, `backend/services/campaigns.py`
+- Selector Focus -> Promo: `src/components/Campaigns.tsx`
 - Concurs backend: `backend/{routers,services,repositories}/contests.py`, `backend/services/contests_config.py`
 - Frontend: `src/components/Campaigns.tsx` (ContestView), `src/api/contests.ts`
 - Docs actualizate: `CLAUDE.md`, `CODEX.md`, `README.md`, `APP_ARCHITECTURE.md`, `LOCAL_SETUP.md`, acest handover.

@@ -33,6 +33,7 @@ import { getActiveContests } from '../api/contests';
 import { getPremiumGlassAnalysis } from '../api/dashboard';
 import type {
   CampaignSnapshot,
+  CampaignPromotionOption,
   CampaignsPromotionsResponse,
   ContestResponse,
   FocusHistoryPoint,
@@ -103,6 +104,7 @@ export function Campaigns({
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(emptySnapshot);
   const [focusHistory, setFocusHistory] = useState<FocusHistoryPoint[]>([]);
   const [promoData, setPromoData] = useState<CampaignsPromotionsResponse | null>(null);
+  const [selectedPromotionKey, setSelectedPromotionKey] = useState('');
   const [premiumGlass, setPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
   const [contests, setContests] = useState<ContestResponse[]>([]);
   const [selectedContestKey, setSelectedContestKey] = useState('');
@@ -133,8 +135,8 @@ export function Campaigns({
   );
 
   const currentCacheKey = useMemo(
-    () => `campaigns:current:${promoMonth}:${JSON.stringify(buildQuery(promoMonth))}`,
-    [buildQuery, promoMonth]
+    () => `campaigns:current:${promoMonth}:${selectedPromotionKey}:${JSON.stringify(buildQuery(promoMonth))}`,
+    [buildQuery, promoMonth, selectedPromotionKey]
   );
   const historyCacheKey = useMemo(
     () => `campaigns:history:${historyMonth}:${JSON.stringify({ ...buildQuery(historyMonth), months_back: 12 })}`,
@@ -152,6 +154,10 @@ export function Campaigns({
       setSnapshot(cached.value.snapshot);
       setPromoData(cached.value.promoData);
       setPremiumGlass(cached.value.premiumGlass);
+      const cachedSelectedKey = cached.value.promoData?.selected_promotion_key ?? '';
+      if (!selectedPromotionKey && cachedSelectedKey) {
+        setSelectedPromotionKey(cachedSelectedKey);
+      }
       setLoading(false);
       setError('');
       if (cached.isFresh) {
@@ -163,7 +169,17 @@ export function Campaigns({
     setError('');
     Promise.all([
       getCampaignSnapshot(buildQuery(promoMonth)),
-      getPromotionsIncentives(`${promoMonth}-01`, (() => { const [yr, mo] = promoMonth.split('-').map(Number); return `${promoMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`; })(), buildQuery(promoMonth)),
+      getPromotionsIncentives(
+        `${promoMonth}-01`,
+        (() => {
+          const [yr, mo] = promoMonth.split('-').map(Number);
+          return `${promoMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`;
+        })(),
+        {
+          ...buildQuery(promoMonth),
+          ...(selectedPromotionKey && { promotion_key: selectedPromotionKey }),
+        }
+      ),
       getPremiumGlassAnalysis({
         ...buildQuery(promoMonth),
         current_scope: true,
@@ -172,6 +188,18 @@ export function Campaigns({
     ])
       .then(([snapshotData, promoResponse, premiumResponse]) => {
         if (!isMountedRef.current) return;
+        const availableKeys = promoResponse.promotions.map((promotion) => promotion.key);
+        if (
+          selectedPromotionKey &&
+          availableKeys.length > 0 &&
+          !availableKeys.includes(selectedPromotionKey)
+        ) {
+          setSelectedPromotionKey(availableKeys[0]);
+          return;
+        }
+        if (!selectedPromotionKey && promoResponse.selected_promotion_key) {
+          setSelectedPromotionKey(promoResponse.selected_promotion_key);
+        }
         setSnapshot(snapshotData);
         setPromoData(promoResponse);
         setPremiumGlass(premiumResponse);
@@ -191,7 +219,7 @@ export function Campaigns({
       .finally(() => {
         if (isMountedRef.current) setLoading(false);
       });
-  }, [buildQuery, currentCacheKey, promoMonth, filters]);
+  }, [buildQuery, currentCacheKey, promoMonth, filters, selectedPromotionKey]);
 
   const loadFocusHistory = useCallback(() => {
     if (!isMountedRef.current) return;
@@ -359,6 +387,13 @@ export function Campaigns({
       ) : activeSection === 'promo' ? (
         <>
           <CampaignMonthBar title="Promotie" icon={BadgePercent} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={currentMonth} />
+          {promoData && promoData.promotions.length > 1 && (
+            <PromotionSelector
+              promotions={promoData.promotions}
+              selectedKey={selectedPromotionKey || promoData.selected_promotion_key}
+              onSelect={setSelectedPromotionKey}
+            />
+          )}
           {!promoData?.has_active_promotion ? (
             <EmptyCard message={`Nu exista promotie activa in ${promoMonth}.`} />
           ) : (
@@ -1078,6 +1113,36 @@ function ContestSelector({
           title={contest.scope_label || contest.title}
         >
           <span className="block truncate">{contest.scope_label || contest.title}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PromotionSelector({
+  promotions,
+  selectedKey,
+  onSelect,
+}: {
+  promotions: CampaignPromotionOption[];
+  selectedKey: string;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <div className="glass grid grid-cols-1 gap-1 rounded-2xl p-1 sm:grid-cols-3">
+      {promotions.map((promotion) => (
+        <button
+          key={promotion.key}
+          type="button"
+          onClick={() => onSelect(promotion.key)}
+          className={`min-w-0 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+            selectedKey === promotion.key
+              ? 'bg-white text-amber-700 shadow-sm dark:bg-slate-800 dark:text-amber-300'
+              : 'text-slate-500 hover:bg-white/60 dark:hover:bg-slate-800/60'
+          }`}
+          title={promotion.label}
+        >
+          <span className="block truncate">{promotion.label}</span>
         </button>
       ))}
     </div>

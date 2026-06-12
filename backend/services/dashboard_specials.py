@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 import json
 import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
@@ -21,8 +22,14 @@ from services.product_lists import (
 _special_config_cache: dict[tuple[str, float], tuple[dict[str, Any], str | None]] = {}
 _special_codes_cache: dict[tuple[str, float], tuple[list[str] | None, str | None]] = {}
 _reward_map_cache: dict[tuple[str, float], tuple[dict[str, float] | None, str | None]] = {}
+_promotion_products_cache: dict[tuple[str, float, str, str], tuple[dict[str, Any] | None, str | None]] = {}
 
 _REWARD_COLUMN_ALIASES = {"incentive", "valoare", "reward", "bonus", "incentiv"}
+_PROMOTION_RULE_TYPES = {
+    "selected_item_copurchase",
+    "same_model_screen_camera",
+    "trigger_discounted",
+}
 EMPTY_SPECIAL_CARDS_CONFIG: dict[str, Any] = {"promotions": [], "incentives": []}
 
 
@@ -92,13 +99,26 @@ def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
 def _parse_single_promotion(
     raw: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
+    rule_type = str(raw.get("rule_type") or "selected_item_copurchase")
+    if rule_type not in _PROMOTION_RULE_TYPES:
+        return None, f"Intrarea `promotions` are `rule_type` necunoscut: {rule_type}."
+
     item_codes = [
         str(code).strip()
         for code in raw.get("item_codes", [])
         if str(code).strip()
     ]
-    if not item_codes:
+    if rule_type == "selected_item_copurchase" and not item_codes:
         return None, "Intrarea `promotions` trebuie sa contina `item_codes`."
+
+    source_file = raw.get("source_file")
+    trigger_sheet = raw.get("trigger_sheet")
+    discounted_sheet = raw.get("discounted_sheet")
+    if rule_type != "selected_item_copurchase":
+        if not source_file:
+            return None, "Intrarea `promotions` trebuie sa contina `source_file` pentru regula selectata."
+        if not trigger_sheet or not discounted_sheet:
+            return None, "Intrarea `promotions` trebuie sa contina `trigger_sheet` si `discounted_sheet`."
 
     try:
         start_date = date.fromisoformat(str(raw["start_date"]))
@@ -117,11 +137,16 @@ def _parse_single_promotion(
 
     return (
         {
+            "key": str(raw.get("key") or _promotion_key(raw.get("title") or "promotie-speciala")),
             "title": str(raw.get("title") or "Promotie speciala"),
             "subtitle": str(raw.get("subtitle") or "Coduri fixe urmarite direct in Hub"),
             "description": str(raw.get("description") or ""),
             "coverage_note": raw.get("coverage_note"),
+            "rule_type": rule_type,
             "item_codes": item_codes,
+            "source_file": str(source_file) if source_file else None,
+            "trigger_sheet": str(trigger_sheet) if trigger_sheet else None,
+            "discounted_sheet": str(discounted_sheet) if discounted_sheet else None,
             "start_date": start_date,
             "end_date": end_date,
         },
@@ -129,15 +154,21 @@ def _parse_single_promotion(
     )
 
 
-def parse_promotion_definition(
+def _promotion_key(value: Any) -> str:
+    normalized = normalize_column_name(value)
+    return normalized or "promotie-speciala"
+
+
+def parse_promotion_definitions(
     config: dict[str, Any],
     month: str,
-) -> tuple[dict[str, Any] | None, str | None]:
-    """Find promotion config whose date range overlaps the given month."""
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Return all promotion configs whose date range overlaps the given month."""
     entries = config.get("promotions")
     if entries is not None:
         if not isinstance(entries, list):
-            return None, "Sectiunea `promotions` trebuie sa fie un array JSON."
+            return [], "Sectiunea `promotions` trebuie sa fie un array JSON."
+        definitions: list[dict[str, Any]] = []
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -146,22 +177,142 @@ def parse_promotion_definition(
                 end = date.fromisoformat(str(entry.get("end_date", "")))
             except ValueError:
                 continue
-            if month_overlaps_period(month, start, end):
-                return _parse_single_promotion(entry)
-        return None, None
+            if not month_overlaps_period(month, start, end):
+                continue
+            definition, error = _parse_single_promotion(entry)
+            if error:
+                return [], error
+            if definition is not None:
+                definitions.append(definition)
+        return definitions, None
 
     # Backward compat: old single-object `promotion` key
     raw = config.get("promotion")
     if raw is None or not isinstance(raw, dict):
-        return None, None
+        return [], None
     try:
         start = date.fromisoformat(str(raw.get("start_date", "")))
         end = date.fromisoformat(str(raw.get("end_date", "")))
     except ValueError:
-        return None, None
+        return [], None
     if not month_overlaps_period(month, start, end):
+        return [], None
+    definition, error = _parse_single_promotion(raw)
+    return ([definition] if definition is not None else []), error
+
+
+def parse_promotion_definition(
+    config: dict[str, Any],
+    month: str,
+    promotion_key: str | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Find promotion config whose date range overlaps the given month."""
+    definitions, error = parse_promotion_definitions(config, month)
+    if error:
+        return None, error
+    if not definitions:
         return None, None
-    return _parse_single_promotion(raw)
+    if promotion_key:
+        for definition in definitions:
+            if definition.get("key") == promotion_key:
+                return definition, None
+        return None, None
+    return definitions[0], None
+
+
+def load_promotion_rule_products(
+    definition: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    rule_type = definition.get("rule_type") or "selected_item_copurchase"
+    if rule_type == "selected_item_copurchase":
+        return {"item_codes": definition.get("item_codes", [])}, None
+
+    source_file = definition.get("source_file")
+    trigger_sheet = definition.get("trigger_sheet")
+    discounted_sheet = definition.get("discounted_sheet")
+    if not source_file or not trigger_sheet or not discounted_sheet:
+        return None, "Promotia nu are fisierul si sheet-urile configurate complet."
+
+    source_path = resolve_path(str(source_file), get_repo_root())
+    if not source_path.exists():
+        return None, f"Fisierul extern `{source_path.name}` nu exista."
+
+    mtime = source_path.stat().st_mtime
+    cache_key = (str(source_path), mtime, str(trigger_sheet), str(discounted_sheet))
+    if cache_key in _promotion_products_cache:
+        return _promotion_products_cache[cache_key]
+
+    try:
+        trigger_rows = load_product_code_rows(source_path, sheet_name=str(trigger_sheet))
+        discounted_rows = load_product_code_rows(source_path, sheet_name=str(discounted_sheet))
+    except Exception as exc:
+        result: tuple[dict[str, Any] | None, str | None] = (
+            None,
+            f"Fisierul `{source_path.name}` nu a putut fi citit: {exc}",
+        )
+        _promotion_products_cache[cache_key] = result
+        return result
+
+    trigger_codes = [str(row["item_code"]) for row in trigger_rows if row.get("item_code")]
+    discounted_codes = [str(row["item_code"]) for row in discounted_rows if row.get("item_code")]
+    if not trigger_codes or not discounted_codes:
+        result = None, f"Fisierul `{source_path.name}` nu contine codurile necesare pentru promotie."
+        _promotion_products_cache[cache_key] = result
+        return result
+
+    payload: dict[str, Any] = {
+        "trigger_codes": trigger_codes,
+        "discounted_codes": discounted_codes,
+    }
+    if rule_type == "same_model_screen_camera":
+        payload["trigger_code_models"] = _product_code_models(trigger_rows)
+        payload["discounted_code_models"] = _product_code_models(discounted_rows)
+
+    result = payload, None
+    _promotion_products_cache[cache_key] = result
+    return result
+
+
+def _product_code_models(rows: list[dict[str, str | None]]) -> dict[str, set[str]]:
+    out: dict[str, set[str]] = {}
+    for row in rows:
+        code = row.get("item_code")
+        if not code:
+            continue
+        models = extract_phone_model_keys(row.get("item_name") or "")
+        if models:
+            out[str(code)] = models
+    return out
+
+
+def extract_phone_model_keys(item_name: str) -> set[str]:
+    """Extract normalized phone model keys from Romanian product names."""
+    normalized = (
+        re.sub(r"\s+", " ", str(item_name).upper())
+        .replace("–", "-")
+        .replace("—", "-")
+        .strip()
+    )
+    if " PENTRU " in normalized:
+        normalized = normalized.split(" PENTRU ", maxsplit=1)[1]
+    normalized = normalized.split(" - ", maxsplit=1)[0].strip()
+    if not normalized:
+        return set()
+
+    prefix_tokens: list[str] = []
+    for token in normalized.split():
+        if any(char.isdigit() for char in token):
+            break
+        prefix_tokens.append(token)
+    prefix = " ".join(prefix_tokens)
+    parts = [part.strip() for part in normalized.split("/") if part.strip()]
+    models: set[str] = set()
+    for part in parts or [normalized]:
+        candidate = part
+        if prefix and not candidate.startswith(prefix):
+            candidate = f"{prefix} {candidate}"
+        models.add(re.sub(r"[^A-Z0-9]+", " ", candidate).strip())
+    return {model for model in models if model}
 
 
 def _parse_single_incentive(
