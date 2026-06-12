@@ -45,6 +45,8 @@ import type {
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
+import { ExportTableButton } from './ExportTableButton';
+import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { VisiteSubtab } from './VisiteSubtab';
 import {
@@ -219,10 +221,13 @@ const ASM_COLUMNS: Array<{ key: AsmSortKey; label: string }> = [
   { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
 
-const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'forecast_target_pct');
+const CURRENT_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
+const CURRENT_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty');
+const CURRENT_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
+const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct');
 const HIST_ASM_COLUMNS = ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
-const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'forecast_target_pct');
-const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
+const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct');
+const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
 
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
@@ -1005,15 +1010,9 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
   const filterScopeLabel = useMemo(() => describeFilterScope(filters), [filters]);
 
-  const hasActivePromotion = specialCards.some(
-    (c) => c.key === 'promotion' && c.status !== 'missing_config' && c.status !== 'inactive'
-  );
-  const regionalColumnsVisible = hasActivePromotion
-    ? REGIONAL_COLUMNS
-    : REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty');
-  const agentColumnsVisible = hasActivePromotion
-    ? AGENT_COLUMNS
-    : AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty');
+  const regionalColumnsVisible = CURRENT_REGIONAL_COLUMNS;
+  const storeColumnsVisible = CURRENT_STORE_COLUMNS;
+  const agentColumnsVisible = CURRENT_AGENT_COLUMNS;
 
   return (
     <div className="space-y-3 p-3 pb-24 lg:pb-6 pt-2">
@@ -1336,6 +1335,23 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   Filtrare: {filterScopeLabel} · Sortare: {regionalColumnsVisible.find((column) => column.key === regionalSort.key)?.label} ({regionalSort.direction}) · {regionals.length} regionale
                 </p>
               </div>
+              <ExportTableButton
+                filename={`hub_${currentMonth}_rm`}
+                sheetName={`RM ${currentMonth}`}
+                rows={sortedRegionals}
+                columns={[
+                  { header: 'Regional', value: (row) => row.regional },
+                  { header: 'Target', value: (row) => formatCurrency(row.target) },
+                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                  { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
+                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
+                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                  { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
+                  { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+                  { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+                ]}
+              />
             </div>
             <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
               <table className={REGIONAL_TABLE_CLASS}>
@@ -1365,8 +1381,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.total_vanzari)}</td>
                       <td className={`${COMPACT_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(regional.proc_realizare_target)}</td>
                       <td className={`${COMPACT_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(regional.forecast_target_pct)}</td>
-                      {hasActivePromotion && <td className={COMPACT_TD_CLASS}>{formatInt(regional.promo_qty)}</td>}
-                      <td className={COMPACT_TD_CLASS}>{formatInt(regional.incentive_qty)}</td>
                       <td className={COMPACT_TD_CLASS}>{formatInt(regional.qty_total)}</td>
                       <td className={COMPACT_TD_CLASS}>{formatInt(regional.nr_bonuri)}</td>
                       <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.medie_zilnica ?? 0)}</td>
@@ -1387,15 +1401,33 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   <h3 className="text-sm font-bold">Magazine</h3>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Filtrare: {filterScopeLabel} · Sortare: {STORE_COLUMNS.find((column) => column.key === storeSort.key)?.label} ({storeSort.direction}) · {stores.length} magazine
+                  Filtrare: {filterScopeLabel} · Sortare: {storeColumnsVisible.find((column) => column.key === storeSort.key)?.label} ({storeSort.direction}) · {stores.length} magazine
                 </p>
               </div>
+              <ExportTableButton
+                filename={`hub_${currentMonth}_magazine`}
+                sheetName={`Magazine ${currentMonth}`}
+                rows={sortedStores}
+                columns={[
+                  { header: 'Firma', value: (row) => row.firma },
+                  { header: 'Magazin', value: (row) => row.locatie },
+                  { header: 'Target', value: (row) => formatCurrency(row.target) },
+                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                  { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
+                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
+                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                  { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
+                  { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
+                  { header: 'Medie zilnica', value: (row) => formatCurrency(getStoreDailyAverage(row)) },
+                ]}
+              />
             </div>
             <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
               <table className={STORE_TABLE_CLASS}>
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {STORE_COLUMNS.map((column, i) => (
+                    {storeColumnsVisible.map((column, i) => (
                       <React.Fragment key={column.key}>
                         <SortableHeader
                           label={column.label}
@@ -1414,18 +1446,16 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       key={store.site_code}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className={`max-w-36 truncate font-semibold ${COMPACT_TD_CLASS}`}>{store.locatie}</td>
-                      <td className={`${COMPACT_TD_CLASS} text-center font-bold`}>
-                        {store.firma?.toLowerCase().includes('mobiup')
-                          ? <span className="text-red-500">MU</span>
-                          : <span className="text-blue-500">MC</span>
-                        }
+                      <td className={`max-w-36 truncate font-semibold ${COMPACT_TD_CLASS}`}>
+                        <span className="inline-flex min-w-0 items-center">
+                          <FirmaBadge firma={store.firma} />
+                          <span className="truncate">{store.locatie}</span>
+                        </span>
                       </td>
                       <td className={COMPACT_TD_CLASS}>{formatCurrency(store.target)}</td>
                       <td className={COMPACT_TD_CLASS}>{formatCurrency(store.total_vanzari)}</td>
                       <td className={`${COMPACT_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
                       <td className={`${COMPACT_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(store.forecast_target_pct)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatInt(store.incentive_qty ?? 0)}</td>
                       <td className={COMPACT_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
                       <td className={COMPACT_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
                       <td className={COMPACT_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
@@ -1446,6 +1476,24 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     Filtrare: {filterScopeLabel} · Sortare: {agentColumnsVisible.find((column) => column.key === agentSort.key)?.label} ({agentSort.direction}) · {agents.length} agenti
                   </p>
                 </div>
+                <ExportTableButton
+                  filename={`hub_${currentMonth}_agenti`}
+                  sheetName={`Agenti ${currentMonth}`}
+                  rows={sortedAgents}
+                  columns={[
+                    { header: 'Agent', value: (row) => row.agent },
+                    { header: 'Magazin', value: (row) => row.locatie },
+                    { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
+                    { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                    { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                    { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
+                    { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                    { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
+                    { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
+                    { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+                    { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+                  ]}
+                />
               </div>
             <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
               <table className="min-w-370 w-full border-collapse text-xs">
@@ -1475,8 +1523,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       <td className="px-3 py-2">{formatCurrency(agentRow.target ?? 0)}</td>
                       <td className="px-3 py-2 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
                       <td className="px-3 py-2">{formatPercent(agentRow.proc_realizare_target)}</td>
-                      {hasActivePromotion && <td className="px-3 py-2">{formatInt(agentRow.promo_qty ?? 0)}</td>}
-                      <td className="px-3 py-2">{formatInt(agentRow.incentive_qty ?? 0)}</td>
                       <td className="px-3 py-2">{formatInt(agentRow.acc_qty_realizat)}</td>
                       <td className="px-3 py-2">{formatInt(agentRow.nr_bonuri)}</td>
                       <td className="px-3 py-2">{formatInt(agentRow.zile_lucrate)}</td>
@@ -1895,6 +1941,22 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       Sortare: {HIST_REGIONAL_COLUMNS.find((c) => c.key === historyRegionalSort.key)?.label} ({historyRegionalSort.direction}) · {historyRegionals.length} regionali
                     </p>
                   </div>
+                  <ExportTableButton
+                    filename={`hub_${historyMonth}_istoric_rm`}
+                    sheetName={`RM istoric ${historyMonth}`}
+                    rows={sortedHistoryRegionals}
+                    columns={[
+                      { header: 'Regional', value: (row) => row.regional },
+                      { header: 'Target', value: (row) => formatCurrency(row.target) },
+                      { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                      { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                      { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
+                      { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                      { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
+                      { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+                      { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+                    ]}
+                  />
                 </div>
                 <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
                   <table className="min-w-330 w-full border-collapse text-xs">
@@ -1923,7 +1985,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           <td className="px-3 py-2">{formatCurrency(row.target)}</td>
                           <td className="px-3 py-2">{formatCurrency(row.total_vanzari)}</td>
                           <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(row.proc_realizare_target)}</td>
-                          <td className="px-3 py-2">{formatInt(row.incentive_qty)}</td>
                           <td className="px-3 py-2">{formatInt(row.qty_total)}</td>
                           <td className="px-3 py-2">{formatInt(row.nr_bonuri)}</td>
                           <td className="px-3 py-2">{formatCurrency(row.medie_zilnica ?? 0)}</td>
@@ -1947,6 +2008,23 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       Sortare: {HIST_STORE_COLUMNS.find((c) => c.key === historyStoreSort.key)?.label} ({historyStoreSort.direction}) · {historyStores.length} magazine
                     </p>
                   </div>
+                  <ExportTableButton
+                    filename={`hub_${historyMonth}_istoric_magazine`}
+                    sheetName={`Magazine istoric ${historyMonth}`}
+                    rows={sortedHistoryStores}
+                    columns={[
+                      { header: 'Firma', value: (row) => row.firma },
+                      { header: 'Magazin', value: (row) => row.locatie },
+                      { header: 'Target', value: (row) => formatCurrency(row.target) },
+                      { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                      { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                      { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
+                      { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                      { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
+                      { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
+                      { header: 'Medie zilnica', value: (row) => formatCurrency(getStoreDailyAverage(row)) },
+                    ]}
+                  />
                 </div>
                 <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
                   <table className="min-w-330 w-full border-collapse text-xs">
@@ -1971,17 +2049,15 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           key={store.site_code}
                           className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                         >
-                          <td className="max-w-0 w-36 truncate px-3 py-2 font-semibold">{store.locatie}</td>
-                          <td className="px-3 py-2 text-center font-bold">
-                            {store.firma?.toLowerCase().includes('mobiup')
-                              ? <span className="text-red-500">MU</span>
-                              : <span className="text-blue-500">MC</span>
-                            }
+                          <td className="max-w-0 w-36 truncate px-3 py-2 font-semibold">
+                            <span className="inline-flex min-w-0 items-center">
+                              <FirmaBadge firma={store.firma} />
+                              <span className="truncate">{store.locatie}</span>
+                            </span>
                           </td>
                           <td className="px-3 py-2">{formatCurrency(store.target)}</td>
                           <td className="px-3 py-2">{formatCurrency(store.total_vanzari)}</td>
                           <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(store.proc_realizare_target)}</td>
-                          <td className="px-3 py-2">{formatInt(store.incentive_qty ?? 0)}</td>
                           <td className="px-3 py-2">{formatInt(store.qty_total ?? 0)}</td>
                           <td className="px-3 py-2">{formatInt(store.nr_bonuri)}</td>
                           <td className="px-3 py-2">{formatInt(store.nr_agenti)}</td>
@@ -2002,6 +2078,24 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       Sortare: {HIST_AGENT_COLUMNS.find((c) => c.key === historyAgentSort.key)?.label} ({historyAgentSort.direction}) · {historyAgents.length} agenti
                     </p>
                   </div>
+                  <ExportTableButton
+                    filename={`hub_${historyMonth}_istoric_agenti`}
+                    sheetName={`Agenti istoric ${historyMonth}`}
+                    rows={sortedHistoryAgents}
+                    columns={[
+                      { header: 'Agent', value: (row) => row.agent },
+                      { header: 'Magazin', value: (row) => row.locatie },
+                      { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
+                      { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                      { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                      { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
+                      { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                      { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
+                      { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
+                      { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+                      { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+                    ]}
+                  />
                 </div>
                 <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
                   <table className="min-w-370 w-full border-collapse text-xs">
@@ -2031,7 +2125,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           <td className="px-3 py-2">{formatCurrency(agentRow.target ?? 0)}</td>
                           <td className="px-3 py-2 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
                           <td className="px-3 py-2">{formatPercent(agentRow.proc_realizare_target)}</td>
-                          <td className="px-3 py-2">{formatInt(agentRow.incentive_qty ?? 0)}</td>
                           <td className="px-3 py-2">{formatInt(agentRow.acc_qty_realizat)}</td>
                           <td className="px-3 py-2">{formatInt(agentRow.nr_bonuri)}</td>
                           <td className="px-3 py-2">{formatInt(agentRow.zile_lucrate)}</td>

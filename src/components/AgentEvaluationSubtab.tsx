@@ -6,6 +6,7 @@ import {
   type AgentEvaluationRow,
   type AgentEvaluationResponse,
 } from '../api/agents';
+import { ExportTableButton } from './ExportTableButton';
 
 function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
@@ -539,6 +540,27 @@ export function AgentEvaluationSubtab() {
         >
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
+        <ExportTableButton
+          filename="management_agenti"
+          sheetName="Management Agenti"
+          rows={rows}
+          columns={[
+            { header: 'Luna', value: (row) => row.month },
+            { header: 'Firma', value: (row) => row.firma },
+            { header: 'Agent', value: (row) => row.agent },
+            { header: 'Magazin', value: (row) => row.locatie },
+            { header: 'Vanzare', value: (row) => formatMoney(row.total_sales) },
+            { header: 'Target', value: (row) => formatMoney(row.target_value) },
+            { header: '% Target', value: (row) => formatPct(row.target_pct) },
+            { header: 'Medie zilnica', value: (row) => formatNumber(row.daily_average, 0) },
+            { header: 'Valoare reper', value: (row) => formatNumber(row.value_reper, 0) },
+            { header: '% Bonuri', value: (row) => formatPct(row.bonuri_pct) },
+            { header: 'Focus', value: (row) => formatPct(row.focus_pct) },
+            { header: 'Folii Premium', value: (row) => formatPct(row.premium_glass_pct) },
+            { header: 'Scor', value: (row) => `${row.total_points}/18` },
+            { header: 'Bonus', value: (row) => row.bonus_amount ? `${row.bonus_amount} lei` : '' },
+          ]}
+        />
       </div>
 
       <MechanismCard />

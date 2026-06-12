@@ -17,6 +17,7 @@ import type { AppFilters } from './MainLayout';
 import type { FilterOptions } from '../api/types';
 import { SalariiSubtab } from './SalariiSubtab';
 import { ErrorBoundary } from './ErrorBoundary';
+import { ExportTableButton } from './ExportTableButton';
 import { 
   fetchAgentsOverview, 
   fetchAgentsMovement, 
@@ -907,7 +908,23 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
               {filteredList.length === list.length ? `Toti (${list.length})` : `${filteredList.length} din ${list.length}`} {list.length === 200 ? '(maxim 200)' : ''}
             </p>
           </div>
-          {loadingList && <RefreshCw size={14} className="animate-spin text-slate-400" />}
+          <div className="flex items-center gap-2">
+            {loadingList && <RefreshCw size={14} className="animate-spin text-slate-400" />}
+            <ExportTableButton
+              filename={`agenti_${currentMonth}`}
+              sheetName={`Agenti ${currentMonth}`}
+              rows={filteredList}
+              columns={[
+                { header: 'Agent', value: (row) => row.agent },
+                { header: 'Magazin', value: (row) => row.store_name ?? '' },
+                { header: 'Status', value: (row) => row.current_status },
+                { header: 'Nou', value: (row) => row.is_new ? 'Da' : 'Nu' },
+                { header: 'Reactivat', value: (row) => row.is_reactivated ? 'Da' : 'Nu' },
+                { header: 'Vanzari', value: (row) => nf.format(row.total_sales) },
+                { header: 'Cantitate', value: (row) => nfNum.format(row.total_quantity) },
+              ]}
+            />
+          </div>
         </div>
 
         <div className="mb-4 flex gap-2 flex-wrap">
