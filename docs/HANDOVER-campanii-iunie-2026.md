@@ -65,13 +65,14 @@ Tabul **Focus -> Promo** afișează butoane pentru promoțiile active din lună 
 - `same_model_screen_camera`: bon calificat = folie ecran + folie cameră pe același bon, cu intersecție de model telefon extrasă din `ItemName`; unitatea redusă = folia de cameră eligibilă cu cel mai mic `unit_price`.
 - `trigger_discounted`: bon calificat = produs declanșator + produs redus pe același bon; unitatea redusă = produsul redus cu cel mai mic `unit_price`. Folosit pentru capac Cellara + husă universală.
 - Toate regulile exclud cartele + locații `TR %` și numără maxim o unitate redusă per bon.
+- Pentru incentive, unitățile reduse se agregă din toate promoțiile active ale lunii, nu doar din promoția selectată în `Focus -> Promo`.
 
 ### 3. Incentive iunie — clonă exactă a lunii mai (în DB)
 - `incentive_campaigns` + `incentive_products`, `month='2026-06'`: **967 produse**, tiere **5/10/25 RON** (total reward 5945) — identic cu mai.
 - **Excludere**: unitatea redusă (vândută în promo) se scade din `net_quantity` la calculul incentive. Aplicat în:
   - `backend/services/dashboard/specials_data.py` — cardul Incentive din Hub.
   - `backend/services/campaigns.py` — tab Focus: top_agenți, top_magazine, categorii pe tier, + headline `incentive_value`/`incentive_qty`.
-  - Se aplică **doar** pe luni cu promo activ. Lunile fără promo (ex. mai) rămân 100% neschimbate.
+  - Se aplică **doar** pe luni cu promo activ și scade unitățile reduse din toate promoțiile active. Lunile fără promo (ex. mai) rămân 100% neschimbate.
   - Coloanele `promo_qty`/`incentive_qty` din **tabelele Hub** rămân pe agregatul simplu (neajustate) — exact cum ai cerut.
 - Cardul promo Hub: highlight = **Bonuri calificate**; metrici = Produse reduse / Magazine / Agenți.
 

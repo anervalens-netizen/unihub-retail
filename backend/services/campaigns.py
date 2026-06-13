@@ -59,6 +59,23 @@ def _campaign_clauses(
     return clauses, params
 
 
+def _merge_excluded_units(
+    target: dict[tuple[str, str, str], int],
+    source: dict[tuple[str, str, str], int],
+) -> None:
+    for key, units in source.items():
+        target[key] = target.get(key, 0) + units
+
+
+def _excluded_by_site_item(
+    excluded_units: dict[tuple[str, str, str], int],
+) -> dict[tuple[str, str], int]:
+    out: dict[tuple[str, str], int] = {}
+    for (site_code, _agent, item_code), units in excluded_units.items():
+        out[(site_code, item_code)] = out.get((site_code, item_code), 0) + units
+    return out
+
+
 class CampaignsService:
     def __init__(self, repo: CampaignsRepository, pool: asyncpg.Pool):
         self.repo = repo
@@ -232,6 +249,7 @@ class CampaignsService:
             promo_bonuri_by_store: dict[str, int] = {}
             promotion_item_codes: list[str] = []
             promotion_rule_type = "selected_item_copurchase"
+            incentive_excluded_ag: dict[tuple[str, str, str], int] = {}
             if has_active_promotion:
                 assert promotion_definition is not None
                 promotion_products, products_error = load_promotion_rule_products(promotion_definition)
@@ -296,22 +314,78 @@ class CampaignsService:
                     promo_active_agents = promo_cp.active_agents
                     for (site, _ag, _item), units in promo_excluded_ag.items():
                         promo_bonuri_by_store[site] = promo_bonuri_by_store.get(site, 0) + units
+                    _merge_excluded_units(incentive_excluded_ag, promo_excluded_ag)
+
+                selected_key = promotion_definition.get("key")
+                for extra_definition in promotion_definitions:
+                    if extra_definition.get("key") == selected_key:
+                        continue
+                    extra_products, extra_error = load_promotion_rule_products(extra_definition)
+                    if extra_error is not None or extra_products is None:
+                        continue
+                    extra_rule_type = extra_definition.get("rule_type") or "selected_item_copurchase"
+                    if extra_rule_type == "same_model_screen_camera":
+                        extra_cp = await compute_promo_same_model_pair(
+                            conn,
+                            month=month,
+                            start_date=extra_definition["start_date"],
+                            end_date=extra_definition["end_date"],
+                            screen_code_models=extra_products["trigger_code_models"],
+                            camera_code_models=extra_products["discounted_code_models"],
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                    elif extra_rule_type == "trigger_discounted":
+                        extra_cp = await compute_promo_trigger_discounted(
+                            conn,
+                            month=month,
+                            start_date=extra_definition["start_date"],
+                            end_date=extra_definition["end_date"],
+                            trigger_codes=extra_products["trigger_codes"],
+                            discounted_codes=extra_products["discounted_codes"],
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                    else:
+                        extra_cp = await compute_promo_copurchase(
+                            conn,
+                            month=month,
+                            start_date=extra_definition["start_date"],
+                            end_date=extra_definition["end_date"],
+                            item_codes=list(extra_products["item_codes"]),
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                    _merge_excluded_units(incentive_excluded_ag, extra_cp.excluded_units)
+
+                incentive_excluded_si = _excluded_by_site_item(incentive_excluded_ag)
                 if incentive_campaign is not None:
                     reward_map_hdr = incentive_campaign["reward_map"]
                     excluded_value = sum(
                         units
                         * reward_map_hdr.get(item, 0)
                         * store_multipliers.get(site, 0)
-                        for (site, _ag, item), units in promo_excluded_ag.items()
+                        for (site, _ag, item), units in incentive_excluded_ag.items()
                     )
                     # Doar unitatile care sunt si produse incentive scad din qty.
                     excluded_inc_units = sum(
                         units
-                        for (_site, _ag, item), units in promo_excluded_ag.items()
+                        for (_site, _ag, item), units in incentive_excluded_ag.items()
                         if item in reward_map_hdr
                     )
                     incentive_value = max(0.0, incentive_value - float(excluded_value))
                     incentive_qty = max(0, incentive_qty - excluded_inc_units)
+            else:
+                incentive_excluded_si = {}
 
             if has_active_promotion:
                 assert promotion_definition is not None
@@ -401,7 +475,7 @@ class CampaignsService:
                         sc = row["site_code"]
                         loc = row["locatie"]
                         firma_val = row["firma"] or ""
-                        excluded = promo_excluded_si.get((sc, row["item_code"]), 0)
+                        excluded = incentive_excluded_si.get((sc, row["item_code"]), 0)
                         val = max(0, int(row["qty"]) - excluded) * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
                         if sc not in store_inc:
                             store_inc[sc] = [loc, 0.0, firma_val]
@@ -481,7 +555,7 @@ class CampaignsService:
                     for row in agent_item_rows:
                         ag = row["agent"]
                         sc = row["site_code"]
-                        excluded = promo_excluded_ag.get((sc, ag, row["item_code"]), 0)
+                        excluded = incentive_excluded_ag.get((sc, ag, row["item_code"]), 0)
                         adj_net = int(row["qty"]) - excluded
                         q = max(0, adj_net)
                         val = q * reward_map.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
@@ -510,7 +584,7 @@ class CampaignsService:
                         if reward_val <= 0:
                             continue
                         label = f"{int(reward_val)} RON" if reward_val == int(reward_val) else f"{reward_val} RON"
-                        excluded = promo_excluded_ag.get((row["site_code"], row["agent"], row["item_code"]), 0)
+                        excluded = incentive_excluded_ag.get((row["site_code"], row["agent"], row["item_code"]), 0)
                         q = max(0, int(row["qty"]) - excluded)
                         tier_qty[label] = tier_qty.get(label, 0) + q
                         tier_value[label] = tier_value.get(label, 0.0) + q * reward_val

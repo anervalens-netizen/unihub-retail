@@ -143,7 +143,8 @@ Helperul este folosit de:
 - cardul Hub special pentru promotie;
 - Focus -> Promo (`promo_qualifying_bons`, `promo_discounted_units`,
   `promo_active_stores`, `promo_active_agents`);
-- excluderea unitatii reduse din incentive;
+- excluderea unitatilor reduse din incentive; aceasta se face peste toate
+  promotiile active ale lunii, independent de `promotion_key` selectat in UI;
 - punctajul de concurs pentru bonurile promo.
 
 `promo_qty` din summary/tabelele Hub ramane agregatul simplu din

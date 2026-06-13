@@ -253,6 +253,108 @@ class TestPromoIncentivesNoConfig:
 
     @pytest.mark.asyncio
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
+    @patch("services.campaigns.parse_promotion_definitions")
+    @patch("services.campaigns.parse_promotion_definition")
+    @patch("services.campaigns.load_promotion_rule_products")
+    @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
+    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.compute_promo_copurchase", new_callable=AsyncMock)
+    @patch("services.campaigns.compute_promo_trigger_discounted", new_callable=AsyncMock)
+    async def test_all_active_promo_discounted_units_are_excluded_from_incentive(
+        self,
+        mock_trigger,
+        mock_cp,
+        mock_mults,
+        mock_summary,
+        mock_inc,
+        mock_products,
+        mock_selected,
+        mock_definitions,
+        mock_config,
+        service_and_conn,
+        mock_repo,
+    ):
+        from models import PromoIncentiveSummary
+        from services.promo_copurchase import PromoCoPurchaseResult
+
+        selected = {
+            "key": "selected",
+            "title": "Selected",
+            "description": "",
+            "rule_type": "selected_item_copurchase",
+            "item_codes": ["I1"],
+            "start_date": date(2026, 6, 1),
+            "end_date": date(2026, 6, 30),
+        }
+        extra = {
+            "key": "extra",
+            "title": "Extra",
+            "description": "",
+            "rule_type": "trigger_discounted",
+            "source_file": "extra.xlsx",
+            "trigger_sheet": "A",
+            "discounted_sheet": "B",
+            "start_date": date(2026, 6, 1),
+            "end_date": date(2026, 6, 30),
+        }
+        mock_definitions.return_value = ([selected, extra], None)
+        mock_selected.return_value = (selected, None)
+        mock_products.side_effect = [
+            ({"item_codes": ["I1"]}, None),
+            ({"trigger_codes": ["T1"], "discounted_codes": ["I2"]}, None),
+        ]
+        mock_cp.return_value = PromoCoPurchaseResult(
+            qualifying_bons=1,
+            discounted_units=1,
+            active_stores=1,
+            active_agents=1,
+            excluded_units={("S1", "Agent1", "I1"): 1},
+        )
+        mock_trigger.return_value = PromoCoPurchaseResult(
+            qualifying_bons=2,
+            discounted_units=2,
+            active_stores=1,
+            active_agents=1,
+            excluded_units={("S1", "Agent1", "I2"): 2},
+        )
+        mock_inc.return_value = {
+            "title": "Incentive",
+            "description": "",
+            "reward_map": {"I1": 5.0, "I2": 10.0},
+            "subtitle": None,
+        }
+        mock_mults.return_value = ({"S1": 1.0}, {"S1": 1.0})
+        mock_summary.return_value = PromoIncentiveSummary(
+            incentive_qty=10,
+            incentive_value=Decimal("100"),
+        )
+        mock_repo.fetch_promo_total.return_value = FakeRow(total_qty=1)
+        mock_repo.fetch_promo_store_rows.return_value = [
+            FakeRow(site_code="S1", locatie="Store 1", qty=1, total_qty=1, firma="F1"),
+        ]
+        mock_repo.fetch_incentive_store_rows.return_value = [
+            FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=5),
+            FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I2", qty=5),
+        ]
+        service, conn = service_and_conn
+        conn.fetch.return_value = [
+            FakeRow(agent="Agent1", site_code="S1", item_code="I1", qty=5),
+            FakeRow(agent="Agent1", site_code="S1", item_code="I2", qty=5),
+        ]
+
+        result = await service.get_promotions_incentives(
+            "2026-06-01", "2026-06-30", None, None, None, None, None, "selected"
+        )
+
+        assert result["promo_qualifying_bons"] == 1
+        assert result["incentive_qty"] == 7
+        assert result["incentive_value"] == 75.0
+        assert result["top_agents"][0].qty_sold == 7
+        assert result["top_agents"][0].val_incentive == 50.0
+
+    @pytest.mark.asyncio
+    @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
     @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)

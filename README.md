@@ -66,6 +66,10 @@ Promo**, cardul Hub special si concursul folosesc campurile co-purchase
 dedicate (`promo_qualifying_bons`, `promo_discounted_units`,
 `promo_active_stores`, `promo_active_agents`).
 
+Pentru incentive, unitatile reduse din toate promotiile active ale lunii sunt
+excluse din cantitate si valoare, indiferent ce promotie este selectata in
+tabul Promo.
+
 ### Fisa de vizita
 Permite inregistrarea si urmarirea vizitelor in magazine:
 - selectie magazin

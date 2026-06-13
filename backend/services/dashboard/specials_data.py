@@ -10,12 +10,93 @@ from services.dashboard.utils import _build_scoped_params
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
+    load_promotion_rule_products,
     load_special_cards_config,
+    parse_promotion_definitions,
     parse_promotion_definition,
 )
 from services.filters import scoped_clauses
 from services.incentive_db import get_incentive_campaign
-from services.promo_copurchase import compute_promo_copurchase
+from services.promo_copurchase import (
+    PromoCoPurchaseResult,
+    compute_promo_copurchase,
+    compute_promo_same_model_pair,
+    compute_promo_trigger_discounted,
+)
+
+
+def _merge_excluded_units(
+    target: dict[tuple[str, str, str], int],
+    source: dict[tuple[str, str, str], int],
+) -> None:
+    for key, units in source.items():
+        target[key] = target.get(key, 0) + units
+
+
+def _excluded_by_site_item(
+    excluded_units: dict[tuple[str, str, str], int],
+) -> dict[tuple[str, str], int]:
+    out: dict[tuple[str, str], int] = {}
+    for (site_code, _agent, item_code), units in excluded_units.items():
+        out[(site_code, item_code)] = out.get((site_code, item_code), 0) + units
+    return out
+
+
+async def _compute_promotion_result(
+    conn: Any,
+    *,
+    month: str,
+    definition: dict[str, Any],
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> PromoCoPurchaseResult | None:
+    products, error = load_promotion_rule_products(definition)
+    if error is not None or products is None:
+        return None
+    rule_type = definition.get("rule_type") or "selected_item_copurchase"
+    if rule_type == "same_model_screen_camera":
+        return await compute_promo_same_model_pair(
+            conn,
+            month=month,
+            start_date=definition["start_date"],
+            end_date=definition["end_date"],
+            screen_code_models=products["trigger_code_models"],
+            camera_code_models=products["discounted_code_models"],
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+    if rule_type == "trigger_discounted":
+        return await compute_promo_trigger_discounted(
+            conn,
+            month=month,
+            start_date=definition["start_date"],
+            end_date=definition["end_date"],
+            trigger_codes=products["trigger_codes"],
+            discounted_codes=products["discounted_codes"],
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+    return await compute_promo_copurchase(
+        conn,
+        month=month,
+        start_date=definition["start_date"],
+        end_date=definition["end_date"],
+        item_codes=list(products["item_codes"]),
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
 
 
 async def _get_special_cards_data(
@@ -28,7 +109,10 @@ async def _get_special_cards_data(
 ) -> list[DashboardSpecialCard]:
     """Internal helper to build special cards data without HTTP dependencies."""
     config, config_error = load_special_cards_config()
+    promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
     promotion_definition, promotion_error = parse_promotion_definition(config, month)
+    if promotion_error is None:
+        promotion_error = promotion_list_error
     promotion_stats: dict[str, Any] | None = None
     incentive_stats: dict[str, Any] | None = None
 
@@ -36,29 +120,33 @@ async def _get_special_cards_data(
     async with pool.acquire() as _conn_ic:
         incentive_campaign = await get_incentive_campaign(_conn_ic, month)
 
-    promo_excluded: dict[tuple[str, str], int] = {}
-    if promotion_definition is not None and promotion_error is None:
+    promo_excluded_units: dict[tuple[str, str, str], int] = {}
+    if promotion_definitions and promotion_error is None:
         async with pool.acquire() as conn:
-            promo_result = await compute_promo_copurchase(
-                conn,
-                month=month,
-                start_date=promotion_definition["start_date"],
-                end_date=promotion_definition["end_date"],
-                item_codes=promotion_definition["item_codes"],
-                firma=firma,
-                regional=regional,
-                asm=asm,
-                site_code=site_code,
-                agent=agent,
-            )
-        promotion_stats = {
-            "qualifying_bons": promo_result.qualifying_bons,
-            "discounted_units": promo_result.discounted_units,
-            "active_stores": promo_result.active_stores,
-            "active_agents": promo_result.active_agents,
-        }
-        # Unitatile reduse (1 per bon calificat) sunt excluse din incentive.
-        promo_excluded = promo_result.excluded_by_site_item()
+            selected_key = promotion_definition.get("key") if promotion_definition else None
+            for definition in promotion_definitions:
+                promo_result = await _compute_promotion_result(
+                    conn,
+                    month=month,
+                    definition=definition,
+                    firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
+                )
+                if promo_result is None:
+                    continue
+                if definition.get("key") == selected_key:
+                    promotion_stats = {
+                        "qualifying_bons": promo_result.qualifying_bons,
+                        "discounted_units": promo_result.discounted_units,
+                        "active_stores": promo_result.active_stores,
+                        "active_agents": promo_result.active_agents,
+                    }
+                # Unitatile reduse (1 per bon calificat) sunt excluse din incentive.
+                _merge_excluded_units(promo_excluded_units, promo_result.excluded_units)
+    promo_excluded = _excluded_by_site_item(promo_excluded_units)
 
     if incentive_campaign is not None:
         reward_map = incentive_campaign["reward_map"]
