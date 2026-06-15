@@ -382,7 +382,7 @@ class ExportsService:
         cfg.append(["Tip export", "Evolutie zilnica comparativa"])
         cfg.append(["Luni", ", ".join(months)])
         cfg.append(["Metrici zilnice", ", ".join(DAILY_EVOLUTION_METRICS[item].label for item in metrics)])
-        cfg.append(["Niveluri", ", ".join(COMPARISON_LEVELS[item]["label"] for item in levels)])
+        cfg.append(["Niveluri", ", ".join(str(COMPARISON_LEVELS[item]["label"]) for item in levels)])
         cfg.append(["Include magazine inchise", "Da" if include_closed_stores else "Nu"])
         cfg.append(["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
         cfg.append(["Randuri", total_rows])
