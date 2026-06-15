@@ -40,7 +40,7 @@ flowchart LR
 | Focus | Incentive, Promo, Concurs, produse focus |
 | Agenti | overview agenti, stabilitate, miscari, salarii |
 | Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target` |
-| Setari | setari aplicatie si erori |
+| Setari | importuri vanzari, exporturi configurabile, setari aplicatie si erori |
 
 ## Functionalitati majore
 
@@ -51,7 +51,14 @@ flowchart LR
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
 - Import vanzari si refresh reporting agregat.
-- Exporturi si rapoarte pentru management.
+- Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
+  builder Excel controlat server-side cu doua moduri: `Tabel detaliat` pentru
+  Agenti, Magazine, RM si ASM cu filtre pe luni/agent/magazin/firma/RM/ASM,
+  coloane bifabile, evolutii lunare/zilnice, preview si download `.xlsx`;
+  respectiv `Evolutie zilnica` pentru comparatii intre luni sau ani. Modul
+  zilnic genereaza workbook cu foi separate `General`, `ASM`, `Magazine` si
+  `Agenti`, aliniaza valorile pe ziua lunii, adauga delta intre doua luni
+  selectate si pune graficul line doar pe foaia `General`.
 
 Filtrele principale sunt gestionate in `App.tsx` si persistate in
 `localStorage` separat pe zone: Hub, Focus si Agenti. Hub si Focus pot porni
@@ -70,6 +77,7 @@ Backend-ul foloseste modelul `router -> service -> repository`.
 | Concursuri | `routers/contests.py` -> `services/contests.py` -> `repositories/contests.py` |
 | HR/CRM/Tasks/Calculator Target | straturi separate per domeniu |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
+| Exporturi | `routers/exports.py` -> `services/exports.py` -> `repositories/exports.py` |
 
 Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
 Tabelele curente RM si Magazine returneaza atat procentul realizat
@@ -81,7 +89,10 @@ Istoricul Hub ruleaza pe structura curenta de magazine. Cand un manager activ
 este selectat, istoricul centralizeaza vanzarile istorice ale magazinelor
 active alocate acum acelui manager, chiar daca in lunile vechi magazinele erau
 sub alt manager. Magazinele inchise sunt excluse implicit; UI-ul are optiune
-dedicata pentru includerea lor.
+dedicata pentru includerea lor. In subtabul Istoric, utilizatorul poate bifa
+mai multe luni; dashboard-ul combina raspunsurile lunare existente si
+recalculeaza totaluri, procente, mixuri, tabele si exporturi pentru selectia
+agregata.
 
 Cardul Hub `Comparatie perioade` foloseste o cohorta like-for-like: magazinele
 cu vanzari Retail in luna analizata sunt considerate deschise pentru acel card,

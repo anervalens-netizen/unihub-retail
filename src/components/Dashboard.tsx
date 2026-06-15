@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Building2,
   CalendarRange,
+  ChevronDown,
   MapPin,
   PieChart as PieChartIcon,
   Sparkles,
@@ -30,6 +31,7 @@ import type {
   BrandMixItem,
   CategoryMixItem,
   DailySalesPoint,
+  DashboardAllResponse,
   DashboardSpecialCard,
   DashboardSummary,
   MonthlyHistoryPoint,
@@ -148,11 +150,15 @@ const DEFAULT_PROMO_INCENTIVE: PromoIncentiveSummary = {
   incentive_qualified_agents: 0,
 };
 const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
-const TABLE_MAX_HEIGHT_CLASS = 'max-h-[30rem]';
-const COMPACT_TH_CLASS = 'px-2 py-2 whitespace-nowrap';
-const COMPACT_TD_CLASS = 'px-2 py-1.5 whitespace-nowrap';
-const REGIONAL_TABLE_CLASS = 'w-max min-w-[980px] border-collapse text-[11px]';
-const STORE_TABLE_CLASS = 'w-max min-w-[1080px] border-collapse text-[11px]';
+const TABLE_MAX_HEIGHT_CLASS = 'max-h-[26rem]';
+const HUB_TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-[10.5px]';
+const COMPACT_TH_CLASS = 'px-1.5 py-1.5 align-bottom whitespace-normal text-[10px] leading-[1.05]';
+const COMPACT_TD_CLASS = 'px-1.5 py-1 whitespace-nowrap align-middle leading-tight';
+const COMPACT_NUM_TD_CLASS = `${COMPACT_TD_CLASS} text-right tabular-nums`;
+const COMPACT_TEXT_TD_CLASS = `${COMPACT_TD_CLASS} text-left`;
+const REGIONAL_TABLE_CLASS = HUB_TABLE_CLASS;
+const STORE_TABLE_CLASS = HUB_TABLE_CLASS;
+const AGENT_TABLE_CLASS = HUB_TABLE_CLASS;
 
 const CATEGORY_SHORT: Record<string, string> = {
   'Casti intraauriculare': 'Casti intraaur.',
@@ -229,9 +235,400 @@ const HIST_ASM_COLUMNS = ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
 const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct');
 const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
 
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+const n = (value: number | null | undefined): number => Number(value ?? 0);
+const pct = (value: number, base: number): number | null => (base > 0 ? round2((value * 100) / base) : null);
+const sortMonthsAsc = (values: string[]): string[] => [...values].sort((a, b) => a.localeCompare(b));
+const formatMonthSelectionLabel = (values: string[]): string =>
+  values.length === 1 ? values[0] : `${values[0]} - ${values[values.length - 1]} (${values.length} luni)`;
+
+function recalcMixShares<T extends { share_pct: number | null }>(
+  rows: T[],
+  total: number,
+  getValue: (row: T) => number
+): T[] {
+  return rows.map((row) => ({ ...row, share_pct: pct(getValue(row), total) }));
+}
+
+function aggregateCategoryMix(rows: CategoryMixItem[][]): CategoryMixItem[] {
+  const map = new Map<string, CategoryMixItem>();
+  for (const group of rows) {
+    for (const item of group) {
+      const current = map.get(item.category) ?? {
+        category: item.category,
+        sales_total: 0,
+        quantity_total: 0,
+        share_pct: null,
+      };
+      current.sales_total += n(item.sales_total);
+      current.quantity_total += n(item.quantity_total);
+      map.set(item.category, current);
+    }
+  }
+  const result = [...map.values()].sort((a, b) => n(b.sales_total) - n(a.sales_total));
+  return recalcMixShares(result, result.reduce((sum, item) => sum + n(item.sales_total), 0), (item) => n(item.sales_total));
+}
+
+function aggregateFocusMix(rows: CategoryMixItem[][]): CategoryMixItem[] {
+  const map = new Map<string, CategoryMixItem>();
+  for (const group of rows) {
+    for (const item of group) {
+      const current = map.get(item.category) ?? {
+        category: item.category,
+        sales_total: 0,
+        quantity_total: 0,
+        share_pct: null,
+      };
+      current.sales_total += n(item.sales_total);
+      current.quantity_total += n(item.quantity_total);
+      map.set(item.category, current);
+    }
+  }
+  const result = [...map.values()].sort((a, b) => n(b.quantity_total) - n(a.quantity_total));
+  return recalcMixShares(result, result.reduce((sum, item) => sum + n(item.quantity_total), 0), (item) => n(item.quantity_total));
+}
+
+function aggregateBrandMix(rows: BrandMixItem[][]): BrandMixItem[] {
+  const map = new Map<string, BrandMixItem>();
+  for (const group of rows) {
+    for (const item of group) {
+      const current = map.get(item.brand) ?? {
+        brand: item.brand,
+        sales_total: 0,
+        quantity_total: 0,
+        share_pct: null,
+      };
+      current.sales_total += n(item.sales_total);
+      current.quantity_total += n(item.quantity_total);
+      map.set(item.brand, current);
+    }
+  }
+  const result = [...map.values()].sort((a, b) => n(b.sales_total) - n(a.sales_total));
+  return recalcMixShares(result, result.reduce((sum, item) => sum + n(item.sales_total), 0), (item) => n(item.sales_total));
+}
+
+function aggregateReceiptBuckets(rows: ReceiptBucketItem[][]): ReceiptBucketItem[] {
+  const order = ['1', '2', '3', '>3'];
+  const map = new Map<string, ReceiptBucketItem>();
+  for (const group of rows) {
+    for (const item of group) {
+      const current = map.get(item.bucket) ?? { bucket: item.bucket, receipt_count: 0, share_pct: null };
+      current.receipt_count += n(item.receipt_count);
+      map.set(item.bucket, current);
+    }
+  }
+  const result = [...map.values()].sort((a, b) => order.indexOf(a.bucket) - order.indexOf(b.bucket));
+  return recalcMixShares(result, result.reduce((sum, item) => sum + n(item.receipt_count), 0), (item) => n(item.receipt_count));
+}
+
+function aggregateDailySales(rows: DailySalesPoint[][]): DailySalesPoint[] {
+  const map = new Map<string, DailySalesPoint>();
+  for (const group of rows) {
+    for (const item of group) {
+      const day = item.sale_date.slice(-2);
+      const current = map.get(day) ?? { sale_date: `zi-${day}`, total_sales: 0, total_quantity: 0, receipt_count: 0 };
+      current.total_sales += n(item.total_sales);
+      current.total_quantity += n(item.total_quantity);
+      current.receipt_count += n(item.receipt_count);
+      map.set(day, current);
+    }
+  }
+  return [...map.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, item]) => item);
+}
+
+function aggregateSummary(responses: DashboardAllResponse[], label: string): DashboardSummary {
+  const summaries = responses.map((response) => response.summary);
+  const totalSales = summaries.reduce((sum, item) => sum + n(item.total_sales), 0);
+  const totalTarget = summaries.reduce((sum, item) => sum + n(item.total_target), 0);
+  const totalQuantity = summaries.reduce((sum, item) => sum + n(item.total_quantity), 0);
+  const totalReceipts = summaries.reduce((sum, item) => sum + n(item.total_receipts), 0);
+  const workingDays = summaries.reduce((sum, item) => sum + n(item.working_days), 0);
+  const forecastSales = summaries.reduce((sum, item) => sum + n(item.forecast_sales ?? item.total_sales), 0);
+  return {
+    month: label,
+    total_sales: round2(totalSales),
+    total_target: round2(totalTarget),
+    target_progress_pct: pct(totalSales, totalTarget),
+    forecast_sales: round2(forecastSales),
+    forecast_target_progress_pct: pct(forecastSales, totalTarget),
+    total_quantity: totalQuantity,
+    total_receipts: totalReceipts,
+    proc_bon2acc: pct(
+      summaries.reduce((sum, item) => sum + (n(item.proc_bon2acc) / 100) * n(item.total_receipts), 0),
+      totalReceipts
+    ),
+    prc_focus_acc_qty: pct(
+      summaries.reduce((sum, item) => sum + (n(item.prc_focus_acc_qty) / 100) * n(item.total_quantity), 0),
+      totalQuantity
+    ),
+    total_stores: new Set(responses.flatMap((response) => response.stores.map((store) => store.site_code))).size,
+    total_agents: new Set(responses.flatMap((response) => response.agents.map((agent) => `${agent.site_code}:${agent.agent}`))).size,
+    working_days: workingDays,
+    daily_average: workingDays > 0 ? round2(totalSales / workingDays) : null,
+    is_month_final: summaries.every((item) => item.is_month_final),
+    last_sale_date: summaries.map((item) => item.last_sale_date).filter(Boolean).sort().at(-1) ?? null,
+    imported_day_of_month: null,
+    days_in_month: summaries.reduce((sum, item) => sum + n(item.days_in_month), 0) || null,
+    cartele_qty: summaries.reduce((sum, item) => sum + n(item.cartele_qty), 0),
+  };
+}
+
+function aggregateRegionals(rows: RegionalStat[][]): RegionalStat[] {
+  const map = new Map<string, RegionalStat>();
+  const weighted = new Map<string, { bon2: number; focus: number }>();
+  for (const group of rows) {
+    for (const row of group) {
+      const key = row.regional;
+      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, promo_qty: 0, incentive_qty: 0, medie_zilnica: null, proc_bon2acc: null, prc_focus_acc_qty: null };
+      current.total_vanzari += n(row.total_vanzari);
+      current.qty_total += n(row.qty_total);
+      current.nr_bonuri += n(row.nr_bonuri);
+      current.nr_agenti = Math.max(n(current.nr_agenti), n(row.nr_agenti));
+      current.zile_active += n(row.zile_active);
+      current.target += n(row.target);
+      current.promo_qty += n(row.promo_qty);
+      current.incentive_qty += n(row.incentive_qty);
+      const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
+      currentWeighted.bon2 += (n(row.proc_bon2acc) / 100) * n(row.nr_bonuri);
+      currentWeighted.focus += (n(row.prc_focus_acc_qty) / 100) * n(row.qty_total);
+      weighted.set(key, currentWeighted);
+      map.set(key, current);
+    }
+  }
+  return [...map.entries()].map(([key, row]) => {
+    const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
+    return {
+      ...row,
+      total_vanzari: round2(row.total_vanzari),
+      target: round2(row.target),
+      proc_realizare_target: pct(row.total_vanzari, row.target),
+      forecast_target_pct: null,
+      medie_zilnica: row.zile_active > 0 ? round2(row.total_vanzari / row.zile_active) : null,
+      proc_bon2acc: pct(currentWeighted.bon2, row.nr_bonuri),
+      prc_focus_acc_qty: pct(currentWeighted.focus, row.qty_total),
+    };
+  });
+}
+
+function aggregateAsms(rows: AsmStat[][]): AsmStat[] {
+  const map = new Map<string, AsmStat>();
+  const weighted = new Map<string, { bon2: number; focus: number }>();
+  for (const group of rows) {
+    for (const row of group) {
+      const key = `${row.regional}:${row.asm}`;
+      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, promo_qty: 0, incentive_qty: 0, medie_zilnica: null, proc_bon2acc: null, prc_focus_acc_qty: null };
+      current.total_vanzari += n(row.total_vanzari);
+      current.qty_total += n(row.qty_total);
+      current.nr_bonuri += n(row.nr_bonuri);
+      current.nr_agenti = Math.max(n(current.nr_agenti), n(row.nr_agenti));
+      current.zile_active += n(row.zile_active);
+      current.target += n(row.target);
+      current.promo_qty += n(row.promo_qty);
+      current.incentive_qty += n(row.incentive_qty);
+      const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
+      currentWeighted.bon2 += (n(row.proc_bon2acc) / 100) * n(row.nr_bonuri);
+      currentWeighted.focus += (n(row.prc_focus_acc_qty) / 100) * n(row.qty_total);
+      weighted.set(key, currentWeighted);
+      map.set(key, current);
+    }
+  }
+  return [...map.entries()].map(([key, row]) => {
+    const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
+    return {
+      ...row,
+      total_vanzari: round2(row.total_vanzari),
+      target: round2(row.target),
+      proc_realizare_target: pct(row.total_vanzari, row.target),
+      medie_zilnica: row.zile_active > 0 ? round2(row.total_vanzari / row.zile_active) : null,
+      proc_bon2acc: pct(currentWeighted.bon2, row.nr_bonuri),
+      prc_focus_acc_qty: pct(currentWeighted.focus, row.qty_total),
+    };
+  });
+}
+
+function aggregateStores(rows: StoreStat[][]): StoreStat[] {
+  const map = new Map<string, StoreStat>();
+  for (const group of rows) {
+    for (const row of group) {
+      const current = map.get(row.site_code) ?? { ...row, import_month: '', total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, promo_qty: 0, incentive_qty: 0 };
+      current.total_vanzari += n(row.total_vanzari);
+      current.qty_total = n(current.qty_total) + n(row.qty_total);
+      current.nr_bonuri += n(row.nr_bonuri);
+      current.nr_agenti = Math.max(n(current.nr_agenti), n(row.nr_agenti));
+      current.zile_active += n(row.zile_active);
+      current.target += n(row.target);
+      current.promo_qty += n(row.promo_qty);
+      current.incentive_qty += n(row.incentive_qty);
+      map.set(row.site_code, current);
+    }
+  }
+  return [...map.values()].map((row) => ({
+    ...row,
+    total_vanzari: round2(row.total_vanzari),
+    target: round2(row.target),
+    proc_realizare_target: pct(row.total_vanzari, row.target),
+    forecast_target_pct: null,
+  }));
+}
+
+function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
+  const map = new Map<string, AgentStat>();
+  for (const group of rows) {
+    for (const row of group) {
+      const key = `${row.site_code}:${row.agent}`;
+      const current = map.get(key) ?? { ...row, import_month: '', acc_qty_realizat: 0, nr_bonuri: 0, nr_bon2acc: 0, proc_bon2acc: null, total_vanzari: 0, zile_lucrate: 0, medie_zilnica: null, acc_focus_qty: 0, prc_focus_acc_qty: null, target: 0, proc_realizare_target: null, promo_qty: 0, incentive_qty: 0 };
+      current.acc_qty_realizat += n(row.acc_qty_realizat);
+      current.nr_bonuri += n(row.nr_bonuri);
+      current.nr_bon2acc += n(row.nr_bon2acc);
+      current.total_vanzari += n(row.total_vanzari);
+      current.zile_lucrate += n(row.zile_lucrate);
+      current.acc_focus_qty += n(row.acc_focus_qty);
+      current.target = n(current.target) + n(row.target);
+      current.promo_qty += n(row.promo_qty);
+      current.incentive_qty += n(row.incentive_qty);
+      map.set(key, current);
+    }
+  }
+  return [...map.values()].map((row) => ({
+    ...row,
+    total_vanzari: round2(row.total_vanzari),
+    target: round2(n(row.target)),
+    medie_zilnica: row.zile_lucrate > 0 ? round2(row.total_vanzari / row.zile_lucrate) : null,
+    proc_bon2acc: pct(row.nr_bon2acc, row.nr_bonuri),
+    prc_focus_acc_qty: pct(row.acc_focus_qty, row.acc_qty_realizat),
+    proc_realizare_target: pct(row.total_vanzari, n(row.target)),
+  }));
+}
+
+function aggregatePromoIncentive(rows: PromoIncentiveSummary[]): PromoIncentiveSummary {
+  return rows.reduce<PromoIncentiveSummary>(
+    (acc, item) => ({
+      promo_qty: acc.promo_qty + n(item.promo_qty),
+      promo_sales: acc.promo_sales + n(item.promo_sales),
+      promo_impact: acc.promo_impact + n(item.promo_impact),
+      incentive_qty: acc.incentive_qty + n(item.incentive_qty),
+      incentive_value: acc.incentive_value + n(item.incentive_value),
+      incentive_qualified_stores: Math.max(acc.incentive_qualified_stores, n(item.incentive_qualified_stores)),
+      incentive_qualified_agents: Math.max(acc.incentive_qualified_agents, n(item.incentive_qualified_agents)),
+    }),
+    { ...DEFAULT_PROMO_INCENTIVE }
+  );
+}
+
+function aggregatePeriodComparisons(rows: Array<PeriodComparisonPayload | null>): PeriodComparisonPayload | null {
+  const valid = rows.filter((row): row is PeriodComparisonPayload => row !== null);
+  if (valid.length === 0) return null;
+  const aggregatePoint = (key: keyof PeriodComparisonPayload): PeriodComparisonPoint => {
+    const points = valid.map((row) => row[key]);
+    const totalSales = points.reduce((sum, item) => sum + n(item.total_sales), 0);
+    const totalQuantity = points.reduce((sum, item) => sum + n(item.total_quantity), 0);
+    const totalReceipts = points.reduce((sum, item) => sum + n(item.total_receipts), 0);
+    const workingDays = points.reduce((sum, item) => sum + n(item.working_days), 0);
+    return {
+      ...points[0],
+      label: points[0].label,
+      month: valid.length > 1 ? 'agregat' : points[0].month,
+      day_range: valid.length > 1 ? 'luni selectate' : points[0].day_range,
+      total_sales: round2(totalSales),
+      total_quantity: totalQuantity,
+      total_receipts: totalReceipts,
+      cartele_qty: points.reduce((sum, item) => sum + n(item.cartele_qty), 0),
+      working_days: workingDays,
+      daily_average: workingDays > 0 ? round2(totalSales / workingDays) : null,
+      avg_receipt_value: totalReceipts > 0 ? round2(totalSales / totalReceipts) : null,
+      proc_bon2acc: pct(points.reduce((sum, item) => sum + (n(item.proc_bon2acc) / 100) * n(item.total_receipts), 0), totalReceipts),
+      prc_focus_acc_qty: pct(points.reduce((sum, item) => sum + (n(item.prc_focus_acc_qty) / 100) * n(item.total_quantity), 0), totalQuantity),
+    };
+  };
+  return {
+    current: aggregatePoint('current'),
+    previous: aggregatePoint('previous'),
+    year_over_year: aggregatePoint('year_over_year'),
+  };
+}
+
+function aggregatePremiumGlass(responses: DashboardAllResponse[]): PremiumGlassAnalysis | null {
+  const analyses = responses.map((response) => response.premium_glass).filter((value): value is PremiumGlassAnalysis => value !== null);
+  if (analyses.length === 0) return null;
+  const summary = analyses.reduce<PremiumGlassAnalysis['summary']>(
+    (acc, item) => ({
+      ...acc,
+      total_qty: acc.total_qty + n(item.summary.total_qty),
+      total_sales: acc.total_sales + n(item.summary.total_sales),
+      premium_qty: acc.premium_qty + n(item.summary.premium_qty),
+      premium_sales: acc.premium_sales + n(item.summary.premium_sales),
+      regular_qty: acc.regular_qty + n(item.summary.regular_qty),
+      regular_sales: acc.regular_sales + n(item.summary.regular_sales),
+      active_stores: Math.max(acc.active_stores, n(item.summary.active_stores)),
+      active_agents: Math.max(acc.active_agents, n(item.summary.active_agents)),
+      premium_active_stores: Math.max(acc.premium_active_stores, n(item.summary.premium_active_stores)),
+      premium_active_agents: Math.max(acc.premium_active_agents, n(item.summary.premium_active_agents)),
+      target_model_count: Math.max(acc.target_model_count, n(item.summary.target_model_count)),
+    }),
+    { ...analyses[0].summary, total_qty: 0, total_sales: 0, premium_qty: 0, premium_sales: 0, regular_qty: 0, regular_sales: 0, active_stores: 0, active_agents: 0, premium_active_stores: 0, premium_active_agents: 0, target_model_count: 0 }
+  );
+  summary.premium_qty_share_pct = pct(summary.premium_qty, summary.total_qty);
+  summary.premium_sales_share_pct = pct(summary.premium_sales, summary.total_sales);
+  const models = aggregateByKey(analyses.flatMap((item) => item.models), (item) => item.model_key, (base, item) => ({
+    ...base,
+    premium_qty: n(base.premium_qty) + n(item.premium_qty),
+    regular_qty: n(base.regular_qty) + n(item.regular_qty),
+    total_qty: n(base.total_qty) + n(item.total_qty),
+    premium_sales: n(base.premium_sales) + n(item.premium_sales),
+    regular_sales: n(base.regular_sales) + n(item.regular_sales),
+    total_sales: n(base.total_sales) + n(item.total_sales),
+    premium_item_count: Math.max(n(base.premium_item_count), n(item.premium_item_count)),
+    regular_item_count: Math.max(n(base.regular_item_count), n(item.regular_item_count)),
+    premium_qty_share_pct: pct(n(base.premium_qty) + n(item.premium_qty), n(base.total_qty) + n(item.total_qty)),
+  })).sort((a, b) => n(b.total_qty) - n(a.total_qty));
+  return {
+    summary,
+    models,
+    managers: analyses.flatMap((item) => item.managers),
+    stores: analyses.flatMap((item) => item.stores),
+    agents: analyses.flatMap((item) => item.agents),
+    products: analyses.flatMap((item) => item.products),
+  };
+}
+
+function aggregateByKey<T>(rows: T[], keyFn: (row: T) => string, merge: (base: T, row: T) => T): T[] {
+  const map = new Map<string, T>();
+  for (const row of rows) {
+    const key = keyFn(row);
+    map.set(key, map.has(key) ? merge(map.get(key)!, row) : { ...row });
+  }
+  return [...map.values()];
+}
+
+function aggregateDashboardDetails(responses: DashboardAllResponse[], selectedMonths: string[]) {
+  const label = selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} - ${selectedMonths[selectedMonths.length - 1]}`;
+  const latest = responses[responses.length - 1];
+  return {
+    summary: aggregateSummary(responses, label),
+    receiptBucketMix: aggregateReceiptBuckets(responses.map((response) => response.receipt_bucket_mix)),
+    focusSubcategoryMix: aggregateFocusMix(responses.map((response) => response.focus_subcategory_mix)),
+    dailySales: selectedMonths.length === 1 ? latest.daily : aggregateDailySales(responses.map((response) => response.daily)),
+    categoryMix: aggregateCategoryMix(responses.map((response) => response.category_mix)),
+    brandMix: aggregateBrandMix(responses.map((response) => response.brand_mix)),
+    specialCards: latest.special_cards,
+    periodComparison: aggregatePeriodComparisons(responses.map((response) => response.period_comparison)),
+    promoIncentive: aggregatePromoIncentive(responses.map((response) => response.promo_incentive ?? DEFAULT_PROMO_INCENTIVE)),
+    premiumGlass: selectedMonths.length === 1 ? latest.premium_glass ?? null : aggregatePremiumGlass(responses),
+    regionals: aggregateRegionals(responses.map((response) => response.regionals ?? [])),
+    asms: aggregateAsms(responses.map((response) => response.asms ?? [])),
+    stores: aggregateStores(responses.map((response) => response.stores ?? [])),
+    agents: aggregateAgents(responses.map((response) => response.agents ?? [])),
+  };
+}
+
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
+  const [historyMonths, setHistoryMonths] = useState<string[]>([currentMonth]);
+  const [draftHistoryMonths, setDraftHistoryMonths] = useState<string[]>([currentMonth]);
+  const [historyMonthDropdownOpen, setHistoryMonthDropdownOpen] = useState(false);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [agents, setAgents] = useState<AgentStat[]>([]);
   const [stores, setStores] = useState<StoreStat[]>([]);
@@ -294,9 +691,18 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [regionals, setRegionals] = useState<RegionalStat[]>([]);
   const [asms, setAsms] = useState<AsmStat[]>([]);
   const isMountedRef = useRef(true);
+  const historyMonthDropdownRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
     setHistoryMonth((previous) => (months.includes(previous) ? previous : currentMonth));
+    setHistoryMonths((previous) => {
+      const valid = previous.filter((month) => months.includes(month));
+      return valid.length > 0 ? valid : [currentMonth];
+    });
+    setDraftHistoryMonths((previous) => {
+      const valid = previous.filter((month) => months.includes(month));
+      return valid.length > 0 ? valid : [currentMonth];
+    });
   }, [months, currentMonth]);
 
   useEffect(() => {
@@ -315,6 +721,26 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     }),
     [buildQuery, includeClosedStores]
   );
+  const selectedHistoryMonths = useMemo(() => {
+    const valid = historyMonths.filter((month) => months.includes(month));
+    return sortMonthsAsc(valid.length > 0 ? valid : [historyMonth]);
+  }, [historyMonth, historyMonths, months]);
+  const historySelectionLabel = useMemo(
+    () => formatMonthSelectionLabel(selectedHistoryMonths),
+    [selectedHistoryMonths]
+  );
+  const draftSelectedHistoryMonths = useMemo(() => {
+    const valid = draftHistoryMonths.filter((month) => months.includes(month));
+    return sortMonthsAsc(valid.length > 0 ? valid : selectedHistoryMonths);
+  }, [draftHistoryMonths, months, selectedHistoryMonths]);
+  const draftHistorySelectionLabel = useMemo(
+    () => formatMonthSelectionLabel(draftSelectedHistoryMonths),
+    [draftSelectedHistoryMonths]
+  );
+  const historySelectionSlug = useMemo(
+    () => selectedHistoryMonths.join('_'),
+    [selectedHistoryMonths]
+  );
 
   const currentCacheKey = useMemo(
     () => `dashboard:current:${currentMonth}:${JSON.stringify(buildQuery(currentMonth))}`,
@@ -325,8 +751,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     [buildHistoryQuery, historyMonth]
   );
   const historyDetailCacheKey = useMemo(
-    () => `dashboard:history-detail:${historyMonth}:${JSON.stringify(buildHistoryQuery(historyMonth))}`,
-    [buildHistoryQuery, historyMonth]
+    () => `dashboard:history-detail:${historySelectionSlug}:${JSON.stringify(selectedHistoryMonths.map((month) => buildHistoryQuery(month)))}`,
+    [buildHistoryQuery, historySelectionSlug, selectedHistoryMonths]
   );
 
   const prefetchHistory = useCallback(
@@ -482,41 +908,43 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
     setHistoryLoading(true);
     setHistoryError(null);
+    const detailRequests = selectedHistoryMonths.map((month) => getDashboardAll(buildHistoryQuery(month)));
     Promise.all([
       getDashboardHistory({ ...buildHistoryQuery(historyMonth), months_back: 12 }),
-      getDashboardAll(buildHistoryQuery(historyMonth)),
+      Promise.all(detailRequests),
     ])
-      .then(([histData, allData]) => {
+      .then(([histData, allResponses]) => {
         if (!isMountedRef.current) return;
+        const allData = aggregateDashboardDetails(allResponses, selectedHistoryMonths);
         setHistory(histData.history);
         setCachedView(historyCacheKey, histData.history);
         setHistorySummary(allData.summary);
-        setHistoryReceiptBucketMix(allData.receipt_bucket_mix);
-        setHistoryFocusSubcategoryMix(allData.focus_subcategory_mix);
-        setHistoryDailySales(allData.daily);
-        setHistoryCategoryMix(allData.category_mix);
-        setHistoryBrandMix(allData.brand_mix);
-        setHistorySpecialCards(allData.special_cards);
-        setHistoryPeriodComparison(allData.period_comparison);
-        setHistoryPromoIncentive(allData.promo_incentive ?? DEFAULT_PROMO_INCENTIVE);
-        setHistoryPremiumGlass(allData.premium_glass ?? null);
-        setHistoryRegionals(allData.regionals ?? []);
-        setHistoryAsms(allData.asms ?? []);
-        setHistoryStores(allData.stores ?? []);
-        setHistoryAgents(allData.agents ?? []);
+        setHistoryReceiptBucketMix(allData.receiptBucketMix);
+        setHistoryFocusSubcategoryMix(allData.focusSubcategoryMix);
+        setHistoryDailySales(allData.dailySales);
+        setHistoryCategoryMix(allData.categoryMix);
+        setHistoryBrandMix(allData.brandMix);
+        setHistorySpecialCards(allData.specialCards);
+        setHistoryPeriodComparison(allData.periodComparison);
+        setHistoryPromoIncentive(allData.promoIncentive);
+        setHistoryPremiumGlass(allData.premiumGlass);
+        setHistoryRegionals(allData.regionals);
+        setHistoryAsms(allData.asms);
+        setHistoryStores(allData.stores);
+        setHistoryAgents(allData.agents);
         setCachedView(historyDetailCacheKey, {
           summary: allData.summary,
-          receiptBucketMix: allData.receipt_bucket_mix,
-          focusSubcategoryMix: allData.focus_subcategory_mix,
-          dailySales: allData.daily,
-          categoryMix: allData.category_mix,
-          brandMix: allData.brand_mix,
-          specialCards: allData.special_cards,
-          periodComparison: allData.period_comparison,
-          promoIncentive: allData.promo_incentive ?? DEFAULT_PROMO_INCENTIVE,
-          premiumGlass: allData.premium_glass ?? null,
-          regionals: allData.regionals ?? [],
-          asms: allData.asms ?? [],
+          receiptBucketMix: allData.receiptBucketMix,
+          focusSubcategoryMix: allData.focusSubcategoryMix,
+          dailySales: allData.dailySales,
+          categoryMix: allData.categoryMix,
+          brandMix: allData.brandMix,
+          specialCards: allData.specialCards,
+          periodComparison: allData.periodComparison,
+          promoIncentive: allData.promoIncentive,
+          premiumGlass: allData.premiumGlass,
+          regionals: allData.regionals,
+          asms: allData.asms,
           stores: allData.stores,
           agents: allData.agents,
         });
@@ -532,7 +960,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       .finally(() => {
         if (isMountedRef.current) setHistoryLoading(false);
       });
-  }, [buildHistoryQuery, historyCacheKey, historyDetailCacheKey, historyMonth]);
+  }, [buildHistoryQuery, historyCacheKey, historyDetailCacheKey, historyMonth, selectedHistoryMonths]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -574,7 +1002,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     if (activeSection === 'history') {
       loadHistory();
     }
-  }, [activeSection, historyMonth, loadHistory]);
+  }, [activeSection, historyMonth, historySelectionSlug, loadHistory]);
 
   // Reset currentHistory when filters, store status scope or month change so it reloads with new params
   useEffect(() => {
@@ -685,8 +1113,26 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   );
 
   const selectedHistoryPoint = useMemo(
-    () => history.find((item) => item.month === historyMonth) ?? history[history.length - 1] ?? null,
-    [history, historyMonth]
+    () => {
+      if (historySummary) {
+        return {
+          month: historySummary.month,
+          total_sales: historySummary.total_sales,
+          total_target: historySummary.total_target,
+          target_progress_pct: historySummary.target_progress_pct,
+          total_quantity: historySummary.total_quantity,
+          total_receipts: historySummary.total_receipts,
+          proc_bon2acc: historySummary.proc_bon2acc,
+          prc_focus_acc_qty: historySummary.prc_focus_acc_qty,
+          total_stores: historySummary.total_stores,
+          total_agents: historySummary.total_agents,
+          working_days: historySummary.working_days,
+          daily_average: historySummary.daily_average,
+        };
+      }
+      return history.find((item) => item.month === historyMonth) ?? history[history.length - 1] ?? null;
+    },
+    [history, historyMonth, historySummary]
   );
 
   const comparisonDeltas = useMemo(() => {
@@ -742,6 +1188,32 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     );
   }, []);
 
+  const handleToggleHistoryMonth = useCallback((month: string) => {
+    const isSelected = draftSelectedHistoryMonths.includes(month);
+    if (isSelected && draftSelectedHistoryMonths.length === 1) {
+      return;
+    }
+    const next = isSelected
+      ? draftSelectedHistoryMonths.filter((item) => item !== month)
+      : [...draftSelectedHistoryMonths, month];
+    setDraftHistoryMonths(sortMonthsAsc(next));
+  }, [draftSelectedHistoryMonths]);
+
+  const handleApplyHistoryMonths = useCallback(() => {
+    const sorted = sortMonthsAsc(draftSelectedHistoryMonths);
+    setHistoryMonths(sorted);
+    setHistoryMonth(sorted[sorted.length - 1] ?? currentMonth);
+    historyMonthDropdownRef.current?.removeAttribute('open');
+  }, [currentMonth, draftSelectedHistoryMonths]);
+
+  const handleHistoryDropdownToggle = useCallback(() => {
+    const isOpen = Boolean(historyMonthDropdownRef.current?.open);
+    setHistoryMonthDropdownOpen(isOpen);
+    if (isOpen) {
+      setDraftHistoryMonths(selectedHistoryMonths);
+    }
+  }, [selectedHistoryMonths]);
+
   const categoryMixChartData = useMemo(
     () =>
       categoryMix.map((item) => ({
@@ -795,11 +1267,14 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
   const historyStatusLabel = useMemo(() => {
     if (!historySummary) return '';
+    if (selectedHistoryMonths.length > 1) {
+      return `${selectedHistoryMonths.length} luni agregate: ${selectedHistoryMonths.join(', ')}.`;
+    }
     if (historySummary.is_month_final) {
       return `Luna finala ${historyMonth}, inchisa la ${historySummary.last_sale_date ?? historyMonth}.`;
     }
     return `Luna ${historyMonth} este inca in actualizare pana in ziua ${historySummary.imported_day_of_month ?? '-'} din ${historySummary.days_in_month ?? '-'}.`;
-  }, [historySummary, historyMonth]);
+  }, [historySummary, historyMonth, selectedHistoryMonths]);
 
   const historyDailyChartData = useMemo(
     () =>
@@ -1364,7 +1839,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           active={regionalSort.key === column.key}
                           direction={regionalSort.direction}
                           onClick={() => handleSortRegionals(column.key)}
-                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-28' : ''}`}
+                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-24 max-w-24' : 'max-w-[4.5rem]'}`}
                         />
                       </React.Fragment>
                     ))}
@@ -1376,16 +1851,16 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       key={regional.regional}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className={`max-w-28 truncate font-semibold ${COMPACT_TD_CLASS}`}>{regional.regional}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.target)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.total_vanzari)}</td>
-                      <td className={`${COMPACT_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(regional.proc_realizare_target)}</td>
-                      <td className={`${COMPACT_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(regional.forecast_target_pct)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatInt(regional.qty_total)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatInt(regional.nr_bonuri)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatCurrency(regional.medie_zilnica ?? 0)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatPercent(regional.proc_bon2acc)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatPercent(regional.prc_focus_acc_qty)}</td>
+                      <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>{regional.regional}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(regional.target)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(regional.total_vanzari)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(regional.proc_realizare_target)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(regional.forecast_target_pct)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(regional.qty_total)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(regional.nr_bonuri)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(regional.medie_zilnica ?? 0)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(regional.proc_bon2acc)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(regional.prc_focus_acc_qty)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1434,7 +1909,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           active={storeSort.key === column.key}
                           direction={storeSort.direction}
                           onClick={() => handleSortStores(column.key)}
-                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-36' : ''}`}
+                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-32 max-w-32' : 'max-w-[4.5rem]'}`}
                         />
                       </React.Fragment>
                     ))}
@@ -1446,21 +1921,21 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       key={store.site_code}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className={`max-w-36 truncate font-semibold ${COMPACT_TD_CLASS}`}>
+                      <td className={`max-w-32 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>
                         <span className="inline-flex min-w-0 items-center">
                           <FirmaBadge firma={store.firma} />
                           <span className="truncate">{store.locatie}</span>
                         </span>
                       </td>
-                      <td className={COMPACT_TD_CLASS}>{formatCurrency(store.target)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatCurrency(store.total_vanzari)}</td>
-                      <td className={`${COMPACT_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
-                      <td className={`${COMPACT_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(store.forecast_target_pct)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatInt(store.zile_active)}</td>
-                      <td className={COMPACT_TD_CLASS}>{formatCurrency(getStoreDailyAverage(store))}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.target)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.total_vanzari)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(store.forecast_target_pct)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(getStoreDailyAverage(store))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1496,7 +1971,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 />
               </div>
             <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-              <table className="min-w-370 w-full border-collapse text-xs">
+              <table className={AGENT_TABLE_CLASS}>
                 <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
                     {agentColumnsVisible.map((column, i) => (
@@ -1506,7 +1981,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           active={agentSort.key === column.key}
                           direction={agentSort.direction}
                           onClick={() => handleSortAgents(column.key)}
-                          className={i === 0 ? 'w-24' : ''}
+                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-20 max-w-20' : i === 1 ? 'w-28 max-w-28' : 'max-w-[4.5rem]'}`}
                         />
                       </React.Fragment>
                     ))}
@@ -1518,17 +1993,17 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       key={`${agentRow.agent}-${agentRow.site_code}`}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className="max-w-0 w-24 truncate px-3 py-2 font-bold">{agentRow.agent}</td>
-                      <td className="max-w-[7rem] truncate px-3 py-2 text-slate-500">{agentRow.locatie}</td>
-                      <td className="px-3 py-2">{formatCurrency(agentRow.target ?? 0)}</td>
-                      <td className="px-3 py-2 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
-                      <td className="px-3 py-2">{formatPercent(agentRow.proc_realizare_target)}</td>
-                      <td className="px-3 py-2">{formatInt(agentRow.acc_qty_realizat)}</td>
-                      <td className="px-3 py-2">{formatInt(agentRow.nr_bonuri)}</td>
-                      <td className="px-3 py-2">{formatInt(agentRow.zile_lucrate)}</td>
-                      <td className="px-3 py-2">{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
-                      <td className="px-3 py-2">{formatPercent(agentRow.proc_bon2acc)}</td>
-                      <td className="px-3 py-2">{formatPercent(agentRow.prc_focus_acc_qty)}</td>
+                      <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.agent}</td>
+                      <td className={`max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.locatie}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.target ?? 0)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatCurrency(agentRow.total_vanzari)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_realizare_target)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.prc_focus_acc_qty)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1675,15 +2150,15 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 )}
               </div>
 
-              <div className="glass rounded-3xl p-4">
+              <div className="glass relative z-50 rounded-3xl p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold">Luna analizata</h3>
+                    <h3 className="text-sm font-bold">Luni analizate</h3>
                     <p className="text-[11px] text-slate-500">
-                      Istoricul foloseste managerii si magazinele din structura curenta
+                      Bifeaza una sau mai multe luni; rezultatele de mai jos se agrega automat
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-start gap-2">
                     <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                       <input
                         type="checkbox"
@@ -1693,17 +2168,51 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       />
                       Include magazine inchise
                     </label>
-                    <select
-                      value={historyMonth}
-                      onChange={(event) => setHistoryMonth(event.target.value)}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
-                    >
-                      {months.map((month) => (
-                        <option key={month} value={month}>
-                          {month}
-                        </option>
-                      ))}
-                    </select>
+                    <details ref={historyMonthDropdownRef} onToggle={handleHistoryDropdownToggle} className="group relative z-50">
+                      <summary className="flex min-w-60 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700">
+                        <span className="truncate">
+                          {historyMonthDropdownOpen ? draftHistorySelectionLabel : historySelectionLabel}
+                        </span>
+                        <ChevronDown size={14} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="absolute right-0 z-[100] mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                        <div className="max-h-72 overflow-auto pr-1">
+                          {months.map((month) => {
+                            const checked = draftSelectedHistoryMonths.includes(month);
+                            return (
+                              <label
+                                key={month}
+                                className={`flex cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors ${
+                                  checked
+                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300'
+                                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => handleToggleHistoryMonth(month)}
+                                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span>{month}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+                          <span className="text-[10px] font-semibold text-slate-400">
+                            {draftSelectedHistoryMonths.length} selectate
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleApplyHistoryMonths}
+                            className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700"
+                          >
+                            OK
+                          </button>
+                        </div>
+                      </div>
+                    </details>
                   </div>
                 </div>
               </div>
@@ -1713,7 +2222,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 {/* 1. Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="text-sm font-bold truncate">Overview — {historyMonth}</h3>
+                    <h3 className="text-sm font-bold truncate">Overview — {historySelectionLabel}</h3>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{historyStatusLabel}</p>
                   </div>
                   <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:bg-slate-800">
@@ -1879,7 +2388,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 <div className="glass rounded-3xl p-4">
                   <div className="mb-3 flex items-center gap-2">
                     <CalendarRange size={16} className="text-indigo-500" />
-                    <h3 className="text-sm font-bold">Evolutie zilnica pentru {historyMonth}</h3>
+                    <h3 className="text-sm font-bold">Evolutie zilnica pentru {historySelectionLabel}</h3>
                   </div>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
@@ -1942,8 +2451,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     </p>
                   </div>
                   <ExportTableButton
-                    filename={`hub_${historyMonth}_istoric_rm`}
-                    sheetName={`RM istoric ${historyMonth}`}
+                    filename={`hub_${historySelectionSlug}_istoric_rm`}
+                    sheetName={`RM istoric`}
                     rows={sortedHistoryRegionals}
                     columns={[
                       { header: 'Regional', value: (row) => row.regional },
@@ -1959,7 +2468,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   />
                 </div>
                 <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-                  <table className="min-w-330 w-full border-collapse text-xs">
+                  <table className={REGIONAL_TABLE_CLASS}>
                     <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                       <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
                         {HIST_REGIONAL_COLUMNS.map((column, i) => (
@@ -1969,7 +2478,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                               active={historyRegionalSort.key === column.key}
                               direction={historyRegionalSort.direction}
                               onClick={() => handleSortHistoryRegionals(column.key)}
-                              className={i === 0 ? 'w-28' : ''}
+                              className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-24 max-w-24' : 'max-w-[4.5rem]'}`}
                             />
                           </React.Fragment>
                         ))}
@@ -1981,15 +2490,15 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           key={row.regional}
                           className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                         >
-                          <td className="max-w-0 w-28 truncate px-3 py-2 font-semibold">{row.regional}</td>
-                          <td className="px-3 py-2">{formatCurrency(row.target)}</td>
-                          <td className="px-3 py-2">{formatCurrency(row.total_vanzari)}</td>
-                          <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(row.proc_realizare_target)}</td>
-                          <td className="px-3 py-2">{formatInt(row.qty_total)}</td>
-                          <td className="px-3 py-2">{formatInt(row.nr_bonuri)}</td>
-                          <td className="px-3 py-2">{formatCurrency(row.medie_zilnica ?? 0)}</td>
-                          <td className="px-3 py-2">{formatPercent(row.proc_bon2acc)}</td>
-                          <td className="px-3 py-2">{formatPercent(row.prc_focus_acc_qty)}</td>
+                          <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>{row.regional}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(row.target)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(row.total_vanzari)}</td>
+                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(row.proc_realizare_target)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.qty_total)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.nr_bonuri)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(row.medie_zilnica ?? 0)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(row.proc_bon2acc)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(row.prc_focus_acc_qty)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2009,8 +2518,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     </p>
                   </div>
                   <ExportTableButton
-                    filename={`hub_${historyMonth}_istoric_magazine`}
-                    sheetName={`Magazine istoric ${historyMonth}`}
+                    filename={`hub_${historySelectionSlug}_istoric_magazine`}
+                    sheetName={`Magazine istoric`}
                     rows={sortedHistoryStores}
                     columns={[
                       { header: 'Firma', value: (row) => row.firma },
@@ -2027,7 +2536,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   />
                 </div>
                 <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-                  <table className="min-w-330 w-full border-collapse text-xs">
+                  <table className={STORE_TABLE_CLASS}>
                     <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                       <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
                         {HIST_STORE_COLUMNS.map((column, i) => (
@@ -2037,7 +2546,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                               active={historyStoreSort.key === column.key}
                               direction={historyStoreSort.direction}
                               onClick={() => handleSortHistoryStores(column.key)}
-                              className={i === 0 ? 'w-36' : ''}
+                              className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-32 max-w-32' : 'max-w-[4.5rem]'}`}
                             />
                           </React.Fragment>
                         ))}
@@ -2049,20 +2558,20 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           key={store.site_code}
                           className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                         >
-                          <td className="max-w-0 w-36 truncate px-3 py-2 font-semibold">
+                          <td className={`max-w-32 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>
                             <span className="inline-flex min-w-0 items-center">
                               <FirmaBadge firma={store.firma} />
                               <span className="truncate">{store.locatie}</span>
                             </span>
                           </td>
-                          <td className="px-3 py-2">{formatCurrency(store.target)}</td>
-                          <td className="px-3 py-2">{formatCurrency(store.total_vanzari)}</td>
-                          <td className="px-3 py-2 font-bold text-indigo-600">{formatPercent(store.proc_realizare_target)}</td>
-                          <td className="px-3 py-2">{formatInt(store.qty_total ?? 0)}</td>
-                          <td className="px-3 py-2">{formatInt(store.nr_bonuri)}</td>
-                          <td className="px-3 py-2">{formatInt(store.nr_agenti)}</td>
-                          <td className="px-3 py-2">{formatInt(store.zile_active)}</td>
-                          <td className="px-3 py-2">{formatCurrency(getStoreDailyAverage(store))}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.target)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.total_vanzari)}</td>
+                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(getStoreDailyAverage(store))}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2079,8 +2588,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     </p>
                   </div>
                   <ExportTableButton
-                    filename={`hub_${historyMonth}_istoric_agenti`}
-                    sheetName={`Agenti istoric ${historyMonth}`}
+                    filename={`hub_${historySelectionSlug}_istoric_agenti`}
+                    sheetName={`Agenti istoric`}
                     rows={sortedHistoryAgents}
                     columns={[
                       { header: 'Agent', value: (row) => row.agent },
@@ -2098,7 +2607,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   />
                 </div>
                 <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-                  <table className="min-w-370 w-full border-collapse text-xs">
+                  <table className={AGENT_TABLE_CLASS}>
                     <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
                       <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
                         {HIST_AGENT_COLUMNS.map((column, i) => (
@@ -2108,7 +2617,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                               active={historyAgentSort.key === column.key}
                               direction={historyAgentSort.direction}
                               onClick={() => handleSortHistoryAgents(column.key)}
-                              className={i === 0 ? 'w-24' : ''}
+                              className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-20 max-w-20' : i === 1 ? 'w-28 max-w-28' : 'max-w-[4.5rem]'}`}
                             />
                           </React.Fragment>
                         ))}
@@ -2120,17 +2629,17 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           key={`${agentRow.agent}-${agentRow.site_code}`}
                           className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                         >
-                          <td className="max-w-0 w-24 truncate px-3 py-2 font-bold">{agentRow.agent}</td>
-                          <td className="max-w-[7rem] truncate px-3 py-2 text-slate-500">{agentRow.locatie}</td>
-                          <td className="px-3 py-2">{formatCurrency(agentRow.target ?? 0)}</td>
-                          <td className="px-3 py-2 font-bold text-indigo-600">{formatCurrency(agentRow.total_vanzari)}</td>
-                          <td className="px-3 py-2">{formatPercent(agentRow.proc_realizare_target)}</td>
-                          <td className="px-3 py-2">{formatInt(agentRow.acc_qty_realizat)}</td>
-                          <td className="px-3 py-2">{formatInt(agentRow.nr_bonuri)}</td>
-                          <td className="px-3 py-2">{formatInt(agentRow.zile_lucrate)}</td>
-                          <td className="px-3 py-2">{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
-                          <td className="px-3 py-2">{formatPercent(agentRow.proc_bon2acc)}</td>
-                          <td className="px-3 py-2">{formatPercent(agentRow.prc_focus_acc_qty)}</td>
+                          <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.agent}</td>
+                          <td className={`max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.locatie}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.target ?? 0)}</td>
+                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatCurrency(agentRow.total_vanzari)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_realizare_target)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.prc_focus_acc_qty)}</td>
                         </tr>
                       ))}
                     </tbody>

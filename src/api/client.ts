@@ -72,7 +72,7 @@ export const client = {
     return { data };
   },
 
-  post: async <T = any>(url: string, data?: any, options?: { headers?: Record<string, string>; params?: Record<string, any> }): Promise<{ data: T }> => {
+  post: async <T = any>(url: string, data?: any, options?: { headers?: Record<string, string>; params?: Record<string, any>; responseType?: 'blob' | 'json' }): Promise<{ data: T }> => {
     let fullUrl = API_BASE_URL === '/' ? url : `${API_BASE_URL}${url}`;
     
     if (options?.params) {
@@ -104,6 +104,10 @@ export const client = {
     });
 
     await handleResponse(response);
+    if (options?.responseType === 'blob') {
+      const blob = await response.blob();
+      return { data: blob as unknown as T };
+    }
     const responseData = await response.json();
     return { data: responseData };
   },

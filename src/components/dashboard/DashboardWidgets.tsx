@@ -460,10 +460,10 @@ export function SortableHeader({
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-200"
+        className="flex max-w-full items-center justify-start gap-0.5 text-left leading-[1.05] transition hover:text-slate-700 dark:hover:text-slate-200"
       >
-        {label}
-        {active ? direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} /> : <ArrowUpDown size={12} />}
+        <span className="min-w-0 whitespace-normal break-words">{label}</span>
+        {active ? direction === 'asc' ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" /> : <ArrowUpDown size={11} className="shrink-0" />}
       </button>
     </th>
   );
