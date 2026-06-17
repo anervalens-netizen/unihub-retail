@@ -56,6 +56,7 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `api/contests.ts` | Fetch `/api/contests/active?month=` (leaderboard concurs, scoped server-side) |
 | `components/Agents.tsx` | Tab Agenti (refactorizat cu useQuery) |
 | `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR/TargetCalculator/**Grile** | Management |
+| `components/AgentEvaluationSubtab.tsx` | Management -> Agenti: toggle intre evaluarea actuala si evaluarea noua 0-100; ambele folosesc aceleasi filtre de luni/manager/magazin, fara componenta de bonus |
 | `components/GrileSubtab.tsx` + `api/grile.ts` | Subtab Grile — verificare K5/L5 vs target+vanzari DB; layout responsive (card pe mobil, grid pe desktop); captions integrate in barele ASM+TL (pliabile); TL fara nume nu afiseaza rand. Vezi `docs/grile-integration-plan.md` |
 | `components/GrileMonthlyPanel.tsx` | Card "Inchidere luna": Finalizeaza / Exporta arhiva / Reset simulare / Reset LIVE + download final/arhiva. Ruleaza nativ in Retail, vizibil doar admin (`/api/grile/monthly/permissions`); poll job arq |
 
@@ -77,6 +78,10 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `routers/target_calculator.py` | `services/target_calculator.py` | `repositories/target_calculator.py` |
 | `routers/visits_report.py` | `services/visits_report.py` | `repositories/visits_report.py` |
 | `routers/grile.py` | `services/grile.py` (+ `services/grile_sheets.py` client Google read-only) | `repositories/grile.py` |
+
+`/api/agents/evaluation` pastreaza evaluarea actuala pe 6 segmente x 0-3 puncte.
+`/api/agents/evaluation-v2` este subsectiunea noua separata: scor 0-100 strict
+de evaluare, status de eligibilitate, flaguri de incredere si trend, fara bonus.
 
 **Auth:** `backend/auth.py` — JWT RS256 validation via JWKS from authentik. All API routers are protected by `require_auth` dependency in `main.py`. Health and metrics endpoints are public.
 
@@ -223,7 +228,7 @@ cd /opt/Mobiup/ops/runners/retail
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate
 - Salarii LEFT JOIN stores conditionat (doar cand regional/asm sunt prezente)
 - Salarii company_name case-insensitive la JOIN (`LOWER()` pe ambele parti)
-- Targetele din tabelul Hub pe agent folosesc `agent_targets` daca exista override pentru `(import_month, site_code, agent)`; altfel raman pe fallback-ul vechi `store_targets / agenti activi`.
+- Targetele din evaluarile pe agent se calculeaza ca `target magazin / zile cu vanzare in locatie * zile cu vanzare agent`, unde zilele locatiei vin din `COUNT(DISTINCT reporting_agent_day.sale_date)`. In evaluarea noua, punctajul targetului se calculeaza lunar si apoi se mediaza ponderat; luna partiala dintr-o selectie multi-luna intra cu pondere `zile disponibile / zile luna`. Ponderile standard sunt 25/20/15/15/10/15; doar luna partiala selectata singura foloseste 10/25/20/20/10/15.
 - Importul pilot din Grile Salarii se ruleaza cu `python backend/scripts/import_grile_agent_targets.py --month YYYY-MM [--apply]` si este limitat implicit la managerul `Andrei Stancu`.
 - Filtre: `MainLayout.hubFilters` shared Hub+Focus; `Agents` uses `agentsFilters` independent
 

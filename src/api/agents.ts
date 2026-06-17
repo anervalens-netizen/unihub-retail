@@ -150,7 +150,6 @@ export interface AgentEvaluationRow {
   total_points: number;
   has_red_segment: boolean;
   qualifier: string;
-  bonus_amount: number;
 }
 
 export interface AgentEvaluationResponse {
@@ -159,6 +158,63 @@ export interface AgentEvaluationResponse {
   asms: AgentEvaluationOption[];
   stores: AgentEvaluationOption[];
   rows: AgentEvaluationRow[];
+}
+
+export interface AgentEvaluationV2Row {
+  month: string;
+  firma: string;
+  site_code: string;
+  locatie: string;
+  regional: string;
+  asm: string;
+  agent: string;
+  total_sales: number;
+  forecast_sales: number;
+  total_quantity: number;
+  working_days: number;
+  receipt_count: number;
+  target_value: number;
+  target_source: string;
+  target_pct: number | null;
+  target_forecast_pct: number | null;
+  is_partial: boolean;
+  period_month_count: number;
+  partial_month_count: number;
+  final_month_count: number;
+  forecast_factor: number;
+  daily_average: number | null;
+  daily_reference: number | null;
+  daily_reference_type: string;
+  daily_vs_reference_pct: number | null;
+  value_reper: number | null;
+  receipt_2plus_count: number;
+  bonuri_pct: number | null;
+  focus_quantity: number;
+  focus_pct: number | null;
+  glass_qty: number;
+  premium_glass_qty: number;
+  premium_glass_pct: number | null;
+  trend_daily_pct: number | null;
+  trend_direction: 'up' | 'down' | 'flat';
+  eligibility_status: 'eligibil' | 'insuficient';
+  confidence_flags: string[];
+  target_score: number | null;
+  daily_score: number | null;
+  bonuri_score: number | null;
+  focus_score: number | null;
+  premium_glass_score: number | null;
+  value_reper_score: number | null;
+  total_score: number | null;
+  max_score: number;
+  rating: string;
+}
+
+export interface AgentEvaluationV2Response {
+  months: AgentEvaluationOption[];
+  firmas: AgentEvaluationOption[];
+  asms: AgentEvaluationOption[];
+  stores: AgentEvaluationOption[];
+  rows: AgentEvaluationV2Row[];
 }
 
 export async function fetchAgentsOverview(query: AgentsQuery): Promise<AgentsOverviewResponse> {
@@ -203,5 +259,16 @@ export async function fetchAgentEvaluation(params: {
   site_code?: string;
 } = {}): Promise<AgentEvaluationResponse> {
   const { data } = await client.get<AgentEvaluationResponse>('/api/agents/evaluation', { params });
+  return data;
+}
+
+export async function fetchAgentEvaluationV2(params: {
+  month?: string;
+  months?: string;
+  firma?: string;
+  asm?: string;
+  site_code?: string;
+} = {}): Promise<AgentEvaluationV2Response> {
+  const { data } = await client.get<AgentEvaluationV2Response>('/api/agents/evaluation-v2', { params });
   return data;
 }

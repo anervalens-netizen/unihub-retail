@@ -33,6 +33,8 @@ from services.filters import normalize_filter, scoped_clauses
 from services.product_lists import get_repo_root, normalize_column_name, resolve_path
 
 
+PromoActualUnitsLoadResult = tuple[dict[tuple[str, str], int] | None, str | None]
+
 _ACTUALS_SITE_ALIASES = {"sitecode", "site_code", "site"}
 _ACTUALS_CODE_ALIASES = {"cod", "item_code", "itemcode", "cod_produs"}
 _ACTUALS_PROMO_QTY_ALIASES = {
@@ -81,7 +83,7 @@ def load_promo_actual_units(
     definition: dict[str, Any],
     *,
     item_codes: list[str],
-) -> tuple[dict[tuple[str, str], int] | None, str | None]:
+) -> PromoActualUnitsLoadResult:
     """Load weekly POS-confirmed promo units from an optional source report.
 
     The report is intentionally optional. If a promotion has no
@@ -105,7 +107,7 @@ def load_promo_actual_units(
         try:
             df = pd.read_excel(source_path, sheet_name=sheet_name, engine=None)
         except Exception as exc:  # pragma: no cover - depends on external Excel parser
-            result = (None, f"Raportul promo `{source_path.name}` nu a putut fi citit: {exc}")
+            result: PromoActualUnitsLoadResult = (None, f"Raportul promo `{source_path.name}` nu a putut fi citit: {exc}")
             _promo_actuals_cache[cache_key] = result
             return result
 

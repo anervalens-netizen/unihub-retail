@@ -87,7 +87,7 @@ Geolocatia a fost eliminata complet din arhitectura aplicatiei.
 Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
 
 - **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM; cardurile expandate includ scorurile magazinelor alocate. Router: `/api/hr`
-- **Agenti** — evaluare agenti ianuarie-mai 2026 pe agentii activi curent, cu alocarea curenta de firma/magazin/manager. Router: `/api/agents/evaluation`
+- **Agenti** — evaluare agenti pe agentii activi curent, cu alocarea curenta de firma/magazin/manager. Subtabul are doua subsectiuni comutabile: evaluarea actuala (`/api/agents/evaluation`) si evaluarea noua, separata (`/api/agents/evaluation-v2`).
 - **Magazine (CRM, istoric intern)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
 - **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
 - **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
@@ -103,6 +103,24 @@ Pragurile sunt:
 - % Bonuri: 3p >=35%, 2p 30-34%, 1p 25-29%, 0p <25%.
 - Focus: 3p >=8%, 2p 7-7,9%, 1p 6-6,9%, 0p <6%.
 - Folii Premium: 3p >=50%, 2p 40-49%, 1p 30-39%, 0p <30%.
+
+Evaluarea noua din acelasi subtab este o subsectiune separata, nu o extensie a
+scorului vechi. Foloseste scor 0-100 strict pentru evaluare, fara componenta de
+bonus, si calculeaza separat: target, productivitate zilnica, Bon2Acc, Focus,
+Folii Premium, valoare reper si trend. Pentru luni partiale marcheaza scorul ca
+provizoriu prin flaguri de incredere si reduce greutatea targetului. Agentii cu
+volum insuficient de zile/bonuri raman vizibili, dar sunt marcati `insuficient`
+si nu trebuie folositi ca reper de leaderboard. Productivitatea compara mai intai
+cu colegii din magazin, apoi cu istoricul locatiei si abia la final cu media
+managerului. Targetul se calculeaza pe zile lucrate: `target magazin / zile cu vanzare
+in locatie * zile cu vanzare agent`. Punctajul de target se calculeaza lunar si
+apoi se mediaza ponderat; daca selectia include o luna partiala, luna partiala
+intra in target cu ponderea zile disponibile / zile luna, nu schimba toata
+selectia pe regula de luna partiala. Ponderile standard sunt Target 25p,
+Productivitate 20p, Bon2Acc 15p, Focus 15p, Folii Premium 10p si Valoare reper
+15p; doar cand este selectata o singura luna partiala se folosesc ponderile
+provizorii Target 10p, Productivitate 25p, Bon2Acc 20p, Focus 20p, Folii
+Premium 10p si Valoare reper 15p.
 
 Folii Premium sunt calculate pe aceeasi baza ca in Focus: produse din categoria
 `Folii Sticla` cu `SAPPHIRE`, `CERAMIC` sau `CORNING`, raportate la totalul

@@ -714,7 +714,6 @@ class AgentEvaluationRow(BaseModel):
     total_points: int
     has_red_segment: bool
     qualifier: str
-    bonus_amount: int
 
 
 class AgentEvaluationResponse(BaseModel):
@@ -723,6 +722,71 @@ class AgentEvaluationResponse(BaseModel):
     asms: list[AgentEvaluationOption]
     stores: list[AgentEvaluationOption]
     rows: list[AgentEvaluationRow]
+
+
+class AgentEvaluationV2Component(BaseModel):
+    value: Decimal | None
+    reference: Decimal | None = None
+    score: Decimal | None
+    weight: int
+    label: str | None = None
+
+
+class AgentEvaluationV2Row(BaseModel):
+    month: str
+    firma: str
+    site_code: str
+    locatie: str
+    regional: str
+    asm: str
+    agent: str
+    total_sales: Decimal
+    forecast_sales: Decimal
+    total_quantity: int
+    working_days: int
+    receipt_count: int
+    target_value: Decimal
+    target_source: str
+    target_pct: Decimal | None
+    target_forecast_pct: Decimal | None
+    is_partial: bool
+    period_month_count: int
+    partial_month_count: int
+    final_month_count: int
+    forecast_factor: Decimal
+    daily_average: Decimal | None
+    daily_reference: Decimal | None
+    daily_reference_type: str
+    daily_vs_reference_pct: Decimal | None
+    value_reper: Decimal | None
+    receipt_2plus_count: int
+    bonuri_pct: Decimal | None
+    focus_quantity: int
+    focus_pct: Decimal | None
+    glass_qty: int
+    premium_glass_qty: int
+    premium_glass_pct: Decimal | None
+    trend_daily_pct: Decimal | None
+    trend_direction: str
+    eligibility_status: str
+    confidence_flags: list[str]
+    target_score: Decimal | None
+    daily_score: Decimal | None
+    bonuri_score: Decimal | None
+    focus_score: Decimal | None
+    premium_glass_score: Decimal | None
+    value_reper_score: Decimal | None
+    total_score: Decimal | None
+    max_score: int = 100
+    rating: str
+
+
+class AgentEvaluationV2Response(BaseModel):
+    months: list[AgentEvaluationOption]
+    firmas: list[AgentEvaluationOption]
+    asms: list[AgentEvaluationOption]
+    stores: list[AgentEvaluationOption]
+    rows: list[AgentEvaluationV2Row]
 
 
 class PromoTopStore(BaseModel):

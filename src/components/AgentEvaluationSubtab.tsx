@@ -2,9 +2,12 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import {
   fetchAgentEvaluation,
+  fetchAgentEvaluationV2,
   type AgentEvaluationOption,
   type AgentEvaluationRow,
   type AgentEvaluationResponse,
+  type AgentEvaluationV2Row,
+  type AgentEvaluationV2Response,
 } from '../api/agents';
 import { ExportTableButton } from './ExportTableButton';
 
@@ -93,7 +96,7 @@ function MechanismCard() {
         <div>
           <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Mecanism analiză agenți</h4>
           <p className="mt-0.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-            Maxim 18 puncte. Bonus: 18p = 300 lei, 16-17p = 200 lei, 14-15p = 100 lei fără segment roșu.
+            Maxim 18 puncte. Evaluare pe 6 segmente comerciale, fiecare cu 0-3 puncte.
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-white/80 dark:bg-slate-900/70 px-2.5 py-1 text-xs font-bold text-indigo-600 dark:text-indigo-300">
@@ -130,9 +133,6 @@ function MechanismCard() {
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
-              Bonus: 18p = 300 lei, 16-17p = 200 lei, 14-15p = 100 lei doar dacă niciun segment nu are 0 puncte.
-            </p>
           </div>
         )}
       </div>
@@ -163,7 +163,7 @@ function CompactSummary({
   children,
 }: {
   rows: AgentEvaluationRow[];
-  summary: { agents: number; avgPoints: number; totalBonus: number; premiumRows: number };
+  summary: { agents: number; avgPoints: number; totalSales: number; premiumRows: number };
   children?: ReactNode;
 }) {
   return (
@@ -172,7 +172,7 @@ function CompactSummary({
         {[
           { label: 'Agenți', value: String(summary.agents), sub: `${rows.length} rânduri` },
           { label: 'Punctaj', value: summary.avgPoints.toFixed(1), sub: 'din 18 pct' },
-          { label: 'Bonus', value: `${formatMoney(summary.totalBonus)} lei`, sub: 'total filtrat' },
+          { label: 'Vânzare', value: formatMoney(summary.totalSales), sub: 'total filtrat' },
           { label: 'Folii', value: String(summary.premiumRows), sub: 'cu 2+ pct' },
         ].map((item) => (
           <div key={item.label} className="min-w-0">
@@ -373,9 +373,6 @@ function AgentRow({ row }: { row: AgentEvaluationRow }) {
         </span>
         <div className="text-[10px] text-slate-400 mt-0.5">{row.qualifier}</div>
       </td>
-      <td className="px-2 py-2 text-right text-xs font-semibold text-slate-700 dark:text-slate-200">
-        {row.bonus_amount ? `${row.bonus_amount} lei` : '-'}
-      </td>
     </tr>
   );
 }
@@ -391,8 +388,7 @@ type SortKey =
   | 'bonuri_pct'
   | 'focus_pct'
   | 'premium_glass_pct'
-  | 'total_points'
-  | 'bonus_amount';
+  | 'total_points';
 
 const NUMERIC_SORT_KEYS = new Set<SortKey>([
   'total_sales',
@@ -404,7 +400,6 @@ const NUMERIC_SORT_KEYS = new Set<SortKey>([
   'focus_pct',
   'premium_glass_pct',
   'total_points',
-  'bonus_amount',
 ]);
 
 function getSortValue(row: AgentEvaluationRow, key: SortKey): string | number {
@@ -451,26 +446,431 @@ function SortHeader({
   );
 }
 
+function V2SortHeader({
+  label,
+  sortKey,
+  align = 'left',
+  currentKey,
+  direction,
+  onSort,
+}: {
+  label: string;
+  sortKey: V2SortKey;
+  align?: 'left' | 'right';
+  currentKey: V2SortKey;
+  direction: 'asc' | 'desc';
+  onSort: (key: V2SortKey) => void;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th className={`px-2 py-2 ${align === 'right' ? 'text-right' : ''}`}>
+      <button
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''} w-full hover:text-slate-700 dark:hover:text-slate-200`}
+      >
+        <span>{label}</span>
+        {active ? (
+          direction === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
+        ) : (
+          <span className="w-[11px]" />
+        )}
+      </button>
+    </th>
+  );
+}
+
+type V2SortKey =
+  | 'agent'
+  | 'total_sales'
+  | 'total_score'
+  | 'target_pct'
+  | 'daily_vs_reference_pct'
+  | 'bonuri_pct'
+  | 'focus_pct'
+  | 'premium_glass_pct'
+  | 'value_reper'
+  | 'trend_daily_pct'
+  | 'eligibility_status';
+
+const V2_NUMERIC_SORT_KEYS = new Set<V2SortKey>([
+  'total_sales',
+  'total_score',
+  'target_pct',
+  'daily_vs_reference_pct',
+  'bonuri_pct',
+  'focus_pct',
+  'premium_glass_pct',
+  'value_reper',
+  'trend_daily_pct',
+]);
+
+function getV2SortValue(row: AgentEvaluationV2Row, key: V2SortKey): string | number {
+  if (key === 'agent') return `${row.agent} ${row.locatie}`.toLowerCase();
+  if (key === 'target_pct') return row.target_pct ?? Number.NEGATIVE_INFINITY;
+  const value = row[key];
+  if (value === null || value === undefined) return Number.NEGATIVE_INFINITY;
+  if (V2_NUMERIC_SORT_KEYS.has(key)) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : Number.NEGATIVE_INFINITY;
+  }
+  return String(value).toLowerCase();
+}
+
+function score100Color(score: number | null | undefined, status?: string) {
+  if (status === 'insuficient') return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300';
+  if (score === null || score === undefined) return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300';
+  if (score >= 75) return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
+  if (score >= 50) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+  return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
+}
+
+function componentWeights(row: AgentEvaluationV2Row) {
+  const isSinglePartialMonth = row.is_partial && row.period_month_count === 1;
+  return isSinglePartialMonth
+    ? { target: 10, daily: 25, bonuri: 20, focus: 20, premium: 10, value: 15 }
+    : { target: 25, daily: 20, bonuri: 15, focus: 15, premium: 10, value: 15 };
+}
+
+function flagLabel(flag: string) {
+  const labels: Record<string, string> = {
+    luna_partiala: 'lună parțială',
+    target_partial_din_grile: 'target parțial',
+    target_alocat_din_magazin: 'target pe zile',
+    reper_istoric_locatie: 'reper locație',
+    reper_media_manager: 'reper manager',
+    reper_none: 'fără reper',
+    folii_volum_mic: 'folii volum mic',
+    volum_insuficient: 'volum insuficient',
+  };
+  return labels[flag] ?? flag.replaceAll('_', ' ');
+}
+
+function referenceLabel(value: string) {
+  if (value === 'colegi') return 'colegi';
+  if (value === 'istoric_locatie') return 'locație';
+  if (value === 'media_manager') return 'manager';
+  return 'fără reper';
+}
+
+function targetSourceLabel(value: string) {
+  if (value === 'agent_target') return 'target agent';
+  if (value === 'partial_agent_target') return 'target mixt';
+  return 'target pe zile';
+}
+
+function ComponentScoreCell({
+  value,
+  score,
+  weight,
+  suffix = '%',
+  sub,
+}: {
+  value: number | null;
+  score: number | null;
+  weight: number;
+  suffix?: '%' | 'lei';
+  sub?: string;
+}) {
+  return (
+    <td className="px-2 py-2 text-right text-xs">
+      <div className="font-medium text-slate-700 dark:text-slate-200">
+        {suffix === 'lei' ? formatNumber(value, 0) : formatPct(value)}
+      </div>
+      {sub && <div className="text-[10px] text-slate-400">{sub}</div>}
+      <div className={`text-[10px] font-semibold ${score === null ? 'text-slate-400' : score >= weight * 0.66 ? 'text-green-600 dark:text-green-400' : score > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
+        {score === null ? '-' : `${Number(score).toFixed(1)}/${weight}`}
+      </div>
+    </td>
+  );
+}
+
+function AgentV2Row({ row }: { row: AgentEvaluationV2Row }) {
+  const weights = componentWeights(row);
+  const targetValue = row.target_pct;
+  const trendClass = row.trend_direction === 'up'
+    ? 'text-green-600 dark:text-green-400'
+    : row.trend_direction === 'down'
+      ? 'text-red-600 dark:text-red-400'
+      : 'text-slate-500 dark:text-slate-400';
+
+  return (
+    <tr className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+      <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-slate-600 dark:text-slate-300">
+        <MonthLabel month={row.month} />
+      </td>
+      <td className="px-2 py-2 min-w-[150px] max-w-[190px]">
+        <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{row.agent}</div>
+        <div className="mt-0.5 flex items-center gap-1 min-w-0">
+          <FirmBadge firma={row.firma} />
+          <span className="truncate text-[10px] text-slate-400">{row.locatie}</span>
+        </div>
+      </td>
+      <td className="px-2 py-2 text-right text-xs text-slate-600 dark:text-slate-300">
+        <div className="font-semibold">{formatMoney(row.total_sales)}</div>
+        <div className="text-[10px] text-slate-400">{row.working_days} zile · {row.receipt_count} bonuri</div>
+      </td>
+      <td className="px-2 py-2 text-right whitespace-nowrap">
+        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold tabular-nums ${score100Color(row.total_score, row.eligibility_status)}`}>
+          {row.total_score === null ? '-' : `${Number(row.total_score).toFixed(1)}`}
+        </span>
+        <div className="text-[10px] text-slate-400 mt-0.5">{row.rating}</div>
+      </td>
+      <td className="px-2 py-2 text-left min-w-[145px]">
+        <div className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${row.eligibility_status === 'eligibil' ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+          {row.eligibility_status}
+        </div>
+        <div className="mt-1 flex max-w-[155px] flex-wrap justify-start gap-1">
+          {row.confidence_flags.slice(0, 3).map((flag) => (
+            <span key={flag} className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              {flagLabel(flag)}
+            </span>
+          ))}
+        </div>
+      </td>
+      <ComponentScoreCell
+        value={targetValue}
+        score={row.target_score}
+        weight={weights.target}
+        sub={`${targetSourceLabel(row.target_source)} · punctaj lunar`}
+      />
+      <ComponentScoreCell
+        value={row.daily_vs_reference_pct}
+        score={row.daily_score}
+        weight={weights.daily}
+        sub={`${formatNumber(row.daily_average, 0)} lei/zi vs ${referenceLabel(row.daily_reference_type)}`}
+      />
+      <ComponentScoreCell value={row.bonuri_pct} score={row.bonuri_score} weight={weights.bonuri} />
+      <ComponentScoreCell value={row.focus_pct} score={row.focus_score} weight={weights.focus} />
+      <ComponentScoreCell
+        value={row.premium_glass_pct}
+        score={row.premium_glass_score}
+        weight={weights.premium}
+        sub={`${row.premium_glass_qty}/${row.glass_qty}`}
+      />
+      <ComponentScoreCell value={row.value_reper} score={row.value_reper_score} weight={weights.value} suffix="lei" />
+      <td className="px-2 py-2 text-right text-xs">
+        <div className={`font-semibold ${trendClass}`}>{row.trend_daily_pct === null ? '-' : `${Number(row.trend_daily_pct).toFixed(1)}%`}</div>
+        <div className="text-[10px] text-slate-400">vs 3 luni</div>
+      </td>
+    </tr>
+  );
+}
+
+function NewEvaluationSubsection({
+  rows,
+  sortKey,
+  sortDirection,
+  onSort,
+}: {
+  rows: AgentEvaluationV2Row[];
+  sortKey: V2SortKey;
+  sortDirection: 'asc' | 'desc';
+  onSort: (key: V2SortKey) => void;
+}) {
+  const [showMechanism, setShowMechanism] = useState(true);
+  const summary = useMemo(() => {
+    const scored = rows.filter((row) => row.total_score !== null);
+    const agents = new Set(rows.map((row) => row.agent)).size;
+    const avgScore = scored.length ? scored.reduce((sum, row) => sum + Number(row.total_score), 0) / scored.length : 0;
+    const eligible = rows.filter((row) => row.eligibility_status === 'eligibil').length;
+    const partial = rows.filter((row) => row.is_partial).length;
+    return { agents, avgScore, eligible, partial };
+  }, [rows]);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/20">
+        <button
+          type="button"
+          onClick={() => setShowMechanism((value) => !value)}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+        >
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
+              Cum se face evaluarea
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              Scor 0-100, subsectiune separata de evaluarea actuala, fara componenta de bonus.
+            </div>
+          </div>
+          {showMechanism ? <ChevronUp size={14} className="text-indigo-500" /> : <ChevronDown size={14} className="text-indigo-500" />}
+        </button>
+        {showMechanism && (
+          <div className="border-t border-indigo-100 dark:border-indigo-900/40 px-3 pb-3 pt-2">
+            <div className="space-y-2 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+              <div className="rounded-lg border border-indigo-100 bg-white/80 p-2.5 dark:border-indigo-900/50 dark:bg-slate-900/50">
+                <div className="font-semibold text-slate-800 dark:text-slate-100">Regula generala</div>
+                <p className="mt-0.5">
+                  Evaluarea noua este independenta de scorul vechi. Fiecare indicator primeste puncte dupa praguri fixe:
+                  sub pragul minim primeste 0, pragul minim primeste o treime din punctaj, pragul mediu primeste doua treimi,
+                  iar pragul bun primeste punctajul maxim. Scorul final este normalizat la 100.
+                </p>
+              </div>
+              <div className="rounded-lg border border-indigo-100 bg-white/80 p-2.5 dark:border-indigo-900/50 dark:bg-slate-900/50">
+                <div className="font-semibold text-slate-800 dark:text-slate-100">Ponderi</div>
+                <p className="mt-0.5">
+                  Selectie normala sau multi-luna: Target 25p, Productivitate 20p, Bon2Acc 15p, Focus 15p,
+                  Folii Premium 10p, Valoare reper 15p. Daca selectezi doar luna partiala, scorul devine provizoriu:
+                  Target 10p, Productivitate 25p, Bon2Acc 20p, Focus 20p, Folii Premium 10p, Valoare reper 15p.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">1. Target: max 25p, luna curenta singura 10p</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  In fiecare luna calculam targetul agentului asa: target magazin / zile cu vanzare in locatie x zile cu vanzare agent.
+                  Luna primeste nota proprie: sub 80% = 0, 80-89.9% = 1/3, 90-99.9% = 2/3, minimum 100% = maxim.
+                  Pentru selectie multi-luna, punctajul target este media ponderata a notelor lunare, nu doar procentul total agregat.
+                  Procentul afisat in tabel este procentul agregat, iar punctele sunt nota lunara ponderata.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">2. Productivitate zilnica: max 20p/25p</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  Calculam vanzare / zile lucrate si comparam cu reperul disponibil: mediana colegilor din magazin,
+                  apoi istoricul locatiei pe ultimele 3 luni, apoi media managerului. Puncte: sub 85% = 0,
+                  85-99.9% = 1/3, 100-114.9% = 2/3, minimum 115% = maxim.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">3. Bon2Acc: max 15p/20p</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  Masuram procentul de bonuri cu minimum 2 produse din total bonuri agent. Puncte: sub 25% = 0,
+                  25-29.9% = 1/3, 30-34.9% = 2/3, minimum 35% = maxim.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">4. Focus: max 15p/20p</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  Masuram produse focus / total produse vandute de agent. Puncte: sub 6% = 0, 6-7.9% = 1/3,
+                  8-9.9% = 2/3, minimum 10% = maxim.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">5. Folii Premium: max 10p</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  Masuram folii premium din total folii eligibile. Premium inseamna modelele marcate Sapphire, Ceramic sau Corning.
+                  Daca agentul are sub 5 folii eligibile, indicatorul este scos din scor si scorul se normalizeaza fara el.
+                  Puncte: sub 30% = 0, 30-39.9% = 1/3, 40-49.9% = 2/3, minimum 50% = maxim.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">6. Valoare reper: max 15p</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  Masuram vanzare / total produse, adica valoarea medie per produs vandut. Puncte: sub 90 lei = 0,
+                  90-94.9 lei = 1/3, 95-99.9 lei = 2/3, minimum 100 lei = maxim.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">7. Eligibilitate si rating</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  Un agent este eligibil daca are volum minim: luna finala cere 8 zile si 30 bonuri; luna partiala singura cere
+                  40% din zilele disponibile si 20 bonuri. La selectie multi-luna, lunile inchise cer 8 zile si 30 bonuri per luna,
+                  iar luna partiala cere 40% din zilele disponibile si 20 bonuri.
+                  Rating: 85+ Excelent, 75-84.9 Foarte Bun, 65-74.9 Bun, 50-64.9 Risc, sub 50 Critic.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">8. Luna partiala si trend</div>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                  Daca selectezi doar luna partiala, scorul este provizoriu: targetul cantareste 10p, productivitatea 25p,
+                  Bon2Acc 20p si Focus 20p. Daca selectezi mai multe luni si una este partiala, luna partiala intra in
+                  target cu ponderea zile disponibile / zile luna, iar lunile inchise raman dominante.
+                </p>
+              </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { label: 'Agenți', value: String(summary.agents), sub: `${rows.length} rânduri` },
+            { label: 'Scor', value: summary.avgScore.toFixed(1), sub: 'medie /100' },
+            { label: 'Eligibili', value: String(summary.eligible), sub: 'volum valid' },
+            { label: 'Provizorii', value: String(summary.partial), sub: 'lună parțială' },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 truncate">{item.label}</div>
+              <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums truncate">{item.value}</div>
+              <div className="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
+        <div className="max-h-[68vh] overflow-auto">
+          <table className="min-w-[1320px] w-full text-left">
+            <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-2">Lună</th>
+                <V2SortHeader label="Agent" sortKey="agent" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Vânzare" sortKey="total_sales" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Scor" sortKey="total_score" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Status" sortKey="eligibility_status" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Target" sortKey="target_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Productivitate" sortKey="daily_vs_reference_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Bon2Acc" sortKey="bonuri_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Focus" sortKey="focus_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Folii Premium" sortKey="premium_glass_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Valoare reper" sortKey="value_reper" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+                <V2SortHeader label="Trend" sortKey="trend_daily_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={onSort} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <AgentV2Row key={`${row.month}:${row.site_code}:${row.agent}:v2`} row={row} />
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">
+                    Fără agenți pentru filtrele selectate.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const EMPTY_RESPONSE: AgentEvaluationResponse = { months: [], firmas: [], asms: [], stores: [], rows: [] };
+const EMPTY_V2_RESPONSE: AgentEvaluationV2Response = { months: [], firmas: [], asms: [], stores: [], rows: [] };
 
 export function AgentEvaluationSubtab() {
   const [data, setData] = useState<AgentEvaluationResponse>(EMPTY_RESPONSE);
+  const [v2Data, setV2Data] = useState<AgentEvaluationV2Response>(EMPTY_V2_RESPONSE);
+  const [mode, setMode] = useState<'current' | 'new'>('current');
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [firma, setFirma] = useState('');
   const [asm, setAsm] = useState('');
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('total_points');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [v2SortKey, setV2SortKey] = useState<V2SortKey>('total_score');
+  const [v2SortDirection, setV2SortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      setData(await fetchAgentEvaluation({
+      const params = {
         months: selectedMonths.length ? selectedMonths.join(',') : undefined,
         asm: asm || undefined,
         site_code: selectedStores.length ? selectedStores.join(',') : undefined,
-      }));
+      };
+      const [legacyResponse, v2Response] = await Promise.all([
+        fetchAgentEvaluation(params),
+        fetchAgentEvaluationV2(params),
+      ]);
+      setData(legacyResponse);
+      setV2Data(v2Response);
     } finally {
       setLoading(false);
     }
@@ -510,6 +910,24 @@ export function AgentEvaluationSubtab() {
     });
   }, [data.rows, firma, sortKey, sortDirection]);
 
+  const v2Rows = useMemo(() => {
+    const filtered = firma
+      ? v2Data.rows.filter((row) => row.firma.toLowerCase() === firma.toLowerCase())
+      : v2Data.rows;
+
+    return [...filtered].sort((a, b) => {
+      const av = getV2SortValue(a, v2SortKey);
+      const bv = getV2SortValue(b, v2SortKey);
+      let result = 0;
+      if (typeof av === 'number' && typeof bv === 'number') {
+        result = av - bv;
+      } else {
+        result = String(av).localeCompare(String(bv), 'ro');
+      }
+      return v2SortDirection === 'asc' ? result : -result;
+    });
+  }, [v2Data.rows, firma, v2SortKey, v2SortDirection]);
+
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
       setSortDirection((value) => value === 'asc' ? 'desc' : 'asc');
@@ -519,13 +937,55 @@ export function AgentEvaluationSubtab() {
     setSortDirection(key === 'agent' || key === 'month' ? 'asc' : 'desc');
   };
 
+  const handleV2Sort = (key: V2SortKey) => {
+    if (key === v2SortKey) {
+      setV2SortDirection((value) => value === 'asc' ? 'desc' : 'asc');
+      return;
+    }
+    setV2SortKey(key);
+    setV2SortDirection(key === 'agent' || key === 'eligibility_status' ? 'asc' : 'desc');
+  };
+
   const summary = useMemo(() => {
     const agents = new Set(rows.map((row) => row.agent)).size;
     const avgPoints = rows.length ? rows.reduce((sum, row) => sum + row.total_points, 0) / rows.length : 0;
-    const totalBonus = rows.reduce((sum, row) => sum + row.bonus_amount, 0);
+    const totalSales = rows.reduce((sum, row) => sum + row.total_sales, 0);
     const premiumRows = rows.filter((row) => row.premium_glass_points >= 2).length;
-    return { agents, avgPoints, totalBonus, premiumRows };
+    return { agents, avgPoints, totalSales, premiumRows };
   }, [rows]);
+
+  const filterControls = (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5 sm:grid-cols-[160px_86px_150px_minmax(260px,1fr)]">
+      <MonthDropdown
+        months={data.months}
+        selectedMonths={selectedMonths}
+        onToggle={toggleMonth}
+        onClear={() => setSelectedMonths([])}
+      />
+      <FirmSelector options={data.firmas} selected={firma} onChange={setFirma} />
+      <select
+        value={asm}
+        onChange={(e) => {
+          setAsm(e.target.value);
+          setSelectedStores([]);
+        }}
+        className="col-span-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 sm:col-span-1"
+      >
+        <option value="">Manageri</option>
+        {data.asms.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+      <div className="col-span-2 sm:col-span-1">
+        <StoreDropdown
+          stores={data.stores}
+          selectedStores={selectedStores}
+          onToggle={toggleStore}
+          onClear={() => setSelectedStores([])}
+        />
+      </div>
+    </div>
+  );
 
   return (
     <div className="p-3 md:p-4 space-y-3">
@@ -534,104 +994,134 @@ export function AgentEvaluationSubtab() {
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Analiză agenți</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">Din ianuarie 2025</p>
         </div>
+        <div className="inline-flex h-9 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
+          {[
+            { key: 'current', label: 'Evaluare actuală' },
+            { key: 'new', label: 'Evaluare nouă' },
+          ].map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setMode(item.key as 'current' | 'new')}
+              className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                mode === item.key
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
         <button
           onClick={load}
           className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500"
         >
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
-        <ExportTableButton
-          filename="management_agenti"
-          sheetName="Management Agenti"
-          rows={rows}
-          columns={[
-            { header: 'Luna', value: (row) => row.month },
-            { header: 'Firma', value: (row) => row.firma },
-            { header: 'Agent', value: (row) => row.agent },
-            { header: 'Magazin', value: (row) => row.locatie },
-            { header: 'Vanzare', value: (row) => formatMoney(row.total_sales) },
-            { header: 'Target', value: (row) => formatMoney(row.target_value) },
-            { header: '% Target', value: (row) => formatPct(row.target_pct) },
-            { header: 'Medie zilnica', value: (row) => formatNumber(row.daily_average, 0) },
-            { header: 'Valoare reper', value: (row) => formatNumber(row.value_reper, 0) },
-            { header: '% Bonuri', value: (row) => formatPct(row.bonuri_pct) },
-            { header: 'Focus', value: (row) => formatPct(row.focus_pct) },
-            { header: 'Folii Premium', value: (row) => formatPct(row.premium_glass_pct) },
-            { header: 'Scor', value: (row) => `${row.total_points}/18` },
-            { header: 'Bonus', value: (row) => row.bonus_amount ? `${row.bonus_amount} lei` : '' },
-          ]}
-        />
-      </div>
-
-      <MechanismCard />
-
-      <CompactSummary rows={rows} summary={summary}>
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5 sm:grid-cols-[160px_86px_150px_minmax(260px,1fr)]">
-          <MonthDropdown
-            months={data.months}
-            selectedMonths={selectedMonths}
-            onToggle={toggleMonth}
-            onClear={() => setSelectedMonths([])}
+        {mode === 'current' ? (
+          <ExportTableButton
+            filename="management_agenti_evaluare_actuala"
+            sheetName="Evaluare Actuala"
+            rows={rows}
+            columns={[
+              { header: 'Luna', value: (row) => row.month },
+              { header: 'Firma', value: (row) => row.firma },
+              { header: 'Agent', value: (row) => row.agent },
+              { header: 'Magazin', value: (row) => row.locatie },
+              { header: 'Vanzare', value: (row) => formatMoney(row.total_sales) },
+              { header: 'Target', value: (row) => formatMoney(row.target_value) },
+              { header: '% Target', value: (row) => formatPct(row.target_pct) },
+              { header: 'Medie zilnica', value: (row) => formatNumber(row.daily_average, 0) },
+              { header: 'Valoare reper', value: (row) => formatNumber(row.value_reper, 0) },
+              { header: 'Bon2Acc', value: (row) => formatPct(row.bonuri_pct) },
+              { header: 'Focus', value: (row) => formatPct(row.focus_pct) },
+              { header: 'Folii Premium', value: (row) => formatPct(row.premium_glass_pct) },
+              { header: 'Scor', value: (row) => `${row.total_points}/18` },
+              { header: 'Calificativ', value: (row) => row.qualifier },
+            ]}
           />
-          <FirmSelector options={data.firmas} selected={firma} onChange={setFirma} />
-          <select
-            value={asm}
-            onChange={(e) => {
-              setAsm(e.target.value);
-              setSelectedStores([]);
-            }}
-            className="col-span-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 sm:col-span-1"
-          >
-            <option value="">Manageri</option>
-            {data.asms.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <div className="col-span-2 sm:col-span-1">
-            <StoreDropdown
-              stores={data.stores}
-              selectedStores={selectedStores}
-              onToggle={toggleStore}
-              onClear={() => setSelectedStores([])}
-            />
-          </div>
-        </div>
-      </CompactSummary>
-
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
-        <div className="max-h-[68vh] overflow-auto">
-          <table className="min-w-[1060px] xl:min-w-0 w-full text-left">
-            <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
-              <tr>
-                <SortHeader label="Lună" sortKey="month" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Agent" sortKey="agent" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Vânzare" sortKey="total_sales" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Target" sortKey="target_value" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="% Target" sortKey="target_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Medie zilnică" sortKey="daily_average" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Valoare reper" sortKey="value_reper" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="% Bonuri" sortKey="bonuri_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Focus" sortKey="focus_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Folii Premium" sortKey="premium_glass_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Scor" sortKey="total_points" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                <SortHeader label="Bonus" sortKey="bonus_amount" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <AgentRow key={`${row.month}:${row.site_code}:${row.agent}`} row={row} />
-              ))}
-              {!loading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">
-                    Fără agenți pentru filtrele selectate.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        ) : (
+          <ExportTableButton
+            filename="management_agenti_evaluare_noua"
+            sheetName="Evaluare Noua"
+            rows={v2Rows}
+            columns={[
+              { header: 'Luna', value: (row) => row.month },
+              { header: 'Firma', value: (row) => row.firma },
+              { header: 'Agent', value: (row) => row.agent },
+              { header: 'Magazin', value: (row) => row.locatie },
+              { header: 'Vanzare', value: (row) => formatMoney(row.total_sales) },
+              { header: 'Scor', value: (row) => row.total_score === null ? '' : Number(row.total_score).toFixed(1) },
+              { header: 'Rating', value: (row) => row.rating },
+              { header: 'Status', value: (row) => row.eligibility_status },
+              { header: 'Flaguri', value: (row) => row.confidence_flags.map(flagLabel).join(', ') },
+              { header: '% Target', value: (row) => formatPct(row.target_pct) },
+              { header: 'Productivitate vs reper', value: (row) => formatPct(row.daily_vs_reference_pct) },
+              { header: 'Bon2Acc', value: (row) => formatPct(row.bonuri_pct) },
+              { header: 'Focus', value: (row) => formatPct(row.focus_pct) },
+              { header: 'Folii Premium', value: (row) => formatPct(row.premium_glass_pct) },
+              { header: 'Valoare reper', value: (row) => formatNumber(row.value_reper, 0) },
+              { header: 'Trend 3 luni', value: (row) => formatPct(row.trend_daily_pct) },
+            ]}
+          />
+        )}
       </div>
+
+      {mode === 'current' ? (
+        <>
+          <MechanismCard />
+          <CompactSummary rows={rows} summary={summary}>
+            {filterControls}
+          </CompactSummary>
+
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
+            <div className="max-h-[68vh] overflow-auto">
+              <table className="min-w-[1060px] xl:min-w-0 w-full text-left">
+                <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <SortHeader label="Lună" sortKey="month" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Agent" sortKey="agent" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Vânzare" sortKey="total_sales" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Target" sortKey="target_value" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="% Target" sortKey="target_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Medie zilnică" sortKey="daily_average" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Valoare reper" sortKey="value_reper" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="% Bonuri" sortKey="bonuri_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Focus" sortKey="focus_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Folii Premium" sortKey="premium_glass_pct" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                    <SortHeader label="Scor" sortKey="total_points" align="right" currentKey={sortKey} direction={sortDirection} onSort={handleSort} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <AgentRow key={`${row.month}:${row.site_code}:${row.agent}`} row={row} />
+                  ))}
+                  {!loading && rows.length === 0 && (
+                    <tr>
+                      <td colSpan={11} className="px-3 py-8 text-center text-sm text-slate-400">
+                        Fără agenți pentru filtrele selectate.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+            {filterControls}
+          </div>
+          <NewEvaluationSubsection
+            rows={v2Rows}
+            sortKey={v2SortKey}
+            sortDirection={v2SortDirection}
+            onSort={handleV2Sort}
+          />
+        </>
+      )}
     </div>
   );
 }
