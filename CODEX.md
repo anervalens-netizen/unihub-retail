@@ -75,6 +75,8 @@ Nu confunda:
 - `promo_discounted_units` = produse reduse, 1 per bon calificat.
 - `promo_active_stores` si `promo_active_agents` = magazine/agenti cu bonuri
   co-purchase.
+- In `top_stores`, `promo_bons` este campul pentru Top Magazine — Promo, iar
+  `qty` ramane cantitatea incentive neta pentru Top Magazine — Incentive.
 
 Validare Codex pe date reale mai, cu config mutat temporar pe mai:
 

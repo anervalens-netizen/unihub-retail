@@ -69,6 +69,9 @@ dedicate (`promo_qualifying_bons`, `promo_discounted_units`,
 Pentru incentive, unitatile reduse din toate promotiile active ale lunii sunt
 excluse din cantitate si valoare, indiferent ce promotie este selectata in
 tabul Promo.
+In raspunsul Focus, `top_stores.qty` reprezinta unitati incentive nete pentru
+cardul **Top Magazine — Incentive**, iar `top_stores.promo_bons` reprezinta
+bonuri co-purchase pentru cardul **Top Magazine — Promo**.
 
 ### Fisa de vizita
 Permite inregistrarea si urmarirea vizitelor in magazine:

@@ -730,6 +730,7 @@ class PromoTopStore(BaseModel):
     qty: int
     total_qty: int
     category_qty: int
+    promo_bons: int = 0
     incentive_value: float = 0.0
     achievement: float | None = None  # ratio 0-1, None = no target configured
     firma: str = ""

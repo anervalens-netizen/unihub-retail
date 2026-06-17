@@ -428,11 +428,11 @@ class CampaignsService:
                 store_rows = await self.repo.fetch_promo_store_rows(promo_clauses, promo_params)
                 top_stores = [
                     PromoTopStore(
-                        # qty = bonuri promo calificate (co-purchase) per magazin, nu cantitate simpla
                         store_name=f"{row['site_code']} - {row['locatie']}",
-                        qty=promo_bonuri_by_store.get(row["site_code"], 0),
+                        qty=0,
                         total_qty=row["total_qty"],
                         category_qty=0,
+                        promo_bons=promo_bonuri_by_store.get(row["site_code"], 0),
                         incentive_value=0.0,
                         achievement=store_achievements.get(row["site_code"]),
                         firma=row["firma"] or "",
@@ -476,18 +476,21 @@ class CampaignsService:
                         loc = row["locatie"]
                         firma_val = row["firma"] or ""
                         excluded = incentive_excluded_si.get((sc, row["item_code"]), 0)
-                        val = max(0, int(row["qty"]) - excluded) * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
+                        qty = max(0, int(row["qty"]) - excluded)
+                        val = qty * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
                         if sc not in store_inc:
-                            store_inc[sc] = [loc, 0.0, firma_val]
+                            store_inc[sc] = [loc, 0.0, firma_val, 0]
                         store_inc[sc][1] += val
+                        store_inc[sc][3] += qty
 
                     if has_active_promotion:
                         top_stores = [
                             PromoTopStore(
                                 store_name=s.store_name,
-                                qty=s.qty,
+                                qty=store_inc.get(s.store_name.split(" - ")[0], [None, 0.0, "", 0])[3],
                                 total_qty=s.total_qty,
                                 category_qty=s.category_qty,
+                                promo_bons=s.promo_bons,
                                 incentive_value=round(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0, ""])[1], 2),
                                 achievement=s.achievement,
                                 firma=s.firma,
@@ -498,9 +501,10 @@ class CampaignsService:
                         top_stores = [
                             PromoTopStore(
                                 store_name=f"{sc} - {data[0]}",
-                                qty=0,
+                                qty=data[3],
                                 total_qty=0,
                                 category_qty=0,
+                                promo_bons=0,
                                 incentive_value=round(data[1], 2),
                                 achievement=store_achievements.get(sc),
                                 firma=data[2],

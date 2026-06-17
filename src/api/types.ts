@@ -408,6 +408,7 @@ export interface PromoTopStore {
   qty: number;
   total_qty: number;
   category_qty: number;
+  promo_bons: number;
   incentive_value: number;
   achievement: number | null;
   firma: string;

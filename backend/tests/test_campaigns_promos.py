@@ -248,8 +248,10 @@ class TestPromoIncentivesNoConfig:
         assert result["promo_discounted_units"] == 4
         assert result["promo_active_stores"] == 1
         assert result["promo_active_agents"] == 1
-        # Top magazine promo: qty = bonuri calificate per magazin (co-purchase), nu cantitate simpla
-        assert result["top_stores"][0].qty == 4
+        # Top Magazine — Incentive: qty = unitati incentive nete, nu bonuri promo.
+        assert result["top_stores"][0].qty == 6
+        # Top Magazine — Promo foloseste camp separat pentru bonuri co-purchase.
+        assert result["top_stores"][0].promo_bons == 4
 
     @pytest.mark.asyncio
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))

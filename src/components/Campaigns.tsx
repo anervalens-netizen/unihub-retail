@@ -439,7 +439,7 @@ export function Campaigns({
                   </div>
                   <SortableTable<PromoTopStore & Record<string, unknown>>
                     rows={promoData.top_stores as (PromoTopStore & Record<string, unknown>)[]}
-                    defaultSortKey="qty"
+                    defaultSortKey="promo_bons"
                     columns={[
                       {
                         key: 'rank',
@@ -477,11 +477,11 @@ export function Campaigns({
                         },
                       },
                       {
-                        key: 'qty',
+                        key: 'promo_bons',
                         label: 'Bonuri',
                         align: 'right',
                         render: (row) => (
-                          <span className="font-black text-amber-600">{formatInt((row as unknown as PromoTopStore).qty)}</span>
+                          <span className="font-black text-amber-600">{formatInt((row as unknown as PromoTopStore).promo_bons ?? 0)}</span>
                         ),
                       },
                     ]}

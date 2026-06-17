@@ -34,11 +34,13 @@ def test_promo_top_store_has_firma():
         qty=200,
         total_qty=200,
         category_qty=0,
+        promo_bons=12,
         incentive_value=1000.0,
         achievement=1.05,
         firma="Mobiup",
     )
     assert store.firma == "Mobiup"
+    assert store.promo_bons == 12
 
 
 def test_promo_top_store_firma_default_empty():
@@ -49,3 +51,4 @@ def test_promo_top_store_firma_default_empty():
         category_qty=0,
     )
     assert store.firma == ""
+    assert store.promo_bons == 0
