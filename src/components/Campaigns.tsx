@@ -412,7 +412,7 @@ export function Campaigns({
 
                 <div className="mb-3">
                   <div className="text-3xl font-black">{formatInt(promoData.promo_qualifying_bons)}</div>
-                  <div className="text-[11px] text-slate-500">bonuri calificate (accesoriu + produs din lista pe acelasi bon)</div>
+                  <div className="text-[11px] text-slate-500">unitati promo efective / bonuri calificate</div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">

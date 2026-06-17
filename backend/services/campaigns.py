@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -27,9 +28,13 @@ from services.dashboard_specials import (
 )
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import (
+    PromoCoPurchaseResult,
+    compute_promo_actuals_from_report,
     compute_promo_copurchase,
     compute_promo_same_model_pair,
     compute_promo_trigger_discounted,
+    merge_promo_results,
+    promo_actuals_cutoff_date,
 )
 
 
@@ -74,6 +79,124 @@ def _excluded_by_site_item(
     for (site_code, _agent, item_code), units in excluded_units.items():
         out[(site_code, item_code)] = out.get((site_code, item_code), 0) + units
     return out
+
+
+async def _compute_promotion_result(
+    conn: asyncpg.Connection,
+    *,
+    month: str,
+    definition: dict[str, Any],
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> tuple[PromoCoPurchaseResult | None, list[str], str, str | None]:
+    products, products_error = load_promotion_rule_products(definition)
+    if products_error is not None or products is None:
+        return None, [], definition.get("rule_type") or "selected_item_copurchase", products_error
+
+    rule_type = definition.get("rule_type") or "selected_item_copurchase"
+    if rule_type == "same_model_screen_camera":
+        promotion_item_codes = list(products["discounted_codes"])
+    elif rule_type == "trigger_discounted":
+        promotion_item_codes = list(products["discounted_codes"])
+    else:
+        promotion_item_codes = list(products["item_codes"])
+
+    actual_result = await compute_promo_actuals_from_report(
+        conn,
+        month=month,
+        definition=definition,
+        item_codes=promotion_item_codes,
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+    if actual_result is not None:
+        cutoff_date = promo_actuals_cutoff_date(definition)
+        if cutoff_date is None:
+            return actual_result, promotion_item_codes, rule_type, None
+        tail_start = max(definition["start_date"], cutoff_date + timedelta(days=1))
+        if tail_start > definition["end_date"]:
+            return actual_result, promotion_item_codes, rule_type, None
+        tail_definition = {
+            **definition,
+            "start_date": tail_start,
+            "actuals_source_file": None,
+            "actuals_file": None,
+        }
+        tail_result, _tail_codes, _tail_rule, tail_error = await _compute_promotion_result(
+            conn,
+            month=month,
+            definition=tail_definition,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+        if tail_error is not None:
+            return actual_result, promotion_item_codes, rule_type, None
+        return merge_promo_results(actual_result, tail_result), promotion_item_codes, rule_type, None
+
+    if rule_type == "same_model_screen_camera":
+        return (
+            await compute_promo_same_model_pair(
+                conn,
+                month=month,
+                start_date=definition["start_date"],
+                end_date=definition["end_date"],
+                screen_code_models=products["trigger_code_models"],
+                camera_code_models=products["discounted_code_models"],
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
+            ),
+            promotion_item_codes,
+            rule_type,
+            None,
+        )
+    if rule_type == "trigger_discounted":
+        return (
+            await compute_promo_trigger_discounted(
+                conn,
+                month=month,
+                start_date=definition["start_date"],
+                end_date=definition["end_date"],
+                trigger_codes=products["trigger_codes"],
+                discounted_codes=products["discounted_codes"],
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
+            ),
+            promotion_item_codes,
+            rule_type,
+            None,
+        )
+    return (
+        await compute_promo_copurchase(
+            conn,
+            month=month,
+            start_date=definition["start_date"],
+            end_date=definition["end_date"],
+            item_codes=promotion_item_codes,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        ),
+        promotion_item_codes,
+        rule_type,
+        None,
+    )
 
 
 class CampaignsService:
@@ -252,57 +375,21 @@ class CampaignsService:
             incentive_excluded_ag: dict[tuple[str, str, str], int] = {}
             if has_active_promotion:
                 assert promotion_definition is not None
-                promotion_products, products_error = load_promotion_rule_products(promotion_definition)
-                if products_error is not None or promotion_products is None:
+                promo_cp, promotion_item_codes, promotion_rule_type, products_error = (
+                    await _compute_promotion_result(
+                        conn,
+                        month=month,
+                        definition=promotion_definition,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
+                    )
+                )
+                if products_error is not None:
                     has_active_promotion = False
                     promotion_error = products_error
-                    promo_cp = None
-                else:
-                    promotion_rule_type = promotion_definition.get("rule_type") or "selected_item_copurchase"
-                    if promotion_rule_type == "same_model_screen_camera":
-                        promotion_item_codes = list(promotion_products["discounted_codes"])
-                        promo_cp = await compute_promo_same_model_pair(
-                            conn,
-                            month=month,
-                            start_date=promotion_definition["start_date"],
-                            end_date=promotion_definition["end_date"],
-                            screen_code_models=promotion_products["trigger_code_models"],
-                            camera_code_models=promotion_products["discounted_code_models"],
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                        )
-                    elif promotion_rule_type == "trigger_discounted":
-                        promotion_item_codes = list(promotion_products["discounted_codes"])
-                        promo_cp = await compute_promo_trigger_discounted(
-                            conn,
-                            month=month,
-                            start_date=promotion_definition["start_date"],
-                            end_date=promotion_definition["end_date"],
-                            trigger_codes=promotion_products["trigger_codes"],
-                            discounted_codes=promotion_products["discounted_codes"],
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                        )
-                    else:
-                        promotion_item_codes = list(promotion_products["item_codes"])
-                        promo_cp = await compute_promo_copurchase(
-                            conn,
-                            month=month,
-                            start_date=promotion_definition["start_date"],
-                            end_date=promotion_definition["end_date"],
-                            item_codes=promotion_item_codes,
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                        )
                 if promo_cp is None:
                     promo_cp = None
                 else:
@@ -320,70 +407,23 @@ class CampaignsService:
                 for extra_definition in promotion_definitions:
                     if extra_definition.get("key") == selected_key:
                         continue
-                    extra_products, extra_error = load_promotion_rule_products(extra_definition)
-                    if extra_error is not None or extra_products is None:
+                    extra_cp, _extra_item_codes, _extra_rule_type, extra_error = (
+                        await _compute_promotion_result(
+                            conn,
+                            month=month,
+                            definition=extra_definition,
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                    )
+                    if extra_error is not None or extra_cp is None:
                         continue
-                    extra_rule_type = extra_definition.get("rule_type") or "selected_item_copurchase"
-                    if extra_rule_type == "same_model_screen_camera":
-                        extra_cp = await compute_promo_same_model_pair(
-                            conn,
-                            month=month,
-                            start_date=extra_definition["start_date"],
-                            end_date=extra_definition["end_date"],
-                            screen_code_models=extra_products["trigger_code_models"],
-                            camera_code_models=extra_products["discounted_code_models"],
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                        )
-                    elif extra_rule_type == "trigger_discounted":
-                        extra_cp = await compute_promo_trigger_discounted(
-                            conn,
-                            month=month,
-                            start_date=extra_definition["start_date"],
-                            end_date=extra_definition["end_date"],
-                            trigger_codes=extra_products["trigger_codes"],
-                            discounted_codes=extra_products["discounted_codes"],
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                        )
-                    else:
-                        extra_cp = await compute_promo_copurchase(
-                            conn,
-                            month=month,
-                            start_date=extra_definition["start_date"],
-                            end_date=extra_definition["end_date"],
-                            item_codes=list(extra_products["item_codes"]),
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                        )
                     _merge_excluded_units(incentive_excluded_ag, extra_cp.excluded_units)
 
                 incentive_excluded_si = _excluded_by_site_item(incentive_excluded_ag)
-                if incentive_campaign is not None:
-                    reward_map_hdr = incentive_campaign["reward_map"]
-                    excluded_value = sum(
-                        units
-                        * reward_map_hdr.get(item, 0)
-                        * store_multipliers.get(site, 0)
-                        for (site, _ag, item), units in incentive_excluded_ag.items()
-                    )
-                    # Doar unitatile care sunt si produse incentive scad din qty.
-                    excluded_inc_units = sum(
-                        units
-                        for (_site, _ag, item), units in incentive_excluded_ag.items()
-                        if item in reward_map_hdr
-                    )
-                    incentive_value = max(0.0, incentive_value - float(excluded_value))
-                    incentive_qty = max(0, incentive_qty - excluded_inc_units)
             else:
                 incentive_excluded_si = {}
 

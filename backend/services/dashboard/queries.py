@@ -1,6 +1,7 @@
 """Heavy lifting for dashboard: stats + mix + period comparison + promo/incentive summary."""
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -20,11 +21,22 @@ from services.dashboard.utils import (
 )
 from services.dashboard_specials import (
     incentive_multiplier,
+    load_promotion_rule_products,
     load_special_cards_config,
+    parse_promotion_definitions,
     parse_promotion_definition,
 )
 from services.filters import scoped_clauses
 from services.incentive_db import get_incentive_campaign
+from services.promo_copurchase import (
+    PromoCoPurchaseResult,
+    compute_promo_actuals_from_report,
+    compute_promo_copurchase,
+    compute_promo_same_model_pair,
+    compute_promo_trigger_discounted,
+    merge_promo_results,
+    promo_actuals_cutoff_date,
+)
 
 
 def _scope_join(current_scope: bool, source_alias: str = "agg") -> str:
@@ -57,6 +69,106 @@ def _scope_clauses(
 
 def _store_field(field: str, current_scope: bool, source_alias: str = "agg") -> str:
     return f"s.{field}" if current_scope else f"{source_alias}.{field}"
+
+
+async def _compute_dashboard_promotion_result(
+    conn: Any,
+    *,
+    month: str,
+    definition: dict[str, Any],
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> PromoCoPurchaseResult | None:
+    products, error = load_promotion_rule_products(definition)
+    if error is not None or products is None:
+        return None
+
+    rule_type = definition.get("rule_type") or "selected_item_copurchase"
+    if rule_type == "same_model_screen_camera":
+        promotion_item_codes = list(products["discounted_codes"])
+    elif rule_type == "trigger_discounted":
+        promotion_item_codes = list(products["discounted_codes"])
+    else:
+        promotion_item_codes = list(products["item_codes"])
+
+    actual_result = await compute_promo_actuals_from_report(
+        conn,
+        month=month,
+        definition=definition,
+        item_codes=promotion_item_codes,
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+    if actual_result is not None:
+        cutoff_date = promo_actuals_cutoff_date(definition)
+        if cutoff_date is None:
+            return actual_result
+        tail_start = max(definition["start_date"], cutoff_date + timedelta(days=1))
+        if tail_start > definition["end_date"]:
+            return actual_result
+        tail_result = await _compute_dashboard_promotion_result(
+            conn,
+            month=month,
+            definition={
+                **definition,
+                "start_date": tail_start,
+                "actuals_source_file": None,
+                "actuals_file": None,
+            },
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+        return merge_promo_results(actual_result, tail_result)
+
+    if rule_type == "same_model_screen_camera":
+        return await compute_promo_same_model_pair(
+            conn,
+            month=month,
+            start_date=definition["start_date"],
+            end_date=definition["end_date"],
+            screen_code_models=products["trigger_code_models"],
+            camera_code_models=products["discounted_code_models"],
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+    if rule_type == "trigger_discounted":
+        return await compute_promo_trigger_discounted(
+            conn,
+            month=month,
+            start_date=definition["start_date"],
+            end_date=definition["end_date"],
+            trigger_codes=products["trigger_codes"],
+            discounted_codes=products["discounted_codes"],
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+    return await compute_promo_copurchase(
+        conn,
+        month=month,
+        start_date=definition["start_date"],
+        end_date=definition["end_date"],
+        item_codes=promotion_item_codes,
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
 
 
 async def _get_store_incentive_multipliers(
@@ -1315,7 +1427,10 @@ async def _fetch_promo_incentive_summary(
     include_closed_stores: bool = False,
 ) -> PromoIncentiveSummary:
     config, _ = load_special_cards_config()
+    promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
     promotion_definition, promotion_error = parse_promotion_definition(config, month)
+    if promotion_error is None:
+        promotion_error = promotion_list_error
     incentive_campaign = await get_incentive_campaign(conn, month)
 
     promo_qty = 0
@@ -1324,7 +1439,29 @@ async def _fetch_promo_incentive_summary(
     incentive_value: Decimal = Decimal("0")
     incentive_qualified_stores = 0
     incentive_qualified_agents = 0
+    promo_excluded_units: dict[tuple[str, str, str], int] = {}
 
+    if promotion_definitions and promotion_error is None:
+        selected_key = promotion_definition.get("key") if promotion_definition else None
+        for definition in promotion_definitions:
+            promo_result = await _compute_dashboard_promotion_result(
+                conn,
+                month=month,
+                definition=definition,
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
+            )
+            if promo_result is None:
+                continue
+            for key, units in promo_result.excluded_units.items():
+                promo_excluded_units[key] = promo_excluded_units.get(key, 0) + units
+            if definition.get("key") == selected_key:
+                promo_qty = promo_result.discounted_units
+
+    promo_qty_from_corrected_source = promo_qty > 0 or bool(promo_excluded_units)
     if promotion_definition is not None and promotion_error is None:
         promo_params, promo_positions = _build_scoped_params(
             [
@@ -1362,8 +1499,15 @@ async def _fetch_promo_incentive_summary(
             *promo_params,
         )
         if promo_row:
-            promo_qty = int(promo_row["promo_qty"] or 0)
+            if not promo_qty_from_corrected_source:
+                promo_qty = int(promo_row["promo_qty"] or 0)
             promo_sales = promo_row["promo_sales"] or Decimal("0")
+
+    promo_excluded_by_site_item: dict[tuple[str, str], int] = {}
+    for (site_code_key, _agent_key, item_code_key), units in promo_excluded_units.items():
+        promo_excluded_by_site_item[(site_code_key, item_code_key)] = (
+            promo_excluded_by_site_item.get((site_code_key, item_code_key), 0) + units
+        )
 
     if incentive_campaign is not None:
         reward_map = incentive_campaign["reward_map"]
@@ -1408,10 +1552,21 @@ async def _fetch_promo_incentive_summary(
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
             )
-            incentive_qty = sum(int(r["qty"]) for r in item_rows)
+            incentive_qty = sum(
+                max(
+                    0,
+                    int(r["qty"])
+                    - promo_excluded_by_site_item.get((r["site_code"], r["item_code"]), 0),
+                )
+                for r in item_rows
+            )
             incentive_value = Decimal(str(
                 sum(
-                    max(0, int(r["qty"]))
+                    max(
+                        0,
+                        int(r["qty"])
+                        - promo_excluded_by_site_item.get((r["site_code"], r["item_code"]), 0),
+                    )
                     * reward_map.get(r["item_code"], 0)
                     * store_multipliers.get(r["site_code"], 0)
                     for r in item_rows

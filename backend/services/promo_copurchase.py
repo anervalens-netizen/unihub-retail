@@ -22,13 +22,29 @@ unit_price pe bon. Aceasta unitate NU se incentiveaza (vezi services/dashboard).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import asyncpg
+import pandas as pd
 
 from services.dashboard.utils import _build_scoped_params
-from services.filters import scoped_clauses
+from services.filters import normalize_filter, scoped_clauses
+from services.product_lists import get_repo_root, normalize_column_name, resolve_path
+
+
+_ACTUALS_SITE_ALIASES = {"sitecode", "site_code", "site"}
+_ACTUALS_CODE_ALIASES = {"cod", "item_code", "itemcode", "cod_produs"}
+_ACTUALS_PROMO_QTY_ALIASES = {
+    "promo_luna_curenta",
+    "promo_qty",
+    "cantitate_promo",
+    "promo",
+}
+_promo_actuals_cache: dict[
+    tuple[str, float, str],
+    tuple[dict[tuple[str, str], int] | None, str | None],
+] = {}
 
 
 @dataclass
@@ -49,6 +65,328 @@ class PromoCoPurchaseResult:
         for (site_code, _agent, item_code), units in self.excluded_units.items():
             out[(site_code, item_code)] = out.get((site_code, item_code), 0) + units
         return out
+
+
+def _find_actuals_column(
+    normalized_columns: dict[str, str],
+    aliases: set[str],
+) -> str | None:
+    for alias in aliases:
+        if alias in normalized_columns:
+            return normalized_columns[alias]
+    return None
+
+
+def load_promo_actual_units(
+    definition: dict[str, Any],
+    *,
+    item_codes: list[str],
+) -> tuple[dict[tuple[str, str], int] | None, str | None]:
+    """Load weekly POS-confirmed promo units from an optional source report.
+
+    The report is intentionally optional. If a promotion has no
+    `actuals_source_file`, callers should keep using the rule-based calculator.
+    If the source file exists, zero promo units in that file are treated as the
+    source of truth for the configured promotion products.
+    """
+    source_file = definition.get("actuals_source_file") or definition.get("actuals_file")
+    if not source_file:
+        return None, None
+
+    source_path = resolve_path(str(source_file), get_repo_root())
+    if not source_path.exists():
+        return None, f"Raportul promo `{source_path}` nu exista."
+
+    sheet_name = str(definition.get("actuals_sheet") or "AccesoriPromoLunar")
+    cache_key = (str(source_path), source_path.stat().st_mtime, sheet_name)
+    if cache_key in _promo_actuals_cache:
+        cached_units, cached_error = _promo_actuals_cache[cache_key]
+    else:
+        try:
+            df = pd.read_excel(source_path, sheet_name=sheet_name, engine=None)
+        except Exception as exc:  # pragma: no cover - depends on external Excel parser
+            result = (None, f"Raportul promo `{source_path.name}` nu a putut fi citit: {exc}")
+            _promo_actuals_cache[cache_key] = result
+            return result
+
+        normalized_columns = {
+            normalize_column_name(column): str(column)
+            for column in df.columns
+        }
+        site_column = _find_actuals_column(normalized_columns, _ACTUALS_SITE_ALIASES)
+        code_column = _find_actuals_column(normalized_columns, _ACTUALS_CODE_ALIASES)
+        promo_qty_column = _find_actuals_column(
+            normalized_columns,
+            _ACTUALS_PROMO_QTY_ALIASES,
+        )
+        if not site_column or not code_column or not promo_qty_column:
+            result = (
+                None,
+                "Raportul promo trebuie sa contina coloanele SiteCode, Cod si Promo Luna Curenta.",
+            )
+            _promo_actuals_cache[cache_key] = result
+            return result
+
+        raw_units: dict[tuple[str, str], int] = {}
+        promo_qty = pd.to_numeric(df[promo_qty_column], errors="coerce").fillna(0)
+        for idx, qty_value in promo_qty.items():
+            qty = int(round(float(qty_value or 0)))
+            if qty == 0:
+                continue
+            site_code = str(df.at[idx, site_column]).strip()
+            item_code = str(df.at[idx, code_column]).strip()
+            if not site_code or site_code.lower() == "nan":
+                continue
+            if not item_code or item_code.lower() == "nan":
+                continue
+            raw_units[(site_code, item_code)] = raw_units.get((site_code, item_code), 0) + qty
+        result = (raw_units, None)
+        _promo_actuals_cache[cache_key] = result
+        cached_units, cached_error = result
+
+    if cached_units is None or cached_error is not None:
+        return cached_units, cached_error
+
+    allowed_codes = {str(code).strip() for code in item_codes if str(code).strip()}
+    if not allowed_codes:
+        return {}, None
+    return {
+        (site_code, item_code): units
+        for (site_code, item_code), units in cached_units.items()
+        if item_code in allowed_codes and units > 0
+    }, None
+
+
+def promo_actuals_cutoff_date(definition: dict[str, Any]) -> date | None:
+    source_file = definition.get("actuals_source_file") or definition.get("actuals_file")
+    if not source_file:
+        return None
+
+    raw_cutoff = definition.get("actuals_cutoff_date")
+    if raw_cutoff:
+        try:
+            return date.fromisoformat(str(raw_cutoff))
+        except ValueError:
+            return None
+
+    source_path = resolve_path(str(source_file), get_repo_root())
+    if not source_path.exists():
+        return None
+    return date.fromtimestamp(source_path.stat().st_mtime) - timedelta(days=1)
+
+
+def merge_promo_results(*results: PromoCoPurchaseResult | None) -> PromoCoPurchaseResult:
+    excluded_units: dict[tuple[str, str, str], int] = {}
+    for result in results:
+        if result is None:
+            continue
+        for key, units in result.excluded_units.items():
+            excluded_units[key] = excluded_units.get(key, 0) + units
+    return _result_from_discounted_rows(
+        [
+            {
+                "site_code": site,
+                "agent": agent_name,
+                "item_code": item,
+                "units": units,
+            }
+            for (site, agent_name, item), units in excluded_units.items()
+        ]
+    )
+
+
+def _agent_filter_values(agent: str | None) -> set[str] | None:
+    normalized = normalize_filter(agent)
+    if normalized is None:
+        return None
+    values = {value.strip() for value in normalized.split(",") if value.strip()}
+    return values or None
+
+
+def _allocate_units_to_agents(
+    promo_units: int,
+    candidates: list[tuple[str, int]],
+) -> list[tuple[str, int]]:
+    """Allocate site+item actual promo units to agents using sales share.
+
+    The source report is store+item granular. Agent-level views and incentive
+    exclusion still need agent keys, so allocation is proportional to positive
+    sales for the same store+item. Any impossible remainder is kept under "-",
+    preserving store-level totals without inventing agent sales.
+    """
+    promo_units = max(0, int(promo_units))
+    if promo_units <= 0:
+        return []
+
+    normalized_candidates = [
+        (agent, max(0, int(positive_qty)))
+        for agent, positive_qty in candidates
+        if agent and agent != "-" and int(positive_qty) > 0
+    ]
+    total_positive = sum(positive_qty for _agent, positive_qty in normalized_candidates)
+    if total_positive <= 0:
+        return [("-", promo_units)]
+
+    distributable = min(promo_units, total_positive)
+    allocations: list[dict[str, Any]] = []
+    base_total = 0
+    for agent, positive_qty in normalized_candidates:
+        numerator = distributable * positive_qty
+        base_units = min(positive_qty, numerator // total_positive)
+        allocations.append(
+            {
+                "agent": agent,
+                "positive_qty": positive_qty,
+                "units": base_units,
+                "remainder": numerator % total_positive,
+            }
+        )
+        base_total += base_units
+
+    remaining = distributable - base_total
+    for allocation in sorted(
+        allocations,
+        key=lambda item: (-int(item["remainder"]), -int(item["positive_qty"]), str(item["agent"])),
+    ):
+        if remaining <= 0:
+            break
+        if int(allocation["units"]) >= int(allocation["positive_qty"]):
+            continue
+        allocation["units"] = int(allocation["units"]) + 1
+        remaining -= 1
+
+    rows = [
+        (str(allocation["agent"]), int(allocation["units"]))
+        for allocation in allocations
+        if int(allocation["units"]) > 0
+    ]
+    if promo_units > total_positive:
+        rows.append(("-", promo_units - total_positive))
+    return rows
+
+
+async def compute_promo_actuals_from_report(
+    conn: asyncpg.Connection,
+    *,
+    month: str,
+    definition: dict[str, Any],
+    item_codes: list[str],
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> PromoCoPurchaseResult | None:
+    """Return POS-confirmed promo units from report, or None when not configured.
+
+    `None` means callers should fall back to the rule-based bon calculator.
+    An empty result means a configured source report explicitly has no promo
+    units for this promotion and scope.
+    """
+    actual_units, error = load_promo_actual_units(definition, item_codes=item_codes)
+    if actual_units is None:
+        return None
+    if error is not None:
+        return None
+    if not actual_units:
+        return PromoCoPurchaseResult()
+
+    source_sites: list[str] = []
+    source_codes: list[str] = []
+    source_units: list[int] = []
+    for (source_site, source_code), units in sorted(actual_units.items()):
+        source_sites.append(source_site)
+        source_codes.append(source_code)
+        source_units.append(int(units))
+
+    start_date = definition["start_date"]
+    end_date = definition["end_date"]
+    cutoff_date = promo_actuals_cutoff_date(definition)
+    if cutoff_date is None:
+        cutoff_date = end_date
+    cutoff_date = min(cutoff_date, end_date)
+    if cutoff_date < start_date:
+        return PromoCoPurchaseResult()
+
+    params, positions = _build_scoped_params(
+        [month, source_sites, source_codes, source_units, start_date, cutoff_date],
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=None,
+    )
+    scope = scoped_clauses(
+        positions,
+        site_alias="a",
+        store_alias="s",
+        agent_alias=None,
+    )
+    scoped_where = " AND ".join(scope)
+    rows = await conn.fetch(
+        f"""
+        WITH actuals AS (
+            SELECT site_code, item_code, promo_units
+            FROM UNNEST($2::TEXT[], $3::TEXT[], $4::INT[]) AS t(site_code, item_code, promo_units)
+        ),
+        scoped_actuals AS (
+            SELECT a.site_code, a.item_code, a.promo_units
+            FROM actuals a
+            JOIN stores s ON s.site_code = a.site_code
+            WHERE {scoped_where}
+        )
+        SELECT
+            sa.site_code,
+            sa.item_code,
+            sa.promo_units,
+            agg.agent,
+            COALESCE(SUM(agg.positive_quantity), 0)::INT AS positive_qty
+        FROM scoped_actuals sa
+        LEFT JOIN reporting_item_day agg
+          ON agg.import_month = $1
+         AND agg.site_code = sa.site_code
+         AND agg.item_code = sa.item_code
+         AND agg.sale_date BETWEEN $5 AND $6
+        GROUP BY sa.site_code, sa.item_code, sa.promo_units, agg.agent
+        """,
+        *params,
+    )
+
+    scoped_units: dict[tuple[str, str], int] = {}
+    candidates: dict[tuple[str, str], list[tuple[str, int]]] = {}
+    for row in rows:
+        key = (str(row["site_code"]), str(row["item_code"]))
+        scoped_units[key] = int(row["promo_units"] or 0)
+        agent_name = row["agent"]
+        positive_qty = int(row["positive_qty"] or 0)
+        if agent_name and positive_qty > 0:
+            candidates.setdefault(key, []).append((str(agent_name), positive_qty))
+
+    allowed_agents = _agent_filter_values(agent)
+    excluded_units: dict[tuple[str, str, str], int] = {}
+    for key, units in scoped_units.items():
+        site, item = key
+        for agent_name, allocated_units in _allocate_units_to_agents(
+            units,
+            candidates.get(key, []),
+        ):
+            if allowed_agents is not None and agent_name not in allowed_agents:
+                continue
+            excluded_units[(site, agent_name, item)] = (
+                excluded_units.get((site, agent_name, item), 0) + allocated_units
+            )
+
+    return _result_from_discounted_rows(
+        [
+            {
+                "site_code": site,
+                "agent": agent_name,
+                "item_code": item,
+                "units": units,
+            }
+            for (site, agent_name, item), units in excluded_units.items()
+        ]
+    )
 
 
 async def compute_promo_copurchase(

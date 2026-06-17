@@ -1,6 +1,7 @@
 """Special cards data assembly (promotion + incentive) for /api/dashboard/special-cards."""
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from db.connection import get_pool
@@ -19,9 +20,12 @@ from services.filters import scoped_clauses
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import (
     PromoCoPurchaseResult,
+    compute_promo_actuals_from_report,
     compute_promo_copurchase,
     compute_promo_same_model_pair,
     compute_promo_trigger_discounted,
+    merge_promo_results,
+    promo_actuals_cutoff_date,
 )
 
 
@@ -58,6 +62,48 @@ async def _compute_promotion_result(
         return None
     rule_type = definition.get("rule_type") or "selected_item_copurchase"
     if rule_type == "same_model_screen_camera":
+        promotion_item_codes = list(products["discounted_codes"])
+    elif rule_type == "trigger_discounted":
+        promotion_item_codes = list(products["discounted_codes"])
+    else:
+        promotion_item_codes = list(products["item_codes"])
+
+    actual_result = await compute_promo_actuals_from_report(
+        conn,
+        month=month,
+        definition=definition,
+        item_codes=promotion_item_codes,
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+    if actual_result is not None:
+        cutoff_date = promo_actuals_cutoff_date(definition)
+        if cutoff_date is None:
+            return actual_result
+        tail_start = max(definition["start_date"], cutoff_date + timedelta(days=1))
+        if tail_start > definition["end_date"]:
+            return actual_result
+        tail_result = await _compute_promotion_result(
+            conn,
+            month=month,
+            definition={
+                **definition,
+                "start_date": tail_start,
+                "actuals_source_file": None,
+                "actuals_file": None,
+            },
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+        return merge_promo_results(actual_result, tail_result)
+
+    if rule_type == "same_model_screen_camera":
         return await compute_promo_same_model_pair(
             conn,
             month=month,
@@ -90,7 +136,7 @@ async def _compute_promotion_result(
         month=month,
         start_date=definition["start_date"],
         end_date=definition["end_date"],
-        item_codes=list(products["item_codes"]),
+        item_codes=promotion_item_codes,
         firma=firma,
         regional=regional,
         asm=asm,
@@ -212,7 +258,7 @@ async def _get_special_cards_data(
                 excluded = promo_excluded.get((site, code), 0)
                 adj_net = int(r["net_quantity"]) - excluded
                 adj_pos = max(0, int(r["positive_quantity"]) - excluded)
-                net_qty += adj_net
+                net_qty += max(0, adj_net)
                 pos_qty += adj_pos
                 ret_qty += int(r["return_quantity"])
                 incentive_value += (

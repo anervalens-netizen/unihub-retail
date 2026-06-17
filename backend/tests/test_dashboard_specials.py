@@ -87,6 +87,29 @@ def test_parse_promotion_definitions_supports_selectable_rules() -> None:
     assert definitions[1]["rule_type"] == "same_model_screen_camera"
 
 
+def test_parse_promotion_definitions_keeps_optional_actuals_report() -> None:
+    definitions, error = parse_promotion_definitions(
+        {
+            "promotions": [
+                {
+                    "key": "actuala",
+                    "title": "Promo actuala",
+                    "item_codes": ["AA-01"],
+                    "actuals_source_file": "/opt/Mobiup/docs/raport-promo-sursa.xls",
+                    "actuals_sheet": "AccesoriPromoLunar",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                },
+            ]
+        },
+        "2026-06",
+    )
+
+    assert error is None
+    assert definitions[0]["actuals_source_file"] == "/opt/Mobiup/docs/raport-promo-sursa.xls"
+    assert definitions[0]["actuals_sheet"] == "AccesoriPromoLunar"
+
+
 def test_parse_promotion_definition_can_select_by_key() -> None:
     definition, error = parse_promotion_definition(
         {

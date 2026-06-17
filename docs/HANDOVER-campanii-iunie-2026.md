@@ -59,18 +59,44 @@ Config-ul live are acum promoții selectabile prin `key`/`promotion_key`:
 
 Tabul **Focus -> Promo** afișează butoane pentru promoțiile active din lună și reîncarcă datele pentru cheia selectată. Cardul promo Hub rămâne pe prima promoție activă din config.
 
+### 1.1. Raport POS de corecție promo — 2026-06-17
+
+Cele 3 promoții iunie au optional `actuals_source_file` către
+`/opt/Mobiup/docs/raport-promo-sursa.xls`, sheet `AccesoriPromoLunar`.
+Raportul are granularitate `SiteCode + Cod` și coloana `Promo Luna Curenta`,
+adică unități la care discountul a fost aplicat efectiv în POS. Când fișierul
+există, aceste unități devin sursa de adevăr pentru promo și pentru excluderea
+din incentive până la `actuals_cutoff_date`; dacă data nu este setată în config,
+backend-ul folosește data modificării fișierului minus o zi. Pentru zilele de
+după cutoff, backend-ul adaugă în continuare calculul pe regula veche de bonuri.
+
+Ingestul zilnic de vânzări rescrie toată luna prin `replace_month_snapshot` și
+reconstruiește `reporting_*`, dar nu atinge acest raport din `/opt/Mobiup/docs`.
+Dacă raportul lipsește sau nu este configurat, sistemul revine integral la
+regula veche de bonuri. Dacă raportul este suprascris săptămânal pe același
+path, cache-ul se invalidează prin `mtime` și valorile se recitesc automat.
+
+Validare pe raportul primit în 2026-06-17:
+- `promotie-actuala-mihai`: 310 unități promo.
+- `folii-ecran-camera-iunie`: 276 unități promo.
+- `capace-huse-cellara-iunie`: 21 unități promo.
+- Total raport POS: 607 unități promo.
+- Focus și Hub summary aliniate după corecție: incentive 14.897 unități,
+  38.720 RON.
+
 ### 2. Reguli co-purchase — `backend/services/promo_copurchase.py` (helper partajat)
 - **Cheia bonului** = `(sale_date, site_code, agent, bon_nr)` — identică cu logica existentă de bonuri din `reporting_refresh.py`. (`bon_nr` singur NU e unic: ex. „174" apare în 3 magazine — de aceea cheia e compozită.) Coloana de ingest = **„Nr"** (7 cifre).
 - `selected_item_copurchase`: bon calificat = ≥1 produs din lista promo **ȘI** ≥2 unități pozitive totale (a doua poate fi orice alt accesoriu non-cartelă). Unitatea redusă = produsul din listă cu cel mai mic `unit_price` pe bon.
 - `same_model_screen_camera`: bon calificat = folie ecran + folie cameră pe același bon, cu intersecție de model telefon extrasă din `ItemName`; unitatea redusă = folia de cameră eligibilă cu cel mai mic `unit_price`.
 - `trigger_discounted`: bon calificat = produs declanșator + produs redus pe același bon; unitatea redusă = produsul redus cu cel mai mic `unit_price`. Folosit pentru capac Cellara + husă universală.
 - Toate regulile exclud cartele + locații `TR %` și numără maxim o unitate redusă per bon.
-- Pentru incentive, unitățile reduse se agregă din toate promoțiile active ale lunii, nu doar din promoția selectată în `Focus -> Promo`.
+- Pentru incentive, unitățile reduse se agregă din toate promoțiile active ale lunii, nu doar din promoția selectată în `Focus -> Promo`. Când există raport POS de corecție, se folosesc unitățile efectiv raportate; pentru zilele de după cutoff se adaugă regula pe bonuri.
 
 ### 3. Incentive iunie — clonă exactă a lunii mai (în DB)
 - `incentive_campaigns` + `incentive_products`, `month='2026-06'`: **967 produse**, tiere **5/10/25 RON** (total reward 5945) — identic cu mai.
 - **Excludere**: unitatea redusă (vândută în promo) se scade din `net_quantity` la calculul incentive. Aplicat în:
   - `backend/services/dashboard/specials_data.py` — cardul Incentive din Hub.
+  - `backend/services/dashboard/queries.py` — mini-cardul Hub `Promo & incentive`.
   - `backend/services/campaigns.py` — tab Focus: top_agenți, top_magazine, categorii pe tier, + headline `incentive_value`/`incentive_qty`.
   - Se aplică **doar** pe luni cu promo activ și scade unitățile reduse din toate promoțiile active. Lunile fără promo (ex. mai) rămân 100% neschimbate.
   - Coloanele `promo_qty`/`incentive_qty` din **tabelele Hub** rămân pe agregatul simplu (neajustate) — exact cum ai cerut.

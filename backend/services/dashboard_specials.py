@@ -147,6 +147,12 @@ def _parse_single_promotion(
             "source_file": str(source_file) if source_file else None,
             "trigger_sheet": str(trigger_sheet) if trigger_sheet else None,
             "discounted_sheet": str(discounted_sheet) if discounted_sheet else None,
+            "actuals_source_file": (
+                str(raw.get("actuals_source_file") or raw.get("actuals_file"))
+                if (raw.get("actuals_source_file") or raw.get("actuals_file"))
+                else None
+            ),
+            "actuals_sheet": str(raw.get("actuals_sheet") or "AccesoriPromoLunar"),
             "start_date": start_date,
             "end_date": end_date,
         },

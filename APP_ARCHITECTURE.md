@@ -139,6 +139,12 @@ operationale din `data/`, care sunt gitignored pe server:
   Focus -> Promo. In Focus, mai multe promotii active pe aceeasi luna sunt
   selectabile prin `promotion_key`; config-ul expune `key`, `rule_type`,
   perioada si, pentru regulile bazate pe anexe, fisierul Excel + sheet-urile.
+  Optional, o promotie poate avea `actuals_source_file` + `actuals_sheet`,
+  folosite ca raport saptamanal POS cu reduceri aplicate efectiv. Cand exista,
+  raportul corecteaza promo si excluderea din incentive pana la
+  `actuals_cutoff_date`; daca data lipseste, fallback-ul este data modificarii
+  fisierului minus o zi. Pentru zilele de dupa cutoff, regula pe bonuri ramane
+  activa, deci ingestul zilnic poate continua fara sa suprascrie corectia.
 - `data/contests.json` — concursuri config-driven, cu perioada, scope,
   reguli de punctaj si premii.
 
@@ -158,9 +164,15 @@ Helperul este folosit de:
   promotiile active ale lunii, independent de `promotion_key` selectat in UI;
 - punctajul de concurs pentru bonurile promo.
 
-`promo_qty` din summary/tabelele Hub ramane agregatul simplu din
-`reporting_item_day`; nu trebuie folosit ca headline pentru campanii
-co-purchase.
+Importul zilnic de vanzari rescrie snapshot-ul lunii prin
+`replace_month_snapshot`, apoi reconstruieste agregatele `reporting_*`. Raportul
+promo saptamanal nu este parte din ingestul zilnic; se pastreaza separat in
+`/opt/Mobiup/docs` si este citit la runtime. Daca fisierul lipseste sau nu este
+configurat, toate calculele revin la regula pe bonuri.
+
+`promo_qty` din tabelele operationale Hub ramane agregatul simplu din
+`reporting_item_day`; headline-urile de campanii folosesc metricile promo
+dedicate sau raportul POS corectiv.
 
 ### Salarii
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import asyncpg
@@ -12,8 +13,19 @@ from models import (
 )
 from repositories.contests import ContestsRepository
 from services.contests_config import ContestDefinition, get_active_contest, get_active_contests
-from services.dashboard_specials import load_special_cards_config, parse_promotion_definition
-from services.promo_copurchase import compute_promo_copurchase
+from services.dashboard_specials import (
+    load_promotion_rule_products,
+    load_special_cards_config,
+    parse_promotion_definition,
+)
+from services.promo_copurchase import (
+    compute_promo_actuals_from_report,
+    compute_promo_copurchase,
+    compute_promo_same_model_pair,
+    compute_promo_trigger_discounted,
+    merge_promo_results,
+    promo_actuals_cutoff_date,
+)
 
 # Prag sentinel cand nu exista regula de pret (nicio unitate nu il depaseste).
 _NO_PRICE_THRESHOLD = 10**12
@@ -138,18 +150,101 @@ class ContestsService:
             promo_config, promo_cfg_err = load_special_cards_config()
             promo_def, promo_def_err = parse_promotion_definition(promo_config, month)
             if promo_def is not None and not promo_def_err and not promo_cfg_err:
-                async with self.pool.acquire() as conn:
-                    cp = await compute_promo_copurchase(
-                        conn,
-                        month=month,
-                        start_date=promo_def["start_date"],
-                        end_date=promo_def["end_date"],
-                        item_codes=promo_def["item_codes"],
-                        **_promo_scope_kwargs(contest.scope),
-                    )
-                for (_site, agent, _item), units in cp.excluded_units.items():
-                    if agent and agent != "-":
-                        promo_bonuri[agent] = promo_bonuri.get(agent, 0) + units
+                products, products_error = load_promotion_rule_products(promo_def)
+                if products is not None and products_error is None:
+                    rule_type = promo_def.get("rule_type") or "selected_item_copurchase"
+                    if rule_type == "same_model_screen_camera":
+                        promo_item_codes = list(products["discounted_codes"])
+                    elif rule_type == "trigger_discounted":
+                        promo_item_codes = list(products["discounted_codes"])
+                    else:
+                        promo_item_codes = list(products["item_codes"])
+
+                    async with self.pool.acquire() as conn:
+                        scope_kwargs = _promo_scope_kwargs(contest.scope)
+                        cp = await compute_promo_actuals_from_report(
+                            conn,
+                            month=month,
+                            definition=promo_def,
+                            item_codes=promo_item_codes,
+                            **scope_kwargs,
+                        )
+                        if cp is not None:
+                            cutoff_date = promo_actuals_cutoff_date(promo_def)
+                            if cutoff_date is not None:
+                                tail_start = max(
+                                    promo_def["start_date"],
+                                    cutoff_date + timedelta(days=1),
+                                )
+                                if tail_start <= promo_def["end_date"]:
+                                    tail_def = {
+                                        **promo_def,
+                                        "start_date": tail_start,
+                                        "actuals_source_file": None,
+                                        "actuals_file": None,
+                                    }
+                                    if rule_type == "same_model_screen_camera":
+                                        tail_cp = await compute_promo_same_model_pair(
+                                            conn,
+                                            month=month,
+                                            start_date=tail_def["start_date"],
+                                            end_date=tail_def["end_date"],
+                                            screen_code_models=products["trigger_code_models"],
+                                            camera_code_models=products["discounted_code_models"],
+                                            **scope_kwargs,
+                                        )
+                                    elif rule_type == "trigger_discounted":
+                                        tail_cp = await compute_promo_trigger_discounted(
+                                            conn,
+                                            month=month,
+                                            start_date=tail_def["start_date"],
+                                            end_date=tail_def["end_date"],
+                                            trigger_codes=products["trigger_codes"],
+                                            discounted_codes=products["discounted_codes"],
+                                            **scope_kwargs,
+                                        )
+                                    else:
+                                        tail_cp = await compute_promo_copurchase(
+                                            conn,
+                                            month=month,
+                                            start_date=tail_def["start_date"],
+                                            end_date=tail_def["end_date"],
+                                            item_codes=promo_item_codes,
+                                            **scope_kwargs,
+                                        )
+                                    cp = merge_promo_results(cp, tail_cp)
+                        if cp is None and rule_type == "same_model_screen_camera":
+                            cp = await compute_promo_same_model_pair(
+                                conn,
+                                month=month,
+                                start_date=promo_def["start_date"],
+                                end_date=promo_def["end_date"],
+                                screen_code_models=products["trigger_code_models"],
+                                camera_code_models=products["discounted_code_models"],
+                                **scope_kwargs,
+                            )
+                        elif cp is None and rule_type == "trigger_discounted":
+                            cp = await compute_promo_trigger_discounted(
+                                conn,
+                                month=month,
+                                start_date=promo_def["start_date"],
+                                end_date=promo_def["end_date"],
+                                trigger_codes=products["trigger_codes"],
+                                discounted_codes=products["discounted_codes"],
+                                **scope_kwargs,
+                            )
+                        elif cp is None:
+                            cp = await compute_promo_copurchase(
+                                conn,
+                                month=month,
+                                start_date=promo_def["start_date"],
+                                end_date=promo_def["end_date"],
+                                item_codes=promo_item_codes,
+                                **scope_kwargs,
+                            )
+                    for (_site, agent, _item), units in cp.excluded_units.items():
+                        if agent and agent != "-":
+                            promo_bonuri[agent] = promo_bonuri.get(agent, 0) + units
 
         # --- combinare per agent ---
         focus_units_by_agent = {r["agent"]: int(r["focus_units"]) for r in agent_rows}

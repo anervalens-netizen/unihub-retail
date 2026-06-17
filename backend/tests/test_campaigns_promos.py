@@ -209,9 +209,9 @@ class TestPromoIncentivesNoConfig:
             "reward_map": {"I1": 5.0}, "subtitle": None,
         }
         mock_mults.return_value = ({"S1": 1.0}, {"S1": 1.0})
-        # Headline gross: 10 unitati * 5 RON * 1.0 = 50
+        # Summary-ul Hub este deja corectat de promo actuals/co-purchase.
         mock_summary.return_value = PromoIncentiveSummary(
-            incentive_qty=10, incentive_value=Decimal("50")
+            incentive_qty=6, incentive_value=Decimal("30")
         )
         # 4 unitati reduse pe (S1, Agent1, I1) -> excluse din incentive
         mock_cp.return_value = PromoCoPurchaseResult(
@@ -237,9 +237,8 @@ class TestPromoIncentivesNoConfig:
         assert result["top_agents"][0].qty_sold == 6
         # Magazin: (10 - 4) * 5 * 1.0 = 30
         assert result["top_stores"][0].incentive_value == 30.0
-        # Headline: 50 - (4 * 5 * 1.0) = 30
+        # Headline-ul vine din summary-ul deja corectat; nu se scade de doua ori.
         assert result["incentive_value"] == 30.0
-        # Headline qty: 10 - 4 (I1 e produs incentive) = 6
         assert result["incentive_qty"] == 6
         # Tier 5 RON: 6 unitati incentivate
         assert result["incentive_categories"][0].qty == 6
@@ -328,8 +327,8 @@ class TestPromoIncentivesNoConfig:
         }
         mock_mults.return_value = ({"S1": 1.0}, {"S1": 1.0})
         mock_summary.return_value = PromoIncentiveSummary(
-            incentive_qty=10,
-            incentive_value=Decimal("100"),
+            incentive_qty=7,
+            incentive_value=Decimal("75"),
         )
         mock_repo.fetch_promo_total.return_value = FakeRow(total_qty=1)
         mock_repo.fetch_promo_store_rows.return_value = [
