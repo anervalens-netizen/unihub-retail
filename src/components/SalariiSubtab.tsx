@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import {
   fetchSalariiOverview,
@@ -51,6 +52,45 @@ const COMPANY_COLORS: Record<string, string> = {
   Mobicell: 'text-indigo-500',
   Mobiup: 'text-emerald-500',
 };
+
+const RATIO_HELP_TEXT = '% = Salarii / Vanzari. Culoarea compara procentul cu media ponderata a randurilor afisate.';
+
+function getSalarySalesRatio(totalSalary: number, totalSales: number): number {
+  return totalSales > 0 ? (totalSalary / totalSales) * 100 : 0;
+}
+
+function getWeightedRatioAverage(rows: Array<{ total_salary: number; total_sales: number }>): number {
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.salary += row.total_salary || 0;
+      acc.sales += row.total_sales || 0;
+      return acc;
+    },
+    { salary: 0, sales: 0 }
+  );
+  return getSalarySalesRatio(totals.salary, totals.sales);
+}
+
+function getRatioToneStyle(ratio: number, average: number): CSSProperties {
+  if (!Number.isFinite(ratio) || !Number.isFinite(average) || average <= 0) {
+    return { color: 'hsl(45 88% 38%)' };
+  }
+
+  const deadband = 0.35;
+  const deviation = ratio - average;
+  if (Math.abs(deviation) <= deadband) {
+    return { color: 'hsl(45 88% 38%)' };
+  }
+
+  const maxDeviation = Math.max(average * 0.6, 8);
+  const intensity = Math.min(Math.abs(deviation) / maxDeviation, 1);
+  const hue = deviation > 0
+    ? 45 - 45 * intensity
+    : 45 + 95 * intensity;
+  const lightness = 38 - 6 * intensity;
+
+  return { color: `hsl(${hue.toFixed(0)} 78% ${lightness.toFixed(0)}%)` };
+}
 
 interface DrawerState {
   cnp: string;
@@ -204,6 +244,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     return sorted;
   }, [trend, trendSort]);
 
+  const summaryRatioAverage = useMemo(() => getWeightedRatioAverage(summary), [summary]);
+  const trendRatioAverage = useMemo(() => getWeightedRatioAverage(trend), [trend]);
+
   const mobicellTotal = overview?.by_company?.find((c) => c.name === 'Mobicell')?.total ?? 0;
   const mobiupTotal = overview?.by_company?.find((c) => c.name === 'Mobiup')?.total ?? 0;
 
@@ -287,7 +330,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 <SortableHeader label="Firma" active={summarySort.key === 'company_name'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'company_name'))} className="pb-2 text-left text-xs" />
                 <SortableHeader label="Salariu" active={summarySort.key === 'total_salary'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_salary'))} className="pb-2 text-right text-xs" />
                 <SortableHeader label="Vanzari" active={summarySort.key === 'total_sales'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_sales'))} className="pb-2 text-right text-xs" />
-                <SortableHeader label="%" active={summarySort.key === 'ratio'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="%*" title={RATIO_HELP_TEXT} active={summarySort.key === 'ratio'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
               </tr>
             </thead>
             <tbody>
@@ -310,7 +353,11 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                   <td className="py-2 text-right font-mono text-slate-500">
                     {formatCurrency(item.total_sales)}
                   </td>
-                  <td className={`py-2 text-right text-xs font-medium ${item.ratio > 50 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                  <td
+                    className="py-2 text-right text-xs font-semibold tabular-nums"
+                    style={getRatioToneStyle(item.ratio, summaryRatioAverage)}
+                    title={`Salarii / Vanzari. Media selectiei: ${summaryRatioAverage.toFixed(1)}%`}
+                  >
                     {item.ratio.toFixed(1)}%
                   </td>
                 </tr>
@@ -318,6 +365,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+          * % = salarii / vanzari; culorile sunt raportate la media ponderata a randurilor afisate.
+        </p>
       </div>
 
       {/* ===== Card 3: Trend (Evolutie Salarii vs Vanzari) ===== */}
@@ -333,7 +383,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 <SortableHeader label="Luna" active={trendSort.key === 'month'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'month'))} className="pb-2 text-left text-xs" />
                 <SortableHeader label="Salarii" active={trendSort.key === 'total_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_salary'))} className="pb-2 text-right text-xs" />
                 <SortableHeader label="Vanzari" active={trendSort.key === 'total_sales'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_sales'))} className="pb-2 text-right text-xs" />
-                <SortableHeader label="%" active={trendSort.key === 'ratio'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="%*" title={RATIO_HELP_TEXT} active={trendSort.key === 'ratio'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
               </tr>
             </thead>
             <tbody>
@@ -343,13 +393,17 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 </tr>
               )}
               {sortedTrend.map((t) => {
-                const ratio = t.total_sales > 0 ? (t.total_salary / t.total_sales) * 100 : 0;
+                const ratio = getSalarySalesRatio(t.total_salary, t.total_sales);
                 return (
                   <tr key={t.month} className="border-b border-slate-100 dark:border-slate-800">
                     <td className="py-2 font-medium text-slate-700 dark:text-slate-200">{t.month}</td>
                     <td className="py-2 text-right font-mono text-slate-600 dark:text-slate-300">{formatCurrency(t.total_salary)}</td>
                     <td className="py-2 text-right font-mono text-slate-500">{formatCurrency(t.total_sales)}</td>
-                    <td className={`py-2 text-right text-xs font-medium ${ratio > 50 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    <td
+                      className="py-2 text-right text-xs font-semibold tabular-nums"
+                      style={getRatioToneStyle(ratio, trendRatioAverage)}
+                      title={`Salarii / Vanzari. Media selectiei: ${trendRatioAverage.toFixed(1)}%`}
+                    >
                       {ratio.toFixed(1)}%
                     </td>
                   </tr>
@@ -357,6 +411,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               })}
             </tbody>
           </table>
+          <p className="mt-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+            * % = salarii / vanzari; culorile sunt raportate la media ponderata a randurilor afisate.
+          </p>
         </div>
       </div>
 

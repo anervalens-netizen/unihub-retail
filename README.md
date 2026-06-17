@@ -346,6 +346,23 @@ Pentru afisare, randurile sunt consolidate pe `locatie + company_name`, nu pe
 part-time sau coduri istorice diferite pentru aceeasi locatie. Consolidarea se
 face doar in query-ul de citire; tabela `salary_records` ramane nemodificata.
 
+Importul lunar se ruleaza cu scriptul dedicat, intai dry-run si apoi `--apply`:
+
+```bash
+backend/venv/bin/python backend/scripts/import_salary_records.py \
+  --year 2026 \
+  --month 5 \
+  --mobiup-file "/opt/Mobiup/docs/comisioane/MOBI COMISIOANE AGENTI MAI.xls" \
+  --mobicell-file "/opt/Mobiup/docs/comisioane/COMISIOANE AGENTI Mobicell mai.xls"
+
+backend/venv/bin/python backend/scripts/import_salary_records.py \
+  --year 2026 \
+  --month 5 \
+  --mobiup-file "/opt/Mobiup/docs/comisioane/MOBI COMISIOANE AGENTI MAI.xls" \
+  --mobicell-file "/opt/Mobiup/docs/comisioane/COMISIOANE AGENTI Mobicell mai.xls" \
+  --apply
+```
+
 ## Fluxul de import
 
 La import:

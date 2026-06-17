@@ -446,20 +446,23 @@ export function SortableHeader({
   direction,
   onClick,
   className = '',
+  title,
 }: {
   label: string;
   active: boolean;
   direction: SortDirection;
   onClick: () => void;
   className?: string;
+  title?: string;
 }) {
   const hasCustomSpacing = /\b[pxy]-/.test(className);
 
   return (
-    <th className={`font-bold ${hasCustomSpacing ? '' : 'px-3 py-3'} ${className}`}>
+    <th className={`font-bold ${hasCustomSpacing ? '' : 'px-3 py-3'} ${className}`} title={title}>
       <button
         type="button"
         onClick={onClick}
+        title={title}
         className="flex max-w-full items-center justify-start gap-0.5 text-left leading-[1.05] transition hover:text-slate-700 dark:hover:text-slate-200"
       >
         <span className="min-w-0 whitespace-normal break-words">{label}</span>
