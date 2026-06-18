@@ -44,10 +44,14 @@ class TestSalariiOverview:
             "by_company": [],
             "record_count": 0,
             "agent_count": 0,
+            "agent_month_count": 0,
+            "avg_agent_month_count": 0,
+            "avg_salary": Decimal("0"),
         }
         result = await service.get_overview(None, None, None)
         assert result["months_span"] is None
         assert result["total"] == Decimal("0")
+        assert result["avg_salary"] == 0
 
     @pytest.mark.asyncio
     async def test_overview_with_months(self, service, mock_repo):
@@ -57,10 +61,15 @@ class TestSalariiOverview:
             "by_company": [{"company": "FirmaA", "total": Decimal("100000")}],
             "record_count": 500,
             "agent_count": 25,
+            "agent_month_count": 40,
+            "avg_agent_month_count": 35,
+            "avg_salary": Decimal("4100"),
         }
         result = await service.get_overview(None, None, None)
         assert result["months_span"] == [2024, 1, 2026, 5]
         assert result["total"] == Decimal("150000")
+        assert result["avg_salary"] == Decimal("4100")
+        assert result["avg_agent_month_count"] == 35
 
     @pytest.mark.asyncio
     async def test_overview_with_filters(self, service, mock_repo):
@@ -70,11 +79,14 @@ class TestSalariiOverview:
             "by_company": [],
             "record_count": 100,
             "agent_count": 10,
+            "agent_month_count": 20,
+            "avg_agent_month_count": 18,
+            "avg_salary": Decimal("3200"),
         }
         result = await service.get_overview("FirmaA", "Region1", "Asm1")
         assert result["months_span"] == [2025, 6, 2026, 3]
         call_args = mock_repo.fetch_overview.call_args
-        assert "st.regional" in call_args[0][1] or "st.asm" in call_args[0][1] or len(call_args[0][3]) == 3
+        assert "st.regional" in call_args[0][1] or "st.asm" in call_args[0][1] or len(call_args[0][2]) == 3
 
 
 class TestSalariiEvolution:
@@ -137,6 +149,7 @@ class TestSalariiAgentHistory:
         assert result["records"] == []
         assert result["total"] == 0.0
         assert result["month_count"] == 0
+        assert result["avg_month_count"] == 0
 
     @pytest.mark.asyncio
     async def test_agent_history_with_data(self, service, mock_repo):
@@ -148,6 +161,19 @@ class TestSalariiAgentHistory:
         assert result["month_count"] == 2
         assert result["total"] == 6500.0
         assert result["avg"] == 3250.0
+        assert result["avg_month_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_agent_history_average_excludes_months_under_2000(self, service, mock_repo):
+        mock_repo.fetch_agent_history.return_value = [
+            FakeRow(total_salary=Decimal("1500"), month=4, year=2026, company_name="F1"),
+            FakeRow(total_salary=Decimal("3000"), month=5, year=2026, company_name="F1"),
+        ]
+        result = await service.get_agent_history("123456")
+        assert result["total"] == 4500.0
+        assert result["month_count"] == 2
+        assert result["avg_month_count"] == 1
+        assert result["avg"] == 3000.0
 
 
 class TestSalariiSummary:
@@ -162,18 +188,22 @@ class TestSalariiSummary:
         mock_repo.fetch_latest_month.return_value = FakeRow(year=2026, month=5)
         mock_repo.fetch_summary_by_site.return_value = [
             FakeRow(site_code="S1", locatie="Store 1", company_name="F1",
-                    total_salary=Decimal("5000"), agent_count=3, total_sales=Decimal("50000")),
+                    total_salary=Decimal("5000"), agent_count=3, avg_agent_count=2,
+                    avg_salary=Decimal("2250"), total_sales=Decimal("50000")),
         ]
         result = await service.get_summary(None, None, None, None, None, None)
         assert result["month"] == "2026-05"
         assert len(result["items"]) == 1
         assert result["items"][0]["ratio"] == pytest.approx(10.0)
+        assert result["items"][0]["avg_salary"] == 2250.0
+        assert result["items"][0]["avg_agent_count"] == 2
 
     @pytest.mark.asyncio
     async def test_summary_explicit_year_month(self, service, mock_repo):
         mock_repo.fetch_summary_by_site.return_value = [
             FakeRow(site_code="S1", locatie="Store 1", company_name="F1",
-                    total_salary=Decimal("3000"), agent_count=2, total_sales=Decimal("0")),
+                    total_salary=Decimal("3000"), agent_count=2, avg_agent_count=1,
+                    avg_salary=Decimal("2500"), total_sales=Decimal("0")),
         ]
         result = await service.get_summary(None, None, None, None, 2026, 4)
         assert result["month"] == "2026-04"
@@ -189,23 +219,29 @@ class TestSalariiTrend:
     @pytest.mark.asyncio
     async def test_trend_aggregation(self, service, mock_repo):
         mock_repo.fetch_trend.return_value = [
-            FakeRow(year=2026, month=4, total_salary=Decimal("5000"), total_sales=Decimal("50000")),
-            FakeRow(year=2026, month=5, total_salary=Decimal("6000"), total_sales=Decimal("60000")),
+            FakeRow(year=2026, month=4, total_salary=Decimal("5000"), total_sales=Decimal("50000"),
+                    agent_count=2, avg_agent_count=1, avg_salary=Decimal("3500")),
+            FakeRow(year=2026, month=5, total_salary=Decimal("6000"), total_sales=Decimal("60000"),
+                    agent_count=3, avg_agent_count=2, avg_salary=Decimal("2750")),
         ]
         result = await service.get_trend(None, None, None, None)
         assert len(result) == 2
-        assert result[0]["month"] in ("2026-04", "2026-05")
+        assert result[0]["month"] == "2026-04"
+        assert result[0]["avg_salary"] == 3500
+        assert result[0]["avg_agent_count"] == 1
 
     @pytest.mark.asyncio
     async def test_trend_with_company(self, service, mock_repo):
         mock_repo.fetch_trend.return_value = [
             FakeRow(year=2026, month=5, total_salary=Decimal("4000"),
-                    total_sales=Decimal("40000"), company_name="FirmaA"),
+                    total_sales=Decimal("40000"), agent_count=1,
+                    avg_agent_count=1, avg_salary=Decimal("4000")),
         ]
         result = await service.get_trend("FirmaA", None, None, None)
         assert len(result) == 1
         assert "by_company" in result[0]
-        assert "FirmaA" in result[0]["by_company"]
+        assert result[0]["by_company"] == {}
+        assert result[0]["avg_salary"] == 4000
 
 
 class TestSalariiSummaryFilters:
@@ -220,7 +256,8 @@ class TestSalariiSummaryFilters:
     async def test_summary_with_company_and_site(self, service, mock_repo):
         mock_repo.fetch_summary_by_site.return_value = [
             FakeRow(site_code="S1", locatie="Store 1", company_name="F1",
-                    total_salary=Decimal("4000"), agent_count=2, total_sales=Decimal("40000")),
+                    total_salary=Decimal("4000"), agent_count=2, avg_agent_count=1,
+                    avg_salary=Decimal("3000"), total_sales=Decimal("40000")),
         ]
         result = await service.get_summary("FirmaA", "SITE01", None, None, 2026, 5)
         assert len(result["items"]) == 1
@@ -233,14 +270,14 @@ class TestSalariiTrendFilters:
         mock_repo.fetch_trend.return_value = []
         result = await service.get_trend(None, None, "Region1", "Asm1")
         call = mock_repo.fetch_trend.call_args
-        assert len(call[0][4]) == 2
+        assert len(call[0][2]) == 2
 
     @pytest.mark.asyncio
     async def test_trend_with_site_code(self, service, mock_repo):
         mock_repo.fetch_trend.return_value = []
         result = await service.get_trend(None, "SITE01", None, None)
         call = mock_repo.fetch_trend.call_args
-        assert len(call[0][4]) == 1
+        assert len(call[0][2]) == 1
 
 
 class TestSalariiStores:

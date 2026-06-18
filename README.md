@@ -351,12 +351,19 @@ Coloane HR folosite:
 
 Acoperire curenta in `salary_records`:
 - 2025 integral
-- 2026 ianuarie-aprilie
+- 2026 ianuarie-mai
 
 Observatii de calitate a datelor:
 - unele randuri Mobiup nu au `site_code` cand locatia HR nu poate fi mapata sigur la un magazin Retail;
 - randurile fara `site_code` intra in totaluri si in istoricul agentilor, dar nu intra corect in filtrele pe magazin/regional/ASM;
-- cateva randuri istorice Mobicell au CNP gol in sursa initiala; acestea sunt pastrate pentru totalurile lunare, dar pot afecta numararea distincta pe agenti.
+- cateva randuri istorice Mobicell au CNP gol in sursa initiala; read model-ul foloseste numele normalizat ca fallback si elimina duplicatele complet identice.
+
+Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
+unitar pe valorile agent-luna de cel putin `2.000 RON`. Identitatea principala
+este CNP-ul. Daca acelasi agent are mai multe randuri de plata in aceeasi luna,
+valorile se insumeaza inainte de aplicarea pragului. Valorile sub prag sunt
+excluse numai din medii; totalurile, numarul de agenti si istoricul raman
+complete.
 
 Cardul **Salarii vs Vanzari** foloseste endpointul `/salarii/summary`.
 Pentru afisare, randurile sunt consolidate pe `locatie + company_name`, nu pe

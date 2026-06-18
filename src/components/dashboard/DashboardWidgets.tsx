@@ -447,6 +447,7 @@ export function SortableHeader({
   onClick,
   className = '',
   title,
+  align = 'left',
 }: {
   label: string;
   active: boolean;
@@ -454,8 +455,12 @@ export function SortableHeader({
   onClick: () => void;
   className?: string;
   title?: string;
+  align?: 'left' | 'right';
 }) {
   const hasCustomSpacing = /\b[pxy]-/.test(className);
+  const alignmentClass = align === 'right'
+    ? 'justify-end text-right'
+    : 'justify-start text-left';
 
   return (
     <th className={`font-bold ${hasCustomSpacing ? '' : 'px-3 py-3'} ${className}`} title={title}>
@@ -463,7 +468,7 @@ export function SortableHeader({
         type="button"
         onClick={onClick}
         title={title}
-        className="flex max-w-full items-center justify-start gap-0.5 text-left leading-[1.05] transition hover:text-slate-700 dark:hover:text-slate-200"
+        className={`flex w-full max-w-full items-center gap-0.5 leading-[1.05] transition hover:text-slate-700 dark:hover:text-slate-200 ${alignmentClass}`}
       >
         <span className="min-w-0 whitespace-normal break-words">{label}</span>
         {active ? direction === 'asc' ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" /> : <ArrowUpDown size={11} className="shrink-0" />}

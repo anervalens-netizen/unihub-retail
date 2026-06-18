@@ -4,63 +4,121 @@ from typing import Any
 import asyncpg
 
 
+MIN_SALARY_FOR_AVERAGE = 2000
+
+
 class SalariiRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def fetch_overview(self, join_sql: str, where_sql: str, cnp_where: str, params: list[Any]) -> dict:
+    async def fetch_overview(self, join_sql: str, where_sql: str, params: list[Any]) -> dict:
+        salary_base_cte = f"""
+            WITH salary_base AS (
+                SELECT DISTINCT
+                    sr.year,
+                    sr.month,
+                    sr.full_name,
+                    sr.cnp,
+                    sr.total_salary,
+                    sr.company_name,
+                    sr.site_code,
+                    sr.locatie
+                FROM salary_records sr
+                {join_sql}
+                {where_sql}
+            ),
+            salary_identified AS (
+                SELECT
+                    *,
+                    COALESCE(
+                        NULLIF(BTRIM(cnp), ''),
+                        'name:' || LOWER(BTRIM(full_name))
+                    ) AS agent_key
+                FROM salary_base
+            ),
+            agent_months AS (
+                SELECT
+                    year,
+                    month,
+                    agent_key,
+                    SUM(total_salary) AS month_salary
+                FROM salary_identified
+                GROUP BY year, month, agent_key
+            )
+        """
         async with self.pool.acquire() as conn:
-            total = await conn.fetchval(
-                f"SELECT COALESCE(SUM(sr.total_salary), 0) FROM salary_records sr {join_sql} {where_sql}",
+            stats = await conn.fetchrow(
+                f"""
+                {salary_base_cte}
+                SELECT
+                    COALESCE((SELECT SUM(total_salary) FROM salary_base), 0) AS total,
+                    (SELECT COUNT(*) FROM salary_base) AS record_count,
+                    (SELECT COUNT(DISTINCT agent_key) FROM salary_identified) AS agent_count,
+                    (SELECT COUNT(*) FROM agent_months) AS agent_month_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM agent_months
+                        WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                    ) AS avg_agent_month_count,
+                    COALESCE((
+                        SELECT AVG(month_salary)
+                        FROM agent_months
+                        WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                    ), 0) AS avg_salary,
+                    (SELECT MIN(year * 100 + month) / 100 FROM salary_base) AS min_year,
+                    (SELECT MIN(year * 100 + month) % 100 FROM salary_base) AS min_month,
+                    (SELECT MAX(year * 100 + month) / 100 FROM salary_base) AS max_year,
+                    (SELECT MAX(year * 100 + month) % 100 FROM salary_base) AS max_month
+                """,
                 *params,
             )
             by_company = await conn.fetch(
-                f"SELECT sr.company_name AS name, COALESCE(SUM(sr.total_salary), 0) AS total "
-                f"FROM salary_records sr {join_sql} {where_sql} "
-                f"GROUP BY sr.company_name ORDER BY total DESC",
-                *params,
-            )
-            record_count = await conn.fetchval(
-                f"SELECT COUNT(*) FROM salary_records sr {join_sql} {where_sql}",
-                *params,
-            )
-            agent_count = await conn.fetchval(
-                f"SELECT COUNT(DISTINCT sr.cnp) FROM salary_records sr {join_sql} {cnp_where}",
-                *params,
-            )
-            months_row = await conn.fetchrow(
                 f"""
-                SELECT
-                    MIN(sr.year * 100 + sr.month) / 100 AS min_year,
-                    MIN(sr.year * 100 + sr.month) % 100 AS min_month,
-                    MAX(sr.year * 100 + sr.month) / 100 AS max_year,
-                    MAX(sr.year * 100 + sr.month) % 100 AS max_month
-                FROM salary_records sr {join_sql} {where_sql}
+                {salary_base_cte}
+                SELECT company_name AS name, COALESCE(SUM(total_salary), 0) AS total
+                FROM salary_base
+                GROUP BY company_name
+                ORDER BY total DESC
                 """,
                 *params,
             )
         return {
-            "total": float(total),
+            "total": float(stats["total"]),
             "by_company": [dict(r) for r in by_company],
-            "record_count": record_count,
-            "agent_count": agent_count,
-            "months_row": months_row,
+            "record_count": stats["record_count"],
+            "agent_count": stats["agent_count"],
+            "agent_month_count": stats["agent_month_count"],
+            "avg_agent_month_count": stats["avg_agent_month_count"],
+            "avg_salary": float(stats["avg_salary"]),
+            "months_row": stats,
         }
 
     async def fetch_evolution_main(self, join_sql: str, where_sql: str, params: list[Any]) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
+                WITH salary_base AS (
+                    SELECT DISTINCT
+                        sr.year,
+                        sr.month,
+                        sr.full_name,
+                        sr.cnp,
+                        sr.total_salary,
+                        sr.company_name,
+                        sr.site_code,
+                        sr.locatie
+                    FROM salary_records sr
+                    {join_sql}
+                    {where_sql}
+                )
                 SELECT
-                    sr.year * 100 + sr.month AS sort_key,
-                    TO_CHAR(sr.year, 'FM9999') || '-' || TO_CHAR(sr.month, 'FM00') AS month,
-                    COALESCE(SUM(sr.total_salary) FILTER (WHERE sr.company_name = 'Mobicell'), 0) AS mobicell,
-                    COALESCE(SUM(sr.total_salary) FILTER (WHERE sr.company_name = 'Mobiup'), 0) AS mobiup,
-                    COALESCE(SUM(sr.total_salary), 0) AS total
-                FROM salary_records sr
-                {join_sql}
-                {where_sql}
-                GROUP BY sr.year, sr.month
+                    year * 100 + month AS sort_key,
+                    TO_CHAR(year, 'FM9999') || '-' || TO_CHAR(month, 'FM00') AS month,
+                    COALESCE(SUM(total_salary) FILTER (WHERE company_name = 'Mobicell'), 0) AS mobicell,
+                    COALESCE(SUM(total_salary) FILTER (WHERE company_name = 'Mobiup'), 0) AS mobiup,
+                    COALESCE(SUM(total_salary), 0) AS total
+                FROM salary_base
+                GROUP BY year, month
                 ORDER BY sort_key
                 """,
                 *params,
@@ -70,14 +128,26 @@ class SalariiRepository:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
+                WITH salary_base AS (
+                    SELECT DISTINCT
+                        sr.year,
+                        sr.month,
+                        sr.full_name,
+                        sr.cnp,
+                        sr.total_salary,
+                        sr.company_name,
+                        sr.site_code,
+                        sr.locatie
+                    FROM salary_records sr
+                    {join_sql}
+                    {where_sql}
+                )
                 SELECT
-                    sr.year * 100 + sr.month AS sort_key,
-                    TO_CHAR(sr.year, 'FM9999') || '-' || TO_CHAR(sr.month, 'FM00') AS month,
-                    SUM(sr.total_salary) AS total
-                FROM salary_records sr
-                {join_sql}
-                {where_sql}
-                GROUP BY sr.year, sr.month
+                    year * 100 + month AS sort_key,
+                    TO_CHAR(year, 'FM9999') || '-' || TO_CHAR(month, 'FM00') AS month,
+                    SUM(total_salary) AS total
+                FROM salary_base
+                GROUP BY year, month
                 ORDER BY sort_key
                 """,
                 *params,
@@ -106,29 +176,70 @@ class SalariiRepository:
                     {join_sql}
                     {where_sql}
                 ),
+                salary_identified AS (
+                    SELECT
+                        *,
+                        COALESCE(
+                            NULLIF(BTRIM(cnp), ''),
+                            'name:' || LOWER(BTRIM(full_name))
+                        ) AS agent_key
+                    FROM salary_dedup
+                ),
                 agent_months AS (
                     SELECT
-                        full_name,
-                        cnp,
-                        company_name,
-                        locatie,
+                        agent_key,
                         year,
                         month,
                         SUM(total_salary) AS month_salary
-                    FROM salary_dedup
-                    GROUP BY full_name, cnp, company_name, locatie, year, month
+                    FROM salary_identified
+                    GROUP BY agent_key, year, month
+                ),
+                agent_totals AS (
+                    SELECT
+                        agent_key,
+                        COUNT(*) AS month_count,
+                        COUNT(*) FILTER (
+                            WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                        ) AS avg_month_count,
+                        SUM(month_salary) AS total_salary,
+                        COALESCE(AVG(month_salary) FILTER (
+                            WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                        ), 0) AS avg_salary
+                    FROM agent_months
+                    GROUP BY agent_key
+                ),
+                latest_period AS (
+                    SELECT
+                        agent_key,
+                        MAX(year * 100 + month) AS latest_month
+                    FROM salary_identified
+                    GROUP BY agent_key
+                ),
+                latest_details AS (
+                    SELECT
+                        si.agent_key,
+                        (ARRAY_AGG(si.full_name ORDER BY si.total_salary DESC, si.full_name))[1] AS full_name,
+                        MAX(NULLIF(BTRIM(si.cnp), '')) AS cnp,
+                        STRING_AGG(DISTINCT si.company_name, ' + ' ORDER BY si.company_name) AS company_name,
+                        STRING_AGG(
+                            DISTINCT COALESCE(NULLIF(BTRIM(si.locatie), ''), si.site_code),
+                            ' + '
+                            ORDER BY COALESCE(NULLIF(BTRIM(si.locatie), ''), si.site_code)
+                        ) FILTER (
+                            WHERE COALESCE(NULLIF(BTRIM(si.locatie), ''), si.site_code) IS NOT NULL
+                        ) AS locatie
+                    FROM salary_identified si
+                    JOIN latest_period lp
+                      ON lp.agent_key = si.agent_key
+                     AND lp.latest_month = si.year * 100 + si.month
+                    GROUP BY si.agent_key
                 )
                 """
         async with self.pool.acquire() as conn:
             total = await conn.fetchval(
                 f"""
                 {agent_months_cte}
-                SELECT COUNT(*)
-                FROM (
-                    SELECT 1
-                    FROM agent_months
-                    GROUP BY full_name, cnp, company_name, locatie
-                ) grouped_agents
+                SELECT COUNT(*) FROM agent_totals
                 """,
                 *params,
             )
@@ -137,20 +248,19 @@ class SalariiRepository:
                 f"""
                 {agent_months_cte}
                 SELECT
-                    full_name,
-                    cnp,
-                    company_name,
-                    locatie,
-                    COUNT(*) AS month_count,
-                    SUM(month_salary) AS total_salary,
-                    SUM(month_salary) / NULLIF(COUNT(*), 0) AS avg_salary
-                FROM agent_months
-                GROUP BY full_name, cnp, company_name, locatie
-                ORDER BY total_salary DESC NULLS LAST,
-                         full_name ASC NULLS LAST,
-                         company_name ASC NULLS LAST,
-                         locatie ASC NULLS LAST,
-                         cnp ASC NULLS LAST
+                    ld.full_name,
+                    ld.cnp,
+                    ld.company_name,
+                    ld.locatie,
+                    at.month_count,
+                    at.avg_month_count,
+                    at.total_salary,
+                    at.avg_salary
+                FROM agent_totals at
+                JOIN latest_details ld USING (agent_key)
+                ORDER BY at.total_salary DESC NULLS LAST,
+                         ld.full_name ASC NULLS LAST,
+                         ld.cnp ASC NULLS LAST
                 LIMIT ${len(params2) - 1} OFFSET ${len(params2)}
                 """,
                 *params2,
@@ -194,7 +304,7 @@ class SalariiRepository:
             return await conn.fetch(
                 f"""
                 WITH salary_rows AS (
-                    SELECT
+                    SELECT DISTINCT
                         s.site_code,
                         s.locatie,
                         s.company_name,
@@ -205,14 +315,39 @@ class SalariiRepository:
                     {join_stores}
                     WHERE {where_clause}
                 ),
+                salary_agents AS (
+                    SELECT
+                        MIN(site_code) AS site_code,
+                        locatie,
+                        company_name,
+                        COALESCE(
+                            NULLIF(BTRIM(cnp), ''),
+                            'name:' || LOWER(BTRIM(full_name))
+                        ) AS agent_key,
+                        SUM(total_salary) AS month_salary
+                    FROM salary_rows
+                    GROUP BY
+                        locatie,
+                        company_name,
+                        COALESCE(
+                            NULLIF(BTRIM(cnp), ''),
+                            'name:' || LOWER(BTRIM(full_name))
+                        )
+                ),
                 salary_display AS (
                     SELECT
                         MIN(site_code) AS site_code,
                         locatie,
                         company_name,
-                        SUM(total_salary) AS total_salary,
-                        COUNT(DISTINCT COALESCE(NULLIF(cnp, ''), full_name)) AS agent_count
-                    FROM salary_rows
+                        SUM(month_salary) AS total_salary,
+                        COUNT(*) AS agent_count,
+                        COUNT(*) FILTER (
+                            WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                        ) AS avg_agent_count,
+                        COALESCE(AVG(month_salary) FILTER (
+                            WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                        ), 0) AS avg_salary
+                    FROM salary_agents
                     GROUP BY locatie, company_name
                 ),
                 salary_sites AS (
@@ -246,6 +381,8 @@ class SalariiRepository:
                     sd.company_name,
                     sd.total_salary,
                     sd.agent_count,
+                    sd.avg_agent_count,
+                    sd.avg_salary,
                     COALESCE(vd.total_sales, 0) AS total_sales
                 FROM salary_display sd
                 LEFT JOIN sales_display vd
@@ -256,34 +393,95 @@ class SalariiRepository:
                 *params2,
             )
 
-    async def fetch_trend(self, join_sql: str, select_company: str, sql_company_group: str, where_sql: str, params: list[Any], company_name: str | None = None) -> list[asyncpg.Record]:
+    async def fetch_trend(
+        self,
+        join_sql: str,
+        where_sql: str,
+        params: list[Any],
+    ) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
-                SELECT
-                    sr.year,
-                    sr.month,
-                    {select_company}
-                    SUM(sr.total_salary) AS total_salary,
-                    COUNT(DISTINCT (sr.year, sr.month, sr.site_code, sr.company_name)) AS store_count,
-                    COALESCE(SUM(r.total_sales), 0) AS total_sales
-                FROM (
-                    SELECT year, month, site_code, company_name, SUM(total_salary) as total_salary
-                    FROM salary_records
-                    GROUP BY year, month, site_code, company_name
-                ) sr
-                {join_sql}
-                LEFT JOIN (
-                    SELECT import_month, site_code, firma, SUM(total_sales) as total_sales
+                WITH salary_rows AS (
+                    SELECT DISTINCT
+                        sr.year,
+                        sr.month,
+                        sr.full_name,
+                        sr.cnp,
+                        sr.total_salary,
+                        sr.company_name,
+                        sr.site_code,
+                        sr.locatie
+                    FROM salary_records sr
+                    {join_sql}
+                    {where_sql}
+                ),
+                salary_agents AS (
+                    SELECT
+                        year,
+                        month,
+                        COALESCE(
+                            NULLIF(BTRIM(cnp), ''),
+                            'name:' || LOWER(BTRIM(full_name))
+                        ) AS agent_key,
+                        SUM(total_salary) AS month_salary
+                    FROM salary_rows
+                    GROUP BY
+                        year,
+                        month,
+                        COALESCE(
+                            NULLIF(BTRIM(cnp), ''),
+                            'name:' || LOWER(BTRIM(full_name))
+                        )
+                ),
+                salary_months AS (
+                    SELECT
+                        year,
+                        month,
+                        SUM(month_salary) AS total_salary,
+                        COUNT(*) AS agent_count,
+                        COUNT(*) FILTER (
+                            WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                        ) AS avg_agent_count,
+                        COALESCE(AVG(month_salary) FILTER (
+                            WHERE month_salary >= {MIN_SALARY_FOR_AVERAGE}
+                        ), 0) AS avg_salary
+                    FROM salary_agents
+                    GROUP BY year, month
+                ),
+                salary_sites AS (
+                    SELECT DISTINCT year, month, site_code, company_name
+                    FROM salary_rows
+                    WHERE site_code IS NOT NULL
+                ),
+                sales_site AS (
+                    SELECT import_month, site_code, LOWER(firma) AS company_key, SUM(total_sales) AS total_sales
                     FROM reporting_agent_month
-                    GROUP BY import_month, site_code, firma
-                ) r
-                    ON r.import_month = TO_CHAR(sr.year, 'FM9999') || '-' || TO_CHAR(sr.month, 'FM00')
-                    AND r.site_code = sr.site_code
-                    AND LOWER(r.firma) = LOWER(sr.company_name)
-                {where_sql}
-                GROUP BY sr.year, sr.month{sql_company_group}
-                ORDER BY sr.year DESC, sr.month DESC{', sr.company_name' if company_name else ''}
+                    GROUP BY import_month, site_code, LOWER(firma)
+                ),
+                sales_months AS (
+                    SELECT
+                        ss.year,
+                        ss.month,
+                        COALESCE(SUM(sales_site.total_sales), 0) AS total_sales
+                    FROM salary_sites ss
+                    LEFT JOIN sales_site
+                      ON sales_site.import_month = TO_CHAR(ss.year, 'FM9999') || '-' || TO_CHAR(ss.month, 'FM00')
+                     AND sales_site.site_code = ss.site_code
+                     AND sales_site.company_key = LOWER(ss.company_name)
+                    GROUP BY ss.year, ss.month
+                )
+                SELECT
+                    sm.year,
+                    sm.month,
+                    sm.total_salary,
+                    sm.agent_count,
+                    sm.avg_agent_count,
+                    sm.avg_salary,
+                    COALESCE(vm.total_sales, 0) AS total_sales
+                FROM salary_months sm
+                LEFT JOIN sales_months vm USING (year, month)
+                ORDER BY sm.year DESC, sm.month DESC
                 """,
                 *params,
             )

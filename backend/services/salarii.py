@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from repositories.salarii import SalariiRepository
+from repositories.salarii import MIN_SALARY_FOR_AVERAGE, SalariiRepository
 
 
 class SalariiService:
@@ -27,9 +27,7 @@ class SalariiService:
             conditions.append(f"st.asm = ${len(params)}")
 
         where_sql = "WHERE " + " AND ".join(conditions) if conditions else ""
-        cnp_where = "WHERE " + " AND ".join(conditions + ["sr.cnp IS NOT NULL"]) if conditions else "WHERE sr.cnp IS NOT NULL"
-
-        data = await self.repo.fetch_overview(join_sql, where_sql, cnp_where, params)
+        data = await self.repo.fetch_overview(join_sql, where_sql, params)
 
         months_row = data["months_row"]
         if not months_row or months_row["min_year"] is None:
@@ -47,6 +45,9 @@ class SalariiService:
             "by_company": data["by_company"],
             "record_count": data["record_count"],
             "agent_count": data["agent_count"],
+            "agent_month_count": data["agent_month_count"],
+            "avg_agent_month_count": data["avg_agent_month_count"],
+            "avg_salary": data["avg_salary"],
             "months_span": months_span,
         }
 
@@ -123,15 +124,31 @@ class SalariiService:
     async def get_agent_history(self, cnp: str) -> dict:
         rows = await self.repo.fetch_agent_history(cnp)
         if not rows:
-            return {"records": [], "total": 0.0, "avg": 0.0, "month_count": 0}
+            return {
+                "records": [],
+                "total": 0.0,
+                "avg": 0.0,
+                "month_count": 0,
+                "avg_month_count": 0,
+            }
         total = sum(float(r["total_salary"]) for r in rows)
         month_count = len({(r["year"], r["month"]) for r in rows})
-        avg = total / month_count
+        monthly_totals: dict[tuple[int, int], float] = {}
+        for row in rows:
+            period = (row["year"], row["month"])
+            monthly_totals[period] = monthly_totals.get(period, 0.0) + float(row["total_salary"])
+        eligible_months = [
+            salary
+            for salary in monthly_totals.values()
+            if salary >= MIN_SALARY_FOR_AVERAGE
+        ]
+        avg = sum(eligible_months) / len(eligible_months) if eligible_months else 0.0
         return {
             "records": [dict(r) for r in rows],
             "total": total,
             "avg": avg,
             "month_count": month_count,
+            "avg_month_count": len(eligible_months),
         }
 
     async def get_summary(
@@ -198,6 +215,8 @@ class SalariiService:
                     "company_name": r["company_name"],
                     "total_salary": float(r["total_salary"]),
                     "agent_count": r["agent_count"],
+                    "avg_agent_count": r["avg_agent_count"],
+                    "avg_salary": float(r["avg_salary"]),
                     "total_sales": float(r["total_sales"]),
                     "ratio": float(r["total_salary"]) / float(r["total_sales"]) * 100
                     if r["total_sales"]
@@ -230,44 +249,22 @@ class SalariiService:
             params.append(asm)
             conditions.append(f"st.asm = ${len(params)}")
 
-        if company_name:
-            select_company = "sr.company_name,"
-            sql_company_group = ", sr.company_name"
-        else:
-            select_company = ""
-            sql_company_group = ""
-
         where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
         join_stores = "LEFT JOIN stores st ON st.site_code = sr.site_code" if needs_store_join else ""
 
-        rows = await self.repo.fetch_trend(
-            join_stores, select_company, sql_company_group, where_clause, params, company_name
-        )
-
-        months_map: dict = {}
-        for r in rows:
-            import_month = f"{r['year']}-{r['month']:02d}"
-            if import_month not in months_map:
-                months_map[import_month] = {
-                    "month": import_month,
-                    "total_salary": 0,
-                    "total_sales": 0,
-                    "agent_count": 0,
-                    "by_company": {},
-                }
-            months_map[import_month]["total_salary"] += float(r["total_salary"])
-            months_map[import_month]["total_sales"] += float(r["total_sales"])
-            if company_name:
-                company = r["company_name"]
-                if company not in months_map[import_month]["by_company"]:
-                    months_map[import_month]["by_company"][company] = {
-                        "total_salary": 0,
-                        "total_sales": 0,
-                    }
-                months_map[import_month]["by_company"][company]["total_salary"] += float(r["total_salary"])
-                months_map[import_month]["by_company"][company]["total_sales"] += float(r["total_sales"])
-
-        return sorted(months_map.values(), key=lambda x: x["month"], reverse=True)
+        rows = await self.repo.fetch_trend(join_stores, where_clause, params)
+        return [
+            {
+                "month": f"{r['year']}-{r['month']:02d}",
+                "total_salary": float(r["total_salary"]),
+                "total_sales": float(r["total_sales"]),
+                "agent_count": r["agent_count"],
+                "avg_agent_count": r["avg_agent_count"],
+                "avg_salary": float(r["avg_salary"]),
+                "by_company": {},
+            }
+            for r in rows
+        ]
 
     async def get_stores(self, company_name: str | None) -> list[dict]:
         conditions: list[str] = []; params: list[Any] = []

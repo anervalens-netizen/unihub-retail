@@ -109,6 +109,9 @@ export function SalaryDrawer({ cnp, fullName, isOpen, onClose }: Props) {
                   <div className="mt-1 text-sm font-bold text-slate-800 dark:text-white">
                     {formatCurrency(history.avg)} RON
                   </div>
+                  <div className="mt-1 text-[10px] text-slate-400">
+                    {history.avg_month_count}/{history.month_count} luni ≥ 2.000 RON
+                  </div>
                 </div>
               </div>
 

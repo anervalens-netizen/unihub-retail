@@ -25,7 +25,7 @@ async def test_salarii_overview_accepts_regional_asm():
             pytest.skip("Backend running but auth required (no test token)")
         assert r1.status_code == 200
         data = r1.json()
-        for key in ("total", "by_company", "record_count", "agent_count", "months_span"):
+        for key in ("total", "by_company", "record_count", "agent_count", "agent_month_count", "avg_agent_month_count", "avg_salary", "months_span"):
             assert key in data, f"Missing key: {key}"
 
         r2 = await client.get(
@@ -36,7 +36,7 @@ async def test_salarii_overview_accepts_regional_asm():
             pytest.skip("Backend running but auth required (no test token)")
         assert r2.status_code == 200
         data2 = r2.json()
-        for key in ("total", "by_company", "record_count", "agent_count", "months_span"):
+        for key in ("total", "by_company", "record_count", "agent_count", "agent_month_count", "avg_agent_month_count", "avg_salary", "months_span"):
             assert key in data2, f"Missing key after filter: {key}"
         assert data2["total"] <= data["total"]
 

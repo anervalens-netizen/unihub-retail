@@ -228,6 +228,7 @@ cd /opt/Mobiup/ops/runners/retail
 - Toate modelele Pydantic din `backend/models.py` cu `ConfigDict(from_attributes=True)` trebuie sa declare explicit campurile returnate
 - Salarii LEFT JOIN stores conditionat (doar cand regional/asm sunt prezente)
 - Salarii company_name case-insensitive la JOIN (`LOWER()` pe ambele parti)
+- Media salariala din Agenti -> Salarii foloseste numai valorile agent-luna de cel putin 2.000 RON; valorile sub prag sunt excluse doar din medii, nu din totaluri, numar de agenti sau istoric. Identitatea foloseste CNP cu fallback pe numele normalizat, iar read model-ul elimina duplicatele complet identice inainte de agregare.
 - Targetele din evaluarile pe agent se calculeaza ca `target magazin / zile cu vanzare in locatie * zile cu vanzare agent`, unde zilele locatiei vin din `COUNT(DISTINCT reporting_agent_day.sale_date)`. In evaluarea noua, punctajul targetului se calculeaza lunar si apoi se mediaza ponderat; luna partiala dintr-o selectie multi-luna intra cu pondere `zile disponibile / zile luna`. Ponderile standard sunt 25/20/15/15/10/15; doar luna partiala selectata singura foloseste 10/25/20/20/10/15.
 - Importul pilot din Grile Salarii se ruleaza cu `python backend/scripts/import_grile_agent_targets.py --month YYYY-MM [--apply]` si este limitat implicit la managerul `Andrei Stancu`.
 - Filtre: `MainLayout.hubFilters` shared Hub+Focus; `Agents` uses `agentsFilters` independent

@@ -5,6 +5,9 @@ export interface SalariiOverview {
   by_company: { name: string; total: number }[];
   record_count: number;
   agent_count: number;
+  agent_month_count: number;
+  avg_agent_month_count: number;
+  avg_salary: number;
   months_span: [number, number, number, number] | null; // [minY, minM, maxY, maxM], null when no data
 }
 
@@ -14,6 +17,7 @@ export interface SalaryAgentSummary {
   company_name: string;
   locatie: string | null;
   month_count: number;
+  avg_month_count: number;
   total_salary: number;
   avg_salary: number;
 }
@@ -39,6 +43,7 @@ export interface SalaryAgentHistory {
   total: number;
   avg: number;
   month_count: number;
+  avg_month_count: number;
 }
 
 export interface SalaryComparisonPoint {
@@ -47,6 +52,8 @@ export interface SalaryComparisonPoint {
   company_name: string;
   total_salary: number;
   agent_count: number;
+  avg_agent_count: number;
+  avg_salary: number;
   total_sales: number;
   ratio: number;
 }
@@ -61,6 +68,8 @@ export interface SalaryTrendMonth {
   total_salary: number;
   total_sales: number;
   agent_count: number;
+  avg_agent_count: number;
+  avg_salary: number;
   by_company: Record<string, {
     total_salary: number;
     total_sales: number;

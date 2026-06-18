@@ -198,6 +198,20 @@ Maparea principala:
 fara `site_code` sunt incluse in totalurile salariale generale, dar nu pot fi
 atribuite corect filtrelor bazate pe `stores` (`regional`, `asm`, magazin).
 
+Media salariala folosita in toate cardurile este:
+
+```text
+media valorilor agent-luna care sunt >= 2.000 RON
+```
+
+Agentul este identificat prin CNP, cu numele normalizat ca fallback pentru
+randurile istorice fara CNP. Inainte de agregare, read model-ul elimina
+duplicatele complet identice. Astfel, un agent cu doua randuri de plata in
+aceeasi luna contribuie cu suma ambelor randuri, dar este numarat o singura
+data in numitor. Valorile agent-luna sub 2.000 RON sunt considerate fractii si
+sunt excluse numai din medii. Totalurile salariale, numarul de agenti si
+istoricul raman complete.
+
 Endpointul `/salarii/summary`, folosit de cardul **Salarii vs Vanzari**,
 consolideaza afisarea pe `locatie + company_name`. Aceasta evita duplicatele
 vizuale cauzate de contracte duble, part-time sau site_code-uri istorice pentru

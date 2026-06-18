@@ -23,8 +23,15 @@ import { SortableHeader } from './dashboard/DashboardWidgets';
 type SortDir = 'asc' | 'desc';
 interface SortState<K extends string> { key: K; dir: SortDir }
 
-type SummarySort = 'locatie' | 'company_name' | 'total_salary' | 'total_sales' | 'ratio';
-type TrendSort = 'month' | 'total_salary' | 'total_sales' | 'ratio';
+type SummarySort =
+  | 'locatie'
+  | 'company_name'
+  | 'agent_count'
+  | 'total_salary'
+  | 'avg_salary'
+  | 'total_sales'
+  | 'ratio';
+type TrendSort = 'month' | 'total_salary' | 'total_sales' | 'avg_salary' | 'ratio';
 
 function toggleSort<K extends string>(prev: SortState<K>, key: K): SortState<K> {
   if (prev.key === key) return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
@@ -39,13 +46,21 @@ function formatMonthSpan(span?: [number, number, number, number] | null): string
   return `${MONTHS[minM - 1]}-${String(minY).slice(2)} → ${MONTHS[maxM - 1]}-${String(maxY).slice(2)}`;
 }
 
-function formatCurrency(val: any): string {
+function formatCurrency(val: unknown): string {
   if (val === undefined || val === null) return '0';
   const value = typeof val === 'string' ? parseFloat(val) : val;
-  if (isNaN(value)) return '0';
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
-  return value.toFixed(0);
+  if (typeof value !== 'number' || Number.isNaN(value)) return '0';
+  return value.toLocaleString('ro-RO', { maximumFractionDigits: 0 });
+}
+
+function formatCompactCurrency(val: unknown): string {
+  if (val === undefined || val === null) return '0';
+  const value = typeof val === 'string' ? parseFloat(val) : val;
+  if (typeof value !== 'number' || Number.isNaN(value)) return '0';
+  return value.toLocaleString('ro-RO', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  });
 }
 
 const COMPANY_COLORS: Record<string, string> = {
@@ -186,7 +201,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
           limit: PAGE_SIZE,
           offset,
         });
-        setAgents(offset === 0 ? res?.items || [] : (prev) => [...(prev || []), ...(res?.items || [])]);
+        setAgents(res?.items || []);
         setTotalAgents(res?.total || 0);
       } catch (e) {
         console.error('Failed to load agents:', e);
@@ -252,38 +267,56 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
   return (
     <div className="space-y-4 px-4 py-4">
-      {/* ===== Card 1: Statistici Salarii (2x2 grid) ===== */}
+      {/* ===== Card 1: Statistici Salarii ===== */}
       <div className="glass rounded-3xl p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">Statistici Salarii</h3>
           {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          {/* Row 1: Total Salarii + Perioada */}
+          {/* Row 1: total + average */}
           <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
             <div className="text-xs font-bold text-slate-500">Total Salarii</div>
             <div className="mt-1 text-2xl font-black text-slate-800 dark:text-white">
-              {overview ? `${formatCurrency(overview.total)} RON` : '—'}
+              {overview ? `${formatCompactCurrency(overview.total)} RON` : '—'}
             </div>
           </div>
+          <div
+            className="rounded-2xl bg-indigo-50 p-3 dark:bg-indigo-950/30"
+            title="Media include doar salariile lunare de cel putin 2.000 RON. Totalurile raman complete."
+          >
+            <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Medie lunară / agent</div>
+            <div className="mt-1 text-2xl font-black text-indigo-600 dark:text-indigo-400">
+              {overview ? `${formatCurrency(overview.avg_salary)} RON` : '—'}
+            </div>
+            <div className="text-xs text-indigo-400">
+              {formatCurrency(overview?.avg_agent_month_count ?? 0)} salarii eligibile (≥ 2.000 RON)
+            </div>
+          </div>
+          {/* Row 2: period + unique agents */}
           <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
             <div className="text-xs font-bold text-slate-500">Perioada</div>
             <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">
               {overview ? formatMonthSpan(overview.months_span) : '—'}
             </div>
-            <div className="text-xs text-slate-400">{overview?.agent_count ?? 0} agenti</div>
           </div>
-          {/* Row 2: Mobiup + Mobicell */}
+          <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
+            <div className="text-xs font-bold text-slate-500">Agenți unici</div>
+            <div className="mt-1 text-2xl font-black text-slate-800 dark:text-white">
+              {overview ? formatCurrency(overview.agent_count) : '—'}
+            </div>
+          </div>
+          {/* Row 3: Mobiup + Mobicell */}
           <div className="rounded-2xl bg-emerald-50 p-3 dark:bg-emerald-950/30">
             <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Mobiup</div>
             <div className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">
-              {overview ? `${formatCurrency(mobiupTotal)} RON` : '—'}
+              {overview ? `${formatCompactCurrency(mobiupTotal)} RON` : '—'}
             </div>
           </div>
           <div className="rounded-2xl bg-indigo-50 p-3 dark:bg-indigo-950/30">
             <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Mobicell</div>
             <div className="mt-1 text-2xl font-black text-indigo-600 dark:text-indigo-400">
-              {overview ? `${formatCurrency(mobicellTotal)} RON` : '—'}
+              {overview ? `${formatCompactCurrency(mobicellTotal)} RON` : '—'}
             </div>
           </div>
         </div>
@@ -322,39 +355,59 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             )}
           </div>
         </div>
-        <div className="max-h-60 overflow-y-auto">
-          <table className="w-full text-sm">
+        <div className="max-h-72 overflow-auto">
+          <table className="w-full min-w-[860px] table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '23%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '10%' }} />
+            </colgroup>
             <thead className="sticky top-0 bg-white dark:bg-slate-900">
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-700">
-                <SortableHeader label="Locatie" active={summarySort.key === 'locatie'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'locatie'))} className="pb-2 text-left text-xs" />
-                <SortableHeader label="Firma" active={summarySort.key === 'company_name'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'company_name'))} className="pb-2 text-left text-xs" />
-                <SortableHeader label="Salariu" active={summarySort.key === 'total_salary'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_salary'))} className="pb-2 text-right text-xs" />
-                <SortableHeader label="Vanzari" active={summarySort.key === 'total_sales'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_sales'))} className="pb-2 text-right text-xs" />
-                <SortableHeader label="%*" title={RATIO_HELP_TEXT} active={summarySort.key === 'ratio'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="Locație" active={summarySort.key === 'locatie'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'locatie'))} className="px-2 py-2 text-left text-xs" />
+                <SortableHeader label="Firmă" active={summarySort.key === 'company_name'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'company_name'))} className="px-2 py-2 text-left text-xs" />
+                <SortableHeader label="Agenți" active={summarySort.key === 'agent_count'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'agent_count'))} className="px-2 py-2 text-right text-xs" align="right" />
+                <SortableHeader label="Salarii" active={summarySort.key === 'total_salary'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
+                <SortableHeader label="Medie / agent" active={summarySort.key === 'avg_salary'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'avg_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
+                <SortableHeader label="Vânzări" active={summarySort.key === 'total_sales'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'total_sales'))} className="px-2 py-2 text-right text-xs" align="right" />
+                <SortableHeader label="%*" title={RATIO_HELP_TEXT} active={summarySort.key === 'ratio'} direction={summarySort.dir} onClick={() => setSummarySort(s => toggleSort(s, 'ratio'))} className="px-2 py-2 text-right text-xs" align="right" />
               </tr>
             </thead>
             <tbody>
               {sortedSummary.length === 0 && !loadingCards && (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-xs text-slate-400">Fara date</td>
+                  <td colSpan={7} className="py-6 text-center text-xs text-slate-400">Fără date</td>
                 </tr>
               )}
               {sortedSummary.map((item) => (
                 <tr key={`${item.locatie ?? item.site_code}-${item.company_name}`} className="border-b border-slate-100 dark:border-slate-800">
-                  <td className="py-2 font-medium text-slate-700 dark:text-slate-200">
+                  <td className="px-2 py-2 font-medium text-slate-700 dark:text-slate-200">
                     {item.locatie ?? item.site_code}
                   </td>
-                  <td className={`py-2 text-xs font-bold ${COMPANY_COLORS[item.company_name] ?? 'text-slate-500'}`}>
+                  <td className={`px-2 py-2 text-xs font-bold ${COMPANY_COLORS[item.company_name] ?? 'text-slate-500'}`}>
                     {item.company_name}
                   </td>
-                  <td className="py-2 text-right font-mono text-slate-600 dark:text-slate-300">
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-500">
+                    {formatCurrency(item.agent_count)}
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono text-slate-600 dark:text-slate-300">
                     {formatCurrency(item.total_salary)}
                   </td>
-                  <td className="py-2 text-right font-mono text-slate-500">
+                  <td
+                    className="px-2 py-2 text-right font-mono font-semibold text-slate-700 dark:text-slate-200"
+                    title={`${item.avg_agent_count} din ${item.agent_count} agenți au salariul lunar de cel puțin 2.000 RON`}
+                  >
+                    {formatCurrency(item.avg_salary)}
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono text-slate-500">
                     {formatCurrency(item.total_sales)}
                   </td>
                   <td
-                    className="py-2 text-right text-xs font-semibold tabular-nums"
+                    className="px-2 py-2 text-right text-xs font-semibold tabular-nums"
                     style={getRatioToneStyle(item.ratio, summaryRatioAverage)}
                     title={`Salarii / Vanzari. Media selectiei: ${summaryRatioAverage.toFixed(1)}%`}
                   >
@@ -366,7 +419,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
           </table>
         </div>
         <p className="mt-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-          * % = salarii / vanzari; culorile sunt raportate la media ponderata a randurilor afisate.
+          Media exclude doar din calcul salariile sub 2.000 RON; totalurile și numărul de agenți rămân complete. * % = salarii / vânzări.
         </p>
       </div>
 
@@ -377,30 +430,47 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
           {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[760px] table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '12%' }} />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-700">
-                <SortableHeader label="Luna" active={trendSort.key === 'month'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'month'))} className="pb-2 text-left text-xs" />
-                <SortableHeader label="Salarii" active={trendSort.key === 'total_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_salary'))} className="pb-2 text-right text-xs" />
-                <SortableHeader label="Vanzari" active={trendSort.key === 'total_sales'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_sales'))} className="pb-2 text-right text-xs" />
-                <SortableHeader label="%*" title={RATIO_HELP_TEXT} active={trendSort.key === 'ratio'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'ratio'))} className="pb-2 text-right text-xs" />
+                <SortableHeader label="Luna" active={trendSort.key === 'month'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'month'))} className="px-2 py-2 text-left text-xs" />
+                <th className="px-2 py-2 text-right text-xs font-bold">Agenți</th>
+                <SortableHeader label="Salarii" active={trendSort.key === 'total_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
+                <SortableHeader label="Medie / agent" title="Salariul mediu per agent în luna respectivă" active={trendSort.key === 'avg_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'avg_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
+                <SortableHeader label="Vânzări" active={trendSort.key === 'total_sales'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_sales'))} className="px-2 py-2 text-right text-xs" align="right" />
+                <SortableHeader label="%*" title={RATIO_HELP_TEXT} active={trendSort.key === 'ratio'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'ratio'))} className="px-2 py-2 text-right text-xs" align="right" />
               </tr>
             </thead>
             <tbody>
               {sortedTrend.length === 0 && !loadingCards && (
                 <tr>
-                  <td colSpan={4} className="py-6 text-center text-xs text-slate-400">Fara date</td>
+                  <td colSpan={6} className="py-6 text-center text-xs text-slate-400">Fără date</td>
                 </tr>
               )}
               {sortedTrend.map((t) => {
                 const ratio = getSalarySalesRatio(t.total_salary, t.total_sales);
                 return (
                   <tr key={t.month} className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="py-2 font-medium text-slate-700 dark:text-slate-200">{t.month}</td>
-                    <td className="py-2 text-right font-mono text-slate-600 dark:text-slate-300">{formatCurrency(t.total_salary)}</td>
-                    <td className="py-2 text-right font-mono text-slate-500">{formatCurrency(t.total_sales)}</td>
+                    <td className="px-2 py-2 font-medium text-slate-700 dark:text-slate-200">{t.month}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-slate-500">{formatCurrency(t.agent_count)}</td>
+                    <td className="px-2 py-2 text-right font-mono text-slate-600 dark:text-slate-300">{formatCurrency(t.total_salary)}</td>
                     <td
-                      className="py-2 text-right text-xs font-semibold tabular-nums"
+                      className="px-2 py-2 text-right font-mono font-semibold text-slate-700 dark:text-slate-200"
+                      title={`Salariul mediu în ${t.month}: ${formatCurrency(t.avg_salary)} RON. Eligibili: ${t.avg_agent_count} din ${t.agent_count} agenți (salariu ≥ 2.000 RON).`}
+                    >
+                      {formatCurrency(t.avg_salary)}
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono text-slate-500">{formatCurrency(t.total_sales)}</td>
+                    <td
+                      className="px-2 py-2 text-right text-xs font-semibold tabular-nums"
                       style={getRatioToneStyle(ratio, trendRatioAverage)}
                       title={`Salarii / Vanzari. Media selectiei: ${trendRatioAverage.toFixed(1)}%`}
                     >
@@ -412,7 +482,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             </tbody>
           </table>
           <p className="mt-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-            * % = salarii / vanzari; culorile sunt raportate la media ponderata a randurilor afisate.
+            Media exclude doar din calcul salariile sub 2.000 RON; totalurile și agenții afișați rămân complete. * % = salarii / vânzări.
           </p>
         </div>
       </div>
@@ -458,48 +528,68 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
           </div>
         </div>
 
-        {/* Table Header */}
-        <div className="grid grid-cols-6 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-800">
-          <div className="col-span-2">Nume</div>
-          <div>Magazin</div>
-          <div className="text-right">Nr Luni</div>
-          <div className="text-right">Medie/Luna</div>
-          <div className="text-right">Total</div>
-        </div>
-
-        {/* Table Body */}
-        <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-          {(!agents || agents.length === 0) && !loading && (
-            <div className="py-12 text-center text-sm text-slate-400">
-              Nu s-au gasit agenti
-            </div>
-          )}
-          {agents?.map((agent) => (
-            <div
-              key={`${agent.cnp}-${agent.company_name}`}
-              onClick={() => setDrawer({ cnp: agent.cnp ?? '', fullName: agent.full_name })}
-              className="grid grid-cols-6 cursor-pointer items-center px-4 py-3 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-            >
-              <div className="col-span-2 font-semibold text-slate-800 dark:text-white">
-                {agent.full_name}
-              </div>
-              <div className={`font-medium ${COMPANY_COLORS[agent.company_name] ?? 'text-slate-500'}`}>
-                {agent.locatie ?? agent.company_name}
-              </div>
-              <div className="text-right text-slate-500">{agent.month_count}</div>
-              <div className="text-right font-mono text-slate-500">
-                {formatCurrency(agent.avg_salary)} RON
-              </div>
-              <div className="text-right font-bold text-slate-800 dark:text-white">
-                {formatCurrency(agent.total_salary)} RON
-              </div>
-            </div>
-          ))}
-          {loading && (!agents || agents.length === 0) && (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw size={20} className="animate-spin text-indigo-500" />
-            </div>
-          )}
+        {/* Table */}
+        <div className="max-h-72 overflow-auto">
+          <table className="w-full min-w-[820px] table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '25%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '23%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '15%' }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-800">
+              <tr>
+                <th className="px-4 py-2 text-left">Nume agent</th>
+                <th className="px-2 py-2 text-left">Firmă</th>
+                <th className="px-2 py-2 text-left">Locație curentă</th>
+                <th className="px-2 py-2 text-right">Luni</th>
+                <th className="px-2 py-2 text-right">Medie / lună</th>
+                <th className="px-4 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {(!agents || agents.length === 0) && !loading && (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-sm text-slate-400">
+                    Nu s-au găsit agenți
+                  </td>
+                </tr>
+              )}
+              {agents?.map((agent) => (
+                <tr
+                  key={agent.cnp ?? `name-${agent.full_name}`}
+                  onClick={() => agent.cnp && setDrawer({ cnp: agent.cnp, fullName: agent.full_name })}
+                  className={`transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 ${agent.cnp ? 'cursor-pointer' : ''}`}
+                  title={agent.cnp ? 'Deschide istoricul agentului' : 'Istoricul detaliat nu este disponibil fără CNP'}
+                >
+                  <td className="px-4 py-3 font-semibold text-slate-800 dark:text-white">{agent.full_name}</td>
+                  <td className={`px-2 py-3 text-xs font-bold ${COMPANY_COLORS[agent.company_name] ?? 'text-slate-500'}`}>
+                    {agent.company_name}
+                  </td>
+                  <td className="px-2 py-3 text-slate-500">{agent.locatie ?? '—'}</td>
+                  <td className="px-2 py-3 text-right tabular-nums text-slate-500">{formatCurrency(agent.month_count)}</td>
+                  <td
+                    className="px-2 py-3 text-right font-mono text-slate-600 dark:text-slate-300"
+                    title={`${agent.avg_month_count} din ${agent.month_count} luni au salariul de cel puțin 2.000 RON`}
+                  >
+                    {formatCurrency(agent.avg_salary)} RON
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-800 dark:text-white">
+                    {formatCurrency(agent.total_salary)} RON
+                  </td>
+                </tr>
+              ))}
+              {loading && (!agents || agents.length === 0) && (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center">
+                    <RefreshCw size={20} className="mx-auto animate-spin text-indigo-500" />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
 
         {/* Pagination */}
