@@ -27,7 +27,7 @@ cutover-ul a fost facut pe 2026-06-03, iar runtime-ul public vechi a fost scos.
 - **Nu se schimba linkurile magazinelor.** Fiecare magazin are un Google Sheet permanent. Retail foloseste Sheet ID-urile salvate in `grile_sheets`.
 - **Verificarea ramane non-distructiva.** Citeste K5/L5 si completarea zilelor; ziua curenta este exclusa din numarul de zile asteptate.
 - **Operatiile write sunt limitate la inchiderea de luna.** `finalize` si `archive` exporta local; `reset` sterge doar range-urile editabile definite in cod si este disponibil admin-only, cu dry-run. Din 2026-06-10, `Pontaj!C8:AG31` este manual si intra in reset; formulele de total din `Pontaj!AH` nu se sterg.
-- Codul retail respecta pattern-ul `router -> service -> repository` si conventiile din `CLAUDE.md`.
+- Codul retail respecta pattern-ul `router -> service -> repository` si regulile din `AGENTS.md`.
 
 ## 3. Constatări validate (pe date reale, 2026-05-31)
 

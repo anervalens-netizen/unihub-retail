@@ -153,4 +153,4 @@ Validare pe raportul pentru 1-21 iunie, primit în 2026-06-22:
 - Selector Focus -> Promo: `src/components/Campaigns.tsx`
 - Concurs backend: `backend/{routers,services,repositories}/contests.py`, `backend/services/contests_config.py`
 - Frontend: `src/components/Campaigns.tsx` (ContestView), `src/api/contests.ts`
-- Docs actualizate: `CLAUDE.md`, `CODEX.md`, `README.md`, `APP_ARCHITECTURE.md`, `LOCAL_SETUP.md`, acest handover.
+- Docs curente: `AGENTS.md`, `README.md`, `APP_ARCHITECTURE.md`, `LOCAL_SETUP.md`, acest handover.

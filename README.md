@@ -518,5 +518,5 @@ npm run build
 
 - setup local: [LOCAL_SETUP.md](./LOCAL_SETUP.md)
 - arhitectura: [APP_ARCHITECTURE.md](./APP_ARCHITECTURE.md)
-- note Codex/agent: [CODEX.md](./CODEX.md)
+- reguli Codex: [AGENTS.md](./AGENTS.md)
 - handover campanii iunie 2026: [docs/HANDOVER-campanii-iunie-2026.md](./docs/HANDOVER-campanii-iunie-2026.md)

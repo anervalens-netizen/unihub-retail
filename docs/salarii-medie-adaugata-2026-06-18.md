@@ -157,5 +157,5 @@ Validarea SQL a fost facuta si prin apelarea directa a serviciilor
 - `src/components/SalaryDrawer.tsx`
 - `src/components/dashboard/DashboardWidgets.tsx`
 - `APP_ARCHITECTURE.md`
-- `CLAUDE.md`
+- `AGENTS.md`
 - `README.md`
