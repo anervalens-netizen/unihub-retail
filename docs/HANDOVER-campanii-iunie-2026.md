@@ -59,10 +59,11 @@ Config-ul live are acum promoții selectabile prin `key`/`promotion_key`:
 
 Tabul **Focus -> Promo** afișează butoane pentru promoțiile active din lună și reîncarcă datele pentru cheia selectată. Cardul promo Hub rămâne pe prima promoție activă din config.
 
-### 1.1. Raport POS de corecție promo — 2026-06-17
+### 1.1. Raport POS de corecție promo — actualizat 2026-06-22
 
 Cele 3 promoții iunie au optional `actuals_source_file` către
-`/opt/Mobiup/docs/raport-promo-sursa.xls`, sheet `AccesoriPromoLunar`.
+`/opt/Mobiup/docs/raport-promo-sursa-1-21 iunie.xls`, sheet
+`AccesoriPromoLunar`, cu `actuals_cutoff_date=2026-06-21`.
 Raportul are granularitate `SiteCode + Cod` și coloana `Promo Luna Curenta`,
 adică unități la care discountul a fost aplicat efectiv în POS. Când fișierul
 există, aceste unități devin sursa de adevăr pentru promo și pentru excluderea
@@ -76,13 +77,13 @@ Dacă raportul lipsește sau nu este configurat, sistemul revine integral la
 regula veche de bonuri. Dacă raportul este suprascris săptămânal pe același
 path, cache-ul se invalidează prin `mtime` și valorile se recitesc automat.
 
-Validare pe raportul primit în 2026-06-17:
-- `promotie-actuala-mihai`: 310 unități promo.
-- `folii-ecran-camera-iunie`: 276 unități promo.
-- `capace-huse-cellara-iunie`: 21 unități promo.
-- Total raport POS: 607 unități promo.
-- Focus și Hub summary aliniate după corecție: incentive 14.897 unități,
-  38.720 RON.
+Validare pe raportul pentru 1-21 iunie, primit în 2026-06-22:
+- `promotie-actuala-mihai`: 439 unități promo.
+- `folii-ecran-camera-iunie`: 502 unități promo.
+- `capace-huse-cellara-iunie`: 36 unități promo.
+- Total raport POS: 977 unități promo.
+- Focus afișează același incentive indiferent de promoția selectată:
+  19.724 unități, 58.100 RON.
 
 ### 2. Reguli co-purchase — `backend/services/promo_copurchase.py` (helper partajat)
 - **Cheia bonului** = `(sale_date, site_code, agent, bon_nr)` — identică cu logica existentă de bonuri din `reporting_refresh.py`. (`bon_nr` singur NU e unic: ex. „174" apare în 3 magazine — de aceea cheia e compozită.) Coloana de ingest = **„Nr"** (7 cifre).
@@ -110,6 +111,11 @@ Validare pe raportul primit în 2026-06-17:
 
 ### 5. Frontend — restructurare tab Focus
 - `src/components/Campaigns.tsx`: sub-secțiunile `campaigns`+`focus` → **Incentive · Promo · Concurs · Focus**. „Campanii" (care amesteca promo+incentive) a fost spart în Incentive separat + Promo separat. Adăugat `ContestView` (leaderboard cu rang, puncte pe categorie, badge premii top 6).
+- Focus -> Promo are acum, pentru fiecare dintre cele 3 promoții selectabile,
+  tabelele `Magazine` și `Agenți`; agenții sunt agregați după bonurile/unitățile
+  promo efective. Focus -> Incentive afișează toți agenții disponibili (fără
+  limită top 20) și coloana `Incentive potential` pentru agenți și magazine.
+  Toate tabelele vizibile din Focus au export Excel.
 - `src/App.tsx`: tipul secțiunii + migrare automată din vechiul `'campaigns'` (localStorage) → `'incentive'`.
 - `src/api/contests.ts` + tipuri în `src/api/types.ts`. Cardul Hub „Promo & incentive" duce acum la sub-secțiunea Promo.
 

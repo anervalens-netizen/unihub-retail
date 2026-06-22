@@ -44,11 +44,14 @@ import type {
   PremiumGlassManagerStat,
   PremiumGlassModelStat,
   PremiumGlassStoreStat,
+  PromoTopAgent,
   PromoTopStore,
 } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
+import type { ExportColumn } from '../lib/tableExport';
 import { getCachedView, setCachedView } from '../lib/viewCache';
+import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'focus';
@@ -477,11 +480,13 @@ export function Campaigns({
                 <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
                   <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
                     <Building2 size={16} />
-                    <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine — Promo</span>
+                    <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Magazine</span>
                   </div>
                   <SortableTable<PromoTopStore & Record<string, unknown>>
                     rows={promoData.top_stores as (PromoTopStore & Record<string, unknown>)[]}
                     defaultSortKey="promo_bons"
+                    exportFilename={`focus-promo-magazine-${promoMonth}-${promoData.selected_promotion_key}`}
+                    exportSheetName="Magazine promo"
                     columns={[
                       {
                         key: 'rank',
@@ -502,20 +507,11 @@ export function Campaigns({
                           return (
                             <span className="flex items-center">
                               <FirmaBadge firma={store.firma} />
-                              <span className="max-w-[90px] truncate font-semibold" title={store.store_name}>
+                              <span className="max-w-[150px] truncate font-semibold sm:max-w-[240px]" title={store.store_name}>
                                 {displayName}
                               </span>
                             </span>
                           );
-                        },
-                      },
-                      {
-                        key: 'achievement',
-                        label: '%Prev.',
-                        align: 'right',
-                        render: (row) => {
-                          const ach = (row as unknown as PromoTopStore).achievement;
-                          return <span className={achievementColor(ach)}>{achievementLabel(ach)}</span>;
                         },
                       },
                       {
@@ -524,6 +520,62 @@ export function Campaigns({
                         align: 'right',
                         render: (row) => (
                           <span className="font-black text-amber-600">{formatInt((row as unknown as PromoTopStore).promo_bons ?? 0)}</span>
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              )}
+
+              {(promoData.promo_agents ?? []).length > 0 && (
+                <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                  <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                    <Sparkles size={16} />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Agenti</span>
+                  </div>
+                  <SortableTable<PromoTopAgent & Record<string, unknown>>
+                    rows={(promoData.promo_agents ?? []) as (PromoTopAgent & Record<string, unknown>)[]}
+                    defaultSortKey="promo_bons"
+                    exportFilename={`focus-promo-agenti-${promoMonth}-${promoData.selected_promotion_key}`}
+                    exportSheetName="Agenti promo"
+                    columns={[
+                      {
+                        key: 'rank',
+                        label: '#',
+                        sortable: false,
+                        render: (_row, index) => <span className="font-bold text-slate-400">{index + 1}</span>,
+                      },
+                      {
+                        key: 'agent_name',
+                        label: 'Agent',
+                        render: (row) => (
+                          <span className="truncate font-semibold" title={(row as unknown as PromoTopAgent).agent_name}>
+                            {(row as unknown as PromoTopAgent).agent_name}
+                          </span>
+                        ),
+                      },
+                      {
+                        key: 'store_name',
+                        label: 'Magazin',
+                        render: (row) => {
+                          const agent = row as unknown as PromoTopAgent;
+                          const displayName = agent.store_name.includes(' - ')
+                            ? agent.store_name.split(' - ').slice(1).join(' - ')
+                            : agent.store_name;
+                          return (
+                            <span className="flex items-center">
+                              <FirmaBadge firma={agent.firma} />
+                              <span className="max-w-[100px] truncate" title={agent.store_name}>{displayName || '—'}</span>
+                            </span>
+                          );
+                        },
+                      },
+                      {
+                        key: 'promo_bons',
+                        label: 'Bonuri',
+                        align: 'right',
+                        render: (row) => (
+                          <span className="font-black text-amber-600">{formatInt((row as unknown as PromoTopAgent).promo_bons)}</span>
                         ),
                       },
                     ]}
@@ -543,11 +595,13 @@ export function Campaigns({
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Sparkles size={16} />
-                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Agenti</span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Agenti</span>
               </div>
               <SortableTable<IncentiveTopAgent & Record<string, unknown>>
                 rows={promoData.top_agents as (IncentiveTopAgent & Record<string, unknown>)[]}
                 defaultSortKey="val_incentive"
+                exportFilename={`focus-incentive-agenti-${promoMonth}`}
+                exportSheetName="Agenti incentive"
                 columns={[
                   {
                     key: 'rank',
@@ -570,6 +624,7 @@ export function Campaigns({
                     key: 'achievement',
                     label: '%Prev.',
                     align: 'right',
+                    exportValue: (row) => achievementLabel((row as unknown as IncentiveTopAgent).achievement),
                     render: (row) => (
                       <span className={achievementColor((row as unknown as IncentiveTopAgent).achievement)}>
                         {achievementLabel((row as unknown as IncentiveTopAgent).achievement)}
@@ -594,6 +649,16 @@ export function Campaigns({
                       </span>
                     ),
                   },
+                  {
+                    key: 'incentive_potential',
+                    label: 'Incentive potential',
+                    align: 'right',
+                    render: (row) => (
+                      <span className="font-black text-emerald-600">
+                        {formatCurrency((row as unknown as IncentiveTopAgent).incentive_potential ?? 0)}
+                      </span>
+                    ),
+                  },
                 ]}
               />
             </div>
@@ -603,11 +668,13 @@ export function Campaigns({
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Building2 size={16} />
-                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Top Magazine — Incentive</span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Magazine</span>
               </div>
               <SortableTable<PromoTopStore & Record<string, unknown>>
                 rows={promoData.top_stores as (PromoTopStore & Record<string, unknown>)[]}
                 defaultSortKey="incentive_value"
+                exportFilename={`focus-incentive-magazine-${promoMonth}`}
+                exportSheetName="Magazine incentive"
                 columns={[
                   {
                     key: 'rank',
@@ -639,6 +706,7 @@ export function Campaigns({
                     key: 'achievement',
                     label: '%Prev.',
                     align: 'right',
+                    exportValue: (row) => achievementLabel((row as unknown as PromoTopStore).achievement),
                     render: (row) => {
                       const ach = (row as unknown as PromoTopStore).achievement;
                       return <span className={achievementColor(ach)}>{achievementLabel(ach)}</span>;
@@ -664,6 +732,16 @@ export function Campaigns({
                         </span>
                       );
                     },
+                  },
+                  {
+                    key: 'incentive_potential',
+                    label: 'Incentive potential',
+                    align: 'right',
+                    render: (row) => (
+                      <span className="font-black text-emerald-600">
+                        {formatCurrency((row as unknown as PromoTopStore).incentive_potential ?? 0)}
+                      </span>
+                    ),
                   },
                 ]}
               />
@@ -903,6 +981,8 @@ function PremiumGlassModelTable({ rows }: { rows: PremiumGlassModelStat[] }) {
       <SortableTable<PremiumGlassModelStat & Record<string, unknown>>
         rows={rows as (PremiumGlassModelStat & Record<string, unknown>)[]}
         defaultSortKey="total_qty"
+        exportFilename="focus-folii-premium-modele"
+        exportSheetName="Modele folii premium"
         columns={[
           { key: 'model_label', label: 'Model', render: (row) => <span className="font-semibold">{(row as PremiumGlassModelStat).model_label}</span> },
           { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassModelStat).premium_qty)}</span> },
@@ -924,6 +1004,8 @@ function PremiumGlassManagerTable({ rows }: { rows: PremiumGlassManagerStat[] })
       <SortableTable<PremiumGlassManagerStat & Record<string, unknown>>
         rows={rows as (PremiumGlassManagerStat & Record<string, unknown>)[]}
         defaultSortKey="premium_qty"
+        exportFilename="focus-folii-premium-manageri"
+        exportSheetName="Manageri folii premium"
         columns={[
           { key: 'manager', label: 'Manager', render: (row) => <span className="font-semibold">{(row as PremiumGlassManagerStat).manager}</span> },
           { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassManagerStat).premium_qty)}</span> },
@@ -947,6 +1029,8 @@ function PremiumGlassStoreTable({ rows }: { rows: PremiumGlassStoreStat[] }) {
       <SortableTable<PremiumGlassStoreStat & Record<string, unknown>>
         rows={rows as (PremiumGlassStoreStat & Record<string, unknown>)[]}
         defaultSortKey="premium_qty"
+        exportFilename="focus-folii-premium-magazine"
+        exportSheetName="Magazine folii premium"
         columns={[
           {
             key: 'locatie',
@@ -980,6 +1064,8 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
       <SortableTable<PremiumGlassAgentStat & Record<string, unknown>>
         rows={rows as (PremiumGlassAgentStat & Record<string, unknown>)[]}
         defaultSortKey="premium_qty"
+        exportFilename="focus-folii-premium-agenti"
+        exportSheetName="Agenti folii premium"
         columns={[
           {
             key: 'agent',
@@ -1246,9 +1332,27 @@ function ContestView({ contest }: { contest: ContestResponse }) {
       )}
 
       <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
-        <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-          <Trophy size={16} />
-          <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Clasament agenti</span>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+            <Trophy size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Clasament agenti</span>
+          </div>
+          <ExportTableButton
+            filename={`focus-concurs-${contest.month}-${contest.key}`}
+            sheetName="Clasament agenti"
+            rows={contest.leaderboard}
+            columns={[
+              { header: '#', value: (row) => row.rank },
+              { header: 'Agent', value: (row) => row.agent },
+              { header: 'Magazin', value: (row) => row.store_name },
+              { header: 'Firma', value: (row) => row.firma },
+              { header: 'Focus', value: (row) => row.focus_points },
+              { header: 'Promo', value: (row) => row.promo_points },
+              { header: '>150', value: (row) => row.price_points },
+              { header: 'Total', value: (row) => row.total_points },
+              { header: 'Premiu', value: (row) => row.prize },
+            ]}
+          />
         </div>
         {contest.leaderboard.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 p-4 text-xs font-semibold text-slate-500 dark:bg-slate-800/60">
@@ -1390,9 +1494,22 @@ function DataTable({
 }) {
   return (
     <div className="glass rounded-3xl p-4">
-      <div className="mb-3">
-        <h3 className="text-sm font-bold">{title}</h3>
-        <p className="text-[11px] text-slate-500">{subtitle}</p>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold">{title}</h3>
+          <p className="text-[11px] text-slate-500">{subtitle}</p>
+        </div>
+        <ExportTableButton
+          filename={title}
+          sheetName={title}
+          rows={rows}
+          columns={[
+            { header: 'Denumire', value: (row) => row.primary },
+            { header: 'Cod', value: (row) => row.secondary },
+            { header: 'Valoare', value: (row) => row.rightTop },
+            { header: 'Detalii', value: (row) => row.rightBottom },
+          ]}
+        />
       </div>
       <div className="space-y-2">
         {rows.map((row) => (
@@ -1443,6 +1560,7 @@ interface ColDef<T> {
   label: string;
   align?: 'left' | 'right';
   sortable?: boolean;
+  exportValue?: (row: T, index: number) => string | number | null | undefined;
   render: (row: T, index: number) => React.ReactNode;
 }
 
@@ -1452,12 +1570,16 @@ function SortableTable<T extends Record<string, unknown>>({
   defaultSortKey,
   defaultSortDir = 'desc',
   maxHeightClass = 'max-h-[360px]',
+  exportFilename,
+  exportSheetName,
 }: {
   rows: T[];
   columns: ColDef<T>[];
   defaultSortKey: keyof T;
   defaultSortDir?: SortDir;
   maxHeightClass?: string;
+  exportFilename: string;
+  exportSheetName: string;
 }) {
   const [sortKey, setSortKey] = useState<keyof T>(defaultSortKey);
   const [sortDir, setSortDir] = useState<SortDir>(defaultSortDir);
@@ -1487,11 +1609,30 @@ function SortableTable<T extends Record<string, unknown>>({
   }
 
   return (
-    <div
-      className={`${maxHeightClass} overflow-y-auto rounded-xl`}
-      style={{ scrollbarWidth: 'thin', scrollbarColor: '#c7d2fe transparent' }}
-    >
-      <table className="w-full border-collapse text-xs">
+    <div>
+      <div className="mb-2 flex justify-end">
+        <ExportTableButton<T>
+          filename={exportFilename}
+          sheetName={exportSheetName}
+          rows={sorted}
+          columns={columns.map((column): ExportColumn<T> => ({
+            header: column.label,
+            value: (row, index): string | number | null | undefined => {
+              if (column.exportValue) return column.exportValue(row, index);
+              if (column.key === 'rank') return index + 1;
+              const value: unknown = row[column.key as keyof T];
+              if (value === null || value === undefined) return null;
+              if (typeof value === 'string' || typeof value === 'number') return value;
+              return String(value);
+            },
+          }))}
+        />
+      </div>
+      <div
+        className={`${maxHeightClass} overflow-auto rounded-xl`}
+        style={{ scrollbarWidth: 'thin', scrollbarColor: '#c7d2fe transparent' }}
+      >
+        <table className="w-full border-collapse text-xs">
         <thead>
           <tr>
             {columns.map((col) => (
@@ -1529,7 +1670,8 @@ function SortableTable<T extends Record<string, unknown>>({
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 }

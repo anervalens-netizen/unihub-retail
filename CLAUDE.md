@@ -54,9 +54,9 @@ sudo journalctl -u unihub-backend -f   # logs live
 | `components/dashboard/DashboardWidgets.tsx` | Componente prezentare extracte din Dashboard (tabele, sortare, pie charts) |
 | `components/Campaigns.tsx` | Tab Focus — 4 sub-sectiuni: **Incentive · Promo · Concurs · Focus** (split din vechiul "Campanii"). Concurs = leaderboard agenti (`ContestView`) |
 | `api/contests.ts` | Fetch `/api/contests/active?month=` (leaderboard concurs, scoped server-side) |
-| `components/Agents.tsx` | Tab Agenti (refactorizat cu useQuery) |
-| `components/Management.tsx` + sub-taburi ASM/CRM/Tasks/HR/TargetCalculator/**Grile** | Management |
-| `components/AgentEvaluationSubtab.tsx` | Management -> Agenti: toggle intre evaluarea actuala si evaluarea noua 0-100; ambele folosesc aceleasi filtre de luni/manager/magazin, fara componenta de bonus |
+| `components/Agents.tsx` | Tab Agenti: Prezentare Generala, Salarii si Analiza agenti |
+| `components/Management.tsx` + sub-taburi Manageri/TargetCalculator/**Grile** | Management |
+| `components/AgentEvaluationSubtab.tsx` | Agenti -> Analiza agenti: toggle intre evaluarea actuala si evaluarea noua 0-100; ambele folosesc aceleasi filtre de luni/manager/magazin, fara componenta de bonus |
 | `components/GrileSubtab.tsx` + `api/grile.ts` | Subtab Grile — verificare K5/L5 vs target+vanzari DB; layout responsive (card pe mobil, grid pe desktop); captions integrate in barele ASM+TL (pliabile); TL fara nume nu afiseaza rand. Vezi `docs/grile-integration-plan.md` |
 | `components/GrileMonthlyPanel.tsx` | Card "Inchidere luna": Finalizeaza / Exporta arhiva / Reset simulare / Reset LIVE + download final/arhiva. Ruleaza nativ in Retail, vizibil doar admin (`/api/grile/monthly/permissions`); poll job arq |
 
@@ -230,12 +230,14 @@ cd /opt/Mobiup/ops/runners/retail
 - Salarii company_name case-insensitive la JOIN (`LOWER()` pe ambele parti)
 - Media salariala din Agenti -> Salarii foloseste numai valorile agent-luna de cel putin 2.000 RON; valorile sub prag sunt excluse doar din medii, nu din totaluri, numar de agenti sau istoric. Identitatea foloseste CNP cu fallback pe numele normalizat, iar read model-ul elimina duplicatele complet identice inainte de agregare.
 - Targetele din evaluarile pe agent se calculeaza ca `target magazin / zile cu vanzare in locatie * zile cu vanzare agent`, unde zilele locatiei vin din `COUNT(DISTINCT reporting_agent_day.sale_date)`. In evaluarea noua, punctajul targetului se calculeaza lunar si apoi se mediaza ponderat; luna partiala dintr-o selectie multi-luna intra cu pondere `zile disponibile / zile luna`. Ponderile standard sunt 25/20/15/15/10/15; doar luna partiala selectata singura foloseste 10/25/20/20/10/15.
+- Simularea ad-hoc a grilei salariale 2026 pentru lunile inchise `2025-12..2026-05` se regenereaza cu `backend/venv/bin/python backend/scripts/generate_salary_grid_simulation.py`; regulile, sursele, output-urile si pragul separat de comparatie HR sunt documentate in `docs/salary-grid-simulation.md`.
+- Comparatia principala a simularii salariale este fata de payroll-ul HR efectiv, nu fata de formula grilei vechi. Workbook-ul include separat controlul exact pentru mai 2026 din arhiva `grile-salarii/outputs/archive/Mai 2026/Grile - Mai 2026.zip`, cu bonurile si orele suplimentare excluse din ambele grile.
 - Importul pilot din Grile Salarii se ruleaza cu `python backend/scripts/import_grile_agent_targets.py --month YYYY-MM [--apply]` si este limitat implicit la managerul `Andrei Stancu`.
 - Filtre: `MainLayout.hubFilters` shared Hub+Focus; `Agents` uses `agentsFilters` independent
 
 ### Campania Iunie 2026 — promo co-purchase, corectie POS, excludere incentive, Concurs (2026-06-17)
 - **Promotia** (`data/hub_specials.json`, gitignored) = campaniile iunie. Cardul Hub si tab Focus folosesc **regula co-purchase** din `services/promo_copurchase.py`, dar pot fi corectate optional cu raport POS confirmat prin `actuals_source_file`.
-- **Raport saptamanal promo**: live config pointeaza cele 3 promotii la `/opt/Mobiup/docs/raport-promo-sursa.xls`, sheet `AccesoriPromoLunar`. Raportul corecteaza unitatile promo efectiv reduse pana la `actuals_cutoff_date`; daca data lipseste, se foloseste data modificarii fisierului minus o zi. Pentru zilele dupa cutoff, sistemul adauga in continuare regula pe bonuri, deci ingestul zilnic nu blocheaza valorile la ultimul raport.
+- **Raport saptamanal promo**: live config pointeaza cele 3 promotii la `/opt/Mobiup/docs/raport-promo-sursa-1-21 iunie.xls`, sheet `AccesoriPromoLunar`, cu `actuals_cutoff_date=2026-06-21`. Raportul corecteaza unitatile promo efectiv reduse pana la cutoff; daca data lipseste, se foloseste data modificarii fisierului minus o zi. Pentru zilele dupa cutoff, sistemul adauga in continuare regula pe bonuri, deci ingestul zilnic nu blocheaza valorile la ultimul raport.
 - **Ingest zilnic vanzari**: importul rescrie toata luna curenta (`replace_month_snapshot`) si reconstruieste `reporting_*`; nu atinge raportul promo din `/opt/Mobiup/docs`. Daca raportul lipseste/neconfigurat, calculul revine integral la regula veche.
 - **Bon calificat** = cheie `(sale_date, site_code, agent, bon_nr)` cu ≥1 produs din lista promo SI ≥2 unitati pozitive totale; se exclud cartele + locatii `TR %` (identic cu `reporting_refresh.py`). Unitatea redusa = produsul din lista cu cel mai mic `unit_price` pe bon (tie-break determinist `unit_price, item_code, id`), 1 per bon.
 - **Cardul promo Hub**: highlight = Bonuri calificate; metrici = Produse reduse / Magazine / Agenti (NU mai e currency). Vezi `build_promotion_card` in `dashboard_specials.py`.

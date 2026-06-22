@@ -410,14 +410,23 @@ export interface PromoTopStore {
   category_qty: number;
   promo_bons: number;
   incentive_value: number;
+  incentive_potential: number;
   achievement: number | null;
   firma: string;
+}
+
+export interface PromoTopAgent {
+  agent_name: string;
+  store_name: string;
+  firma: string;
+  promo_bons: number;
 }
 
 export interface IncentiveTopAgent {
   agent_name: string;
   qty_sold: number;
   val_incentive: number;
+  incentive_potential: number;
   achievement: number | null;
 }
 
@@ -453,6 +462,7 @@ export interface CampaignsPromotionsResponse {
   incentive_categories: IncentiveCategory[];
   has_active_promotion: boolean;
   top_stores: PromoTopStore[];
+  promo_agents: PromoTopAgent[];
   top_agents: IncentiveTopAgent[];
 }
 

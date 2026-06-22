@@ -153,6 +153,11 @@ def _parse_single_promotion(
                 else None
             ),
             "actuals_sheet": str(raw.get("actuals_sheet") or "AccesoriPromoLunar"),
+            "actuals_cutoff_date": (
+                str(raw.get("actuals_cutoff_date"))
+                if raw.get("actuals_cutoff_date")
+                else None
+            ),
             "start_date": start_date,
             "end_date": end_date,
         },

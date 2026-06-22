@@ -97,6 +97,7 @@ def test_parse_promotion_definitions_keeps_optional_actuals_report() -> None:
                     "item_codes": ["AA-01"],
                     "actuals_source_file": "/opt/Mobiup/docs/raport-promo-sursa.xls",
                     "actuals_sheet": "AccesoriPromoLunar",
+                    "actuals_cutoff_date": "2026-06-21",
                     "start_date": "2026-06-01",
                     "end_date": "2026-06-30",
                 },
@@ -108,6 +109,7 @@ def test_parse_promotion_definitions_keeps_optional_actuals_report() -> None:
     assert error is None
     assert definitions[0]["actuals_source_file"] == "/opt/Mobiup/docs/raport-promo-sursa.xls"
     assert definitions[0]["actuals_sheet"] == "AccesoriPromoLunar"
+    assert definitions[0]["actuals_cutoff_date"] == "2026-06-21"
 
 
 def test_parse_promotion_definition_can_select_by_key() -> None:

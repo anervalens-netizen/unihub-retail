@@ -83,17 +83,22 @@ Permite inregistrarea si urmarirea vizitelor in magazine:
 
 Geolocatia a fost eliminata complet din arhitectura aplicatiei.
 
+### Agenti
+Tabul principal Agenti include `Prezentare Generala`, `Salarii` si
+`Analiza agenti`.
+
+- **Analiza agenti** — evaluare agenti pe agentii activi curent, cu alocarea curenta de firma/magazin/manager. Sectiunea are doua moduri comutabile: evaluarea actuala (`/api/agents/evaluation`) si evaluarea noua, separata (`/api/agents/evaluation-v2`).
+
 ### Management
 Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
 
 - **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM; cardurile expandate includ scorurile magazinelor alocate. Router: `/api/hr`
-- **Agenti** — evaluare agenti pe agentii activi curent, cu alocarea curenta de firma/magazin/manager. Subtabul are doua subsectiuni comutabile: evaluarea actuala (`/api/agents/evaluation`) si evaluarea noua, separata (`/api/agents/evaluation-v2`).
 - **Magazine (CRM, istoric intern)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
 - **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
 - **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
 - **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
 
-Evaluarea din **Management -> Agenti** foloseste 6 segmente, fiecare cu 0-3 puncte:
+Evaluarea din **Agenti -> Analiza agenti** foloseste 6 segmente, fiecare cu 0-3 puncte:
 Target valoare, Medie zilnica, Valoare reper, % Bonuri, Focus si Folii Premium.
 Pragurile sunt:
 

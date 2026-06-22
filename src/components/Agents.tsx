@@ -16,6 +16,7 @@ import { getFilterOptions } from '../api/filters';
 import type { AppFilters } from './MainLayout';
 import type { FilterOptions } from '../api/types';
 import { SalariiSubtab } from './SalariiSubtab';
+import { AgentEvaluationSubtab } from './AgentEvaluationSubtab';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ExportTableButton } from './ExportTableButton';
 import { 
@@ -309,8 +310,11 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     if (typeof window !== 'undefined') return (localStorage.getItem('agents_activeTab') as any) || 'active';
     return 'active';
   });
-  const [mainTab, setMainTab] = useState<'overview' | 'salarii'>(() => {
-    if (typeof window !== 'undefined') return (localStorage.getItem('agents_mainTab') as any) || 'overview';
+  const [mainTab, setMainTab] = useState<'overview' | 'salarii' | 'analysis'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('agents_mainTab');
+      if (saved === 'overview' || saved === 'salarii' || saved === 'analysis') return saved;
+    }
     return 'overview';
   });
   
@@ -513,9 +517,23 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
         >
           Salarii
         </button>
+        <button
+          onClick={() => setMainTab('analysis')}
+          className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
+            mainTab === 'analysis'
+              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+          }`}
+        >
+          Analiza agenti
+        </button>
       </div>
 
-      {mainTab === 'salarii' ? (
+      {mainTab === 'analysis' ? (
+        <ErrorBoundary>
+          <AgentEvaluationSubtab />
+        </ErrorBoundary>
+      ) : mainTab === 'salarii' ? (
         <ErrorBoundary>
           <SalariiSubtab globalFilters={filters} />
         </ErrorBoundary>

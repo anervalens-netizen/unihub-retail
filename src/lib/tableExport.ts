@@ -1,6 +1,6 @@
 export type ExportColumn<T> = {
   header: string;
-  value: (row: T) => string | number | null | undefined;
+  value: (row: T, index: number) => string | number | null | undefined;
 };
 
 function escapeHtml(value: string | number | null | undefined): string {
@@ -33,8 +33,8 @@ export function downloadExcelTable<T>({
 }) {
   const headerHtml = columns.map((column) => `<th>${escapeHtml(column.header)}</th>`).join('');
   const rowsHtml = rows
-    .map((row) => (
-      `<tr>${columns.map((column) => `<td>${escapeHtml(column.value(row))}</td>`).join('')}</tr>`
+    .map((row, index) => (
+      `<tr>${columns.map((column) => `<td>${escapeHtml(column.value(row, index))}</td>`).join('')}</tr>`
     ))
     .join('');
 

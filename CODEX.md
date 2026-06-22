@@ -23,6 +23,15 @@ cd backend && venv/bin/mypy . --ignore-missing-imports --explicit-package-bases
 npm run build
 ```
 
+## Navigare Agenti si Management
+
+- Tabul principal `Agenti` contine `Prezentare Generala`, `Salarii` si
+  `Analiza agenti`, in aceasta ordine.
+- `AgentEvaluationSubtab.tsx` este montat in `Agenti -> Analiza agenti`.
+- Management nu mai contine subtabul Agenti; optiunile curente sunt Manageri,
+  Calculator Target si Grile. Valoarea veche persistata `crm` cade automat pe
+  Manageri deoarece nu mai exista in `MGMT_SUBTABS`.
+
 ## Campanii iunie 2026
 
 Livrabilele sunt:
@@ -77,6 +86,15 @@ Nu confunda:
   co-purchase.
 - In `top_stores`, `promo_bons` este campul pentru Top Magazine — Promo, iar
   `qty` ramane cantitatea incentive neta pentru Top Magazine — Incentive.
+- Focus -> Promo expune separat `promo_agents`, agregat din bonurile/unitatile
+  promo efective ale promotiei selectate. Cardurile operationale se numesc
+  `Magazine` si `Agenti`, nu `Top ...`.
+- Focus -> Incentive afiseaza toate randurile de agenti eligibili din date, fara
+  limita top 20. `incentive_potential` este valoarea bruta la realizare 100%
+  (cantitate neta eligibila x reward), inainte de multiplicatorul 0/50/100%;
+  este disponibil atat pentru agenti, cat si pentru magazine.
+- Toate tabelele vizibile din tabul Focus au export Excel prin componenta
+  reutilizabila `ExportTableButton`.
 
 Validare Codex pe date reale mai, cu config mutat temporar pe mai:
 

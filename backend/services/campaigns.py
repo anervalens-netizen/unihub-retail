@@ -14,6 +14,7 @@ from models import (
     FocusHistoryResponse,
     FocusHistoryPoint,
     PromoTopStore,
+    PromoTopAgent,
     IncentiveCategory,
     IncentiveTopAgent,
 )
@@ -370,6 +371,8 @@ class CampaignsService:
             promo_active_stores = 0
             promo_active_agents = 0
             promo_bonuri_by_store: dict[str, int] = {}
+            promo_bonuri_by_agent: dict[str, int] = {}
+            promo_agent_sites: dict[str, dict[str, int]] = {}
             promotion_item_codes: list[str] = []
             promotion_rule_type = "selected_item_copurchase"
             incentive_excluded_ag: dict[tuple[str, str, str], int] = {}
@@ -401,6 +404,10 @@ class CampaignsService:
                     promo_active_agents = promo_cp.active_agents
                     for (site, _ag, _item), units in promo_excluded_ag.items():
                         promo_bonuri_by_store[site] = promo_bonuri_by_store.get(site, 0) + units
+                        if _ag and _ag != "-":
+                            promo_bonuri_by_agent[_ag] = promo_bonuri_by_agent.get(_ag, 0) + units
+                            agent_sites = promo_agent_sites.setdefault(_ag, {})
+                            agent_sites[site] = agent_sites.get(site, 0) + units
                     _merge_excluded_units(incentive_excluded_ag, promo_excluded_ag)
 
                 selected_key = promotion_definition.get("key")
@@ -474,6 +481,7 @@ class CampaignsService:
                         category_qty=0,
                         promo_bons=promo_bonuri_by_store.get(row["site_code"], 0),
                         incentive_value=0.0,
+                        incentive_potential=0.0,
                         achievement=store_achievements.get(row["site_code"]),
                         firma=row["firma"] or "",
                     )
@@ -485,6 +493,30 @@ class CampaignsService:
                 ]
             else:
                 top_stores = []
+
+            store_meta = {
+                store.store_name.split(" - ")[0]: (store.store_name, store.firma)
+                for store in top_stores
+            }
+            promo_agent_rows: list[PromoTopAgent] = []
+            for agent_name, promo_bons in promo_bonuri_by_agent.items():
+                primary_site = max(
+                    promo_agent_sites[agent_name],
+                    key=lambda site: (promo_agent_sites[agent_name][site], site),
+                )
+                store_name, firma_val = store_meta.get(primary_site, ("", ""))
+                promo_agent_rows.append(
+                    PromoTopAgent(
+                        agent_name=agent_name,
+                        store_name=store_name,
+                        firma=firma_val,
+                        promo_bons=promo_bons,
+                    )
+                )
+            promo_agents = sorted(
+                promo_agent_rows,
+                key=lambda item: (-item.promo_bons, item.agent_name),
+            )
 
             if incentive_campaign is not None:
                 reward_map_for_stores: dict[str, float] | None = incentive_campaign["reward_map"] or None
@@ -517,11 +549,13 @@ class CampaignsService:
                         firma_val = row["firma"] or ""
                         excluded = incentive_excluded_si.get((sc, row["item_code"]), 0)
                         qty = max(0, int(row["qty"]) - excluded)
-                        val = qty * reward_map_for_stores.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
+                        potential = qty * reward_map_for_stores.get(row["item_code"], 0)
+                        val = potential * store_multipliers.get(sc, 0)
                         if sc not in store_inc:
-                            store_inc[sc] = [loc, 0.0, firma_val, 0]
+                            store_inc[sc] = [loc, 0.0, firma_val, 0, 0.0]
                         store_inc[sc][1] += val
                         store_inc[sc][3] += qty
+                        store_inc[sc][4] += potential
 
                     if has_active_promotion:
                         top_stores = [
@@ -532,6 +566,7 @@ class CampaignsService:
                                 category_qty=s.category_qty,
                                 promo_bons=s.promo_bons,
                                 incentive_value=round(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0, ""])[1], 2),
+                                incentive_potential=round(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0, "", 0, 0.0])[4], 2),
                                 achievement=s.achievement,
                                 firma=s.firma,
                             )
@@ -546,6 +581,7 @@ class CampaignsService:
                                 category_qty=0,
                                 promo_bons=0,
                                 incentive_value=round(data[1], 2),
+                                incentive_potential=round(data[4], 2),
                                 achievement=store_achievements.get(sc),
                                 firma=data[2],
                             )
@@ -594,6 +630,7 @@ class CampaignsService:
                         *inc_agent_params,
                     )
                     agent_inc: dict[str, float] = {}
+                    agent_potential: dict[str, float] = {}
                     agent_qty: dict[str, int] = {}
                     agent_sites: dict[str, str] = {}
                     for row in agent_item_rows:
@@ -602,8 +639,10 @@ class CampaignsService:
                         excluded = incentive_excluded_ag.get((sc, ag, row["item_code"]), 0)
                         adj_net = int(row["qty"]) - excluded
                         q = max(0, adj_net)
-                        val = q * reward_map.get(row["item_code"], 0) * store_multipliers.get(sc, 0)
+                        potential = q * reward_map.get(row["item_code"], 0)
+                        val = potential * store_multipliers.get(sc, 0)
                         agent_inc[ag] = agent_inc.get(ag, 0.0) + val
+                        agent_potential[ag] = agent_potential.get(ag, 0.0) + potential
                         agent_qty[ag] = agent_qty.get(ag, 0) + adj_net
                         agent_sites[ag] = sc
 
@@ -613,13 +652,14 @@ class CampaignsService:
                                 agent_name=ag,
                                 qty_sold=agent_qty[ag],
                                 val_incentive=round(agent_inc[ag], 2),
+                                incentive_potential=round(agent_potential[ag], 2),
                                 achievement=store_achievements.get(agent_sites.get(ag, ""))
                             )
                             for ag in agent_inc
                         ],
                         key=lambda x: x.val_incentive,
                         reverse=True,
-                    )[:20]
+                    )
 
                     tier_qty: dict[str, int] = {}
                     tier_value: dict[str, float] = {}
@@ -656,6 +696,7 @@ class CampaignsService:
                 "promo_active_agents": promo_active_agents,
                 "has_active_promotion": has_active_promotion,
                 "top_stores": top_stores,
+                "promo_agents": promo_agents,
                 "top_agents": top_agents,
                 "incentive_title": incentive_title,
                 "incentive_description": incentive_description,

@@ -38,7 +38,7 @@ flowchart LR
 | --- | --- |
 | Hub | KPI-uri, comparatii perioade, carduri speciale |
 | Focus | Incentive, Promo, Concurs, produse focus |
-| Agenti | overview agenti, stabilitate, miscari, salarii |
+| Agenti | overview agenti, stabilitate, miscari, salarii, analiza si evaluare |
 | Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target` |
 | Setari | importuri vanzari, exporturi configurabile, setari aplicatie si erori |
 
@@ -64,6 +64,11 @@ Filtrele principale sunt gestionate in `App.tsx` si persistate in
 `localStorage` separat pe zone: Hub, Focus si Agenti. Hub si Focus pot porni
 cu aceleasi valori initiale, dar fiecare isi pastreaza ultima selectie dupa
 refresh.
+
+Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Salarii` si
+`Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab` si include
+evaluarea actuala plus evaluarea noua 0-100. Aceasta analiza nu mai apare in
+Management; subtaburile Management sunt Manageri, Calculator Target si Grile.
 
 ## Arhitectura backend
 
@@ -163,6 +168,13 @@ Helperul este folosit de:
 - excluderea unitatilor reduse din incentive; aceasta se face peste toate
   promotiile active ale lunii, independent de `promotion_key` selectat in UI;
 - punctajul de concurs pentru bonurile promo.
+
+In interfata Focus, fiecare promotie are tabele separate pentru Magazine si
+Agenti, calculate din rezultatul promotiei selectate. Incentive afiseaza toate
+randurile disponibile de agenti si magazine, plus `Incentive potential`:
+valoarea care s-ar plati la realizare 100% a targetului, inainte de
+multiplicatorul curent. Tabelele din toate subsectiunile Focus, inclusiv
+Concurs si Folii premium, pot fi exportate in Excel.
 
 Importul zilnic de vanzari rescrie snapshot-ul lunii prin
 `replace_month_snapshot`, apoi reconstruieste agregatele `reporting_*`. Raportul

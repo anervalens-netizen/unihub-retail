@@ -117,14 +117,20 @@ class TestPromoIncentivesNoConfig:
         ]
         conn.fetch.return_value = [
             FakeRow(agent="Agent1", site_code="S1", item_code="COD1", qty=20),
+            *[
+                FakeRow(agent=f"Agent{index}", site_code="S1", item_code="COD1", qty=1)
+                for index in range(2, 22)
+            ],
         ]
         result = await service.get_promotions_incentives(
             "2026-05-01", "2026-05-31", None, None, None, None, None
         )
         assert result["incentive_title"] == "Incentive Mai"
         assert result["incentive_product_count"] == 1
-        assert len(result["top_agents"]) >= 1
+        assert len(result["top_agents"]) == 21
         assert result["top_agents"][0].agent_name == "Agent1"
+        assert result["top_agents"][0].incentive_potential == 200.0
+        assert result["top_stores"][0].incentive_potential == 300.0
 
     @pytest.mark.asyncio
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
@@ -247,8 +253,11 @@ class TestPromoIncentivesNoConfig:
         assert result["promo_discounted_units"] == 4
         assert result["promo_active_stores"] == 1
         assert result["promo_active_agents"] == 1
+        assert result["promo_agents"][0].agent_name == "Agent1"
+        assert result["promo_agents"][0].promo_bons == 4
         # Top Magazine — Incentive: qty = unitati incentive nete, nu bonuri promo.
         assert result["top_stores"][0].qty == 6
+        assert result["top_stores"][0].incentive_potential == 30.0
         # Top Magazine — Promo foloseste camp separat pentru bonuri co-purchase.
         assert result["top_stores"][0].promo_bons == 4
 
