@@ -8,6 +8,11 @@ from scripts.generate_salary_grid_simulation import (
     _qualitative_points,
     _target_bonus,
 )
+from scripts.generate_may_old_vs_new_grid import _new_other_location_commission
+
+
+class _OldRow:
+    other_location_rows = [(100, 80), (100, 79.99), (0, 50)]
 
 
 def test_commission_scenarios_are_ordered() -> None:
@@ -35,6 +40,10 @@ def test_old_grid_target_bonus_has_no_110_tier() -> None:
 def test_old_grid_comparable_excludes_meals_and_overtime() -> None:
     assert _old_grid_comparable_salary(4239.22, 480, 0) == pytest.approx(3759.22)
     assert _old_grid_comparable_salary(3386, 480, 300) == 2606
+
+
+def test_new_other_location_commission_uses_80_percent_gate() -> None:
+    assert _new_other_location_commission(_OldRow(), 0.03) == pytest.approx(2.4)
 
 
 def test_daily_average_has_no_two_point_band() -> None:

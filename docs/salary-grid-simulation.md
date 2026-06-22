@@ -15,6 +15,23 @@ Output-uri:
 
 - `/opt/Mobiup/docs/simulare_grila_noua_2025-12_2026-05.xlsx`
 - `/opt/Mobiup/docs/comparatie_salarii_istorice_vs_grila_noua_2025-12_2026-05.xlsx`
+- `/opt/Mobiup/docs/comparatie_grila_veche_vs_noua_mai_2026.xlsx`
+
+## Comparatia simplificata pentru mai 2026
+
+Pentru comparatia stricta grila-la-grila se ruleaza:
+
+```bash
+backend/venv/bin/python backend/scripts/generate_may_old_vs_new_grid.py
+```
+
+Acest raport foloseste aceiasi agenti, aceleasi vanzari, aceleasi targete si
+aceleasi zile lucrate din arhiva grilelor vechi din mai. Se modifica numai
+formula salariala. Bonurile si orele suplimentare sunt excluse din ambele
+variante. Criteriile calitative care nu exista in sheet sunt completate din
+datele Retail pentru mai 2026. Grila veche este insumata din componente, nu din
+cache-ul celulei de total; in arhiva exista un caz in care totalul nu preluase
+un comision deja calculat.
 
 ## Reguli de comparatie
 
