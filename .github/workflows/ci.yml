@@ -12,13 +12,12 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Python lint & typecheck
         run: |
           python3 -m venv venv
           venv/bin/pip install -r requirements.txt -r requirements-dev.txt 2>/dev/null
-          venv/bin/pip install mypy pytest-cov 2>/dev/null
           venv/bin/mypy . --ignore-missing-imports --explicit-package-bases
           echo "Mypy: OK"
 
@@ -34,7 +33,7 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install & typecheck
         run: |
@@ -61,4 +60,3 @@ jobs:
           else
             echo "No SENTRY_DSN set, skipping source maps upload"
           fi
-
