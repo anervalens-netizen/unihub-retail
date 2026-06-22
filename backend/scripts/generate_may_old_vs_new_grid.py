@@ -32,6 +32,7 @@ from generate_salary_grid_simulation import (
     COMMISSION_SCENARIOS,
     OLD_GRID_MAY_ARCHIVE,
     _number,
+    _grid_registry_site_map,
     _old_grid_comparable_salary,
     _old_grid_target_bonus,
     _qualitative_bonus,
@@ -130,17 +131,15 @@ def _read_other_location_rows(
 def load_old_grid_rows(
     grid_registry: list[dict[str, Any]],
 ) -> list[OldGridRow]:
-    registry_by_key = {
-        row["registry_key"]: row["site_code"] for row in grid_registry
-    }
+    registry_by_key = _grid_registry_site_map(grid_registry)
     rows: list[OldGridRow] = []
     with ZipFile(OLD_GRID_MAY_ARCHIVE) as archive:
         for archive_name in archive.namelist():
             if not archive_name.lower().endswith(".xlsx"):
                 continue
             registry_key = archive_name[:-5]
-            site_code = registry_by_key.get(registry_key)
-            if not site_code:
+            mapped_site_code = registry_by_key.get(registry_key)
+            if mapped_site_code is None:
                 continue
             company, store = registry_key.split("/", 1)
             workbook = load_workbook(
@@ -170,7 +169,7 @@ def load_old_grid_rows(
                         registry_key=registry_key,
                         company=company,
                         store=store,
-                        site_code=site_code,
+                        site_code=mapped_site_code,
                         slot=slot,
                         old_name=old_name,
                         old_base=_number(sheet[f"D{3 + offset}"].value),
@@ -214,8 +213,8 @@ def match_old_rows_to_retail(
             retail_by_site[row["site_code"]].append(row)
 
     old_by_site: dict[str, list[OldGridRow]] = defaultdict(list)
-    for row in old_rows:
-        old_by_site[row.site_code].append(row)
+    for old_row in old_rows:
+        old_by_site[old_row.site_code].append(old_row)
 
     for site_code, site_old_rows in old_by_site.items():
         candidates = retail_by_site.get(site_code, [])
@@ -256,12 +255,12 @@ def match_old_rows_to_retail(
 
 
 def _new_other_location_commission(
-    row: OldGridRow,
+    other_location_rows: list[tuple[float, float]],
     rate: float,
 ) -> float:
     return sum(
         realized * rate
-        for target, realized in row.other_location_rows
+        for target, realized in other_location_rows
         if target > 0 and realized * 100 / target >= ACCESSORY_COMMISSION_GATE
     )
 
@@ -389,7 +388,10 @@ def build_comparison(
                 and old_row.target_pct >= ACCESSORY_COMMISSION_GATE
                 else 0.0
             )
-            other_commission = _new_other_location_commission(old_row, rate)
+            other_commission = _new_other_location_commission(
+                old_row.other_location_rows,
+                rate,
+            )
             new_salary = (
                 BASE_SALARY
                 + main_commission

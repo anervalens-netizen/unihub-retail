@@ -406,8 +406,8 @@ class CampaignsService:
                         promo_bonuri_by_store[site] = promo_bonuri_by_store.get(site, 0) + units
                         if _ag and _ag != "-":
                             promo_bonuri_by_agent[_ag] = promo_bonuri_by_agent.get(_ag, 0) + units
-                            agent_sites = promo_agent_sites.setdefault(_ag, {})
-                            agent_sites[site] = agent_sites.get(site, 0) + units
+                            site_weights = promo_agent_sites.setdefault(_ag, {})
+                            site_weights[site] = site_weights.get(site, 0) + units
                     _merge_excluded_units(incentive_excluded_ag, promo_excluded_ag)
 
                 selected_key = promotion_definition.get("key")
@@ -634,12 +634,13 @@ class CampaignsService:
                     agent_qty: dict[str, int] = {}
                     agent_sites: dict[str, str] = {}
                     for row in agent_item_rows:
-                        ag = row["agent"]
-                        sc = row["site_code"]
-                        excluded = incentive_excluded_ag.get((sc, ag, row["item_code"]), 0)
+                        ag = str(row["agent"])
+                        sc = str(row["site_code"])
+                        item_code = str(row["item_code"])
+                        excluded = incentive_excluded_ag.get((sc, ag, item_code), 0)
                         adj_net = int(row["qty"]) - excluded
                         q = max(0, adj_net)
-                        potential = q * reward_map.get(row["item_code"], 0)
+                        potential = q * reward_map.get(item_code, 0)
                         val = potential * store_multipliers.get(sc, 0)
                         agent_inc[ag] = agent_inc.get(ag, 0.0) + val
                         agent_potential[ag] = agent_potential.get(ag, 0.0) + potential

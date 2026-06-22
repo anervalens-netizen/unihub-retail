@@ -1141,6 +1141,24 @@ def _old_grid_comparable_salary(
     return total_salary - meal_tickets - overtime
 
 
+def _grid_registry_site_map(
+    grid_registry: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Return validated registry_key -> site_code mappings.
+
+    Database rows are represented as dictionaries with Any values. Normalize
+    the two identifiers at this boundary so downstream archive matching uses a
+    strict string contract and silently ignores incomplete registry rows.
+    """
+    result: dict[str, str] = {}
+    for registry_row in grid_registry:
+        registry_key = str(registry_row.get("registry_key") or "").strip()
+        site_code = str(registry_row.get("site_code") or "").strip()
+        if registry_key and site_code:
+            result[registry_key] = site_code
+    return result
+
+
 def build_old_grid_may_control(
     simulation: pd.DataFrame,
     combined: pd.DataFrame,
@@ -1218,9 +1236,7 @@ def build_old_grid_may_control(
             simulation_by_site[site_code].append(row)
 
     may_combined = combined[combined["Luna"] == "2026-05"].set_index("Agent cod")
-    registry_by_key = {
-        row["registry_key"]: row["site_code"] for row in grid_registry
-    }
+    registry_by_key = _grid_registry_site_map(grid_registry)
     details: list[dict[str, Any]] = []
 
     with ZipFile(OLD_GRID_MAY_ARCHIVE) as archive:
@@ -1228,8 +1244,8 @@ def build_old_grid_may_control(
             if not archive_name.lower().endswith(".xlsx"):
                 continue
             registry_key = archive_name[:-5]
-            site_code = registry_by_key.get(registry_key)
-            if not site_code:
+            mapped_site_code = registry_by_key.get(registry_key)
+            if mapped_site_code is None:
                 continue
             company, store = registry_key.split("/", 1)
             workbook = load_workbook(
@@ -1245,7 +1261,7 @@ def build_old_grid_may_control(
                 name_candidates = candidate_agent_codes(old_name)
                 matched_agents = [
                     row
-                    for row in simulation_by_site.get(site_code, [])
+                    for row in simulation_by_site.get(mapped_site_code, [])
                     if row["Agent cod"] in name_candidates
                 ]
                 if len(matched_agents) != 1:
@@ -1301,7 +1317,7 @@ def build_old_grid_may_control(
                         "Luna": "2026-05",
                         "Companie": company,
                         "Magazin grila veche": store,
-                        "Site": site_code,
+                        "Site": mapped_site_code,
                         "Nume grila veche": old_name,
                         "Agent cod": agent_code,
                         "Salariu baza vechi": old_base,

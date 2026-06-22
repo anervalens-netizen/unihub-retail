@@ -1,7 +1,10 @@
+from typing import Any
+
 import pytest
 
 from scripts.generate_salary_grid_simulation import (
     COMMISSION_SCENARIOS,
+    _grid_registry_site_map,
     _old_grid_comparable_salary,
     _old_grid_target_bonus,
     _qualitative_bonus,
@@ -9,10 +12,6 @@ from scripts.generate_salary_grid_simulation import (
     _target_bonus,
 )
 from scripts.generate_may_old_vs_new_grid import _new_other_location_commission
-
-
-class _OldRow:
-    other_location_rows = [(100, 80), (100, 79.99), (0, 50)]
 
 
 def test_commission_scenarios_are_ordered() -> None:
@@ -43,7 +42,17 @@ def test_old_grid_comparable_excludes_meals_and_overtime() -> None:
 
 
 def test_new_other_location_commission_uses_80_percent_gate() -> None:
-    assert _new_other_location_commission(_OldRow(), 0.03) == pytest.approx(2.4)
+    rows = [(100.0, 80.0), (100.0, 79.99), (0.0, 50.0)]
+    assert _new_other_location_commission(rows, 0.03) == pytest.approx(2.4)
+
+
+def test_grid_registry_site_map_normalizes_and_skips_incomplete_rows() -> None:
+    registry: list[dict[str, Any]] = [
+        {"registry_key": " Mobiup/Store 1 ", "site_code": 101},
+        {"registry_key": "", "site_code": "102"},
+        {"registry_key": "Mobicell/Store 2", "site_code": None},
+    ]
+    assert _grid_registry_site_map(registry) == {"Mobiup/Store 1": "101"}
 
 
 def test_daily_average_has_no_two_point_band() -> None:
