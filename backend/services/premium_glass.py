@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from collections import defaultdict
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from models import (
@@ -114,6 +115,37 @@ def _premium_base_cte(where_sql: str) -> str:
     """
 
 
+def _zero_split_bucket() -> dict[str, Any]:
+    return {
+        "premium_qty": 0,
+        "regular_qty": 0,
+        "total_qty": 0,
+        "premium_sales": Decimal(0),
+        "regular_sales": Decimal(0),
+        "total_sales": Decimal(0),
+    }
+
+
+def _add_split(bucket: dict[str, Any], qty: int, sales: Decimal, is_premium: bool) -> None:
+    bucket["total_qty"] += qty
+    bucket["total_sales"] += sales
+    if is_premium:
+        bucket["premium_qty"] += qty
+        bucket["premium_sales"] += sales
+    else:
+        bucket["regular_qty"] += qty
+        bucket["regular_sales"] += sales
+
+
+def _share_pct(part: int | Decimal, total: int | Decimal) -> Decimal | None:
+    if total == 0:
+        return None
+    return (Decimal(part) * Decimal(100) / Decimal(total)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+
+
 async def get_premium_glass_analysis(
     conn: Any,
     month: str,
@@ -138,177 +170,226 @@ async def get_premium_glass_analysis(
     )
     cte = _premium_base_cte(" AND ".join(clauses))
 
-    summary_row = await conn.fetchrow(
+    matched_rows = await conn.fetch(
         f"""
         {cte}
         SELECT
-            $1::TEXT AS month,
-            COALESCE(SUM(qty), 0)::INT AS total_qty,
-            COALESCE(SUM(sales), 0) AS total_sales,
-            COALESCE(SUM(qty) FILTER (WHERE is_premium), 0)::INT AS premium_qty,
-            COALESCE(SUM(sales) FILTER (WHERE is_premium), 0) AS premium_sales,
-            COALESCE(SUM(qty) FILTER (WHERE NOT is_premium), 0)::INT AS regular_qty,
-            COALESCE(SUM(sales) FILTER (WHERE NOT is_premium), 0) AS regular_sales,
-            ROUND(
-                COALESCE(SUM(qty) FILTER (WHERE is_premium), 0) * 100.0
-                / NULLIF(COALESCE(SUM(qty), 0), 0),
-                2
-            ) AS premium_qty_share_pct,
-            ROUND(
-                COALESCE(SUM(sales) FILTER (WHERE is_premium), 0) * 100.0
-                / NULLIF(COALESCE(SUM(sales), 0), 0),
-                2
-            ) AS premium_sales_share_pct,
-            COUNT(DISTINCT site_code)::INT AS active_stores,
-            COUNT(DISTINCT agent)::INT AS active_agents,
-            COUNT(DISTINCT site_code) FILTER (WHERE is_premium)::INT AS premium_active_stores,
-            COUNT(DISTINCT agent) FILTER (WHERE is_premium)::INT AS premium_active_agents,
-            (SELECT COUNT(DISTINCT model_key)::INT FROM premium_glass_item_models) AS target_model_count
-        FROM eligible_lines
-        """,
-        *params,
-    )
-
-    model_rows = await conn.fetch(
-        f"""
-        {cte}
-        SELECT
+            id,
+            item_code,
+            item_name,
+            site_code,
+            locatie,
+            firma,
+            manager,
+            agent,
+            is_premium,
             model_key,
             model_label,
-            COALESCE(SUM(qty) FILTER (WHERE is_premium), 0)::INT AS premium_qty,
-            COALESCE(SUM(qty) FILTER (WHERE NOT is_premium), 0)::INT AS regular_qty,
-            COALESCE(SUM(qty), 0)::INT AS total_qty,
-            COALESCE(SUM(sales) FILTER (WHERE is_premium), 0) AS premium_sales,
-            COALESCE(SUM(sales) FILTER (WHERE NOT is_premium), 0) AS regular_sales,
-            COALESCE(SUM(sales), 0) AS total_sales,
-            ROUND(
-                COALESCE(SUM(qty) FILTER (WHERE is_premium), 0) * 100.0
-                / NULLIF(COALESCE(SUM(qty), 0), 0),
-                2
-            ) AS premium_qty_share_pct,
-            COUNT(DISTINCT item_code) FILTER (WHERE is_premium)::INT AS premium_item_count,
-            COUNT(DISTINCT item_code) FILTER (WHERE NOT is_premium)::INT AS regular_item_count
+            qty,
+            sales
         FROM matched_lines
-        GROUP BY model_key, model_label
-        ORDER BY total_qty DESC, model_label ASC
         """,
         *params,
     )
-
-    store_rows = await conn.fetch(
-        f"""
-        {cte}
-        SELECT
-            site_code,
-            MAX(locatie) AS locatie,
-            MAX(firma) AS firma,
-            COALESCE(SUM(qty) FILTER (WHERE is_premium), 0)::INT AS premium_qty,
-            COALESCE(SUM(qty) FILTER (WHERE NOT is_premium), 0)::INT AS regular_qty,
-            COALESCE(SUM(qty), 0)::INT AS total_qty,
-            COALESCE(SUM(sales) FILTER (WHERE is_premium), 0) AS premium_sales,
-            COALESCE(SUM(sales) FILTER (WHERE NOT is_premium), 0) AS regular_sales,
-            COALESCE(SUM(sales), 0) AS total_sales,
-            ROUND(
-                COALESCE(SUM(qty) FILTER (WHERE is_premium), 0) * 100.0
-                / NULLIF(COALESCE(SUM(qty), 0), 0),
-                2
-            ) AS premium_qty_share_pct
-        FROM eligible_lines
-        GROUP BY site_code
-        ORDER BY premium_qty DESC, total_qty DESC, locatie ASC
-        """,
-        *params,
-    )
-
-    manager_rows = await conn.fetch(
-        f"""
-        {cte}
-        SELECT
-            manager,
-            COALESCE(SUM(qty) FILTER (WHERE is_premium), 0)::INT AS premium_qty,
-            COALESCE(SUM(qty) FILTER (WHERE NOT is_premium), 0)::INT AS regular_qty,
-            COALESCE(SUM(qty), 0)::INT AS total_qty,
-            COALESCE(SUM(sales) FILTER (WHERE is_premium), 0) AS premium_sales,
-            COALESCE(SUM(sales) FILTER (WHERE NOT is_premium), 0) AS regular_sales,
-            COALESCE(SUM(sales), 0) AS total_sales,
-            ROUND(
-                COALESCE(SUM(qty) FILTER (WHERE is_premium), 0) * 100.0
-                / NULLIF(COALESCE(SUM(qty), 0), 0),
-                2
-            ) AS premium_qty_share_pct,
-            COUNT(DISTINCT site_code)::INT AS store_count,
-            COUNT(DISTINCT agent)::INT AS agent_count
-        FROM eligible_lines
-        GROUP BY manager
-        ORDER BY premium_qty DESC, total_qty DESC, manager ASC
-        """,
-        *params,
-    )
-
-    agent_rows = await conn.fetch(
-        f"""
-        {cte}
-        SELECT
-            agent,
-            site_code,
-            MAX(locatie) AS locatie,
-            COALESCE(SUM(qty) FILTER (WHERE is_premium), 0)::INT AS premium_qty,
-            COALESCE(SUM(qty) FILTER (WHERE NOT is_premium), 0)::INT AS regular_qty,
-            COALESCE(SUM(qty), 0)::INT AS total_qty,
-            COALESCE(SUM(sales) FILTER (WHERE is_premium), 0) AS premium_sales,
-            COALESCE(SUM(sales) FILTER (WHERE NOT is_premium), 0) AS regular_sales,
-            COALESCE(SUM(sales), 0) AS total_sales,
-            ROUND(
-                COALESCE(SUM(qty) FILTER (WHERE is_premium), 0) * 100.0
-                / NULLIF(COALESCE(SUM(qty), 0), 0),
-                2
-            ) AS premium_qty_share_pct
-        FROM eligible_lines
-        GROUP BY agent, site_code
-        ORDER BY premium_qty DESC, total_qty DESC, agent ASC
-        """,
-        *params,
-    )
-
-    product_rows = await conn.fetch(
-        f"""
-        {cte},
-        product_models AS (
-            SELECT
-                item_code,
-                ARRAY_AGG(DISTINCT model_label ORDER BY model_label) AS model_labels
-            FROM matched_lines
-            GROUP BY item_code
+    target_model_count = int(
+        await conn.fetchval(
+            "SELECT COUNT(DISTINCT model_key)::INT FROM premium_glass_item_models"
         )
-        SELECT
-            el.item_code,
-            MAX(el.item_name) AS item_name,
-            bool_or(el.is_premium) AS is_premium,
-            COALESCE(pm.model_labels, ARRAY[]::TEXT[]) AS model_labels,
-            COALESCE(SUM(el.qty), 0)::INT AS qty,
-            COALESCE(SUM(el.sales), 0) AS sales,
-            COUNT(DISTINCT el.site_code)::INT AS store_count
-        FROM eligible_lines el
-        LEFT JOIN product_models pm ON pm.item_code = el.item_code
-        GROUP BY el.item_code, pm.model_labels
-        ORDER BY qty DESC, sales DESC, item_name ASC
-        LIMIT 12
-        """,
-        *params,
+        or 0
     )
 
-    summary = (
-        PremiumGlassSummary(**dict(summary_row))
-        if summary_row
-        else PremiumGlassSummary(month=month)
+    eligible_rows = {
+        (
+            row["id"],
+            row["item_code"],
+            row["item_name"],
+            row["site_code"],
+            row["locatie"],
+            row["firma"],
+            row["manager"],
+            row["agent"],
+            row["is_premium"],
+            row["qty"],
+            row["sales"],
+        ): row
+        for row in matched_rows
+    }.values()
+
+    summary_bucket = _zero_split_bucket()
+    active_stores: set[str] = set()
+    active_agents: set[str] = set()
+    premium_active_stores: set[str] = set()
+    premium_active_agents: set[str] = set()
+
+    model_buckets: dict[tuple[str, str], dict[str, Any]] = defaultdict(_zero_split_bucket)
+    store_buckets: dict[str, dict[str, Any]] = {}
+    manager_buckets: dict[str, dict[str, Any]] = {}
+    agent_buckets: dict[tuple[str, str], dict[str, Any]] = {}
+    product_buckets: dict[str, dict[str, Any]] = {}
+    product_models: dict[str, set[str]] = defaultdict(set)
+
+    for row in matched_rows:
+        qty = int(row["qty"] or 0)
+        sales = row["sales"] or Decimal(0)
+        is_premium = bool(row["is_premium"])
+        model_key = str(row["model_key"])
+        model_label = str(row["model_label"])
+        item_code = str(row["item_code"])
+
+        model_bucket = model_buckets[(model_key, model_label)]
+        _add_split(model_bucket, qty, sales, is_premium)
+        premium_items = model_bucket.setdefault("premium_items", set())
+        regular_items = model_bucket.setdefault("regular_items", set())
+        if is_premium:
+            premium_items.add(item_code)
+        else:
+            regular_items.add(item_code)
+        product_models[item_code].add(model_label)
+
+    for row in eligible_rows:
+        qty = int(row["qty"] or 0)
+        sales = row["sales"] or Decimal(0)
+        is_premium = bool(row["is_premium"])
+        site_code = str(row["site_code"])
+        agent_name = str(row["agent"])
+        manager = str(row["manager"])
+        item_code = str(row["item_code"])
+
+        _add_split(summary_bucket, qty, sales, is_premium)
+        active_stores.add(site_code)
+        active_agents.add(agent_name)
+        if is_premium:
+            premium_active_stores.add(site_code)
+            premium_active_agents.add(agent_name)
+
+        store_bucket = store_buckets.setdefault(
+            site_code,
+            {
+                **_zero_split_bucket(),
+                "site_code": site_code,
+                "locatie": str(row["locatie"]),
+                "firma": str(row["firma"]),
+            },
+        )
+        _add_split(store_bucket, qty, sales, is_premium)
+
+        manager_bucket = manager_buckets.setdefault(
+            manager,
+            {
+                **_zero_split_bucket(),
+                "manager": manager,
+                "stores": set(),
+                "agents": set(),
+            },
+        )
+        _add_split(manager_bucket, qty, sales, is_premium)
+        manager_bucket["stores"].add(site_code)
+        manager_bucket["agents"].add(agent_name)
+
+        agent_bucket = agent_buckets.setdefault(
+            (agent_name, site_code),
+            {
+                **_zero_split_bucket(),
+                "agent": agent_name,
+                "site_code": site_code,
+                "locatie": str(row["locatie"]),
+            },
+        )
+        _add_split(agent_bucket, qty, sales, is_premium)
+
+        product_bucket = product_buckets.setdefault(
+            item_code,
+            {
+                "item_code": item_code,
+                "item_name": str(row["item_name"]),
+                "is_premium": False,
+                "qty": 0,
+                "sales": Decimal(0),
+                "stores": set(),
+            },
+        )
+        product_bucket["is_premium"] = bool(product_bucket["is_premium"] or is_premium)
+        product_bucket["qty"] += qty
+        product_bucket["sales"] += sales
+        product_bucket["stores"].add(site_code)
+
+    summary = PremiumGlassSummary(
+        month=month,
+        total_qty=summary_bucket["total_qty"],
+        total_sales=summary_bucket["total_sales"],
+        premium_qty=summary_bucket["premium_qty"],
+        premium_sales=summary_bucket["premium_sales"],
+        regular_qty=summary_bucket["regular_qty"],
+        regular_sales=summary_bucket["regular_sales"],
+        premium_qty_share_pct=_share_pct(
+            summary_bucket["premium_qty"], summary_bucket["total_qty"]
+        ),
+        premium_sales_share_pct=_share_pct(
+            summary_bucket["premium_sales"], summary_bucket["total_sales"]
+        ),
+        active_stores=len(active_stores),
+        active_agents=len(active_agents),
+        premium_active_stores=len(premium_active_stores),
+        premium_active_agents=len(premium_active_agents),
+        target_model_count=target_model_count,
     )
+
+    model_rows = [
+        {
+            **bucket,
+            "model_key": key[0],
+            "model_label": key[1],
+            "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
+            "premium_item_count": len(bucket.get("premium_items", set())),
+            "regular_item_count": len(bucket.get("regular_items", set())),
+        }
+        for key, bucket in model_buckets.items()
+    ]
+    store_rows = [
+        {
+            **bucket,
+            "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
+        }
+        for bucket in store_buckets.values()
+    ]
+    manager_rows = [
+        {
+            **bucket,
+            "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
+            "store_count": len(bucket["stores"]),
+            "agent_count": len(bucket["agents"]),
+        }
+        for bucket in manager_buckets.values()
+    ]
+    agent_rows = [
+        {
+            **bucket,
+            "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
+        }
+        for bucket in agent_buckets.values()
+    ]
+    product_rows = [
+        {
+            **bucket,
+            "model_labels": sorted(product_models[bucket["item_code"]]),
+            "store_count": len(bucket["stores"]),
+        }
+        for bucket in product_buckets.values()
+    ]
+
+    model_rows.sort(key=lambda r: (-r["total_qty"], r["model_label"]))
+    store_rows.sort(key=lambda r: (-r["premium_qty"], -r["total_qty"], r["locatie"]))
+    manager_rows.sort(key=lambda r: (-r["premium_qty"], -r["total_qty"], r["manager"]))
+    agent_rows.sort(key=lambda r: (-r["premium_qty"], -r["total_qty"], r["agent"]))
+    product_rows.sort(key=lambda r: (-r["qty"], -r["sales"], r["item_name"]))
+
     return PremiumGlassAnalysis(
         summary=summary,
-        models=[PremiumGlassModelStat(**dict(row)) for row in model_rows],
-        managers=[PremiumGlassManagerStat(**dict(row)) for row in manager_rows],
-        stores=[PremiumGlassStoreStat(**dict(row)) for row in store_rows],
-        agents=[PremiumGlassAgentStat(**dict(row)) for row in agent_rows],
-        products=[PremiumGlassProductStat(**dict(row)) for row in product_rows],
+        models=[PremiumGlassModelStat(**row) for row in model_rows],
+        managers=[PremiumGlassManagerStat(**row) for row in manager_rows],
+        stores=[PremiumGlassStoreStat(**row) for row in store_rows],
+        agents=[PremiumGlassAgentStat(**row) for row in agent_rows],
+        products=[PremiumGlassProductStat(**row) for row in product_rows[:12]],
     )
 
 
