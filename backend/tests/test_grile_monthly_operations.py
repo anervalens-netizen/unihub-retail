@@ -152,6 +152,45 @@ async def test_live_reset_retry_blocks_after_uncertain_stale_checkpoint() -> Non
         await close_db_pool()
 
 
+async def test_completed_live_reset_is_idempotent_for_same_scope() -> None:
+    pool = await get_pool()
+    month = "2099-08"
+    await _cleanup(month)
+
+    try:
+        async with pool.acquire() as conn:
+            operation_id = await conn.fetchval(
+                """
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, only_filter, dry_run, status,
+                    job_id, finished_at
+                )
+                VALUES (
+                    'reset', $1, 'Store 1', false, 'completed',
+                    'job-completed', now()
+                )
+                RETURNING id
+                """,
+                month,
+            )
+
+        reservation = await reserve_monthly_operation(
+            pool,
+            op="reset",
+            month=month,
+            only="  Store 1  ",
+            dry_run=False,
+            triggered_by_email="admin@example.com",
+        )
+
+        assert reservation.status == "already_completed"
+        assert reservation.operation_id == operation_id
+        assert reservation.job_id == "job-completed"
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
 async def test_live_reset_checkpoint_skips_already_completed_store(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
