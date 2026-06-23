@@ -107,6 +107,8 @@ Frontend-ul foloseste lazy-loading pe ecranele principale (`Hub`, `Focus`,
 dar nu este preincarcat din `index.html`; se descarca la primul ecran cu
 grafice. TanStack Query are default `staleTime=60s` si `gcTime=10min`, iar
 polling-ul pentru operatii Grile ramane explicit per-query.
+Aplicatia este invelita la radacina in `ErrorBoundary`; fallback-ul nu expune
+stack trace in UI si trimite erorile catre GlitchTip/Sentry.
 
 Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Salarii` si
 `Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab` si include
