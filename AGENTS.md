@@ -41,6 +41,8 @@ provisioning a new checkout. Never commit `.npmrc`.
   `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`
   group. Agents and Team Leaders must receive 403.
 - Shared Google API clients are not thread-safe. Build one service per worker thread and keep conservative concurrency.
+- The Retail ARQ worker serializes heavy jobs (`max_jobs=1`), waits up to 60
+  seconds for an active job on SIGTERM, and must close both ARQ and DB pools.
 
 ## Business invariants
 

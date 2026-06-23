@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from arq.worker import create_worker
 
 from services.jobs import get_valkey_settings
@@ -88,11 +87,13 @@ async def grile_monthly_background(
 
 async def shutdown(ctx: dict) -> None:
     from db.connection import close_db_pool
+    from services.jobs import close_arq_pool
+
+    await close_arq_pool()
     await close_db_pool()
 
 
-
-async def main() -> None:
+def main() -> None:
     from dotenv import find_dotenv, load_dotenv
     load_dotenv(find_dotenv())
 
@@ -101,10 +102,16 @@ async def main() -> None:
         "functions": [import_sales_background, grile_check_background, grile_monthly_background],
         "on_startup": startup,
         "on_shutdown": shutdown,
+        "job_completion_wait": 60,
+        "max_jobs": 1,
+        "job_timeout": 1800,
+        "keep_result": 3600,
+        "health_check_interval": 30,
+        "retry_jobs": True,
     }
     worker = create_worker(worker_settings)
-    await worker.async_run()
+    worker.run()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

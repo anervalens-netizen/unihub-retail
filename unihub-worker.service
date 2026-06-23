@@ -12,6 +12,7 @@ EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5
+TimeoutStopSec=75
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=unihub-worker

@@ -17,6 +17,10 @@ UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard 
 | Public URL | `https://retail.unihub.ro/` |
 | Service | `unihub-backend.service` |
 
+Workerul ARQ serializeaza joburile grele, are timeout explicit de 30 minute si
+la SIGTERM asteapta bounded jobul activ inainte sa inchida conexiunile Valkey
+si PostgreSQL. Unitatea systemd acorda 75 secunde pentru shutdown-ul controlat.
+
 ## Diagrama
 
 ```mermaid
