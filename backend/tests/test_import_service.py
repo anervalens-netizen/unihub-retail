@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -16,6 +17,14 @@ from services.jobs import JobResult, JobStatus
 
 def service() -> ImportsService:
     return ImportsService(MagicMock(), MagicMock())
+
+
+@pytest.mark.asyncio
+async def test_sales_import_rejects_missing_filename() -> None:
+    upload = UploadFile(file=BytesIO(b"data"), filename=None)
+    with pytest.raises(HTTPException) as exc:
+        await service().import_sales(upload)
+    assert exc.value.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -38,6 +47,15 @@ async def test_sales_import_enforces_bounded_upload(
 
 
 @pytest.mark.asyncio
+async def test_sales_import_rejects_empty_file() -> None:
+    upload = UploadFile(file=BytesIO(), filename="sales.xlsx")
+    with pytest.raises(HTTPException) as exc:
+        await service().import_sales(upload)
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Fisierul este gol"
+
+
+@pytest.mark.asyncio
 async def test_sales_import_is_always_queued(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -57,6 +75,92 @@ async def test_sales_import_is_always_queued(
     assert result.job_id == "sales-import:abc"
     assert result.status == "queued"
     enqueue.assert_awaited_once_with(b"valid", filename="sales.xlsx")
+
+
+@pytest.mark.asyncio
+async def test_import_job_status_maps_result_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {
+        "import_month": "2099-07",
+        "rows_in_file": 2,
+        "rows_imported": 2,
+        "rows_filtered": 0,
+        "store_count": 1,
+        "agent_count": 2,
+        "snapshot_id": 12,
+        "filename": "sales.xlsx",
+        "is_month_final": False,
+    }
+    monkeypatch.setattr(
+        imports_service,
+        "get_job_status",
+        AsyncMock(
+            return_value=JobResult(
+                job_id="sales-import:abc",
+                status=JobStatus.COMPLETE,
+                result=payload,
+            )
+        ),
+    )
+
+    result = await service().get_import_job_status("sales-import:abc")
+
+    assert result.status == "complete"
+    assert result.result is not None
+    assert result.result.snapshot_id == 12
+
+
+@pytest.mark.asyncio
+async def test_import_history_maps_repository_rows() -> None:
+    now = datetime.now(timezone.utc)
+    repo = MagicMock()
+    repo.get_import_history = AsyncMock(
+        return_value=[
+            {
+                "id": 12,
+                "import_month": "2099-07",
+                "filename": "sales.xlsx",
+                "upload_date": date(2099, 7, 31),
+                "is_month_final": False,
+                "rows_in_file": 2,
+                "rows_imported": 2,
+                "status": "completed",
+                "error_message": None,
+                "created_at": now,
+            }
+        ]
+    )
+
+    result = await ImportsService(repo, MagicMock()).get_import_history()
+
+    assert len(result) == 1
+    assert result[0].id == 12
+    assert result[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_grile_check_after_import_is_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueue = AsyncMock(
+        return_value=SimpleNamespace(
+            status="queued",
+            run_id=8,
+        )
+    )
+    monkeypatch.setattr(imports_service, "enqueue_grile_check", enqueue)
+
+    await imports_service.trigger_grile_check_after_import("2099-07", 12)
+
+    enqueue.assert_awaited_once_with(
+        month="2099-07",
+        source="auto",
+        source_snapshot_id=12,
+    )
+
+    enqueue.side_effect = RuntimeError("Valkey unavailable")
+    await imports_service.trigger_grile_check_after_import("2099-07", 12)
 
 
 @pytest.mark.asyncio

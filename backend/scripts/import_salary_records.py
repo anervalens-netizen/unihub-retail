@@ -226,6 +226,8 @@ def validate_records(records: list[SalaryRecord]) -> None:
 
 
 async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) -> None:
+    if not records:
+        raise ValueError("Nu exista randuri valide de importat.")
     await conn.execute(
         "DELETE FROM salary_records WHERE year = $1 AND month = $2 AND company_name = ANY($3::text[])",
         records[0].year,
