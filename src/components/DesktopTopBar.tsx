@@ -1,11 +1,11 @@
 import { Filter, LogOut } from 'lucide-react';
 import type { AppFilters } from './MainLayout';
-import { TAB_LABELS, MGMT_SUBTAB_LABELS, type ManagementTab } from '../lib/tabs';
+import { TAB_LABELS, MGMT_SUBTAB_LABELS, type ManagementTab, type TabId } from '../lib/tabs';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { cn } from '../lib/utils';
 
 interface Props {
-  activeTab: string;
+  activeTab: TabId;
   mgmtSubTab: ManagementTab;
   showFilterButton: boolean;
   onOpenFilter: () => void;
@@ -14,7 +14,7 @@ interface Props {
   onLogout?: () => void;
 }
 
-const FILTER_TABS = new Set(['hub', 'focus', 'agents']);
+const FILTER_TABS = new Set<TabId>(['hub', 'focus', 'agents']);
 
 export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenFilter, filters, userEmail, onLogout }: Props) {
   const breadcrumb =

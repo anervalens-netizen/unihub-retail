@@ -38,7 +38,11 @@ function avgScore(items: { score: number }[]) {
 
 function toggle(set: Set<string>, key: string): Set<string> {
   const next = new Set(set);
-  next.has(key) ? next.delete(key) : next.add(key);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
   return next;
 }
 

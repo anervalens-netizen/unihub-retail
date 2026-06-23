@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { client, setAccessTokenProvider, setUnauthorizedHandler } from './client';
 
 const mockFetch = vi.fn();
+type FetchCall = [string, { method: string; headers: Record<string, string>; body?: BodyInit | string }];
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -18,12 +19,22 @@ function okResponse(data: any) {
   return new Response(JSON.stringify(data), { status: 200 });
 }
 
+function fetchCall(index = 0): FetchCall {
+  const call = mockFetch.mock.calls[index] as FetchCall | undefined;
+  expect(call).toBeDefined();
+  return call as FetchCall;
+}
+
+function latestFetchCall(): FetchCall {
+  return fetchCall(mockFetch.mock.calls.length - 1);
+}
+
 describe('client.get', () => {
   it('makes a GET request to the given URL', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({ status: 'ok' }));
     const { data } = await client.get('/api/health');
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url, opts] = fetchCall();
     expect(url).toBe('/api/health');
     expect(opts.method).toBe('GET');
     expect(data).toEqual({ status: 'ok' });
@@ -32,7 +43,7 @@ describe('client.get', () => {
   it('appends query params to URL', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({}));
     await client.get('/api/data', { params: { month: '2026-05', firma: 'MobiCell' } });
-    const [url] = mockFetch.mock.calls[0];
+    const [url] = fetchCall();
     expect(url).toContain('month=2026-05');
     expect(url).toContain('firma=MobiCell');
   });
@@ -40,7 +51,7 @@ describe('client.get', () => {
   it('skips undefined and null params', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({}));
     await client.get('/api/data', { params: { month: '2026-05', firma: undefined, rm: null } });
-    const [url] = mockFetch.mock.calls[0];
+    const [url] = fetchCall();
     expect(url).toContain('month=2026-05');
     expect(url).not.toContain('firma');
     expect(url).not.toContain('rm');
@@ -50,14 +61,14 @@ describe('client.get', () => {
     setAccessTokenProvider(() => 'test-token-123');
     mockFetch.mockResolvedValueOnce(okResponse({}));
     await client.get('/api/data');
-    const [, opts] = mockFetch.mock.calls[0];
+    const [, opts] = fetchCall();
     expect(opts.headers.Authorization).toBe('Bearer test-token-123');
   });
 
   it('does not include Authorization when no token provider', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({}));
     await client.get('/api/data');
-    const [, opts] = mockFetch.mock.calls[0];
+    const [, opts] = fetchCall();
     expect(opts.headers.Authorization).toBeUndefined();
   });
 
@@ -71,8 +82,7 @@ describe('client.post', () => {
   it('sends JSON body', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({ id: 1 }));
     const { data } = await client.post('/api/items', { name: 'test' });
-    const callIdx = mockFetch.mock.calls.length - 1;
-    const [url, opts] = mockFetch.mock.calls[callIdx];
+    const [url, opts] = latestFetchCall();
     expect(url).toBe('/api/items');
     expect(opts.method).toBe('POST');
     expect(opts.body).toBe(JSON.stringify({ name: 'test' }));
@@ -84,8 +94,7 @@ describe('client.post', () => {
     fd.append('file', 'content');
     mockFetch.mockResolvedValueOnce(okResponse({ ok: true }));
     await client.post('/api/upload', fd);
-    const callIdx = mockFetch.mock.calls.length - 1;
-    const [, opts] = mockFetch.mock.calls[callIdx];
+    const [, opts] = latestFetchCall();
     expect(opts.body).toBe(fd);
   });
 });

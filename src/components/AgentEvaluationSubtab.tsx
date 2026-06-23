@@ -900,12 +900,9 @@ export function AgentEvaluationSubtab() {
     return [...filtered].sort((a, b) => {
       const av = getSortValue(a, sortKey);
       const bv = getSortValue(b, sortKey);
-      let result = 0;
-      if (typeof av === 'number' && typeof bv === 'number') {
-        result = av - bv;
-      } else {
-        result = String(av).localeCompare(String(bv), 'ro');
-      }
+      const result = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv), 'ro');
       return sortDirection === 'asc' ? result : -result;
     });
   }, [data.rows, firma, sortKey, sortDirection]);
@@ -918,12 +915,9 @@ export function AgentEvaluationSubtab() {
     return [...filtered].sort((a, b) => {
       const av = getV2SortValue(a, v2SortKey);
       const bv = getV2SortValue(b, v2SortKey);
-      let result = 0;
-      if (typeof av === 'number' && typeof bv === 'number') {
-        result = av - bv;
-      } else {
-        result = String(av).localeCompare(String(bv), 'ro');
-      }
+      const result = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv), 'ro');
       return v2SortDirection === 'asc' ? result : -result;
     });
   }, [v2Data.rows, firma, v2SortKey, v2SortDirection]);

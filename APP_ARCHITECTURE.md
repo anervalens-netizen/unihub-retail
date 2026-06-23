@@ -112,6 +112,10 @@ stack trace in UI si trimite erorile catre GlitchTip/Sentry.
 PWA precache exclude logo-urile mari nefolosite in UI (`logo-horizontal`,
 `logo-inverted`, `logo-mark`); sidebar-ul foloseste `favicon-64.png`, iar
 imaginile autentificate din Vizite folosesc lazy loading.
+Calitatea frontend are doua praguri: `npm run lint` ruleaza ESLint flat config
+cu React Hooks si TypeScript rules, iar `npm run typecheck:strict` aplica
+strict TypeScript pe subseturi curate. `npm run typecheck` ramane pragul
+general pentru toata aplicatia.
 
 Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Salarii` si
 `Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab` si include

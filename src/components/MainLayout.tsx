@@ -24,7 +24,7 @@ interface FilterValueOption {
 
 interface MainLayoutProps {
   children: React.ReactNode;
-  activeTab: string;
+  activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
   isFilterOpen: boolean;
   setIsFilterOpen: (open: boolean) => void;

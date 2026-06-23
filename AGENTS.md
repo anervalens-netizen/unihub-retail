@@ -14,6 +14,8 @@ Read `APP_ARCHITECTURE.md` for module boundaries and `README.md` for setup. Read
 
 ```bash
 npm run typecheck
+npm run typecheck:strict
+npm run lint
 npm run test
 pytest backend/tests/ -q
 mypy backend/ --ignore-missing-imports --explicit-package-bases
