@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+from hashlib import sha256
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.constants import result_key_prefix
 from arq.jobs import Job, JobStatus as ArqJobStatus
 
 
@@ -71,8 +73,26 @@ async def close_arq_pool() -> None:
 
 async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("import_sales_background", file_content, filename)
+    job_id = f"sales-import:{sha256(file_content).hexdigest()}"
+    enqueue_args = (
+        "import_sales_background",
+        file_content,
+        filename,
+    )
+    job = await pool.enqueue_job(*enqueue_args, _job_id=job_id)
     if job is None:
+        existing = Job(job_id, pool)
+        existing_status = await existing.status()
+        if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
+            return existing
+        if existing_status == ArqJobStatus.complete:
+            info = await existing.result_info()
+            if info and info.success:
+                return existing
+            await pool.delete(result_key_prefix + job_id)
+            job = await pool.enqueue_job(*enqueue_args, _job_id=job_id)
+            if job is not None:
+                return job
         raise RuntimeError("Failed to enqueue import job")
     return job
 

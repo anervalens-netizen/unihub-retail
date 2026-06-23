@@ -18,6 +18,16 @@ async def import_sales_background(ctx: dict, file_content: bytes, filename: str)
     else:
         result = await import_sales_file(conn, file_content, filename=filename)
 
+    from routers.filters import clear_filter_options_cache
+    from services.retail_metrics import update_business_metrics
+
+    clear_filter_options_cache()
+    pool = ctx.get("db_pool")
+    if pool is None:
+        from db.connection import get_pool
+        pool = await get_pool()
+    await update_business_metrics(pool)
+
     # Best-effort: dupa import reusit + reporting rebuild (in tranzactia din
     # import_sales_file), declanseaza verificarea grilelor. Nu propaga erori.
     from services.imports import trigger_grile_check_after_import

@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
+import os
+from pathlib import Path
 
 from fastapi import HTTPException, status
 from fastapi import UploadFile
 
 from models import ImportHistoryEntry, ImportJobStatus, ImportResponse
 from repositories.imports import ImportsRepository
-from services.importer import import_sales_file
 from services.jobs import JobStatus, enqueue_grile_check, enqueue_sales_import, get_job_status
 import asyncpg
 
 logger = logging.getLogger(__name__)
+DEFAULT_MAX_SALES_UPLOAD_BYTES = 32 * 1024 * 1024
+ALLOWED_SALES_EXTENSIONS = frozenset({".xlsx", ".xls"})
 
 
 async def trigger_grile_check_after_import(import_month: str, snapshot_id: int | None) -> None:
@@ -41,29 +43,48 @@ class ImportsService:
         self.repo = repo
         self.pool = pool
 
-    async def import_sales(self, file: UploadFile, background: bool = False) -> ImportResponse | ImportJobStatus:
+    async def import_sales(self, file: UploadFile) -> ImportJobStatus:
         if not file.filename:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fișier invalid")
+        if Path(file.filename).suffix.casefold() not in ALLOWED_SALES_EXTENSIONS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Importul accepta numai fisiere .xlsx sau .xls",
+            )
 
-        if background:
-            content = await file.read()
-            job = await enqueue_sales_import(content, filename=file.filename)
-            return ImportJobStatus(job_id=job.job_id, status=JobStatus.QUEUED.value)
+        max_bytes = int(
+            os.getenv("MAX_SALES_UPLOAD_BYTES", str(DEFAULT_MAX_SALES_UPLOAD_BYTES))
+        )
+        content = await file.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"Fisierul depaseste limita de {max_bytes // (1024 * 1024)} MB",
+            )
+        if not content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Fisierul este gol",
+            )
 
-        content = await file.read()
-        async with self.pool.acquire() as conn:
-            result = await import_sales_file(conn, content, filename=file.filename)
-        from routers.filters import clear_filter_options_cache
-        from services.retail_metrics import update_business_metrics
-
-        clear_filter_options_cache()
-        await update_business_metrics(self.pool)
-        await trigger_grile_check_after_import(result.import_month, result.snapshot_id)
-        return ImportResponse(**asdict(result))
+        job = await enqueue_sales_import(content, filename=file.filename)
+        job_status = await get_job_status(job.job_id)
+        return ImportJobStatus(
+            job_id=job.job_id,
+            status=job_status.status.value,
+            result=ImportResponse(**job_status.result) if job_status.result else None,
+            error=job_status.error,
+        )
 
     async def get_import_job_status(self, job_id: str) -> ImportJobStatus:
         result = await get_job_status(job_id)
-        return ImportJobStatus(job_id=result.job_id, status=result.status.value)
+        payload = ImportResponse(**result.result) if result.result else None
+        return ImportJobStatus(
+            job_id=result.job_id,
+            status=result.status.value,
+            result=payload,
+            error=result.error,
+        )
 
     async def get_import_history(self) -> list[ImportHistoryEntry]:
         rows = await self.repo.get_import_history()

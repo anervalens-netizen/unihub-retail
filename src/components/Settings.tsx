@@ -6,10 +6,12 @@ import { Download, Eye, FileSpreadsheet, LineChart as LineChartIcon, SlidersHori
 import { downloadExport, getExportCatalog, previewExport } from '../api/exports';
 import type { ExportCatalog, ExportColumnDef, ExportFilters, ExportPreview, ExportRequest } from '../api/exports';
 import { getAvailableMonths, getFilterOptions } from '../api/filters';
-import { getImportHistory, uploadSalesFile } from '../api/imports';
+import { getImportHistory, getImportJobStatus, uploadSalesFile } from '../api/imports';
 import type { FilterOptions, ImportHistoryEntry } from '../api/types';
 import { cn } from '../lib/utils';
 import { getCachedView, setCachedView } from '../lib/viewCache';
+import { useAuth } from '../auth/AuthContext';
+import { canAdministerImports } from '../auth/permissions';
 
 interface SettingsProps {
   theme: string;
@@ -18,6 +20,8 @@ interface SettingsProps {
 }
 
 const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
+const IMPORT_POLL_INTERVAL_MS = 1500;
+const IMPORT_POLL_LIMIT = 1200;
 const CACHE_KEY = 'settings:imports';
 const EMPTY_EXPORT_FILTERS: ExportFilters = {
   firma: [],
@@ -45,12 +49,16 @@ export function Settings({
   setTheme,
   onImportCompleted,
 }: SettingsProps) {
+  const { user } = useAuth();
+  const canImportSales = canAdministerImports(user?.profile, user?.access_token);
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
-  const [section, setSection] = useState<'imports' | 'exports'>('imports');
+  const [section, setSection] = useState<'imports' | 'exports'>(
+    canImportSales ? 'imports' : 'exports',
+  );
   const [catalog, setCatalog] = useState<ExportCatalog | null>(null);
   const [months, setMonths] = useState<string[]>([]);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
@@ -69,6 +77,13 @@ export function Settings({
   const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
+    if (!canImportSales && section === 'imports') {
+      setSection('exports');
+    }
+  }, [canImportSales, section]);
+
+  useEffect(() => {
+    if (!canImportSales) return;
     const cached = getCachedView<{ history: ImportHistoryEntry[] }>(CACHE_KEY, SETTINGS_CACHE_TTL_MS);
     if (cached.value) {
       setHistory(cached.value.history);
@@ -87,7 +102,7 @@ export function Settings({
         setMessage('Nu am putut încărca istoricul importurilor.');
         setMessageType('error');
       });
-  }, []);
+  }, [canImportSales]);
 
   useEffect(() => {
     if (section !== 'exports') return;
@@ -158,22 +173,23 @@ export function Settings({
       setUploading(true);
       setMessage('');
       setMessageType('success');
-      const response = await uploadSalesFile(file);
-      setHistory((previous) => [
-        {
-          id: response.snapshot_id,
-          import_month: response.import_month,
-          filename: response.filename,
-          upload_date: new Date().toISOString().slice(0, 10),
-          is_month_final: response.is_month_final,
-          rows_in_file: response.rows_in_file,
-          rows_imported: response.rows_imported,
-          status: 'completed',
-          error_message: null,
-          created_at: new Date().toISOString(),
-        },
-        ...previous,
-      ]);
+      let job = await uploadSalesFile(file);
+      setMessage('Fișier încărcat. Importul rulează în worker.');
+      for (let attempt = 0; attempt < IMPORT_POLL_LIMIT; attempt += 1) {
+        if (job.status === 'complete' || job.status === 'not_found') break;
+        await new Promise((resolve) => window.setTimeout(resolve, IMPORT_POLL_INTERVAL_MS));
+        job = await getImportJobStatus(job.job_id);
+      }
+      if (job.status !== 'complete') {
+        throw new Error('Import job timeout');
+      }
+      if (job.error || !job.result) {
+        throw new Error(job.error || 'Importul nu a returnat un rezultat');
+      }
+      const response = job.result;
+      const historyData = await getImportHistory();
+      setHistory(historyData);
+      setCachedView(CACHE_KEY, { history: historyData });
       onImportCompleted(response.import_month);
       const parts = [
         `Import ${response.import_month}: ${response.rows_imported} rânduri importate`,
@@ -188,8 +204,13 @@ export function Settings({
       }
       setMessage(parts.join(' · '));
       setFile(null);
-    } catch {
-      setMessage('Importul a eșuat. Verifică fișierul și încearcă din nou.');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      setMessage(
+        detail && !detail.startsWith('API error')
+          ? `Importul a eșuat: ${detail}`
+          : 'Importul a eșuat. Verifică fișierul și încearcă din nou.',
+      );
       setMessageType('error');
     } finally {
       setUploading(false);
@@ -272,7 +293,7 @@ export function Settings({
 
       <div className="glass flex gap-1 rounded-2xl p-1">
         {[
-          { key: 'imports', label: 'Importuri' },
+          ...(canImportSales ? [{ key: 'imports', label: 'Importuri' }] : []),
           { key: 'exports', label: 'Exporturi' },
         ].map((item) => (
           <button
@@ -343,7 +364,7 @@ export function Settings({
               disabled={!file || uploading}
               className="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-indigo-500/30 disabled:opacity-60"
             >
-              {uploading ? 'Se încarcă...' : 'Importă fișier'}
+              {uploading ? 'Import în desfășurare...' : 'Importă fișier'}
             </button>
             {message && (
               <div className={`mt-3 rounded-2xl px-3 py-2 text-xs font-semibold ${

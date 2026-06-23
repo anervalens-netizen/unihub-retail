@@ -390,6 +390,8 @@ class ImportResponse(BaseModel):
 class ImportJobStatus(BaseModel):
     job_id: str
     status: str
+    result: ImportResponse | None = None
+    error: str | None = None
 
 
 class VisitReportRow(BaseModel):

@@ -49,6 +49,10 @@ class ImportResult:
     is_month_final: bool
 
 
+class ImportAlreadyRunningError(RuntimeError):
+    pass
+
+
 def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     if isinstance(source, bytes):
         content: str | BytesIO = BytesIO(source)
@@ -182,27 +186,47 @@ async def replace_month_snapshot(conn: asyncpg.Connection, import_month: str) ->
     await conn.execute("SELECT replace_month_snapshot($1)", import_month)
 
 
-async def insert_snapshot(
+async def reserve_snapshot(
     conn: asyncpg.Connection,
     import_month: str,
     filename: str,
     rows_in_file: int,
 ) -> int:
-    row = await conn.fetchrow(
-        """
-        INSERT INTO import_snapshots (
-            import_month, filename, rows_in_file, status, is_month_final
+    async with conn.transaction():
+        await conn.execute(
+            """
+            UPDATE import_snapshots
+            SET status = 'failed',
+                rows_imported = 0,
+                error_message = 'Import processing abandonat si inchis automat',
+                heartbeat_at = now()
+            WHERE import_month = $1
+              AND status = 'processing'
+              AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour'
+            """,
+            import_month,
         )
-        VALUES ($1, $2, $3, 'processing', $4)
-        RETURNING id
-        """,
-        import_month,
-        filename,
-        rows_in_file,
-        is_month_final(import_month),
-    )
+        row = await conn.fetchrow(
+            """
+            INSERT INTO import_snapshots (
+                import_month, filename, rows_in_file, status,
+                is_month_final, heartbeat_at
+            )
+            VALUES ($1, $2, $3, 'processing', $4, now())
+            ON CONFLICT (import_month)
+                WHERE status = 'processing'
+            DO NOTHING
+            RETURNING id
+            """,
+            import_month,
+            filename,
+            rows_in_file,
+            is_month_final(import_month),
+        )
     if row is None:
-        raise RuntimeError("Nu s-a putut crea snapshot-ul de import")
+        raise ImportAlreadyRunningError(
+            f"Exista deja un import in curs pentru luna {import_month}"
+        )
     return int(row["id"])
 
 
@@ -336,7 +360,7 @@ async def import_sales_dataframe(
     import_month = detect_month(df)
     month_final = is_month_final(import_month)
 
-    snapshot_id = await insert_snapshot(
+    snapshot_id = await reserve_snapshot(
         conn,
         import_month=import_month,
         filename=filename,
@@ -357,7 +381,8 @@ async def import_sales_dataframe(
                 SET status = 'completed',
                     rows_imported = $2,
                     is_month_final = $3,
-                    error_message = NULL
+                    error_message = NULL,
+                    heartbeat_at = now()
                 WHERE id = $1
                 """,
                 snapshot_id,
@@ -370,7 +395,8 @@ async def import_sales_dataframe(
             UPDATE import_snapshots
             SET status = 'failed',
                 rows_imported = 0,
-                error_message = $2
+                error_message = $2,
+                heartbeat_at = now()
             WHERE id = $1
             """,
             snapshot_id,

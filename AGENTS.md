@@ -36,6 +36,9 @@ provisioning a new checkout. Never commit `.npmrc`.
 - When `site_code` is selected it dominates historical scope; do not also constrain by current company/RM/ASM.
 - Use canonical scoped-parameter builders. Do not leave unused asyncpg parameters.
 - Sales imports replace the current monthly snapshot and rebuild reporting aggregates.
+- Sales imports are admin-only and always run in the worker. Uploads are
+  bounded by `MAX_SALES_UPLOAD_BYTES`; one `processing` snapshot per month is
+  the DB lease, and stale leases become failed audit entries.
 - Auth is Authentik OIDC. Do not add local login or remove `offline_access`.
 - Salary endpoints are backend-gated. Access is limited to `unihub-manager`,
   `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`

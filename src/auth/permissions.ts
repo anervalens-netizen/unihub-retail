@@ -6,6 +6,7 @@ const SALARY_ACCESS_GROUPS = new Set([
   'unihub-hr',
   'unihub-manager',
 ]);
+const ADMIN_ACCESS_GROUPS = new Set(['authentik admins', 'unihub-admin']);
 
 function stringGroups(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -41,5 +42,14 @@ export function canAccessSalaries(
 ): boolean {
   return oidcGroups(profile, accessToken).some((group) =>
     SALARY_ACCESS_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
+  );
+}
+
+export function canAdministerImports(
+  profile: unknown,
+  accessToken?: string,
+): boolean {
+  return oidcGroups(profile, accessToken).some((group) =>
+    ADMIN_ACCESS_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
   );
 }

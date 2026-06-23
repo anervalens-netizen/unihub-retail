@@ -6,7 +6,12 @@ from fastapi.routing import APIRoute
 from starlette.requests import Request
 
 from auth import AuthClaims
-from permissions import can_access_salaries, require_salary_access
+from permissions import (
+    can_access_salaries,
+    can_administer_imports,
+    require_import_admin,
+    require_salary_access,
+)
 from routers.salarii import SalaryExportAudit, audit_salary_export
 
 
@@ -88,6 +93,42 @@ def test_every_salary_route_uses_the_salary_dependency() -> None:
             for dependency in route.dependant.dependencies
         }
         assert require_salary_access in dependency_calls
+
+
+@pytest.mark.parametrize("group", ["unihub-admin", "authentik Admins"])
+def test_import_access_allows_admin_groups(group: str) -> None:
+    user_claims = claims([group])
+    assert can_administer_imports(user_claims) is True
+    assert require_import_admin(request(), user_claims) is user_claims
+
+
+@pytest.mark.parametrize(
+    "group",
+    ["unihub-manager", "unihub-hr", "unihub-agent", "unihub-team-lead"],
+)
+def test_import_access_rejects_non_admin_groups(group: str) -> None:
+    user_claims = claims([group])
+    assert can_administer_imports(user_claims) is False
+    with pytest.raises(HTTPException) as exc:
+        require_import_admin(request(), user_claims)
+    assert exc.value.status_code == 403
+
+
+def test_every_import_route_uses_the_import_admin_dependency() -> None:
+    from main import app
+
+    import_routes = [
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute) and route.path.startswith("/api/import")
+    ]
+    assert import_routes
+    for route in import_routes:
+        dependency_calls = {
+            dependency.call
+            for dependency in route.dependant.dependencies
+        }
+        assert require_import_admin in dependency_calls
 
 
 @pytest.mark.asyncio

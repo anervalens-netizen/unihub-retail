@@ -326,6 +326,13 @@ export interface ImportResponse {
   is_month_final: boolean;
 }
 
+export interface ImportJobStatus {
+  job_id: string;
+  status: 'queued' | 'in_progress' | 'complete' | 'not_found';
+  result: ImportResponse | null;
+  error: string | null;
+}
+
 export interface StoreOption {
   site_code: string;
   locatie: string;

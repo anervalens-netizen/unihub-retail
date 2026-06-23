@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { canAccessSalaries, oidcGroups } from './permissions';
+import {
+  canAccessSalaries,
+  canAdministerImports,
+  oidcGroups,
+} from './permissions';
 
 describe('salary permissions', () => {
   it.each([
@@ -36,5 +40,20 @@ describe('salary permissions', () => {
     const token = `header.${payload}.signature`;
 
     expect(canAccessSalaries({}, token)).toBe(true);
+  });
+});
+
+describe('import permissions', () => {
+  it.each(['unihub-admin', 'authentik Admins'])('allows %s', (group) => {
+    expect(canAdministerImports({ groups: [group] })).toBe(true);
+  });
+
+  it.each([
+    'unihub-manager',
+    'unihub-hr',
+    'unihub-agent',
+    'unihub-team-lead',
+  ])('rejects %s', (group) => {
+    expect(canAdministerImports({ groups: [group] })).toBe(false);
   });
 });

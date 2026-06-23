@@ -37,7 +37,7 @@ from services.importer import (
     filter_asm_rows,
     detect_month,
     is_month_final,
-    insert_snapshot,
+    reserve_snapshot,
     upsert_stores,
     replace_month_snapshot,
     insert_transactions,
@@ -129,7 +129,7 @@ async def import_one(
         print(f"  [DRY RUN] s-ar importa {len(df):,} rânduri")
         return import_month, len(df)
 
-    snapshot_id = await insert_snapshot(
+    snapshot_id = await reserve_snapshot(
         conn,
         import_month=import_month,
         filename=path.name,
@@ -149,7 +149,8 @@ async def import_one(
                 SET status = 'completed',
                     rows_imported = $2,
                     is_month_final = $3,
-                    error_message = NULL
+                    error_message = NULL,
+                    heartbeat_at = now()
                 WHERE id = $1
                 """,
                 snapshot_id,
@@ -160,7 +161,8 @@ async def import_one(
         await conn.execute(
             """
             UPDATE import_snapshots
-            SET status = 'failed', rows_imported = 0, error_message = $2
+            SET status = 'failed', rows_imported = 0, error_message = $2,
+                heartbeat_at = now()
             WHERE id = $1
             """,
             snapshot_id,

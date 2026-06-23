@@ -60,6 +60,11 @@ flowchart LR
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
 - Import vanzari si refresh reporting agregat.
+- Importul de vanzari este rezervat administratorilor, accepta numai Excel in
+  limita configurata (implicit 32 MB) si ruleaza exclusiv in worker. Hash-ul
+  continutului deduplica retry-urile aflate deja in coada, iar DB permite un
+  singur snapshot `processing` per luna. Lease-urile mai vechi de o ora sunt
+  inchise ca `failed`, fara stergerea istoricului de audit.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
   builder Excel controlat server-side cu doua moduri: `Tabel detaliat` pentru
   Agenti, Magazine, RM si ASM cu filtre pe luni/agent/magazin/firma/RM/ASM,

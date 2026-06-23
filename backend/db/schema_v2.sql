@@ -89,8 +89,13 @@ CREATE TABLE IF NOT EXISTS import_snapshots (
     rows_imported INTEGER,
     status TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'completed', 'failed')),
     error_message TEXT,
+    heartbeat_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_import_snapshots_month_processing
+    ON import_snapshots (import_month)
+    WHERE status = 'processing';
 
 CREATE TABLE IF NOT EXISTS sales_transactions (
     id BIGSERIAL PRIMARY KEY,
