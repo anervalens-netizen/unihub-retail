@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from db.connection import get_pool
+from rate_limits import REPORT_EXPORT_LIMIT, rate_limit
 from repositories.exports import ExportsRepository
 from services.exports import ExportValidationError, ExportsService
 
@@ -53,6 +54,7 @@ async def get_catalog(
 @router.post("/preview")
 async def preview_export(
     body: ExportRequest,
+    _rate_limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
     svc: ExportsService = Depends(get_exports_service),
 ) -> dict:
     try:
@@ -64,6 +66,7 @@ async def preview_export(
 @router.post("/download")
 async def download_export(
     body: ExportRequest,
+    _rate_limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
     svc: ExportsService = Depends(get_exports_service),
 ) -> StreamingResponse:
     try:

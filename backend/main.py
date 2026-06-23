@@ -49,6 +49,7 @@ from permissions import (
     require_report_export_access,
     require_salary_access,
 )
+from rate_limits import AUTH_PROXY_LIMIT, anonymous_rate_limit
 from routers import agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
@@ -216,7 +217,11 @@ async def metrics() -> Response:
     )
 
 
-@app.api_route("/auth/proxy/{path:path}", methods=["GET", "POST"])
+@app.api_route(
+    "/auth/proxy/{path:path}",
+    methods=["GET", "POST"],
+    dependencies=[Depends(anonymous_rate_limit(AUTH_PROXY_LIMIT))],
+)
 async def auth_proxy(path: str, request: Request) -> Response:
     """Proxy requests to authentik.
 

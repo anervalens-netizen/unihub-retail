@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from rate_limits import GRILE_JOB_LIMIT, rate_limit
 from repositories.grile import GrileRepository
 from services.grile import _run_to_dict, get_overview, resolve_month
 from services.grile_monthly import GrileMonthlyRetryBlockedError, fetch_download, next_ym, ro_month_label
@@ -32,6 +33,7 @@ async def grile_overview(month: str | None = Query(default=None)) -> dict[str, A
 async def grile_run(
     month: str | None = Query(default=None),
     claims: AuthClaims = Depends(require_auth),
+    _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
 ) -> dict[str, Any]:
     pool = await get_pool()
     resolved = await resolve_month(pool, month)
@@ -105,6 +107,7 @@ async def grile_monthly_permissions(claims: AuthClaims = Depends(require_auth)) 
 async def grile_monthly_run(
     body: MonthlyRunRequest,
     claims: AuthClaims = Depends(require_grile_admin),
+    _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
 ) -> dict[str, Any]:
     try:
         result = await enqueue_grile_monthly(

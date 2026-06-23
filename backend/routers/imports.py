@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from db.connection import get_pool
 from models import ImportHistoryEntry, ImportJobStatus, ImportResponse
 from repositories.imports import ImportsRepository
+from rate_limits import SALES_IMPORT_UPLOAD_LIMIT, rate_limit
 from services.imports import ImportsService
 
 router = APIRouter(prefix="/api/import", tags=["imports"])
@@ -18,6 +19,7 @@ async def get_imports_service() -> ImportsService:
 @router.post("/sales", response_model=ImportJobStatus)
 async def upload_sales_file(
     file: UploadFile = File(...),
+    _rate_limit: None = Depends(rate_limit(SALES_IMPORT_UPLOAD_LIMIT)),
     svc: ImportsService = Depends(get_imports_service),
 ) -> ImportJobStatus:
     return await svc.import_sales(file)

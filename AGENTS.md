@@ -50,6 +50,9 @@ provisioning a new checkout. Never commit `.npmrc`.
   `unihub-manager`, `unihub-admin` or `authentik Admins`. Official imports
   remain admin-only, and Target Calculator calculate/edit/finalize remains
   owner-gated by the configured allowlist.
+- Risky/costly endpoints use `backend/rate_limits.py`. Keep rate limits on
+  auth proxy, import uploads, server-side exports, Grile jobs, Target
+  Calculator mutations and business writes when changing these routes.
 - Salary endpoints are backend-gated. Access is limited to `unihub-manager`,
   `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`
   group. Agents and Team Leaders must receive 403.

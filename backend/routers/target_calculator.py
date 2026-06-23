@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from rate_limits import REPORT_EXPORT_LIMIT, TARGET_MUTATION_LIMIT, rate_limit
 from repositories.target_calculator import TargetCalculatorRepository
 from services.target_calculator import TargetCalculatorService
 
@@ -101,8 +102,9 @@ async def list_scenarios(
 @router.post("/scenarios/calculate")
 async def calculate_scenario(
     body: TargetCalculationRequest,
-    svc: TargetCalculatorService = Depends(get_target_calculator_service),
     _claims: AuthClaims = Depends(require_target_owner),
+    _rate_limit: None = Depends(rate_limit(TARGET_MUTATION_LIMIT)),
+    svc: TargetCalculatorService = Depends(get_target_calculator_service),
 ):
     return await svc.calculate(body.model_dump())
 
@@ -111,8 +113,9 @@ async def calculate_scenario(
 async def update_final_targets(
     scenario_id: int,
     body: TargetFinalRowsRequest,
-    svc: TargetCalculatorService = Depends(get_target_calculator_service),
     _claims: AuthClaims = Depends(require_target_owner),
+    _rate_limit: None = Depends(rate_limit(TARGET_MUTATION_LIMIT)),
+    svc: TargetCalculatorService = Depends(get_target_calculator_service),
 ):
     return await svc.save_final_targets(
         scenario_id,
@@ -125,8 +128,9 @@ async def update_final_targets(
 async def finalize_scenario(
     scenario_id: int,
     body: TargetFinalizeRequest,
-    svc: TargetCalculatorService = Depends(get_target_calculator_service),
     _claims: AuthClaims = Depends(require_target_owner),
+    _rate_limit: None = Depends(rate_limit(TARGET_MUTATION_LIMIT)),
+    svc: TargetCalculatorService = Depends(get_target_calculator_service),
 ):
     return await svc.finalize(scenario_id, body.expected_revision)
 
@@ -134,6 +138,7 @@ async def finalize_scenario(
 @router.get("/scenarios/{scenario_id}/export")
 async def export_scenario(
     scenario_id: int,
+    _rate_limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 ):
     content, filename = await svc.export_excel(scenario_id)

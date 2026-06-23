@@ -69,6 +69,11 @@ flowchart LR
   Scrierile business cer `unihub-manager` sau admin. Importurile vanzari
   raman admin-only, iar calcularea/editarea/finalizarea in Calculator Target
   ramane limitata la allowlist-ul operational.
+- Rate limiting-ul Retail este centralizat in `backend/rate_limits.py` si se
+  aplica pe auth proxy, uploadul importurilor, exporturi server-side, joburi
+  Grile, mutatii Target Calculator si scrieri business. Limitele sunt
+  configurabile prin variabilele `RATE_LIMIT_*`; uploadul de vanzari ramane
+  limitat separat prin `MAX_SALES_UPLOAD_BYTES`.
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
 - Management -> Grile include verificare read-only si inchidere de luna.
