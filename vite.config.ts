@@ -77,6 +77,10 @@ export default defineConfig(() => {
       },
     },
     build: {
+      modulePreload: {
+        resolveDependencies: (_filename, deps) =>
+          deps.filter((dep) => !dep.includes('/charts-')),
+      },
       rollupOptions: {
         output: {
           manualChunks,

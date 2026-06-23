@@ -102,6 +102,12 @@ Filtrele principale sunt gestionate in `App.tsx` si persistate in
 cu aceleasi valori initiale, dar fiecare isi pastreaza ultima selectie dupa
 refresh.
 
+Frontend-ul foloseste lazy-loading pe ecranele principale (`Hub`, `Focus`,
+`Agenti`, `Management`, `Setari`). Recharts este izolat in chunk-ul `charts`,
+dar nu este preincarcat din `index.html`; se descarca la primul ecran cu
+grafice. TanStack Query are default `staleTime=60s` si `gcTime=10min`, iar
+polling-ul pentru operatii Grile ramane explicit per-query.
+
 Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Salarii` si
 `Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab` si include
 evaluarea actuala plus evaluarea noua 0-100. Aceasta analiza nu mai apare in
