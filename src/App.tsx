@@ -3,28 +3,26 @@ import { MainLayout, type AppFilters } from './components/MainLayout';
 
 import { getAvailableMonths } from './api/filters';
 import { defaultAppFilters } from './lib/filterValues';
-import { MGMT_SUBTABS, type ManagementTab } from './lib/tabs';
+import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
+import { sanitizeActiveTab } from './lib/navigationAccess';
+import {
+  loadAgentsScreen,
+  loadCampaignsScreen,
+  loadDashboardScreen,
+  loadManagementScreen,
+  loadSettingsScreen,
+} from './screenLoaders';
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
 import { canAccessManagement } from './auth/permissions';
 
-const Campaigns = lazy(() =>
-  import('./components/Campaigns').then((module) => ({ default: module.Campaigns }))
-);
-const Dashboard = lazy(() =>
-  import('./components/Dashboard').then((module) => ({ default: module.Dashboard }))
-);
-const Agents = lazy(() =>
-  import('./components/Agents').then((module) => ({ default: module.Agents }))
-);
-const Settings = lazy(() =>
-  import('./components/Settings').then((module) => ({ default: module.Settings }))
-);
-const Management = lazy(() =>
-  import('./components/Management').then((module) => ({ default: module.Management }))
-);
+const Campaigns = lazy(loadCampaignsScreen);
+const Dashboard = lazy(loadDashboardScreen);
+const Agents = lazy(loadAgentsScreen);
+const Settings = lazy(loadSettingsScreen);
+const Management = lazy(loadManagementScreen);
 
-type ActiveTab = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
+type ActiveTab = TabId;
 type CampaignsSection = 'incentive' | 'promo' | 'concurs' | 'focus';
 const CAMPAIGNS_SECTIONS: CampaignsSection[] = ['incentive', 'promo', 'concurs', 'focus'];
 
@@ -74,7 +72,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const saved = localStorage.getItem('unihub_active_tab');
-    return (saved as ActiveTab) || 'hub';
+    return sanitizeActiveTab(saved, hasManagementAccess);
   });
   const [campaignsSection, setCampaignsSection] = useState<CampaignsSection>(() => {
     const saved = localStorage.getItem('unihub_campaigns_section');
