@@ -1262,11 +1262,15 @@ CREATE TABLE IF NOT EXISTS grile_runs (
     triggered_by_email TEXT,
     error_message      TEXT,
     started_at         TIMESTAMPTZ,
+    heartbeat_at       TIMESTAMPTZ,
     finished_at        TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_grile_runs_month ON grile_runs(run_month, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_grile_runs_month_active
+    ON grile_runs(run_month)
+    WHERE status IN ('queued', 'running');
 
 CREATE TABLE IF NOT EXISTS grile_store_status (
     run_id           INT NOT NULL REFERENCES grile_runs(id) ON DELETE CASCADE,

@@ -39,6 +39,7 @@ async def grile_check_background(
     source: str = "manual",
     source_snapshot_id: int | None = None,
     triggered_by_email: str | None = None,
+    run_id: int | None = None,
 ) -> dict:
     from services.grile import run_grile_check
 
@@ -52,6 +53,7 @@ async def grile_check_background(
         source=source,
         source_snapshot_id=source_snapshot_id,
         triggered_by_email=triggered_by_email,
+        run_id=run_id,
     )
     agent_targets: dict | None = None
     try:

@@ -25,6 +25,14 @@ class JobResult:
     error: Optional[str] = None
 
 
+@dataclass
+class GrileEnqueueResult:
+    status: str
+    run_id: int
+    job: Job | None = None
+    run: dict | None = None
+
+
 _VALKEY_SETTINGS: Optional[RedisSettings] = None
 
 
@@ -75,14 +83,56 @@ async def enqueue_grile_check(
     source: str = "manual",
     source_snapshot_id: int | None = None,
     triggered_by_email: str | None = None,
-) -> Job:
-    pool = await get_arq_pool()
-    job = await pool.enqueue_job(
-        "grile_check_background", month, source, source_snapshot_id, triggered_by_email
+) -> GrileEnqueueResult:
+    from db.connection import get_pool
+    from repositories.grile import GrileRepository
+
+    db_pool = await get_pool()
+    repo = GrileRepository(db_pool)
+    run_id = await repo.reserve_run(
+        run_month=month,
+        source=source,
+        source_snapshot_id=source_snapshot_id,
+        triggered_by_email=triggered_by_email,
     )
-    if job is None:
-        raise RuntimeError("Failed to enqueue grile check job")
-    return job
+    if run_id is None:
+        active = await repo.get_running_run(month)
+        if active is None:
+            raise RuntimeError("Failed to reserve grile check run")
+        return GrileEnqueueResult(
+            status="already_running",
+            run_id=int(active["id"]),
+            run=dict(active),
+        )
+
+    try:
+        pool = await get_arq_pool()
+        job = await pool.enqueue_job(
+            "grile_check_background",
+            month,
+            source,
+            source_snapshot_id,
+            triggered_by_email,
+            int(run_id),
+        )
+        if job is None:
+            raise RuntimeError("Failed to enqueue grile check job")
+    except Exception:
+        await repo.finalize_run(
+            int(run_id),
+            status="failed",
+            ok_count=0,
+            problem_count=0,
+            error_count=0,
+            duration_ms=0,
+            error_message="Jobul nu a putut fi adaugat in coada",
+        )
+        raise
+    return GrileEnqueueResult(
+        status="enqueued",
+        run_id=int(run_id),
+        job=job,
+    )
 
 
 async def enqueue_grile_monthly(

@@ -48,6 +48,9 @@ provisioning a new checkout. Never commit `.npmrc`.
 - `total_salary` already includes meal vouchers.
 - Agent target allocation uses store target / store selling days * agent selling days.
 - Grile months use `YYYY-MM`; reset is irreversible, admin-gated, clears only documented editable ranges, and never recreates permanent links.
+- Grile checks have at most one `queued` or `running` run per month. Reserve
+  the DB run before enqueue; abandoned reservations expire through the
+  documented heartbeat lease.
 - Calculator Target has one draft per target month. Finalized months cannot be
   recalculated. Draft recalculation, row saves, and finalization use the
   scenario revision; stale writes must return 409 instead of overwriting newer

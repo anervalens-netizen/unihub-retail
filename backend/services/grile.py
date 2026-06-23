@@ -14,7 +14,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Mapping
 
 import asyncpg
 
@@ -137,6 +137,7 @@ async def run_grile_check(
     source: str = "manual",
     source_snapshot_id: int | None = None,
     triggered_by_email: str | None = None,
+    run_id: int | None = None,
     tolerance: float = DEFAULT_TOLERANCE,
     concurrency: int = DEFAULT_CONCURRENCY,
 ) -> int:
@@ -144,13 +145,20 @@ async def run_grile_check(
     repo = GrileRepository(pool)
     sheets = await repo.get_active_sheets()
     expected = await repo.get_expected_by_site(month)
-    run_id = await repo.create_run(
-        run_month=month,
-        source=source,
-        source_snapshot_id=source_snapshot_id,
-        triggered_by_email=triggered_by_email,
-        progress_total=len(sheets),
-    )
+    if run_id is None:
+        run_id = await repo.reserve_run(
+            run_month=month,
+            source=source,
+            source_snapshot_id=source_snapshot_id,
+            triggered_by_email=triggered_by_email,
+        )
+        if run_id is None:
+            active = await repo.get_running_run(month)
+            if active is None:
+                raise RuntimeError("Nu s-a putut rezerva verificarea grilelor")
+            return int(active["id"])
+    if not await repo.start_run(run_id, len(sheets)):
+        return run_id
     started = time.monotonic()
 
     # Fail-fast daca lipsesc credentialele (SA file), inainte de a porni thread-urile.
@@ -411,7 +419,7 @@ def _completed_days_for_month(month: str, *, today: date | None = None) -> int |
     return calendar.monthrange(year, month_num)[1]
 
 
-def _run_to_dict(r: asyncpg.Record) -> dict[str, Any]:
+def _run_to_dict(r: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "id": r["id"],
         "run_month": r["run_month"],

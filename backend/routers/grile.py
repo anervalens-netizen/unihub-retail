@@ -35,14 +35,20 @@ async def grile_run(
 ) -> dict[str, Any]:
     pool = await get_pool()
     resolved = await resolve_month(pool, month)
-    repo = GrileRepository(pool)
-    running = await repo.get_running_run(resolved)
-    if running is not None:
-        return {"status": "already_running", "run": _run_to_dict(running)}
-    await enqueue_grile_check(
+    result = await enqueue_grile_check(
         month=resolved, source="manual", source_snapshot_id=None, triggered_by_email=claims.email
     )
-    return {"status": "enqueued", "month": resolved}
+    if result.status == "already_running":
+        return {
+            "status": result.status,
+            "run": _run_to_dict(result.run) if result.run is not None else None,
+        }
+    return {
+        "status": result.status,
+        "month": resolved,
+        "run_id": result.run_id,
+        "job_id": result.job.job_id if result.job is not None else None,
+    }
 
 
 @router.get("/run-status")

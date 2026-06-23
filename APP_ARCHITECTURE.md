@@ -265,7 +265,9 @@ Retail compara `K5/L5` din grila cu `store_targets` si
 `reporting_item_month.total_sales` pe `site_code`. Inchiderea de luna ruleaza
 nativ in Retail: finalizare salarii, export arhiva XLSX/ZIP si reset lunar
 controlat al range-urilor editabile. Output-urile sunt generate in
-`backend/outputs/grile`.
+`backend/outputs/grile`. Verificarile async rezerva atomic un singur run
+`queued/running` per luna inainte de enqueue; workerul actualizeaza heartbeat-ul,
+iar o rezervare abandonata poate fi inlocuita dupa doua ore.
 
 ### Calculator Target
 

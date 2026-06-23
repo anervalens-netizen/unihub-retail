@@ -108,31 +108,72 @@ class GrileRepository:
 
     # ---------- runs ----------
 
-    async def create_run(
+    async def reserve_run(
         self,
         *,
         run_month: str,
         source: str,
         source_snapshot_id: int | None,
         triggered_by_email: str | None,
-        progress_total: int,
-    ) -> int:
+    ) -> int | None:
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    UPDATE grile_runs
+                    SET status = 'failed',
+                        error_message = 'Rezervare expirata inainte de finalizare',
+                        finished_at = now(),
+                        heartbeat_at = now()
+                    WHERE run_month = $1
+                      AND status IN ('queued', 'running')
+                      AND COALESCE(heartbeat_at, started_at, created_at)
+                          < now() - interval '2 hours'
+                    """,
+                    run_month,
+                )
+                return await conn.fetchval(
+                    """
+                    INSERT INTO grile_runs (
+                        run_month, source, source_snapshot_id,
+                        triggered_by_email, status, heartbeat_at
+                    )
+                    VALUES ($1, $2, $3, $4, 'queued', now())
+                    ON CONFLICT (run_month)
+                        WHERE status IN ('queued', 'running')
+                    DO NOTHING
+                    RETURNING id
+                    """,
+                    run_month,
+                    source,
+                    source_snapshot_id,
+                    triggered_by_email,
+                )
+
+    async def start_run(self, run_id: int, progress_total: int) -> bool:
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
                 """
-                INSERT INTO grile_runs
-                    (run_month, source, source_snapshot_id, triggered_by_email,
-                     status, progress_total, started_at)
-                VALUES ($1, $2, $3, $4, 'running', $5, now())
-                RETURNING id
+                UPDATE grile_runs
+                SET status = 'running',
+                    progress_total = $2,
+                    started_at = now(),
+                    heartbeat_at = now()
+                WHERE id = $1 AND status = 'queued'
                 """,
-                run_month, source, source_snapshot_id, triggered_by_email, progress_total,
+                run_id,
+                progress_total,
             )
+        return result == "UPDATE 1"
 
     async def set_run_progress(self, run_id: int, current: int) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE grile_runs SET progress_current = $2 WHERE id = $1",
+                """
+                UPDATE grile_runs
+                SET progress_current = $2, heartbeat_at = now()
+                WHERE id = $1 AND status = 'running'
+                """,
                 run_id, current,
             )
 
@@ -153,7 +194,8 @@ class GrileRepository:
                 UPDATE grile_runs
                 SET status = $2, ok_count = $3, problem_count = $4, error_count = $5,
                     duration_ms = $6, error_message = $7,
-                    progress_current = progress_total, finished_at = now()
+                    progress_current = progress_total, finished_at = now(),
+                    heartbeat_at = now()
                 WHERE id = $1
                 """,
                 run_id, status, ok_count, problem_count, error_count, duration_ms, error_message,

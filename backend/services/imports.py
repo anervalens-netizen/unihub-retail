@@ -22,10 +22,16 @@ async def trigger_grile_check_after_import(import_month: str, snapshot_id: int |
     afectat daca enqueue-ul esueaza (Valkey down etc.).
     """
     try:
-        await enqueue_grile_check(
+        result = await enqueue_grile_check(
             month=import_month, source="auto", source_snapshot_id=snapshot_id
         )
-        logger.info("grile check enqueued (auto) for %s snapshot=%s", import_month, snapshot_id)
+        logger.info(
+            "grile check %s (auto) for %s snapshot=%s run=%s",
+            result.status,
+            import_month,
+            snapshot_id,
+            result.run_id,
+        )
     except Exception:  # noqa: BLE001 — best-effort, nu strica importul
         logger.exception("enqueue grile check (auto) esuat pentru %s", import_month)
 
