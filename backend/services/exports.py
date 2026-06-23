@@ -692,9 +692,11 @@ class ExportsService:
 
     def _safe_filename(self, value: str) -> str:
         safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in value).strip("._")
+        if not safe:
+            safe = "export_retail"
         if not safe.lower().endswith(".xlsx"):
             safe += ".xlsx"
-        return safe[:140] or "export_retail.xlsx"
+        return safe[:140]
 
     def _excel_number_format(self, column_type: str) -> str | None:
         if column_type == "currency":

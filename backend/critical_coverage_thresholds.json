@@ -1,6 +1,6 @@
 {
   "permissions.py": 100,
-  "services/exports.py": 60,
+  "services/exports.py": 100,
   "services/grile_monthly.py": 98,
   "services/importer.py": 95,
   "services/imports.py": 100,
