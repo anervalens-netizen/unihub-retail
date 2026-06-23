@@ -37,6 +37,9 @@ provisioning a new checkout. Never commit `.npmrc`.
 - Use canonical scoped-parameter builders. Do not leave unused asyncpg parameters.
 - Sales imports replace the current monthly snapshot and rebuild reporting aggregates.
 - Auth is Authentik OIDC. Do not add local login or remove `offline_access`.
+- Salary endpoints are backend-gated. Access is limited to `unihub-manager`,
+  `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`
+  group. Agents and Team Leaders must receive 403.
 - Shared Google API clients are not thread-safe. Build one service per worker thread and keep conservative concurrency.
 
 ## Business invariants

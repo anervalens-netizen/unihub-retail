@@ -19,6 +19,8 @@ import { SalariiSubtab } from './SalariiSubtab';
 import { AgentEvaluationSubtab } from './AgentEvaluationSubtab';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ExportTableButton } from './ExportTableButton';
+import { useAuth } from '../auth/AuthContext';
+import { canAccessSalaries } from '../auth/permissions';
 import { 
   fetchAgentsOverview, 
   fetchAgentsMovement, 
@@ -300,6 +302,11 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 export function Agents({ currentMonth, months, filters }: AgentsProps) {
+  const { user } = useAuth();
+  const canViewSalaries = canAccessSalaries(
+    user?.profile,
+    user?.access_token,
+  );
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<string | null>(() => {
@@ -313,7 +320,8 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
   const [mainTab, setMainTab] = useState<'overview' | 'salarii' | 'analysis'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('agents_mainTab');
-      if (saved === 'overview' || saved === 'salarii' || saved === 'analysis') return saved;
+      if (saved === 'salarii') return canViewSalaries ? saved : 'overview';
+      if (saved === 'overview' || saved === 'analysis') return saved;
     }
     return 'overview';
   });
@@ -365,6 +373,12 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
   useEffect(() => {
     localStorage.setItem('agents_mainTab', mainTab);
   }, [mainTab]);
+
+  useEffect(() => {
+    if (!canViewSalaries && mainTab === 'salarii') {
+      setMainTab('overview');
+    }
+  }, [canViewSalaries, mainTab]);
 
   useEffect(() => {
     localStorage.setItem('agents_activeTab', activeTab);
@@ -507,16 +521,18 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
         >
           Prezentare Generala
         </button>
-        <button
-          onClick={() => setMainTab('salarii')}
-          className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
-            mainTab === 'salarii'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          Salarii
-        </button>
+        {canViewSalaries && (
+          <button
+            onClick={() => setMainTab('salarii')}
+            className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
+              mainTab === 'salarii'
+                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            Salarii
+          </button>
+        )}
         <button
           onClick={() => setMainTab('analysis')}
           className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
@@ -533,7 +549,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
         <ErrorBoundary>
           <AgentEvaluationSubtab />
         </ErrorBoundary>
-      ) : mainTab === 'salarii' ? (
+      ) : mainTab === 'salarii' && canViewSalaries ? (
         <ErrorBoundary>
           <SalariiSubtab globalFilters={filters} />
         </ErrorBoundary>

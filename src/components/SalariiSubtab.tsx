@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import {
+  auditSalaryExport,
   fetchSalariiOverview,
   fetchSalaryAgents,
   fetchSalaryEvolution,
@@ -18,6 +19,7 @@ import type {
 import type { AppFilters } from './MainLayout';
 import { SalaryAreaChart } from './SalaryAreaChart';
 import { SalaryDrawer } from './SalaryDrawer';
+import { ExportTableButton } from './ExportTableButton';
 import { SortableHeader } from './dashboard/DashboardWidgets';
 
 type SortDir = 'asc' | 'desc';
@@ -329,6 +331,23 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             Salarii vs Vânzări
           </h3>
           <div className="flex items-center gap-2">
+            <ExportTableButton
+              filename={`salarii-magazine-${summaryMonth ?? 'curent'}`}
+              sheetName="Salarii magazine"
+              rows={sortedSummary}
+              beforeExport={() =>
+                auditSalaryExport('store_summary', sortedSummary.length)
+              }
+              columns={[
+                { header: 'Locatie', value: (row) => row.locatie ?? row.site_code },
+                { header: 'Firma', value: (row) => row.company_name },
+                { header: 'Agenti', value: (row) => row.agent_count },
+                { header: 'Salarii', value: (row) => row.total_salary },
+                { header: 'Medie agent', value: (row) => row.avg_salary },
+                { header: 'Vanzari', value: (row) => row.total_sales },
+                { header: 'Procent', value: (row) => row.ratio },
+              ]}
+            />
             <select
               value={selectedSummaryMonth}
               onChange={(e) => setSelectedSummaryMonth(e.target.value)}
@@ -427,7 +446,29 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       <div className="glass rounded-3xl p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">Evolutie Salarii vs Vanzari</h3>
-          {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
+          <div className="flex items-center gap-2">
+            <ExportTableButton
+              filename="salarii-evolutie-lunara"
+              sheetName="Evolutie salarii"
+              rows={sortedTrend}
+              beforeExport={() =>
+                auditSalaryExport('monthly_trend', sortedTrend.length)
+              }
+              columns={[
+                { header: 'Luna', value: (row) => row.month },
+                { header: 'Agenti', value: (row) => row.agent_count },
+                { header: 'Salarii', value: (row) => row.total_salary },
+                { header: 'Medie agent', value: (row) => row.avg_salary },
+                { header: 'Vanzari', value: (row) => row.total_sales },
+                {
+                  header: 'Procent',
+                  value: (row) =>
+                    getSalarySalesRatio(row.total_salary, row.total_sales),
+                },
+              ]}
+            />
+            {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] table-fixed text-sm">
@@ -505,6 +546,22 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <ExportTableButton
+                filename={`salarii-agenti-pagina-${page + 1}`}
+                sheetName="Salarii agenti"
+                rows={agents}
+                beforeExport={() =>
+                  auditSalaryExport('agents_page', agents.length)
+                }
+                columns={[
+                  { header: 'Agent', value: (row) => row.full_name },
+                  { header: 'Firma', value: (row) => row.company_name },
+                  { header: 'Locatie', value: (row) => row.locatie ?? '' },
+                  { header: 'Luni', value: (row) => row.month_count },
+                  { header: 'Medie lunara', value: (row) => row.avg_salary },
+                  { header: 'Total', value: (row) => row.total_salary },
+                ]}
+              />
               {/* Search */}
               <div className="relative">
                 <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />

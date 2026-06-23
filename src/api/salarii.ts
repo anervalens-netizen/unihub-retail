@@ -143,3 +143,13 @@ export async function fetchSalaryTrend(params: {
   const res = await client.get<SalaryTrendMonth[]>('/salarii/trend', { params });
   return res.data;
 }
+
+export async function auditSalaryExport(
+  exportKind: 'store_summary' | 'monthly_trend' | 'agents_page',
+  rowCount: number,
+): Promise<void> {
+  await client.post('/salarii/audit/export', {
+    export_kind: exportKind,
+    row_count: rowCount,
+  });
+}

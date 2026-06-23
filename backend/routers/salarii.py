@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+import logging
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from pydantic import BaseModel, Field
 
 from db.connection import get_pool
 from repositories.salarii import SalariiRepository
@@ -10,6 +14,12 @@ router = APIRouter(
     prefix="/salarii",
     tags=["salarii"],
 )
+logger = logging.getLogger(__name__)
+
+
+class SalaryExportAudit(BaseModel):
+    export_kind: Literal["store_summary", "monthly_trend", "agents_page"]
+    row_count: int = Field(ge=0, le=5000)
 
 
 async def get_salarii_service() -> SalariiService:
@@ -105,3 +115,21 @@ async def list_records(
     svc: SalariiService = Depends(get_salarii_service),
 ):
     return await svc.get_records(company_name, year, month, site_code, limit, offset)
+
+
+@router.post(
+    "/audit/export",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def audit_salary_export(
+    body: SalaryExportAudit,
+    request: Request,
+) -> Response:
+    claims = request.state.salary_claims
+    logger.info(
+        "sensitive_export resource=salarii subject=%s kind=%s rows=%d",
+        claims.sub,
+        body.export_kind,
+        body.row_count,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -48,6 +48,11 @@ flowchart LR
 - Filtre globale firma / regional / magazin / agent.
 - Campanii promo, incentive si concursuri config-driven.
 - Analiza agentilor, lifecycle, salarii.
+- Salarii are RBAC backend: acces pentru `unihub-manager`, `unihub-admin`,
+  `authentik Admins` si grupul rezervat `unihub-hr`; agentii si Team Leaderii
+  primesc 403. Frontend-ul ascunde tabul, dar backend-ul ramane autoritativ.
+  Accesul permis/refuzat si exporturile din tab sunt logate fara CNP sau
+  valori salariale.
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
 - Import vanzari si refresh reporting agregat.
