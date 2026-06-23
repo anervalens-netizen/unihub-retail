@@ -108,11 +108,26 @@ def compute_schema_hash(schema_sql: str) -> str:
 async def init_db_pool() -> asyncpg.Pool:
     global pool
     if pool is None:
+        statement_timeout_ms = int(
+            os.getenv("DB_STATEMENT_TIMEOUT_MS", "120000")
+        )
+        lock_timeout_ms = int(os.getenv("DB_LOCK_TIMEOUT_MS", "10000"))
+        idle_transaction_timeout_ms = int(
+            os.getenv("DB_IDLE_TRANSACTION_TIMEOUT_MS", "60000")
+        )
         pool = await asyncpg.create_pool(
             dsn=get_database_url(),
             min_size=int(os.getenv("DB_POOL_MIN_SIZE", "3")),
             max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10")),
-            command_timeout=120,
+            command_timeout=statement_timeout_ms / 1000,
+            server_settings={
+                "application_name": "unihub-retail",
+                "statement_timeout": str(statement_timeout_ms),
+                "lock_timeout": str(lock_timeout_ms),
+                "idle_in_transaction_session_timeout": str(
+                    idle_transaction_timeout_ms
+                ),
+            },
         )
     return pool
 

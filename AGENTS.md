@@ -35,6 +35,9 @@ provisioning a new checkout. Never commit `.npmrc`.
 - Retail excludes `Cartele` and locations matching `TR %` from normal retail KPIs.
 - When `site_code` is selected it dominates historical scope; do not also constrain by current company/RM/ASM.
 - Use canonical scoped-parameter builders. Do not leave unused asyncpg parameters.
+- Every application DB connection sets PostgreSQL statement, lock, and idle
+  transaction timeouts. Change them through the documented `DB_*_TIMEOUT_MS`
+  variables, not ad-hoc SQL in repositories.
 - Sales imports replace the current monthly snapshot and rebuild reporting aggregates.
 - Sales imports are admin-only and always run in the worker. Uploads are
   bounded by `MAX_SALES_UPLOAD_BYTES`; one `processing` snapshot per month is

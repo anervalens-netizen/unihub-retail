@@ -21,6 +21,11 @@ Workerul ARQ serializeaza joburile grele, are timeout explicit de 30 minute si
 la SIGTERM asteapta bounded jobul activ inainte sa inchida conexiunile Valkey
 si PostgreSQL. Unitatea systemd acorda 75 secunde pentru shutdown-ul controlat.
 
+Pool-ul PostgreSQL seteaza server-side `statement_timeout=120s`,
+`lock_timeout=10s` si `idle_in_transaction_session_timeout=60s` implicit.
+Valorile sunt configurabile prin `.env`; `command_timeout` asyncpg este aliniat
+cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
+
 ## Diagrama
 
 ```mermaid
