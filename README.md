@@ -469,14 +469,11 @@ Reguli de filtrare pentru dashboard:
 - aceeasi regula se aplica in summary, daily, history, period comparison, mixuri, focus/campaigns history, promo/incentive si special cards
 - selectorul global de luni listeaza doar `import_snapshots.status='completed'`; lunile configurate dar fara import de vanzari nu apar in UI pana la primul import finalizat
 
-## Bootstrap utilizatori
+## Autentificare
 
-La startup se asigura:
-- existenta userilor core `admin` si `management`
-- existenta userilor TL
-- optional sincronizarea alocarilor TL
-
-Resetul parolelor default nu este automat. Se face explicit cu scriptul dedicat.
+Authentik OIDC este singura sursa de identity. Backend-ul valideaza tokenurile
+RS256 prin JWKS; nu exista utilizatori locali, parole implicite sau secret JWT
+HMAC al aplicatiei.
 
 ## Rulare locala
 
@@ -495,11 +492,14 @@ npm run dev:backend
 Comenzi importante:
 
 ```bash
-pytest backend -q
+backend/scripts/run_tests_isolated.sh
 python backend/scripts/smoke_api.py
 npm run typecheck
 npm run build
 ```
+
+`run_tests_isolated.sh` creeaza un PostgreSQL 18 temporar si refuza orice
+conectare a testelor la baza Retail de productie.
 
 ## Scripturi utile
 
@@ -510,8 +510,8 @@ npm run build
 | `backend/scripts/import_annual_summary.py` | Import agregate anuale 2022/2023 din `vanzari 2022 si 2023.xlsx` |
 | `backend/scripts/seed.py` | Seed complet din `data/` |
 | `backend/scripts/rebuild_reporting.py` | Rebuild agregate reporting |
-| `backend/scripts/reset_default_users.py` | Reset parole utilizatori default |
-| `backend/scripts/smoke_api.py` | Smoke test API |
+| `backend/scripts/run_tests_isolated.sh` | Teste backend pe PostgreSQL temporar |
+| `backend/scripts/smoke_api.py` | Smoke test API read-only; token Authentik optional |
 | `/opt/Mobiup/ops/scripts/backup.sh` | Backup zilnic PostgreSQL + SQLite |
 
 ## Documente suplimentare

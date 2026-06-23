@@ -8,16 +8,19 @@ Type=simple
 User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
-Environment="VALKEY_URL=redis://:oevmgAl9zjpYz3rnZ6ye4KcyrxmqjjbluqYEwX6I@127.0.0.1:6379"
-Environment="VALKEY_HOST=127.0.0.1"
-Environment="VALKEY_PORT=6379"
-Environment="VALKEY_PASSWORD=oevmgAl9zjpYz3rnZ6ye4KcyrxmqjjbluqYEwX6I"
+EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=unihub-worker
+
+ProtectSystem=strict
+ReadWritePaths=/opt/Mobiup
+ProtectHome=read-only
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

@@ -22,10 +22,7 @@ jobs:
           echo "Mypy: OK"
 
       - name: Backend tests
-        run: |
-          venv/bin/pytest . -v --tb=short
-        env:
-          DATABASE_URL: postgresql://unihub:unihub_dev_password@127.0.0.1:5432/unihub
+        run: scripts/run_tests_isolated.sh -v --tb=short
 
   frontend-check:
     runs-on: [self-hosted, unihub-server]
@@ -37,7 +34,7 @@ jobs:
 
       - name: Install & typecheck
         run: |
-          npm install
+          npm ci
           npx tsc --noEmit
           echo "TypeScript: OK"
 

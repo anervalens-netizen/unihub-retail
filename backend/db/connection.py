@@ -6,6 +6,7 @@ import logging
 import os
 import re
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import asyncpg
 
@@ -48,10 +49,47 @@ def _load_repo_env_file() -> None:
 _load_repo_env_file()
 
 
+def validate_test_database_url(database_url: str) -> None:
+    """Refuse test execution against production or a shared PostgreSQL cluster.
+
+    Integration tests are destructive by design. They are allowed only when
+    the caller explicitly opts in and the URL points to a loopback database
+    whose name is clearly marked as a test database, on a port other than the
+    production Retail port.
+    """
+    if os.getenv("UNIHUB_TEST_DATABASE") != "1":
+        raise RuntimeError(
+            "Database tests require UNIHUB_TEST_DATABASE=1 and an isolated "
+            "PostgreSQL instance"
+        )
+
+    parsed = urlparse(database_url)
+    database_name = unquote(parsed.path.lstrip("/"))
+    hostname = (parsed.hostname or "").lower()
+
+    if parsed.scheme not in {"postgresql", "postgres"}:
+        raise RuntimeError("Test DATABASE_URL must use PostgreSQL")
+    if hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError("Test DATABASE_URL must point to a loopback host")
+    if parsed.port == 5432:
+        raise RuntimeError(
+            "Test DATABASE_URL cannot use the production Retail port 5432"
+        )
+    if not (
+        database_name.endswith("_test")
+        or database_name.startswith("test_")
+    ):
+        raise RuntimeError(
+            "Test database name must start with test_ or end with _test"
+        )
+
+
 def get_database_url() -> str:
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is not configured")
+    if os.getenv("UNIHUB_RUNNING_TESTS") == "1":
+        validate_test_database_url(database_url)
     return database_url
 
 

@@ -1,22 +1,16 @@
 """Central config validation — fail-fast la startup pe env vars critice.
 
-Motivație: fără validare, env vars lipsă produc erori la prima cerere (500
-Internal Server Error) în loc să crape la boot. Backend care pornește curat
-dar crapă pe `/api/auth/login` e mai greu de detectat decât unul care
-refuză să pornească.
+Authentik OIDC/JWKS RS256 este singurul mecanism de autentificare. Nu exista
+secret JWT local de validat.
 
 Check-uri:
 - DATABASE_URL prezent, format minimal valid
-- JWT_SECRET prezent, minim 32 chars (SHA-256 HMAC safety)
 - VISITS_DB_PATH fișier existent (doar în producție)
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
-
-
-JWT_SECRET_MIN_LENGTH = 32
 
 
 class ConfigError(RuntimeError):
@@ -44,16 +38,6 @@ def validate_required_env_vars() -> None:
         errors.append(
             f"DATABASE_URL are schemă invalidă (găsit: {db_url[:20]}...); "
             "trebuie să înceapă cu postgresql:// sau postgres://"
-        )
-
-    # JWT_SECRET
-    jwt_secret = os.getenv("JWT_SECRET", "").strip()
-    if not jwt_secret:
-        errors.append("JWT_SECRET este gol sau nesetat")
-    elif len(jwt_secret) < JWT_SECRET_MIN_LENGTH:
-        errors.append(
-            f"JWT_SECRET prea scurt: {len(jwt_secret)} chars "
-            f"(minim {JWT_SECRET_MIN_LENGTH} — HMAC-SHA256 collision safety)"
         )
 
     # VISITS_DB_PATH — strict doar în producție

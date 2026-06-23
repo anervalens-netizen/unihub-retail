@@ -1,385 +1,201 @@
-## Setup Local UniHub
+# UniHub Retail - setup local
 
-Acest proiect ruleaza local, fara Docker.
+## Principii
 
-Stack:
-- frontend: React 19 + Vite
-- backend: FastAPI + asyncpg
-- baza de date: PostgreSQL
-- fisiere de business: Excel/JSON din `data/`
+- dezvoltarea si testele nu folosesc niciodata baza de productie;
+- autentificarea este exclusiv Authentik OIDC/JWKS RS256;
+- nu exista utilizatori locali, parole implicite sau `JWT_SECRET` al
+  aplicatiei;
+- fisierele `.env`, tokenurile Authentik si cheile Google raman neversionate;
+- importurile si seed-urile se ruleaza numai pe o baza locala dedicata.
 
-## 1. Cerinte
+## Cerinte
 
-Ai nevoie de:
 - Node.js 20+
 - Python 3.12+ sau 3.14
-- PostgreSQL local
+- Docker pentru testele backend izolate
+- PostgreSQL local numai daca rulezi aplicatia cu date persistente de
+  dezvoltare
 
-## 2. Pregatire PostgreSQL
+## Configurare
 
-Aplicatia foloseste implicit:
+Copiaza `.env.example` in `.env` si foloseste credite locale proprii:
 
 ```env
-DATABASE_URL=postgresql://unihub:unihub_dev_password@localhost:5432/unihub
+DATABASE_URL=postgresql://unihub:change_me_local_only@127.0.0.1:5432/unihub
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+UNIHUB_ENV=development
 ```
 
-Daca pornesti de la zero, intra in `psql` cu utilizatorul tau de admin PostgreSQL si ruleaza:
+Exemplu de baza locala:
 
 ```sql
-CREATE ROLE unihub WITH LOGIN PASSWORD 'unihub_dev_password';
+CREATE ROLE unihub WITH LOGIN PASSWORD 'change_me_local_only';
 CREATE DATABASE unihub OWNER unihub;
 GRANT ALL PRIVILEGES ON DATABASE unihub TO unihub;
 ```
 
-Important:
-- nu se sterge baza la boot
-- schema este verificata la startup si se reaplica doar daca `backend/db/schema_v2.sql` s-a schimbat
-- starea schemei este urmarita in tabela `schema_meta`
+Nu reutiliza utilizatorul, parola, hostul sau baza de productie.
 
-## 3. Configurare `.env`
+La startup, backend-ul:
 
-In radacina proiectului exista `.env` si `.env.example`.
+1. valideaza configuratia;
+2. initializeaza pool-ul asyncpg;
+3. verifica hash-ul `backend/db/schema_v2.sql`;
+4. aplica migrarile neexecutate;
+5. porneste integrarile runtime.
 
-Valorile locale relevante:
-
-```env
-DATABASE_URL=postgresql://unihub:unihub_dev_password@localhost:5432/unihub
-JWT_SECRET=change_me_local_only
-DEFAULT_ADMIN_USERNAME=admin
-DEFAULT_ADMIN_PASSWORD=9999
-DEFAULT_MANAGEMENT_USERNAME=management
-DEFAULT_MANAGEMENT_PASSWORD=9999
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-```
-
-## 4. Instalare dependinte
+## Dependinte
 
 Frontend:
 
 ```bash
-npm install
+npm ci
 ```
 
 Backend:
 
 ```bash
 cd backend
-python -m pip install -r requirements.txt
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 cd ..
 ```
 
-## 5. Pornire dezvoltare
-
-Frontend:
+## Pornire dezvoltare
 
 ```bash
 npm run dev
-```
-
-Backend:
-
-```bash
 npm run dev:backend
 ```
 
-Aplicatia va fi disponibila pe:
+Endpointuri implicite:
+
 - frontend: `http://127.0.0.1:3000`
 - backend: `http://127.0.0.1:8000`
 - health: `http://127.0.0.1:8000/health`
 
-## 6. Acces de pe telefon, in aceeasi retea
+Pentru acces din LAN, adauga explicit origin-ul de dezvoltare in
+`CORS_ORIGINS` si limiteaza accesul prin firewall.
 
-Scripturile actuale pornesc pe `0.0.0.0`, deci frontendul si backendul sunt expuse si in LAN.
+## Authentik OIDC
 
-Adauga IP-ul masinii tale de dev in `.env`:
-```env
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://<IP-PC>:3000
-```
+Frontend-ul foloseste providerul Authentik `unihub-retail`.
 
-Atentie:
-- telefonul trebuie sa fie pe acelasi Wi-Fi
-- firewall-ul trebuie sa permita traficul local pe portul 3000
+- callback-ul local trebuie permis explicit in provider;
+- backend-ul valideaza issuer, audience, expirare si semnatura RS256 prin JWKS;
+- rolurile si scope-ul provin din grupurile Authentik;
+- `offline_access` ramane activ conform politicii comune UniHub;
+- nu adauga fallback cu username/parola.
 
-## 7. Bootstrap utilizatori si login
+## Teste backend izolate
 
-La startup, backend-ul:
-- initializeaza pool-ul PostgreSQL
-- verifica schema
-- creeaza userii core daca lipsesc
-- nu reseteaza automat parolele existente
-
-Credentiale locale implicite:
-
-```text
-admin / 9999
-management / 9999
-```
-
-Daca login-ul nu merge pentru ca userul exista deja cu alta parola, ruleaza reset explicit:
+Ruleaza:
 
 ```bash
-cd backend
-python scripts/reset_default_users.py
-cd ..
+backend/scripts/run_tests_isolated.sh
 ```
 
-Optional, doar pentru debug local, poti forta resetul la fiecare boot:
+Scriptul:
 
-```env
-RESET_DEFAULT_USERS_ON_BOOT=true
-```
+1. porneste un PostgreSQL 18 temporar fara port public fix;
+2. seteaza o baza `unihub_test`;
+3. aplica schema si migrarile;
+4. ruleaza testele;
+5. elimina containerul prin `trap`, inclusiv la eroare.
 
-Implicit, acest flag trebuie sa ramana dezactivat.
-
-## 8. Seed, import si rebuild reporting
-
-### Seed complet din `data/`
+Pentru argumente pytest suplimentare:
 
 ```bash
-cd backend
-python scripts/seed.py
-cd ..
+backend/scripts/run_tests_isolated.sh -v --tb=short
+backend/scripts/run_tests_isolated.sh tests/test_target_calculator.py -q
 ```
 
-Ce face:
-- importa fisierele de vanzari
-- importa targetele
-- sincronizeaza focus products
-- reconstruieste agregatele de reporting
-- sincronizeaza utilizatorii TL si alocarile lor
+Protectia din `backend/db/connection.py` refuza testele daca:
 
-### Rebuild agregate reporting
+- lipseste opt-in-ul `UNIHUB_TEST_DATABASE=1`;
+- hostul nu este loopback;
+- portul este portul Retail de productie `5432`;
+- numele bazei nu incepe cu `test_` si nu se termina in `_test`.
 
-```bash
-cd backend
-python scripts/rebuild_reporting.py
-cd ..
-```
+Nu rula direct testele de integrare cu `.env` de productie.
 
-Sau pentru o luna anume:
+## Verificari frontend
 
-```bash
-cd backend
-python scripts/rebuild_reporting.py --month 2026-03
-cd ..
-```
-
-### Grile salariale
-
-Subtab-ul `Management -> Grile` foloseste Google Sheets permanente si datele
-din Retail DB.
-
-Pentru verificari sunt necesare:
-
-- tabela `grile_sheets` populata cu `site_code -> sheet_id`;
-- `backend/config/google/service-account.json` (gitignored), share-uit pe
-  grilele permanente.
-
-Inchiderea de luna ruleaza nativ in Retail, prin worker:
-
-- finalizare salarii;
-- arhiva XLSX/ZIP;
-- reset dry-run/live.
-
-Output-urile locale sunt in `backend/outputs/grile` si sunt gitignored.
-Repo-ul vechi `/opt/Mobiup/grile-salarii` nu mai este runtime public; ramane
-doar pentru CLI-uri istorice si reparatii punctuale.
-
-### Sync focus products (optional — via coding agent)
-
-Scriptul load_focus_products.py exista dar nu mai este accesibil din UI. Focus products se adauga prin coding agent direct in DB sau via seed.
-
-### Import date istorice (one-time, deja rulat pe productie)
-
-Date tranzactii 2023 Q4 + 2024:
-```bash
-cd backend
-python scripts/import_historical.py
-cd ..
-```
-
-Agregate anuale 2022 + 2023 Jan–Aug:
-```bash
-cd backend
-python scripts/import_annual_summary.py
-cd ..
-```
-
-### Import campanie incentive per-produs
-
-Campaniile de incentive sunt stocate in DB (tabelele `incentive_campaigns` si `incentive_products`).
-Import dintr-un fisier Excel:
-
-```bash
-cd backend
-python scripts/import_incentive_campaign.py \
-    --month 2026-04 \
-    --title "Incentive Aprilie 2026" \
-    --file "../data/incentive-apr-2026.xlsx" \
-    [--header 1]   # daca headerul e pe rand 2 (0-indexed)
-    [--dry-run]
-cd ..
-```
-
-Coloane Excel detectate automat (alias-uri acceptate):
-- Cod produs: `Cod`, `ItemCode`, `cod_produs`, `code`, `sku`
-- Valoare incentive: `Incentive`, `Valoare`, `Bonus`, `Reward`, `valoare_incentive`
-- Nume produs (optional): `ItemName`, `Denumire`, `name`
-
-### Configurare promo si concursuri
-
-Promotiile speciale si concursurile live sunt in JSON-uri din `data/`, iar
-directorul `data/` este gitignored. Asta inseamna ca aceste fisiere trebuie
-pastrate/sincronizate operational pe server, separat de commit:
-
-- `data/hub_specials.json` — promotii speciale folosite de cardurile Hub si
-  tabul Focus -> Promo.
-- `data/contests.json` — concursuri config-driven folosite de
-  `/api/contests/active?month=YYYY-MM`.
-
-Pentru campania iunie 2026, `hub_specials.json` contine 47 coduri si perioada
-`2026-06-01` - `2026-06-30`. Regula de masurare este co-purchase, implementata
-in `backend/services/promo_copurchase.py`: bon calificat = acelasi
-`(sale_date, site_code, agent, bon_nr)` cu cel putin un produs din lista promo
-si cel putin doua unitati pozitive non-cartela.
-
-Metrici importante:
-- `promo_qty` ramane agregatul simplu din reporting pentru KPI-uri/tabele Hub.
-- `promo_qualifying_bons`, `promo_discounted_units`, `promo_active_stores` si
-  `promo_active_agents` sunt metricile corecte pentru tabul Focus -> Promo si
-  trebuie sa corespunda cardului Hub special.
-- unitatea redusa co-purchase se exclude din incentive doar cand exista promo
-  activa pe luna respectiva.
-
-Lunile afisate in UI vin exclusiv din `import_snapshots.status='completed'`.
-Nu forta luni configurate dar fara import in `/api/filters/months`; iunie 2026
-apare automat dupa primul import de vanzari iunie.
-
-### Import targete reale per agent din Grile Salarii
-
-Pilotul curent importa targete per agent din `/opt/Mobiup/grile-salarii`,
-doar pentru managerul Andrei Stancu. Scriptul citeste
-`store_metadata.json` si `outputs/monitor_output.json`, apoi scrie in tabela
-`agent_targets`. Implicit ruleaza dry-run:
-
-```bash
-python backend/scripts/import_grile_agent_targets.py --month 2026-05
-python backend/scripts/import_grile_agent_targets.py --month 2026-05 --apply
-```
-
-Hub foloseste targetul din `agent_targets` doar pentru agentii mapati; restul
-raman pe fallback-ul vechi `target magazin / agenti activi`.
-
-### Management -> Grile
-
-Integrarea Grile din Retail este fluxul activ pentru verificare si inchidere
-de luna. Verificarea citeste Google Sheets si Retail DB; inchiderea de luna
-ruleaza nativ prin worker pentru finalizare salarii, arhiva XLSX/ZIP si reset
-lunar guarded. Output-urile se scriu in `backend/outputs/grile`.
-
-`/opt/Mobiup/grile-salarii` este doar arhiva/CLI pentru reparatii punctuale si
-fallback operational, nu runtime public.
-
-### Note UI Hub
-
-- Filtrele Hub, Focus si Agenti se salveaza in `localStorage`, ca refresh-ul
-  paginii sa pastreze selectia curenta.
-- Tabelele curente `RM` si `Magazine` afiseaza `Forecast%` dupa `Procent`.
-  Valoarea vine din backend (`forecast_target_pct`) si proiecteaza vanzarile
-  pana la finalul lunii cand luna importata este partiala.
-- Cardul `Comparatie perioade` afiseaza delte doar pentru vanzari, bonuri si
-  cantitate; medie zilnica ramane doar in tabelul de comparatie.
-- Cardul `Comparatie perioade` este like-for-like: pentru luna analizata,
-  magazinele cu vanzari Retail sunt tratate ca magazine deschise, iar
-  comparatia cu luna trecuta/anul trecut foloseste strict aceleasi
-  `site_code`.
-- Daca este selectat un RM sau o firma, acea selectie stabileste cohorta din
-  luna analizata; vanzarile istorice ale acelor magazine se pastreaza chiar
-  daca magazinul apartinea anterior altui RM sau altei firme.
-
-### Note Vizite
-
-- FieldOps scrie vizitele in `data/visits/visits.db`, cu codul magazinului in
-  coloana `magazin`.
-- Retail imbogateste vizitele cu mapping-ul curent din `stores`; filtrele RM
-  si firma nu trebuie aplicate direct pe coloanele `regional`/`firma` din
-  SQLite, pentru ca randurile istorice pot avea valori vechi sau goale.
-
-## 9. Cum sunt gestionate datele
-
-Fluxul standard este:
-
-1. se importa Excel-ul unei luni
-2. se creeaza un `import_snapshot`
-3. se inlocuieste snapshot-ul completed anterior pentru luna respectiva
-4. se insereaza liniile brute in `sales_transactions`
-5. se reconstruieste stratul de reporting pentru luna respectiva
-6. snapshot-ul devine `completed`
-
-Dashboard-urile si istoricul nu mai citesc in principal din `sales_transactions`, ci din tabele agregate:
-- `reporting_agent_day`
-- `reporting_agent_month`
-- `reporting_item_day`
-- `reporting_item_month`
-- `reporting_focus_item_month`
-- `reporting_category_month`
-
-## 10. Verificari utile
-
-Backend tests:
-
-```bash
-pytest backend -q
-```
-
-Smoke API:
-
-```bash
-python backend/scripts/smoke_api.py
-```
-
-Frontend typecheck:
+Ruleaza secvential:
 
 ```bash
 npm run typecheck
-```
-
-Frontend production build:
-
-```bash
+npm run test
 npm run build
 ```
 
-## 11. Troubleshooting rapid
+Typecheck-ul si build-ul nu se ruleaza in paralel, deoarece build-ul regenereaza
+`dist/`.
 
-### Backend-ul nu porneste
-- verifica PostgreSQL
-- verifica `DATABASE_URL`
-- verifica `JWT_SECRET`
+## Smoke API
 
-### Login-ul `admin / 9999` nu merge
-- ruleaza `python backend/scripts/reset_default_users.py`
+Health check-ul nu necesita token:
 
-### Aplicatia nu are date
-- ruleaza `python backend/scripts/seed.py`
-- sau importa manual fisierele din `data/`
+```bash
+UNIHUB_API_URL=http://127.0.0.1:8000 \
+python backend/scripts/smoke_api.py
+```
 
-### Istoricul sau dashboard-ul par goale
-- verifica sa existe luni `completed` in `import_snapshots`
-- ruleaza `python backend/scripts/rebuild_reporting.py`
+Pentru endpointurile protejate, foloseste temporar un access token Authentik:
 
-### Vrei sa confirmi schema
-- la startup, `ensure_schema_current()` verifica hash-ul din `schema_meta`
-- daca schema este deja la zi, nu reaplica tot SQL-ul
+```bash
+UNIHUB_API_URL=http://127.0.0.1:8000 \
+UNIHUB_SMOKE_TOKEN='<token-temporar>' \
+python backend/scripts/smoke_api.py
+```
 
-### Incentive per-produs nu apar in dashboard
-- verifica ca exista campanie importata: `SELECT * FROM incentive_campaigns;`
-- luna din request trebuie sa coincida cu `month` din campanie (ex: `2026-04`)
-- reimporta cu `import_incentive_campaign.py` daca e nevoie
+Scriptul este read-only. Tokenul nu se salveaza in fisiere sau documentatie.
 
-### Promo/concurs iunie nu apar in selector
-- verifica `SELECT import_month, status FROM import_snapshots ORDER BY import_month DESC LIMIT 5;`
-- daca `2026-06` nu are import `completed`, comportamentul este corect: luna nu
-  apare in selector pana la primul import
-- verifica separat config-urile live: `data/hub_specials.json` si
-  `data/contests.json`
+## Date si importuri
+
+Seed complet, numai pe baza locala dedicata:
+
+```bash
+cd backend
+venv/bin/python scripts/seed.py
+```
+
+Rebuild reporting:
+
+```bash
+cd backend
+venv/bin/python scripts/rebuild_reporting.py
+venv/bin/python scripts/rebuild_reporting.py --month 2026-03
+```
+
+Fluxul standard de import:
+
+1. creeaza `import_snapshot`;
+2. inlocuieste snapshot-ul anterior al lunii;
+3. insereaza tranzactiile;
+4. reconstruieste tabelele `reporting_*`;
+5. marcheaza snapshot-ul `completed`.
+
+Dashboardurile folosesc stratul de reporting. Accesul direct la
+`sales_transactions` ramane exceptie documentata.
+
+## Configuratii operationale neversionate
+
+- `data/hub_specials.json` - promotii active;
+- `data/contests.json` - concursuri;
+- `backend/config/google/service-account.json` - Google service account;
+- `.env.worker` - configuratia Valkey pentru worker.
+
+Aceste fisiere sunt incluse in backupul operational, nu in Git.
+
+## Productie
+
+- frontend-ul vizibil este `dist/`, deci modificarile UI necesita build;
+- modificarile backend necesita restart `unihub-backend.service`;
+- modificarile worker necesita restart `unihub-worker.service`;
+- dupa deploy se verifica health local si public;
+- joburile grele raman in worker, in afara timeouturilor HTTP/Cloudflare.
+
+Comenzile si procedurile de productie sunt documentate in `AGENTS.md`,
+`APP_ARCHITECTURE.md` si runbook-urile relevante.
