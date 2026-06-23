@@ -24,6 +24,10 @@ curl -fsS http://127.0.0.1:9898/health
 
 Run validation sequentially; typecheck can race with a Vite build while `dist/` is regenerated.
 
+Private `@unihub/*` packages use local Verdaccio. Keep the real token only in
+the ignored `.npmrc`; copy `.npmrc.example` and provide `VERDACCIO_TOKEN` when
+provisioning a new checkout. Never commit `.npmrc`.
+
 ## Architecture rules
 
 - Backend flow is router -> service -> repository. Keep SQL and business logic out of routers.
