@@ -137,7 +137,6 @@ export function KpiPerformanceCard({
         valueFormatter={formatValue}
         centerLabel="TOTAL"
         centerValue={formatCompactDonutValue(sumChartValues(chartData, dataKey))}
-        showShare
         compact
       />
     </div>
@@ -225,7 +224,6 @@ function DonutLegendChart({
   valueFormatter,
   centerLabel,
   centerValue,
-  showShare = false,
   compact = false,
   sideBySide = false,
 }: {
@@ -236,7 +234,6 @@ function DonutLegendChart({
   valueFormatter: (value: number) => string;
   centerLabel: string;
   centerValue: string;
-  showShare?: boolean;
   compact?: boolean;
   sideBySide?: boolean;
 }) {

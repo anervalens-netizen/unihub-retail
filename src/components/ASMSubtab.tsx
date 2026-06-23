@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import {
   fetchAsmPerformance,
@@ -310,7 +310,7 @@ export function ASMSubtab() {
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(CURRENT_MONTH);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [performance, scores] = await Promise.all([
@@ -322,9 +322,9 @@ export function ASMSubtab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [month]);
 
-  useEffect(() => { load(); }, [month]);
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <div className="p-4 space-y-3">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, AlertTriangle, BarChart2, ChevronDown, ChevronRight, Info, X } from 'lucide-react';
 import { fetchScores, fetchAlerts, recalculateScores, type StoreScore, type StoreAlert } from '../api/crm';
 import { createTask } from '../api/tasks';
@@ -473,7 +473,7 @@ export function CRMSubtab() {
   const [recalculating, setRecalculating] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       if (view === 'scores') setScores(await fetchScores(month));
@@ -481,9 +481,9 @@ export function CRMSubtab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [month, view]);
 
-  useEffect(() => { load(); }, [view, month]);
+  useEffect(() => { void load(); }, [load]);
 
   const handleRecalculate = async () => {
     setRecalculating(true);

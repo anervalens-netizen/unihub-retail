@@ -65,7 +65,6 @@ import {
   describeFilterScope,
   formatCompactDonutValue,
   getAgentSortValue,
-  getAsmSortValue,
   getBon2AccTone,
   getFocusTone,
   getRegionalSortValue,
@@ -118,20 +117,6 @@ type RegionalSortKey =
   | 'total_vanzari'
   | 'proc_realizare_target'
   | 'forecast_target_pct'
-  | 'promo_qty'
-  | 'incentive_qty'
-  | 'qty_total'
-  | 'nr_bonuri'
-  | 'medie_zilnica'
-  | 'proc_bon2acc'
-  | 'prc_focus_acc_qty';
-
-type AsmSortKey =
-  | 'asm'
-  | 'regional'
-  | 'target'
-  | 'total_vanzari'
-  | 'proc_realizare_target'
   | 'promo_qty'
   | 'incentive_qty'
   | 'qty_total'
@@ -213,25 +198,10 @@ const REGIONAL_COLUMNS: Array<{ key: RegionalSortKey; label: string }> = [
   { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
 
-const ASM_COLUMNS: Array<{ key: AsmSortKey; label: string }> = [
-  { key: 'asm', label: 'ASM' },
-  { key: 'target', label: 'Target' },
-  { key: 'total_vanzari', label: 'Vanzari' },
-  { key: 'proc_realizare_target', label: 'Procent' },
-  { key: 'promo_qty', label: 'Promo' },
-  { key: 'incentive_qty', label: 'Incentive' },
-  { key: 'qty_total', label: 'Cantitate' },
-  { key: 'nr_bonuri', label: 'Nr bonuri' },
-  { key: 'medie_zilnica', label: 'Medie zilnica' },
-  { key: 'proc_bon2acc', label: 'ProcBon2Acc' },
-  { key: 'prc_focus_acc_qty', label: 'Focus%' },
-];
-
 const CURRENT_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
 const CURRENT_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty');
 const CURRENT_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
 const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct');
-const HIST_ASM_COLUMNS = ASM_COLUMNS.filter((c) => c.key !== 'promo_qty');
 const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct');
 const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
 
@@ -655,11 +625,11 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [historyCategoryMix, setHistoryCategoryMix] = useState<CategoryMixItem[]>([]);
   const [historyBrandMix, setHistoryBrandMix] = useState<BrandMixItem[]>([]);
   const [historySpecialCards, setHistorySpecialCards] = useState<DashboardSpecialCard[]>([]);
-  const [historyPeriodComparison, setHistoryPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
+  const [, setHistoryPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
   const [historyPromoIncentive, setHistoryPromoIncentive] = useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
   const [historyPremiumGlass, setHistoryPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
   const [historyRegionals, setHistoryRegionals] = useState<RegionalStat[]>([]);
-  const [historyAsms, setHistoryAsms] = useState<AsmStat[]>([]);
+  const [, setHistoryAsms] = useState<AsmStat[]>([]);
   const [historyStores, setHistoryStores] = useState<StoreStat[]>([]);
   const [historyAgents, setHistoryAgents] = useState<AgentStat[]>([]);
   const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
@@ -680,16 +650,11 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     key: 'total_vanzari',
     direction: 'desc',
   });
-  const [asmSort, setAsmSort] = useState<{ key: AsmSortKey; direction: SortDirection }>({
-    key: 'total_vanzari',
-    direction: 'desc',
-  });
   const [historyRegionalSort, setHistoryRegionalSort] = useState<{ key: RegionalSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
-  const [historyAsmSort, setHistoryAsmSort] = useState<{ key: AsmSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
   const [historyStoreSort, setHistoryStoreSort] = useState<{ key: StoreSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
   const [historyAgentSort, setHistoryAgentSort] = useState<{ key: AgentSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
   const [regionals, setRegionals] = useState<RegionalStat[]>([]);
-  const [asms, setAsms] = useState<AsmStat[]>([]);
+  const [, setAsms] = useState<AsmStat[]>([]);
   const isMountedRef = useRef(true);
   const historyMonthDropdownRef = useRef<HTMLDetailsElement>(null);
 
@@ -1054,17 +1019,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     [dailySales]
   );
 
-  const historyChartData = useMemo(
-    () =>
-      history.map((item) => ({
-        month: item.month.slice(2),
-        sales: Number(item.total_sales),
-        target: Number(item.total_target),
-        progress: Number(item.target_progress_pct ?? 0),
-      })),
-    [history]
-  );
-
   // Card 1 data — always anchored to currentMonth; last bar shows forecast if month not final
   const currentHistoryChartData = useMemo(() => {
     return currentHistory.map((item, idx) => {
@@ -1380,17 +1334,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     return rows;
   }, [regionals, regionalSort]);
 
-  const sortedAsms = useMemo(() => {
-    const rows = [...asms];
-    rows.sort((left, right) => {
-      const leftValue = getAsmSortValue(left, asmSort.key);
-      const rightValue = getAsmSortValue(right, asmSort.key);
-      const result = leftValue - rightValue;
-      return asmSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [asms, asmSort]);
-
   const sortedHistoryRegionals = useMemo(() => {
     const rows = [...historyRegionals];
     rows.sort((left, right) => {
@@ -1401,17 +1344,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     });
     return rows;
   }, [historyRegionals, historyRegionalSort]);
-
-  const sortedHistoryAsms = useMemo(() => {
-    const rows = [...historyAsms];
-    rows.sort((left, right) => {
-      const leftValue = getAsmSortValue(left, historyAsmSort.key);
-      const rightValue = getAsmSortValue(right, historyAsmSort.key);
-      const result = leftValue - rightValue;
-      return historyAsmSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [historyAsms, historyAsmSort]);
 
   const sortedHistoryStores = useMemo(() => {
     const rows = [...historyStores];
@@ -1443,27 +1375,11 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     );
   }, []);
 
-  const handleSortAsms = useCallback((key: AsmSortKey) => {
-    setAsmSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'asm' || key === 'regional' ? 'asc' : 'desc' }
-    );
-  }, []);
-
   const handleSortHistoryRegionals = useCallback((key: RegionalSortKey) => {
     setHistoryRegionalSort((current) =>
       current.key === key
         ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: key === 'regional' ? 'asc' : 'desc' }
-    );
-  }, []);
-
-  const handleSortHistoryAsms = useCallback((key: AsmSortKey) => {
-    setHistoryAsmSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'asm' || key === 'regional' ? 'asc' : 'desc' }
     );
   }, []);
 

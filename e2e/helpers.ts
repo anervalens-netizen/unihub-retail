@@ -1,6 +1,4 @@
-import { Page, BrowserContext } from '@playwright/test';
-
-const CLIENT_ID = '4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t';
+import { BrowserContext } from '@playwright/test';
 
 export const MOCK_USER = {
   sub: 'test-user-123',

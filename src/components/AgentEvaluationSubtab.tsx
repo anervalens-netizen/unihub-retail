@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import {
   fetchAgentEvaluation,
@@ -857,7 +857,7 @@ export function AgentEvaluationSubtab() {
   const [v2SortDirection, setV2SortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
@@ -874,9 +874,9 @@ export function AgentEvaluationSubtab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [asm, selectedMonths, selectedStores]);
 
-  useEffect(() => { load(); }, [selectedMonths, asm, selectedStores]);
+  useEffect(() => { void load(); }, [load]);
 
   const toggleMonth = (value: string) => {
     setSelectedMonths((current) => {

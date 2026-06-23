@@ -29,12 +29,7 @@ import {
   fetchAgentHistory,
   fetchStoreCoverage,
   AgentsQuery,
-  AgentsOverviewResponse,
-  AgentMovementResponse,
   AgentListItem,
-  AgentProfileResponse,
-  AgentHistoryResponse,
-  StoreCoverageResponse,
   StoreCoverageItem
 } from '../api/agents';
 
@@ -45,10 +40,9 @@ const nfNum = new Intl.NumberFormat('ro-RO');
 interface AgentDetailsProps {
   agent: string;
   currentMonth: string;
-  onBack?: () => void;
 }
 
-function AgentDetails({ agent, currentMonth, onBack }: AgentDetailsProps) {
+function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['agents', 'profile', agent, currentMonth],
     queryFn: () => fetchAgentProfile(agent, currentMonth),
@@ -249,7 +243,6 @@ function AgentDrawer({ agent, currentMonth, isOpen, onClose }: AgentDrawerProps)
           <AgentDetails
             agent={agent}
             currentMonth={currentMonth}
-            onBack={onClose}
           />
         </div>
       </div>
@@ -301,7 +294,7 @@ function CustomTooltip({ active, payload, label }: any) {
   return null;
 }
 
-export function Agents({ currentMonth, months, filters }: AgentsProps) {
+export function Agents({ currentMonth, months: _months, filters }: AgentsProps) {
   const { user } = useAuth();
   const canViewSalaries = canAccessSalaries(
     user?.profile,
@@ -362,7 +355,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
     queryFn: () => fetchAgentsList(listParams),
   });
   
-  const list = listResponse?.items || [];
+  const list = useMemo(() => listResponse?.items || [], [listResponse?.items]);
 
   // Fetch filter options for card filters
   useEffect(() => {

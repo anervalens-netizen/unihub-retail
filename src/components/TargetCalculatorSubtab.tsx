@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Calculator,
@@ -386,18 +386,18 @@ export function TargetCalculatorSubtab() {
   const dirty = dirtyRows.size > 0;
   const isDesktop = useMediaQuery('(min-width: 768px)');
 
-  const replaceScenario = (next: TargetScenario | null) => {
+  const replaceScenario = useCallback((next: TargetScenario | null) => {
     scenarioRef.current = next;
     setScenario(next);
-  };
+  }, []);
 
-  const clearLocalEdits = () => {
+  const clearLocalEdits = useCallback(() => {
     dirtyRowsRef.current = new Set();
     setDirtyRows(new Set());
     editVersionsRef.current.clear();
-  };
+  }, []);
 
-  const loadInitial = async () => {
+  const loadInitial = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -424,11 +424,11 @@ export function TargetCalculatorSubtab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [clearLocalEdits, replaceScenario]);
 
   useEffect(() => {
     void loadInitial();
-  }, []);
+  }, [loadInitial]);
 
   useEffect(() => {
     scenarioRef.current = scenario;
@@ -605,7 +605,7 @@ export function TargetCalculatorSubtab() {
     });
   };
 
-  const persistRows = async (siteCodes: string[]): Promise<TargetScenario | null> => {
+  const persistRows = useCallback(async (siteCodes: string[]): Promise<TargetScenario | null> => {
     const current = scenarioRef.current;
     if (!current || current.status === 'finalized' || siteCodes.length === 0) return current;
     const rowSet = new Set(siteCodes);
@@ -673,7 +673,7 @@ export function TargetCalculatorSubtab() {
         return next;
       });
     }
-  };
+  }, [replaceScenario]);
 
   const persistDraft = async (): Promise<TargetScenario | null> => {
     const current = scenarioRef.current;
@@ -705,7 +705,7 @@ export function TargetCalculatorSubtab() {
       });
     }, 700);
     return () => window.clearTimeout(timeoutId);
-  }, [scenario, dirtyRows, savingRows]);
+  }, [scenario, dirtyRows, savingRows, persistRows]);
 
   useEffect(() => {
     if (!scenario || dirtyRows.size > 0 || savingRows.size > 0) return;
@@ -720,7 +720,7 @@ export function TargetCalculatorSubtab() {
       });
     }, 15000);
     return () => window.clearInterval(intervalId);
-  }, [scenario?.id, dirtyRows.size, savingRows.size]);
+  }, [scenario, dirtyRows.size, savingRows.size, replaceScenario]);
 
   const handleFinalize = async () => {
     if (!scenario) return;

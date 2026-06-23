@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   fetchLeaveRequests,
@@ -32,16 +32,16 @@ export function HRSubtab() {
   const [perfData, setPerfData] = useState<PerformancePoint[]>([]);
   const [perfLoading, setPerfLoading] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       setRequests(await fetchLeaveRequests(filterStatus ? { status: filterStatus } : undefined));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterStatus]);
 
-  useEffect(() => { load(); }, [filterStatus]);
+  useEffect(() => { void load(); }, [load]);
 
   const handleCreate = async () => {
     if (!form.agent_name || !form.start_date || !form.end_date) return;
