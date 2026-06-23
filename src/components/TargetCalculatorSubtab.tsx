@@ -550,6 +550,9 @@ export function TargetCalculatorSubtab() {
         total_target: parsedTarget,
         min_floor: parsedFloor,
         previous_month_floor_pct: parsedPct / 100,
+        expected_revision: recalculatingCurrentDraft
+          ? existingTarget.revision
+          : undefined,
       });
       replaceScenario(calculated);
       setRegionalFilter('all');
@@ -614,24 +617,55 @@ export function TargetCalculatorSubtab() {
     try {
       const saved = await saveTargetFinalValues(
         current.id,
+        current.revision,
         rowsToSave.map((row) => ({
           site_code: row.site_code,
           final_target: row.final_target,
           note: row.note,
         })),
       );
-      setDirtyRows((previous) => {
-        const next = new Set(previous);
-        submittedVersions.forEach((version, siteCode) => {
-          if ((editVersionsRef.current.get(siteCode) ?? 0) === version) {
-            next.delete(siteCode);
-          }
-        });
-        dirtyRowsRef.current = next;
-        return next;
+      const remainingDirty = new Set(dirtyRowsRef.current);
+      submittedVersions.forEach((version, siteCode) => {
+        if ((editVersionsRef.current.get(siteCode) ?? 0) === version) {
+          remainingDirty.delete(siteCode);
+        }
       });
+      dirtyRowsRef.current = remainingDirty;
+      setDirtyRows(remainingDirty);
+
+      const latestLocal = scenarioRef.current;
+      const localRows = new Map(
+        latestLocal?.id === saved.id
+          ? latestLocal.rows.map((row) => [row.site_code, row])
+          : [],
+      );
+      const mergedRows = saved.rows.map((row) => (
+        remainingDirty.has(row.site_code)
+          ? localRows.get(row.site_code) ?? row
+          : row
+      ));
+      replaceScenario(recalculateVisibleScenario(saved, mergedRows));
       setError(null);
       return saved;
+    } catch (err) {
+      try {
+        const latest = await fetchTargetScenario(current.id);
+        const latestLocal = scenarioRef.current;
+        const localRows = new Map(
+          latestLocal?.id === latest.id
+            ? latestLocal.rows.map((row) => [row.site_code, row])
+            : [],
+        );
+        const mergedRows = latest.rows.map((row) => (
+          dirtyRowsRef.current.has(row.site_code)
+            ? localRows.get(row.site_code) ?? row
+            : row
+        ));
+        replaceScenario(recalculateVisibleScenario(latest, mergedRows));
+      } catch {
+        // Preserve local edits if the conflict refresh is also unavailable.
+      }
+      throw err;
     } finally {
       setSavingRows((previous) => {
         const next = new Set(previous);
@@ -710,7 +744,7 @@ export function TargetCalculatorSubtab() {
         `Finalizezi scenariul pentru exact cele ${latest.store_count} magazine active? `
         + 'Valorile vor deveni targetele oficiale din Hub si CRM, iar orice target existent in afara acestei cohorte va fi eliminat.',
       )) return;
-      replaceScenario(await finalizeTargetScenario(latest.id));
+      replaceScenario(await finalizeTargetScenario(latest.id, latest.revision));
       clearLocalEdits();
     } catch (err) {
       console.error(err);

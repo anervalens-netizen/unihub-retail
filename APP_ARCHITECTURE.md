@@ -274,7 +274,9 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
 
 1. Creeaza sau recalculeaza unicul `draft` al lunii tinta; recalcularea nu
    creeaza versiuni paralele. Panoul parametrilor de calcul este afisat numai
-   proprietarului configurat.
+   proprietarului configurat. Fiecare mutatie creste `revision`; scrierile cu
+   o versiune veche primesc 409, iar un advisory lock tranzactional serializeaza
+   crearea initiala pentru aceeasi luna. O luna finalizata nu se recalculeaza.
 2. Stabileste cohorta din magazinele cu vanzari in ultima luna disponibila
    anterior lunii tinta; datele de apartenenta RM/firma sunt snapshot in
    randurile draftului.

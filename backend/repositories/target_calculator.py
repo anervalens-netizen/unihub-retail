@@ -7,6 +7,14 @@ from typing import Any
 import asyncpg
 
 
+class TargetScenarioFinalizedError(Exception):
+    pass
+
+
+class TargetScenarioVersionConflict(Exception):
+    pass
+
+
 class TargetCalculatorRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
@@ -92,39 +100,74 @@ class TargetCalculatorRepository:
         self,
         scenario: dict[str, Any],
         rows: list[dict[str, Any]],
-    ) -> int | None:
+        expected_revision: int | None,
+    ) -> int:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                scenario_id = await conn.fetchval(
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                    scenario["target_month"],
+                )
+                existing = await conn.fetchrow(
                     """
-                    INSERT INTO target_scenarios (
-                        target_month, cohort_month, total_target, min_floor,
-                        previous_month_floor_pct, calculation_method, source_months, warnings
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
-                    ON CONFLICT (target_month) DO UPDATE
-                    SET cohort_month = EXCLUDED.cohort_month,
-                        total_target = EXCLUDED.total_target,
-                        min_floor = EXCLUDED.min_floor,
-                        previous_month_floor_pct = EXCLUDED.previous_month_floor_pct,
-                        calculation_method = EXCLUDED.calculation_method,
-                        source_months = EXCLUDED.source_months,
-                        warnings = EXCLUDED.warnings,
-                        updated_at = now()
-                    WHERE target_scenarios.status = 'draft'
-                    RETURNING id
+                    SELECT id, status, revision
+                    FROM target_scenarios
+                    WHERE target_month = $1
+                    FOR UPDATE
                     """,
                     scenario["target_month"],
-                    scenario["cohort_month"],
-                    scenario["total_target"],
-                    scenario["min_floor"],
-                    scenario["previous_month_floor_pct"],
-                    scenario["calculation_method"],
-                    json.dumps(scenario["source_months"]),
-                    json.dumps(scenario["warnings"]),
                 )
-                if scenario_id is None:
-                    return None
+                if existing:
+                    if existing["status"] != "draft":
+                        raise TargetScenarioFinalizedError
+                    if expected_revision != int(existing["revision"]):
+                        raise TargetScenarioVersionConflict
+                    scenario_id = int(existing["id"])
+                    await conn.execute(
+                        """
+                        UPDATE target_scenarios
+                        SET cohort_month = $2,
+                            total_target = $3,
+                            min_floor = $4,
+                            previous_month_floor_pct = $5,
+                            calculation_method = $6,
+                            source_months = $7::jsonb,
+                            warnings = $8::jsonb,
+                            revision = revision + 1,
+                            updated_at = now()
+                        WHERE id = $1
+                        """,
+                        scenario_id,
+                        scenario["cohort_month"],
+                        scenario["total_target"],
+                        scenario["min_floor"],
+                        scenario["previous_month_floor_pct"],
+                        scenario["calculation_method"],
+                        json.dumps(scenario["source_months"]),
+                        json.dumps(scenario["warnings"]),
+                    )
+                else:
+                    if expected_revision is not None:
+                        raise TargetScenarioVersionConflict
+                    scenario_id = await conn.fetchval(
+                        """
+                        INSERT INTO target_scenarios (
+                            target_month, cohort_month, total_target, min_floor,
+                            previous_month_floor_pct, calculation_method,
+                            source_months, warnings
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+                        RETURNING id
+                        """,
+                        scenario["target_month"],
+                        scenario["cohort_month"],
+                        scenario["total_target"],
+                        scenario["min_floor"],
+                        scenario["previous_month_floor_pct"],
+                        scenario["calculation_method"],
+                        json.dumps(scenario["source_months"]),
+                        json.dumps(scenario["warnings"]),
+                    )
                 await conn.execute(
                     "DELETE FROM target_scenario_rows WHERE scenario_id = $1",
                     scenario_id,
@@ -164,7 +207,7 @@ class TargetCalculatorRepository:
                 SELECT
                     ts.id, ts.target_month, ts.cohort_month, ts.total_target,
                     ts.min_floor, ts.previous_month_floor_pct, ts.status,
-                    ts.calculation_method, ts.source_months, ts.warnings, ts.created_at::text,
+                    ts.revision, ts.calculation_method, ts.source_months, ts.warnings, ts.created_at::text,
                     ts.updated_at::text, ts.finalized_at::text,
                     COUNT(tr.site_code) AS store_count,
                     COALESCE(SUM(tr.proposed_target), 0) AS proposed_total,
@@ -186,7 +229,7 @@ class TargetCalculatorRepository:
                 SELECT
                     ts.id, ts.target_month, ts.cohort_month, ts.total_target,
                     ts.min_floor, ts.previous_month_floor_pct, ts.status,
-                    ts.calculation_method, ts.source_months, ts.warnings,
+                    ts.revision, ts.calculation_method, ts.source_months, ts.warnings,
                     ts.created_at::text, ts.updated_at::text, ts.finalized_at::text
                 FROM target_scenarios ts
                 WHERE ts.id = $1
@@ -213,17 +256,25 @@ class TargetCalculatorRepository:
         self,
         scenario_id: int,
         rows: list[dict[str, Any]],
+        expected_revision: int,
     ) -> int:
         if not rows:
             return 0
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                status = await conn.fetchval(
-                    "SELECT status FROM target_scenarios WHERE id = $1 FOR UPDATE",
+                scenario = await conn.fetchrow(
+                    """
+                    SELECT status, revision
+                    FROM target_scenarios
+                    WHERE id = $1
+                    FOR UPDATE
+                    """,
                     scenario_id,
                 )
-                if status != "draft":
+                if not scenario or scenario["status"] != "draft":
                     return 0
+                if int(scenario["revision"]) != expected_revision:
+                    raise TargetScenarioVersionConflict
                 existing = await conn.fetchval(
                     """
                     SELECT COUNT(*)
@@ -245,20 +296,31 @@ class TargetCalculatorRepository:
                     ],
                 )
                 await conn.execute(
-                    "UPDATE target_scenarios SET updated_at = now() WHERE id = $1",
+                    """
+                    UPDATE target_scenarios
+                    SET revision = revision + 1, updated_at = now()
+                    WHERE id = $1
+                    """,
                     scenario_id,
                 )
         return int(existing or 0)
 
-    async def finalize_scenario(self, scenario_id: int) -> bool:
+    async def finalize_scenario(self, scenario_id: int, expected_revision: int) -> bool:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 scenario = await conn.fetchrow(
-                    "SELECT target_month, total_target, status FROM target_scenarios WHERE id = $1 FOR UPDATE",
+                    """
+                    SELECT target_month, total_target, status, revision
+                    FROM target_scenarios
+                    WHERE id = $1
+                    FOR UPDATE
+                    """,
                     scenario_id,
                 )
                 if not scenario or scenario["status"] != "draft":
                     return False
+                if int(scenario["revision"]) != expected_revision:
+                    raise TargetScenarioVersionConflict
                 final_total = await conn.fetchval(
                     "SELECT COALESCE(SUM(final_target), 0) FROM target_scenario_rows WHERE scenario_id = $1",
                     scenario_id,
@@ -304,7 +366,10 @@ class TargetCalculatorRepository:
                 await conn.execute(
                     """
                     UPDATE target_scenarios
-                    SET status = 'finalized', finalized_at = now(), updated_at = now()
+                    SET status = 'finalized',
+                        revision = revision + 1,
+                        finalized_at = now(),
+                        updated_at = now()
                     WHERE id = $1
                     """,
                     scenario_id,

@@ -71,6 +71,7 @@ export interface TargetScenarioSummary {
   min_floor: number;
   previous_month_floor_pct: number;
   status: 'draft' | 'finalized';
+  revision: number;
   calculation_method: string;
   source_months: TargetSourceMonth[];
   warnings: string[];
@@ -97,6 +98,7 @@ export interface TargetCalculationInput {
   total_target: number;
   min_floor: number;
   previous_month_floor_pct: number;
+  expected_revision?: number;
 }
 
 export async function fetchTargetCalculatorContext(): Promise<TargetCalculatorContext> {
@@ -121,9 +123,13 @@ export async function calculateTargetScenario(input: TargetCalculationInput): Pr
 
 export async function saveTargetFinalValues(
   id: number,
+  expectedRevision: number,
   rows: Array<{ site_code: string; final_target: number | null; note: string | null }>,
 ): Promise<TargetScenario> {
-  const { data } = await client.patch<TargetScenario>(`/api/target-calculator/scenarios/${id}/rows`, { rows });
+  const { data } = await client.patch<TargetScenario>(
+    `/api/target-calculator/scenarios/${id}/rows`,
+    { expected_revision: expectedRevision, rows },
+  );
   return data;
 }
 
@@ -179,8 +185,11 @@ export async function fetchTargetStoreDetail(scenarioId: number, siteCode: strin
   return data;
 }
 
-export async function finalizeTargetScenario(id: number): Promise<TargetScenario> {
-  const { data } = await client.post<TargetScenario>(`/api/target-calculator/scenarios/${id}/finalize`);
+export async function finalizeTargetScenario(id: number, expectedRevision: number): Promise<TargetScenario> {
+  const { data } = await client.post<TargetScenario>(
+    `/api/target-calculator/scenarios/${id}/finalize`,
+    { expected_revision: expectedRevision },
+  );
   return data;
 }
 

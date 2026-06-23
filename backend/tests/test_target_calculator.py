@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
@@ -7,7 +9,12 @@ import pytest
 from fastapi import HTTPException
 
 from auth import AuthClaims
-from repositories.target_calculator import TargetCalculatorRepository
+from db.connection import close_db_pool, get_pool
+from repositories.target_calculator import (
+    TargetCalculatorRepository,
+    TargetScenarioFinalizedError,
+    TargetScenarioVersionConflict,
+)
 from routers.target_calculator import can_finalize_targets, require_target_owner
 from services.target_calculator import (
     CALCULATION_METHOD,
@@ -113,7 +120,11 @@ def make_repository_connection() -> tuple[TargetCalculatorRepository, AsyncMock]
 @pytest.mark.asyncio
 async def test_recalculation_replaces_the_single_draft_for_target_month() -> None:
     repo, conn = make_repository_connection()
-    conn.fetchval.return_value = 8
+    conn.fetchrow.return_value = {
+        "id": 8,
+        "status": "draft",
+        "revision": 3,
+    }
 
     scenario = {
         "target_month": "2026-06",
@@ -138,13 +149,13 @@ async def test_recalculation_replaces_the_single_draft_for_target_month() -> Non
         "history": [],
     }]
 
-    assert await repo.save_draft_scenario(scenario, rows) == 8
+    assert await repo.save_draft_scenario(scenario, rows, expected_revision=3) == 8
 
-    insert_sql = conn.fetchval.await_args.args[0]
-    delete_sql = conn.execute.await_args.args[0]
-    assert "ON CONFLICT (target_month) DO UPDATE" in insert_sql
-    assert "WHERE target_scenarios.status = 'draft'" in insert_sql
-    assert "final_target" not in insert_sql
+    statements = [call.args[0] for call in conn.execute.await_args_list]
+    assert "pg_advisory_xact_lock" in statements[0]
+    assert "UPDATE target_scenarios" in statements[1]
+    assert "revision = revision + 1" in statements[1]
+    delete_sql = statements[2]
     assert "DELETE FROM target_scenario_rows" in delete_sql
     conn.executemany.assert_awaited_once()
 
@@ -152,7 +163,11 @@ async def test_recalculation_replaces_the_single_draft_for_target_month() -> Non
 @pytest.mark.asyncio
 async def test_recalculation_cannot_overwrite_a_finalized_month() -> None:
     repo, conn = make_repository_connection()
-    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": 8,
+        "status": "finalized",
+        "revision": 4,
+    }
 
     scenario = {
         "target_month": "2026-06",
@@ -165,9 +180,110 @@ async def test_recalculation_cannot_overwrite_a_finalized_month() -> None:
         "warnings": [],
     }
 
-    assert await repo.save_draft_scenario(scenario, []) is None
-    conn.execute.assert_not_awaited()
+    with pytest.raises(TargetScenarioFinalizedError):
+        await repo.save_draft_scenario(scenario, [], expected_revision=4)
+
+    assert conn.execute.await_count == 1
     conn.executemany.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recalculation_rejects_a_stale_revision() -> None:
+    repo, conn = make_repository_connection()
+    conn.fetchrow.return_value = {
+        "id": 8,
+        "status": "draft",
+        "revision": 4,
+    }
+
+    with pytest.raises(TargetScenarioVersionConflict):
+        await repo.save_draft_scenario(
+            {
+                "target_month": "2026-06",
+                "cohort_month": "2026-05",
+                "total_target": Decimal("100.00"),
+                "min_floor": Decimal("35.00"),
+                "previous_month_floor_pct": Decimal("0.90"),
+                "calculation_method": CALCULATION_METHOD,
+                "source_months": [],
+                "warnings": [],
+            },
+            [],
+            expected_revision=3,
+        )
+
+    assert conn.execute.await_count == 1
+    conn.executemany.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_concurrent_recalculations_allow_exactly_one_writer() -> None:
+    pool = await get_pool()
+    repo = TargetCalculatorRepository(pool)
+    target_month = "2099-12"
+    scenario = {
+        "target_month": target_month,
+        "cohort_month": "2099-11",
+        "total_target": Decimal("100.00"),
+        "min_floor": Decimal("35.00"),
+        "previous_month_floor_pct": Decimal("0.90"),
+        "calculation_method": CALCULATION_METHOD,
+        "source_months": [],
+        "warnings": [],
+    }
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM target_scenarios WHERE target_month = $1",
+                target_month,
+            )
+
+        first_results = await asyncio.gather(
+            repo.save_draft_scenario(scenario, [], expected_revision=None),
+            repo.save_draft_scenario(scenario, [], expected_revision=None),
+            return_exceptions=True,
+        )
+        assert sum(isinstance(result, int) for result in first_results) == 1
+        assert sum(
+            isinstance(result, TargetScenarioVersionConflict)
+            for result in first_results
+        ) == 1
+
+        second_results = await asyncio.gather(
+            repo.save_draft_scenario(scenario, [], expected_revision=1),
+            repo.save_draft_scenario(scenario, [], expected_revision=1),
+            return_exceptions=True,
+        )
+        assert sum(isinstance(result, int) for result in second_results) == 1
+        assert sum(
+            isinstance(result, TargetScenarioVersionConflict)
+            for result in second_results
+        ) == 1
+
+        async with pool.acquire() as conn:
+            stored = await conn.fetchrow(
+                """
+                SELECT COUNT(*) OVER () AS scenario_count, revision
+                FROM target_scenarios
+                WHERE target_month = $1
+                """,
+                target_month,
+            )
+        assert stored is not None
+        assert stored["scenario_count"] == 1
+        assert stored["revision"] == 2
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM target_scenarios WHERE target_month = $1",
+                target_month,
+            )
+        await close_db_pool()
 
 
 @pytest.mark.asyncio
@@ -177,10 +293,11 @@ async def test_finalize_replaces_official_targets_with_exact_approved_cohort() -
         "target_month": "2026-06",
         "total_target": Decimal("100.00"),
         "status": "draft",
+        "revision": 2,
     }
     conn.fetchval.side_effect = [Decimal("100.00"), 0]
 
-    assert await repo.finalize_scenario(8) is True
+    assert await repo.finalize_scenario(8, expected_revision=2) is True
 
     statements = [call.args[0] for call in conn.execute.await_args_list]
     assert "DELETE FROM store_targets" in statements[0]
@@ -196,10 +313,11 @@ async def test_finalize_does_not_publish_or_delete_when_final_total_changed() ->
         "target_month": "2026-06",
         "total_target": Decimal("100.00"),
         "status": "draft",
+        "revision": 2,
     }
     conn.fetchval.side_effect = [Decimal("99.00"), 0]
 
-    assert await repo.finalize_scenario(8) is False
+    assert await repo.finalize_scenario(8, expected_revision=2) is False
     conn.execute.assert_not_awaited()
 
 
@@ -210,8 +328,9 @@ async def test_finalize_does_not_publish_when_final_targets_are_blank() -> None:
         "target_month": "2026-06",
         "total_target": Decimal("100.00"),
         "status": "draft",
+        "revision": 2,
     }
     conn.fetchval.side_effect = [Decimal("100.00"), 1]
 
-    assert await repo.finalize_scenario(8) is False
+    assert await repo.finalize_scenario(8, expected_revision=2) is False
     conn.execute.assert_not_awaited()

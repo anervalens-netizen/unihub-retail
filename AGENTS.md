@@ -48,7 +48,10 @@ provisioning a new checkout. Never commit `.npmrc`.
 - `total_salary` already includes meal vouchers.
 - Agent target allocation uses store target / store selling days * agent selling days.
 - Grile months use `YYYY-MM`; reset is irreversible, admin-gated, clears only documented editable ranges, and never recreates permanent links.
-- Calculator Target has one draft per target month. Finalization requires all manager values and zero remaining allocation.
+- Calculator Target has one draft per target month. Finalized months cannot be
+  recalculated. Draft recalculation, row saves, and finalization use the
+  scenario revision; stale writes must return 409 instead of overwriting newer
+  work. Finalization requires all manager values and zero remaining allocation.
 - Promo qualifying receipts and incentive quantity are distinct metrics; do not reuse one field for both meanings.
 - Visits are grouped by the visit author's Team Leader snapshot, not the store ASM. Enrich store hierarchy from current `stores`.
 

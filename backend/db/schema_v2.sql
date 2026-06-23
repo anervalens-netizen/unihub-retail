@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS target_scenarios (
     min_floor NUMERIC(12, 2) NOT NULL DEFAULT 0,
     previous_month_floor_pct NUMERIC(7, 4) NOT NULL DEFAULT 0.9,
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'finalized')),
+    revision INTEGER NOT NULL DEFAULT 1,
     calculation_method TEXT NOT NULL DEFAULT 'weighted_floor_forecast_v2',
     source_months JSONB NOT NULL DEFAULT '[]'::jsonb,
     warnings JSONB NOT NULL DEFAULT '[]'::jsonb,

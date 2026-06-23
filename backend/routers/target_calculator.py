@@ -44,6 +44,7 @@ class TargetCalculationRequest(BaseModel):
     min_floor: Decimal = Field(default=Decimal("35000"), ge=0)
     previous_month_floor_pct: Decimal = Field(default=Decimal("0.90"), ge=0, le=2)
     cohort_month: str | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
     @field_validator("target_month", "cohort_month")
     @classmethod
@@ -64,7 +65,14 @@ class TargetFinalRow(BaseModel):
 class TargetFinalRowsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    expected_revision: int = Field(ge=1)
     rows: list[TargetFinalRow] = Field(min_length=1)
+
+
+class TargetFinalizeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=1)
 
 
 async def get_target_calculator_service() -> TargetCalculatorService:
@@ -108,16 +116,18 @@ async def update_final_targets(
     return await svc.save_final_targets(
         scenario_id,
         [row.model_dump() for row in body.rows],
+        body.expected_revision,
     )
 
 
 @router.post("/scenarios/{scenario_id}/finalize")
 async def finalize_scenario(
     scenario_id: int,
+    body: TargetFinalizeRequest,
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
     _claims: AuthClaims = Depends(require_target_owner),
 ):
-    return await svc.finalize(scenario_id)
+    return await svc.finalize(scenario_id, body.expected_revision)
 
 
 @router.get("/scenarios/{scenario_id}/export")

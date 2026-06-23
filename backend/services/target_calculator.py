@@ -12,7 +12,11 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from repositories.target_calculator import TargetCalculatorRepository
+from repositories.target_calculator import (
+    TargetCalculatorRepository,
+    TargetScenarioFinalizedError,
+    TargetScenarioVersionConflict,
+)
 from services.forecast import get_forecast_factor
 
 MONEY = Decimal("0.01")
@@ -278,24 +282,34 @@ class TargetCalculatorService:
 
         calculated_rows, allocation_warnings = allocate_with_floors(calculated_rows, total_target)
         warnings.extend(allocation_warnings)
-        scenario_id = await self.repo.save_draft_scenario(
-            {
-                "target_month": target_month,
-                "cohort_month": cohort_month,
-                "total_target": total_target,
-                "min_floor": min_floor,
-                "previous_month_floor_pct": floor_pct,
-                "calculation_method": CALCULATION_METHOD,
-                "source_months": source_months,
-                "warnings": warnings,
-            },
-            calculated_rows,
-        )
-        if scenario_id is None:
+        try:
+            scenario_id = await self.repo.save_draft_scenario(
+                {
+                    "target_month": target_month,
+                    "cohort_month": cohort_month,
+                    "total_target": total_target,
+                    "min_floor": min_floor,
+                    "previous_month_floor_pct": floor_pct,
+                    "calculation_method": CALCULATION_METHOD,
+                    "source_months": source_months,
+                    "warnings": warnings,
+                },
+                calculated_rows,
+                payload.get("expected_revision"),
+            )
+        except TargetScenarioFinalizedError:
             raise HTTPException(
                 status_code=409,
                 detail="Targetul acestei luni a fost deja finalizat si nu mai poate fi recalculat.",
-            )
+            ) from None
+        except TargetScenarioVersionConflict:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Scenariul a fost modificat de alt utilizator. "
+                    "Reincarca datele inainte de recalculare."
+                ),
+            ) from None
         return await self.get_scenario_detail(scenario_id)
 
     async def list_scenarios(self) -> list[dict[str, Any]]:
@@ -333,10 +347,24 @@ class TargetCalculatorService:
         self,
         scenario_id: int,
         rows: list[dict[str, Any]],
+        expected_revision: int,
     ) -> dict[str, Any]:
         if len({row["site_code"] for row in rows}) != len(rows):
             raise HTTPException(status_code=400, detail="Aceeasi locatie apare de mai multe ori in salvare.")
-        updated = await self.repo.update_final_targets(scenario_id, rows)
+        try:
+            updated = await self.repo.update_final_targets(
+                scenario_id,
+                rows,
+                expected_revision,
+            )
+        except TargetScenarioVersionConflict:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Scenariul a fost modificat de alt utilizator. "
+                    "Reincarca datele inainte de salvare."
+                ),
+            ) from None
         if updated != len(rows):
             scenario = await self.repo.get_scenario(scenario_id)
             if not scenario:
@@ -346,7 +374,7 @@ class TargetCalculatorService:
             raise HTTPException(status_code=400, detail="Una sau mai multe locatii nu apartin scenariului.")
         return await self.get_scenario_detail(scenario_id)
 
-    async def finalize(self, scenario_id: int) -> dict[str, Any]:
+    async def finalize(self, scenario_id: int, expected_revision: int) -> dict[str, Any]:
         scenario = await self.get_scenario_detail(scenario_id)
         if scenario["calculation_method"] != CALCULATION_METHOD:
             raise HTTPException(
@@ -363,7 +391,19 @@ class TargetCalculatorService:
                 status_code=400,
                 detail="Totalul targetelor finale trebuie sa fie egal cu bugetul scenariului inainte de finalizare.",
             )
-        finalized = await self.repo.finalize_scenario(scenario_id)
+        try:
+            finalized = await self.repo.finalize_scenario(
+                scenario_id,
+                expected_revision,
+            )
+        except TargetScenarioVersionConflict:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Scenariul a fost modificat de alt utilizator. "
+                    "Reincarca datele inainte de finalizare."
+                ),
+            ) from None
         if not finalized:
             raise HTTPException(status_code=409, detail="Scenariul nu poate fi finalizat.")
         return await self.get_scenario_detail(scenario_id)

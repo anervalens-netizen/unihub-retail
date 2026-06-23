@@ -9,7 +9,7 @@ STAMP="${GITHUB_RUN_ID:-local}-$(date +%s)-$$"
 CONTAINER="unihub-retail-test-${STAMP}"
 
 cleanup() {
-  docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
+  timeout 30 docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -19,7 +19,7 @@ if [[ ! -x "${PYTHON}" || ! -x "${PYTEST}" ]]; then
 fi
 
 password="$(openssl rand -hex 24)"
-docker run -d --rm \
+docker run -d \
   --name "${CONTAINER}" \
   --label unihub.test=retail \
   -e POSTGRES_USER=unihub_test \
