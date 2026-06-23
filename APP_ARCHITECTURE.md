@@ -109,6 +109,9 @@ grafice. TanStack Query are default `staleTime=60s` si `gcTime=10min`, iar
 polling-ul pentru operatii Grile ramane explicit per-query.
 Aplicatia este invelita la radacina in `ErrorBoundary`; fallback-ul nu expune
 stack trace in UI si trimite erorile catre GlitchTip/Sentry.
+PWA precache exclude logo-urile mari nefolosite in UI (`logo-horizontal`,
+`logo-inverted`, `logo-mark`); sidebar-ul foloseste `favicon-64.png`, iar
+imaginile autentificate din Vizite folosesc lazy loading.
 
 Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Salarii` si
 `Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab` si include

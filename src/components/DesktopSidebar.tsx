@@ -41,10 +41,11 @@ export function DesktopSidebar({
       {/* Header */}
       <div className="flex items-center gap-2.5 h-14 px-4 border-b border-[var(--glass-border)] shrink-0">
         <img
-          src="/logo-mark.png"
+          src="/favicon-64.png"
           alt=""
           className="h-7 w-7 shrink-0 rounded-lg bg-white p-0.5 shadow-sm"
           aria-hidden
+          decoding="async"
         />
         <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
           UniHub Retail

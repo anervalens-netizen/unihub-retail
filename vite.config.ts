@@ -28,9 +28,6 @@ export default defineConfig(() => {
         includeAssets: [
           'favicon-64.png',
           'apple-touch-icon.png',
-          'logo-mark.png',
-          'logo-horizontal.png',
-          'logo-inverted.png',
         ],
         manifest: {
           name: 'UniHub Retail',
@@ -68,6 +65,11 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          globIgnores: [
+            '**/logo-horizontal.png',
+            '**/logo-inverted.png',
+            '**/logo-mark.png',
+          ],
         },
       }),
     ],

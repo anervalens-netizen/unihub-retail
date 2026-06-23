@@ -44,7 +44,7 @@ function AuthImage({ src, alt, className }: { src: string; alt: string; classNam
       <div className={cn('animate-pulse bg-slate-200 dark:bg-slate-700', className)} />
     );
   }
-  return <img src={blobUrl} alt={alt} className={className} />;
+  return <img src={blobUrl} alt={alt} className={className} loading="lazy" decoding="async" />;
 }
 
 interface VisiteSubtabProps {
