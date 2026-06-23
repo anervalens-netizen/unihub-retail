@@ -18,6 +18,7 @@ backend/__pycache__/
 backend/.pytest_cache/
 backend/data/
 backend/outputs/
+backend/critical-coverage.json
 **/__pycache__/
 *.pyc
 

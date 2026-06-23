@@ -22,7 +22,21 @@ jobs:
           echo "Mypy: OK"
 
       - name: Backend tests
-        run: scripts/run_tests_isolated.sh -v --tb=short
+        run: |
+          scripts/run_tests_isolated.sh \
+            -v \
+            --tb=short \
+            --cov=permissions \
+            --cov=services.exports \
+            --cov=services.grile_monthly \
+            --cov=services.importer \
+            --cov=services.imports \
+            --cov=services.reporting_refresh \
+            --cov=services.salarii \
+            --cov=services.target_calculator \
+            --cov-report=term \
+            --cov-report=json:critical-coverage.json
+          venv/bin/python scripts/check_critical_coverage.py critical-coverage.json
 
   frontend-check:
     runs-on: [self-hosted, unihub-server]
