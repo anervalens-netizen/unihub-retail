@@ -113,9 +113,19 @@ grile_store_status(
   - `GET /api/grile/overview?month=YYYY-MM` — ultimul run + arbore ASM→TL→Firmă→Magazin din DB.
   - `POST /api/grile/run?month=YYYY-MM` — enqueue manual, returnează `run_id`.
   - `GET /api/grile/run/{id}` — status + progres (poll).
-  - `POST /api/grile/monthly/run` — enqueue finalize/archive/reset, admin-only.
-  - `GET /api/grile/monthly/job/{id}` — poll job lunar.
-  - `GET /api/grile/monthly/download/{final|archive}/{YYYY-MM}` — descarca artefacte locale.
+- `POST /api/grile/monthly/run` — enqueue finalize/archive/reset, admin-only.
+- `GET /api/grile/monthly/job/{id}` — poll job lunar.
+- `GET /api/grile/monthly/download/{final|archive}/{YYYY-MM}` — descarca artefacte locale.
+- Operatiile lunare nu se pun direct in coada: API-ul creeaza intai o
+  inregistrare in `grile_monthly_operations`, apoi enqueue cu job id
+  determinist `grile-monthly:<operation_id>`. Indexul unic partial permite o
+  singura operatie activa pe luna inchisa, indiferent daca este finalizare,
+  arhiva sau reset.
+- Resetul live scrie checkpoint per magazin in `grile_monthly_reset_items`.
+  Magazinele deja `completed` sunt sarite la retry. Daca un job expira cu
+  itemi `pending` sau `running`, acestia devin `uncertain`, iar reluarea
+  automata se opreste cu 409 pana la verificarea manuala a grilei in Google
+  Sheets.
 - Job arq `grile_check_background(month, snapshot_id, triggered_by)` în `worker.py`: per magazin cu `sheet_id` → citește K5/L5 → compară cu `store_targets` + `Σ reporting_item_month` → upsert `grile_store_status`, update progres pe `grile_runs`.
 - Dupa verificare, `services/grile_agent_targets.py` citeste read-only `Grila!D2/D8/D16/D22` pentru managerii din `GRILE_AGENT_TARGET_ENABLED_MANAGERS` si inlocuieste override-urile `agent_targets` doar pentru sheet-urile citite cu succes. Implicit sunt activati Andrei Stancu, Adrian Badea, Mihai Condorateanu si Elena Minca. Daca targetul lipseste sau agentul nu se mapeaza sigur, randul ramane fara override si UI foloseste fallback-ul `store_targets / agenti activi`.
 - `GRILE_AGENT_TARGET_DISABLED_MANAGERS` are prioritate peste lista activata; implicit Bogdan Radu si Bogdana Costan raman nesincronizati.

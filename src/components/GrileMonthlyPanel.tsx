@@ -86,9 +86,25 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
     setBusy(true);
     try {
       const res = await runGrileMonthly({ op, month, dry_run: dryRun });
+      if (res.status === 'already_completed') {
+        setError('Resetul LIVE pentru luna selectata este deja marcat finalizat. Nu il reluam automat.');
+        return;
+      }
+      if (!res.job_id) {
+        setError(
+          res.status === 'already_running'
+            ? 'Exista deja o operatie lunara Grile in curs pentru luna selectata.'
+            : 'Nu am primit id-ul jobului pentru operatia lunara.',
+        );
+        return;
+      }
       setJob({ jobId: res.job_id, op, dryRun });
-    } catch {
-      setError('Nu am putut porni operatia. Verifica permisiunile / serviciul grile.');
+    } catch (exc: unknown) {
+      const detail =
+        typeof exc === 'object' && exc !== null && 'response' in exc
+          ? (exc as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : null;
+      setError(detail || 'Nu am putut porni operatia. Verifica permisiunile / serviciul grile.');
     } finally {
       setBusy(false);
     }

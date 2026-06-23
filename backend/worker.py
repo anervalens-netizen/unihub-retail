@@ -81,6 +81,7 @@ async def grile_monthly_background(
     only: str | None = None,
     dry_run: bool = True,
     triggered_by_email: str | None = None,
+    operation_id: int | None = None,
 ) -> dict:
     """Inchidere luna grile: ruleaza operatiile native din Retail.
 
@@ -90,7 +91,13 @@ async def grile_monthly_background(
     """
     from services.grile_monthly import run_monthly_op
 
-    result = await run_monthly_op(op=op, month=month, only=only, dry_run=dry_run)
+    result = await run_monthly_op(
+        op=op,
+        month=month,
+        only=only,
+        dry_run=dry_run,
+        operation_id=operation_id,
+    )
     result["triggered_by_email"] = triggered_by_email
     return result
 

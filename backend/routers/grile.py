@@ -11,7 +11,7 @@ from auth import AuthClaims, require_auth
 from db.connection import get_pool
 from repositories.grile import GrileRepository
 from services.grile import _run_to_dict, get_overview, resolve_month
-from services.grile_monthly import fetch_download, next_ym, ro_month_label
+from services.grile_monthly import GrileMonthlyRetryBlockedError, fetch_download, next_ym, ro_month_label
 from services.jobs import enqueue_grile_check, enqueue_grile_monthly, get_job_status
 
 router = APIRouter(prefix="/api/grile", tags=["grile"])
@@ -106,20 +106,27 @@ async def grile_monthly_run(
     body: MonthlyRunRequest,
     claims: AuthClaims = Depends(require_grile_admin),
 ) -> dict[str, Any]:
-    job = await enqueue_grile_monthly(
-        op=body.op,
-        month=body.month,
-        only=body.only,
-        dry_run=body.dry_run,
-        triggered_by_email=claims.email,
-    )
+    try:
+        result = await enqueue_grile_monthly(
+            op=body.op,
+            month=body.month,
+            only=body.only,
+            dry_run=body.dry_run,
+            triggered_by_email=claims.email,
+        )
+    except GrileMonthlyRetryBlockedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     payload: dict[str, Any] = {
-        "status": "enqueued",
-        "job_id": job.job_id,
+        "status": result.status,
+        "job_id": result.job_id,
+        "operation_id": result.operation_id,
         "op": body.op,
         "month": body.month,
         "month_label": ro_month_label(body.month),
     }
+    if result.operation is not None:
+        payload["operation"] = result.operation
     if body.op == "reset":
         payload["next_month_label"] = ro_month_label(next_ym(body.month))
         payload["dry_run"] = body.dry_run

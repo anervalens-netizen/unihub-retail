@@ -59,6 +59,10 @@ provisioning a new checkout. Never commit `.npmrc`.
 - Grile checks have at most one `queued` or `running` run per month. Reserve
   the DB run before enqueue; abandoned reservations expire through the
   documented heartbeat lease.
+- Grile monthly closeout operations reserve a DB operation before enqueue.
+  Only one monthly operation can run for a closing month. Live reset uses a
+  per-store checkpoint and must block automatic retry if a stale checkpoint is
+  `uncertain`.
 - Calculator Target has one draft per target month. Finalized months cannot be
   recalculated. Draft recalculation, row saves, and finalization use the
   scenario revision; stale writes must return 409 instead of overwriting newer

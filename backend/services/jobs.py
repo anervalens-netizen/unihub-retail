@@ -35,6 +35,15 @@ class GrileEnqueueResult:
     run: dict | None = None
 
 
+@dataclass
+class GrileMonthlyEnqueueResult:
+    status: str
+    operation_id: int
+    job: Job | None = None
+    job_id: str | None = None
+    operation: dict | None = None
+
+
 _VALKEY_SETTINGS: Optional[RedisSettings] = None
 
 
@@ -162,14 +171,63 @@ async def enqueue_grile_monthly(
     only: str | None = None,
     dry_run: bool = True,
     triggered_by_email: str | None = None,
-) -> Job:
+) -> GrileMonthlyEnqueueResult:
+    from db.connection import get_pool
+    from services.grile_monthly import (
+        fail_monthly_operation,
+        reserve_monthly_operation,
+    )
+
+    db_pool = await get_pool()
+    reservation = await reserve_monthly_operation(
+        db_pool,
+        op=op,
+        month=month,
+        only=only,
+        dry_run=dry_run,
+        triggered_by_email=triggered_by_email,
+    )
+    if reservation.status != "enqueued":
+        return GrileMonthlyEnqueueResult(
+            status=reservation.status,
+            operation_id=reservation.operation_id,
+            job_id=reservation.job_id,
+            operation=reservation.operation,
+        )
+
     pool = await get_arq_pool()
+    job_id = f"grile-monthly:{reservation.operation_id}"
     job = await pool.enqueue_job(
-        "grile_monthly_background", op, month, only, dry_run, triggered_by_email
+        "grile_monthly_background",
+        op,
+        month,
+        only,
+        dry_run,
+        triggered_by_email,
+        reservation.operation_id,
+        _job_id=job_id,
     )
     if job is None:
+        await fail_monthly_operation(
+            db_pool,
+            reservation.operation_id,
+            error_message="Jobul lunar Grile nu a putut fi adaugat in coada",
+        )
         raise RuntimeError("Failed to enqueue grile monthly job")
-    return job
+
+    from services.grile_monthly import attach_monthly_operation_job
+
+    await attach_monthly_operation_job(
+        db_pool,
+        operation_id=reservation.operation_id,
+        job_id=job.job_id,
+    )
+    return GrileMonthlyEnqueueResult(
+        status="enqueued",
+        operation_id=reservation.operation_id,
+        job=job,
+        job_id=job.job_id,
+    )
 
 
 async def get_job_status(job_id: str) -> JobResult:

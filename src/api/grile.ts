@@ -111,13 +111,15 @@ export interface GrileMonthlyResult {
 }
 
 export interface GrileMonthlyEnqueue {
-  status: 'enqueued';
-  job_id: string;
+  status: 'enqueued' | 'already_running' | 'already_completed';
+  job_id: string | null;
+  operation_id: number;
   op: GrileMonthlyOp;
   month: string;
   month_label: string;
   next_month_label?: string;
   dry_run?: boolean;
+  operation?: Record<string, unknown>;
 }
 
 export interface GrileMonthlyJob {

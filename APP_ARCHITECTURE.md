@@ -64,6 +64,12 @@ flowchart LR
   valori salariale.
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
+- Management -> Grile include verificare read-only si inchidere de luna.
+  Operatiile lunare ruleaza exclusiv in worker, sunt rezervate in DB inainte de
+  enqueue si permit o singura operatie activa pe luna inchisa. Resetul live are
+  checkpoint persistent per magazin; magazinele deja confirmate sunt sarite la
+  retry, iar checkpointurile incerte blocheaza reluarea automata pana la
+  verificare manuala.
 - Import vanzari si refresh reporting agregat.
 - Importul de vanzari este rezervat administratorilor, accepta numai Excel in
   limita configurata (implicit 32 MB) si ruleaza exclusiv in worker. Hash-ul
