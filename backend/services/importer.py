@@ -449,7 +449,10 @@ def load_targets_dataframe(source: str | Path) -> list[dict[str, Any]]:
 
     target_rows: list[dict[str, Any]] = []
     for row in df.to_dict(orient="records"):
-        site_code = str(row.get("SiteCode", "")).strip()
+        raw_site_code = row.get("SiteCode")
+        if pd.isna(raw_site_code):
+            continue
+        site_code = str(raw_site_code).strip()
         if not site_code:
             continue
         for _, column_name, year, month in month_columns:
