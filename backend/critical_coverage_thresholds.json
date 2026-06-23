@@ -6,5 +6,5 @@
   "services/imports.py": 100,
   "services/reporting_refresh.py": 80,
   "services/salarii.py": 98,
-  "services/target_calculator.py": 25
+  "services/target_calculator.py": 100
 }
