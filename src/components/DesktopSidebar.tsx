@@ -13,6 +13,7 @@ interface Props {
   theme: string;
   setTheme: (theme: string) => void;
   errorCount?: number;
+  canAccessManagement?: boolean;
 }
 
 export function DesktopSidebar({
@@ -23,6 +24,7 @@ export function DesktopSidebar({
   theme,
   setTheme,
   errorCount = 0,
+  canAccessManagement = true,
 }: Props) {
   const [mgmtExpanded, setMgmtExpanded] = useState(activeTab === 'management');
 
@@ -51,7 +53,7 @@ export function DesktopSidebar({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {ALL_TABS.map((tab) => {
+        {ALL_TABS.filter((tab) => canAccessManagement || tab.id !== 'management').map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           const isMgmt = tab.id === 'management';

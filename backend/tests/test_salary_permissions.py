@@ -9,7 +9,12 @@ from auth import AuthClaims
 from permissions import (
     can_access_salaries,
     can_administer_imports,
+    can_access_management,
+    can_write_business_data,
+    require_business_write_access,
     require_import_admin,
+    require_management_access,
+    require_report_export_access,
     require_salary_access,
 )
 from routers.salarii import SalaryExportAudit, audit_salary_export
@@ -114,6 +119,45 @@ def test_import_access_rejects_non_admin_groups(group: str) -> None:
     assert exc.value.status_code == 403
 
 
+@pytest.mark.parametrize(
+    "group",
+    ["unihub-manager", "unihub-admin", "authentik Admins", "unihub-hr"],
+)
+def test_management_access_allows_management_groups(group: str) -> None:
+    user_claims = claims([group])
+    assert can_access_management(user_claims) is True
+    assert require_management_access(request(), user_claims) is user_claims
+    assert require_report_export_access(request(), user_claims) is user_claims
+
+
+@pytest.mark.parametrize("group", ["unihub-agent", "unihub-team-lead"])
+def test_management_access_rejects_non_management_groups(group: str) -> None:
+    user_claims = claims([group])
+    assert can_access_management(user_claims) is False
+    with pytest.raises(HTTPException) as exc:
+        require_management_access(request(), user_claims)
+    assert exc.value.status_code == 403
+    with pytest.raises(HTTPException) as exc:
+        require_report_export_access(request(), user_claims)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("group", ["unihub-manager", "unihub-admin", "authentik Admins"])
+def test_business_write_access_allows_managers_and_admins(group: str) -> None:
+    user_claims = claims([group])
+    assert can_write_business_data(user_claims) is True
+    assert require_business_write_access(request(), user_claims) is user_claims
+
+
+@pytest.mark.parametrize("group", ["unihub-hr", "unihub-agent", "unihub-team-lead"])
+def test_business_write_access_rejects_non_business_writers(group: str) -> None:
+    user_claims = claims([group])
+    assert can_write_business_data(user_claims) is False
+    with pytest.raises(HTTPException) as exc:
+        require_business_write_access(request(), user_claims)
+    assert exc.value.status_code == 403
+
+
 def test_every_import_route_uses_the_import_admin_dependency() -> None:
     from main import app
 
@@ -129,6 +173,75 @@ def test_every_import_route_uses_the_import_admin_dependency() -> None:
             for dependency in route.dependant.dependencies
         }
         assert require_import_admin in dependency_calls
+
+
+def test_sensitive_management_routes_use_role_dependencies() -> None:
+    from main import app
+
+    expected = {
+        "/api/exports": require_report_export_access,
+        "/api/hr": require_management_access,
+        "/api/target-calculator": require_management_access,
+    }
+
+    for prefix, dependency in expected.items():
+        routes = [
+            route
+            for route in app.routes
+            if isinstance(route, APIRoute) and route.path.startswith(prefix)
+        ]
+        assert routes, prefix
+        for route in routes:
+            dependency_calls = {
+                route_dependency.call
+                for route_dependency in route.dependant.dependencies
+            }
+            assert dependency in dependency_calls, route.path
+
+
+def test_business_write_routes_use_business_write_dependency() -> None:
+    from main import app
+
+    expected_routes = {
+        ("POST", "/api/stores/targets"),
+        ("POST", "/api/tasks"),
+        ("PATCH", "/api/tasks/{task_id}"),
+        ("DELETE", "/api/tasks/{task_id}"),
+        ("POST", "/api/crm/scores/recalculate"),
+    }
+
+    routes = [
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        and any(method in route.methods for method, path in expected_routes if path == route.path)
+    ]
+    seen = {(next(iter(route.methods & {"POST", "PATCH", "DELETE"})), route.path) for route in routes}
+    assert expected_routes <= seen
+
+    for route in routes:
+        dependency_calls = {
+            route_dependency.call
+            for route_dependency in route.dependant.dependencies
+        }
+        assert require_business_write_access in dependency_calls, route.path
+
+
+def test_target_row_write_uses_target_owner_dependency() -> None:
+    from main import app
+    from routers.target_calculator import require_target_owner
+
+    route = next(
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/target-calculator/scenarios/{scenario_id}/rows"
+    )
+    dependency_calls = {
+        route_dependency.call
+        for route_dependency in route.dependant.dependencies
+    }
+    assert require_target_owner in dependency_calls
 
 
 @pytest.mark.asyncio

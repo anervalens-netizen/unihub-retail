@@ -6,6 +6,7 @@ import { defaultAppFilters } from './lib/filterValues';
 import { MGMT_SUBTABS, type ManagementTab } from './lib/tabs';
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
+import { canAccessManagement } from './auth/permissions';
 
 const Campaigns = lazy(() =>
   import('./components/Campaigns').then((module) => ({ default: module.Campaigns }))
@@ -62,6 +63,7 @@ function loadSavedFilters(key: string): AppFilters {
 
 export default function App() {
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
+  const hasManagementAccess = canAccessManagement(user?.profile, user?.access_token);
 
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);
@@ -95,6 +97,12 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('unihub_active_tab', activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!hasManagementAccess && activeTab === 'management') {
+      setActiveTab('hub');
+    }
+  }, [activeTab, hasManagementAccess]);
 
   useEffect(() => {
     localStorage.setItem('unihub_campaigns_section', campaignsSection);
@@ -247,6 +255,7 @@ export default function App() {
       setMgmtSubTab={setMgmtSubTab}
       userEmail={user?.profile.email ?? undefined}
       onLogout={logout}
+      canAccessManagement={hasManagementAccess}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (

@@ -7,6 +7,17 @@ const SALARY_ACCESS_GROUPS = new Set([
   'unihub-manager',
 ]);
 const ADMIN_ACCESS_GROUPS = new Set(['authentik admins', 'unihub-admin']);
+const MANAGEMENT_ACCESS_GROUPS = new Set([
+  'authentik admins',
+  'unihub-admin',
+  'unihub-hr',
+  'unihub-manager',
+]);
+const BUSINESS_WRITE_GROUPS = new Set([
+  'authentik admins',
+  'unihub-admin',
+  'unihub-manager',
+]);
 
 function stringGroups(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -53,3 +64,23 @@ export function canAdministerImports(
     ADMIN_ACCESS_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
   );
 }
+
+export function canAccessManagement(
+  profile: unknown,
+  accessToken?: string,
+): boolean {
+  return oidcGroups(profile, accessToken).some((group) =>
+    MANAGEMENT_ACCESS_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
+  );
+}
+
+export function canWriteBusinessData(
+  profile: unknown,
+  accessToken?: string,
+): boolean {
+  return oidcGroups(profile, accessToken).some((group) =>
+    BUSINESS_WRITE_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
+  );
+}
+
+export const canExportReports = canAccessManagement;

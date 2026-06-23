@@ -39,6 +39,7 @@ interface MainLayoutProps {
   errorCount?: number;
   userEmail?: string;
   onLogout?: () => void;
+  canAccessManagement?: boolean;
 }
 
 const emptyOptions: FilterOptions = {
@@ -75,6 +76,7 @@ export function MainLayout({
   errorCount = 0,
   userEmail,
   onLogout,
+  canAccessManagement = true,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
 
@@ -152,6 +154,7 @@ export function MainLayout({
         theme={theme}
         setTheme={setTheme}
         errorCount={errorCount}
+        canAccessManagement={canAccessManagement}
       />
 
       <div className="flex flex-col flex-1 min-w-0 min-h-0">
@@ -313,7 +316,7 @@ export function MainLayout({
 
       <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 mx-auto max-w-6xl p-3">
         <div className="glass flex items-center justify-around rounded-2xl p-1.5">
-          {ALL_TABS.map((tab) => {
+          {ALL_TABS.filter((tab) => canAccessManagement || tab.id !== 'management').map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (

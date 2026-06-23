@@ -43,7 +43,12 @@ from db.connection import (
     prewarm_pool,
 )
 from auth import require_auth
-from permissions import require_import_admin, require_salary_access
+from permissions import (
+    require_import_admin,
+    require_management_access,
+    require_report_export_access,
+    require_salary_access,
+)
 from routers import agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
@@ -164,7 +169,7 @@ app.include_router(agents.router, dependencies=_auth)
 app.include_router(campaigns.router, dependencies=_auth)
 app.include_router(contests.router, dependencies=_auth)
 app.include_router(dashboard.router, dependencies=_auth)
-app.include_router(exports.router, dependencies=_auth)
+app.include_router(exports.router, dependencies=[Depends(require_report_export_access)])
 app.include_router(filters.router, dependencies=_auth)
 app.include_router(imports.router, dependencies=[Depends(require_import_admin)])
 app.include_router(stores.router, dependencies=_auth)
@@ -174,9 +179,9 @@ app.include_router(
 )
 app.include_router(visits_report.router, dependencies=_auth)
 app.include_router(tasks.router, dependencies=_auth)
-app.include_router(hr.router, dependencies=_auth)
+app.include_router(hr.router, dependencies=[Depends(require_management_access)])
 app.include_router(crm.router, dependencies=_auth)
-app.include_router(target_calculator.router, dependencies=_auth)
+app.include_router(target_calculator.router, dependencies=[Depends(require_management_access)])
 app.include_router(grile.router, dependencies=_auth)
 
 

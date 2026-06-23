@@ -7,6 +7,7 @@ from models import StoreOption, StoreTargetInput
 from repositories.stores import StoresRepository
 from routers.filters import clear_filter_options_cache
 from services.stores import StoresService
+from permissions import require_business_write_access
 
 router = APIRouter(prefix="/api/stores", tags=["stores"])
 
@@ -28,6 +29,7 @@ async def list_stores(
 async def save_targets(
     payload: list[StoreTargetInput],
     svc: StoresService = Depends(get_stores_service),
+    _claims=Depends(require_business_write_access),
 ) -> dict[str, int]:
     inserted = await svc.save_targets([item.model_dump() for item in payload])
     clear_filter_options_cache()

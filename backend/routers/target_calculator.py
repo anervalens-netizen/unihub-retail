@@ -112,6 +112,7 @@ async def update_final_targets(
     scenario_id: int,
     body: TargetFinalRowsRequest,
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
+    _claims: AuthClaims = Depends(require_target_owner),
 ):
     return await svc.save_final_targets(
         scenario_id,

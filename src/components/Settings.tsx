@@ -11,7 +11,7 @@ import type { FilterOptions, ImportHistoryEntry } from '../api/types';
 import { cn } from '../lib/utils';
 import { getCachedView, setCachedView } from '../lib/viewCache';
 import { useAuth } from '../auth/AuthContext';
-import { canAdministerImports } from '../auth/permissions';
+import { canAdministerImports, canExportReports } from '../auth/permissions';
 
 interface SettingsProps {
   theme: string;
@@ -43,6 +43,7 @@ const DEFAULT_EXPORT_METRICS = [
 const DEFAULT_DAILY_COMPARISON_METRICS = ['total_sales'];
 const DEFAULT_COMPARISON_LEVELS = ['general', 'asms', 'stores', 'agents'];
 type ExportMode = 'table' | 'daily_comparison';
+type SettingsSection = 'imports' | 'exports' | 'preferences';
 
 export function Settings({
   theme,
@@ -51,13 +52,14 @@ export function Settings({
 }: SettingsProps) {
   const { user } = useAuth();
   const canImportSales = canAdministerImports(user?.profile, user?.access_token);
+  const canUseExports = canExportReports(user?.profile, user?.access_token);
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
-  const [section, setSection] = useState<'imports' | 'exports'>(
-    canImportSales ? 'imports' : 'exports',
+  const [section, setSection] = useState<SettingsSection>(
+    canImportSales ? 'imports' : canUseExports ? 'exports' : 'preferences',
   );
   const [catalog, setCatalog] = useState<ExportCatalog | null>(null);
   const [months, setMonths] = useState<string[]>([]);
@@ -78,9 +80,12 @@ export function Settings({
 
   useEffect(() => {
     if (!canImportSales && section === 'imports') {
-      setSection('exports');
+      setSection(canUseExports ? 'exports' : 'preferences');
     }
-  }, [canImportSales, section]);
+    if (!canUseExports && section === 'exports') {
+      setSection(canImportSales ? 'imports' : 'preferences');
+    }
+  }, [canImportSales, canUseExports, section]);
 
   useEffect(() => {
     if (!canImportSales) return;
@@ -105,7 +110,7 @@ export function Settings({
   }, [canImportSales]);
 
   useEffect(() => {
-    if (section !== 'exports') return;
+    if (section !== 'exports' || !canUseExports) return;
     let cancelled = false;
     Promise.all([getExportCatalog(), getAvailableMonths()])
       .then(async ([catalogData, monthData]) => {
@@ -127,7 +132,7 @@ export function Settings({
     return () => {
       cancelled = true;
     };
-  }, [section, exportDataset]);
+  }, [section, canUseExports, exportDataset]);
 
   const selectedDataset = useMemo(
     () => catalog?.datasets.find((item) => item.key === exportDataset) ?? null,
@@ -294,12 +299,13 @@ export function Settings({
       <div className="glass flex gap-1 rounded-2xl p-1">
         {[
           ...(canImportSales ? [{ key: 'imports', label: 'Importuri' }] : []),
-          { key: 'exports', label: 'Exporturi' },
+          ...(canUseExports ? [{ key: 'exports', label: 'Exporturi' }] : []),
+          { key: 'preferences', label: 'General' },
         ].map((item) => (
           <button
             key={item.key}
             type="button"
-            onClick={() => setSection(item.key as 'imports' | 'exports')}
+            onClick={() => setSection(item.key as SettingsSection)}
             className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
               section === item.key
                 ? 'bg-indigo-600 text-white shadow-sm'
@@ -311,7 +317,17 @@ export function Settings({
         ))}
       </div>
 
-      {section === 'imports' ? (
+      {section === 'preferences' ? (
+        <div className="glass rounded-3xl p-4">
+          <h3 className="mb-3 text-sm font-bold">Temă</h3>
+          <ThemeSwitcher theme={theme} setTheme={setTheme} />
+          {!canImportSales && !canUseExports && (
+            <p className="mt-3 text-xs text-slate-500">
+              Importurile si exporturile server-side sunt disponibile doar rolurilor manageriale.
+            </p>
+          )}
+        </div>
+      ) : section === 'imports' ? (
         <>
           <div className="glass rounded-3xl p-4 lg:hidden">
             <h3 className="mb-3 text-sm font-bold">Temă</h3>

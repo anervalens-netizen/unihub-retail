@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   canAccessSalaries,
   canAdministerImports,
+  canAccessManagement,
+  canExportReports,
+  canWriteBusinessData,
   oidcGroups,
 } from './permissions';
 
@@ -55,5 +58,27 @@ describe('import permissions', () => {
     'unihub-team-lead',
   ])('rejects %s', (group) => {
     expect(canAdministerImports({ groups: [group] })).toBe(false);
+  });
+});
+
+describe('management and export permissions', () => {
+  it.each(['unihub-manager', 'unihub-admin', 'authentik Admins', 'unihub-hr'])('allows %s', (group) => {
+    expect(canAccessManagement({ groups: [group] })).toBe(true);
+    expect(canExportReports({ groups: [group] })).toBe(true);
+  });
+
+  it.each(['unihub-agent', 'unihub-team-lead'])('rejects %s', (group) => {
+    expect(canAccessManagement({ groups: [group] })).toBe(false);
+    expect(canExportReports({ groups: [group] })).toBe(false);
+  });
+});
+
+describe('business write permissions', () => {
+  it.each(['unihub-manager', 'unihub-admin', 'authentik Admins'])('allows %s', (group) => {
+    expect(canWriteBusinessData({ groups: [group] })).toBe(true);
+  });
+
+  it.each(['unihub-hr', 'unihub-agent', 'unihub-team-lead'])('rejects %s', (group) => {
+    expect(canWriteBusinessData({ groups: [group] })).toBe(false);
   });
 });

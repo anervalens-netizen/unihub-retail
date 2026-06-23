@@ -43,6 +43,13 @@ provisioning a new checkout. Never commit `.npmrc`.
   bounded by `MAX_SALES_UPLOAD_BYTES`; one `processing` snapshot per month is
   the DB lease, and stale leases become failed audit entries.
 - Auth is Authentik OIDC. Do not add local login or remove `offline_access`.
+- Dashboard, Focus, Agenti, Vizite, Grile overview and filters require
+  authentication. Management-only modules and server-side exports require
+  `unihub-manager`, `unihub-hr`, `unihub-admin` or `authentik Admins`.
+- Business writes (tasks, CRM recalculation, store target writes) require
+  `unihub-manager`, `unihub-admin` or `authentik Admins`. Official imports
+  remain admin-only, and Target Calculator calculate/edit/finalize remains
+  owner-gated by the configured allowlist.
 - Salary endpoints are backend-gated. Access is limited to `unihub-manager`,
   `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`
   group. Agents and Team Leaders must receive 403.

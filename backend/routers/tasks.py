@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from db.connection import get_pool
+from permissions import require_business_write_access
 from repositories.tasks import TasksRepository
 from services.tasks import TasksService
 
@@ -52,15 +53,17 @@ async def get_tasks(
 async def post_task(
     body: TaskCreate,
     svc: TasksService = Depends(get_tasks_service),
+    _claims=Depends(require_business_write_access),
 ):
     return await svc.create_task(body.model_dump())
 
 
 @router.patch("/{task_id}")
 async def patch_task(
-    task_id: int, 
+    task_id: int,
     body: TaskUpdate,
     svc: TasksService = Depends(get_tasks_service),
+    _claims=Depends(require_business_write_access),
 ):
     return await svc.update_task(task_id, body.model_dump(exclude_none=True))
 
@@ -69,6 +72,7 @@ async def patch_task(
 async def remove_task(
     task_id: int,
     svc: TasksService = Depends(get_tasks_service),
+    _claims=Depends(require_business_write_access),
 ):
     await svc.delete_task(task_id)
     return {"ok": True}

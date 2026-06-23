@@ -62,6 +62,13 @@ flowchart LR
   primesc 403. Frontend-ul ascunde tabul, dar backend-ul ramane autoritativ.
   Accesul permis/refuzat si exporturile din tab sunt logate fara CNP sau
   valori salariale.
+- RBAC-ul Retail este centralizat in `backend/permissions.py`. Rapoartele
+  generale raman disponibile utilizatorilor autentificati, dar Management,
+  HR, Calculator Target si exporturile server-side cer rol managerial
+  (`unihub-manager`, `unihub-hr`, `unihub-admin` sau `authentik Admins`).
+  Scrierile business cer `unihub-manager` sau admin. Importurile vanzari
+  raman admin-only, iar calcularea/editarea/finalizarea in Calculator Target
+  ramane limitata la allowlist-ul operational.
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
 - Raportare vizite citita din SQLite shared.
 - Management -> Grile include verificare read-only si inchidere de luna.
