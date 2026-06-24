@@ -409,9 +409,11 @@ Implementarea este in:
 - `backend/services/importer.py`
 - `backend/services/reporting_refresh.py`
 
-## Integrare Platforma-Mobiup
+## View-uri de compatibilitate pentru FieldOps
 
-Platforma-Mobiup (aplicatia veche) citeste datele de vanzari direct din PostgreSQL UniHub via VIEW-uri de compatibilitate. Importul zilnic se face **o singura data**, in UniHub.
+Aplicatia Platforma-Mobiup a fost dezafectata. View-urile cu prefix
+`v_platforma_*` raman active deoarece FieldOps le foloseste ca interfata de
+raportare peste baza Retail. Importul se face o singura data, in Retail.
 
 VIEW-uri disponibile in `schema_v2.sql`:
 - `v_platforma_dashboard` — agregat lunar per agent
@@ -419,21 +421,23 @@ VIEW-uri disponibile in `schema_v2.sql`:
 - `v_platforma_raw_sales` — tranzactii brute cu campuri aliasate pentru compatibilitate
 - `v_platforma_store_targets` — targete magazine cu detalii firma/asm/regional
 
-**Vizite**: UniHub este sursa de adevar pentru vizite. Ambele aplicatii citesc din acelasi SQLite:
-`/opt/Mobiup/unihub/data/visits/visits.db` (configurat via `VISITS_DB_PATH` in `.env`).
+**Vizite**: Retail este sursa de adevar pentru fisierul SQLite partajat:
+`/opt/Mobiup/unihub-retail/data/visits/visits.db`, configurat prin
+`VISITS_DB_PATH`.
 
 ## Backup
 
-Backup-urile automate sunt configurate in crontab zilnic la ora 02:00:
+Backup-urile automate ruleaza prin `mobiup-backup.timer`, zilnic in jurul
+orei 03:00:
 - Script: `/opt/Mobiup/ops/scripts/backup.sh`
-- Destinatie: `/opt/Mobiup/ops/backups/`
-  - `postgres/` — dump PostgreSQL (`pg_dump -Fc`)
-  - `visits/` — copie SQLite visits
+- Destinatie primara: `/storage/backups/db/`
+- Copie locala SSD: `/opt/Mobiup/ops/backups/`
+- Copie NAS: `/storage/backups/server-68/` pe NAS, prin rsync
 - Retentie: 30 zile
 
 Restore PostgreSQL:
 ```bash
-pg_restore -d unihub /opt/Mobiup/ops/backups/postgres/<fisier.dump>
+pg_restore -d unihub /storage/backups/db/postgres/<fisier.dump>
 ```
 
 ## Gestionarea schemei DB
@@ -520,3 +524,4 @@ conectare a testelor la baza Retail de productie.
 - arhitectura: [APP_ARCHITECTURE.md](./APP_ARCHITECTURE.md)
 - reguli Codex: [AGENTS.md](./AGENTS.md)
 - handover campanii iunie 2026: [docs/HANDOVER-campanii-iunie-2026.md](./docs/HANDOVER-campanii-iunie-2026.md)
+- arhiva de planuri si rapoarte inchise: [docs/archive/README.md](./docs/archive/README.md)

@@ -10,7 +10,8 @@
 
 1. Deschide `retail.unihub.ro` → tab **Focus**. Acum are 4 sub-secțiuni: **Incentive · Promo · Concurs · Focus** (înainte erau „Campanii" + „Focus").
 2. ⚠️ **Luna 2026-06 NU apare încă în selector** — by design (vezi „Findings Codex" #1). Lista de luni = doar importuri finalizate; iunie n-are date. Pune **2026-05** ca să vezi structura/comportamentul cu date reale; iunie apare automat la primul import de vânzări iunie.
-3. Codul este pregătit pentru commit/push pe `main`; push-ul declanșează runner-ul CI și redeploy-ul automat.
+3. Codul este versionat și live; pentru starea tehnică actuală se verifică
+   `AGENTS.md`, `APP_ARCHITECTURE.md`, configurațiile runtime și health-ul.
 4. Cifrele reale (promo, excludere incentive, clasament concurs) apar **după primul import de vânzări iunie**.
 
 ## Findings Codex (review pre-commit) — status
