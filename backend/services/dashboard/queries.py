@@ -1,6 +1,7 @@
 """Heavy lifting for dashboard: stats + mix + period comparison + promo/incentive summary."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -37,6 +38,31 @@ from services.promo_copurchase import (
     merge_promo_results,
     promo_actuals_cutoff_date,
 )
+
+
+@dataclass
+class DashboardCampaignContext:
+    """Request-local promo/incentive inputs shared by dashboard projections."""
+
+    config_error: str | None
+    promotion_definitions: list[dict[str, Any]]
+    promotion_definition: dict[str, Any] | None
+    promotion_error: str | None
+    incentive_campaign: dict[str, Any] | None
+    promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]]
+    promo_excluded_units: dict[tuple[str, str, str], int]
+
+    @property
+    def selected_promotion_result(self) -> PromoCoPurchaseResult | None:
+        selected_key = (
+            self.promotion_definition.get("key")
+            if self.promotion_definition is not None
+            else None
+        )
+        for definition, result in self.promotion_results:
+            if definition.get("key") == selected_key:
+                return result
+        return None
 
 
 def _scope_join(current_scope: bool, source_alias: str = "agg") -> str:
@@ -168,6 +194,56 @@ async def _compute_dashboard_promotion_result(
         asm=asm,
         site_code=site_code,
         agent=agent,
+    )
+
+
+async def _load_dashboard_campaign_context(
+    conn: Any,
+    month: str,
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> DashboardCampaignContext:
+    """Load and calculate campaign data once for all dashboard projections."""
+    config, config_error = load_special_cards_config()
+    promotion_definitions, promotion_list_error = parse_promotion_definitions(
+        config, month
+    )
+    promotion_definition, promotion_error = parse_promotion_definition(config, month)
+    if promotion_error is None:
+        promotion_error = promotion_list_error
+    incentive_campaign = await get_incentive_campaign(conn, month)
+
+    promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]] = []
+    promo_excluded_units: dict[tuple[str, str, str], int] = {}
+    if promotion_definitions and promotion_error is None:
+        for definition in promotion_definitions:
+            promo_result = await _compute_dashboard_promotion_result(
+                conn,
+                month=month,
+                definition=definition,
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
+            )
+            if promo_result is None:
+                continue
+            promotion_results.append((definition, promo_result))
+            for key, units in promo_result.excluded_units.items():
+                promo_excluded_units[key] = promo_excluded_units.get(key, 0) + units
+
+    return DashboardCampaignContext(
+        config_error=config_error,
+        promotion_definitions=promotion_definitions,
+        promotion_definition=promotion_definition,
+        promotion_error=promotion_error,
+        incentive_campaign=incentive_campaign,
+        promotion_results=promotion_results,
+        promo_excluded_units=promo_excluded_units,
     )
 
 
@@ -1425,13 +1501,21 @@ async def _fetch_promo_incentive_summary(
     agent: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
+    campaign_context: DashboardCampaignContext | None = None,
 ) -> PromoIncentiveSummary:
-    config, _ = load_special_cards_config()
-    promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
-    promotion_definition, promotion_error = parse_promotion_definition(config, month)
-    if promotion_error is None:
-        promotion_error = promotion_list_error
-    incentive_campaign = await get_incentive_campaign(conn, month)
+    if campaign_context is None:
+        campaign_context = await _load_dashboard_campaign_context(
+            conn,
+            month,
+            firma,
+            regional,
+            asm,
+            site_code,
+            agent,
+        )
+    promotion_definition = campaign_context.promotion_definition
+    promotion_error = campaign_context.promotion_error
+    incentive_campaign = campaign_context.incentive_campaign
 
     promo_qty = 0
     promo_sales: Decimal = Decimal("0")
@@ -1439,27 +1523,10 @@ async def _fetch_promo_incentive_summary(
     incentive_value: Decimal = Decimal("0")
     incentive_qualified_stores = 0
     incentive_qualified_agents = 0
-    promo_excluded_units: dict[tuple[str, str, str], int] = {}
-
-    if promotion_definitions and promotion_error is None:
-        selected_key = promotion_definition.get("key") if promotion_definition else None
-        for definition in promotion_definitions:
-            promo_result = await _compute_dashboard_promotion_result(
-                conn,
-                month=month,
-                definition=definition,
-                firma=firma,
-                regional=regional,
-                asm=asm,
-                site_code=site_code,
-                agent=agent,
-            )
-            if promo_result is None:
-                continue
-            for key, units in promo_result.excluded_units.items():
-                promo_excluded_units[key] = promo_excluded_units.get(key, 0) + units
-            if definition.get("key") == selected_key:
-                promo_qty = promo_result.discounted_units
+    promo_excluded_units = campaign_context.promo_excluded_units
+    selected_promotion_result = campaign_context.selected_promotion_result
+    if selected_promotion_result is not None:
+        promo_qty = selected_promotion_result.discounted_units
 
     promo_qty_from_corrected_source = promo_qty > 0 or bool(promo_excluded_units)
     if promotion_definition is not None and promotion_error is None:

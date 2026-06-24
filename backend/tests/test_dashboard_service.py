@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from models import DashboardSummary, DailySalesPoint, PremiumGlassAnalysis, PremiumGlassSummary
+from services.dashboard.queries import DashboardCampaignContext
 from services.dashboard_service import DashboardService
 
 
@@ -44,6 +45,18 @@ def _make_summary_row(**overrides) -> FakeRow:
 
 def _empty_premium_glass(month: str = "2026-05") -> PremiumGlassAnalysis:
     return PremiumGlassAnalysis(summary=PremiumGlassSummary(month=month))
+
+
+def _empty_campaign_context() -> DashboardCampaignContext:
+    return DashboardCampaignContext(
+        config_error=None,
+        promotion_definitions=[],
+        promotion_definition=None,
+        promotion_error=None,
+        incentive_campaign=None,
+        promotion_results=[],
+        promo_excluded_units={},
+    )
 
 
 @pytest.fixture
@@ -280,7 +293,15 @@ class TestGetDashboardAll:
         mock_promo.return_value = PromoIncentiveSummary()
         mock_repo.fetch_summary.return_value = None
 
-        result = await service.get_dashboard_all("2026-05", None, None, None, None, None)
+        campaign_context = _empty_campaign_context()
+        with patch(
+            "services.dashboard_service._load_dashboard_campaign_context",
+            new_callable=AsyncMock,
+            return_value=campaign_context,
+        ) as mock_load_context:
+            result = await service.get_dashboard_all(
+                "2026-05", None, None, None, None, None
+            )
         assert result.summary.total_sales == Decimal(0)
         assert result.agents == []
         assert result.stores == []
@@ -289,6 +310,9 @@ class TestGetDashboardAll:
         assert result.premium_glass is not None
         assert result.regionals == []
         assert result.asms == []
+        mock_load_context.assert_awaited_once()
+        assert mock_promo.await_args.kwargs["campaign_context"] is campaign_context
+        assert mock_specials.await_args.kwargs["campaign_context"] is campaign_context
 
     @pytest.mark.asyncio
     @patch("services.dashboard_service._get_special_cards_data", new_callable=AsyncMock, return_value=[])

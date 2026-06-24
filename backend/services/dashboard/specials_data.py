@@ -1,40 +1,21 @@
 """Special cards data assembly (promotion + incentive) for /api/dashboard/special-cards."""
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 from db.connection import get_pool
 from models import DashboardSpecialCard
-from services.dashboard.queries import _get_store_incentive_multipliers
+from services.dashboard.queries import (
+    DashboardCampaignContext,
+    _get_store_incentive_multipliers,
+    _load_dashboard_campaign_context,
+)
 from services.dashboard.utils import _build_scoped_params
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
-    load_promotion_rule_products,
-    load_special_cards_config,
-    parse_promotion_definitions,
-    parse_promotion_definition,
 )
 from services.filters import scoped_clauses
-from services.incentive_db import get_incentive_campaign
-from services.promo_copurchase import (
-    PromoCoPurchaseResult,
-    compute_promo_actuals_from_report,
-    compute_promo_copurchase,
-    compute_promo_same_model_pair,
-    compute_promo_trigger_discounted,
-    merge_promo_results,
-    promo_actuals_cutoff_date,
-)
-
-
-def _merge_excluded_units(
-    target: dict[tuple[str, str, str], int],
-    source: dict[tuple[str, str, str], int],
-) -> None:
-    for key, units in source.items():
-        target[key] = target.get(key, 0) + units
 
 
 def _excluded_by_site_item(
@@ -46,105 +27,6 @@ def _excluded_by_site_item(
     return out
 
 
-async def _compute_promotion_result(
-    conn: Any,
-    *,
-    month: str,
-    definition: dict[str, Any],
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
-) -> PromoCoPurchaseResult | None:
-    products, error = load_promotion_rule_products(definition)
-    if error is not None or products is None:
-        return None
-    rule_type = definition.get("rule_type") or "selected_item_copurchase"
-    if rule_type == "same_model_screen_camera":
-        promotion_item_codes = list(products["discounted_codes"])
-    elif rule_type == "trigger_discounted":
-        promotion_item_codes = list(products["discounted_codes"])
-    else:
-        promotion_item_codes = list(products["item_codes"])
-
-    actual_result = await compute_promo_actuals_from_report(
-        conn,
-        month=month,
-        definition=definition,
-        item_codes=promotion_item_codes,
-        firma=firma,
-        regional=regional,
-        asm=asm,
-        site_code=site_code,
-        agent=agent,
-    )
-    if actual_result is not None:
-        cutoff_date = promo_actuals_cutoff_date(definition)
-        if cutoff_date is None:
-            return actual_result
-        tail_start = max(definition["start_date"], cutoff_date + timedelta(days=1))
-        if tail_start > definition["end_date"]:
-            return actual_result
-        tail_result = await _compute_promotion_result(
-            conn,
-            month=month,
-            definition={
-                **definition,
-                "start_date": tail_start,
-                "actuals_source_file": None,
-                "actuals_file": None,
-            },
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-        )
-        return merge_promo_results(actual_result, tail_result)
-
-    if rule_type == "same_model_screen_camera":
-        return await compute_promo_same_model_pair(
-            conn,
-            month=month,
-            start_date=definition["start_date"],
-            end_date=definition["end_date"],
-            screen_code_models=products["trigger_code_models"],
-            camera_code_models=products["discounted_code_models"],
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-        )
-    if rule_type == "trigger_discounted":
-        return await compute_promo_trigger_discounted(
-            conn,
-            month=month,
-            start_date=definition["start_date"],
-            end_date=definition["end_date"],
-            trigger_codes=products["trigger_codes"],
-            discounted_codes=products["discounted_codes"],
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-        )
-    return await compute_promo_copurchase(
-        conn,
-        month=month,
-        start_date=definition["start_date"],
-        end_date=definition["end_date"],
-        item_codes=promotion_item_codes,
-        firma=firma,
-        regional=regional,
-        asm=asm,
-        site_code=site_code,
-        agent=agent,
-    )
-
-
 async def _get_special_cards_data(
     month: str,
     firma: str | None,
@@ -152,47 +34,40 @@ async def _get_special_cards_data(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    *,
+    campaign_context: DashboardCampaignContext | None = None,
 ) -> list[DashboardSpecialCard]:
     """Internal helper to build special cards data without HTTP dependencies."""
-    config, config_error = load_special_cards_config()
-    promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
-    promotion_definition, promotion_error = parse_promotion_definition(config, month)
-    if promotion_error is None:
-        promotion_error = promotion_list_error
+    pool = await get_pool()
+    if campaign_context is None:
+        async with pool.acquire() as conn:
+            campaign_context = await _load_dashboard_campaign_context(
+                conn,
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+            )
+    config_error = campaign_context.config_error
+    promotion_definition = campaign_context.promotion_definition
+    promotion_error = campaign_context.promotion_error
+    incentive_campaign = campaign_context.incentive_campaign
     promotion_stats: dict[str, Any] | None = None
     incentive_stats: dict[str, Any] | None = None
 
-    pool = await get_pool()
-    async with pool.acquire() as _conn_ic:
-        incentive_campaign = await get_incentive_campaign(_conn_ic, month)
-
-    promo_excluded_units: dict[tuple[str, str, str], int] = {}
-    if promotion_definitions and promotion_error is None:
-        async with pool.acquire() as conn:
-            selected_key = promotion_definition.get("key") if promotion_definition else None
-            for definition in promotion_definitions:
-                promo_result = await _compute_promotion_result(
-                    conn,
-                    month=month,
-                    definition=definition,
-                    firma=firma,
-                    regional=regional,
-                    asm=asm,
-                    site_code=site_code,
-                    agent=agent,
-                )
-                if promo_result is None:
-                    continue
-                if definition.get("key") == selected_key:
-                    promotion_stats = {
-                        "qualifying_bons": promo_result.qualifying_bons,
-                        "discounted_units": promo_result.discounted_units,
-                        "active_stores": promo_result.active_stores,
-                        "active_agents": promo_result.active_agents,
-                    }
-                # Unitatile reduse (1 per bon calificat) sunt excluse din incentive.
-                _merge_excluded_units(promo_excluded_units, promo_result.excluded_units)
-    promo_excluded = _excluded_by_site_item(promo_excluded_units)
+    selected_promotion_result = campaign_context.selected_promotion_result
+    if selected_promotion_result is not None:
+        promotion_stats = {
+            "qualifying_bons": selected_promotion_result.qualifying_bons,
+            "discounted_units": selected_promotion_result.discounted_units,
+            "active_stores": selected_promotion_result.active_stores,
+            "active_agents": selected_promotion_result.active_agents,
+        }
+    promo_excluded = _excluded_by_site_item(
+        campaign_context.promo_excluded_units
+    )
 
     if incentive_campaign is not None:
         reward_map = incentive_campaign["reward_map"]
@@ -219,31 +94,54 @@ async def _get_special_cards_data(
             )
             clauses.extend(query_clauses)
             async with pool.acquire() as conn:
-                item_rows = await conn.fetch(
+                rows = await conn.fetch(
                     f"""
-                    SELECT
-                        agg.site_code,
-                        agg.item_code,
-                        COALESCE(SUM(agg.net_quantity), 0)::INT AS net_quantity,
-                        COALESCE(SUM(agg.positive_quantity), 0)::INT AS positive_quantity,
-                        COALESCE(SUM(agg.return_quantity), 0)::INT AS return_quantity
-                    FROM reporting_item_month agg
-                    WHERE {" AND ".join(clauses)}
-                    GROUP BY agg.site_code, agg.item_code
+                    WITH filtered AS MATERIALIZED (
+                        SELECT
+                            agg.site_code,
+                            agg.agent,
+                            agg.item_code,
+                            agg.net_quantity,
+                            agg.positive_quantity,
+                            agg.return_quantity
+                        FROM reporting_item_month agg
+                        WHERE {" AND ".join(clauses)}
+                    ),
+                    item_totals AS (
+                        SELECT
+                            false AS is_meta,
+                            site_code,
+                            item_code,
+                            COALESCE(SUM(net_quantity), 0)::INT AS net_quantity,
+                            COALESCE(SUM(positive_quantity), 0)::INT AS positive_quantity,
+                            COALESCE(SUM(return_quantity), 0)::INT AS return_quantity,
+                            0::BIGINT AS active_stores,
+                            0::BIGINT AS active_agents,
+                            0::BIGINT AS active_codes
+                        FROM filtered
+                        GROUP BY site_code, item_code
+                    ),
+                    meta AS (
+                        SELECT
+                            true AS is_meta,
+                            NULL::TEXT AS site_code,
+                            NULL::TEXT AS item_code,
+                            0::INT AS net_quantity,
+                            0::INT AS positive_quantity,
+                            0::INT AS return_quantity,
+                            COUNT(DISTINCT site_code) FILTER (WHERE positive_quantity > 0) AS active_stores,
+                            COUNT(DISTINCT agent) FILTER (WHERE positive_quantity > 0) AS active_agents,
+                            COUNT(DISTINCT item_code) FILTER (WHERE positive_quantity > 0) AS active_codes
+                        FROM filtered
+                    )
+                    SELECT * FROM item_totals
+                    UNION ALL
+                    SELECT * FROM meta
                     """,
                     *params,
                 )
-                meta_row = await conn.fetchrow(
-                    f"""
-                    SELECT
-                        COUNT(DISTINCT agg.site_code) FILTER (WHERE agg.positive_quantity > 0) AS active_stores,
-                        COUNT(DISTINCT agg.agent) FILTER (WHERE agg.positive_quantity > 0) AS active_agents,
-                        COUNT(DISTINCT agg.item_code) FILTER (WHERE agg.positive_quantity > 0) AS active_codes
-                    FROM reporting_item_month agg
-                    WHERE {" AND ".join(clauses)}
-                    """,
-                    *params,
-                )
+                item_rows = [row for row in rows if not row["is_meta"]]
+                meta_row = next((row for row in rows if row["is_meta"]), None)
                 store_multipliers, _ = await _get_store_incentive_multipliers(
                     conn, month, firma, regional, asm, site_code
                 )

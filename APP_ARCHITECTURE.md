@@ -142,6 +142,13 @@ Tabelele curente RM si Magazine returneaza atat procentul realizat
 (`forecast_target_pct`) calculata pe baza `import_snapshots.is_month_final` si
 ultimei zile importate.
 
+`/api/dashboard/all` calculeaza contextul promo/incentive o singura data per
+request si il reutilizeaza pentru sumar si cardurile speciale. Reutilizarea
+este strict request-local, fara cache global care ar necesita invalidare dupa
+import. Latenta celor 15 componente fixe este expusa in Prometheus prin
+`dashboard_component_duration_seconds`; etichetele nu includ filtre sau date
+business.
+
 Istoricul Hub ruleaza pe structura curenta de magazine. Cand un manager activ
 este selectat, istoricul centralizeaza vanzarile istorice ale magazinelor
 active alocate acum acelui manager, chiar daca in lunile vechi magazinele erau

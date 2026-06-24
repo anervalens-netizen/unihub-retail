@@ -40,8 +40,10 @@ from services.dashboard.queries import (
     _fetch_receipt_bucket_mix,
     _fetch_regional_stats,
     _fetch_store_stats_rows,
+    _load_dashboard_campaign_context,
 )
 from services.dashboard.specials_data import _get_special_cards_data
+from services.dashboard.metrics import observe_dashboard_component
 from services.dashboard.utils import _build_scoped_params, _expand_current_manager_scope
 from services.filters import normalize_filter, scoped_clauses
 from services.premium_glass import build_premium_glass_card, get_premium_glass_analysis
@@ -374,6 +376,25 @@ class DashboardService:
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> DashboardAllResponse:
+        async def load_campaign_context():
+            async with self.pool.acquire() as conn:
+                return await _load_dashboard_campaign_context(
+                    conn,
+                    month,
+                    firma,
+                    regional,
+                    asm,
+                    site_code,
+                    agent,
+                )
+
+        campaign_context_task = asyncio.create_task(
+            observe_dashboard_component(
+                "campaign_context",
+                load_campaign_context(),
+            )
+        )
+
         async def get_agents_data() -> list[AgentStats]:
             async with self.pool.acquire() as conn:
                 rows = await _fetch_agent_stats_rows(
@@ -506,6 +527,7 @@ class DashboardService:
                 )
 
         async def get_promo_incentive_data() -> PromoIncentiveSummary:
+            campaign_context = await campaign_context_task
             async with self.pool.acquire() as conn:
                 return await _fetch_promo_incentive_summary(
                     conn,
@@ -517,7 +539,20 @@ class DashboardService:
                     agent=agent,
                     current_scope=current_scope,
                     include_closed_stores=include_closed_stores,
+                    campaign_context=campaign_context,
                 )
+
+        async def get_special_cards_data() -> list[DashboardSpecialCard]:
+            campaign_context = await campaign_context_task
+            return await _get_special_cards_data(
+                month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                campaign_context=campaign_context,
+            )
 
         async def get_premium_glass_data() -> PremiumGlassAnalysis:
             return await self.get_premium_glass(
@@ -562,29 +597,40 @@ class DashboardService:
             return [AsmStats(**r) for r in rows]
 
         results = await asyncio.gather(
-            self.get_summary(
-                month,
-                firma,
-                regional,
-                asm,
-                site_code,
-                agent,
-                current_scope=current_scope,
-                include_closed_stores=include_closed_stores,
+            observe_dashboard_component(
+                "summary",
+                self.get_summary(
+                    month,
+                    firma,
+                    regional,
+                    asm,
+                    site_code,
+                    agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
+                ),
             ),
-            get_agents_data(),
-            get_stores_data(),
-            get_daily_data(),
-            get_period_comparison_data(),
-            get_category_mix_data(),
-            get_receipt_bucket_mix_data(),
-            get_focus_subcategory_mix_data(),
-            get_brand_mix_data(),
-            get_promo_incentive_data(),
-            get_regional_data(),
-            get_asm_data(),
-            _get_special_cards_data(month, firma, regional, asm, site_code, agent),
-            get_premium_glass_data(),
+            observe_dashboard_component("agents", get_agents_data()),
+            observe_dashboard_component("stores", get_stores_data()),
+            observe_dashboard_component("daily", get_daily_data()),
+            observe_dashboard_component(
+                "period_comparison", get_period_comparison_data()
+            ),
+            observe_dashboard_component("category_mix", get_category_mix_data()),
+            observe_dashboard_component(
+                "receipt_bucket_mix", get_receipt_bucket_mix_data()
+            ),
+            observe_dashboard_component(
+                "focus_subcategory_mix", get_focus_subcategory_mix_data()
+            ),
+            observe_dashboard_component("brand_mix", get_brand_mix_data()),
+            observe_dashboard_component(
+                "promo_incentive", get_promo_incentive_data()
+            ),
+            observe_dashboard_component("regionals", get_regional_data()),
+            observe_dashboard_component("asms", get_asm_data()),
+            observe_dashboard_component("special_cards", get_special_cards_data()),
+            observe_dashboard_component("premium_glass", get_premium_glass_data()),
         )
         summary: DashboardSummary = results[0]  # type: ignore[assignment]
         agents_stats: list[AgentStats] = results[1]  # type: ignore[assignment]
