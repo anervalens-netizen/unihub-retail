@@ -34,6 +34,9 @@ graphify-out/
 graphify-out/.graphify_*
 entities.json
 
+# External audit work products may contain copied runtime secrets.
+reports/audit/
+
 # Grile — Google service account (secret, read-only Sheets)
 backend/config/google/
 backend/config/google/*.json
