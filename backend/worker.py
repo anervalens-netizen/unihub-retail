@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from arq.worker import create_worker
 
 from services.jobs import get_valkey_settings
+
+
+logger = logging.getLogger(__name__)
 
 
 async def import_sales_background(ctx: dict, file_content: bytes, filename: str) -> dict:
@@ -37,8 +42,17 @@ async def import_sales_background(ctx: dict, file_content: bytes, filename: str)
 
 async def startup(ctx: dict) -> None:
     from db.connection import init_db_pool, get_pool
+    from services.importer import reconcile_interrupted_imports
+
     await init_db_pool()
     pool = await get_pool()
+    interrupted = await reconcile_interrupted_imports(pool)
+    if interrupted:
+        logger.warning(
+            "Closed %d interrupted sales import reservations before retry: %s",
+            len(interrupted),
+            interrupted,
+        )
     ctx["db_pool"] = pool
 
 

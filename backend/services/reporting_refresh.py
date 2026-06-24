@@ -714,5 +714,6 @@ async def rebuild_reporting_all(
     for import_month in target_months:
         async with conn.transaction():
             await rebuild_reporting_month(conn, import_month)
-    await rebuild_agent_lifecycle_reporting(conn)
+    async with conn.transaction():
+        await rebuild_agent_lifecycle_reporting(conn)
     return target_months

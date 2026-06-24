@@ -187,35 +187,38 @@ async def main(dry_run: bool) -> None:
             print("*** DRY RUN — nu se scrie nimic ***")
             return
 
-        # Aplică schema (tabela poate să nu existe în DB curent până la restart backend)
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS historical_annual_sales (
-                site_code TEXT NOT NULL REFERENCES stores(site_code),
-                year INTEGER NOT NULL,
-                firma TEXT NOT NULL,
-                total_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
-                total_qty INTEGER NOT NULL DEFAULT 0,
-                is_partial_year BOOLEAN NOT NULL DEFAULT false,
-                PRIMARY KEY (site_code, year, firma)
+        async with conn.transaction():
+            # Compatibilitate cu instalari vechi; schema canonica include tabela.
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS historical_annual_sales (
+                    site_code TEXT NOT NULL REFERENCES stores(site_code),
+                    year INTEGER NOT NULL,
+                    firma TEXT NOT NULL,
+                    total_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                    total_qty INTEGER NOT NULL DEFAULT 0,
+                    is_partial_year BOOLEAN NOT NULL DEFAULT false,
+                    PRIMARY KEY (site_code, year, firma)
+                )
+                """
             )
-            """
-        )
 
-        await conn.executemany(
-            """
-            INSERT INTO historical_annual_sales
-                (site_code, year, firma, total_value, total_qty, is_partial_year)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (site_code, year, firma) DO UPDATE
-            SET total_value      = EXCLUDED.total_value,
-                total_qty        = EXCLUDED.total_qty,
-                is_partial_year  = EXCLUDED.is_partial_year
-            """,
-            records,
-        )
+            await conn.executemany(
+                """
+                INSERT INTO historical_annual_sales
+                    (site_code, year, firma, total_value, total_qty, is_partial_year)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (site_code, year, firma) DO UPDATE
+                SET total_value      = EXCLUDED.total_value,
+                    total_qty        = EXCLUDED.total_qty,
+                    is_partial_year  = EXCLUDED.is_partial_year
+                """,
+                records,
+            )
 
-        count = await conn.fetchval("SELECT COUNT(*) FROM historical_annual_sales")
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM historical_annual_sales"
+            )
         print(f"Importat cu succes. Înregistrări în historical_annual_sales: {count}")
 
         # Sumar pe ani

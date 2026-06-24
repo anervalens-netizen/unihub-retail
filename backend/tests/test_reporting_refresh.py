@@ -117,4 +117,6 @@ async def test_rebuild_reporting_all_wraps_each_month_and_refreshes_lifecycle(
         "transaction_exit",
         "transaction_enter",
         "transaction_exit",
+        "transaction_enter",
+        "transaction_exit",
     ]

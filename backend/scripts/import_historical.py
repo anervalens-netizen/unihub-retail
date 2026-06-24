@@ -98,6 +98,12 @@ def collect_files() -> list[Path]:
     return files
 
 
+async def reconcile_lifecycle(conn: asyncpg.Connection) -> None:
+    """Atomically rebuild lifecycle even when a retry imports no new month."""
+    async with conn.transaction():
+        await rebuild_agent_lifecycle_reporting(conn)
+
+
 async def import_one(
     conn: asyncpg.Connection,
     path: Path,
@@ -209,9 +215,9 @@ async def main(dry_run: bool) -> None:
                 errors.append((path.name, str(exc)))
             print()
 
-        if results and not dry_run:
-            print("Reconstruiesc reporting lifecycle (o singură dată pentru toți agenții)...")
-            await rebuild_agent_lifecycle_reporting(conn)
+        if not dry_run:
+            print("Reconciliez reporting lifecycle din toate lunile completed...")
+            await reconcile_lifecycle(conn)
             print("  Done.\n")
 
         print("=" * 50)

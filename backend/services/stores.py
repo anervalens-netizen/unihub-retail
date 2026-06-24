@@ -20,9 +20,10 @@ class StoresService:
 
     async def save_targets(self, targets: list[dict[str, Any]]) -> int:
         async with self.pool.acquire() as conn:
-            inserted = await upsert_store_targets(
-                conn,
-                targets,
-                source_file="manual-api",
-            )
+            async with conn.transaction():
+                inserted = await upsert_store_targets(
+                    conn,
+                    targets,
+                    source_file="manual-api",
+                )
         return inserted

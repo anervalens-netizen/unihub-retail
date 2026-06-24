@@ -67,40 +67,34 @@ async def sync_visits_snapshot(
         Numărul de rânduri inserate/actualizate.
     """
     path = sqlite_path or _VISITS_DB_PATH
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     rows = await loop.run_in_executor(None, _read_sqlite_aggregates, path)
 
     if not rows:
         return 0
 
-    await conn.executemany(
-        """
-        INSERT INTO visits_snapshot
-            (asm, month, total_visits, avg_completion, avg_duration,
-             distinct_stores, checklist_score, approved_pct, synced_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
-        ON CONFLICT (asm, month) DO UPDATE SET
-            total_visits    = EXCLUDED.total_visits,
-            avg_completion  = EXCLUDED.avg_completion,
-            avg_duration    = EXCLUDED.avg_duration,
-            distinct_stores = EXCLUDED.distinct_stores,
-            checklist_score = EXCLUDED.checklist_score,
-            approved_pct    = EXCLUDED.approved_pct,
-            synced_at       = now()
-        """,
-        [
-            (
-                r["asm"],
-                r["month"],
-                int(r["total_visits"] or 0),
-                r["avg_completion"],
-                r["avg_duration"],
-                int(r["distinct_stores"] or 0),
-                r["checklist_score"],
-                r["approved_pct"],
-            )
-            for r in rows
-        ],
-    )
+    async with conn.transaction():
+        await conn.execute("DELETE FROM visits_snapshot")
+        await conn.executemany(
+            """
+            INSERT INTO visits_snapshot
+                (asm, month, total_visits, avg_completion, avg_duration,
+                 distinct_stores, checklist_score, approved_pct, synced_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+            """,
+            [
+                (
+                    r["asm"],
+                    r["month"],
+                    int(r["total_visits"] or 0),
+                    r["avg_completion"],
+                    r["avg_duration"],
+                    int(r["distinct_stores"] or 0),
+                    r["checklist_score"],
+                    r["approved_pct"],
+                )
+                for r in rows
+            ],
+        )
     logger.info("visits_snapshot synced: %d rows", len(rows))
     return len(rows)

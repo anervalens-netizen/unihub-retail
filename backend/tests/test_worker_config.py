@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import db.connection
+import services.importer
 import services.jobs
 import worker
 
@@ -22,6 +23,31 @@ def test_worker_uses_bounded_serial_execution(monkeypatch: pytest.MonkeyPatch) -
     assert settings["job_completion_wait"] == 60
     assert settings["health_check_interval"] == 30
     worker_instance.run.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_worker_startup_reconciles_interrupted_imports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = MagicMock()
+    init_db_pool = AsyncMock()
+    get_pool = AsyncMock(return_value=pool)
+    reconcile = AsyncMock(return_value=[11, 12])
+    monkeypatch.setattr(db.connection, "init_db_pool", init_db_pool)
+    monkeypatch.setattr(db.connection, "get_pool", get_pool)
+    monkeypatch.setattr(
+        services.importer,
+        "reconcile_interrupted_imports",
+        reconcile,
+    )
+    ctx: dict = {}
+
+    await worker.startup(ctx)
+
+    init_db_pool.assert_awaited_once_with()
+    get_pool.assert_awaited_once_with()
+    reconcile.assert_awaited_once_with(pool)
+    assert ctx["db_pool"] is pool
 
 
 @pytest.mark.asyncio

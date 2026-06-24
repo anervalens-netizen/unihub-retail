@@ -9,7 +9,11 @@ import pytest
 
 import services.importer as importer
 from db.connection import close_db_pool, get_pool
-from services.importer import ImportAlreadyRunningError, reserve_snapshot
+from services.importer import (
+    ImportAlreadyRunningError,
+    reconcile_interrupted_imports,
+    reserve_snapshot,
+)
 
 
 pytestmark = [
@@ -76,6 +80,54 @@ async def test_import_snapshot_reservation_is_atomic_and_recovers_stale() -> Non
             )
         assert replacement_id is not None
         assert [row["status"] for row in statuses] == ["failed", "processing"]
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM import_snapshots WHERE import_month = $1",
+                import_month,
+            )
+        await close_db_pool()
+
+
+async def test_worker_restart_reconciliation_allows_immediate_retry() -> None:
+    pool = await get_pool()
+    import_month = "2099-10"
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM import_snapshots WHERE import_month = $1",
+                import_month,
+            )
+            interrupted_id = await reserve_snapshot(
+                conn,
+                import_month,
+                "interrupted.xlsx",
+                rows_in_file=1,
+            )
+
+        reconciled = await reconcile_interrupted_imports(pool)
+        assert interrupted_id in reconciled
+
+        async with pool.acquire() as conn:
+            replacement_id = await reserve_snapshot(
+                conn,
+                import_month,
+                "retry.xlsx",
+                rows_in_file=1,
+            )
+            rows = await conn.fetch(
+                """
+                SELECT id, status, error_message
+                FROM import_snapshots
+                WHERE import_month = $1
+                ORDER BY id
+                """,
+                import_month,
+            )
+
+        assert replacement_id != interrupted_id
+        assert [row["status"] for row in rows] == ["failed", "processing"]
+        assert "restartul workerului" in rows[0]["error_message"]
     finally:
         async with pool.acquire() as conn:
             await conn.execute(

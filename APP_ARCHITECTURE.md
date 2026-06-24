@@ -20,6 +20,9 @@ UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard 
 Workerul ARQ serializeaza joburile grele, are timeout explicit de 30 minute si
 la SIGTERM asteapta bounded jobul activ inainte sa inchida conexiunile Valkey
 si PostgreSQL. Unitatea systemd acorda 75 secunde pentru shutdown-ul controlat.
+La startup, workerul inchide rezervarile de import ramase `processing` dupa o
+oprire necontrolata. Tranzactia PostgreSQL intrerupta este deja rollback-ata,
+rezervarea devine `failed`, iar retry-ul ARQ poate porni imediat.
 
 Pool-ul PostgreSQL seteaza server-side `statement_timeout=120s`,
 `lock_timeout=10s` si `idle_in_transaction_session_timeout=60s` implicit.
@@ -87,7 +90,8 @@ flowchart LR
   limita configurata (implicit 32 MB) si ruleaza exclusiv in worker. Hash-ul
   continutului deduplica retry-urile aflate deja in coada, iar DB permite un
   singur snapshot `processing` per luna. Lease-urile mai vechi de o ora sunt
-  inchise ca `failed`, fara stergerea istoricului de audit.
+  inchise ca `failed`, fara stergerea istoricului de audit; restartul workerului
+  reconciliaza imediat lease-urile intrerupte.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
   builder Excel controlat server-side cu doua moduri: `Tabel detaliat` pentru
   Agenti, Magazine, RM si ASM cu filtre pe luni/agent/magazin/firma/RM/ASM,
@@ -370,6 +374,10 @@ extinderea formulei.
   `stores.site_code -> firma/regional/asm`, nu valorile istorice salvate in
   randurile SQLite. Vizitele FieldOps pastreaza codul magazinului in
   `visits.magazin`.
+- `visits_snapshot` este o proiectie completa a agregatelor SQLite. Sync-ul
+  inlocuieste proiectia intr-o singura tranzactie: randurile disparute din
+  sursa nu raman stale, iar o eroare de insert pastreaza snapshotul anterior
+  prin rollback.
 
 ## Integrari
 

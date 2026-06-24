@@ -53,6 +53,28 @@ class ImportAlreadyRunningError(RuntimeError):
     pass
 
 
+async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
+    """Close leases left by a worker stop before ARQ retries queued imports.
+
+    The import transaction is bound to the worker connection, so PostgreSQL
+    rolls it back when that process stops. Only the reservation row survives
+    because it is intentionally committed before the destructive replacement.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            UPDATE import_snapshots
+            SET status = 'failed',
+                rows_imported = 0,
+                error_message = 'Import intrerupt de restartul workerului; retry permis',
+                heartbeat_at = now()
+            WHERE status = 'processing'
+            RETURNING id
+            """
+        )
+    return [int(row["id"]) for row in rows]
+
+
 def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     if isinstance(source, bytes):
         content: str | BytesIO = BytesIO(source)
