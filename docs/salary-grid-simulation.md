@@ -13,9 +13,15 @@ backend/venv/bin/python backend/scripts/generate_salary_grid_simulation.py
 
 Output-uri:
 
-- `/opt/Mobiup/docs/simulare_grila_noua_2025-12_2026-05.xlsx`
-- `/opt/Mobiup/docs/comparatie_salarii_istorice_vs_grila_noua_2025-12_2026-05.xlsx`
-- `/opt/Mobiup/docs/comparatie_grila_veche_vs_noua_mai_2026.xlsx`
+- arhiva acceptata:
+  `/storage/backups/business-archive/2026-06-retail-regenerable-reports/docs/`
+  - `simulare_grila_noua_2025-12_2026-05.xlsx`
+  - `comparatie_salarii_istorice_vs_grila_noua_2025-12_2026-05.xlsx`
+  - `comparatie_grila_veche_vs_noua_mai_2026.xlsx`
+
+Scripturile pastreaza ca output implicit caile originale din
+`/opt/Mobiup/docs/`. O noua rulare recreeaza livrabilele in workspace; copia
+acceptata din iunie 2026 ramane read-only in arhiva de mai sus.
 
 ## Comparatia simplificata pentru mai 2026
 
