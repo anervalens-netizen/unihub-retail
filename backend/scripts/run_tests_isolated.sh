@@ -9,7 +9,7 @@ STAMP="${GITHUB_RUN_ID:-local}-$(date +%s)-$$"
 CONTAINER="unihub-retail-test-${STAMP}"
 
 cleanup() {
-  timeout 30 docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
+  timeout 30 docker rm -f -v "${CONTAINER}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
