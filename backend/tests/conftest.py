@@ -11,6 +11,8 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 os.environ["UNIHUB_RUNNING_TESTS"] = "1"
+os.environ["SENTRY_DSN"] = ""
+os.environ["VITE_GLITCHTIP_DSN"] = ""
 
 
 def anyio_backend():

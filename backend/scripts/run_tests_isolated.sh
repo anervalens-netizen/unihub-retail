@@ -46,6 +46,8 @@ docker exec "${CONTAINER}" pg_isready -U unihub_test -d unihub_test >/dev/null
 export DATABASE_URL="postgresql://unihub_test:${password}@127.0.0.1:${port}/unihub_test"
 export UNIHUB_RUNNING_TESTS=1
 export UNIHUB_TEST_DATABASE=1
+export SENTRY_DSN=
+export VITE_GLITCHTIP_DSN=
 export DB_POOL_MIN_SIZE=1
 export DB_POOL_MAX_SIZE=4
 
