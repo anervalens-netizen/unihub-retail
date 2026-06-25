@@ -4,10 +4,12 @@ import logging
 
 from arq.worker import create_worker
 
+from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
 from services.jobs import get_valkey_settings
 
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

@@ -160,3 +160,30 @@ async def test_request_id_header_is_allowed_in_cors_preflight() -> None:
 
     assert response.status_code == 200
     assert "x-request-id" in response.headers["access-control-allow-headers"].lower()
+
+
+@pytest.mark.anyio
+async def test_unhandled_exception_response_preserves_request_id() -> None:
+    from main import unhandled_exception_handler
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/boom",
+            "raw_path": b"/boom",
+            "query_string": b"",
+            "headers": [],
+            "state": {"request_id": "retail-error-123"},
+            "scheme": "http",
+            "server": ("test", 80),
+            "client": ("test", 123),
+            "root_path": "",
+            "http_version": "1.1",
+        },
+    )
+
+    response = await unhandled_exception_handler(request, RuntimeError("boom"))
+
+    assert response.status_code == 500
+    assert response.headers[request_context.REQUEST_ID_HEADER] == "retail-error-123"

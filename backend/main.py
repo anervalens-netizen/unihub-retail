@@ -20,7 +20,14 @@ from fastapi.responses import Response
 import httpx
 
 import sentry_sdk
-from request_context import RequestContextMiddleware, REQUEST_ID_HEADER, get_request_id, normalize_request_id
+from request_context import (
+    REQUEST_ID_HEADER,
+    RequestContextMiddleware,
+    bind_request_id,
+    get_request_id,
+    normalize_request_id,
+    reset_request_id,
+)
 
 sentry_dsn = os.getenv("VITE_GLITCHTIP_DSN", os.getenv("SENTRY_DSN"))
 if sentry_dsn:
@@ -166,6 +173,26 @@ app.add_middleware(
     expose_headers=[REQUEST_ID_HEADER],
 )
 app.add_middleware(RequestContextMiddleware)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", normalize_request_id(None))
+    token = bind_request_id(request_id)
+    try:
+        logger.warning(
+            "unhandled request exception",
+            extra={"method": request.method, "path": request.url.path},
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    finally:
+        reset_request_id(token)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers={REQUEST_ID_HEADER: request_id},
+    )
+
 
 _auth = [Depends(require_auth)]
 
