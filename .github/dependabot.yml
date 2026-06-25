@@ -7,6 +7,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    # Private @unihub packages are served by the host-only Verdaccio registry
+    # and are upgraded through the shared-packages release workflow.
+    ignore:
+      - dependency-name: "@unihub/*"
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
