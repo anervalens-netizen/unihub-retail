@@ -10,6 +10,7 @@ from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 from arq.constants import result_key_prefix
 from arq.jobs import Job, JobStatus as ArqJobStatus
+from request_context import get_request_id
 
 
 class JobStatus(str, Enum):
@@ -87,6 +88,7 @@ async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
         "import_sales_background",
         file_content,
         filename,
+        get_request_id(),
     )
     job = await pool.enqueue_job(*enqueue_args, _job_id=job_id)
     if job is None:
@@ -143,6 +145,7 @@ async def enqueue_grile_check(
             source_snapshot_id,
             triggered_by_email,
             int(run_id),
+            get_request_id(),
         )
         if job is None:
             raise RuntimeError("Failed to enqueue grile check job")
@@ -205,6 +208,7 @@ async def enqueue_grile_monthly(
         dry_run,
         triggered_by_email,
         reservation.operation_id,
+        get_request_id(),
         _job_id=job_id,
     )
     if job is None:

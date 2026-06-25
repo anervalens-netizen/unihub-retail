@@ -4,40 +4,51 @@ import logging
 
 from arq.worker import create_worker
 
+from request_context import bind_request_id, reset_request_id
 from services.jobs import get_valkey_settings
 
 
 logger = logging.getLogger(__name__)
 
 
-async def import_sales_background(ctx: dict, file_content: bytes, filename: str) -> dict:
+async def import_sales_background(
+    ctx: dict,
+    file_content: bytes,
+    filename: str,
+    request_id: str | None = None,
+) -> dict:
     from dataclasses import asdict
     from services.importer import import_sales_file
 
-    conn = ctx.get("db_conn")
-    if conn is None:
-        from db.connection import get_pool
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+    token = bind_request_id(request_id) if request_id else None
+    try:
+        conn = ctx.get("db_conn")
+        if conn is None:
+            from db.connection import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                result = await import_sales_file(conn, file_content, filename=filename)
+        else:
             result = await import_sales_file(conn, file_content, filename=filename)
-    else:
-        result = await import_sales_file(conn, file_content, filename=filename)
 
-    from routers.filters import clear_filter_options_cache
-    from services.retail_metrics import update_business_metrics
+        from routers.filters import clear_filter_options_cache
+        from services.retail_metrics import update_business_metrics
 
-    clear_filter_options_cache()
-    pool = ctx.get("db_pool")
-    if pool is None:
-        from db.connection import get_pool
-        pool = await get_pool()
-    await update_business_metrics(pool)
+        clear_filter_options_cache()
+        pool = ctx.get("db_pool")
+        if pool is None:
+            from db.connection import get_pool
+            pool = await get_pool()
+        await update_business_metrics(pool)
 
-    # Best-effort: dupa import reusit + reporting rebuild (in tranzactia din
-    # import_sales_file), declanseaza verificarea grilelor. Nu propaga erori.
-    from services.imports import trigger_grile_check_after_import
-    await trigger_grile_check_after_import(result.import_month, result.snapshot_id)
-    return asdict(result)
+        # Best-effort: dupa import reusit + reporting rebuild (in tranzactia din
+        # import_sales_file), declanseaza verificarea grilelor. Nu propaga erori.
+        from services.imports import trigger_grile_check_after_import
+        await trigger_grile_check_after_import(result.import_month, result.snapshot_id)
+        return asdict(result)
+    finally:
+        if token is not None:
+            reset_request_id(token)
 
 
 async def startup(ctx: dict) -> None:
@@ -63,29 +74,35 @@ async def grile_check_background(
     source_snapshot_id: int | None = None,
     triggered_by_email: str | None = None,
     run_id: int | None = None,
+    request_id: str | None = None,
 ) -> dict:
     from services.grile import run_grile_check
 
-    pool = ctx.get("db_pool")
-    if pool is None:
-        from db.connection import get_pool
-        pool = await get_pool()
-    run_id = await run_grile_check(
-        pool,
-        month=month,
-        source=source,
-        source_snapshot_id=source_snapshot_id,
-        triggered_by_email=triggered_by_email,
-        run_id=run_id,
-    )
-    agent_targets: dict | None = None
+    token = bind_request_id(request_id) if request_id else None
     try:
-        from services.grile_agent_targets import sync_agent_targets_from_grile
-        result = await sync_agent_targets_from_grile(pool, month=month, apply=True)
-        agent_targets = result.as_dict()
-    except Exception as exc:  # noqa: BLE001 - sync-ul agentilor nu invalideaza verificarea grilelor
-        agent_targets = {"status": "failed", "error": str(exc)[:500]}
-    return {"run_id": run_id, "month": month, "agent_targets": agent_targets}
+        pool = ctx.get("db_pool")
+        if pool is None:
+            from db.connection import get_pool
+            pool = await get_pool()
+        run_id = await run_grile_check(
+            pool,
+            month=month,
+            source=source,
+            source_snapshot_id=source_snapshot_id,
+            triggered_by_email=triggered_by_email,
+            run_id=run_id,
+        )
+        agent_targets: dict | None = None
+        try:
+            from services.grile_agent_targets import sync_agent_targets_from_grile
+            result = await sync_agent_targets_from_grile(pool, month=month, apply=True)
+            agent_targets = result.as_dict()
+        except Exception as exc:  # noqa: BLE001 - sync-ul agentilor nu invalideaza verificarea grilelor
+            agent_targets = {"status": "failed", "error": str(exc)[:500]}
+        return {"run_id": run_id, "month": month, "agent_targets": agent_targets}
+    finally:
+        if token is not None:
+            reset_request_id(token)
 
 
 async def grile_monthly_background(
@@ -96,6 +113,7 @@ async def grile_monthly_background(
     dry_run: bool = True,
     triggered_by_email: str | None = None,
     operation_id: int | None = None,
+    request_id: str | None = None,
 ) -> dict:
     """Inchidere luna grile: ruleaza operatiile native din Retail.
 
@@ -103,17 +121,22 @@ async def grile_monthly_background(
     edge Cloudflare). Rezultatul (output + exit_code) e citit din rezultatul
     jobului arq de catre UI (`/api/grile/monthly/job/{id}`).
     """
-    from services.grile_monthly import run_monthly_op
+    token = bind_request_id(request_id) if request_id else None
+    try:
+        from services.grile_monthly import run_monthly_op
 
-    result = await run_monthly_op(
-        op=op,
-        month=month,
-        only=only,
-        dry_run=dry_run,
-        operation_id=operation_id,
-    )
-    result["triggered_by_email"] = triggered_by_email
-    return result
+        result = await run_monthly_op(
+            op=op,
+            month=month,
+            only=only,
+            dry_run=dry_run,
+            operation_id=operation_id,
+        )
+        result["triggered_by_email"] = triggered_by_email
+        return result
+    finally:
+        if token is not None:
+            reset_request_id(token)
 
 
 async def shutdown(ctx: dict) -> None:

@@ -16,6 +16,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from request_context import request_id_var
+
 # Câmpuri interne Python LogRecord care nu au valoare în JSON output
 _SKIP_FIELDS = frozenset(
     {
@@ -72,6 +74,14 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(entry, default=str)
 
 
+class RequestContextFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        request_id = request_id_var.get()
+        if request_id is not None:
+            record.request_id = request_id
+        return True
+
+
 def setup_logging(fmt: str | None = None) -> None:
     """Configurează logging-ul aplicației.
 
@@ -94,6 +104,7 @@ def setup_logging(fmt: str | None = None) -> None:
     formatter = JSONFormatter()
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
+    handler.addFilter(RequestContextFilter())
 
     # Root logger — prinde toți loggerii aplicației
     root = logging.getLogger()
@@ -142,6 +153,7 @@ def _setup_structlog() -> None:
 
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
+    handler.addFilter(RequestContextFilter())
 
     root = logging.getLogger()
     root.handlers.clear()

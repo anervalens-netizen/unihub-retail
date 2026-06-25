@@ -20,6 +20,7 @@ from fastapi.responses import Response
 import httpx
 
 import sentry_sdk
+from request_context import RequestContextMiddleware, REQUEST_ID_HEADER, get_request_id, normalize_request_id
 
 sentry_dsn = os.getenv("VITE_GLITCHTIP_DSN", os.getenv("SENTRY_DSN"))
 if sentry_dsn:
@@ -161,8 +162,10 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "sentry-trace", "baggage"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "sentry-trace", "baggage", REQUEST_ID_HEADER],
+    expose_headers=[REQUEST_ID_HEADER],
 )
+app.add_middleware(RequestContextMiddleware)
 
 _auth = [Depends(require_auth)]
 
@@ -232,6 +235,7 @@ async def auth_proxy(path: str, request: Request) -> Response:
     params = dict(request.query_params)
     headers = {k: v for k, v in request.headers.items()
                if k.lower() not in ("host", "origin", "referer")}
+    headers[REQUEST_ID_HEADER] = get_request_id() or normalize_request_id(request.headers.get(REQUEST_ID_HEADER))
     body = await request.body()
 
     # Inject client_secret for token endpoint (confidential client)
