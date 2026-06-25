@@ -94,6 +94,21 @@ def test_request_context_helpers_bind_structlog_and_logging_records() -> None:
         request_context.reset_request_id(token)
 
 
+def test_request_context_filter_uses_dash_outside_request() -> None:
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="hello",
+        args=(),
+        exc_info=None,
+    )
+
+    assert RequestContextFilter().filter(record) is True
+    assert getattr(record, "request_id") == "-"
+
+
 @pytest.mark.anyio
 async def test_auth_proxy_forwards_request_id_to_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
     from main import app

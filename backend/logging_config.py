@@ -77,8 +77,7 @@ class JSONFormatter(logging.Formatter):
 class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         request_id = request_id_var.get()
-        if request_id is not None:
-            record.request_id = request_id
+        record.request_id = request_id or getattr(record, "request_id", "-")
         return True
 
 
@@ -97,11 +96,14 @@ def setup_logging(fmt: str | None = None) -> None:
         _setup_structlog()
         return
 
-    if fmt != "json":
-        # Comportament default — nu modificăm nimic
-        return
-
-    formatter = JSONFormatter()
+    formatter: logging.Formatter
+    if fmt == "json":
+        formatter = JSONFormatter()
+    else:
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s "
+            "request_id=%(request_id)s %(message)s",
+        )
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
     handler.addFilter(RequestContextFilter())
