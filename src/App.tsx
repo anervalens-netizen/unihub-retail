@@ -23,8 +23,8 @@ const Settings = lazy(loadSettingsScreen);
 const Management = lazy(loadManagementScreen);
 
 type ActiveTab = TabId;
-type CampaignsSection = 'incentive' | 'promo' | 'concurs' | 'focus';
-const CAMPAIGNS_SECTIONS: CampaignsSection[] = ['incentive', 'promo', 'concurs', 'focus'];
+type CampaignsSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
+const CAMPAIGNS_SECTIONS: CampaignsSection[] = ['incentive', 'promo', 'concurs', 'premium', 'focus'];
 
 const FILTER_STORAGE_KEYS = {
   hub: 'unihub_hub_filters',

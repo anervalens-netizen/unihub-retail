@@ -68,7 +68,6 @@ import {
   getBon2AccTone,
   getFocusTone,
   getRegionalSortValue,
-  getStoreDailyAverage,
   getStoreSortValue,
   sumChartValues,
 } from './dashboard/DashboardWidgets';
@@ -164,7 +163,6 @@ const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
   { key: 'nr_bonuri', label: 'Nr bonuri' },
   { key: 'nr_agenti', label: 'Agenti' },
   { key: 'zile_active', label: 'Zile active' },
-  { key: 'medie_zilnica', label: 'Medie zilnica' },
 ];
 
 const AGENT_COLUMNS: Array<{ key: AgentSortKey; label: string }> = [
@@ -193,7 +191,6 @@ const REGIONAL_COLUMNS: Array<{ key: RegionalSortKey; label: string }> = [
   { key: 'incentive_qty', label: 'Incentive' },
   { key: 'qty_total', label: 'Cantitate' },
   { key: 'nr_bonuri', label: 'Nr bonuri' },
-  { key: 'medie_zilnica', label: 'Medie zilnica' },
   { key: 'proc_bon2acc', label: 'ProcBon2Acc' },
   { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
@@ -580,6 +577,7 @@ function aggregateDashboardDetails(responses: DashboardAllResponse[], selectedMo
     receiptBucketMix: aggregateReceiptBuckets(responses.map((response) => response.receipt_bucket_mix)),
     focusSubcategoryMix: aggregateFocusMix(responses.map((response) => response.focus_subcategory_mix)),
     dailySales: selectedMonths.length === 1 ? latest.daily : aggregateDailySales(responses.map((response) => response.daily)),
+    dailyLastYear: selectedMonths.length === 1 ? (latest.daily_last_year ?? []) : [],
     categoryMix: aggregateCategoryMix(responses.map((response) => response.category_mix)),
     brandMix: aggregateBrandMix(responses.map((response) => response.brand_mix)),
     specialCards: latest.special_cards,
@@ -603,6 +601,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [agents, setAgents] = useState<AgentStat[]>([]);
   const [stores, setStores] = useState<StoreStat[]>([]);
   const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
+  const [dailyLastYear, setDailyLastYear] = useState<DailySalesPoint[]>([]);
   const [specialCards, setSpecialCards] = useState<DashboardSpecialCard[]>([]);
   const [periodComparison, setPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
   const [categoryMix, setCategoryMix] = useState<CategoryMixItem[]>([]);
@@ -749,6 +748,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       regionals: RegionalStat[];
       asms: AsmStat[];
       dailySales: DailySalesPoint[];
+      dailyLastYear: DailySalesPoint[];
       specialCards: DashboardSpecialCard[];
       periodComparison: PeriodComparisonPayload | null;
       categoryMix: CategoryMixItem[];
@@ -766,6 +766,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       setRegionals(cached.value.regionals);
       setAsms(cached.value.asms);
       setDailySales(cached.value.dailySales);
+      setDailyLastYear(cached.value.dailyLastYear ?? []);
       setSpecialCards(cached.value.specialCards);
       setPeriodComparison(cached.value.periodComparison);
       setCategoryMix(cached.value.categoryMix);
@@ -792,6 +793,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         setRegionals(data.regionals || []);
         setAsms(data.asms || []);
         setDailySales(data.daily);
+        setDailyLastYear(data.daily_last_year ?? []);
         setSpecialCards(data.special_cards);
         setPeriodComparison(data.period_comparison);
         setCategoryMix(data.category_mix);
@@ -807,6 +809,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           regionals: data.regionals || [],
           asms: data.asms || [],
           dailySales: data.daily,
+          dailyLastYear: data.daily_last_year ?? [],
           specialCards: data.special_cards,
           periodComparison: data.period_comparison,
           categoryMix: data.category_mix,
@@ -1008,16 +1011,67 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     return { promotion, incentive, premium };
   }, [specialCards]);
 
-  const dailyChartData = useMemo(
-    () =>
-      dailySales.map((item) => ({
-        day: item.sale_date.slice(-2),
+  const dailyChartData = useMemo(() => {
+    const lastYearMap = new Map<string, number>();
+    for (const item of dailyLastYear) {
+      lastYearMap.set(item.sale_date.slice(-2), Number(item.total_sales));
+    }
+    const currentMap = new Map<string, { sales: number; qty: number; receipts: number }>();
+    for (const item of dailySales) {
+      currentMap.set(item.sale_date.slice(-2), {
         sales: Number(item.total_sales),
         qty: Number(item.total_quantity),
         receipts: Number(item.receipt_count),
-      })),
-    [dailySales]
-  );
+      });
+    }
+
+    const currentDays = Array.from(currentMap.keys()).sort();
+    const lastActualDay = currentDays.length > 0 ? currentDays[currentDays.length - 1] : null;
+
+    const isFinal = summary?.is_month_final ?? false;
+    const daysInMonth = summary?.days_in_month ?? 31;
+
+    const allDays = new Set<string>([...currentMap.keys(), ...lastYearMap.keys()]);
+    if (!isFinal) {
+      for (let d = 1; d <= daysInMonth; d++) {
+        allDays.add(String(d).padStart(2, '0'));
+      }
+    }
+
+    let scalingRatio = 1;
+    if (lastActualDay && lastYearMap.size > 0) {
+      let currentSum = 0;
+      let lastYearSum = 0;
+      for (const day of currentDays) {
+        currentSum += currentMap.get(day)!.sales;
+        const ly = lastYearMap.get(day);
+        if (ly !== undefined) lastYearSum += ly;
+      }
+      if (lastYearSum > 0) scalingRatio = currentSum / lastYearSum;
+    }
+
+    return Array.from(allDays)
+      .sort()
+      .map((day) => {
+        const current = currentMap.get(day);
+        const hasActual = current !== undefined;
+        const isFuture = !hasActual && !isFinal && lastActualDay !== null && day > lastActualDay && lastYearMap.has(day);
+        const isLastActual = day === lastActualDay && hasActual;
+        const forecast = isFuture
+          ? Math.round((lastYearMap.get(day) ?? 0) * scalingRatio)
+          : isLastActual && !isFinal
+            ? current!.sales
+            : null;
+        return {
+          day,
+          sales: hasActual ? current!.sales : null,
+          qty: hasActual ? current!.qty : null,
+          receipts: hasActual ? current!.receipts ?? null : null,
+          sales_last_year: lastYearMap.get(day) ?? null,
+          sales_forecast: forecast,
+        };
+      });
+  }, [dailySales, dailyLastYear, summary]);
 
   // Card 1 data — always anchored to currentMonth; last bar shows forecast if month not final
   const currentHistoryChartData = useMemo(() => {
@@ -1673,15 +1727,13 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                     <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                     <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                     <Tooltip
-                      formatter={(value: number, name: string) =>
-                        name === 'Vanzari' ? formatCurrency(value) : formatInt(value)
-                      }
+                      formatter={(value: number, _name: string) => formatCurrency(value)}
                     />
                     <Legend />
                     <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
-                    <Line yAxisId="qty" type="monotone" dataKey="qty" name="Cantitate" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    <Line yAxisId="sales" type="monotone" dataKey="sales_last_year" name="Anul trecut" stroke="#10b981" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
+                    <Line yAxisId="sales" type="monotone" dataKey="sales_forecast" name="Prognoza" stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" dot={false} connectNulls />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -1738,7 +1790,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
                   { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
                   { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                  { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
                   { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
                   { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
                 ]}
@@ -1774,7 +1825,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(regional.forecast_target_pct)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(regional.qty_total)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(regional.nr_bonuri)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(regional.medie_zilnica ?? 0)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(regional.proc_bon2acc)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(regional.prc_focus_acc_qty)}</td>
                     </tr>
@@ -1810,7 +1860,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
                   { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
                   { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
-                  { header: 'Medie zilnica', value: (row) => formatCurrency(getStoreDailyAverage(row)) },
                 ]}
               />
             </div>
@@ -1851,7 +1900,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(getStoreDailyAverage(store))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2377,7 +2425,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
                       { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
                       { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                      { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
                       { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
                       { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
                     ]}
@@ -2412,7 +2459,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(row.proc_realizare_target)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.qty_total)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.nr_bonuri)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(row.medie_zilnica ?? 0)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(row.proc_bon2acc)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(row.prc_focus_acc_qty)}</td>
                         </tr>
@@ -2447,7 +2493,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
                       { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
                       { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
-                      { header: 'Medie zilnica', value: (row) => formatCurrency(getStoreDailyAverage(row)) },
                     ]}
                   />
                 </div>
@@ -2487,7 +2532,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(getStoreDailyAverage(store))}</td>
                         </tr>
                       ))}
                     </tbody>

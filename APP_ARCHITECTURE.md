@@ -54,7 +54,7 @@ flowchart LR
 | Meniu principal | Scop |
 | --- | --- |
 | Hub | KPI-uri, comparatii perioade, carduri speciale |
-| Focus | Incentive, Promo, Concurs, produse focus |
+| Focus | Incentive, Promo, Concurs, Folii premium, produse focus |
 | Agenti | overview agenti, stabilitate, miscari, salarii, analiza si evaluare |
 | Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target` |
 | Setari | importuri vanzari, exporturi configurabile, setari aplicatie si erori |
@@ -156,7 +156,12 @@ request si il reutilizeaza pentru sumar si cardurile speciale. Reutilizarea
 este strict request-local, fara cache global care ar necesita invalidare dupa
 import. Latenta celor 15 componente fixe este expusa in Prometheus prin
 `dashboard_component_duration_seconds`; etichetele nu includ filtre sau date
-business.
+business. Componenta `daily_last_year` (vanzarile zilnice din aceeasi luna a
+anului anterior) este obtinuta printr-un query paralel pe
+`reporting_agent_day` cu `import_month = YYYY-1-MM` si aceleasi filtre de
+scope; in graficul Hub "Evolutie zilnica" este afisata ca linie comparativa
+verde, impreuna cu o linie de prognoza portocalie care scaleaza forma zilnica
+a anului trecut cu raportul de crestere curent pe zilele comune.
 
 Istoricul Hub ruleaza pe structura curenta de magazine. Cand un manager activ
 este selectat, istoricul centralizeaza vanzarile istorice ale magazinelor

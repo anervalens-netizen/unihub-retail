@@ -54,8 +54,7 @@ import { getCachedView, setCachedView } from '../lib/viewCache';
 import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
 
-type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'focus';
-type FocusMode = 'products' | 'premium';
+type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
 
 interface CampaignsProps {
   currentMonth: string;
@@ -95,6 +94,7 @@ const SECTION_TABS: [CampaignSection, string][] = [
   ['incentive', 'Incentive'],
   ['promo', 'Promo'],
   ['concurs', 'Concurs'],
+  ['premium', 'Folii premium'],
   ['focus', 'Focus'],
 ];
 
@@ -107,7 +107,6 @@ export function Campaigns({
 }: CampaignsProps) {
   const latestMonth = useMemo(() => months[0] ?? currentMonth, [months, currentMonth]);
   const [activeSection, setActiveSection] = useState<CampaignSection>(preferredSection);
-  const [focusMode, setFocusMode] = useState<FocusMode>('products');
   const [historyMonth, setHistoryMonth] = useState(latestMonth);
   const [promoMonth, setPromoMonth] = useState(latestMonth);
   const [snapshot, setSnapshot] = useState<CampaignSnapshot>(emptySnapshot);
@@ -150,8 +149,8 @@ export function Campaigns({
   );
 
   const currentCacheKey = useMemo(
-    () => `campaigns:current:${activeSection}:${focusMode}:${promoMonth}:${selectedPromotionKey}:${JSON.stringify(buildQuery(promoMonth))}`,
-    [activeSection, buildQuery, focusMode, promoMonth, selectedPromotionKey]
+    () => `campaigns:current:${activeSection}:${promoMonth}:${selectedPromotionKey}:${JSON.stringify(buildQuery(promoMonth))}`,
+    [activeSection, buildQuery, promoMonth, selectedPromotionKey]
   );
   const historyCacheKey = useMemo(
     () => `campaigns:history:${historyMonth}:${JSON.stringify({ ...buildQuery(historyMonth), months_back: 12 })}`,
@@ -161,8 +160,8 @@ export function Campaigns({
   const loadCurrentFocus = useCallback(() => {
     if (!isMountedRef.current) return;
     const shouldLoadPromoData = activeSection === 'promo' || activeSection === 'incentive';
-    const shouldLoadSnapshot = activeSection === 'focus' && focusMode === 'products';
-    const shouldLoadPremiumGlass = activeSection === 'focus' && focusMode === 'premium';
+    const shouldLoadSnapshot = activeSection === 'focus';
+    const shouldLoadPremiumGlass = activeSection === 'premium';
 
     if (!shouldLoadPromoData && !shouldLoadSnapshot && !shouldLoadPremiumGlass) {
       setLoading(false);
@@ -257,7 +256,7 @@ export function Campaigns({
       .finally(() => {
         if (isMountedRef.current) setLoading(false);
       });
-  }, [activeSection, buildQuery, currentCacheKey, focusMode, promoMonth, selectedPromotionKey]);
+  }, [activeSection, buildQuery, currentCacheKey, promoMonth, selectedPromotionKey]);
 
   const loadFocusHistory = useCallback(() => {
     if (!isMountedRef.current) return;
@@ -326,10 +325,10 @@ export function Campaigns({
   useEffect(() => {
     setFocusHistory([]);
     setHistoryError('');
-    if (activeSection === 'focus' && focusMode === 'products') {
+    if (activeSection === 'focus') {
       loadFocusHistory();
     }
-  }, [activeSection, focusMode, historyMonth, loadFocusHistory]);
+  }, [activeSection, historyMonth, loadFocusHistory]);
 
   useEffect(() => {
     if (activeSection === 'concurs') {
@@ -372,7 +371,7 @@ export function Campaigns({
     ? 'Se incarca promotia...'
     : activeSection === 'incentive'
       ? 'Se incarca incentive-ul...'
-      : activeSection === 'focus' && focusMode === 'premium'
+      : activeSection === 'premium'
         ? 'Se incarca analiza foliilor premium...'
         : 'Se incarca datele de focus...';
 
@@ -748,12 +747,10 @@ export function Campaigns({
             </div>
           )}
         </>
+      ) : activeSection === 'premium' ? (
+        <PremiumGlassFocusSection analysis={premiumGlass} />
       ) : (
         <>
-          <FocusModeSwitch value={focusMode} onChange={setFocusMode} />
-
-          {focusMode === 'products' ? (
-            <>
           <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
             <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <Sparkles size={16} />
@@ -863,10 +860,6 @@ export function Campaigns({
               />
             </>
           )}
-            </>
-          ) : (
-            <PremiumGlassFocusSection analysis={premiumGlass} />
-          )}
         </>
       )}
     </div>
@@ -874,36 +867,6 @@ export function Campaigns({
 }
 
 const INCENTIVE_TIER_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
-
-function FocusModeSwitch({
-  value,
-  onChange,
-}: {
-  value: FocusMode;
-  onChange: (value: FocusMode) => void;
-}) {
-  return (
-    <div className="glass grid grid-cols-2 gap-1 rounded-2xl p-1">
-      {([
-        ['products', 'Produse focus'],
-        ['premium', 'Folii premium'],
-      ] as const).map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => onChange(key)}
-          className={`rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            value === key
-              ? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-800 dark:text-emerald-300'
-              : 'text-slate-500 hover:bg-white/60 dark:hover:bg-slate-800/60'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function PremiumGlassFocusSection({ analysis }: { analysis: PremiumGlassAnalysis | null }) {
   const summary = analysis?.summary;

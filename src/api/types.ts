@@ -348,6 +348,7 @@ export interface DashboardAllResponse {
   regionals: RegionalStat[];
   asms: AsmStat[];
   daily: DailySalesPoint[];
+  daily_last_year: DailySalesPoint[];
   special_cards: DashboardSpecialCard[];
   period_comparison: PeriodComparisonPayload | null;
   category_mix: CategoryMixItem[];

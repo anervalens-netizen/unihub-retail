@@ -522,6 +522,7 @@ class DashboardAllResponse(BaseModel):
     premium_glass: "PremiumGlassAnalysis | None" = None
     regionals: list[RegionalStats] = Field(default_factory=list)
     asms: list[AsmStats] = Field(default_factory=list)
+    daily_last_year: list[DailySalesPoint] = Field(default_factory=list)
 
 
 class DashboardHistoryResponse(BaseModel):

@@ -453,6 +453,20 @@ class DashboardService:
                 include_closed_stores=include_closed_stores,
             )
 
+        async def get_daily_last_year_data() -> list[DailySalesPoint]:
+            year, mon = month.split("-")
+            last_year_month = f"{int(year) - 1}-{mon}"
+            return await self.get_daily_sales(
+                last_year_month,
+                firma,
+                regional,
+                asm,
+                site_code,
+                agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
+            )
+
         async def get_period_comparison_data(
             target_metric: str = "sales",
         ) -> PeriodComparisonPayload:
@@ -631,6 +645,9 @@ class DashboardService:
             observe_dashboard_component("asms", get_asm_data()),
             observe_dashboard_component("special_cards", get_special_cards_data()),
             observe_dashboard_component("premium_glass", get_premium_glass_data()),
+            observe_dashboard_component(
+                "daily_last_year", get_daily_last_year_data()
+            ),
         )
         summary: DashboardSummary = results[0]  # type: ignore[assignment]
         agents_stats: list[AgentStats] = results[1]  # type: ignore[assignment]
@@ -646,6 +663,7 @@ class DashboardService:
         asm_stats: list[AsmStats] = results[11]  # type: ignore[assignment]
         special_cards: list[DashboardSpecialCard] = results[12]  # type: ignore[assignment]
         premium_glass: PremiumGlassAnalysis = results[13]  # type: ignore[assignment]
+        daily_last_year: list[DailySalesPoint] = results[14]  # type: ignore[assignment]
         special_cards = [*special_cards, build_premium_glass_card(premium_glass)]
 
         return DashboardAllResponse(
@@ -663,4 +681,5 @@ class DashboardService:
             premium_glass=premium_glass,
             regionals=regional_stats,
             asms=asm_stats,
+            daily_last_year=daily_last_year,
         )
