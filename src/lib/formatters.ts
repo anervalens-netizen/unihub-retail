@@ -6,6 +6,12 @@ export function formatCurrency(value: number) {
   }).format(Number(value));
 }
 
+export function formatAmount(value: number) {
+  return new Intl.NumberFormat('ro-RO', {
+    maximumFractionDigits: 0,
+  }).format(Number(value));
+}
+
 export function formatInt(value: number) {
   return new Intl.NumberFormat('ro-RO').format(Number(value));
 }

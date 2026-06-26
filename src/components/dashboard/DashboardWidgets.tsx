@@ -3,7 +3,7 @@ import { AlertCircle, ArrowUpDown, ChevronDown, ChevronUp, RefreshCw } from 'luc
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import type { AgentStat, AsmStat, PeriodComparisonPoint, RegionalStat, StoreStat } from '../../api/types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../../lib/filterValues';
-import { formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
+import { formatAmount, formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
 import type { AppFilters } from '../MainLayout';
 
 type SortDirection = 'asc' | 'desc';
@@ -314,12 +314,12 @@ export function PeriodTable({
 }) {
   const points = [current, previous, yoy];
   const rows: { label: string; fn: (p: PeriodComparisonPoint) => string }[] = [
-    { label: 'Vanzari',      fn: (p) => formatCurrency(p.total_sales) },
+    { label: 'Vanzari',      fn: (p) => formatAmount(p.total_sales) },
     { label: 'Cantitate',    fn: (p) => formatInt(p.total_quantity) },
     { label: 'Bonuri',       fn: (p) => formatInt(p.total_receipts) },
     { label: 'Zile',         fn: (p) => formatInt(p.working_days) },
-    { label: 'Med. zilnica', fn: (p) => formatCurrency(p.daily_average ?? 0) },
-    { label: 'Med. bon',     fn: (p) => formatCurrency(p.avg_receipt_value ?? 0) },
+    { label: 'Med. zilnica', fn: (p) => formatAmount(p.daily_average ?? 0) },
+    { label: 'Med. bon',     fn: (p) => formatAmount(p.avg_receipt_value ?? 0) },
     { label: 'Bon2Acc',      fn: (p) => formatPercent(p.proc_bon2acc) },
     { label: 'Focus/Acc',    fn: (p) => formatPercent(p.prc_focus_acc_qty) },
     { label: 'Cartele',      fn: (p) => formatInt(p.cartele_qty ?? 0) },
@@ -476,7 +476,7 @@ export function SortableHeader({
 
 function formatDeltaCurrency(value: number) {
   const prefix = value > 0 ? '+' : '';
-  return `${prefix}${formatCurrency(value)}`;
+  return `${prefix}${formatAmount(value)}`;
 }
 
 function formatDeltaInt(value: number) {
@@ -486,14 +486,9 @@ function formatDeltaInt(value: number) {
 
 export function CompactCurrency({ value }: { value: number }) {
   const formatted = formatCurrency(value);
-  const [amount, currency = 'RON'] = formatted.split(/\s(?=[A-Z]{3}$)/);
+  const amount = formatted.replace(/\s[A-Z]{3}$/, '');
 
-  return (
-    <span className="inline-flex flex-wrap items-end gap-1">
-      <span>{amount}</span>
-      <span className="text-[0.5em] font-bold opacity-75">{currency}</span>
-    </span>
-  );
+  return <span>{amount}</span>;
 }
 
 export function getAgentSortValue(agent: AgentStat, key: AgentSortKey): number {

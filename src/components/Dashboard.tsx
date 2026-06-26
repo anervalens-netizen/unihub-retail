@@ -45,7 +45,7 @@ import type {
   YearHistoryPoint,
 } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
-import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
+import { formatAmount, formatCurrency, formatInt, formatPercent } from '../lib/formatters';
 import { getCachedView, setCachedView } from '../lib/viewCache';
 import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
@@ -1602,10 +1602,10 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
               <Metric label="Magazine" value={formatInt(summary.total_stores)} className="p-2" />
               <Metric label="Agenti" value={formatInt(summary.total_agents)} className="p-2" />
               <Metric label="Zile lucrate" value={formatInt(summary.working_days)} className="p-2" />
-              <Metric label="Med. zilnica" value={formatCurrency(summary.daily_average ?? 0)} className="p-2" />
+              <Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} className="p-2" />
               <Metric
                 label="Val. medie bon"
-                value={formatCurrency(
+                value={formatAmount(
                   summary.total_receipts > 0
                     ? Number(summary.total_sales) / Number(summary.total_receipts)
                     : 0
@@ -1686,9 +1686,9 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       status={promoSummary.promotion.status_label ?? 'Fara date'}
                       metrics={[
                         { label: 'Cantitate', value: formatInt(promoIncentive.promo_qty) },
-                        { label: 'Impact', value: formatCurrency(promoIncentive.promo_impact) },
+                        { label: 'Impact', value: formatAmount(promoIncentive.promo_impact) },
                       ]}
-                      footer={`Vanzari promo: ${formatCurrency(promoIncentive.promo_sales)}`}
+                      footer={`Vanzari promo: ${formatAmount(promoIncentive.promo_sales)}`}
                     />
                   )}
                 <CampaignMiniCard
@@ -1697,7 +1697,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   status={promoSummary.incentive?.status_label ?? 'Fara date'}
                   metrics={[
                     { label: 'Cantitate', value: formatInt(promoIncentive.incentive_qty) },
-                    { label: 'Valoare', value: formatCurrency(promoIncentive.incentive_value) },
+                    { label: 'Valoare', value: formatAmount(promoIncentive.incentive_value) },
                     ...(promoSummary.incentive ? [
                       { label: 'Magazine calificate', value: formatInt(promoIncentive.incentive_qualified_stores) },
                       { label: 'Agenți calificați', value: formatInt(promoIncentive.incentive_qualified_agents) },
@@ -1728,7 +1728,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                     <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                     <Tooltip
-                      formatter={(value: number, _name: string) => formatCurrency(value)}
+                      formatter={(value: number, _name: string) => formatAmount(value)}
                     />
                     <Legend />
                     <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
@@ -1751,7 +1751,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   pieData={categoryMixChartData}
                   dataKey="sales_total"
                   nameKey="category"
-                  valueFormatter={formatCurrency}
+                  valueFormatter={formatAmount}
                   centerValue={formatCompactDonutValue(sumChartValues(categoryMixChartData, 'sales_total'))}
                 />
                 <CompactPieSection
@@ -1760,7 +1760,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   pieData={brandMixChartData}
                   dataKey="sales_total"
                   nameKey="brand"
-                  valueFormatter={formatCurrency}
+                  valueFormatter={formatAmount}
                   centerValue={formatCompactDonutValue(sumChartValues(brandMixChartData, 'sales_total'))}
                 />
               </div>
@@ -1819,8 +1819,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
                       <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>{regional.regional}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(regional.target)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(regional.total_vanzari)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(regional.target)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(regional.total_vanzari)}</td>
                       <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(regional.proc_realizare_target)}</td>
                       <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(regional.forecast_target_pct)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(regional.qty_total)}</td>
@@ -1892,8 +1892,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           <span className="truncate">{store.locatie}</span>
                         </span>
                       </td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.target)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.total_vanzari)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.target)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.total_vanzari)}</td>
                       <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
                       <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(store.forecast_target_pct)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
@@ -1959,13 +1959,13 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     >
                       <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.agent}</td>
                       <td className={`max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.locatie}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.target ?? 0)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatCurrency(agentRow.total_vanzari)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.target ?? 0)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatAmount(agentRow.total_vanzari)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_realizare_target)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
+                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_zilnica ?? 0)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.prc_focus_acc_qty)}</td>
                     </tr>
@@ -2017,7 +2017,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                         <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatCurrency(value))} />
+                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatAmount(value))} />
                         <Legend />
                         <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
                           {currentHistoryChartData.map((entry, index) => (
@@ -2041,7 +2041,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                         <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatCurrency(value))} />
+                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatAmount(value))} />
                         <Legend />
                         <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
                           {yearHistoryChartData.map((entry, index) => (
@@ -2276,10 +2276,10 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   <Metric label="Magazine" value={formatInt(historySummary?.total_stores ?? selectedHistoryPoint.total_stores)} className="p-2" />
                   <Metric label="Agenti" value={formatInt(historySummary?.total_agents ?? selectedHistoryPoint.total_agents)} className="p-2" />
                   <Metric label="Zile lucrate" value={formatInt(historySummary?.working_days ?? selectedHistoryPoint.working_days)} className="p-2" />
-                  <Metric label="Med. zilnica" value={formatCurrency(historySummary?.daily_average ?? selectedHistoryPoint.daily_average ?? 0)} className="p-2" />
+                  <Metric label="Med. zilnica" value={formatAmount(historySummary?.daily_average ?? selectedHistoryPoint.daily_average ?? 0)} className="p-2" />
                   <Metric
                     label="Val. medie bon"
-                    value={formatCurrency(
+                    value={formatAmount(
                       (historySummary?.total_receipts ?? selectedHistoryPoint.total_receipts) > 0
                         ? Number(historySummary?.total_sales ?? selectedHistoryPoint.total_sales) / Number(historySummary?.total_receipts ?? selectedHistoryPoint.total_receipts)
                         : 0
@@ -2315,9 +2315,9 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           status={historyPromoSummary.promotion!.status_label ?? 'Fara date'}
                           metrics={[
                             { label: 'Cantitate', value: formatInt(historyPromoIncentive.promo_qty) },
-                            { label: 'Impact', value: formatCurrency(historyPromoIncentive.promo_impact) },
+                            { label: 'Impact', value: formatAmount(historyPromoIncentive.promo_impact) },
                           ]}
-                          footer={`Vanzari promo: ${formatCurrency(historyPromoIncentive.promo_sales)}`}
+                          footer={`Vanzari promo: ${formatAmount(historyPromoIncentive.promo_sales)}`}
                         />
                       )}
                       {showIncentive && (
@@ -2327,7 +2327,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           status={historyPromoSummary.incentive!.status_label ?? 'Fara date'}
                           metrics={[
                             { label: 'Cantitate', value: formatInt(historyPromoIncentive.incentive_qty) },
-                            { label: 'Valoare', value: formatCurrency(historyPromoIncentive.incentive_value) },
+                            { label: 'Valoare', value: formatAmount(historyPromoIncentive.incentive_value) },
                             ...(historyPromoSummary.incentive ? [
                               { label: 'Magazine calificate', value: formatInt(historyPromoIncentive.incentive_qualified_stores) },
                               { label: 'Agenți calificați', value: formatInt(historyPromoIncentive.incentive_qualified_agents) },
@@ -2363,7 +2363,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                         <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <Tooltip
                           formatter={(value: number, name: string) =>
-                            name === 'Vanzari' ? formatCurrency(value) : formatInt(value)
+                            name === 'Vanzari' ? formatAmount(value) : formatInt(value)
                           }
                         />
                         <Legend />
@@ -2386,7 +2386,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       pieData={historyCategoryMixChartData}
                       dataKey="sales_total"
                       nameKey="category"
-                      valueFormatter={formatCurrency}
+                      valueFormatter={formatAmount}
                       centerValue={formatCompactDonutValue(sumChartValues(historyCategoryMixChartData, 'sales_total'))}
                     />
                     <CompactPieSection
@@ -2395,7 +2395,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       pieData={historyBrandMixChartData}
                       dataKey="sales_total"
                       nameKey="brand"
-                      valueFormatter={formatCurrency}
+                      valueFormatter={formatAmount}
                       centerValue={formatCompactDonutValue(sumChartValues(historyBrandMixChartData, 'sales_total'))}
                     />
                   </div>
@@ -2454,8 +2454,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                         >
                           <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>{row.regional}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(row.target)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(row.total_vanzari)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(row.target)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(row.total_vanzari)}</td>
                           <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(row.proc_realizare_target)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.qty_total)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.nr_bonuri)}</td>
@@ -2525,8 +2525,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                               <span className="truncate">{store.locatie}</span>
                             </span>
                           </td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.target)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(store.total_vanzari)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.target)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.total_vanzari)}</td>
                           <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
@@ -2591,13 +2591,13 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                         >
                           <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.agent}</td>
                           <td className={`max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.locatie}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.target ?? 0)}</td>
-                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatCurrency(agentRow.total_vanzari)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.target ?? 0)}</td>
+                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatAmount(agentRow.total_vanzari)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_realizare_target)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatCurrency(agentRow.medie_zilnica ?? 0)}</td>
+                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_zilnica ?? 0)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.prc_focus_acc_qty)}</td>
                         </tr>
