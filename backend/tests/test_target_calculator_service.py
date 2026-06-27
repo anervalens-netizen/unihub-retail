@@ -272,6 +272,62 @@ async def test_calculate_builds_forecasted_rows_and_saves_draft(
 
 
 @pytest.mark.asyncio
+async def test_calculate_flags_extreme_seasonality_and_capped_adjustments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {
+            "site_code": "SITE01",
+            "locatie": "Magazin 1",
+            "firma": "Mobiup",
+            "regional": "Regional",
+            "asm": "ASM 1",
+        },
+    ]
+    realized_by_month = {
+        "2025-05": Decimal("100000"),
+        "2025-06": Decimal("300000"),
+        "2026-05": Decimal("500000"),
+    }
+    repo.get_source_metrics.return_value = [
+        {
+            "site_code": "SITE01",
+            "import_month": month,
+            "target": Decimal("0"),
+            "realized": realized_by_month.get(month, Decimal("0")),
+        }
+        for month in ("2023-05", "2023-06", "2024-05", "2024-06", "2025-05", "2025-06", "2026-05")
+    ]
+    monkeypatch.setattr(
+        target_module,
+        "get_forecast_factor",
+        AsyncMock(return_value=Decimal("1")),
+    )
+    repo.save_draft_scenario.return_value = 9
+    service.get_scenario_detail = AsyncMock(return_value={"id": 9})  # type: ignore[method-assign]
+
+    await service.calculate(
+        {
+            "target_month": "2026-06",
+            "total_target": 800000,
+            "min_floor": 10000,
+            "previous_month_floor_pct": 0.1,
+            "expected_revision": 2,
+        }
+    )
+
+    saved_rows = repo.save_draft_scenario.await_args.args[1]
+    flags = saved_rows[0]["calculation_details"]["flags"]
+    assert "EXTREME_SEASONALITY" in flags
+    assert "SEASONALITY_CAPPED" in flags
+    assert "TREND_ADJUSTMENT_CAPPED" in flags
+    assert saved_rows[0]["calculation_details"]["seasonality"]["used_factor"] == 1.7
+    assert saved_rows[0]["calculation_details"]["trend"]["used_adjustment"] == 1.1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("cohort_month", "cohort", "total_target", "expected_detail"),
     [
@@ -392,6 +448,45 @@ async def test_scenario_detail_serializes_totals_and_summaries() -> None:
     ]
     assert result["source_summary"][0]["is_forecast"] is True
     assert result["source_summary"][0]["attainment_pct"] == 105.0
+
+
+def test_regional_summary_falls_back_to_history_when_details_are_missing() -> None:
+    service, _repo = make_service()
+    rows = [
+        {
+            "regional": "Regional A",
+            "floor_target": 10000.0,
+            "proposed_target": 50000.0,
+            "final_target": None,
+            "calculation_details": "{}",
+            "history": (
+                '[{"month":"2025-06","role":"seasonality_base_y1","realized":40000.0},'
+                '{"month":"2025-07","role":"seasonality_target_y1","realized":60000.0},'
+                '{"month":"2026-06","role":"floor_reference","realized":45000.0}]'
+            ),
+        }
+    ]
+
+    result = service._regional_summary(rows)
+
+    assert result == [
+        {
+            "regional": "Regional A",
+            "store_count": 1,
+            "floor_total": 10000.0,
+            "proposed_total": 50000.0,
+            "final_total": 0.0,
+            "current_month": "2026-06",
+            "current_forecast_total": 45000.0,
+            "last_year_base_month": "2025-06",
+            "last_year_target_month": "2025-07",
+            "last_year_base_total": 40000.0,
+            "last_year_target_total": 60000.0,
+            "proposed_growth_vs_current_pct": 11.11,
+            "final_growth_vs_current_pct": -100.0,
+            "last_year_growth_pct": 50.0,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -535,6 +630,7 @@ async def test_export_excel_contains_audit_sheets() -> None:
                 }
             ],
             warnings=["Atentionare test"],
+            calculation_params={"strong_weights": {"store": 0.5}},
         ),
         "rows": [
             {
@@ -606,7 +702,9 @@ async def test_export_excel_contains_audit_sheets() -> None:
 
     assert workbook.sheetnames == ["Targete finale", "Rezumat manageri", "Parametri"]
     assert workbook["Targete finale"]["G1"].value == "Forecast folosit 2025-05"
-    assert workbook["Parametri"]["A11"].value == "Forecast 2025-05"
+    parameter_labels = [cell.value for cell in workbook["Parametri"]["A"]]
+    assert "Parametru strong_weights" in parameter_labels
+    assert "Forecast 2025-05" in parameter_labels
     assert filename.startswith("targete_2026-06_scenariu_9_")
 
 

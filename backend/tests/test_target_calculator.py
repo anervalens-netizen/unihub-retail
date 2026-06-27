@@ -18,11 +18,15 @@ from repositories.target_calculator import (
 from routers.target_calculator import can_finalize_targets, require_target_owner
 from services.target_calculator import (
     CALCULATION_METHOD,
+    allocate_with_bounds,
     allocate_with_floors,
+    percent_change,
     realized_for_calculation,
     seasonality_pair_configuration,
+    seasonal_year_weights,
     shift_month,
     source_month_configuration,
+    weighted_available,
     weighted_ratio,
 )
 
@@ -94,6 +98,18 @@ def test_multiyear_seasonality_blends_recent_years_more_heavily() -> None:
     assert [item["year_offset"] for item in details] == [1, 2]
 
 
+def test_helper_edges_for_seasonality_and_growth() -> None:
+    assert percent_change(100, 0) is None
+    assert seasonal_year_weights(3) == [Decimal("0.50"), Decimal("0.30"), Decimal("0.20")]
+    assert weighted_available({"store": (None, Decimal("0.5"))}) is None
+    factor, details = weighted_ratio(
+        seasonality_pair_configuration("2026-07", 1),
+        {"2025-06": Decimal("0"), "2025-07": Decimal("100")},
+    )
+    assert factor is None
+    assert details[0]["ratio"] is None
+
+
 def test_allocation_redistributes_after_applying_floor() -> None:
     rows = [
         {"calculated_weight": Decimal("0.90"), "floor_target": Decimal("100"), "is_floor_limited": False},
@@ -122,6 +138,89 @@ def test_allocation_warns_when_budget_cannot_cover_floors() -> None:
 
     assert sum(row["proposed_target"] for row in allocated) == Decimal("200.00")
     assert len(warnings) == 1
+
+
+def bounded_row(
+    weight: str,
+    floor: str,
+    cap: str,
+) -> dict[str, object]:
+    return {
+        "calculated_weight": Decimal(weight),
+        "floor_target": Decimal(floor),
+        "cap_target": Decimal(cap),
+        "is_floor_limited": False,
+        "is_cap_limited": False,
+        "allocation_reason": "proportional",
+        "flags": [],
+    }
+
+
+def test_bounded_allocation_handles_empty_input() -> None:
+    assert allocate_with_bounds([], Decimal("100")) == ([], [])
+
+
+def test_bounded_allocation_warns_when_budget_cannot_cover_floors() -> None:
+    rows = [bounded_row("0.5", "100", "200"), bounded_row("0.5", "100", "200")]
+
+    allocated, warnings = allocate_with_bounds(rows, Decimal("150"))
+
+    assert sum(row["proposed_target"] for row in allocated) == Decimal("200.00")
+    assert warnings
+    assert all(row["is_floor_limited"] for row in allocated)
+    assert all("FLOOR_APPLIED" in row["flags"] for row in allocated)
+
+
+def test_bounded_allocation_warns_when_budget_exceeds_caps() -> None:
+    rows = [bounded_row("0.5", "0", "50"), bounded_row("0.5", "0", "50")]
+
+    allocated, warnings = allocate_with_bounds(rows, Decimal("150"))
+
+    assert sum(row["proposed_target"] for row in allocated) == Decimal("100.00")
+    assert warnings
+    assert all(row["is_cap_limited"] for row in allocated)
+    assert all("CAP_APPLIED" in row["flags"] for row in allocated)
+
+
+def test_bounded_allocation_handles_zero_weights_and_iterative_bounds() -> None:
+    zero_rows = [bounded_row("0", "0", "100"), bounded_row("0", "0", "100")]
+    zero_allocated, zero_warnings = allocate_with_bounds(zero_rows, Decimal("50"))
+    assert zero_warnings == []
+    assert [row["proposed_target"] for row in zero_allocated] == [Decimal("25.00"), Decimal("25.00")]
+
+    floor_rows = [bounded_row("0.99", "0", "100"), bounded_row("0.01", "40", "100")]
+    floor_allocated, _ = allocate_with_bounds(floor_rows, Decimal("100"))
+    assert floor_allocated[1]["is_floor_limited"] is True
+    assert "FLOOR_APPLIED" in floor_allocated[1]["flags"]
+    assert sum(row["proposed_target"] for row in floor_allocated) == Decimal("100.00")
+
+    cap_rows = [bounded_row("0.99", "0", "50"), bounded_row("0.01", "0", "100")]
+    cap_allocated, _ = allocate_with_bounds(cap_rows, Decimal("100"))
+    assert cap_allocated[0]["is_cap_limited"] is True
+    assert "CAP_APPLIED" in cap_allocated[0]["flags"]
+    assert sum(row["proposed_target"] for row in cap_allocated) == Decimal("100.00")
+
+
+def test_bounded_allocation_rounding_marks_bound_when_single_row_cannot_absorb_diff() -> None:
+    positive_rows = [
+        bounded_row("1", "0", "33.335"),
+        bounded_row("1", "0", "33.335"),
+        bounded_row("1", "0", "33.335"),
+    ]
+    positive_allocated, positive_warnings = allocate_with_bounds(positive_rows, Decimal("100"))
+    assert positive_warnings == []
+    assert sum(row["proposed_target"] for row in positive_allocated) == Decimal("100.00")
+    assert any(row["is_cap_limited"] for row in positive_allocated)
+
+    negative_rows = [
+        bounded_row("1", "33.335", "100"),
+        bounded_row("1", "33.335", "100"),
+        bounded_row("1", "33.335", "100"),
+    ]
+    negative_allocated, negative_warnings = allocate_with_bounds(negative_rows, Decimal("100.01"))
+    assert negative_warnings == []
+    assert sum(row["proposed_target"] for row in negative_allocated) == Decimal("100.01")
+    assert any(row["is_floor_limited"] for row in negative_allocated)
 
 
 def make_repository_connection() -> tuple[TargetCalculatorRepository, AsyncMock]:

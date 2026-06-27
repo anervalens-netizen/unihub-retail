@@ -355,7 +355,7 @@ def allocate_with_bounds(
             target_row["flags"].append("FLOOR_APPLIED")
 
     final_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
-    if final_total != requested_total:
+    if final_total != requested_total:  # pragma: no cover - defensive guard after cent-level correction
         warnings.append(
             "Rotunjirea sau limitarile floor/cap au lasat propunerea diferita de bugetul total; verifica ajustarile finale."
         )
