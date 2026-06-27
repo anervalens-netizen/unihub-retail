@@ -42,9 +42,10 @@ mai "frumos", ci reducerea riscului operational:
 
 ## Stare curenta validata
 
-Snapshot publicat:
+Ultima transa de cod validata:
 
-- Commit: `3be1a9c ci: isolate visits sqlite for backend tests`
+- Commit: `a0e2624 refactor: move dashboard data to query cache`
+- CI: `28290623749` - OK
 - Branch: `main`
 - Remote: `origin/main`
 
@@ -220,6 +221,7 @@ Validare transa curenta:
 - `sudo systemctl restart unihub-backend.service` - OK;
 - health local si public - OK;
 - jurnal `unihub-backend.service` dupa restart - fara warnings;
+- GitHub Actions CI `28290623749` - OK;
 - `/api/dashboard/all?month=2026-06` local a raspuns `401`, asteptat fara
   sesiune Authentik; nu s-a folosit ca proba de business fara autentificare.
 
