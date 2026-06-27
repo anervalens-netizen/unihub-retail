@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRight,
   Building2,
@@ -25,6 +26,7 @@ import {
   YAxis,
 } from 'recharts';
 import { getDashboardAll, getDashboardHistory, getDashboardHistoryYear } from '../api/dashboard';
+import type { DashboardQuery } from '../api/dashboard';
 import type {
   AgentStat,
   AsmStat,
@@ -46,7 +48,7 @@ import type {
 } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../lib/formatters';
-import { getCachedView, setCachedView } from '../lib/viewCache';
+import { queryKeys } from '../lib/queryKeys';
 import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
@@ -133,7 +135,17 @@ const DEFAULT_PROMO_INCENTIVE: PromoIncentiveSummary = {
   incentive_qualified_stores: 0,
   incentive_qualified_agents: 0,
 };
-const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
+const DASHBOARD_STALE_MS = 3 * 60 * 1000;
+const EMPTY_AGENT_STATS: AgentStat[] = [];
+const EMPTY_BRAND_MIX: BrandMixItem[] = [];
+const EMPTY_CATEGORY_MIX: CategoryMixItem[] = [];
+const EMPTY_DAILY_SALES: DailySalesPoint[] = [];
+const EMPTY_HISTORY: MonthlyHistoryPoint[] = [];
+const EMPTY_RECEIPT_BUCKETS: ReceiptBucketItem[] = [];
+const EMPTY_REGIONAL_STATS: RegionalStat[] = [];
+const EMPTY_SPECIAL_CARDS: DashboardSpecialCard[] = [];
+const EMPTY_STORE_STATS: StoreStat[] = [];
+const EMPTY_YEAR_HISTORY: YearHistoryPoint[] = [];
 const TABLE_MAX_HEIGHT_CLASS = 'max-h-[26rem]';
 const HUB_TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-[10.5px]';
 const COMPACT_TH_CLASS = 'px-1.5 py-1.5 align-bottom whitespace-normal text-[10px] leading-[1.05]';
@@ -569,7 +581,28 @@ function aggregateByKey<T>(rows: T[], keyFn: (row: T) => string, merge: (base: T
   return [...map.values()];
 }
 
-function aggregateDashboardDetails(responses: DashboardAllResponse[], selectedMonths: string[]) {
+interface AggregatedDashboardDetails {
+  summary: DashboardSummary;
+  receiptBucketMix: ReceiptBucketItem[];
+  focusSubcategoryMix: CategoryMixItem[];
+  dailySales: DailySalesPoint[];
+  dailyLastYear: DailySalesPoint[];
+  categoryMix: CategoryMixItem[];
+  brandMix: BrandMixItem[];
+  specialCards: DashboardSpecialCard[];
+  periodComparison: PeriodComparisonPayload | null;
+  promoIncentive: PromoIncentiveSummary;
+  premiumGlass: PremiumGlassAnalysis | null;
+  regionals: RegionalStat[];
+  asms: AsmStat[];
+  stores: StoreStat[];
+  agents: AgentStat[];
+}
+
+export function aggregateDashboardDetails(
+  responses: DashboardAllResponse[],
+  selectedMonths: string[]
+): AggregatedDashboardDetails {
   const label = selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} - ${selectedMonths[selectedMonths.length - 1]}`;
   const latest = responses[responses.length - 1];
   return {
@@ -592,50 +625,14 @@ function aggregateDashboardDetails(responses: DashboardAllResponse[], selectedMo
 }
 
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [historyMonths, setHistoryMonths] = useState<string[]>([currentMonth]);
   const [draftHistoryMonths, setDraftHistoryMonths] = useState<string[]>([currentMonth]);
   const [historyMonthDropdownOpen, setHistoryMonthDropdownOpen] = useState(false);
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [agents, setAgents] = useState<AgentStat[]>([]);
-  const [stores, setStores] = useState<StoreStat[]>([]);
-  const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
-  const [dailyLastYear, setDailyLastYear] = useState<DailySalesPoint[]>([]);
-  const [specialCards, setSpecialCards] = useState<DashboardSpecialCard[]>([]);
-  const [periodComparison, setPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
-  const [categoryMix, setCategoryMix] = useState<CategoryMixItem[]>([]);
-  const [receiptBucketMix, setReceiptBucketMix] = useState<ReceiptBucketItem[]>([]);
-  const [focusSubcategoryMix, setFocusSubcategoryMix] = useState<CategoryMixItem[]>([]);
-  const [brandMix, setBrandMix] = useState<BrandMixItem[]>([]);
-  const [promoIncentive, setPromoIncentive] =
-    useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
-  const [premiumGlass, setPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
-  const [currentHistory, setCurrentHistory] = useState<MonthlyHistoryPoint[]>([]);
-  const [currentHistoryLoading, setCurrentHistoryLoading] = useState(false);
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
-  const [yearHistory, setYearHistory] = useState<YearHistoryPoint[]>([]);
-  const [yearHistoryLoading, setYearHistoryLoading] = useState(false);
-  const [history, setHistory] = useState<MonthlyHistoryPoint[]>([]);
-  const [historySummary, setHistorySummary] = useState<DashboardSummary | null>(null);
-  const [historyReceiptBucketMix, setHistoryReceiptBucketMix] = useState<ReceiptBucketItem[]>([]);
-  const [historyFocusSubcategoryMix, setHistoryFocusSubcategoryMix] = useState<CategoryMixItem[]>([]);
-  const [historyDailySales, setHistoryDailySales] = useState<DailySalesPoint[]>([]);
-  const [historyCategoryMix, setHistoryCategoryMix] = useState<CategoryMixItem[]>([]);
-  const [historyBrandMix, setHistoryBrandMix] = useState<BrandMixItem[]>([]);
-  const [historySpecialCards, setHistorySpecialCards] = useState<DashboardSpecialCard[]>([]);
-  const [, setHistoryPeriodComparison] = useState<PeriodComparisonPayload | null>(null);
-  const [historyPromoIncentive, setHistoryPromoIncentive] = useState<PromoIncentiveSummary>(DEFAULT_PROMO_INCENTIVE);
-  const [historyPremiumGlass, setHistoryPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
-  const [historyRegionals, setHistoryRegionals] = useState<RegionalStat[]>([]);
-  const [, setHistoryAsms] = useState<AsmStat[]>([]);
-  const [historyStores, setHistoryStores] = useState<StoreStat[]>([]);
-  const [historyAgents, setHistoryAgents] = useState<AgentStat[]>([]);
   const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
   const [includeClosedStores, setIncludeClosedStores] = useState(false);
   const [storeSort, setStoreSort] = useState<{ key: StoreSortKey; direction: SortDirection }>({
     key: 'proc_realizare_target',
@@ -652,9 +649,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [historyRegionalSort, setHistoryRegionalSort] = useState<{ key: RegionalSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
   const [historyStoreSort, setHistoryStoreSort] = useState<{ key: StoreSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
   const [historyAgentSort, setHistoryAgentSort] = useState<{ key: AgentSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
-  const [regionals, setRegionals] = useState<RegionalStat[]>([]);
-  const [, setAsms] = useState<AsmStat[]>([]);
-  const isMountedRef = useRef(true);
   const historyMonthDropdownRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -693,6 +687,10 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     () => formatMonthSelectionLabel(selectedHistoryMonths),
     [selectedHistoryMonths]
   );
+  const historySelectionSlug = useMemo(
+    () => selectedHistoryMonths.join('_'),
+    [selectedHistoryMonths]
+  );
   const draftSelectedHistoryMonths = useMemo(() => {
     const valid = draftHistoryMonths.filter((month) => months.includes(month));
     return sortMonthsAsc(valid.length > 0 ? valid : selectedHistoryMonths);
@@ -701,303 +699,134 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     () => formatMonthSelectionLabel(draftSelectedHistoryMonths),
     [draftSelectedHistoryMonths]
   );
-  const historySelectionSlug = useMemo(
-    () => selectedHistoryMonths.join('_'),
-    [selectedHistoryMonths]
-  );
-
-  const currentCacheKey = useMemo(
-    () => `dashboard:current:${currentMonth}:${JSON.stringify(buildQuery(currentMonth))}`,
+  const currentQueryParams = useMemo(
+    () => buildQuery(currentMonth),
     [buildQuery, currentMonth]
   );
-  const historyCacheKey = useMemo(
-    () => `dashboard:history:${historyMonth}:${JSON.stringify({ ...buildHistoryQuery(historyMonth), months_back: 12 })}`,
+  const historyQueryParams = useMemo(
+    () => ({ ...buildHistoryQuery(historyMonth), months_back: 12 }),
     [buildHistoryQuery, historyMonth]
   );
-  const historyDetailCacheKey = useMemo(
-    () => `dashboard:history-detail:${historySelectionSlug}:${JSON.stringify(selectedHistoryMonths.map((month) => buildHistoryQuery(month)))}`,
-    [buildHistoryQuery, historySelectionSlug, selectedHistoryMonths]
+  const historyDetailQueries = useMemo(
+    () => selectedHistoryMonths.map((month) => buildHistoryQuery(month)),
+    [buildHistoryQuery, selectedHistoryMonths]
   );
+  const historyDetailQueryParams = useMemo(
+    () => ({
+      selected_months: selectedHistoryMonths,
+      queries: historyDetailQueries,
+    }),
+    [historyDetailQueries, selectedHistoryMonths]
+  );
+  const currentHistoryQueryParams = useMemo(
+    () => ({ ...buildHistoryQuery(currentMonth), months_back: 14 }),
+    [buildHistoryQuery, currentMonth]
+  );
+  const yearHistoryQueryParams = useMemo<Omit<DashboardQuery, 'month'> & { year: number } | null>(() => {
+    if (historyYearFilter === null) return null;
+    const { month: _month, ...filterParams } = buildHistoryQuery(currentMonth);
+    return { ...filterParams, year: historyYearFilter };
+  }, [buildHistoryQuery, currentMonth, historyYearFilter]);
 
-  const prefetchHistory = useCallback(
-    (monthToPrefetch: string) => {
-      const query = { ...buildHistoryQuery(monthToPrefetch), months_back: 12 };
-      const cacheKey = `dashboard:history:${monthToPrefetch}:${JSON.stringify(query)}`;
-      const cached = getCachedView<MonthlyHistoryPoint[]>(cacheKey, DASHBOARD_CACHE_TTL_MS);
-      if (cached.isFresh) {
-        return;
-      }
-
-      getDashboardHistory(query)
-        .then((data) => {
-          setCachedView(cacheKey, data.history);
-        })
-        .catch(() => {
-          // background prefetch stays silent
-        });
+  const currentQuery = useQuery({
+    queryKey: queryKeys.dashboard.current(currentMonth, currentQueryParams),
+    queryFn: () => getDashboardAll(currentQueryParams),
+    staleTime: DASHBOARD_STALE_MS,
+  });
+  const historyQuery = useQuery({
+    queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
+    queryFn: () => getDashboardHistory(historyQueryParams),
+    enabled: activeSection === 'history',
+    staleTime: DASHBOARD_STALE_MS,
+  });
+  const historyDetailQuery = useQuery({
+    queryKey: queryKeys.dashboard.historyDetail(selectedHistoryMonths, historyDetailQueryParams),
+    queryFn: async () => {
+      const responses = await Promise.all(historyDetailQueries.map((query) => getDashboardAll(query)));
+      return aggregateDashboardDetails(responses, selectedHistoryMonths);
     },
-    [buildHistoryQuery]
-  );
+    enabled: activeSection === 'history' && selectedHistoryMonths.length > 0,
+    staleTime: DASHBOARD_STALE_MS,
+  });
+  const currentHistoryQuery = useQuery({
+    queryKey: queryKeys.dashboard.currentHistory(currentMonth, currentHistoryQueryParams),
+    queryFn: () => getDashboardHistory(currentHistoryQueryParams),
+    enabled: activeSection === 'history',
+    staleTime: DASHBOARD_STALE_MS,
+  });
+  const yearHistoryQuery = useQuery({
+    queryKey: queryKeys.dashboard.yearHistory(historyYearFilter ?? 0, yearHistoryQueryParams ?? { year: 0 }),
+    queryFn: () => getDashboardHistoryYear(yearHistoryQueryParams!),
+    enabled: activeSection === 'history' && yearHistoryQueryParams !== null,
+    staleTime: DASHBOARD_STALE_MS,
+  });
 
-  const fetchCurrentData = useCallback(() => {
-    if (!isMountedRef.current) return;
-    const cached = getCachedView<{
-      summary: DashboardSummary;
-      agents: AgentStat[];
-      stores: StoreStat[];
-      regionals: RegionalStat[];
-      asms: AsmStat[];
-      dailySales: DailySalesPoint[];
-      dailyLastYear: DailySalesPoint[];
-      specialCards: DashboardSpecialCard[];
-      periodComparison: PeriodComparisonPayload | null;
-      categoryMix: CategoryMixItem[];
-      receiptBucketMix: ReceiptBucketItem[];
-      focusSubcategoryMix: CategoryMixItem[];
-      brandMix: BrandMixItem[];
-      promoIncentive: PromoIncentiveSummary;
-      premiumGlass: PremiumGlassAnalysis | null;
-    }>(currentCacheKey, DASHBOARD_CACHE_TTL_MS);
+  const summary = currentQuery.data?.summary ?? null;
+  const agents = currentQuery.data?.agents ?? EMPTY_AGENT_STATS;
+  const stores = currentQuery.data?.stores ?? EMPTY_STORE_STATS;
+  const dailySales = currentQuery.data?.daily ?? EMPTY_DAILY_SALES;
+  const dailyLastYear = currentQuery.data?.daily_last_year ?? EMPTY_DAILY_SALES;
+  const specialCards = currentQuery.data?.special_cards ?? EMPTY_SPECIAL_CARDS;
+  const periodComparison = currentQuery.data?.period_comparison ?? null;
+  const categoryMix = currentQuery.data?.category_mix ?? EMPTY_CATEGORY_MIX;
+  const receiptBucketMix = currentQuery.data?.receipt_bucket_mix ?? EMPTY_RECEIPT_BUCKETS;
+  const focusSubcategoryMix = currentQuery.data?.focus_subcategory_mix ?? EMPTY_CATEGORY_MIX;
+  const brandMix = currentQuery.data?.brand_mix ?? EMPTY_BRAND_MIX;
+  const promoIncentive = currentQuery.data?.promo_incentive ?? DEFAULT_PROMO_INCENTIVE;
+  const premiumGlass = currentQuery.data?.premium_glass ?? null;
+  const regionals = currentQuery.data?.regionals ?? EMPTY_REGIONAL_STATS;
+  const currentHistory = currentHistoryQuery.data?.history ?? EMPTY_HISTORY;
+  const currentHistoryLoading = currentHistoryQuery.isPending && activeSection === 'history';
+  const yearHistory = yearHistoryQuery.data?.points ?? EMPTY_YEAR_HISTORY;
+  const yearHistoryLoading = yearHistoryQuery.isPending && activeSection === 'history' && historyYearFilter !== null;
+  const history = historyQuery.data?.history ?? EMPTY_HISTORY;
+  const historySummary = historyDetailQuery.data?.summary ?? null;
+  const historyReceiptBucketMix = historyDetailQuery.data?.receiptBucketMix ?? EMPTY_RECEIPT_BUCKETS;
+  const historyFocusSubcategoryMix = historyDetailQuery.data?.focusSubcategoryMix ?? EMPTY_CATEGORY_MIX;
+  const historyDailySales = historyDetailQuery.data?.dailySales ?? EMPTY_DAILY_SALES;
+  const historyCategoryMix = historyDetailQuery.data?.categoryMix ?? EMPTY_CATEGORY_MIX;
+  const historyBrandMix = historyDetailQuery.data?.brandMix ?? EMPTY_BRAND_MIX;
+  const historySpecialCards = historyDetailQuery.data?.specialCards ?? EMPTY_SPECIAL_CARDS;
+  const historyPromoIncentive = historyDetailQuery.data?.promoIncentive ?? DEFAULT_PROMO_INCENTIVE;
+  const historyPremiumGlass = historyDetailQuery.data?.premiumGlass ?? null;
+  const historyRegionals = historyDetailQuery.data?.regionals ?? EMPTY_REGIONAL_STATS;
+  const historyStores = historyDetailQuery.data?.stores ?? EMPTY_STORE_STATS;
+  const historyAgents = historyDetailQuery.data?.agents ?? EMPTY_AGENT_STATS;
+  const loading = currentQuery.isPending;
+  const error = currentQuery.isError && !currentQuery.data
+    ? currentQuery.error.message || 'Eroare la incarcarea lunii in curs'
+    : null;
+  const historyLoading = activeSection === 'history' && (historyQuery.isPending || historyDetailQuery.isPending);
+  const historyError = activeSection === 'history'
+    ? historyQuery.isError && !historyQuery.data
+      ? historyQuery.error.message || 'Istoricul nu a putut fi incarcat.'
+      : historyDetailQuery.isError && !historyDetailQuery.data
+        ? historyDetailQuery.error.message || 'Istoricul nu a putut fi incarcat.'
+        : !historyLoading && history.length === 0
+          ? 'Nu exista date istorice pentru filtrarea curenta.'
+          : null
+    : null;
 
-    if (cached.value) {
-      setSummary(cached.value.summary);
-      setAgents(cached.value.agents);
-      setStores(cached.value.stores);
-      setRegionals(cached.value.regionals);
-      setAsms(cached.value.asms);
-      setDailySales(cached.value.dailySales);
-      setDailyLastYear(cached.value.dailyLastYear ?? []);
-      setSpecialCards(cached.value.specialCards);
-      setPeriodComparison(cached.value.periodComparison);
-      setCategoryMix(cached.value.categoryMix);
-      setReceiptBucketMix(cached.value.receiptBucketMix);
-      setFocusSubcategoryMix(cached.value.focusSubcategoryMix);
-      setBrandMix(cached.value.brandMix);
-      setPromoIncentive(cached.value.promoIncentive);
-      setPremiumGlass(cached.value.premiumGlass);
-      setLoading(false);
-      setError(null);
-      if (cached.isFresh) {
-        return;
-      }
-    }
-
-    setLoading(true);
-    setError(null);
-    getDashboardAll(buildQuery(currentMonth))
-      .then((data) => {
-        if (!isMountedRef.current) return;
-        setSummary(data.summary);
-        setAgents(data.agents);
-        setStores(data.stores);
-        setRegionals(data.regionals || []);
-        setAsms(data.asms || []);
-        setDailySales(data.daily);
-        setDailyLastYear(data.daily_last_year ?? []);
-        setSpecialCards(data.special_cards);
-        setPeriodComparison(data.period_comparison);
-        setCategoryMix(data.category_mix);
-        setReceiptBucketMix(data.receipt_bucket_mix);
-        setFocusSubcategoryMix(data.focus_subcategory_mix);
-        setBrandMix(data.brand_mix);
-        setPromoIncentive(data.promo_incentive ?? DEFAULT_PROMO_INCENTIVE);
-        setPremiumGlass(data.premium_glass ?? null);
-        setCachedView(currentCacheKey, {
-          summary: data.summary,
-          agents: data.agents,
-          stores: data.stores,
-          regionals: data.regionals || [],
-          asms: data.asms || [],
-          dailySales: data.daily,
-          dailyLastYear: data.daily_last_year ?? [],
-          specialCards: data.special_cards,
-          periodComparison: data.period_comparison,
-          categoryMix: data.category_mix,
-          receiptBucketMix: data.receipt_bucket_mix,
-          focusSubcategoryMix: data.focus_subcategory_mix,
-          brandMix: data.brand_mix,
-          promoIncentive: data.promo_incentive ?? DEFAULT_PROMO_INCENTIVE,
-          premiumGlass: data.premium_glass ?? null,
-        });
-      })
-      .catch((err: Error) => {
-        if (!isMountedRef.current) return;
-        setError(err.message || 'Eroare la incarcarea lunii in curs');
-      })
-      .finally(() => {
-        if (isMountedRef.current) setLoading(false);
-      });
-  }, [buildQuery, currentCacheKey, currentMonth]);
-
-  const loadHistory = useCallback(() => {
-    if (!isMountedRef.current) return;
-    const cached = getCachedView<MonthlyHistoryPoint[]>(historyCacheKey, DASHBOARD_CACHE_TTL_MS);
-    const cachedDetail = getCachedView<{
-      summary: DashboardSummary;
-      receiptBucketMix: ReceiptBucketItem[];
-      focusSubcategoryMix: CategoryMixItem[];
-      dailySales: DailySalesPoint[];
-      categoryMix: CategoryMixItem[];
-      brandMix: BrandMixItem[];
-      specialCards: DashboardSpecialCard[];
-      periodComparison: PeriodComparisonPayload | null;
-      promoIncentive: PromoIncentiveSummary;
-      regionals: RegionalStat[];
-      asms: AsmStat[];
-      stores: StoreStat[];
-      agents: AgentStat[];
-      premiumGlass: PremiumGlassAnalysis | null;
-    }>(historyDetailCacheKey, DASHBOARD_CACHE_TTL_MS);
-
-    if (cached.value) {
-      setHistory(cached.value);
-      setHistoryError(cached.value.length === 0 ? 'Nu exista date istorice pentru filtrarea curenta.' : '');
-      if (cachedDetail.value) {
-        setHistorySummary(cachedDetail.value.summary);
-        setHistoryReceiptBucketMix(cachedDetail.value.receiptBucketMix);
-        setHistoryFocusSubcategoryMix(cachedDetail.value.focusSubcategoryMix);
-        setHistoryDailySales(cachedDetail.value.dailySales);
-        setHistoryCategoryMix(cachedDetail.value.categoryMix);
-        setHistoryBrandMix(cachedDetail.value.brandMix);
-        setHistorySpecialCards(cachedDetail.value.specialCards);
-        setHistoryPeriodComparison(cachedDetail.value.periodComparison);
-        setHistoryPromoIncentive(cachedDetail.value.promoIncentive);
-        setHistoryPremiumGlass(cachedDetail.value.premiumGlass);
-        setHistoryRegionals(cachedDetail.value.regionals ?? []);
-        setHistoryAsms(cachedDetail.value.asms ?? []);
-        setHistoryStores(cachedDetail.value.stores ?? []);
-        setHistoryAgents(cachedDetail.value.agents ?? []);
-      }
-      setHistoryLoading(false);
-      if (cached.isFresh && cachedDetail.isFresh) {
-        return;
-      }
-    }
-
-    setHistoryLoading(true);
-    setHistoryError(null);
-    const detailRequests = selectedHistoryMonths.map((month) => getDashboardAll(buildHistoryQuery(month)));
-    Promise.all([
-      getDashboardHistory({ ...buildHistoryQuery(historyMonth), months_back: 12 }),
-      Promise.all(detailRequests),
-    ])
-      .then(([histData, allResponses]) => {
-        if (!isMountedRef.current) return;
-        const allData = aggregateDashboardDetails(allResponses, selectedHistoryMonths);
-        setHistory(histData.history);
-        setCachedView(historyCacheKey, histData.history);
-        setHistorySummary(allData.summary);
-        setHistoryReceiptBucketMix(allData.receiptBucketMix);
-        setHistoryFocusSubcategoryMix(allData.focusSubcategoryMix);
-        setHistoryDailySales(allData.dailySales);
-        setHistoryCategoryMix(allData.categoryMix);
-        setHistoryBrandMix(allData.brandMix);
-        setHistorySpecialCards(allData.specialCards);
-        setHistoryPeriodComparison(allData.periodComparison);
-        setHistoryPromoIncentive(allData.promoIncentive);
-        setHistoryPremiumGlass(allData.premiumGlass);
-        setHistoryRegionals(allData.regionals);
-        setHistoryAsms(allData.asms);
-        setHistoryStores(allData.stores);
-        setHistoryAgents(allData.agents);
-        setCachedView(historyDetailCacheKey, {
-          summary: allData.summary,
-          receiptBucketMix: allData.receiptBucketMix,
-          focusSubcategoryMix: allData.focusSubcategoryMix,
-          dailySales: allData.dailySales,
-          categoryMix: allData.categoryMix,
-          brandMix: allData.brandMix,
-          specialCards: allData.specialCards,
-          periodComparison: allData.periodComparison,
-          promoIncentive: allData.promoIncentive,
-          premiumGlass: allData.premiumGlass,
-          regionals: allData.regionals,
-          asms: allData.asms,
-          stores: allData.stores,
-          agents: allData.agents,
-        });
-        if (histData.history.length === 0) {
-          setHistoryError('Nu exista date istorice pentru filtrarea curenta.');
-        }
-      })
-      .catch((err: Error) => {
-        if (!isMountedRef.current) return;
-        setHistory([]);
-        setHistoryError(err.message || 'Istoricul nu a putut fi incarcat.');
-      })
-      .finally(() => {
-        if (isMountedRef.current) setHistoryLoading(false);
-      });
-  }, [buildHistoryQuery, historyCacheKey, historyDetailCacheKey, historyMonth, selectedHistoryMonths]);
+  const refetchCurrentData = useCallback(() => {
+    void currentQuery.refetch();
+  }, [currentQuery]);
+  const refetchHistoryData = useCallback(() => {
+    void historyQuery.refetch();
+    void historyDetailQuery.refetch();
+  }, [historyDetailQuery, historyQuery]);
 
   useEffect(() => {
-    isMountedRef.current = true;
-    fetchCurrentData();
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [fetchCurrentData]);
-
-  // Prefetch history data in background (decoupled from fetchCurrentData to avoid
-  // re-fetching current data when only historyMonth changes)
-  useEffect(() => {
-    if (!loading) {
-      prefetchHistory(historyMonth);
-    }
-  }, [loading, historyMonth, prefetchHistory]);
+    if (!currentQuery.data) return;
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
+      queryFn: () => getDashboardHistory(historyQueryParams),
+      staleTime: DASHBOARD_STALE_MS,
+    });
+  }, [currentQuery.data, historyMonth, historyQueryParams, queryClient]);
 
   useEffect(() => {
     onSectionChange?.(activeSection);
   }, [activeSection, onSectionChange]);
-
-  useEffect(() => {
-    setHistory([]);
-    setHistorySummary(null);
-    setHistoryReceiptBucketMix([]);
-    setHistoryFocusSubcategoryMix([]);
-    setHistoryDailySales([]);
-    setHistoryCategoryMix([]);
-    setHistoryBrandMix([]);
-    setHistorySpecialCards([]);
-    setHistoryPeriodComparison(null);
-    setHistoryPromoIncentive(DEFAULT_PROMO_INCENTIVE);
-    setHistoryPremiumGlass(null);
-    setHistoryRegionals([]);
-    setHistoryAsms([]);
-    setHistoryStores([]);
-    setHistoryAgents([]);
-    setHistoryError(null);
-    if (activeSection === 'history') {
-      loadHistory();
-    }
-  }, [activeSection, historyMonth, historySelectionSlug, loadHistory]);
-
-  // Reset currentHistory when filters, store status scope or month change so it reloads with new params
-  useEffect(() => {
-    setCurrentHistory([]);
-  }, [buildHistoryQuery, currentMonth]);
-
-  // Load currentHistory when opening Istoric (or after reset above)
-  useEffect(() => {
-    if (activeSection !== 'history' || currentHistory.length > 0 || currentHistoryLoading) return;
-    setCurrentHistoryLoading(true);
-    getDashboardHistory({ ...buildHistoryQuery(currentMonth), months_back: 14 })
-      .then((data) => { if (isMountedRef.current) setCurrentHistory(data.history); })
-      .catch((err: Error) => { if (isMountedRef.current) setCurrentHistory([]); console.warn('currentHistory fetch failed:', err.message); })
-      .finally(() => { if (isMountedRef.current) setCurrentHistoryLoading(false); });
-  }, [activeSection, currentHistory.length, currentHistoryLoading, buildHistoryQuery, currentMonth]);
-
-  // Load year history when a specific year is selected
-  useEffect(() => {
-    if (historyYearFilter === null || activeSection !== 'history') return;
-    setYearHistoryLoading(true);
-    setYearHistory([]);
-    const { month: _month, ...filterParams } = buildHistoryQuery(currentMonth);
-    getDashboardHistoryYear({ ...filterParams, year: historyYearFilter })
-      .then((data) => { if (isMountedRef.current) setYearHistory(data.points); })
-      .catch((err: Error) => { if (isMountedRef.current) setYearHistory([]); console.warn('yearHistory fetch failed:', err.message); })
-      .finally(() => { if (isMountedRef.current) setYearHistoryLoading(false); });
-  }, [historyYearFilter, activeSection, buildHistoryQuery, currentMonth]);
 
   const availableYears = useMemo(() => {
     const cy = parseInt(currentMonth.slice(0, 4));
@@ -1509,7 +1338,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       ) : error || !summary ? (
         <ErrorCard
           message={error ?? 'Datele pentru luna in curs nu au putut fi incarcate.'}
-          onRetry={fetchCurrentData}
+          onRetry={refetchCurrentData}
         />
       ) : activeSection === 'current' ? (
         <>
@@ -1980,9 +1809,9 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           {historyLoading ? (
             <LoadingCard label="Se incarca istoricul..." />
           ) : historyError ? (
-            <ErrorCard message={historyError} onRetry={loadHistory} />
+            <ErrorCard message={historyError} onRetry={refetchHistoryData} />
           ) : !selectedHistoryPoint ? (
-            <ErrorCard message="Nu exista valori istorice pentru luna selectata." onRetry={loadHistory} />
+            <ErrorCard message="Nu exista valori istorice pentru luna selectata." onRetry={refetchHistoryData} />
           ) : (
             <>
               {/* Card 1 — Evolutie lunara (independent de historyMonth) */}

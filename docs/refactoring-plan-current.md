@@ -44,7 +44,7 @@ mai "frumos", ci reducerea riscului operational:
 
 Snapshot publicat:
 
-- Commit: `0a7c5a1 refactor: stabilize retail scope boundaries`
+- Commit: `3be1a9c ci: isolate visits sqlite for backend tests`
 - Branch: `main`
 - Remote: `origin/main`
 
@@ -186,22 +186,42 @@ Validare transa:
 
 ## Milestone 2 - Dashboard pe TanStack Query si split frontend
 
-Status: dupa Milestone 1.
+Status: partial implementat.
 
 Livrabile:
 
-- `Dashboard` current/history/history-detail migreaza pe TanStack Query;
-- prefetch-ul istoric este reimplementat explicit cu `queryClient.prefetchQuery`;
-- agregatul multi-month ramane un singur query cu key dedicat;
-- `Dashboard.tsx` se imparte in hooks de date si subcomponente:
+- [x] `Dashboard` current/history/history-detail migreaza pe TanStack Query;
+- [x] `currentHistory` si `yearHistory` raman query-uri separate, cu scopuri si
+  chei separate;
+- [x] prefetch-ul istoric este reimplementat explicit cu
+  `queryClient.prefetchQuery`;
+- [x] agregatul multi-month ramane un singur query cu key dedicat;
+- [x] `aggregateDashboardDetails` are test pentru totaluri, ponderari KPI,
+  daily aggregation si regula `special_cards` din ultima luna;
+- [x] `queryKeys.dashboard.yearHistory` adaugat si testat;
+- [ ] `Dashboard.tsx` se imparte in hooks de date si subcomponente:
   `CurrentDashboard`, `HistoryDashboard`, `BreakdownTable`;
-- sortarile repetitive folosesc `useSortable`.
+- [ ] sortarile repetitive folosesc `useSortable`.
 
 Criteriu:
 
 - payload-urile dashboard nu se schimba;
-- primul paint la schimbarea filtrelor ramane rapid cu `keepPreviousData`;
-- teste de render pentru KPI-uri si cartela informationala.
+- la schimbarea filtrelor/lunii nu se afiseaza date din scope-ul anterior;
+- query cache in-memory pastreaza `staleTime` de 3 minute pentru reintoarceri
+  rapide in acelasi scope;
+- teste pentru KPI-uri agregate, trendul curent si cartela informationala.
+
+Validare transa curenta:
+
+- `npm run typecheck` - OK;
+- `npm run lint` - OK;
+- `npm run test` - OK, 19 fisiere / 158 teste;
+- `npm run build` - OK;
+- `sudo systemctl restart unihub-backend.service` - OK;
+- health local si public - OK;
+- jurnal `unihub-backend.service` dupa restart - fara warnings;
+- `/api/dashboard/all?month=2026-06` local a raspuns `401`, asteptat fara
+  sesiune Authentik; nu s-a folosit ca proba de business fara autentificare.
 
 ## Milestone 3 - Backend domain boundaries ramase
 

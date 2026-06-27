@@ -11,6 +11,8 @@ export const queryKeys = {
       ['dashboard', 'history-detail', [...months], query] as const,
     currentHistory: (month: string, query: QueryKeyParams) =>
       ['dashboard', 'current-history', month, query] as const,
+    yearHistory: (year: number, query: QueryKeyParams) =>
+      ['dashboard', 'year-history', year, query] as const,
   },
   campaigns: {
     all: ['campaigns'] as const,

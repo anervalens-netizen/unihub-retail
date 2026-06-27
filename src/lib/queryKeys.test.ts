@@ -22,4 +22,21 @@ describe('queryKeys', () => {
 
     expect(key[2]).toEqual(['2026-06', '2026-05']);
   });
+
+  it('keeps dashboard current and yearly history keys separate', () => {
+    const query = { current_scope: true, include_closed_stores: false, months_back: 14 };
+
+    expect(queryKeys.dashboard.currentHistory('2026-06', query)).toEqual([
+      'dashboard',
+      'current-history',
+      '2026-06',
+      query,
+    ]);
+    expect(queryKeys.dashboard.yearHistory(2026, query)).toEqual([
+      'dashboard',
+      'year-history',
+      2026,
+      query,
+    ]);
+  });
 });
