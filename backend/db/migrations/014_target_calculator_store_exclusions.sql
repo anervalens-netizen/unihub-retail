@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS target_calculator_store_exclusions (
-    site_code TEXT NOT NULL REFERENCES stores(site_code),
+    site_code TEXT NOT NULL,
     effective_from_month TEXT NOT NULL CHECK (effective_from_month ~ '^[0-9]{4}-[0-9]{2}$'),
     reason TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
