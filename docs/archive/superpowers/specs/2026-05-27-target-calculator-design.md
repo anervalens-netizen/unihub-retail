@@ -16,17 +16,20 @@ Excel-ul furnizat initial este referinta functionala, nu o dependinta runtime.
 
 - filtrarea pe manager este expusa prin butoane rapide pentru toti regionalii,
   plus optiunea `Toti managerii`;
-- tabelul per locatie afiseaza, pentru fiecare dintre cele trei luni de
-  referinta, atat targetul istoric, cat si realizatul si procentul realizat;
-- coloanele celor doua luni consecutive din anul precedent sunt evidentiate
-  vizual, pentru citirea sezonalitatii fata de luna tinta;
+- tabelul per locatie afiseaza lunile de referinta ale metodei selectate, atat
+  targetul istoric, cat si realizatul si procentul realizat;
+- coloanele perechilor sezoniere sunt evidentiate vizual, iar tabelul arata
+  factorul folosit, factorul last-year, factorul multi-year si flag-urile
+  principale pentru fiecare locatie;
 - tabelul operational afiseaza valoarea `Calculat`, fara a expune separat
-  coloana de floor; floor-ul ramane aplicat in algoritm si pastrat in export;
+  coloane de floor/cap; limitele raman aplicate in algoritm si pastrate in export;
 - interfata nu expune un selector de scenarii: exista un singur draft pentru
   fiecare luna tinta, iar recalcularea actualizeaza acelasi draft;
 - rezumatul `Calculator si Final manager` este tabelar: finalul sub propunere
   este rosu, finalul egal sau pana la `+5%` este verde, iar finalul peste
-  `+5%` este galben;
+  `+5%` este galben. Cardul include si cresterea propunerii fata de forecastul
+  lunii curente, plus cresterea observata anul trecut intre luna baza si luna
+  target;
 - utilizatorul editeaza separat `Final manager`, fara a suprascrie propunerea;
   coloana si cardul ei sunt evidentiate ca zona care trebuie completata sau
   confirmata de manager. In drafturile noi, campul porneste gol si finalizarea
@@ -41,8 +44,9 @@ Excel-ul furnizat initial este referinta functionala, nu o dependinta runtime.
   `reporting_agent_day.sale_date`, cu fallback la agregatul lunar numai daca
   lipsesc randurile zilnice.
 - cardul superior `Calculator Target`, cu parametrii si actiunea de calcul,
-  este vizibil numai proprietarului configurat; managerii incep direct cu
-  documentul rezultat si completarile `Final manager`, iar singura lor
+  este vizibil numai proprietarului configurat; acesta include switch-ul
+  `Anul trecut` / `Multi-year`, cu multi-year implicit. Managerii incep direct
+  cu documentul rezultat si completarile `Final manager`, iar singura lor
   actiune manuala asupra draftului este `Salveaza acum`.
 - sub-tab-ul Management selectat este restaurat dupa refresh, astfel incat
   utilizatorul sa revina direct in `Calculator Target`.
@@ -54,10 +58,16 @@ in ultima luna disponibila anterior lunii tinta. Exemplu: pentru target
 `2026-06`, cand ultima luna incarcata este `2026-05`, cohorta este lista
 magazinelor cu vanzari in `2026-05`.
 
+Inainte de salvarea draftului, cohorta elimina intrarile active din
+`target_calculator_store_exclusions`. Regula acopera magazine inchise in luna
+de referinta, care inca au vanzari in acea luna dar nu trebuie sa primeasca
+target pentru luna urmatoare. Primele intrari sunt `CRFVUL` (Mobiup Carrefour
+Vulcan) si `CRFARENA` (MobiCell Grand Arena), effective din `2026-07`.
+
 Apartenenta `firma`, `regional` si `asm` se salveaza in randul draftului la
 momentul calculului, pentru ca filtrarea si exportul sa ramana reproductibile.
 
-## Algoritm `weighted_floor_forecast_v2`
+## Algoritm `seasonal_blended_multiyear_v1`
 
 Parametri configurabili:
 
@@ -65,45 +75,62 @@ Parametri configurabili:
 - `total_target`
 - `min_floor`
 - `previous_month_floor_pct`
+- `previous_month_cap_pct`
+- `seasonality_years` (`1` pentru anul trecut, `3` pentru multi-year)
 
-Perioadele folosite sunt derivate automat:
+Perioadele folosite sunt derivate automat. Pentru fiecare an istoric se ia
+perechea `luna anterioara targetului -> luna target`, iar luna curenta intra ca
+forecast/baza operationala:
 
 | Rol | Luna |
 | --- | --- |
-| Luna anterioara din anul precedent | `target_month - 13 luni` |
-| Aceeasi luna din anul precedent | `target_month - 12 luni` |
-| Referinta floor | `target_month - 1 luna` |
+| Baza sezoniera Y-1 | `target_month - 13 luni` |
+| Luna target Y-1 | `target_month - 12 luni` |
+| Baza sezoniera Y-2 | `target_month - 25 luni` |
+| Luna target Y-2 | `target_month - 24 luni` |
+| Baza sezoniera Y-3 | `target_month - 37 luni` |
+| Luna target Y-3 | `target_month - 36 luni` |
+| Referinta curenta | `target_month - 1 luna` |
 
-Exemplu: pentru targetul din `2026-06`, tabelul si calculul folosesc
-`2025-05`, `2025-06` si `2026-05`. Aceasta combinatie permite compararea
-evolutiei mai-iunie din anul anterior cu nivelul disponibil din mai curent.
-Pentru targetul din `2026-07`, perioadele devin `2025-06`, `2025-07` si
-`2026-06`.
+Exemplu: pentru targetul din `2026-07`, modul `Anul trecut` foloseste
+`2025-06 -> 2025-07` si `2026-06`. Modul `Multi-year` adauga perechile
+`2024-06 -> 2024-07` si `2023-06 -> 2023-07`, daca exista date.
 
 Daca o perioada folosita la calcul este inca partiala, valoarea de vanzari
 utilizata este forecastata din baza live cu aceeasi regula folosita in
 Hub/CRM: `realizat_importat * zile_luna / ultima_zi_importata`. Draftul
 salveaza atat realizatul importat, cat si forecast-ul si factorul folosit,
-iar interfata si exportul le marcheaza explicit. Factorul este comun tuturor
-magazinelor aceleiasi luni; prin urmare ajusteaza valoarea proiectata, dar nu
-schimba substantial ponderea relativa dintre magazine in acea perioada.
+iar interfata si exportul le marcheaza explicit.
 
-Pentru fiecare perioada si locatie, ponderea este media dintre ponderea in
-targetul total si ponderea in valoarea de vanzari utilizata a cohortei
-(`realizat` pentru luni inchise sau `forecast` pentru luni partiale).
-Ponderea finala este media perioadelor care au date disponibile.
+Pentru fiecare locatie:
+
+```text
+IS_magazin = weighted_average(target_istoric / baza_istorica)
+IS_manager = weighted_average(total_manager_target_istoric / total_manager_baza_istorica)
+IS_retea = weighted_average(total_retea_target_istoric / total_retea_baza_istorica)
+IS_blended = 50% IS_magazin + 30% IS_manager + 20% IS_retea
+estimare_bruta = forecast_luna_curenta * IS_blended_limitat * ajustare_trend
+```
+
+In multi-year, anii utilizabili primesc ponderi `70/30` pentru doi ani sau
+`50/30/20` pentru trei ani, cu anul cel mai recent primul. Daca magazinul are
+istoric slab, ponderile devin `30/40/30`; daca nu are factor de magazin,
+formula foloseste `0/60/40`. Factorul sezonier este limitat implicit la
+`0.70 - 1.70`, iar ajustarea de trend este mica si limitata.
 
 Floor-ul per locatie este:
 
 ```text
-max(min_floor, target_luna_anterioara * previous_month_floor_pct)
+max(min_floor, forecast_luna_curenta * previous_month_floor_pct)
 ```
 
-Bugetul se distribuie proportional cu ponderile. Magazinele care ar primi
-mai putin decat floor-ul sunt fixate la floor, iar diferenta ramasa se
-redistribuie iterativ celorlalte magazine. Daca suma floor-urilor depaseste
-bugetul, documentul avertizeaza utilizatorul si nu poate fi finalizat fara
-alinierea valorilor finale la totalul bugetat.
+Cap-ul per locatie este `forecast_luna_curenta * previous_month_cap_pct`, dar
+nu poate cobori sub floor. Bugetul se distribuie proportional cu estimarile
+brute. Magazinele care ar primi mai putin decat floor-ul sau mai mult decat
+cap-ul sunt fixate la limita, iar diferenta ramasa se redistribuie iterativ
+celorlalte magazine. Daca suma floor-urilor depaseste bugetul sau suma
+cap-urilor este sub buget, documentul avertizeaza utilizatorul si nu poate fi
+finalizat fara alinierea valorilor finale la totalul bugetat.
 
 ## Procedura lunara
 
@@ -113,7 +140,7 @@ Fluxul operational este unul singur, fara scenarii paralele:
    urmatoare si introduce targetul total.
 2. Apasa `Calculeaza propunerea`. Backend-ul creeaza sau actualizeaza draftul
    unic pentru luna tinta, cu cohorta din ultima luna disponibila inaintea
-   lunii tinta.
+   lunii tinta, minus excluderile active pentru Calculator Target.
 3. Daca ultima luna disponibila este partiala, valorile acesteia intra in
    calcul ca forecast, dar UI-ul pastreaza separat realizatul importat,
    forecast-ul si factorul folosit.
@@ -131,12 +158,13 @@ lista magazinelor cu vanzari in `2026-06`; calculul foloseste `2025-06`,
 ## Date si publicare
 
 `target_scenarios` retine cate un singur document de lucru per luna tinta,
-parametrii, lunile sursa, avertizarile si statusul `draft` sau `finalized`.
+parametrii, lunile sursa, parametrii formulei, avertizarile si statusul `draft`
+sau `finalized`.
 
 `target_scenario_rows` retine snapshot-ul locatiei, istoricul folosit,
-propunerea calculata, floor-ul si targetul final editabil. Coloana
-`final_target` este nullable: un `NULL` inseamna ca managerul nu a completat
-inca valoarea finala.
+breakdown-ul formulei in `calculation_details`, propunerea calculata, floor-ul
+si targetul final editabil. Coloana `final_target` este nullable: un `NULL`
+inseamna ca managerul nu a completat inca valoarea finala.
 
 Primul calcul pentru o luna creeaza imediat un `draft` in baza de date.
 Recalcularea aceleiasi luni actualizeaza draftul existent si reseteaza
@@ -183,7 +211,7 @@ exceptie explicita de includere, nu prin targete introduse separat in
 
 Workbook-ul exportat are trei foi:
 
-- `Targete finale`: istoric per locatie, floor, propunere, Final manager,
-  diferenta si observatii;
+- `Targete finale`: istoric per locatie, sezonalitate, trend, estimare bruta,
+  floor, cap, propunere, Final manager, diferenta, flag-uri si observatii;
 - `Rezumat manageri`: totaluri propuse si finale pe regional;
 - `Parametri`: cohorta, formula, parametri si avertizari.

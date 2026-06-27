@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS target_scenarios (
     calculation_method TEXT NOT NULL DEFAULT 'weighted_floor_forecast_v2',
     source_months JSONB NOT NULL DEFAULT '[]'::jsonb,
     warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
+    calculation_params JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     finalized_at TIMESTAMPTZ
@@ -241,6 +242,7 @@ CREATE TABLE IF NOT EXISTS target_scenario_rows (
     final_target NUMERIC(12, 2),
     is_floor_limited BOOLEAN NOT NULL DEFAULT false,
     history JSONB NOT NULL DEFAULT '[]'::jsonb,
+    calculation_details JSONB NOT NULL DEFAULT '{}'::jsonb,
     note TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (scenario_id, site_code)
@@ -248,6 +250,15 @@ CREATE TABLE IF NOT EXISTS target_scenario_rows (
 
 CREATE INDEX IF NOT EXISTS idx_target_scenario_rows_regional
     ON target_scenario_rows (scenario_id, regional);
+
+CREATE TABLE IF NOT EXISTS target_calculator_store_exclusions (
+    site_code TEXT NOT NULL REFERENCES stores(site_code),
+    effective_from_month TEXT NOT NULL CHECK (effective_from_month ~ '^[0-9]{4}-[0-9]{2}$'),
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (site_code, effective_from_month)
+);
 
 CREATE TABLE IF NOT EXISTS agent_targets (
     import_month TEXT NOT NULL,

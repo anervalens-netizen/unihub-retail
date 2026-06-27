@@ -44,6 +44,8 @@ class TargetCalculationRequest(BaseModel):
     total_target: Decimal = Field(gt=0)
     min_floor: Decimal = Field(default=Decimal("35000"), ge=0)
     previous_month_floor_pct: Decimal = Field(default=Decimal("0.90"), ge=0, le=2)
+    previous_month_cap_pct: Decimal = Field(default=Decimal("1.70"), gt=0, le=3)
+    seasonality_years: int = Field(default=3, ge=1, le=3)
     cohort_month: str | None = None
     expected_revision: int | None = Field(default=None, ge=1)
 

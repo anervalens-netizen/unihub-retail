@@ -348,19 +348,22 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    o versiune veche primesc 409, iar un advisory lock tranzactional serializeaza
    crearea initiala pentru aceeasi luna. O luna finalizata nu se recalculeaza.
 2. Stabileste cohorta din magazinele cu vanzari in ultima luna disponibila
-   anterior lunii tinta; datele de apartenenta RM/firma sunt snapshot in
-   randurile draftului.
-3. Calculeaza propunerea `weighted_floor_forecast_v2` din lunile `M-13` si `M-12`
-   (doua luni consecutive din anul anterior) si luna `M-1` curenta, aplicand
-   pragul minim si floor-ul procentual configurat. Pentru targetul din iunie
-   2026, referintele sunt mai 2025, iunie 2025 si mai 2026.
-   Daca o referinta este partiala, valoarea realizata folosita in ponderi este
-   forecastata cu regula comuna Hub/CRM si salvata in snapshot impreuna cu
-   realizatul importat.
+   anterior lunii tinta, apoi elimina magazinele cu excluderi active in
+   `target_calculator_store_exclusions`; datele de apartenenta RM/firma sunt
+   snapshot in randurile draftului.
+3. Calculeaza propunerea `seasonal_blended_multiyear_v1`: porneste de la
+   forecastul lunii curente, aplica un factor sezonier blended magazin / manager
+   / retea si aloca top-down targetul total dupa estimarea bruta. Finalizatorul
+   poate comuta in cardul de calcul intre `Anul trecut` si `Multi-year`, cu
+   multi-year implicit. Daca luna curenta este partiala, forecastul foloseste
+   regula comuna Hub/CRM si este salvat impreuna cu realizatul importat.
 4. Permite completarea valorii `final_target` pe fiecare locatie si exportul
    Excel al draftului sau rezultatului final. In drafturile noi, `Final manager`
    este `NULL`/gol pana la completarea explicita de catre manager; UI-ul il
    evidentiaza, iar finalizarea este blocata cat timp exista randuri goale.
+   Rezumatul pe manager afiseaza cresterea propunerii fata de forecastul lunii
+   curente si cresterea sezoniera observata anul trecut intre luna baza si
+   luna tinta.
 5. Tabelul de lucru permite filtru multi-select pe locatie. Click pe numele
    locatiei deschide un drawer cu 16 luni de istoric. Graficul din drawer
    comuta intre vanzari versus target, Bon2Acc si Focus/Acc; KPI-ul

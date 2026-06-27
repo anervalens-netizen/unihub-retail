@@ -20,8 +20,10 @@ from services.target_calculator import (
     CALCULATION_METHOD,
     allocate_with_floors,
     realized_for_calculation,
+    seasonality_pair_configuration,
     shift_month,
     source_month_configuration,
+    weighted_ratio,
 )
 
 
@@ -41,12 +43,16 @@ def auth_claims(email: str) -> AuthClaims:
 
 def test_source_months_are_derived_from_target_month() -> None:
     assert source_month_configuration("2026-06") == [
-        {"month": "2025-05", "label": "Luna anterioara anului trecut", "role": "previous_year_reference"},
-        {"month": "2025-06", "label": "Aceeasi luna anul trecut", "role": "year_over_year"},
-        {"month": "2026-05", "label": "Luna anterioara / floor", "role": "floor_reference"},
+        {"month": "2023-05", "label": "Baza sezoniera Y-3", "role": "seasonality_base_y3"},
+        {"month": "2023-06", "label": "Luna target Y-3", "role": "seasonality_target_y3"},
+        {"month": "2024-05", "label": "Baza sezoniera Y-2", "role": "seasonality_base_y2"},
+        {"month": "2024-06", "label": "Luna target Y-2", "role": "seasonality_target_y2"},
+        {"month": "2025-05", "label": "Baza sezoniera Y-1", "role": "seasonality_base_y1"},
+        {"month": "2025-06", "label": "Luna target Y-1", "role": "seasonality_target_y1"},
+        {"month": "2026-05", "label": "Forecast luna curenta", "role": "floor_reference"},
     ]
     assert shift_month("2026-01", -1) == "2025-12"
-    assert CALCULATION_METHOD == "weighted_floor_forecast_v2"
+    assert CALCULATION_METHOD == "seasonal_blended_multiyear_v1"
 
 
 def test_only_owner_can_finalize_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,6 +75,23 @@ def test_finalizer_allowlist_is_configurable(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_partial_reference_sales_are_projected_for_calculation() -> None:
     assert realized_for_calculation(Decimal("2608548.73"), Decimal(31) / Decimal(26)) == Decimal("3110192.72")
+
+
+def test_multiyear_seasonality_blends_recent_years_more_heavily() -> None:
+    pairs = seasonality_pair_configuration("2026-07", 2)
+    values = {
+        "2025-06": Decimal("100000"),
+        "2025-07": Decimal("130000"),
+        "2024-06": Decimal("100000"),
+        "2024-07": Decimal("90000"),
+    }
+
+    multiyear_factor, details = weighted_ratio(pairs, values)
+    single_year_factor, _ = weighted_ratio(pairs[:1], values)
+
+    assert single_year_factor == Decimal("1.3")
+    assert multiyear_factor == Decimal("1.18")
+    assert [item["year_offset"] for item in details] == [1, 2]
 
 
 def test_allocation_redistributes_after_applying_floor() -> None:

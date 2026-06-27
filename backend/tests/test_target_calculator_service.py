@@ -70,6 +70,16 @@ def scenario_rows() -> list[dict]:
         '"is_forecast":true,"forecast_factor":1.2,"attainment_pct":105.0,'
         '"weight":0.4}]'
     )
+    details_1 = (
+        '{"current_month":"2026-05","current_forecast":42000.0,'
+        '"seasonality":{"store_years":[{"year_offset":1,"base_month":"2025-05",'
+        '"target_month":"2025-06","base_value":42000.0,"target_value":50400.0,"ratio":1.2}]}}'
+    )
+    details_2 = (
+        '{"current_month":"2026-05","current_forecast":63000.0,'
+        '"seasonality":{"store_years":[{"year_offset":1,"base_month":"2025-05",'
+        '"target_month":"2025-06","base_value":63000.0,"target_value":75600.0,"ratio":1.2}]}}'
+    )
     return [
         {
             "site_code": "SITE01",
@@ -83,6 +93,7 @@ def scenario_rows() -> list[dict]:
             "final_target": Decimal("41000"),
             "is_floor_limited": False,
             "history": history,
+            "calculation_details": details_1,
             "note": "ajustat",
         },
         {
@@ -97,6 +108,7 @@ def scenario_rows() -> list[dict]:
             "final_target": Decimal("59000"),
             "is_floor_limited": True,
             "history": history,
+            "calculation_details": details_2,
             "note": None,
         },
     ]
@@ -173,9 +185,12 @@ async def test_get_context_uses_latest_target_as_fallback() -> None:
         "suggested_total_target": 90000.0,
         "default_min_floor": 35000.0,
         "default_previous_month_floor_pct": 0.9,
+        "default_previous_month_cap_pct": 1.7,
+        "default_seasonality_years": 3,
         "active_store_count": 2,
         "regionals": ["Regional A", "Regional B"],
     }
+    repo.get_active_cohort.assert_awaited_once_with("2026-05", "2026-06")
 
 
 @pytest.mark.asyncio
@@ -241,6 +256,7 @@ async def test_calculate_builds_forecasted_rows_and_saves_draft(
     )
 
     assert result == {"id": 9}
+    repo.get_active_cohort.assert_awaited_once_with("2026-05", "2026-06")
     save_call = repo.save_draft_scenario.await_args
     assert save_call is not None
     saved_scenario, saved_rows, expected_revision = save_call.args
@@ -363,6 +379,15 @@ async def test_scenario_detail_serializes_totals_and_summaries() -> None:
             "floor_total": 22000.0,
             "proposed_total": 100000.0,
             "final_total": 100000.0,
+            "current_month": "2026-05",
+            "current_forecast_total": 105000.0,
+            "proposed_growth_vs_current_pct": -4.76,
+            "final_growth_vs_current_pct": -4.76,
+            "last_year_base_month": "2025-05",
+            "last_year_target_month": "2025-06",
+            "last_year_base_total": 105000.0,
+            "last_year_target_total": 126000.0,
+            "last_year_growth_pct": 20.0,
         }
     ]
     assert result["source_summary"][0]["is_forecast"] is True
@@ -528,6 +553,22 @@ async def test_export_excel_contains_audit_sheets() -> None:
                         "is_forecast": True,
                     }
                 ],
+                "calculation_details": {
+                    "current_month": "2026-05",
+                    "current_forecast": 42000.0,
+                    "seasonality": {
+                        "store_years": [
+                            {
+                                "year_offset": 1,
+                                "base_month": "2025-05",
+                                "target_month": "2025-06",
+                                "base_value": 42000.0,
+                                "target_value": 50400.0,
+                                "ratio": 1.2,
+                            }
+                        ]
+                    },
+                },
             }
         ],
         "regional_summary": [
@@ -537,6 +578,15 @@ async def test_export_excel_contains_audit_sheets() -> None:
                 "floor_total": 10000.0,
                 "proposed_total": 40000.0,
                 "final_total": 41000.0,
+                "current_month": "2026-05",
+                "current_forecast_total": 42000.0,
+                "proposed_growth_vs_current_pct": -4.76,
+                "final_growth_vs_current_pct": -2.38,
+                "last_year_base_month": "2025-05",
+                "last_year_target_month": "2025-06",
+                "last_year_base_total": 42000.0,
+                "last_year_target_total": 50400.0,
+                "last_year_growth_pct": 20.0,
             }
         ],
         "source_summary": [

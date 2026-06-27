@@ -38,7 +38,7 @@ class TargetCalculatorRepository:
             )
         return Decimal(value or 0)
 
-    async def get_active_cohort(self, cohort_month: str) -> list[asyncpg.Record]:
+    async def get_active_cohort(self, cohort_month: str, target_month: str | None = None) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -52,10 +52,17 @@ class TargetCalculatorRepository:
                 JOIN stores s ON s.site_code = ram.site_code
                 WHERE ram.import_month = $1
                   AND {distribution_location_clause("s")}
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM target_calculator_store_exclusions tcse
+                      WHERE tcse.site_code = ram.site_code
+                        AND ($2::TEXT IS NULL OR tcse.effective_from_month <= $2)
+                  )
                 GROUP BY ram.site_code, s.locatie, s.firma, s.regional, s.asm
                 ORDER BY s.regional, s.locatie, ram.site_code
                 """,
                 cohort_month,
+                target_month,
             )
 
     async def get_source_metrics(
@@ -135,6 +142,7 @@ class TargetCalculatorRepository:
                             calculation_method = $6,
                             source_months = $7::jsonb,
                             warnings = $8::jsonb,
+                            calculation_params = $9::jsonb,
                             revision = revision + 1,
                             updated_at = now()
                         WHERE id = $1
@@ -147,6 +155,7 @@ class TargetCalculatorRepository:
                         scenario["calculation_method"],
                         json.dumps(scenario["source_months"]),
                         json.dumps(scenario["warnings"]),
+                        json.dumps(scenario.get("calculation_params", {})),
                     )
                 else:
                     if expected_revision is not None:
@@ -156,9 +165,9 @@ class TargetCalculatorRepository:
                         INSERT INTO target_scenarios (
                             target_month, cohort_month, total_target, min_floor,
                             previous_month_floor_pct, calculation_method,
-                            source_months, warnings
+                            source_months, warnings, calculation_params
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb)
                         RETURNING id
                         """,
                         scenario["target_month"],
@@ -169,6 +178,7 @@ class TargetCalculatorRepository:
                         scenario["calculation_method"],
                         json.dumps(scenario["source_months"]),
                         json.dumps(scenario["warnings"]),
+                        json.dumps(scenario.get("calculation_params", {})),
                     )
                 await conn.execute(
                     "DELETE FROM target_scenario_rows WHERE scenario_id = $1",
@@ -179,9 +189,9 @@ class TargetCalculatorRepository:
                     INSERT INTO target_scenario_rows (
                         scenario_id, site_code, locatie, firma, regional, asm,
                         calculated_weight, floor_target, proposed_target,
-                        is_floor_limited, history
+                        is_floor_limited, history, calculation_details
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb)
                     """,
                     [
                         (
@@ -196,6 +206,7 @@ class TargetCalculatorRepository:
                             row["proposed_target"],
                             row["is_floor_limited"],
                             json.dumps(row["history"]),
+                            json.dumps(row.get("calculation_details", {})),
                         )
                         for row in rows
                     ],
@@ -209,7 +220,8 @@ class TargetCalculatorRepository:
                 SELECT
                     ts.id, ts.target_month, ts.cohort_month, ts.total_target,
                     ts.min_floor, ts.previous_month_floor_pct, ts.status,
-                    ts.revision, ts.calculation_method, ts.source_months, ts.warnings, ts.created_at::text,
+                    ts.revision, ts.calculation_method, ts.source_months, ts.warnings,
+                    ts.calculation_params, ts.created_at::text,
                     ts.updated_at::text, ts.finalized_at::text,
                     COUNT(tr.site_code) AS store_count,
                     COALESCE(SUM(tr.proposed_target), 0) AS proposed_total,
@@ -232,6 +244,7 @@ class TargetCalculatorRepository:
                     ts.id, ts.target_month, ts.cohort_month, ts.total_target,
                     ts.min_floor, ts.previous_month_floor_pct, ts.status,
                     ts.revision, ts.calculation_method, ts.source_months, ts.warnings,
+                    ts.calculation_params,
                     ts.created_at::text, ts.updated_at::text, ts.finalized_at::text
                 FROM target_scenarios ts
                 WHERE ts.id = $1
@@ -246,7 +259,7 @@ class TargetCalculatorRepository:
                 SELECT
                     site_code, locatie, firma, regional, asm, calculated_weight,
                     floor_target, proposed_target, final_target, is_floor_limited,
-                    history, note, updated_at::text
+                    history, calculation_details, note, updated_at::text
                 FROM target_scenario_rows
                 WHERE scenario_id = $1
                 ORDER BY regional, locatie, site_code

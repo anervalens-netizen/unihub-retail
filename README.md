@@ -147,17 +147,32 @@ referinta de business, nu sursa de executie. Pentru fiecare luna tinta exista
 un singur draft, care retine:
 
 - luna pentru care se pregateste targetul;
-- cohorta de magazine active, determinata din ultima luna cu vanzari disponibila inaintea lunii tinta;
-- targetul total, pragul minim absolut si floor-ul procentual fata de luna anterioara;
+- cohorta de magazine active, determinata din ultima luna cu vanzari disponibila inaintea lunii tinta si filtrata de excluderile active pentru Calculator Target;
+- targetul total, pragul minim absolut si floor-ul procentual fata de forecastul lunii curente;
 - propunerea automata si targetul final editabil per locatie.
 
-Formula `weighted_floor_forecast_v2` foloseste trei perioade de referinta derivate automat
-din luna tinta: luna anterioara din anul trecut, aceeasi luna din anul trecut
-si luna anterioara curenta. Pentru un target din iunie 2026, acestea sunt
-mai 2025, iunie 2025 si mai 2026. Targetul este distribuit dupa ponderile istorice, apoi
-redistribuit iterativ pana cand toate magazinele respecta floor-ul. Daca
-bugetul este mai mic decat suma floor-urilor, documentul ramane draft si
-afiseaza o avertizare.
+Formula `seasonal_blended_multiyear_v1` porneste de la forecastul lunii
+curente si aplica sezonalitatea reala dintre luna anterioara si luna tinta.
+Finalizatorul poate comuta in cardul de calcul intre:
+
+- `Anul trecut`: foloseste doar perechea `M-13 -> M-12`;
+- `Multi-year`: foloseste pana la trei ani, cu ponderi mai mari pentru anul cel
+  mai recent. Anii fara date suficiente sunt sariti automat.
+
+Factorul sezonier folosit pentru un magazin combina sezonalitatea magazinului,
+a managerului curent si a retelei. Pentru date stabile ponderile sunt
+`50% magazin / 30% manager / 20% retea`; pentru date slabe sau magazin nou,
+formula muta greutatea spre manager si retea. Targetul total ramane top-down:
+bugetul este impartit proportional cu estimarile brute, apoi redistribuit
+iterativ pana cand respecta pragul minim, floor-ul fata de forecastul lunii
+curente si cap-ul configurat. Daca bugetul este mai mic decat suma floor-urilor
+sau mai mare decat suma cap-urilor, documentul ramane draft si afiseaza o
+avertizare.
+
+Cardul de manageri arata, pe langa propunere si `Final manager`, doua repere
+rapide: cresterea propunerii fata de forecastul lunii curente si cresterea
+observata anul trecut intre luna baza si luna target (de exemplu `Iul 2025 vs
+Iun 2025` pentru targetul de iulie 2026).
 
 Daca ultima referinta este o luna neinchisa, calculatorul foloseste forecast-ul
 derivat din importul live (`realizat * zile_luna / ultima_zi_importata`), la
@@ -169,7 +184,9 @@ Procedura lunara recomandata este:
 1. Spre finalul lunii curente, se alege luna tinta urmatoare si se introduce
    targetul total.
 2. `Calculeaza propunerea` creeaza sau actualizeaza draftul unic al lunii.
-   Cohorta se ia din ultima luna cu vanzari disponibila inaintea lunii tinta.
+   Cohorta se ia din ultima luna cu vanzari disponibila inaintea lunii tinta,
+   excluzand magazinele cu intrari in `target_calculator_store_exclusions`
+   active pentru luna tinta.
 3. Managerii completeaza `Final manager`; valorile se salveaza automat si sunt
    vizibile pentru toti utilizatorii autentificati care deschid documentul.
 4. Inainte de publicare, `Ramas de distribuit` trebuie sa fie `0`, iar toate
@@ -178,9 +195,11 @@ Procedura lunara recomandata este:
    Din acel moment Hub si CRM le folosesc cand apar importuri pentru luna
    respectiva.
 
-Exemplu: pentru targetul din iulie 2026, calculul foloseste `2025-06`,
-`2025-07` si `2026-06`. Daca in 27 iunie 2026 luna `2026-06` este inca
-partiala, referinta `2026-06` este forecastata automat.
+Exemplu: pentru targetul din iulie 2026, modul `Anul trecut` foloseste
+`2025-06 -> 2025-07` si forecastul `2026-06`. Modul `Multi-year` adauga, daca
+exista date, perechile `2024-06 -> 2024-07` si `2023-06 -> 2023-07`. Daca in
+27 iunie 2026 luna `2026-06` este inca partiala, referinta curenta este
+forecastata automat.
 Recalcularea unei luni actualizeaza draftul acesteia si reseteaza ajustarile
 manuale dupa confirmarea utilizatorului; nu sunt create versiuni alternative
 in interfata.
@@ -191,7 +210,8 @@ managerii trebuie sa completeze explicit valorile finale, iar finalizarea este
 blocata pana cand toate locatiile au o valoare. Doar actiunea de finalizare
 inlocuieste targetele oficiale ale lunii din `store_targets`, strict cu
 magazinele din cohorta aprobata. Exportul Excel contine targetele finale,
-rezumatul pe manager si parametrii documentului.
+rezumatul pe manager cu indicatorii de crestere, parametrii documentului si breakdown-ul de calcul
+sezonier per locatie.
 Crearea propunerii salveaza imediat un draft comun, iar modificarile de
 `Final manager` sunt salvate automat per locatie si devin vizibile celorlalti
 manageri care deschid sau reincarca acelasi draft.

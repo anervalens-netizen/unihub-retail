@@ -22,7 +22,32 @@ from services.forecast import get_forecast_factor
 MONEY = Decimal("0.01")
 DEFAULT_MIN_FLOOR = Decimal("35000")
 DEFAULT_PREVIOUS_MONTH_FLOOR_PCT = Decimal("0.90")
-CALCULATION_METHOD = "weighted_floor_forecast_v2"
+DEFAULT_PREVIOUS_MONTH_CAP_PCT = Decimal("1.70")
+DEFAULT_SEASONALITY_YEARS = 3
+MAX_SEASONALITY_YEARS = 3
+DEFAULT_TREND_WEIGHT = Decimal("0.10")
+DEFAULT_TREND_ADJUSTMENT_MIN = Decimal("0.95")
+DEFAULT_TREND_ADJUSTMENT_MAX = Decimal("1.10")
+DEFAULT_SEASONALITY_MIN = Decimal("0.70")
+DEFAULT_SEASONALITY_MAX = Decimal("1.70")
+MIN_SEASONALITY_BASE = Decimal("10000")
+CALCULATION_METHOD = "seasonal_blended_multiyear_v1"
+
+STRONG_SEASONALITY_WEIGHTS = {
+    "store": Decimal("0.50"),
+    "zone": Decimal("0.30"),
+    "network": Decimal("0.20"),
+}
+WEAK_SEASONALITY_WEIGHTS = {
+    "store": Decimal("0.30"),
+    "zone": Decimal("0.40"),
+    "network": Decimal("0.30"),
+}
+NEW_STORE_SEASONALITY_WEIGHTS = {
+    "store": Decimal("0"),
+    "zone": Decimal("0.60"),
+    "network": Decimal("0.40"),
+}
 
 
 class SourceMetric(TypedDict):
@@ -38,8 +63,20 @@ class PeriodTotals(TypedDict):
     realized: Decimal
 
 
+class SeasonalityPair(TypedDict):
+    year_offset: int
+    base_month: str
+    target_month: str
+
+
 def money(value: Decimal | int | str | float) -> Decimal:
     return Decimal(str(value)).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def percent_change(new_value: float, base_value: float) -> float | None:
+    if base_value <= 0:
+        return None
+    return round((new_value - base_value) * 100 / base_value, 2)
 
 
 def realized_for_calculation(actual_realized: Decimal, forecast_factor: Decimal) -> Decimal:
@@ -58,15 +95,104 @@ def shift_month(month: str, offset: int) -> str:
 
 
 def source_month_configuration(target_month: str) -> list[dict[str, str]]:
+    pairs = seasonality_pair_configuration(target_month, DEFAULT_SEASONALITY_YEARS)
+    return build_source_month_configuration(target_month, pairs)
+
+
+def seasonality_pair_configuration(target_month: str, years: int) -> list[SeasonalityPair]:
+    years = max(1, min(int(years), MAX_SEASONALITY_YEARS))
     return [
         {
-            "month": shift_month(target_month, -13),
-            "label": "Luna anterioara anului trecut",
-            "role": "previous_year_reference",
-        },
-        {"month": shift_month(target_month, -12), "label": "Aceeasi luna anul trecut", "role": "year_over_year"},
-        {"month": shift_month(target_month, -1), "label": "Luna anterioara / floor", "role": "floor_reference"},
+            "year_offset": year_offset,
+            "base_month": shift_month(target_month, -1 - 12 * year_offset),
+            "target_month": shift_month(target_month, -12 * year_offset),
+        }
+        for year_offset in range(1, years + 1)
     ]
+
+
+def build_source_month_configuration(target_month: str, pairs: list[SeasonalityPair]) -> list[dict[str, str]]:
+    source_months: list[dict[str, str]] = []
+    for pair in sorted(pairs, key=lambda item: item["base_month"]):
+        source_months.extend([
+            {
+                "month": pair["base_month"],
+                "label": f"Baza sezoniera Y-{pair['year_offset']}",
+                "role": f"seasonality_base_y{pair['year_offset']}",
+            },
+            {
+                "month": pair["target_month"],
+                "label": f"Luna target Y-{pair['year_offset']}",
+                "role": f"seasonality_target_y{pair['year_offset']}",
+            },
+        ])
+    source_months.append({
+        "month": shift_month(target_month, -1),
+        "label": "Forecast luna curenta",
+        "role": "floor_reference",
+    })
+    return source_months
+
+
+def unique_months(months: list[str]) -> list[str]:
+    return list(dict.fromkeys(months))
+
+
+def clamp_decimal(value: Decimal, minimum: Decimal, maximum: Decimal) -> Decimal:
+    return min(max(value, minimum), maximum)
+
+
+def seasonal_year_weights(count: int) -> list[Decimal]:
+    if count <= 1:
+        return [Decimal("1")]
+    if count == 2:
+        return [Decimal("0.70"), Decimal("0.30")]
+    return [Decimal("0.50"), Decimal("0.30"), Decimal("0.20")]
+
+
+def weighted_ratio(
+    pairs: list[SeasonalityPair],
+    value_by_month: dict[str, Decimal],
+    *,
+    minimum_base: Decimal = Decimal("0"),
+) -> tuple[Decimal | None, list[dict[str, Any]]]:
+    usable: list[tuple[SeasonalityPair, Decimal]] = []
+    details: list[dict[str, Any]] = []
+    for pair in pairs:
+        base_value = money(value_by_month.get(pair["base_month"], Decimal("0")))
+        target_value = money(value_by_month.get(pair["target_month"], Decimal("0")))
+        ratio = target_value / base_value if base_value > minimum_base and target_value > 0 else None
+        details.append({
+            "year_offset": pair["year_offset"],
+            "base_month": pair["base_month"],
+            "target_month": pair["target_month"],
+            "base_value": float(base_value),
+            "target_value": float(target_value),
+            "ratio": float(ratio.quantize(Decimal("0.0001"))) if ratio is not None else None,
+        })
+        if ratio is not None:
+            usable.append((pair, ratio))
+
+    if not usable:
+        return None, details
+
+    weights = seasonal_year_weights(len(usable))
+    factor = sum((ratio * weights[index] for index, (_, ratio) in enumerate(usable)), Decimal("0"))
+    return factor, details
+
+
+def weighted_available(components: dict[str, tuple[Decimal | None, Decimal]]) -> Decimal | None:
+    total_weight = sum(weight for value, weight in components.values() if value is not None and weight > 0)
+    if total_weight <= 0:
+        return None
+    return sum(
+        (
+            value * weight / total_weight
+            for value, weight in components.values()
+            if value is not None and weight > 0
+        ),
+        Decimal("0"),
+    )
 
 
 def allocate_with_floors(
@@ -132,6 +258,111 @@ def allocate_with_floors(
     return rows, warnings
 
 
+def allocate_with_bounds(
+    rows: list[dict[str, Any]],
+    requested_total: Decimal,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Allocate proportionally while respecting lower and upper proposal bounds."""
+    warnings: list[str] = []
+    if not rows:
+        return rows, warnings
+
+    requested_total = money(requested_total)
+    floor_total = sum((row["floor_target"] for row in rows), Decimal("0"))
+    cap_total = sum((row["cap_target"] for row in rows), Decimal("0"))
+    if floor_total > requested_total:
+        for row in rows:
+            row["proposed_target"] = money(row["floor_target"])
+            row["is_floor_limited"] = True
+            row["allocation_reason"] = "floor"
+            row["flags"].append("FLOOR_APPLIED")
+        warnings.append(
+            "Bugetul total este mai mic decat suma pragurilor minime; propunerea depaseste bugetul pentru a respecta floor-ul."
+        )
+        return rows, warnings
+    if cap_total < requested_total:
+        for row in rows:
+            row["proposed_target"] = money(row["cap_target"])
+            row["is_cap_limited"] = True
+            row["allocation_reason"] = "cap"
+            row["flags"].append("CAP_APPLIED")
+        warnings.append(
+            "Bugetul total depaseste suma cap-urilor configurate; propunerea ramane sub buget pana la ajustare manageriala."
+        )
+        return rows, warnings
+
+    remaining = set(range(len(rows)))
+    assigned: dict[int, Decimal] = {}
+    remaining_budget = requested_total
+
+    while remaining:
+        weight_total = sum((rows[index]["calculated_weight"] for index in remaining), Decimal("0"))
+        allocations: dict[int, Decimal] = {}
+        for index in remaining:
+            if weight_total > 0:
+                allocations[index] = remaining_budget * rows[index]["calculated_weight"] / weight_total
+            else:
+                allocations[index] = remaining_budget / Decimal(len(remaining))
+
+        fixed = False
+        for index in list(remaining):
+            row = rows[index]
+            if allocations[index] < row["floor_target"]:
+                assigned[index] = row["floor_target"]
+                remaining_budget -= row["floor_target"]
+                remaining.remove(index)
+                row["is_floor_limited"] = True
+                row["allocation_reason"] = "floor"
+                row["flags"].append("FLOOR_APPLIED")
+                fixed = True
+            elif allocations[index] > row["cap_target"]:
+                assigned[index] = row["cap_target"]
+                remaining_budget -= row["cap_target"]
+                remaining.remove(index)
+                row["is_cap_limited"] = True
+                row["allocation_reason"] = "cap"
+                row["flags"].append("CAP_APPLIED")
+                fixed = True
+
+        if not fixed:
+            assigned.update(allocations)
+            break
+
+    for index, row in enumerate(rows):
+        row["proposed_target"] = money(assigned[index])
+
+    rounded_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
+    difference = requested_total - rounded_total
+    if difference:
+        if difference > 0:
+            adjustable = [
+                row for row in rows
+                if row["proposed_target"] + difference <= row["cap_target"]
+            ]
+            target_row = max(adjustable or rows, key=lambda row: row["cap_target"] - row["proposed_target"])
+        else:
+            adjustable = [
+                row for row in rows
+                if row["proposed_target"] + difference >= row["floor_target"]
+            ]
+            target_row = max(adjustable or rows, key=lambda row: row["proposed_target"] - row["floor_target"])
+        target_row["proposed_target"] = money(target_row["proposed_target"] + difference)
+        if target_row["proposed_target"] > target_row["cap_target"]:
+            target_row["is_cap_limited"] = True
+            target_row["flags"].append("CAP_APPLIED")
+        if target_row["proposed_target"] < target_row["floor_target"]:
+            target_row["is_floor_limited"] = True
+            target_row["flags"].append("FLOOR_APPLIED")
+
+    final_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
+    if final_total != requested_total:
+        warnings.append(
+            "Rotunjirea sau limitarile floor/cap au lasat propunerea diferita de bugetul total; verifica ajustarile finale."
+        )
+
+    return rows, warnings
+
+
 class TargetCalculatorService:
     def __init__(self, repo: TargetCalculatorRepository):
         self.repo = repo
@@ -144,7 +375,7 @@ class TargetCalculatorService:
         target_total = await self.repo.get_target_total(suggested_month)
         if target_total == 0:
             target_total = await self.repo.get_target_total(latest_month)
-        cohort = await self.repo.get_active_cohort(latest_month)
+        cohort = await self.repo.get_active_cohort(latest_month, suggested_month)
         return {
             "latest_sales_month": latest_month,
             "suggested_target_month": suggested_month,
@@ -152,13 +383,18 @@ class TargetCalculatorService:
             "suggested_total_target": float(target_total),
             "default_min_floor": float(DEFAULT_MIN_FLOOR),
             "default_previous_month_floor_pct": float(DEFAULT_PREVIOUS_MONTH_FLOOR_PCT),
+            "default_previous_month_cap_pct": float(DEFAULT_PREVIOUS_MONTH_CAP_PCT),
+            "default_seasonality_years": DEFAULT_SEASONALITY_YEARS,
             "active_store_count": len(cohort),
             "regionals": sorted({row["regional"] for row in cohort}),
         }
 
     async def calculate(self, payload: dict[str, Any]) -> dict[str, Any]:
         target_month = payload["target_month"]
-        source_months = source_month_configuration(target_month)
+        seasonality_years = int(payload.get("seasonality_years") or DEFAULT_SEASONALITY_YEARS)
+        seasonality_years = max(1, min(seasonality_years, MAX_SEASONALITY_YEARS))
+        source_pairs = seasonality_pair_configuration(target_month, seasonality_years)
+        source_months = build_source_month_configuration(target_month, source_pairs)
         latest_before_target = await self.repo.get_latest_sales_month(before_month=target_month)
         cohort_month = payload.get("cohort_month") or latest_before_target
         if not cohort_month:
@@ -172,17 +408,34 @@ class TargetCalculatorService:
                 detail="Cohorta activa trebuie sa provina dintr-o luna anterioara lunii de target.",
             )
 
-        cohort = await self.repo.get_active_cohort(cohort_month)
+        cohort = await self.repo.get_active_cohort(cohort_month, target_month)
         if not cohort:
             raise HTTPException(status_code=400, detail="Luna de cohorta nu are magazine active.")
 
         total_target = money(payload["total_target"])
         min_floor = money(payload.get("min_floor", DEFAULT_MIN_FLOOR))
         floor_pct = Decimal(str(payload.get("previous_month_floor_pct", DEFAULT_PREVIOUS_MONTH_FLOOR_PCT)))
-        if total_target <= 0 or min_floor < 0 or floor_pct < 0:
+        cap_pct = Decimal(str(payload.get("previous_month_cap_pct", DEFAULT_PREVIOUS_MONTH_CAP_PCT)))
+        trend_weight = Decimal(str(payload.get("trend_weight", DEFAULT_TREND_WEIGHT)))
+        seasonality_min = Decimal(str(payload.get("seasonality_min", DEFAULT_SEASONALITY_MIN)))
+        seasonality_max = Decimal(str(payload.get("seasonality_max", DEFAULT_SEASONALITY_MAX)))
+        trend_min = Decimal(str(payload.get("trend_adjustment_min", DEFAULT_TREND_ADJUSTMENT_MIN)))
+        trend_max = Decimal(str(payload.get("trend_adjustment_max", DEFAULT_TREND_ADJUSTMENT_MAX)))
+        if (
+            total_target <= 0
+            or min_floor < 0
+            or floor_pct < 0
+            or cap_pct <= 0
+            or cap_pct < floor_pct
+            or trend_weight < 0
+            or seasonality_min <= 0
+            or seasonality_max < seasonality_min
+            or trend_min <= 0
+            or trend_max < trend_min
+        ):
             raise HTTPException(status_code=400, detail="Parametrii de calcul nu sunt valizi.")
 
-        months = [item["month"] for item in source_months]
+        months = unique_months([item["month"] for item in source_months])
         site_codes = [row["site_code"] for row in cohort]
         metrics = await self.repo.get_source_metrics(site_codes, months)
         async with self.repo.pool.acquire() as conn:
@@ -203,11 +456,34 @@ class TargetCalculatorService:
             }
             for row in metrics
         }
+        for site_code in site_codes:
+            for month in months:
+                metric_map.setdefault((site_code, month), {
+                    "target": Decimal("0"),
+                    "actual_realized": Decimal("0"),
+                    "realized": Decimal("0"),
+                    "forecast_factor": forecast_factors[month],
+                    "is_forecast": forecast_factors[month] > Decimal("1"),
+                })
         totals: dict[str, PeriodTotals] = {
             month: {
                 "target": sum((metric_map[(site_code, month)]["target"] for site_code in site_codes), Decimal("0")),
                 "realized": sum((metric_map[(site_code, month)]["realized"] for site_code in site_codes), Decimal("0")),
             }
+            for month in months
+        }
+        regionals = sorted({row["regional"] for row in cohort})
+        site_regional = {row["site_code"]: row["regional"] for row in cohort}
+        regional_month_values: dict[tuple[str, str], Decimal] = {
+            (regional, month): sum(
+                (
+                    metric_map[(site_code, month)]["realized"]
+                    for site_code in site_codes
+                    if site_regional[site_code] == regional
+                ),
+                Decimal("0"),
+            )
+            for regional in regionals
             for month in months
         }
 
@@ -221,12 +497,20 @@ class TargetCalculatorService:
                     f"Perioada {item['month']} este partiala; vanzarile folosite in calcul sunt forecastate "
                     f"cu factor {forecast_factors[item['month']]:.4f}x pe baza importului disponibil."
                 )
+        if seasonality_years > 1:
+            warnings.append(
+                f"Formula foloseste sezonalitate multi-year pe pana la {seasonality_years} ani; anii fara date suficiente sunt sariti automat."
+            )
 
         calculated_rows: list[dict[str, Any]] = []
-        floor_month = source_months[-1]["month"]
+        current_month = shift_month(target_month, -1)
+        network_values = {month: totals[month]["realized"] for month in months}
+        network_factor, network_years = weighted_ratio(source_pairs, network_values)
+        if network_factor is None:
+            network_factor = Decimal("1")
         for cohort_row in cohort:
             site_code = cohort_row["site_code"]
-            period_weights: list[Decimal] = []
+            regional = cohort_row["regional"]
             history: list[dict[str, Any]] = []
             for item in source_months:
                 metric = metric_map[(site_code, item["month"])]
@@ -237,8 +521,6 @@ class TargetCalculatorService:
                 if total["realized"] > 0:
                     shares.append(metric["realized"] / total["realized"])
                 period_weight = sum(shares, Decimal("0")) / Decimal(len(shares)) if shares else Decimal("0")
-                if shares:
-                    period_weights.append(period_weight)
                 attainment = (
                     metric["realized"] / metric["target"] * Decimal("100")
                     if metric["target"] > 0 else None
@@ -255,33 +537,139 @@ class TargetCalculatorService:
                     "attainment_pct": float(attainment.quantize(MONEY)) if attainment is not None else None,
                     "weight": float(period_weight),
                 })
-            average_weight = (
-                sum(period_weights, Decimal("0")) / Decimal(len(period_weights))
-                if period_weights else Decimal("0")
+
+            store_values = {month: metric_map[(site_code, month)]["realized"] for month in months}
+            regional_values = {month: regional_month_values[(regional, month)] for month in months}
+            store_factor, store_years = weighted_ratio(
+                source_pairs,
+                store_values,
+                minimum_base=MIN_SEASONALITY_BASE,
             )
-            previous_target = metric_map[(site_code, floor_month)]["target"]
-            floor_target = max(min_floor, money(previous_target * floor_pct))
+            zone_factor, zone_years = weighted_ratio(source_pairs, regional_values)
+            last_year_store_factor, _ = weighted_ratio(source_pairs[:1], store_values, minimum_base=MIN_SEASONALITY_BASE)
+            multiyear_store_factor, _ = weighted_ratio(source_pairs, store_values, minimum_base=MIN_SEASONALITY_BASE)
+
+            weights = STRONG_SEASONALITY_WEIGHTS
+            flags: list[str] = []
+            usable_store_years = sum(1 for item in store_years if item["ratio"] is not None)
+            store_ratios = [
+                Decimal(str(item["ratio"]))
+                for item in store_years
+                if item["ratio"] is not None
+            ]
+            if store_factor is None:
+                weights = NEW_STORE_SEASONALITY_WEIGHTS
+                flags.extend(["NEW_STORE", "LOW_HISTORY"])
+            elif usable_store_years <= 1 and seasonality_years > 1:
+                weights = WEAK_SEASONALITY_WEIGHTS
+                flags.append("LOW_HISTORY")
+            if store_ratios and (min(store_ratios) < Decimal("0.50") or max(store_ratios) > Decimal("2.00")):
+                weights = WEAK_SEASONALITY_WEIGHTS
+                flags.append("EXTREME_SEASONALITY")
+
+            blended = weighted_available({
+                "store": (store_factor, weights["store"]),
+                "zone": (zone_factor, weights["zone"]),
+                "network": (network_factor, weights["network"]),
+            })
+            raw_blended = blended if blended is not None else Decimal("1")
+            seasonality_factor = clamp_decimal(raw_blended, seasonality_min, seasonality_max)
+            if seasonality_factor != raw_blended:
+                flags.append("SEASONALITY_CAPPED")
+
+            current_forecast = metric_map[(site_code, current_month)]["realized"]
+            trend_base = metric_map[(site_code, source_pairs[0]["base_month"])]["realized"]
+            if trend_base > MIN_SEASONALITY_BASE:
+                trend_ratio = current_forecast / trend_base
+                trend_adjustment_raw = Decimal("1") + ((trend_ratio - Decimal("1")) * trend_weight)
+            else:
+                trend_ratio = None
+                trend_adjustment_raw = Decimal("1")
+            trend_adjustment = clamp_decimal(trend_adjustment_raw, trend_min, trend_max)
+            if trend_adjustment != trend_adjustment_raw:
+                flags.append("TREND_ADJUSTMENT_CAPPED")
+
+            raw_estimate = money(current_forecast * seasonality_factor * trend_adjustment)
+            floor_target = max(min_floor, money(current_forecast * floor_pct))
+            cap_target = max(floor_target, money(current_forecast * cap_pct))
+            calculation_details = {
+                "method": CALCULATION_METHOD,
+                "seasonality_years": seasonality_years,
+                "current_month": current_month,
+                "current_forecast": float(money(current_forecast)),
+                "seasonality": {
+                    "store_factor": float(store_factor.quantize(Decimal("0.0001"))) if store_factor is not None else None,
+                    "zone_factor": float(zone_factor.quantize(Decimal("0.0001"))) if zone_factor is not None else None,
+                    "network_factor": float(network_factor.quantize(Decimal("0.0001"))),
+                    "blended_factor": float(raw_blended.quantize(Decimal("0.0001"))),
+                    "used_factor": float(seasonality_factor.quantize(Decimal("0.0001"))),
+                    "last_year_store_factor": (
+                        float(last_year_store_factor.quantize(Decimal("0.0001")))
+                        if last_year_store_factor is not None else None
+                    ),
+                    "multiyear_store_factor": (
+                        float(multiyear_store_factor.quantize(Decimal("0.0001")))
+                        if multiyear_store_factor is not None else None
+                    ),
+                    "weights": {key: float(value) for key, value in weights.items()},
+                    "store_years": store_years,
+                    "zone_years": zone_years,
+                    "network_years": network_years,
+                    "min": float(seasonality_min),
+                    "max": float(seasonality_max),
+                },
+                "trend": {
+                    "base_month": source_pairs[0]["base_month"],
+                    "ratio": float(trend_ratio.quantize(Decimal("0.0001"))) if trend_ratio is not None else None,
+                    "weight": float(trend_weight),
+                    "raw_adjustment": float(trend_adjustment_raw.quantize(Decimal("0.0001"))),
+                    "used_adjustment": float(trend_adjustment.quantize(Decimal("0.0001"))),
+                    "min": float(trend_min),
+                    "max": float(trend_max),
+                },
+                "raw_estimate": float(raw_estimate),
+                "floor_target": float(floor_target),
+                "cap_target": float(cap_target),
+                "flags": [],
+                "allocation_reason": "proportional",
+            }
             calculated_rows.append({
                 "site_code": site_code,
                 "locatie": cohort_row["locatie"],
                 "firma": cohort_row["firma"],
-                "regional": cohort_row["regional"],
+                "regional": regional,
                 "asm": cohort_row["asm"],
-                "calculated_weight": average_weight,
+                "calculated_weight": raw_estimate,
                 "floor_target": floor_target,
+                "cap_target": cap_target,
                 "proposed_target": Decimal("0"),
                 "is_floor_limited": False,
+                "is_cap_limited": False,
+                "allocation_reason": "proportional",
+                "flags": flags,
                 "history": history,
+                "calculation_details": calculation_details,
             })
 
         if sum((row["calculated_weight"] for row in calculated_rows), Decimal("0")) == 0:
             equal_weight = Decimal("1") / Decimal(len(calculated_rows))
             for row in calculated_rows:
                 row["calculated_weight"] = equal_weight
-            warnings.append("Datele istorice nu contin ponderi utilizabile; targetul a fost distribuit uniform.")
+                row["flags"].append("LOW_HISTORY")
+            warnings.append("Datele istorice nu contin estimari sezoniere utilizabile; targetul a fost distribuit uniform.")
+        else:
+            raw_total = sum((row["calculated_weight"] for row in calculated_rows), Decimal("0"))
+            for row in calculated_rows:
+                row["calculated_weight"] = row["calculated_weight"] / raw_total
 
-        calculated_rows, allocation_warnings = allocate_with_floors(calculated_rows, total_target)
+        calculated_rows, allocation_warnings = allocate_with_bounds(calculated_rows, total_target)
         warnings.extend(allocation_warnings)
+        for row in calculated_rows:
+            flags = list(dict.fromkeys(row["flags"]))
+            row["calculation_details"]["flags"] = flags
+            row["calculation_details"]["allocation_reason"] = row["allocation_reason"]
+            row["calculation_details"]["is_floor_limited"] = row["is_floor_limited"]
+            row["calculation_details"]["is_cap_limited"] = row["is_cap_limited"]
         try:
             scenario_id = await self.repo.save_draft_scenario(
                 {
@@ -293,6 +681,19 @@ class TargetCalculatorService:
                     "calculation_method": CALCULATION_METHOD,
                     "source_months": source_months,
                     "warnings": warnings,
+                    "calculation_params": {
+                        "seasonality_years": seasonality_years,
+                        "seasonality_min": float(seasonality_min),
+                        "seasonality_max": float(seasonality_max),
+                        "trend_weight": float(trend_weight),
+                        "trend_adjustment_min": float(trend_min),
+                        "trend_adjustment_max": float(trend_max),
+                        "previous_month_cap_pct": float(cap_pct),
+                        "minimum_seasonality_base": float(MIN_SEASONALITY_BASE),
+                        "strong_weights": {key: float(value) for key, value in STRONG_SEASONALITY_WEIGHTS.items()},
+                        "weak_weights": {key: float(value) for key, value in WEAK_SEASONALITY_WEIGHTS.items()},
+                        "new_store_weights": {key: float(value) for key, value in NEW_STORE_SEASONALITY_WEIGHTS.items()},
+                    },
                 },
                 calculated_rows,
                 payload.get("expected_revision"),
@@ -431,8 +832,11 @@ class TargetCalculatorService:
                 f"% Realizare {period['month']}",
             ])
         headers.extend([
-            "Floor", "Pondere calcul", "Target propus", "Target final",
-            "Diferenta final-propus", "Ajustat manual", "Observatii",
+            "Forecast luna curenta", "Sezonalitate magazin LY", "Sezonalitate magazin multi-year",
+            "Sezonalitate zona", "Sezonalitate retea", "Sezonalitate folosita",
+            "Ajustare trend", "Estimare bruta", "Floor", "Cap", "Pondere calcul",
+            "Target propus", "Target final", "Diferenta final-propus", "Ajustat manual",
+            "Flag-uri", "Observatii",
         ])
         sheet.append(headers)
         history_by_month: dict[str, dict[str, Any]]
@@ -449,12 +853,27 @@ class TargetCalculatorService:
                     history.get("actual_realized", history["realized"]),
                     history["attainment_pct"],
                 ])
+            details = row.get("calculation_details") or {}
+            seasonality = details.get("seasonality") or {}
+            trend = details.get("trend") or {}
             values.extend([
-                row["floor_target"], row["calculated_weight"], row["proposed_target"],
+                details.get("current_forecast"),
+                seasonality.get("last_year_store_factor"),
+                seasonality.get("multiyear_store_factor"),
+                seasonality.get("zone_factor"),
+                seasonality.get("network_factor"),
+                seasonality.get("used_factor"),
+                trend.get("used_adjustment"),
+                details.get("raw_estimate"),
+                row["floor_target"],
+                details.get("cap_target"),
+                row["calculated_weight"],
+                row["proposed_target"],
                 row["final_target"],
                 None if row["final_target"] is None else row["final_target"] - row["proposed_target"],
                 "Necompletat" if row["final_target"] is None
                 else "Da" if abs(row["final_target"] - row["proposed_target"]) > 0.01 else "Nu",
+                ", ".join(details.get("flags") or []),
                 row["note"] or "",
             ])
             sheet.append(values)
@@ -462,11 +881,20 @@ class TargetCalculatorService:
         sheet.auto_filter.ref = sheet.dimensions
 
         summary = workbook.create_sheet("Rezumat manageri")
-        summary.append(["Regional", "Magazine", "Floor", "Target propus", "Target final", "Diferenta"])
+        summary.append([
+            "Regional", "Magazine", "Floor", "Target propus", "Target final", "Diferenta",
+            "Luna curenta", "Forecast luna curenta", "% crestere propus vs luna curenta",
+            "Baza anul trecut", "Target anul trecut", "Realizat baza anul trecut",
+            "Realizat target anul trecut", "% crestere anul trecut",
+        ])
         for row in scenario["regional_summary"]:
             summary.append([
                 row["regional"], row["store_count"], row["floor_total"],
                 row["proposed_total"], row["final_total"], row["final_total"] - row["proposed_total"],
+                row.get("current_month"), row.get("current_forecast_total"), row.get("proposed_growth_vs_current_pct"),
+                row.get("last_year_base_month"), row.get("last_year_target_month"),
+                row.get("last_year_base_total"), row.get("last_year_target_total"),
+                row.get("last_year_growth_pct"),
             ])
 
         parameters = workbook.create_sheet("Parametri")
@@ -479,6 +907,8 @@ class TargetCalculatorService:
         parameters.append(["Prag minim absolut", scenario["min_floor"]])
         parameters.append(["Floor fata de luna precedenta", scenario["previous_month_floor_pct"]])
         parameters.append(["Metoda", scenario["calculation_method"]])
+        for key, value in (scenario.get("calculation_params") or {}).items():
+            parameters.append([f"Parametru {key}", json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value])
         for item in scenario["source_months"]:
             parameters.append([item["label"], item["month"]])
         for item in scenario["source_summary"]:
@@ -541,11 +971,12 @@ class TargetCalculatorService:
         for key in ("total_target", "min_floor", "previous_month_floor_pct", "proposed_total", "final_total"):
             if key in row:
                 row[key] = float(row[key] or 0)
-        for key in ("source_months", "warnings"):
+        for key in ("source_months", "warnings", "calculation_params"):
             if key in row and isinstance(row[key], str):
                 row[key] = json.loads(row[key])
         row.setdefault("source_months", [])
         row.setdefault("warnings", [])
+        row.setdefault("calculation_params", {})
         if "store_count" in row:
             row["store_count"] = int(row["store_count"])
         row["pending_final_count"] = int(row.get("pending_final_count") or 0)
@@ -557,11 +988,25 @@ class TargetCalculatorService:
         row["final_target"] = float(row["final_target"]) if row.get("final_target") is not None else None
         if isinstance(row.get("history"), str):
             row["history"] = json.loads(row["history"])
+        if isinstance(row.get("calculation_details"), str):
+            row["calculation_details"] = json.loads(row["calculation_details"])
+        row.setdefault("calculation_details", {})
         return row
 
     def _regional_summary(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         summary: dict[str, dict[str, Any]] = defaultdict(
-            lambda: {"store_count": 0, "floor_total": 0.0, "proposed_total": 0.0, "final_total": 0.0}
+            lambda: {
+                "store_count": 0,
+                "floor_total": 0.0,
+                "proposed_total": 0.0,
+                "final_total": 0.0,
+                "current_month": None,
+                "current_forecast_total": 0.0,
+                "last_year_base_month": None,
+                "last_year_target_month": None,
+                "last_year_base_total": 0.0,
+                "last_year_target_total": 0.0,
+            }
         )
         for row in rows:
             data = summary[row["regional"]]
@@ -569,8 +1014,60 @@ class TargetCalculatorService:
             data["floor_total"] += row["floor_target"]
             data["proposed_total"] += row["proposed_target"]
             data["final_total"] += row["final_target"] or 0
+            details = row.get("calculation_details") or {}
+            if isinstance(details, str):
+                details = json.loads(details)
+            history = row.get("history") or []
+            if isinstance(history, str):
+                history = json.loads(history)
+
+            current_month = details.get("current_month")
+            current_forecast = details.get("current_forecast")
+            if current_forecast is None:
+                current_period = next((item for item in history if item.get("role") == "floor_reference"), None)
+                current_month = current_month or (current_period or {}).get("month")
+                current_forecast = (current_period or {}).get("realized")
+            if current_month:
+                data["current_month"] = current_month
+            data["current_forecast_total"] += float(current_forecast or 0)
+
+            seasonality = details.get("seasonality") or {}
+            last_year = next(
+                (item for item in seasonality.get("store_years") or [] if item.get("year_offset") == 1),
+                None,
+            )
+            if last_year is None:
+                base_period = next((item for item in history if item.get("role") == "seasonality_base_y1"), None)
+                target_period = next((item for item in history if item.get("role") == "seasonality_target_y1"), None)
+                last_year = {
+                    "base_month": (base_period or {}).get("month"),
+                    "target_month": (target_period or {}).get("month"),
+                    "base_value": (base_period or {}).get("realized"),
+                    "target_value": (target_period or {}).get("realized"),
+                }
+            if last_year.get("base_month"):
+                data["last_year_base_month"] = last_year["base_month"]
+            if last_year.get("target_month"):
+                data["last_year_target_month"] = last_year["target_month"]
+            data["last_year_base_total"] += float(last_year.get("base_value") or 0)
+            data["last_year_target_total"] += float(last_year.get("target_value") or 0)
         return [
-            {"regional": regional, **values}
+            {
+                "regional": regional,
+                **values,
+                "proposed_growth_vs_current_pct": percent_change(
+                    values["proposed_total"],
+                    values["current_forecast_total"],
+                ),
+                "final_growth_vs_current_pct": percent_change(
+                    values["final_total"],
+                    values["current_forecast_total"],
+                ),
+                "last_year_growth_pct": percent_change(
+                    values["last_year_target_total"],
+                    values["last_year_base_total"],
+                ),
+            }
             for regional, values in sorted(summary.items())
         ]
 

@@ -35,12 +35,13 @@ import {
   finalizeTargetScenario,
   saveTargetFinalValues,
   type TargetCalculatorContext,
+  type TargetRegionalSummary,
   type TargetScenario,
   type TargetScenarioRow,
   type TargetStoreDetail,
 } from '../api/targetCalculator';
 import { formatCurrency, formatPercent } from '../lib/formatters';
-import { formatMonthLabel } from '../lib/dates';
+import { formatMonthLabel, shiftMonth } from '../lib/dates';
 
 const inputCls = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 const finalInputCls = 'rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-600 dark:bg-amber-950/30 dark:text-slate-100';
@@ -50,15 +51,51 @@ function monthLabel(month: string): string {
 }
 
 function isPreviousYearPeriod(role: string): boolean {
-  return role === 'previous_year_reference' || role === 'year_over_year';
+  return role === 'previous_year_reference'
+    || role === 'year_over_year'
+    || role.startsWith('seasonality_');
 }
 
 function sum(values: number[]): number {
   return Math.round(values.reduce((total, value) => total + value, 0) * 100) / 100;
 }
 
+function percentChangeValue(newValue: number, baseValue: number): number | null {
+  if (baseValue <= 0) return null;
+  return Math.round(((newValue - baseValue) * 100 / baseValue) * 100) / 100;
+}
+
 function formatOptionalCurrency(value: number | null): string {
   return value == null ? 'Necompletat' : formatCurrency(value);
+}
+
+function formatFactor(value?: number | null): string {
+  return value == null ? '-' : `${value.toFixed(2)}x`;
+}
+
+function formatSignedPercent(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return '-';
+  return `${value > 0 ? '+' : ''}${formatPercent(value)}`;
+}
+
+function percentTone(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return 'text-slate-500 dark:text-slate-400';
+  if (value > 0.01) return 'text-emerald-600 dark:text-emerald-400';
+  if (value < -0.01) return 'text-red-600 dark:text-red-400';
+  return 'text-slate-600 dark:text-slate-300';
+}
+
+function flagLabel(flag: string): string {
+  const labels: Record<string, string> = {
+    NEW_STORE: 'nou',
+    LOW_HISTORY: 'istoric redus',
+    EXTREME_SEASONALITY: 'sez. extrema',
+    FLOOR_APPLIED: 'floor',
+    CAP_APPLIED: 'cap',
+    SEASONALITY_CAPPED: 'sez. limitata',
+    TREND_ADJUSTMENT_CAPPED: 'trend limitat',
+  };
+  return labels[flag] ?? flag.toLowerCase().replaceAll('_', ' ');
 }
 
 type StoreChartMode = 'sales' | 'bon2acc' | 'focus';
@@ -84,7 +121,7 @@ function useMediaQuery(query: string): boolean {
 }
 
 function recalculateVisibleScenario(scenario: TargetScenario, rows: TargetScenarioRow[]): TargetScenario {
-  const regional = new Map<string, { regional: string; store_count: number; floor_total: number; proposed_total: number; final_total: number }>();
+  const regional = new Map<string, TargetRegionalSummary>();
   rows.forEach((row) => {
     const item = regional.get(row.regional) ?? {
       regional: row.regional,
@@ -92,13 +129,39 @@ function recalculateVisibleScenario(scenario: TargetScenario, rows: TargetScenar
       floor_total: 0,
       proposed_total: 0,
       final_total: 0,
+      current_month: null,
+      current_forecast_total: 0,
+      proposed_growth_vs_current_pct: null,
+      final_growth_vs_current_pct: null,
+      last_year_base_month: null,
+      last_year_target_month: null,
+      last_year_base_total: 0,
+      last_year_target_total: 0,
+      last_year_growth_pct: null,
     };
     item.store_count += 1;
     item.floor_total += row.floor_target;
     item.proposed_total += row.proposed_target;
     item.final_total += row.final_target ?? 0;
+    const currentPeriod = row.history.find((period) => period.role === 'floor_reference');
+    item.current_month = row.calculation_details.current_month ?? currentPeriod?.month ?? item.current_month;
+    item.current_forecast_total += Number(row.calculation_details.current_forecast ?? currentPeriod?.realized ?? 0);
+
+    const lastYear = row.calculation_details.seasonality?.store_years?.find((period) => period.year_offset === 1);
+    const basePeriod = row.history.find((period) => period.role === 'seasonality_base_y1');
+    const targetPeriod = row.history.find((period) => period.role === 'seasonality_target_y1');
+    item.last_year_base_month = lastYear?.base_month ?? basePeriod?.month ?? item.last_year_base_month;
+    item.last_year_target_month = lastYear?.target_month ?? targetPeriod?.month ?? item.last_year_target_month;
+    item.last_year_base_total += Number(lastYear?.base_value ?? basePeriod?.realized ?? 0);
+    item.last_year_target_total += Number(lastYear?.target_value ?? targetPeriod?.realized ?? 0);
     regional.set(row.regional, item);
   });
+  const regionalSummary = Array.from(regional.values()).map((item) => ({
+    ...item,
+    proposed_growth_vs_current_pct: percentChangeValue(item.proposed_total, item.current_forecast_total),
+    final_growth_vs_current_pct: percentChangeValue(item.final_total, item.current_forecast_total),
+    last_year_growth_pct: percentChangeValue(item.last_year_target_total, item.last_year_base_total),
+  }));
   const finalTotal = sum(rows.map((row) => row.final_target ?? 0));
   return {
     ...scenario,
@@ -107,7 +170,7 @@ function recalculateVisibleScenario(scenario: TargetScenario, rows: TargetScenar
     remaining_difference: Math.round((scenario.total_target - finalTotal) * 100) / 100,
     pending_final_count: rows.filter((row) => row.final_target == null).length,
     manual_adjustments_count: rows.filter((row) => row.final_target != null && Math.abs(row.final_target - row.proposed_target) > 0.01).length,
-    regional_summary: Array.from(regional.values()).sort((left, right) => left.regional.localeCompare(right.regional)),
+    regional_summary: regionalSummary.sort((left, right) => left.regional.localeCompare(right.regional)),
   };
 }
 
@@ -370,6 +433,7 @@ export function TargetCalculatorSubtab() {
   const [totalTarget, setTotalTarget] = useState('');
   const [minFloor, setMinFloor] = useState('');
   const [floorPct, setFloorPct] = useState('');
+  const [seasonalityMode, setSeasonalityMode] = useState<'multi' | 'single'>('multi');
   const [selectedLocationCodes, setSelectedLocationCodes] = useState<string[]>([]);
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [detailSiteCode, setDetailSiteCode] = useState<string | null>(null);
@@ -409,6 +473,7 @@ export function TargetCalculatorSubtab() {
       setTotalTarget((current) => current || String(nextContext.suggested_total_target));
       setMinFloor((current) => current || String(nextContext.default_min_floor));
       setFloorPct((current) => current || String(nextContext.default_previous_month_floor_pct * 100));
+      setSeasonalityMode((current) => current || (nextContext.default_seasonality_years > 1 ? 'multi' : 'single'));
       const activeScenarioId = scenarioRef.current?.id;
       if (activeScenarioId && dirtyRowsRef.current.size === 0) {
         replaceScenario(await fetchTargetScenario(activeScenarioId));
@@ -478,6 +543,10 @@ export function TargetCalculatorSubtab() {
     () => scenario?.regional_summary.filter((item) => regionalFilter === 'all' || item.regional === regionalFilter) ?? [],
     [scenario, regionalFilter],
   );
+  const activeSeasonalityLabel = useMemo(() => {
+    const years = Number(scenario?.calculation_params?.seasonality_years ?? 1);
+    return years > 1 ? `Multi-year ${years} ani` : 'Sezonalitate anul trecut';
+  }, [scenario]);
 
   useEffect(() => {
     const available = new Set(locationOptions.map((row) => row.site_code));
@@ -549,6 +618,8 @@ export function TargetCalculatorSubtab() {
         total_target: parsedTarget,
         min_floor: parsedFloor,
         previous_month_floor_pct: parsedPct / 100,
+        previous_month_cap_pct: context?.default_previous_month_cap_pct ?? 1.7,
+        seasonality_years: seasonalityMode === 'multi' ? 3 : 1,
         expected_revision: recalculatingCurrentDraft
           ? existingTarget.revision
           : undefined,
@@ -799,7 +870,7 @@ export function TargetCalculatorSubtab() {
             </button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <label className="space-y-1 text-xs text-slate-500">
               Luna target
               <input className={`w-full ${inputCls}`} type="month" value={targetMonth} onChange={(event) => setTargetMonth(event.target.value)} />
@@ -816,6 +887,33 @@ export function TargetCalculatorSubtab() {
               Floor vs luna anterioara (%)
               <input className={`w-full ${inputCls}`} type="number" min="0" max="200" step="0.1" value={floorPct} onChange={(event) => setFloorPct(event.target.value)} />
             </label>
+            <div className="space-y-1 text-xs text-slate-500">
+              Sezonalitate
+              <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSeasonalityMode('single')}
+                  className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
+                    seasonalityMode === 'single'
+                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  Anul trecut
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSeasonalityMode('multi')}
+                  className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
+                    seasonalityMode === 'multi'
+                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  Multi-year
+                </button>
+              </div>
+            </div>
             <div className="flex items-end">
               <button
                 onClick={handleCalculate}
@@ -873,7 +971,7 @@ export function TargetCalculatorSubtab() {
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryCard label="Target total" value={formatCurrency(scenario.total_target)} detail={monthLabel(scenario.target_month)} />
-            <SummaryCard label="Calculat" value={formatCurrency(scenario.proposed_total)} detail={`${scenario.store_count} magazine active`} />
+            <SummaryCard label="Calculat" value={formatCurrency(scenario.proposed_total)} detail={`${scenario.store_count} magazine active · ${activeSeasonalityLabel}`} />
             <SummaryCard
               label="Final manager"
               value={formatCurrency(scenario.final_total)}
@@ -900,6 +998,10 @@ export function TargetCalculatorSubtab() {
                 {regionalChart.map((manager) => {
                   const difference = manager.final_total - manager.proposed_total;
                   const status = managerTargetStatus(manager.proposed_total, manager.final_total);
+                  const currentMonth = monthLabel(manager.current_month ?? shiftMonth(scenario.target_month, -1));
+                  const lastYearLabel = manager.last_year_base_month && manager.last_year_target_month
+                    ? `${monthLabel(manager.last_year_target_month)} vs ${monthLabel(manager.last_year_base_month)}`
+                    : 'Anul trecut';
                   return (
                     <div key={manager.regional} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/60">
                       <div className="flex items-start justify-between gap-3">
@@ -925,15 +1027,33 @@ export function TargetCalculatorSubtab() {
                           <p className={`mt-1 font-semibold tabular-nums ${status.valueClass}`}>{difference > 0 ? '+' : ''}{formatCurrency(difference)}</p>
                         </div>
                       </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="rounded-lg bg-emerald-50 p-2 dark:bg-emerald-900/20">
+                          <p className="uppercase tracking-wide text-emerald-500">Propus vs {currentMonth}</p>
+                          <p className={`mt-1 font-semibold tabular-nums ${percentTone(manager.proposed_growth_vs_current_pct)}`}>
+                            {formatSignedPercent(manager.proposed_growth_vs_current_pct)}
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-400">{formatCurrency(manager.current_forecast_total)}</p>
+                        </div>
+                        <div className="rounded-lg bg-sky-50 p-2 dark:bg-sky-900/20">
+                          <p className="uppercase tracking-wide text-sky-500">{lastYearLabel}</p>
+                          <p className={`mt-1 font-semibold tabular-nums ${percentTone(manager.last_year_growth_pct)}`}>
+                            {formatSignedPercent(manager.last_year_growth_pct)}
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-400">{formatCurrency(manager.last_year_base_total)} {'->'} {formatCurrency(manager.last_year_target_total)}</p>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
               </div>
               <div className="mt-3 hidden overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 md:block">
-                <div className="min-w-[585px]">
-                  <div className="grid grid-cols-[minmax(130px,1fr)_120px_120px_105px_110px] bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:bg-slate-800">
+                <div className="min-w-[820px]">
+                  <div className="grid grid-cols-[minmax(130px,1fr)_115px_115px_115px_115px_100px_110px] bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:bg-slate-800">
                     <span>Manager</span>
                     <span className="text-right">Calculator</span>
+                    <span className="text-right">Vs luna curenta</span>
+                    <span className="text-right">LY target/baza</span>
                     <span className="text-right">Final manager</span>
                     <span className="text-right">Diferenta</span>
                     <span className="text-right">Status</span>
@@ -942,14 +1062,30 @@ export function TargetCalculatorSubtab() {
                     {regionalChart.map((manager) => {
                       const difference = manager.final_total - manager.proposed_total;
                       const status = managerTargetStatus(manager.proposed_total, manager.final_total);
+                      const currentMonth = monthLabel(manager.current_month ?? shiftMonth(scenario.target_month, -1));
+                      const lastYearLabel = manager.last_year_base_month && manager.last_year_target_month
+                        ? `${monthLabel(manager.last_year_target_month)} / ${monthLabel(manager.last_year_base_month)}`
+                        : 'LY';
                       return (
-                        <div key={manager.regional} className="grid grid-cols-[minmax(130px,1fr)_120px_120px_105px_110px] items-center px-3 py-3 text-xs">
+                        <div key={manager.regional} className="grid grid-cols-[minmax(130px,1fr)_115px_115px_115px_115px_100px_110px] items-center px-3 py-3 text-xs">
                           <div>
                             <p className="font-semibold text-slate-700 dark:text-slate-200">{manager.regional}</p>
                             <p className="text-[10px] text-slate-400">{manager.store_count} magazine</p>
                           </div>
                           <span className="text-right font-medium tabular-nums text-indigo-600 dark:text-indigo-300">
                             {formatCurrency(manager.proposed_total)}
+                          </span>
+                          <span className="text-right tabular-nums">
+                            <span className={`block font-semibold ${percentTone(manager.proposed_growth_vs_current_pct)}`}>
+                              {formatSignedPercent(manager.proposed_growth_vs_current_pct)}
+                            </span>
+                            <span className="block text-[10px] text-slate-400">{currentMonth}</span>
+                          </span>
+                          <span className="text-right tabular-nums">
+                            <span className={`block font-semibold ${percentTone(manager.last_year_growth_pct)}`}>
+                              {formatSignedPercent(manager.last_year_growth_pct)}
+                            </span>
+                            <span className="block text-[10px] text-slate-400">{lastYearLabel}</span>
                           </span>
                           <span className={`text-right font-semibold tabular-nums ${status.valueClass}`}>
                             {formatCurrency(manager.final_total)}
@@ -1203,6 +1339,28 @@ export function TargetCalculatorSubtab() {
                       </div>
                     ))}
                   </div>
+                  <div className="mt-2 rounded-xl bg-slate-50 p-2 text-[11px] text-slate-500 dark:bg-slate-800/60 dark:text-slate-300">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Sezonalitate folosita</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">
+                        {formatFactor(row.calculation_details.seasonality?.used_factor)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-slate-400">
+                      <span>LY {formatFactor(row.calculation_details.seasonality?.last_year_store_factor)}</span>
+                      <span>MY {formatFactor(row.calculation_details.seasonality?.multiyear_store_factor)}</span>
+                      <span>Trend {formatFactor(row.calculation_details.trend?.used_adjustment)}</span>
+                    </div>
+                    {(row.calculation_details.flags ?? []).length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(row.calculation_details.flags ?? []).slice(0, 3).map((flag) => (
+                          <span key={flag} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            {flagLabel(flag)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="mt-2 flex items-center justify-between gap-2 text-xs">
                     <span className="text-slate-400">Delta</span>
                     <span className={`font-semibold ${
@@ -1229,7 +1387,7 @@ export function TargetCalculatorSubtab() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-[1380px] w-full text-xs">
+              <table className="min-w-[1680px] w-full text-xs">
                 <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
                   <tr>
                     <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Locatie</th>
@@ -1245,6 +1403,7 @@ export function TargetCalculatorSubtab() {
                         {forecastMonths.has(period.month) && <p className="text-[9px] uppercase tracking-wide text-sky-600 dark:text-sky-300">Forecast</p>}
                       </th>
                     ))}
+                    <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Sezonalitate</th>
                     <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Calculat</th>
                     <th rowSpan={2} className="border-x border-amber-200 bg-amber-100/80 px-3 py-2 text-right font-semibold text-amber-800 align-bottom dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                       <span className="flex items-center justify-end gap-1">
@@ -1318,7 +1477,27 @@ export function TargetCalculatorSubtab() {
                           </td>
                         </Fragment>
                       ))}
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">{formatCurrency(row.proposed_target)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                        <p className="font-semibold text-slate-800 dark:text-slate-100">{formatFactor(row.calculation_details.seasonality?.used_factor)}</p>
+                        <p className="text-[10px] text-slate-400">
+                          LY {formatFactor(row.calculation_details.seasonality?.last_year_store_factor)} · MY {formatFactor(row.calculation_details.seasonality?.multiyear_store_factor)}
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          Trend {formatFactor(row.calculation_details.trend?.used_adjustment)}
+                        </p>
+                        {(row.calculation_details.flags ?? []).length > 0 && (
+                          <div className="mt-1 flex flex-wrap justify-end gap-1">
+                            {(row.calculation_details.flags ?? []).slice(0, 2).map((flag) => (
+                              <span key={flag} className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                {flagLabel(flag)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">
+                        {formatCurrency(row.proposed_target)}
+                      </td>
                       <td className="border-x border-amber-100 bg-amber-50/50 px-3 py-2 text-right dark:border-amber-900 dark:bg-amber-950/10">
                         <input
                           type="number"
