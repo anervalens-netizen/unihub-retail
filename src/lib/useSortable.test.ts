@@ -58,6 +58,14 @@ describe('sortRows', () => {
       'B',
     ]);
   });
+
+  it('sorts by virtual keys through a custom value getter', () => {
+    expect(
+      sortRows(rows, 'virtual_score', 'asc', (row, key) =>
+        key === 'virtual_score' ? row.sales ?? -1 : 0,
+      ).map((row) => row.name),
+    ).toEqual(['Gamma', 'Beta', 'Alfa']);
+  });
 });
 
 describe('sort direction helpers', () => {

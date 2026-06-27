@@ -46,6 +46,7 @@ import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { VisiteSubtab } from './VisiteSubtab';
+import { useSortable } from '../lib/useSortable';
 import {
   CampaignMiniCard,
   CompactCurrency,
@@ -78,7 +79,6 @@ interface DashboardProps {
 }
 
 type DashboardSection = 'current' | 'history' | 'visits';
-type SortDirection = 'asc' | 'desc';
 type StoreSortKey =
   | 'locatie'
   | 'site_code'
@@ -188,6 +188,9 @@ const CURRENT_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' 
 const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct');
 const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct');
 const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
+const STORE_ASC_SORT_KEYS: StoreSortKey[] = ['locatie', 'site_code'];
+const AGENT_ASC_SORT_KEYS: AgentSortKey[] = ['locatie', 'agent'];
+const REGIONAL_ASC_SORT_KEYS: RegionalSortKey[] = ['regional'];
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const n = (value: number | null | undefined): number => Number(value ?? 0);
@@ -590,21 +593,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
   const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
   const [includeClosedStores, setIncludeClosedStores] = useState(false);
-  const [storeSort, setStoreSort] = useState<{ key: StoreSortKey; direction: SortDirection }>({
-    key: 'proc_realizare_target',
-    direction: 'desc',
-  });
-  const [agentSort, setAgentSort] = useState<{ key: AgentSortKey; direction: SortDirection }>({
-    key: 'total_vanzari',
-    direction: 'desc',
-  });
-  const [regionalSort, setRegionalSort] = useState<{ key: RegionalSortKey; direction: SortDirection }>({
-    key: 'total_vanzari',
-    direction: 'desc',
-  });
-  const [historyRegionalSort, setHistoryRegionalSort] = useState<{ key: RegionalSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
-  const [historyStoreSort, setHistoryStoreSort] = useState<{ key: StoreSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
-  const [historyAgentSort, setHistoryAgentSort] = useState<{ key: AgentSortKey; direction: SortDirection }>({ key: 'total_vanzari', direction: 'desc' });
   const historyMonthDropdownRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -1030,125 +1018,80 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     [brandMix]
   );
 
-  const sortedStores = useMemo(() => {
-    const rows = [...stores];
-    rows.sort((left, right) => {
-      const leftValue = getStoreSortValue(left, storeSort.key);
-      const rightValue = getStoreSortValue(right, storeSort.key);
-      const result = leftValue - rightValue;
-      return storeSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [stores, storeSort]);
+  const currentStoreSort = useSortable<StoreStat, StoreSortKey>({
+    rows: stores,
+    key: 'proc_realizare_target',
+    defaultAscKeys: STORE_ASC_SORT_KEYS,
+    getValue: getStoreSortValue,
+  });
+  const currentAgentSort = useSortable<AgentStat, AgentSortKey>({
+    rows: agents,
+    key: 'total_vanzari',
+    defaultAscKeys: AGENT_ASC_SORT_KEYS,
+    getValue: getAgentSortValue,
+  });
+  const currentRegionalSort = useSortable<RegionalStat, RegionalSortKey>({
+    rows: regionals,
+    key: 'total_vanzari',
+    defaultAscKeys: REGIONAL_ASC_SORT_KEYS,
+    getValue: getRegionalSortValue,
+  });
+  const historicalRegionalSort = useSortable<RegionalStat, RegionalSortKey>({
+    rows: historyRegionals,
+    key: 'total_vanzari',
+    defaultAscKeys: REGIONAL_ASC_SORT_KEYS,
+    getValue: getRegionalSortValue,
+  });
+  const historicalStoreSort = useSortable<StoreStat, StoreSortKey>({
+    rows: historyStores,
+    key: 'total_vanzari',
+    defaultAscKeys: STORE_ASC_SORT_KEYS,
+    getValue: getStoreSortValue,
+  });
+  const historicalAgentSort = useSortable<AgentStat, AgentSortKey>({
+    rows: historyAgents,
+    key: 'total_vanzari',
+    defaultAscKeys: AGENT_ASC_SORT_KEYS,
+    getValue: getAgentSortValue,
+  });
 
-  const sortedAgents = useMemo(() => {
-    const rows = [...agents];
-    rows.sort((left, right) => {
-      const leftValue = getAgentSortValue(left, agentSort.key);
-      const rightValue = getAgentSortValue(right, agentSort.key);
-      const result = leftValue - rightValue;
-      return agentSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [agents, agentSort]);
+  const storeSort = useMemo(
+    () => ({ key: currentStoreSort.sortKey, direction: currentStoreSort.direction }),
+    [currentStoreSort.direction, currentStoreSort.sortKey]
+  );
+  const agentSort = useMemo(
+    () => ({ key: currentAgentSort.sortKey, direction: currentAgentSort.direction }),
+    [currentAgentSort.direction, currentAgentSort.sortKey]
+  );
+  const regionalSort = useMemo(
+    () => ({ key: currentRegionalSort.sortKey, direction: currentRegionalSort.direction }),
+    [currentRegionalSort.direction, currentRegionalSort.sortKey]
+  );
+  const historyRegionalSort = useMemo(
+    () => ({ key: historicalRegionalSort.sortKey, direction: historicalRegionalSort.direction }),
+    [historicalRegionalSort.direction, historicalRegionalSort.sortKey]
+  );
+  const historyStoreSort = useMemo(
+    () => ({ key: historicalStoreSort.sortKey, direction: historicalStoreSort.direction }),
+    [historicalStoreSort.direction, historicalStoreSort.sortKey]
+  );
+  const historyAgentSort = useMemo(
+    () => ({ key: historicalAgentSort.sortKey, direction: historicalAgentSort.direction }),
+    [historicalAgentSort.direction, historicalAgentSort.sortKey]
+  );
 
-  const handleSortAgents = useCallback((key: AgentSortKey) => {
-    setAgentSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'locatie' || key === 'agent' ? 'asc' : 'desc' }
-    );
-  }, []);
-
-  const handleSortStores = useCallback((key: StoreSortKey) => {
-    setStoreSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : {
-            key,
-            direction:
-              key === 'locatie' || key === 'site_code'
-                ? 'asc'
-                : 'desc',
-          }
-    );
-  }, []);
-
-  const sortedRegionals = useMemo(() => {
-    const rows = [...regionals];
-    rows.sort((left, right) => {
-      const leftValue = getRegionalSortValue(left, regionalSort.key);
-      const rightValue = getRegionalSortValue(right, regionalSort.key);
-      const result = leftValue - rightValue;
-      return regionalSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [regionals, regionalSort]);
-
-  const sortedHistoryRegionals = useMemo(() => {
-    const rows = [...historyRegionals];
-    rows.sort((left, right) => {
-      const leftValue = getRegionalSortValue(left, historyRegionalSort.key);
-      const rightValue = getRegionalSortValue(right, historyRegionalSort.key);
-      const result = leftValue - rightValue;
-      return historyRegionalSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [historyRegionals, historyRegionalSort]);
-
-  const sortedHistoryStores = useMemo(() => {
-    const rows = [...historyStores];
-    rows.sort((left, right) => {
-      const leftValue = getStoreSortValue(left, historyStoreSort.key);
-      const rightValue = getStoreSortValue(right, historyStoreSort.key);
-      const result = leftValue - rightValue;
-      return historyStoreSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [historyStores, historyStoreSort]);
-
-  const sortedHistoryAgents = useMemo(() => {
-    const rows = [...historyAgents];
-    rows.sort((left, right) => {
-      const leftValue = getAgentSortValue(left, historyAgentSort.key);
-      const rightValue = getAgentSortValue(right, historyAgentSort.key);
-      const result = leftValue - rightValue;
-      return historyAgentSort.direction === 'asc' ? result : -result;
-    });
-    return rows;
-  }, [historyAgents, historyAgentSort]);
-
-  const handleSortRegionals = useCallback((key: RegionalSortKey) => {
-    setRegionalSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'regional' ? 'asc' : 'desc' }
-    );
-  }, []);
-
-  const handleSortHistoryRegionals = useCallback((key: RegionalSortKey) => {
-    setHistoryRegionalSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'regional' ? 'asc' : 'desc' }
-    );
-  }, []);
-
-  const handleSortHistoryStores = useCallback((key: StoreSortKey) => {
-    setHistoryStoreSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'locatie' || key === 'site_code' ? 'asc' : 'desc' }
-    );
-  }, []);
-
-  const handleSortHistoryAgents = useCallback((key: AgentSortKey) => {
-    setHistoryAgentSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'locatie' || key === 'agent' ? 'asc' : 'desc' }
-    );
-  }, []);
+  const sortedStores = currentStoreSort.sorted;
+  const sortedAgents = currentAgentSort.sorted;
+  const sortedRegionals = currentRegionalSort.sorted;
+  const sortedHistoryRegionals = historicalRegionalSort.sorted;
+  const sortedHistoryStores = historicalStoreSort.sorted;
+  const sortedHistoryAgents = historicalAgentSort.sorted;
+  const handleSortStores = currentStoreSort.handleSort;
+  const handleSortAgents = currentAgentSort.handleSort;
+  const handleSortRegionals = currentRegionalSort.handleSort;
+  const handleSortHistoryRegionals = historicalRegionalSort.handleSort;
+  const handleSortHistoryStores = historicalStoreSort.handleSort;
+  const handleSortHistoryAgents = historicalAgentSort.handleSort;
 
   const filterScopeLabel = useMemo(() => describeFilterScope(filters), [filters]);
 

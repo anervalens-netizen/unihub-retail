@@ -35,11 +35,12 @@ export function compareSortableValues(left: unknown, right: unknown): number {
   return String(a).localeCompare(String(b), 'ro');
 }
 
-export function sortRows<T, K extends keyof T>(
+export function sortRows<T, K extends PropertyKey>(
   rows: readonly T[],
   key: K,
   direction: SortDirection,
-  getValue: (row: T, key: K) => unknown = (row, rowKey) => row[rowKey],
+  getValue: (row: T, key: K) => unknown = (row, rowKey) =>
+    (row as Record<PropertyKey, unknown>)[rowKey],
 ): T[] {
   const factor = direction === 'asc' ? 1 : -1;
   return rows
@@ -81,7 +82,7 @@ export function nextSortState<K>(
   };
 }
 
-export function useSortable<T, K extends keyof T>({
+export function useSortable<T, K extends PropertyKey>({
   rows,
   key,
   direction = 'desc',

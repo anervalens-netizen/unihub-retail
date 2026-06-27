@@ -203,7 +203,8 @@ Livrabile:
 - [x] data-fetching-ul Dashboard este extras in `useDashboardData`;
 - [ ] `Dashboard.tsx` se imparte in subcomponente:
   `CurrentDashboard`, `HistoryDashboard`, `BreakdownTable`;
-- [ ] sortarile repetitive folosesc `useSortable`.
+- [x] sortarile repetitive din tabelele Dashboard folosesc `useSortable`;
+- [x] `useSortable` accepta chei virtuale prin `getValue` custom.
 
 Criteriu:
 
@@ -234,6 +235,16 @@ Validare extractie `useDashboardData`:
 - `npm run build` - OK;
 - `sudo systemctl restart unihub-backend.service` - OK;
 - health local si public - OK dupa warm-up;
+- jurnal `unihub-backend.service` dupa restart - fara warnings.
+
+Validare sortari Dashboard:
+
+- `npm run typecheck` - OK;
+- `npm run lint` - OK;
+- `npm run test` - OK, 19 fisiere / 159 teste;
+- `npm run build` - OK;
+- `sudo systemctl restart unihub-backend.service` - OK;
+- health local si public - OK;
 - jurnal `unihub-backend.service` dupa restart - fara warnings.
 
 ## Milestone 3 - Backend domain boundaries ramase
