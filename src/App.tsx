@@ -16,6 +16,7 @@ import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
 import { canAccessManagement } from './auth/permissions';
 import { selectCurrentMonth } from './lib/currentMonth';
+import { usePersistentState } from './lib/usePersistentState';
 
 const Campaigns = lazy(loadCampaignsScreen);
 const Dashboard = lazy(loadDashboardScreen);
@@ -39,15 +40,20 @@ const CURRENT_MONTH_STORAGE_KEY = 'unihub_current_month';
 type HubSection = 'current' | 'history' | 'visits';
 const HUB_SECTIONS: HubSection[] = ['current', 'history', 'visits'];
 
-function loadHubSection(): HubSection {
-  const saved = localStorage.getItem(HUB_SECTION_STORAGE_KEY);
-  return HUB_SECTIONS.includes(saved as HubSection) ? (saved as HubSection) : 'current';
+function parseHubSection(value: string): HubSection {
+  return HUB_SECTIONS.includes(value as HubSection) ? (value as HubSection) : 'current';
 }
 
-function loadManagementSubTab(): ManagementTab {
-  const saved = localStorage.getItem(MANAGEMENT_SUBTAB_STORAGE_KEY);
-  const isKnownSubTab = MGMT_SUBTABS.some((tab) => tab.id === saved);
-  return isKnownSubTab ? saved as ManagementTab : 'asm';
+function parseManagementSubTab(value: string): ManagementTab {
+  const isKnownSubTab = MGMT_SUBTABS.some((tab) => tab.id === value);
+  return isKnownSubTab ? value as ManagementTab : 'asm';
+}
+
+function parseCampaignsSection(value: string): CampaignsSection {
+  if (value === 'campaigns') return 'incentive'; // migrare din vechea grupare Campanii
+  return CAMPAIGNS_SECTIONS.includes(value as CampaignsSection)
+    ? (value as CampaignsSection)
+    : 'incentive';
 }
 
 function loadSavedFilters(key: string): AppFilters {
@@ -71,49 +77,38 @@ export default function App() {
     });
   }, [getAccessToken, login]);
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-    const saved = localStorage.getItem('unihub_active_tab');
-    return sanitizeActiveTab(saved, hasManagementAccess);
+  const [activeTab, setActiveTab] = usePersistentState<ActiveTab>('unihub_active_tab', 'hub', {
+    deserialize: (raw) => sanitizeActiveTab(raw, hasManagementAccess),
   });
-  const [campaignsSection, setCampaignsSection] = useState<CampaignsSection>(() => {
-    const saved = localStorage.getItem('unihub_campaigns_section');
-    if (saved === 'campaigns') return 'incentive'; // migrare din vechea grupare Campanii
-    return CAMPAIGNS_SECTIONS.includes(saved as CampaignsSection)
-      ? (saved as CampaignsSection)
-      : 'incentive';
-  });
-  const [theme, setTheme] = useState(() => localStorage.getItem('unihub_theme') ?? 'light');
+  const [campaignsSection, setCampaignsSection] = usePersistentState<CampaignsSection>(
+    'unihub_campaigns_section',
+    'incentive',
+    { deserialize: parseCampaignsSection },
+  );
+  const [theme, setTheme] = usePersistentState('unihub_theme', 'light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [hubSection, setHubSection] = useState<HubSection>(loadHubSection);
+  const [hubSection, setHubSection] = usePersistentState<HubSection>(
+    HUB_SECTION_STORAGE_KEY,
+    'current',
+    { deserialize: parseHubSection },
+  );
   const [hubFilters, setHubFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.hub));
   const [focusFilters, setFocusFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.focus));
   const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.agents));
   const [currentMonth, setCurrentMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
-  const [mgmtSubTab, setMgmtSubTab] = useState<ManagementTab>(loadManagementSubTab);
-
-  useEffect(() => {
-    localStorage.setItem('unihub_active_tab', activeTab);
-  }, [activeTab]);
+  const [mgmtSubTab, setMgmtSubTab] = usePersistentState<ManagementTab>(
+    MANAGEMENT_SUBTAB_STORAGE_KEY,
+    'asm',
+    { deserialize: parseManagementSubTab },
+  );
 
   useEffect(() => {
     if (!hasManagementAccess && activeTab === 'management') {
       setActiveTab('hub');
     }
-  }, [activeTab, hasManagementAccess]);
-
-  useEffect(() => {
-    localStorage.setItem('unihub_campaigns_section', campaignsSection);
-  }, [campaignsSection]);
-
-  useEffect(() => {
-    localStorage.setItem(MANAGEMENT_SUBTAB_STORAGE_KEY, mgmtSubTab);
-  }, [mgmtSubTab]);
-
-  useEffect(() => {
-    localStorage.setItem(HUB_SECTION_STORAGE_KEY, hubSection);
-  }, [hubSection]);
+  }, [activeTab, hasManagementAccess, setActiveTab]);
 
   useEffect(() => {
     // Luna in curs se rescrie la bootstrap cu cea mai recenta luna disponibila.
@@ -133,7 +128,6 @@ export default function App() {
   }, [agentsFilters]);
 
   useEffect(() => {
-    localStorage.setItem('unihub_theme', theme);
     const root = document.documentElement;
     root.className = '';
     if (theme === 'dark') {
@@ -196,7 +190,7 @@ export default function App() {
       mounted = false;
       window.removeEventListener('unihub:navigate', handleNavigate as EventListener);
     };
-  }, [isAuthenticated, isAuthLoading]);
+  }, [isAuthenticated, isAuthLoading, setActiveTab, setCampaignsSection, setMgmtSubTab]);
 
 
 

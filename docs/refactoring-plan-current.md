@@ -149,7 +149,9 @@ Livrabile:
 
 - [x] hook comun pentru localStorage, cu parse fallback robust;
 - [x] teste pentru read/write, string plain, JSON invalid si remove condition;
-- [ ] adoptare graduala in `App.tsx`/`Agents.tsx`.
+- [x] adoptare initiala in `App.tsx` pentru tab activ, sectiune Focus, tema,
+  sectiune Hub si subtab Management;
+- [ ] adoptare graduala in `Agents.tsx`.
 
 Criteriu:
 
@@ -343,3 +345,6 @@ build pot concura pe `dist/`.
   `useSortable`, `SegmentedTabs`, `SideDrawer`, `usePersistentState`; `Campaigns`
   a trecut pe TanStack Query pentru fluxurile principale, iar cache-ul manual cu
   `isMountedRef`/`viewCache` a fost eliminat din acest ecran.
+- 2026-06-27: `usePersistentState` a fost adoptat in `App.tsx` pentru
+  persistarile simple. `currentMonth` a ramas exclus intentionat si continua sa
+  fie setat din lista backend de luni disponibile.
