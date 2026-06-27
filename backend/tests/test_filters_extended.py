@@ -4,9 +4,16 @@ from __future__ import annotations
 from services.filters import (
     normalize_filter,
     base_filter_values,
+    build_scoped_params,
     scoped_clauses,
     where_clauses,
     transaction_filter_parts,
+)
+from retail_filters import (
+    DISTRIBUTION_LOCATION_PREFIX,
+    cartela_exclusion_clause,
+    distribution_location_clause,
+    retail_exclusion_clauses,
 )
 
 
@@ -22,6 +29,17 @@ def test_normalize_filter_sentinels():
 def test_normalize_filter_valid():
     assert normalize_filter("FirmaA") == "FirmaA"
     assert normalize_filter("  Region1  ") == "Region1"
+
+
+def test_retail_filter_helpers_build_stable_clauses():
+    assert DISTRIBUTION_LOCATION_PREFIX == "TR "
+    assert distribution_location_clause("s") == "s.locatie NOT ILIKE 'TR %'"
+    assert distribution_location_clause() == "locatie NOT ILIKE 'TR %'"
+    assert cartela_exclusion_clause("st") == "NOT st.is_cartela"
+    assert retail_exclusion_clauses(site_alias="st", store_alias="s") == [
+        "s.locatie NOT ILIKE 'TR %'",
+        "NOT st.is_cartela",
+    ]
 
 
 def test_base_filter_values_no_filters():
@@ -47,6 +65,19 @@ def test_base_filter_values_partial():
     assert "regional" not in positions
     assert "firma" not in positions
     assert positions["site_code"] == 2
+
+
+def test_build_scoped_params_preserves_initial_offset_and_site_dominance():
+    params, positions = build_scoped_params(
+        ["2026-05", ["SKU1", "SKU2"]],
+        firma="F1",
+        regional="R1",
+        asm="A1",
+        site_code="SITE01",
+        agent="Agent1",
+    )
+    assert params == ["2026-05", ["SKU1", "SKU2"], "SITE01", "Agent1"]
+    assert positions == {"site_code": 3, "agent": 4}
 
 
 def test_scoped_clauses_empty():

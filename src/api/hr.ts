@@ -20,7 +20,7 @@ export interface PerformancePoint {
 }
 
 export async function fetchLeaveRequests(params?: { status?: string; agent_name?: string }): Promise<LeaveRequest[]> {
-  const { data } = await client.get('/api/hr/leave-requests', { params });
+  const { data } = await client.get<LeaveRequest[]>('/api/hr/leave-requests', { params });
   return data;
 }
 
@@ -31,17 +31,17 @@ export async function createLeaveRequest(body: {
   leave_type: string;
   notes?: string;
 }): Promise<LeaveRequest> {
-  const { data } = await client.post('/api/hr/leave-requests', body);
+  const { data } = await client.post<LeaveRequest>('/api/hr/leave-requests', body);
   return data;
 }
 
 export async function updateLeaveStatus(id: number, status: 'approved' | 'rejected'): Promise<LeaveRequest> {
-  const { data } = await client.patch(`/api/hr/leave-requests/${id}`, { status });
+  const { data } = await client.patch<LeaveRequest>(`/api/hr/leave-requests/${id}`, { status });
   return data;
 }
 
 export async function fetchAgentPerformance(agentName: string): Promise<PerformancePoint[]> {
-  const { data } = await client.get(`/api/hr/performance/${encodeURIComponent(agentName)}`);
+  const { data } = await client.get<PerformancePoint[]>(`/api/hr/performance/${encodeURIComponent(agentName)}`);
   return data;
 }
 
@@ -81,11 +81,11 @@ export interface AsmHistoryPoint {
 }
 
 export async function fetchAsmPerformance(month: string, regional?: string): Promise<AsmPerformance[]> {
-  const { data } = await client.get('/api/hr/asm-performance', { params: { month, regional } });
+  const { data } = await client.get<AsmPerformance[]>('/api/hr/asm-performance', { params: { month, regional } });
   return data;
 }
 
 export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmHistoryPoint[]> {
-  const { data } = await client.get(`/api/hr/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
+  const { data } = await client.get<AsmHistoryPoint[]>(`/api/hr/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
   return data;
 }

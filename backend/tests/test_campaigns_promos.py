@@ -31,6 +31,7 @@ def mock_repo():
     repo.fetch_promo_total = AsyncMock(return_value=None)
     repo.fetch_promo_store_rows = AsyncMock(return_value=[])
     repo.fetch_incentive_store_rows = AsyncMock(return_value=[])
+    repo.fetch_incentive_agent_rows = AsyncMock(return_value=[])
     return repo
 
 
@@ -115,7 +116,7 @@ class TestPromoIncentivesNoConfig:
         mock_repo.fetch_incentive_store_rows.return_value = [
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=30),
         ]
-        conn.fetch.return_value = [
+        mock_repo.fetch_incentive_agent_rows.return_value = [
             FakeRow(agent="Agent1", site_code="S1", item_code="COD1", qty=20),
             *[
                 FakeRow(agent=f"Agent{index}", site_code="S1", item_code="COD1", qty=1)
@@ -172,7 +173,7 @@ class TestPromoIncentivesNoConfig:
         mock_repo.fetch_incentive_store_rows.return_value = [
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=20),
         ]
-        conn.fetch.return_value = [
+        mock_repo.fetch_incentive_agent_rows.return_value = [
             FakeRow(agent="Agent1", site_code="S1", item_code="I1", qty=10),
         ]
         result = await service.get_promotions_incentives(
@@ -232,7 +233,7 @@ class TestPromoIncentivesNoConfig:
         mock_repo.fetch_incentive_store_rows.return_value = [
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=10),
         ]
-        conn.fetch.return_value = [
+        mock_repo.fetch_incentive_agent_rows.return_value = [
             FakeRow(agent="Agent1", site_code="S1", item_code="I1", qty=10),
         ]
         result = await service.get_promotions_incentives(
@@ -348,7 +349,7 @@ class TestPromoIncentivesNoConfig:
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I2", qty=5),
         ]
         service, conn = service_and_conn
-        conn.fetch.return_value = [
+        mock_repo.fetch_incentive_agent_rows.return_value = [
             FakeRow(agent="Agent1", site_code="S1", item_code="I1", qty=5),
             FakeRow(agent="Agent1", site_code="S1", item_code="I2", qty=5),
         ]
@@ -383,7 +384,7 @@ class TestPromoIncentivesNoConfig:
         mock_repo.fetch_incentive_store_rows.return_value = [
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=10),
         ]
-        conn.fetch.return_value = []
+        mock_repo.fetch_incentive_agent_rows.return_value = []
         result = await service.get_promotions_incentives(
             "2026-05-01", "2026-05-31", None, None, None, None, None
         )

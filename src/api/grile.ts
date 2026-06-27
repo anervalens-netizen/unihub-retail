@@ -1,4 +1,6 @@
 import { client } from './client';
+import { formatMonthLabel } from '../lib/dates';
+import { downloadBlob } from '../lib/download';
 
 export interface GrileRun {
   id: number;
@@ -153,18 +155,9 @@ export async function downloadGrileMonthly(kind: 'final' | 'archive', month: str
   const { data } = await client.get<Blob>(`/api/grile/monthly/download/${kind}/${month}`, {
     responseType: 'blob',
   });
-  const roMonths = [
-    '', 'Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie',
-    'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie',
-  ];
-  const [year, monthNo] = month.split('-');
-  const monthLabel = `${roMonths[Number(monthNo)] ?? monthNo} ${year}`;
-  const url = URL.createObjectURL(data);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = kind === 'final' ? `Tabel Salarii - ${monthLabel}.xlsx` : `Arhiva Grile - ${monthLabel}.zip`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const monthLabel = formatMonthLabel(month, { month: 'long' });
+  downloadBlob(
+    data,
+    kind === 'final' ? `Tabel Salarii - ${monthLabel}.xlsx` : `Arhiva Grile - ${monthLabel}.zip`,
+  );
 }

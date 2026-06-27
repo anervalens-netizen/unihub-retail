@@ -20,7 +20,6 @@ from models import (
 )
 from repositories.campaigns import CampaignsRepository
 from services.dashboard.queries import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
-from services.filters import normalize_filter, scoped_clauses
 from services.dashboard_specials import (
     load_promotion_rule_products,
     load_special_cards_config,
@@ -37,32 +36,6 @@ from services.promo_copurchase import (
     merge_promo_results,
     promo_actuals_cutoff_date,
 )
-
-
-def _campaign_clauses(
-    month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
-    *,
-    alias: str,
-) -> tuple[list[str], list[Any]]:
-    clauses = [f"{alias}.locatie NOT ILIKE 'TR %'", f"{alias}.import_month = $1"]
-    params: list[Any] = [month]
-    site_scope = normalize_filter(site_code)
-    for column, value in [
-        (f"{alias}.firma", None if site_scope else normalize_filter(firma)),
-        (f"{alias}.regional", None if site_scope else normalize_filter(regional)),
-        (f"{alias}.asm", None if site_scope else normalize_filter(asm)),
-        (f"{alias}.site_code", site_scope),
-        (f"{alias}.agent", normalize_filter(agent)),
-    ]:
-        if value:
-            params.append(value)
-            clauses.append(f"{column} = ANY(string_to_array(${len(params)}::TEXT, ','))")
-    return clauses, params
 
 
 def _merge_excluded_units(
@@ -214,16 +187,14 @@ class CampaignsService:
         site_code: str | None,
         agent: str | None,
     ) -> CampaignSnapshot:
-        focus_clauses, focus_params = _campaign_clauses(
-            month, firma, regional, asm, site_code, agent, alias="agg"
+        data = await self.repo.fetch_overview(
+            month,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
         )
-        totals_clauses, totals_params = _campaign_clauses(
-            month, firma, regional, asm, site_code, agent, alias="tot"
-        )
-        focus_where_sql = " AND ".join(focus_clauses)
-        totals_where_sql = " AND ".join(totals_clauses)
-
-        data = await self.repo.fetch_overview(focus_where_sql, totals_where_sql, focus_params)
 
         overview = (
             CampaignOverview(**dict(data["overview"]))
@@ -253,33 +224,15 @@ class CampaignsService:
         site_code: str | None,
         agent: str | None,
     ) -> FocusHistoryResponse:
-        params: list[Any] = [month, months_back]
-        positions: dict[str, int] = {}
-        for key, value in [
-            ("firma", normalize_filter(firma)),
-            ("regional", normalize_filter(regional)),
-            ("asm", normalize_filter(asm)),
-            ("site_code", normalize_filter(site_code)),
-            ("agent", normalize_filter(agent)),
-        ]:
-            if value is not None:
-                params.append(value)
-                positions[key] = len(params)
-
-        focus_clauses = ["agg.import_month IN (SELECT import_month FROM recent_months)"]
-        totals_clauses = ["tot.import_month IN (SELECT import_month FROM recent_months)"]
-        for key, focus_column, totals_column in [
-            ("firma", "agg.firma", "tot.firma"),
-            ("regional", "agg.regional", "tot.regional"),
-            ("asm", "agg.asm", "tot.asm"),
-            ("site_code", "agg.site_code", "tot.site_code"),
-            ("agent", "agg.agent", "tot.agent"),
-        ]:
-            if key in positions:
-                focus_clauses.append(f"{focus_column} = ANY(string_to_array(${positions[key]}::TEXT, ','))")
-                totals_clauses.append(f"{totals_column} = ANY(string_to_array(${positions[key]}::TEXT, ','))")
-
-        rows = await self.repo.fetch_history(focus_clauses, totals_clauses, params)
+        rows = await self.repo.fetch_history(
+            month,
+            months_back,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
         return FocusHistoryResponse(
             history=[FocusHistoryPoint(**dict(row)) for row in rows]
         )
@@ -300,12 +253,6 @@ class CampaignsService:
         start = date_cls.fromisoformat(start_date)
         end = date_cls.fromisoformat(end_date)
         month = start_date[:7]
-
-        # Cand site_code e prezent el domina scope-ul: scoped_clauses() ignora
-        # firma/regional/asm, deci NU trebuie sa-i adaugam ca parametri (altfel
-        # raman parametri orfani -> asyncpg IndeterminateDatatypeError). Mirror
-        # exact al logicii din _campaign_clauses.
-        site_scope = normalize_filter(site_code)
 
         config, _ = load_special_cards_config()
         promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
@@ -437,42 +384,31 @@ class CampaignsService:
             if has_active_promotion:
                 assert promotion_definition is not None
                 promo_month = start_date[:7]
-                promo_params: list[Any] = [
+                total_row = await self.repo.fetch_promo_total(
                     start,
                     end,
                     promotion_item_codes,
                     promo_month,
-                ]
-                positions: dict[str, int] = {}
-                for key, value in [
-                    ("firma", None if site_scope else normalize_filter(firma)),
-                    ("regional", None if site_scope else normalize_filter(regional)),
-                    ("asm", None if site_scope else normalize_filter(asm)),
-                    ("site_code", site_scope),
-                    ("agent", normalize_filter(agent)),
-                ]:
-                    if value is not None:
-                        promo_params.append(value)
-                        positions[key] = len(promo_params)
-
-                promo_clauses = [
-                    "agg.import_month = $4",
-                    "agg.sale_date BETWEEN $1 AND $2",
-                    "agg.item_code = ANY($3::TEXT[])",
-                ]
-                promo_query_clauses = scoped_clauses(
-                    positions,
-                    site_alias="agg",
-                    store_alias="agg",
-                    agent_alias="agg",
+                    firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
                 )
-                promo_clauses.extend(promo_query_clauses)
-
-                total_row = await self.repo.fetch_promo_total(promo_clauses, promo_params)
                 if total_row:
                     promo_total_qty = int(total_row["total_qty"] or 0)
 
-                store_rows = await self.repo.fetch_promo_store_rows(promo_clauses, promo_params)
+                store_rows = await self.repo.fetch_promo_store_rows(
+                    start,
+                    end,
+                    promotion_item_codes,
+                    promo_month,
+                    firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
+                )
                 top_stores = [
                     PromoTopStore(
                         store_name=f"{row['site_code']} - {row['locatie']}",
@@ -521,27 +457,14 @@ class CampaignsService:
             if incentive_campaign is not None:
                 reward_map_for_stores: dict[str, float] | None = incentive_campaign["reward_map"] or None
                 if reward_map_for_stores:
-                    inc_store_params: list[Any] = [list(reward_map_for_stores.keys()), month]
-                    inc_store_positions: dict[str, int] = {}
-                    for key, value in [
-                        ("firma", None if site_scope else normalize_filter(firma)),
-                        ("regional", None if site_scope else normalize_filter(regional)),
-                        ("asm", None if site_scope else normalize_filter(asm)),
-                        ("site_code", site_scope),
-                    ]:
-                        if value is not None:
-                            inc_store_params.append(value)
-                            inc_store_positions[key] = len(inc_store_params)
-                    inc_store_clauses = [
-                        "agg.item_code = ANY($1::TEXT[])",
-                        "agg.import_month = $2",
-                    ]
-                    inc_store_query_clauses = scoped_clauses(
-                        inc_store_positions,
-                        site_alias="agg", store_alias="agg", agent_alias="agg",
+                    store_item_rows = await self.repo.fetch_incentive_store_rows(
+                        list(reward_map_for_stores.keys()),
+                        month,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
                     )
-                    inc_store_clauses.extend(inc_store_query_clauses)
-                    store_item_rows = await self.repo.fetch_incentive_store_rows(inc_store_clauses, inc_store_params)
                     store_inc: dict[str, list] = {}
                     for row in store_item_rows:
                         sc = row["site_code"]
@@ -597,37 +520,14 @@ class CampaignsService:
                 incentive_product_count = len(reward_map)
 
                 if reward_map:
-                    inc_agent_params: list[Any] = [list(reward_map.keys()), month]
-                    inc_agent_positions: dict[str, int] = {}
-                    for key, value in [
-                        ("firma", None if site_scope else normalize_filter(firma)),
-                        ("regional", None if site_scope else normalize_filter(regional)),
-                        ("asm", None if site_scope else normalize_filter(asm)),
-                        ("site_code", site_scope),
-                        ("agent", normalize_filter(agent)),
-                    ]:
-                        if value is not None:
-                            inc_agent_params.append(value)
-                            inc_agent_positions[key] = len(inc_agent_params)
-                    inc_agent_clauses = [
-                        "agg.item_code = ANY($1::TEXT[])",
-                        "agg.import_month = $2",
-                    ]
-                    inc_agent_query_clauses = scoped_clauses(
-                        inc_agent_positions,
-                        site_alias="agg", store_alias="agg", agent_alias="agg",
-                    )
-                    inc_agent_clauses.extend(inc_agent_query_clauses)
-                    agent_item_rows = await conn.fetch(
-                        f"""
-                        SELECT agg.agent, agg.site_code, agg.item_code,
-                               COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
-                        FROM reporting_item_month agg
-                        WHERE {" AND ".join(inc_agent_clauses)}
-                          AND agg.agent IS NOT NULL AND agg.agent != '-'
-                        GROUP BY agg.agent, agg.site_code, agg.item_code
-                        """,
-                        *inc_agent_params,
+                    agent_item_rows = await self.repo.fetch_incentive_agent_rows(
+                        list(reward_map.keys()),
+                        month,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
                     )
                     agent_inc: dict[str, float] = {}
                     agent_potential: dict[str, float] = {}

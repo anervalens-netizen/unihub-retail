@@ -148,7 +148,7 @@ export async function auditSalaryExport(
   exportKind: 'store_summary' | 'monthly_trend' | 'agents_page',
   rowCount: number,
 ): Promise<void> {
-  await client.post('/salarii/audit/export', {
+  await client.post<void>('/salarii/audit/export', {
     export_kind: exportKind,
     row_count: rowCount,
   });

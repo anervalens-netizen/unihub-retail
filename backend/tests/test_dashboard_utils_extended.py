@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from services.dashboard.utils import _shift_month, _month_day_range, _build_scoped_params
+from services.dashboard.utils import _shift_month, _month_day_range
+from services.filters import build_scoped_params
 
 
 class TestShiftMonth:
@@ -56,12 +57,12 @@ class TestMonthDayRange:
 
 class TestBuildScopedParams:
     def test_no_filters(self):
-        params, positions = _build_scoped_params(["2026-05"], firma=None, regional=None, asm=None, site_code=None, agent=None)
+        params, positions = build_scoped_params(["2026-05"], firma=None, regional=None, asm=None, site_code=None, agent=None)
         assert params == ["2026-05"]
         assert positions == {}
 
     def test_all_filters(self):
-        params, positions = _build_scoped_params(
+        params, positions = build_scoped_params(
             ["2026-05"], firma="F1", regional="R1", asm="A1", site_code="SITE01", agent="Agent1"
         )
         assert params == ["2026-05", "SITE01", "Agent1"]
@@ -72,7 +73,7 @@ class TestBuildScopedParams:
         assert positions["agent"] == 3
 
     def test_sentinels_skipped(self):
-        params, positions = _build_scoped_params(
+        params, positions = build_scoped_params(
             ["2026-05"], firma="Toate", regional="Toti", asm=None, site_code="SITE01", agent=None
         )
         assert len(params) == 2
@@ -80,7 +81,7 @@ class TestBuildScopedParams:
         assert "site_code" in positions
 
     def test_initial_params_preserved(self):
-        params, positions = _build_scoped_params(
+        params, positions = build_scoped_params(
             ["2026-05", 12], firma="F1", regional=None, asm=None, site_code=None, agent=None
         )
         assert params[0] == "2026-05"

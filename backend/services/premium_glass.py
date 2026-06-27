@@ -15,8 +15,8 @@ from models import (
     PremiumGlassStoreStat,
     PremiumGlassSummary,
 )
-from services.dashboard.utils import _build_scoped_params, _expand_current_manager_scope
-from services.filters import scoped_clauses
+from services.dashboard.utils import _expand_current_manager_scope
+from services.filters import build_scoped_params, scoped_clauses
 
 
 def _format_int(value: int) -> str:
@@ -40,7 +40,7 @@ def _premium_scope(
     current_scope: bool,
     include_closed_stores: bool,
 ) -> tuple[list[str], list[Any]]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,

@@ -948,7 +948,7 @@ async def finalize_month(pool: asyncpg.Pool, month: str, only: str | None = None
         print(f"[{idx:02d}/{len(entries):02d}] Read {entry.company}/{entry.store}", flush=True)
         all_rows.extend(extract_store_rows(sheets_svc, entry))
         if delay > 0 and idx < len(entries):
-            time.sleep(delay)
+            await asyncio.sleep(delay)
 
     output_path = resolve_output_path(month, only, OUTPUTS_DIR)
     build_workbook(all_rows, output_path, metadata)
@@ -1053,7 +1053,7 @@ async def archive_month(pool: asyncpg.Pool, month: str, only: str | None = None,
         if result["status"] == "OK":
             exported_files.append(Path(result["xlsx_path"]))
         if delay > 0 and idx < len(entries):
-            time.sleep(delay)
+            await asyncio.sleep(delay)
 
     zip_path = build_archive_zip_path(OUTPUTS_DIR, month)
     manager_zip_paths: dict[str, Path] = {}

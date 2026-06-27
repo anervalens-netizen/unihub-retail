@@ -7,8 +7,8 @@ type FetchCall = [string, { method: string; headers: Record<string, string>; bod
 beforeEach(() => {
   mockFetch.mockReset();
   vi.stubGlobal('fetch', mockFetch);
-  setAccessTokenProvider(null as any);
-  setUnauthorizedHandler(null as any);
+  setAccessTokenProvider(null);
+  setUnauthorizedHandler(null);
 });
 
 afterEach(() => {
@@ -76,6 +76,12 @@ describe('client.get', () => {
     mockFetch.mockResolvedValueOnce(new Response('{}', { status: 500 }));
     await expect(client.get('/api/fail')).rejects.toThrow('API error: 500');
   });
+
+  it('returns undefined for empty 204 responses', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const { data } = await client.get<void>('/api/no-content');
+    expect(data).toBeUndefined();
+  });
 });
 
 describe('client.post', () => {
@@ -96,6 +102,25 @@ describe('client.post', () => {
     await client.post('/api/upload', fd);
     const [, opts] = latestFetchCall();
     expect(opts.body).toBe(fd);
+    expect(opts.headers['Content-Type']).toBeUndefined();
+  });
+});
+
+describe('client verbs', () => {
+  it('supports query params on PATCH', async () => {
+    mockFetch.mockResolvedValueOnce(okResponse({ ok: true }));
+    await client.patch('/api/items/1', { name: 'x' }, { params: { revision: 4 } });
+    const [url, opts] = latestFetchCall();
+    expect(url).toBe('/api/items/1?revision=4');
+    expect(opts.method).toBe('PATCH');
+  });
+
+  it('supports query params on DELETE', async () => {
+    mockFetch.mockResolvedValueOnce(okResponse({ ok: true }));
+    await client.delete('/api/items/1', { params: { force: true } });
+    const [url, opts] = latestFetchCall();
+    expect(url).toBe('/api/items/1?force=true');
+    expect(opts.method).toBe('DELETE');
   });
 });
 
@@ -106,5 +131,20 @@ describe('unauthorized handler', () => {
     mockFetch.mockResolvedValueOnce(new Response('{}', { status: 401 }));
     await expect(client.get('/api/protected')).rejects.toThrow('API error: 401');
     expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it('allows a new 401 redirect after a successful response', async () => {
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    mockFetch
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(okResponse({ ok: true }))
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }));
+
+    await expect(client.get('/api/protected')).rejects.toThrow('API error: 401');
+    await client.get('/api/health');
+    await expect(client.get('/api/protected-again')).rejects.toThrow('API error: 401');
+
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 });

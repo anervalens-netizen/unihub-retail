@@ -7,11 +7,77 @@ import asyncpg
 MIN_SALARY_FOR_AVERAGE = 2000
 
 
+def _salary_scope(
+    *,
+    salary_alias: str,
+    company_name: str | None = None,
+    site_code: str | None = None,
+    regional: str | None = None,
+    asm: str | None = None,
+    year: int | None = None,
+    month: int | None = None,
+    q: str | None = None,
+    initial_params: list[Any] | None = None,
+    initial_conditions: list[str] | None = None,
+    lower_company: bool = True,
+    where_prefix: bool = True,
+) -> tuple[str, str, list[Any]]:
+    params = list(initial_params or [])
+    conditions = list(initial_conditions or [])
+    join_block = (
+        f"LEFT JOIN stores st ON st.site_code = {salary_alias}.site_code"
+        if regional is not None or asm is not None
+        else ""
+    )
+
+    def col(name: str) -> str:
+        return f"{salary_alias}.{name}" if salary_alias else name
+
+    def add(condition: str, value: Any) -> None:
+        params.append(value)
+        conditions.append(condition.format(position=len(params)))
+
+    if q:
+        add(f"{col('full_name')} ILIKE ${{position}}", f"%{q}%")
+    if company_name:
+        if lower_company:
+            add(f"LOWER({col('company_name')}) = ${{position}}", company_name.lower())
+        else:
+            add(f"{col('company_name')} = ${{position}}", company_name)
+    if site_code:
+        add(f"{col('site_code')} = ${{position}}", site_code)
+    if regional:
+        add("st.regional = ${position}", regional)
+    if asm:
+        add("st.asm = ${position}", asm)
+    if year is not None:
+        add(f"{col('year')} = ${{position}}", year)
+    if month is not None:
+        add(f"{col('month')} = ${{position}}", month)
+
+    if not conditions:
+        return join_block, "", params
+    operator = "WHERE " if where_prefix else ""
+    return join_block, operator + " AND ".join(conditions), params
+
+
 class SalariiRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def fetch_overview(self, join_sql: str, where_sql: str, params: list[Any]) -> dict:
+    async def fetch_overview(
+        self,
+        *,
+        company_name: str | None,
+        regional: str | None,
+        asm: str | None,
+    ) -> dict:
+        join_block, where_block, params = _salary_scope(
+            salary_alias="sr",
+            company_name=company_name,
+            regional=regional,
+            asm=asm,
+        )
         salary_base_cte = f"""
             WITH salary_base AS (
                 SELECT DISTINCT
@@ -24,8 +90,8 @@ class SalariiRepository:
                     sr.site_code,
                     sr.locatie
                 FROM salary_records sr
-                {join_sql}
-                {where_sql}
+                {join_block}
+                {where_block}
             ),
             salary_identified AS (
                 SELECT
@@ -93,7 +159,19 @@ class SalariiRepository:
             "months_row": stats,
         }
 
-    async def fetch_evolution_main(self, join_sql: str, where_sql: str, params: list[Any]) -> list[asyncpg.Record]:
+    async def fetch_evolution_main(
+        self,
+        *,
+        company_name: str | None,
+        regional: str | None,
+        asm: str | None,
+    ) -> list[asyncpg.Record]:
+        join_block, where_block, params = _salary_scope(
+            salary_alias="sr",
+            company_name=company_name,
+            regional=regional,
+            asm=asm,
+        )
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -108,8 +186,8 @@ class SalariiRepository:
                         sr.site_code,
                         sr.locatie
                     FROM salary_records sr
-                    {join_sql}
-                    {where_sql}
+                    {join_block}
+                    {where_block}
                 )
                 SELECT
                     year * 100 + month AS sort_key,
@@ -124,7 +202,19 @@ class SalariiRepository:
                 *params,
             )
 
-    async def fetch_evolution_single_company(self, join_sql: str, where_sql: str, params: list[Any]) -> list[asyncpg.Record]:
+    async def fetch_evolution_single_company(
+        self,
+        *,
+        company_name: str,
+        regional: str | None,
+        asm: str | None,
+    ) -> list[asyncpg.Record]:
+        join_block, where_block, params = _salary_scope(
+            salary_alias="sr",
+            company_name=company_name,
+            regional=regional,
+            asm=asm,
+        )
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -139,8 +229,8 @@ class SalariiRepository:
                         sr.site_code,
                         sr.locatie
                     FROM salary_records sr
-                    {join_sql}
-                    {where_sql}
+                    {join_block}
+                    {where_block}
                 )
                 SELECT
                     year * 100 + month AS sort_key,
@@ -155,12 +245,27 @@ class SalariiRepository:
 
     async def fetch_agents_summary(
         self,
-        join_sql: str,
-        where_sql: str,
-        params: list[Any],
+        *,
+        q: str | None,
+        company_name: str | None,
+        site_code: str | None,
+        regional: str | None,
+        asm: str | None,
+        year: int | None,
+        month: int | None,
         limit: int,
         offset: int,
     ) -> dict:
+        join_block, where_block, params = _salary_scope(
+            salary_alias="sr",
+            q=q,
+            company_name=company_name,
+            site_code=site_code,
+            regional=regional,
+            asm=asm,
+            year=year,
+            month=month,
+        )
         agent_months_cte = f"""
                 WITH salary_dedup AS (
                     SELECT DISTINCT
@@ -173,8 +278,8 @@ class SalariiRepository:
                         sr.locatie,
                         sr.total_salary
                     FROM salary_records sr
-                    {join_sql}
-                    {where_sql}
+                    {join_block}
+                    {where_block}
                 ),
                 salary_identified AS (
                     SELECT
@@ -291,14 +396,45 @@ class SalariiRepository:
                 cnp,
             )
 
-    async def fetch_latest_month(self, join_sql: str, where_sql: str, params: list[Any]) -> asyncpg.Record | None:
+    async def fetch_latest_month(
+        self,
+        *,
+        company_name: str | None,
+        regional: str | None,
+        asm: str | None,
+    ) -> asyncpg.Record | None:
+        join_block, where_block, params = _salary_scope(
+            salary_alias="sr",
+            company_name=company_name,
+            regional=regional,
+            asm=asm,
+        )
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
-                f"SELECT sr.year, sr.month FROM salary_records sr {join_sql} {where_sql} ORDER BY sr.year DESC, sr.month DESC LIMIT 1",
+                f"SELECT sr.year, sr.month FROM salary_records sr {join_block} {where_block} ORDER BY sr.year DESC, sr.month DESC LIMIT 1",
                 *params,
             )
 
-    async def fetch_summary_by_site(self, join_stores: str, where_clause: str, params: list[Any], import_month: str) -> list[asyncpg.Record]:
+    async def fetch_summary_by_site(
+        self,
+        *,
+        company_name: str | None,
+        site_code: str | None,
+        regional: str | None,
+        asm: str | None,
+        year: int,
+        month: int,
+    ) -> list[asyncpg.Record]:
+        join_block, where_block, params = _salary_scope(
+            salary_alias="s",
+            company_name=company_name,
+            site_code=site_code,
+            regional=regional,
+            asm=asm,
+            initial_params=[year, month],
+            initial_conditions=["s.year = $1", "s.month = $2"],
+        )
+        import_month = f"{year}-{month:02d}"
         async with self.pool.acquire() as conn:
             params2 = params + [import_month]
             return await conn.fetch(
@@ -312,8 +448,8 @@ class SalariiRepository:
                         s.cnp,
                         s.total_salary
                     FROM salary_records s
-                    {join_stores}
-                    WHERE {where_clause}
+                    {join_block}
+                    {where_block}
                 ),
                 salary_agents AS (
                     SELECT
@@ -395,10 +531,19 @@ class SalariiRepository:
 
     async def fetch_trend(
         self,
-        join_sql: str,
-        where_sql: str,
-        params: list[Any],
+        *,
+        company_name: str | None,
+        site_code: str | None,
+        regional: str | None,
+        asm: str | None,
     ) -> list[asyncpg.Record]:
+        join_block, where_block, params = _salary_scope(
+            salary_alias="sr",
+            company_name=company_name,
+            site_code=site_code,
+            regional=regional,
+            asm=asm,
+        )
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -413,8 +558,8 @@ class SalariiRepository:
                         sr.site_code,
                         sr.locatie
                     FROM salary_records sr
-                    {join_sql}
-                    {where_sql}
+                    {join_block}
+                    {where_block}
                 ),
                 salary_agents AS (
                     SELECT
@@ -486,19 +631,42 @@ class SalariiRepository:
                 *params,
             )
 
-    async def fetch_stores(self, where: str, params: list[Any]) -> list[asyncpg.Record]:
+    async def fetch_stores(self, *, company_name: str | None) -> list[asyncpg.Record]:
+        _join_block, where_block, params = _salary_scope(
+            salary_alias="",
+            company_name=company_name,
+            initial_conditions=["site_code IS NOT NULL"],
+            lower_company=False,
+        )
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
                 SELECT DISTINCT site_code, locatie
                 FROM salary_records
-                {where}
+                {where_block}
                 ORDER BY locatie ASC NULLS LAST, site_code ASC
                 """,
                 *params,
             )
 
-    async def fetch_records(self, where: str, params: list[Any], limit: int, offset: int) -> list[asyncpg.Record]:
+    async def fetch_records(
+        self,
+        *,
+        company_name: str | None,
+        year: int | None,
+        month: int | None,
+        site_code: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[asyncpg.Record]:
+        _join_block, where_block, params = _salary_scope(
+            salary_alias="",
+            company_name=company_name,
+            site_code=site_code,
+            year=year,
+            month=month,
+            lower_company=False,
+        )
         async with self.pool.acquire() as conn:
             params2 = params + [limit, offset]
             return await conn.fetch(
@@ -506,7 +674,7 @@ class SalariiRepository:
                 SELECT id, year, month, full_name, cnp, total_salary,
                        company_name, site_code, locatie
                 FROM salary_records
-                {where}
+                {where_block}
                 ORDER BY year DESC, month DESC, full_name
                 LIMIT ${len(params2) - 1} OFFSET ${len(params2)}
                 """,

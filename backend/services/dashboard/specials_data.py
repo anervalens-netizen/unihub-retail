@@ -10,12 +10,11 @@ from services.dashboard.queries import (
     _get_store_incentive_multipliers,
     _load_dashboard_campaign_context,
 )
-from services.dashboard.utils import _build_scoped_params
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
 )
-from services.filters import scoped_clauses
+from services.filters import build_scoped_params, scoped_clauses
 
 
 def _excluded_by_site_item(
@@ -73,7 +72,7 @@ async def _get_special_cards_data(
         reward_map = incentive_campaign["reward_map"]
         if reward_map:
             incentive_codes = list(reward_map.keys())
-            params, positions = _build_scoped_params(
+            params, positions = build_scoped_params(
                 [month, incentive_codes],
                 firma=firma,
                 regional=regional,

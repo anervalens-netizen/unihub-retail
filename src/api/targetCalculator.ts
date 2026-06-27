@@ -1,4 +1,5 @@
 import { client } from './client';
+import { downloadBlob } from '../lib/download';
 
 export interface TargetCalculatorContext {
   latest_sales_month: string;
@@ -195,10 +196,5 @@ export async function finalizeTargetScenario(id: number, expectedRevision: numbe
 
 export async function downloadTargetScenario(id: number, filename: string): Promise<void> {
   const { data } = await client.get<Blob>(`/api/target-calculator/scenarios/${id}/export`, { responseType: 'blob' });
-  const url = URL.createObjectURL(data);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(data, filename);
 }

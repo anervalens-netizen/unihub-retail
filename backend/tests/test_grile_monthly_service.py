@@ -399,11 +399,15 @@ async def test_finalize_month_sleeps_only_between_entries(
 ) -> None:
     entries = [entry(), entry(store="Store 2", sheet_id="sheet-2")]
     sleeps: list[float] = []
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
     monkeypatch.setattr(grile, "extract_store_rows", MagicMock(return_value=[extracted()]))
-    monkeypatch.setattr(grile.time, "sleep", sleeps.append)
+    monkeypatch.setattr(grile.asyncio, "sleep", sleep)
 
     await grile.finalize_month(MagicMock(), "Iunie 2026", delay=0.25)
 
@@ -563,6 +567,10 @@ async def test_archive_month_sleeps_only_between_entries(
 ) -> None:
     entries = [entry(), entry(store="Store 2", sheet_id="sheet-2")]
     sleeps: list[float] = []
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
@@ -583,7 +591,7 @@ async def test_archive_month_sleeps_only_between_entries(
         }
 
     monkeypatch.setattr(grile, "export_sheet_xlsx", export)
-    monkeypatch.setattr(grile.time, "sleep", sleeps.append)
+    monkeypatch.setattr(grile.asyncio, "sleep", sleep)
 
     await grile.archive_month(MagicMock(), "Iunie 2026", delay=0.25)
 

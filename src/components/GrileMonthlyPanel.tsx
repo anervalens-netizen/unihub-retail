@@ -18,26 +18,15 @@ import {
   runGrileMonthly,
   type GrileMonthlyOp,
 } from '../api/grile';
+import { formatMonthLabel, shiftMonth } from '../lib/dates';
 import { cn } from '../lib/utils';
 
-const RO_MONTHS = [
-  '', 'Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie',
-  'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie',
-];
-
 function roLabel(ym: string): string {
-  const [y, m] = ym.split('-');
-  return `${RO_MONTHS[Number(m)] ?? m} ${y}`;
+  return formatMonthLabel(ym, { month: 'long' });
 }
 
 function nextLabel(ym: string): string {
-  let [y, m] = ym.split('-').map(Number);
-  m += 1;
-  if (m > 12) {
-    m = 1;
-    y += 1;
-  }
-  return `${RO_MONTHS[m]} ${y}`;
+  return formatMonthLabel(shiftMonth(ym, 1), { month: 'long' });
 }
 
 type ActiveJob = { jobId: string; op: GrileMonthlyOp; dryRun: boolean };

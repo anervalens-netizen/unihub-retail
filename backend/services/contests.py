@@ -11,6 +11,7 @@ from models import (
     ContestResponse,
     ContestRuleInfo,
 )
+from retail_filters import cartela_exclusion_clause, distribution_location_clause
 from repositories.contests import ContestsRepository
 from services.contests_config import ContestDefinition, get_active_contest, get_active_contests
 from services.dashboard_specials import (
@@ -34,7 +35,7 @@ _NO_PRICE_THRESHOLD = 10**12
 def _scope_clause_for_stores(scope: dict[str, Any]) -> tuple[str, list[Any]]:
     """Clauze pe tabela `stores` (alias s), non-TR inclus."""
     params: list[Any] = []
-    clauses = ["s.locatie NOT ILIKE 'TR %'"]
+    clauses = [distribution_location_clause("s")]
     if scope.get("site_codes"):
         params.append(",".join(str(c) for c in scope["site_codes"]))
         clauses.append(f"s.site_code = ANY(string_to_array(${len(params)}::TEXT, ','))")
@@ -127,9 +128,9 @@ class ContestsService:
         clauses = [
             "st.import_month = $1",
             "st.sale_date BETWEEN $2 AND $3",
-            "NOT st.is_cartela",
+            cartela_exclusion_clause("st"),
             "NOT st.is_return",
-            "s.locatie NOT ILIKE 'TR %'",
+            distribution_location_clause("s"),
             "st.agent IS NOT NULL",
             "st.agent <> '-'",
         ]

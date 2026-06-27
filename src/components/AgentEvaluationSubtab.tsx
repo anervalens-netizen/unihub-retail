@@ -10,6 +10,7 @@ import {
   type AgentEvaluationV2Response,
 } from '../api/agents';
 import { ExportTableButton } from './ExportTableButton';
+import { formatMonthLabel } from '../lib/dates';
 
 function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
@@ -44,18 +45,14 @@ function pointColor(points: number) {
 function MonthLabel({ month }: { month: string }) {
   if (month === 'custom') return <>Selectate</>;
   const formatShort = (value: string) => {
-    const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
-    const [year, mo] = value.split('-');
-    const label = labels[Number(mo) - 1];
-    return label && year ? `${label} ${year.slice(2)}` : value;
+    const formatted = formatMonthLabel(value, { year: 'short' });
+    return formatted === value ? value : formatted;
   };
   if (month.includes('..')) {
     const [start, end] = month.split('..');
     return <>{formatShort(start)} - {end.includes('-') ? formatShort(end) : end}</>;
   }
-  const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
-  const [year, mo] = month.split('-');
-  return <>{labels[Number(mo) - 1]} {year.slice(2)}</>;
+  return <>{formatShort(month)}</>;
 }
 
 function MetricCell({ value, points, suffix = '%' }: { value: number | null; points: number; suffix?: string }) {

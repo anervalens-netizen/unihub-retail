@@ -11,6 +11,7 @@ import {
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { formatMonthLabel } from '../lib/dates';
 
 const STATUS_ICON = {
   pending: <Clock size={14} className="text-amber-500" />,
@@ -73,9 +74,7 @@ export function HRSubtab() {
   };
 
   const formatMonth = (m: string) => {
-    const [y, mo] = m.split('-');
-    const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
-    return `${labels[parseInt(mo) - 1]} ${y.slice(2)}`;
+    return formatMonthLabel(m, { year: 'short' });
   };
 
   return (

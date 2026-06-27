@@ -1,4 +1,4 @@
-"""Unit tests for campaign clause building and service helpers."""
+"""Unit tests for campaign repository clause building and service helpers."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.campaigns import _campaign_clauses
+from repositories.campaigns import build_campaign_clauses, build_campaign_history_clauses
 
 
 class FakeRow(dict):
@@ -16,13 +16,13 @@ class FakeRow(dict):
 
 
 def test_campaign_clauses_no_filters():
-    clauses, params = _campaign_clauses("2026-05", None, None, None, None, None, alias="agg")
+    clauses, params = build_campaign_clauses("2026-05", None, None, None, None, None, alias="agg")
     assert clauses == ["agg.locatie NOT ILIKE 'TR %'", "agg.import_month = $1"]
     assert params == ["2026-05"]
 
 
 def test_campaign_clauses_all_filters():
-    clauses, params = _campaign_clauses(
+    clauses, params = build_campaign_clauses(
         "2026-05", "FirmaA", "RegionalB", "AsmC", "SITE01", "Agent1", alias="t"
     )
     assert len(clauses) == 4
@@ -34,7 +34,7 @@ def test_campaign_clauses_all_filters():
 
 
 def test_campaign_clauses_skips_toate():
-    clauses, params = _campaign_clauses(
+    clauses, params = build_campaign_clauses(
         "2026-05", "Toate", None, "Toti", None, None, alias="x"
     )
     assert clauses == ["x.locatie NOT ILIKE 'TR %'", "x.import_month = $1"]
@@ -42,13 +42,22 @@ def test_campaign_clauses_skips_toate():
 
 
 def test_campaign_clauses_partial_filters():
-    clauses, params = _campaign_clauses(
+    clauses, params = build_campaign_clauses(
         "2026-04", None, "Regional1", None, "SITE99", None, alias="agg"
     )
     assert len(clauses) == 3
     assert params == ["2026-04", "SITE99"]
     assert not any("agg.regional" in clause for clause in clauses)
     assert "agg.site_code = ANY(string_to_array($2::TEXT, ','))" in clauses
+
+
+def test_campaign_history_clauses_site_code_scope_supports_comma_lists():
+    focus_clauses, totals_clauses, params = build_campaign_history_clauses(
+        "2026-06", 12, None, None, None, "CCTCIT,CTAUCH,CTCITYPRK", None
+    )
+    assert params == ["2026-06", 12, "CCTCIT,CTAUCH,CTCITYPRK"]
+    assert "agg.site_code = ANY(string_to_array($3::TEXT, ','))" in focus_clauses
+    assert "tot.site_code = ANY(string_to_array($3::TEXT, ','))" in totals_clauses
 
 
 class TestCampaignsServiceOverview:
@@ -143,7 +152,11 @@ class TestCampaignsServiceHistory:
         await service.get_focus_history(
             "2026-06", 12, None, None, None, "CCTCIT,CTAUCH,CTCITYPRK", None
         )
-        focus_clauses, totals_clauses, params = service.repo.fetch_history.call_args.args
-        assert params == ["2026-06", 12, "CCTCIT,CTAUCH,CTCITYPRK"]
-        assert "agg.site_code = ANY(string_to_array($3::TEXT, ','))" in focus_clauses
-        assert "tot.site_code = ANY(string_to_array($3::TEXT, ','))" in totals_clauses
+        assert service.repo.fetch_history.call_args.args == ("2026-06", 12)
+        assert service.repo.fetch_history.call_args.kwargs == {
+            "firma": None,
+            "regional": None,
+            "asm": None,
+            "site_code": "CCTCIT,CTAUCH,CTCITYPRK",
+            "agent": None,
+        }

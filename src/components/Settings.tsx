@@ -10,6 +10,7 @@ import { getImportHistory, getImportJobStatus, uploadSalesFile } from '../api/im
 import type { FilterOptions, ImportHistoryEntry } from '../api/types';
 import { cn } from '../lib/utils';
 import { getCachedView, setCachedView } from '../lib/viewCache';
+import { downloadBlob } from '../lib/download';
 import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
 
@@ -274,14 +275,7 @@ export function Settings({
       setExportBusy(true);
       setExportMessage('');
       const blob = await downloadExport(exportRequest);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${exportRequest.filename || 'export_retail'}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${exportRequest.filename || 'export_retail'}.xlsx`);
     } catch {
       setExportMessage('Exportul nu a putut fi generat. Verifica selectia.');
     } finally {

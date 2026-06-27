@@ -32,17 +32,17 @@ export interface TaskUpdate {
 }
 
 export async function fetchTasks(params?: { status?: string; assignee?: string; site_code?: string }): Promise<Task[]> {
-  const { data } = await client.get('/api/tasks', { params });
+  const { data } = await client.get<Task[]>('/api/tasks', { params });
   return data;
 }
 
 export async function createTask(body: TaskCreate): Promise<Task> {
-  const { data } = await client.post('/api/tasks', body);
+  const { data } = await client.post<Task>('/api/tasks', body);
   return data;
 }
 
 export async function updateTask(id: number, body: TaskUpdate): Promise<Task> {
-  const { data } = await client.patch(`/api/tasks/${id}`, body);
+  const { data } = await client.patch<Task>(`/api/tasks/${id}`, body);
   return data;
 }
 

@@ -4,13 +4,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-VISITS_DB = Path("/opt/Mobiup/unihub-retail/data/visits/visits.db")
-IMAGES_DIR = Path("/opt/Mobiup/unihub-retail/data/visits/images")
+from config import get_visits_db_path, get_visits_images_dir
 
 class VisitsReportRepository:
     def __init__(self, db_path: Path | None = None, images_dir: Path | None = None):
-        self.db_path = db_path or VISITS_DB
-        self.images_dir = images_dir or IMAGES_DIR
+        self.db_path = db_path or get_visits_db_path()
+        self.images_dir = images_dir or get_visits_images_dir()
 
     def query_sqlite(
         self,

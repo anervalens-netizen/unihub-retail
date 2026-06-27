@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pathlib
 import time
+import json
 from contextlib import asynccontextmanager
 import logging
 
@@ -65,6 +66,7 @@ from services.visits_sync import sync_visits_snapshot
 from services.jobs import close_arq_pool, get_arq_pool
 
 logger = logging.getLogger(__name__)
+AUTH_PROXY_BASE_URL = os.getenv("AUTH_PROXY_BASE_URL", "https://auth.unihub.ro").rstrip("/")
 
 HTTP_REQUESTS_TOTAL = Counter(
     "http_requests_total",
@@ -147,7 +149,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path.startswith("/assets/"):
             response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
-        elif path == "/" or path.endswith(".html") or path in ("/sw.js", "/registerSW.js", "/manifest.webmanifest"):
+        elif (
+            path.startswith("/api/")
+            or path == "/"
+            or path.endswith(".html")
+            or path in ("/sw.js", "/registerSW.js", "/manifest.webmanifest")
+        ):
             response.headers.setdefault("Cache-Control", "no-cache, no-store, must-revalidate")
             response.headers.setdefault("CDN-Cache-Control", "no-store")
             response.headers.setdefault("Surrogate-Control", "no-store")
@@ -258,7 +265,7 @@ async def auth_proxy(path: str, request: Request) -> Response:
     For token endpoint requests, injects the client_secret (confidential
     client) since SPAs cannot safely store secrets.
     """
-    target = f"https://auth.unihub.ro/{path}"
+    target = f"{AUTH_PROXY_BASE_URL}/{path}"
     params = dict(request.query_params)
     headers = {k: v for k, v in request.headers.items()
                if k.lower() not in ("host", "origin", "referer")}
@@ -291,19 +298,24 @@ async def auth_proxy(path: str, request: Request) -> Response:
     # Rewrite discovery response to route API calls through the proxy
     # (token/userinfo/etc — avoids CORS + injects client_secret)
     if path.endswith("/.well-known/openid-configuration"):
-        raw = content.decode("utf-8")
-        # Determine the client-facing origin (must be HTTPS in production)
         origin = request.headers.get("origin")
         if not origin:
             host = request.headers.get("host", request.url.netloc)
             # CloudFlare forwards internally over HTTP — always use HTTPS for public URLs
             scheme = "http" if host.startswith("localhost") or host.startswith("127.") else "https"
             origin = f"{scheme}://{host}"
-        # ALWAYS rewrite token and userinfo to use the proxy
-        raw = raw.replace("https://auth.unihub.ro/application/o/token/", f"{origin}/auth/proxy/application/o/token/")
-        raw = raw.replace("https://auth.unihub.ro/application/o/userinfo/", f"{origin}/auth/proxy/application/o/userinfo/")
-        # Do NOT rewrite authorization_endpoint — browser must redirect there directly
-        content = raw.encode("utf-8")
+        try:
+            discovery = json.loads(content.decode("utf-8"))
+        except json.JSONDecodeError:
+            logger.warning("OIDC discovery response is not valid JSON")
+        else:
+            for endpoint_key in ("token_endpoint", "userinfo_endpoint"):
+                endpoint = discovery.get(endpoint_key)
+                if isinstance(endpoint, str) and endpoint.startswith(AUTH_PROXY_BASE_URL):
+                    proxied_path = endpoint.removeprefix(AUTH_PROXY_BASE_URL).lstrip("/")
+                    discovery[endpoint_key] = f"{origin}/auth/proxy/{proxied_path}"
+            # Do NOT rewrite authorization_endpoint — browser must redirect there directly.
+            content = json.dumps(discovery).encode("utf-8")
     response_headers = {
         k: v for k, v in resp.headers.items()
         if k.lower() not in ("transfer-encoding", "content-encoding", "content-length")

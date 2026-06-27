@@ -4,6 +4,8 @@ from typing import Sequence
 
 import asyncpg
 
+from retail_filters import retail_exclusion_clauses
+
 
 _BRAND_GROUP_SQL = """
 CASE
@@ -21,6 +23,10 @@ END
 
 _MONTH_INDEX_SQL = (
     "(split_part({alias}, '-', 1)::INT * 12 + split_part({alias}, '-', 2)::INT)"
+)
+
+_RETAIL_TRANSACTION_EXCLUSIONS_SQL = "\n          AND ".join(
+    retail_exclusion_clauses(site_alias="st", store_alias="s")
 )
 
 _PREMIUM_GLASS_REFRESH_SQL = """
@@ -119,7 +125,7 @@ async def rebuild_reporting_month(
         """
     )
     await conn.execute(
-        """
+        f"""
         INSERT INTO tmp_reporting_receipts (
             import_month,
             sale_date,
@@ -141,8 +147,7 @@ async def rebuild_reporting_month(
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
-          AND NOT st.is_cartela
-          AND s.locatie NOT ILIKE 'TR %'
+          AND {_RETAIL_TRANSACTION_EXCLUSIONS_SQL}
         GROUP BY st.import_month, st.sale_date, st.site_code, st.agent, st.bon_nr
         """,
         import_month,
@@ -155,7 +160,7 @@ async def rebuild_reporting_month(
     )
 
     await conn.execute(
-        """
+        f"""
         INSERT INTO reporting_agent_day (
             import_month,
             sale_date,
@@ -209,8 +214,7 @@ async def rebuild_reporting_month(
             AND tr.agent = st.agent
             AND tr.bon_nr = st.bon_nr
         WHERE st.import_month = $1
-          AND NOT st.is_cartela
-          AND s.locatie NOT ILIKE 'TR %'
+          AND {_RETAIL_TRANSACTION_EXCLUSIONS_SQL}
         GROUP BY
             st.import_month,
             st.sale_date,
@@ -225,7 +229,7 @@ async def rebuild_reporting_month(
     )
 
     await conn.execute(
-        """
+        f"""
         INSERT INTO reporting_agent_month (
             import_month,
             site_code,
@@ -271,7 +275,7 @@ async def rebuild_reporting_month(
     )
 
     await conn.execute(
-        """
+        f"""
         INSERT INTO reporting_item_day (
             import_month,
             sale_date,
@@ -308,8 +312,7 @@ async def rebuild_reporting_month(
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
-          AND NOT st.is_cartela
-          AND s.locatie NOT ILIKE 'TR %'
+          AND {_RETAIL_TRANSACTION_EXCLUSIONS_SQL}
         GROUP BY
             st.import_month,
             st.sale_date,
@@ -325,7 +328,7 @@ async def rebuild_reporting_month(
     )
 
     await conn.execute(
-        """
+        f"""
         INSERT INTO reporting_focus_item_month (
             import_month,
             site_code,
@@ -364,8 +367,7 @@ async def rebuild_reporting_month(
         JOIN stores s ON s.site_code = st.site_code
         JOIN focus_products fp ON fp.item_code = st.item_code
         WHERE st.import_month = $1
-          AND NOT st.is_cartela
-          AND s.locatie NOT ILIKE 'TR %'
+          AND {_RETAIL_TRANSACTION_EXCLUSIONS_SQL}
         GROUP BY
             st.import_month,
             st.site_code,
@@ -466,8 +468,7 @@ async def rebuild_reporting_month(
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
-          AND NOT st.is_cartela
-          AND s.locatie NOT ILIKE 'TR %'
+          AND {_RETAIL_TRANSACTION_EXCLUSIONS_SQL}
         GROUP BY
             st.import_month,
             st.site_code,

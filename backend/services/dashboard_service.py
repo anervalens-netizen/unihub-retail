@@ -44,8 +44,8 @@ from services.dashboard.queries import (
 )
 from services.dashboard.specials_data import _get_special_cards_data
 from services.dashboard.metrics import observe_dashboard_component
-from services.dashboard.utils import _build_scoped_params, _expand_current_manager_scope
-from services.filters import normalize_filter, scoped_clauses
+from services.dashboard.utils import _expand_current_manager_scope
+from services.filters import build_scoped_params, normalize_filter, scoped_clauses
 from services.premium_glass import build_premium_glass_card, get_premium_glass_analysis
 
 
@@ -71,7 +71,7 @@ class DashboardService:
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> DashboardSummary:
-        params, positions = _build_scoped_params(
+        params, positions = build_scoped_params(
             [month],
             firma=firma,
             regional=regional,
@@ -92,7 +92,20 @@ class DashboardService:
         if current_scope and not include_closed_stores:
             clauses.append("s.is_active = true")
 
-        row = await self.repo.fetch_summary(clauses, params, current_scope)
+        cartela_clauses = scoped_clauses(
+            positions,
+            site_alias="c",
+            store_alias="cs",
+            agent_alias="c",
+        )
+        if current_scope:
+            cartela_clauses = _expand_current_manager_scope(
+                cartela_clauses, positions, store_alias="cs"
+            )
+        if current_scope and not include_closed_stores:
+            cartela_clauses.append("cs.is_active = true")
+
+        row = await self.repo.fetch_summary(clauses, params, cartela_clauses, current_scope)
         if row is None:
             return DashboardSummary(
                 month=month,
@@ -128,7 +141,7 @@ class DashboardService:
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> list[DailySalesPoint]:
-        params, positions = _build_scoped_params(
+        params, positions = build_scoped_params(
             [month],
             firma=firma,
             regional=regional,
@@ -215,7 +228,7 @@ class DashboardService:
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> DashboardHistoryResponse:
-        params, positions = _build_scoped_params(
+        params, positions = build_scoped_params(
             [month, months_back],
             firma=firma,
             regional=regional,

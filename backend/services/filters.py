@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from retail_filters import cartela_exclusion_clause, distribution_location_clause
+
 _FILTER_SENTINELS = {
     "",
     "Toate",
@@ -14,8 +16,6 @@ _FILTER_SENTINELS = {
     "To\u00c8\u203aI",
     "To\u00c3\u02c6\u20ac\u203aI",
 }
-
-_DISTRIBUTION_LOCATION_PREFIX = "TR "
 
 
 def normalize_filter(value: Any) -> str | None:
@@ -35,7 +35,26 @@ def base_filter_values(
     site_code: str | None,
     agent: str | None,
 ) -> tuple[list[Any], dict[str, int]]:
-    params: list[Any] = [month]
+    return build_scoped_params(
+        [month],
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+
+
+def build_scoped_params(
+    initial_params: list[Any],
+    *,
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+) -> tuple[list[Any], dict[str, int]]:
+    params = list(initial_params)
     positions: dict[str, int] = {}
     normalized_site_code = normalize_filter(site_code)
     for key, value in [
@@ -62,14 +81,14 @@ def scoped_clauses(
 ) -> list[str]:
     clauses: list[str] = []
 
-    def col(alias: str, name: str) -> str:
+    def col(alias: str | None, name: str) -> str:
         return f"{alias}.{name}" if alias else name
 
-    clauses.append(f"{col(store_alias, 'locatie')} NOT ILIKE '{_DISTRIBUTION_LOCATION_PREFIX}%'")
+    clauses.append(distribution_location_clause(store_alias))
     if month_alias and month_position:
         clauses.append(f"{month_alias} = ${month_position}")
     if include_cartela_filter:
-        clauses.append(f"NOT {col(site_alias, 'is_cartela')}")
+        clauses.append(cartela_exclusion_clause(site_alias))
     has_site_scope = "site_code" in positions
 
     if "firma" in positions and not has_site_scope:

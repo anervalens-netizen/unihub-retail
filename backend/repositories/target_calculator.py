@@ -6,6 +6,8 @@ from typing import Any
 
 import asyncpg
 
+from retail_filters import distribution_location_clause
+
 
 class TargetScenarioFinalizedError(Exception):
     pass
@@ -39,7 +41,7 @@ class TargetCalculatorRepository:
     async def get_active_cohort(self, cohort_month: str) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
-                """
+                f"""
                 SELECT
                     ram.site_code,
                     s.locatie,
@@ -49,7 +51,7 @@ class TargetCalculatorRepository:
                 FROM reporting_agent_month ram
                 JOIN stores s ON s.site_code = ram.site_code
                 WHERE ram.import_month = $1
-                  AND s.locatie NOT ILIKE 'TR %'
+                  AND {distribution_location_clause("s")}
                 GROUP BY ram.site_code, s.locatie, s.firma, s.regional, s.asm
                 ORDER BY s.regional, s.locatie, ram.site_code
                 """,

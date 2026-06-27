@@ -35,16 +35,16 @@ export interface StoreAlert {
 }
 
 export async function fetchScores(month: string): Promise<StoreScore[]> {
-  const { data } = await client.get('/api/crm/scores', { params: { month } });
+  const { data } = await client.get<StoreScore[]>('/api/crm/scores', { params: { month } });
   return data;
 }
 
 export async function recalculateScores(month: string): Promise<{ recalculated: number; month: string }> {
-  const { data } = await client.post('/api/crm/scores/recalculate', null, { params: { month } });
+  const { data } = await client.post<{ recalculated: number; month: string }>('/api/crm/scores/recalculate', null, { params: { month } });
   return data;
 }
 
 export async function fetchAlerts(month: string): Promise<StoreAlert[]> {
-  const { data } = await client.get('/api/crm/alerts', { params: { month } });
+  const { data } = await client.get<StoreAlert[]>('/api/crm/alerts', { params: { month } });
   return data;
 }

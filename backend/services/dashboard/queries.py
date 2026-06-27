@@ -15,7 +15,6 @@ from models import (
     ReceiptBucketItem,
 )
 from services.dashboard.utils import (
-    _build_scoped_params,
     _expand_current_manager_scope,
     _month_day_range,
     _shift_month,
@@ -27,7 +26,7 @@ from services.dashboard_specials import (
     parse_promotion_definitions,
     parse_promotion_definition,
 )
-from services.filters import scoped_clauses
+from services.filters import build_scoped_params, scoped_clauses
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import (
     PromoCoPurchaseResult,
@@ -258,7 +257,7 @@ async def _get_store_incentive_multipliers(
     include_closed_stores: bool = False,
 ) -> tuple[dict[str, float], dict[str, float | None]]:
     """Returns (multipliers, achievements) keyed by site_code."""
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -343,7 +342,7 @@ async def _fetch_store_stats_rows(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[Any]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -469,7 +468,7 @@ async def _enrich_store_stats_with_campaign(
             row["incentive_qty"] = 0
         return base_rows
 
-    metric_params, metric_positions = _build_scoped_params(
+    metric_params, metric_positions = build_scoped_params(
         [month, promotion_codes or [], incentive_codes or []],
         firma=firma,
         regional=regional,
@@ -542,7 +541,7 @@ async def _fetch_agent_stats_rows(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -662,7 +661,7 @@ async def _fetch_agent_stats_rows(
     if not promotion_codes and not incentive_codes:
         return base_rows
 
-    metric_params, metric_positions = _build_scoped_params(
+    metric_params, metric_positions = build_scoped_params(
         [month, promotion_codes or [], incentive_codes or []],
         firma=firma,
         regional=regional,
@@ -738,7 +737,7 @@ async def _fetch_regional_stats(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -868,7 +867,7 @@ async def _fetch_regional_stats(
             row["incentive_qty"] = 0
         return base_rows
 
-    metric_params, metric_positions = _build_scoped_params(
+    metric_params, metric_positions = build_scoped_params(
         [month, promotion_codes or [], incentive_codes or []],
         firma=firma,
         regional=regional,
@@ -941,7 +940,7 @@ async def _fetch_asm_stats(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -1050,7 +1049,7 @@ async def _fetch_asm_stats(
             row["incentive_qty"] = 0
         return base_rows
 
-    metric_params, metric_positions = _build_scoped_params(
+    metric_params, metric_positions = build_scoped_params(
         [month, promotion_codes or [], incentive_codes or []],
         firma=firma,
         regional=regional,
@@ -1131,7 +1130,7 @@ async def _fetch_period_comparison(
     if cutoff_day is None:
         cutoff_day = await _fetch_period_comparison_cutoff_day(conn, month)
 
-    baseline_params, baseline_positions = _build_scoped_params(
+    baseline_params, baseline_positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -1169,7 +1168,7 @@ async def _fetch_period_comparison(
     for label, period_month in periods:
         start_date, end_date, day_range = _month_day_range(period_month, cutoff_day)
         is_current_period = period_month == month
-        params, positions = _build_scoped_params(
+        params, positions = build_scoped_params(
             [period_month, start_date, end_date],
             # Historical columns follow the current-store cohort. Applying
             # historical ownership again would drop stores moved between RMs.
@@ -1320,7 +1319,7 @@ async def _fetch_receipt_bucket_mix(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[ReceiptBucketItem]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -1381,7 +1380,7 @@ async def _fetch_focus_subcategory_mix(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[CategoryMixItem]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -1449,7 +1448,7 @@ async def _fetch_brand_mix(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[BrandMixItem]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,
@@ -1530,7 +1529,7 @@ async def _fetch_promo_incentive_summary(
 
     promo_qty_from_corrected_source = promo_qty > 0 or bool(promo_excluded_units)
     if promotion_definition is not None and promotion_error is None:
-        promo_params, promo_positions = _build_scoped_params(
+        promo_params, promo_positions = build_scoped_params(
             [
                 month,
                 promotion_definition["start_date"],
@@ -1580,7 +1579,7 @@ async def _fetch_promo_incentive_summary(
         reward_map = incentive_campaign["reward_map"]
         if reward_map:
             incentive_codes = list(reward_map.keys())
-            incentive_params, incentive_positions = _build_scoped_params(
+            incentive_params, incentive_positions = build_scoped_params(
                 [month, incentive_codes],
                 firma=firma,
                 regional=regional,
@@ -1679,7 +1678,7 @@ async def _fetch_category_mix(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[CategoryMixItem]:
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month],
         firma=firma,
         regional=regional,

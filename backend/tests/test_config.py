@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from config import ConfigError, validate_required_env_vars, _is_production
+from config import ConfigError, get_visits_db_path, get_visits_images_dir, validate_required_env_vars, _is_production
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,6 +45,20 @@ def test_config_ignores_visits_db_in_development(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("UNIHUB_ENV", "development")
     monkeypatch.setenv("VISITS_DB_PATH", "/nonexistent/path.db")
     validate_required_env_vars()  # în dev, visits path nu e validat
+
+
+def test_visits_paths_use_env_with_repo_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("VISITS_DB_PATH", raising=False)
+    monkeypatch.delenv("VISITS_IMAGES_DIR", raising=False)
+    assert get_visits_db_path().name == "visits.db"
+    assert get_visits_images_dir().name == "images"
+
+    db_path = tmp_path / "visits-custom.db"
+    images_path = tmp_path / "images-custom"
+    monkeypatch.setenv("VISITS_DB_PATH", str(db_path))
+    monkeypatch.setenv("VISITS_IMAGES_DIR", str(images_path))
+    assert get_visits_db_path() == db_path
+    assert get_visits_images_dir() == images_path
 
 
 def test_config_requires_visits_db_in_production(monkeypatch: pytest.MonkeyPatch) -> None:

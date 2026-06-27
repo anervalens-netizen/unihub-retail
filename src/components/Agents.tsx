@@ -21,6 +21,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ExportTableButton } from './ExportTableButton';
 import { useAuth } from '../auth/AuthContext';
 import { canAccessSalaries } from '../auth/permissions';
+import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { 
   fetchAgentsOverview, 
   fetchAgentsMovement, 
@@ -319,17 +320,17 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
     return 'overview';
   });
   
-  const [cardFirma, setCardFirma] = useState('Toate');
-  const [cardMagazin, setCardMagazin] = useState('Toate');
+  const [cardFirma, setCardFirma] = useState(ALL_FIRMS);
+  const [cardMagazin, setCardMagazin] = useState(ALL_STORES);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [expandedSection, setExpandedSection] = useState<'active' | 'modified' | 'inactive' | null>(null);
 
   const queryParams = useMemo(() => {
     const p: AgentsQuery = { selected_month: currentMonth };
-    if (filters.firma !== 'Toate') p.firma = filters.firma;
-    if (filters.rm !== 'Toti') p.regional = filters.rm;
-    if (filters.magazin !== 'Toate') p.site_code = filters.magazin;
-    if (filters.agent !== 'Toti') p.agent = filters.agent;
+    if (filters.firma !== ALL_FIRMS) p.firma = filters.firma;
+    if (filters.rm !== ALL_SCOPE) p.regional = filters.rm;
+    if (filters.magazin !== ALL_STORES) p.site_code = filters.magazin;
+    if (filters.agent !== ALL_SCOPE) p.agent = filters.agent;
     return p;
   }, [currentMonth, filters]);
 
@@ -391,11 +392,11 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
     if (activeTab === 'movement') result = result.filter((ag: AgentListItem) => ag.is_new || ag.is_reactivated);
     if (activeTab === 'inactive') result = result.filter((ag: AgentListItem) => ag.current_status === 'inactive_recent');
     if (activeTab === 'churned') result = result.filter((ag: AgentListItem) => ag.current_status === 'churned');
-    if (cardFirma !== 'Toate' && filterOptions) {
+    if (cardFirma !== ALL_FIRMS && filterOptions) {
       const firmaMagazine = filterOptions.magazine.filter((m) => m.firma === cardFirma).map((m) => m.locatie || m.site_code);
       result = result.filter((ag: AgentListItem) => firmaMagazine.includes(ag.store_name || ''));
     }
-    if (cardMagazin !== 'Toate') {
+    if (cardMagazin !== ALL_STORES) {
       result = result.filter((ag: AgentListItem) => ag.store_name === cardMagazin);
     }
     return result;
@@ -469,10 +470,10 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
   }, [coverage]);
 
   const filterLabel = useMemo(() => {
-    if (filters.agent !== 'Toti') return `Agent: ${filters.agent}`;
-    if (filters.magazin !== 'Toate') return `Magazin: ${filters.magazin}`;
-    if (filters.rm !== 'Toti') return `Regional: ${filters.rm}`;
-    if (filters.firma !== 'Toate') return `Firma: ${filters.firma}`;
+    if (filters.agent !== ALL_SCOPE) return `Agent: ${filters.agent}`;
+    if (filters.magazin !== ALL_STORES) return `Magazin: ${filters.magazin}`;
+    if (filters.rm !== ALL_SCOPE) return `Regional: ${filters.rm}`;
+    if (filters.firma !== ALL_FIRMS) return `Firma: ${filters.firma}`;
     return 'Toata selectia activa';
   }, [filters]);
 
@@ -960,7 +961,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
             { key: 'movement' as const, label: 'Miscari' },
             { key: 'inactive' as const, label: 'Inactiv' },
             { key: 'churned' as const, label: 'Iesiti' },
-            { key: 'all' as const, label: 'Toti' },
+            { key: 'all' as const, label: ALL_SCOPE },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -992,10 +993,10 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
             <div className="relative">
               <select
                 value={cardFirma}
-                onChange={(e) => { setCardFirma(e.target.value); setCardMagazin('Toate'); }}
+                onChange={(e) => { setCardFirma(e.target.value); setCardMagazin(ALL_STORES); }}
                 className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 pr-6 text-xs outline-none dark:border-slate-700 dark:bg-slate-800"
               >
-                <option value="Toate">Toate firmele</option>
+                <option value={ALL_FIRMS}>Toate firmele</option>
                 {filterOptions?.firme.sort().map((firma) => (
                   <option key={firma} value={firma}>{firma}</option>
                 ))}
@@ -1012,9 +1013,9 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
                 disabled={!filterOptions}
                 className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 pr-6 text-xs outline-none disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800"
               >
-                <option value="Toate">Toate</option>
+                <option value={ALL_STORES}>Toate</option>
                 {Array.from(new Set(filterOptions?.magazine
-                  .filter((m) => cardFirma === 'Toate' || m.firma === cardFirma)
+                  .filter((m) => cardFirma === ALL_FIRMS || m.firma === cardFirma)
                   .map((m) => m.locatie || m.site_code) || [])).sort()
                   .map((locatie) => (
                     <option key={locatie} value={locatie}>{locatie}</option>

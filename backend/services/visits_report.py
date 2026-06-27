@@ -16,6 +16,7 @@ from models import (
     VisitSummaryItem,
     VisitTreeResponse,
 )
+from retail_filters import distribution_location_clause
 from repositories.visits_report import VisitsReportRepository
 from services.filters import normalize_filter
 
@@ -161,7 +162,7 @@ class VisitsReportService:
         asm_values = _split_filter_values(filters.get("asm"))
         site_values = _split_filter_values(filters.get("magazin"))
 
-        clauses = ["locatie NOT ILIKE 'TR %'"]
+        clauses = [distribution_location_clause()]
         params: list[object] = []
 
         def add_any_clause(column: str, values: list[str]) -> None:

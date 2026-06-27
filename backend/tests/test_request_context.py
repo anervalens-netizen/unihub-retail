@@ -159,6 +159,56 @@ async def test_auth_proxy_forwards_request_id_to_upstream(monkeypatch: pytest.Mo
 
 
 @pytest.mark.anyio
+async def test_auth_proxy_rewrites_discovery_json_without_touching_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from main import app
+
+    real_async_client = httpx.AsyncClient
+
+    class FakeResponse:
+        status_code = 200
+        content = (
+            b'{'
+            b'"issuer":"https://auth.unihub.ro/application/o/unihub-retail/",'
+            b'"authorization_endpoint":"https://auth.unihub.ro/application/o/authorize/",'
+            b'"token_endpoint":"https://auth.unihub.ro/application/o/token/",'
+            b'"userinfo_endpoint":"https://auth.unihub.ro/application/o/userinfo/"'
+            b'}'
+        )
+        headers = {"content-type": "application/json"}
+        is_redirect = False
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def request(self, method, url, params=None, headers=None, content=None):
+            return FakeResponse()
+
+    monkeypatch.setattr("main.httpx.AsyncClient", FakeAsyncClient)
+
+    transport = httpx.ASGITransport(app=app)
+    async with real_async_client(transport=transport, base_url="https://retail.unihub.ro") as client:
+        response = await client.get(
+            "/auth/proxy/application/o/unihub-retail/.well-known/openid-configuration",
+            headers={"Origin": "https://retail.unihub.ro"},
+        )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["token_endpoint"] == "https://retail.unihub.ro/auth/proxy/application/o/token/"
+    assert payload["userinfo_endpoint"] == "https://retail.unihub.ro/auth/proxy/application/o/userinfo/"
+    assert payload["authorization_endpoint"] == "https://auth.unihub.ro/application/o/authorize/"
+
+
+@pytest.mark.anyio
 async def test_request_id_header_is_allowed_in_cors_preflight() -> None:
     from main import app
 
@@ -175,6 +225,20 @@ async def test_request_id_header_is_allowed_in_cors_preflight() -> None:
 
     assert response.status_code == 200
     assert "x-request-id" in response.headers["access-control-allow-headers"].lower()
+
+
+@pytest.mark.anyio
+async def test_api_responses_are_not_cached_by_browser_or_cdn() -> None:
+    from main import app
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/filters/months")
+
+    assert response.status_code == 401
+    assert response.headers["cache-control"] == "no-cache, no-store, must-revalidate"
+    assert response.headers["cdn-cache-control"] == "no-store"
+    assert response.headers["surrogate-control"] == "no-store"
 
 
 @pytest.mark.anyio

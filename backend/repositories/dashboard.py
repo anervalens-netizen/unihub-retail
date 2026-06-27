@@ -9,26 +9,13 @@ class DashboardRepository:
         self.pool = pool
 
     async def fetch_summary(
-        self, clauses: list[str], params: list[Any], current_scope: bool = False
+        self,
+        clauses: list[str],
+        params: list[Any],
+        cartela_clauses: list[str],
+        current_scope: bool = False,
     ) -> asyncpg.Record | None:
         store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
-        cartela_clauses = []
-        for clause in clauses:
-            cartela_clause = (
-                clause.replace("s.locatie", "cs.locatie")
-                .replace("s.firma", "cs.firma")
-                .replace("s.regional", "cs.regional")
-                .replace("s.asm", "cs.asm")
-                .replace("s.is_active", "cs.is_active")
-                .replace("agg.import_month", "c.import_month")
-                .replace("agg.site_code", "c.site_code")
-                .replace("agg.locatie", "cs.locatie")
-                .replace("agg.agent", "c.agent")
-                .replace("agg.firma", "cs.firma")
-                .replace("agg.regional", "cs.regional")
-                .replace("agg.asm", "cs.asm")
-            )
-            cartela_clauses.append(cartela_clause)
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 f"""

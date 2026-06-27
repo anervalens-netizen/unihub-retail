@@ -1,13 +1,11 @@
 import React, { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FirmaBadge } from './FirmaBadge';
 import {
-  AlertCircle,
   BadgePercent,
   Building2,
   Gift,
   Medal,
   PackageSearch,
-  RefreshCw,
   Sparkles,
   Tag,
   Trophy,
@@ -53,6 +51,7 @@ import type { ExportColumn } from '../lib/tableExport';
 import { getCachedView, setCachedView } from '../lib/viewCache';
 import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
+import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
 
@@ -1402,38 +1401,6 @@ function StatCard({
       </div>
       <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1 text-lg font-black">{value}</div>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string | number | null }) {
-  return (
-    <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/60">
-      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-bold">{value ?? '-'}</div>
-    </div>
-  );
-}
-
-function LoadingCard({ label }: { label: string }) {
-  return <div className="glass rounded-3xl p-6 text-sm font-semibold text-slate-500">{label}</div>;
-}
-
-function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="glass flex flex-col items-center gap-4 rounded-3xl p-6">
-      <div className="flex items-center gap-2 text-rose-600 dark:text-rose-300">
-        <AlertCircle className="h-5 w-5" />
-        <span className="text-sm font-medium">{message}</span>
-      </div>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700"
-      >
-        <RefreshCw className="h-4 w-4" />
-        Reincearca
-      </button>
     </div>
   );
 }

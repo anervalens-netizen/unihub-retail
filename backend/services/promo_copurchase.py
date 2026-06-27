@@ -28,8 +28,7 @@ from typing import Any
 import asyncpg
 import pandas as pd
 
-from services.dashboard.utils import _build_scoped_params
-from services.filters import normalize_filter, scoped_clauses
+from services.filters import build_scoped_params, normalize_filter, scoped_clauses
 from services.product_lists import get_repo_root, normalize_column_name, resolve_path
 
 
@@ -310,7 +309,7 @@ async def compute_promo_actuals_from_report(
     if cutoff_date < start_date:
         return PromoCoPurchaseResult()
 
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month, source_sites, source_codes, source_units, start_date, cutoff_date],
         firma=firma,
         regional=regional,
@@ -411,7 +410,7 @@ async def compute_promo_copurchase(
     if not item_codes:
         return PromoCoPurchaseResult()
 
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month, start_date, end_date, item_codes],
         firma=firma,
         regional=regional,
@@ -527,7 +526,7 @@ async def compute_promo_trigger_discounted(
     if not trigger_codes or not discounted_codes:
         return PromoCoPurchaseResult()
 
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month, start_date, end_date, trigger_codes, discounted_codes],
         firma=firma,
         regional=regional,
@@ -639,7 +638,7 @@ async def compute_promo_same_model_pair(
     camera_codes = [code for code, _model in camera_pairs]
     camera_models = [model for _code, model in camera_pairs]
 
-    params, positions = _build_scoped_params(
+    params, positions = build_scoped_params(
         [month, start_date, end_date, screen_codes, screen_models, camera_codes, camera_models],
         firma=firma,
         regional=regional,

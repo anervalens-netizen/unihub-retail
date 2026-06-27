@@ -15,9 +15,9 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from config import get_visits_db_path
 
-_VISITS_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "visits" / "visits.db"
+logger = logging.getLogger(__name__)
 
 
 def _read_sqlite_aggregates(sqlite_path: Path) -> list[dict[str, Any]]:
@@ -66,7 +66,7 @@ async def sync_visits_snapshot(
     Returns:
         Numărul de rânduri inserate/actualizate.
     """
-    path = sqlite_path or _VISITS_DB_PATH
+    path = sqlite_path or get_visits_db_path()
     loop = asyncio.get_running_loop()
     rows = await loop.run_in_executor(None, _read_sqlite_aggregates, path)
 

@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sqlite3
 import json
 from typing import Any
 import asyncpg
 
+from config import get_visits_db_path
 from repositories.crm import CrmRepository
 from services.forecast import get_forecast_factor
 
-VISITS_DB_PATH = os.getenv("VISITS_DB_PATH", "/opt/Mobiup/unihub-retail/data/visits/visits.db")
-
 
 def _query_visits_by_store(year_month: str) -> dict[str, dict[str, Any]]:
-    con = sqlite3.connect(VISITS_DB_PATH)
+    con = sqlite3.connect(get_visits_db_path())
     con.row_factory = sqlite3.Row
     cur = con.execute(
         """

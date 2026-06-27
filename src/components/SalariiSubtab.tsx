@@ -21,6 +21,7 @@ import { SalaryAreaChart } from './SalaryAreaChart';
 import { SalaryDrawer } from './SalaryDrawer';
 import { ExportTableButton } from './ExportTableButton';
 import { SortableHeader } from './dashboard/DashboardWidgets';
+import { formatMonthSpanLabel } from '../lib/dates';
 
 type SortDir = 'asc' | 'desc';
 interface SortState<K extends string> { key: K; dir: SortDir }
@@ -40,12 +41,8 @@ function toggleSort<K extends string>(prev: SortState<K>, key: K): SortState<K> 
   return { key, dir: 'desc' };
 }
 
-const MONTHS = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
-
 function formatMonthSpan(span?: [number, number, number, number] | null): string {
-  if (!span || !Array.isArray(span) || span.length !== 4) return '—';
-  const [minY, minM, maxY, maxM] = span;
-  return `${MONTHS[minM - 1]}-${String(minY).slice(2)} → ${MONTHS[maxM - 1]}-${String(maxY).slice(2)}`;
+  return formatMonthSpanLabel(span);
 }
 
 function formatCurrency(val: unknown): string {

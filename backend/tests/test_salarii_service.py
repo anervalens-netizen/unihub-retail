@@ -85,8 +85,11 @@ class TestSalariiOverview:
         }
         result = await service.get_overview("FirmaA", "Region1", "Asm1")
         assert result["months_span"] == [2025, 6, 2026, 3]
-        call_args = mock_repo.fetch_overview.call_args
-        assert "st.regional" in call_args[0][1] or "st.asm" in call_args[0][1] or len(call_args[0][2]) == 3
+        assert mock_repo.fetch_overview.call_args.kwargs == {
+            "company_name": "FirmaA",
+            "regional": "Region1",
+            "asm": "Asm1",
+        }
 
 
 class TestSalariiEvolution:
@@ -113,15 +116,22 @@ class TestSalariiEvolution:
         mock_repo.fetch_evolution_main.return_value = []
         result = await service.get_evolution(None, "Region1", "Asm1")
         call = mock_repo.fetch_evolution_main.call_args
-        assert "st.regional" in call[0][1] or "stores" in call[0][0].lower()
-        assert len(call[0][2]) == 2
+        assert call.kwargs == {
+            "company_name": None,
+            "regional": "Region1",
+            "asm": "Asm1",
+        }
 
     @pytest.mark.asyncio
     async def test_evolution_company_with_regional(self, service, mock_repo):
         mock_repo.fetch_evolution_single_company.return_value = []
         result = await service.get_evolution("FirmaA", "Region1", None)
         call = mock_repo.fetch_evolution_single_company.call_args
-        assert len(call[0][2]) == 2
+        assert call.kwargs == {
+            "company_name": "FirmaA",
+            "regional": "Region1",
+            "asm": None,
+        }
 
 
 class TestSalariiAgentsSummary:
@@ -137,8 +147,17 @@ class TestSalariiAgentsSummary:
         result = await service.get_agents_summary("search", "FirmaA", "SITE01", "Reg1", "Asm1", 2026, 5, 10, 0)
         assert result["total"] == 1
         call = mock_repo.fetch_agents_summary.call_args
-        params = call[0][2]
-        assert len(params) == 7
+        assert call.kwargs == {
+            "q": "search",
+            "company_name": "FirmaA",
+            "site_code": "SITE01",
+            "regional": "Reg1",
+            "asm": "Asm1",
+            "year": 2026,
+            "month": 5,
+            "limit": 10,
+            "offset": 0,
+        }
 
 
 class TestSalariiAgentHistory:
@@ -270,14 +289,24 @@ class TestSalariiTrendFilters:
         mock_repo.fetch_trend.return_value = []
         result = await service.get_trend(None, None, "Region1", "Asm1")
         call = mock_repo.fetch_trend.call_args
-        assert len(call[0][2]) == 2
+        assert call.kwargs == {
+            "company_name": None,
+            "site_code": None,
+            "regional": "Region1",
+            "asm": "Asm1",
+        }
 
     @pytest.mark.asyncio
     async def test_trend_with_site_code(self, service, mock_repo):
         mock_repo.fetch_trend.return_value = []
         result = await service.get_trend(None, "SITE01", None, None)
         call = mock_repo.fetch_trend.call_args
-        assert len(call[0][2]) == 1
+        assert call.kwargs == {
+            "company_name": None,
+            "site_code": "SITE01",
+            "regional": None,
+            "asm": None,
+        }
 
 
 class TestSalariiStores:
@@ -296,7 +325,7 @@ class TestSalariiStores:
         result = await service.get_stores("FirmaA")
         assert result == []
         call = mock_repo.fetch_stores.call_args
-        assert "company_name" in call[0][0]
+        assert call.kwargs == {"company_name": "FirmaA"}
 
 
 class TestSalariiRecords:
@@ -314,5 +343,11 @@ class TestSalariiRecords:
         result = await service.get_records("FirmaA", 2026, 5, "SITE01", 10, 0)
         assert result == []
         call = mock_repo.fetch_records.call_args
-        params = call[0][1]
-        assert len(params) == 4
+        assert call.kwargs == {
+            "company_name": "FirmaA",
+            "year": 2026,
+            "month": 5,
+            "site_code": "SITE01",
+            "limit": 10,
+            "offset": 0,
+        }

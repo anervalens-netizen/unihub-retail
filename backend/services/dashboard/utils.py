@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import calendar
 from datetime import date
-from typing import Any
 
-from services.filters import normalize_filter
+from services.filters import build_scoped_params as _build_scoped_params
 
 
 def _shift_month(month: str, offset: int) -> str:
@@ -24,45 +23,28 @@ def _month_day_range(month: str, cutoff_day: int) -> tuple[date, date, str]:
     return start, end, f"01-{final_day:02d}"
 
 
-def _build_scoped_params(
-    initial_params: list[Any],
+def _expand_current_manager_scope(
+    clauses: list[str],
+    positions: dict[str, int],
     *,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
-) -> tuple[list[Any], dict[str, int]]:
-    params = list(initial_params)
-    positions: dict[str, int] = {}
-    normalized_site_code = normalize_filter(site_code)
-    for key, value in [
-        ("firma", None if normalized_site_code else normalize_filter(firma)),
-        ("regional", None if normalized_site_code else normalize_filter(regional)),
-        ("asm", None if normalized_site_code else normalize_filter(asm)),
-        ("site_code", normalized_site_code),
-        ("agent", normalize_filter(agent)),
-    ]:
-        if value is not None:
-            params.append(value)
-            positions[key] = len(params)
-    return params, positions
-
-
-def _expand_current_manager_scope(clauses: list[str], positions: dict[str, int]) -> list[str]:
+    store_alias: str = "s",
+) -> list[str]:
     """Treat a current-scope Regional selection as a current manager selection.
 
     In the Hub history filters, users may select a manager from the Regional field
     even when that person currently owns stores through the ASM column. When ASM
     is not explicitly selected, match either current regional or current ASM.
+
+    The store_alias parameter controls which table alias is used in the emitted
+    clauses (default "s" for the main stores join; "cs" for the cartela CTE).
     """
     regional_position = positions.get("regional")
     if not regional_position or "asm" in positions or "site_code" in positions:
         return clauses
 
-    regional_clause = f"s.regional = ANY(string_to_array(${regional_position}::TEXT, ','))"
+    regional_clause = f"{store_alias}.regional = ANY(string_to_array(${regional_position}::TEXT, ','))"
     manager_clause = (
-        f"(s.regional = ANY(string_to_array(${regional_position}::TEXT, ',')) "
-        f"OR s.asm = ANY(string_to_array(${regional_position}::TEXT, ',')))"
+        f"({store_alias}.regional = ANY(string_to_array(${regional_position}::TEXT, ',')) "
+        f"OR {store_alias}.asm = ANY(string_to_array(${regional_position}::TEXT, ',')))"
     )
     return [manager_clause if clause == regional_clause else clause for clause in clauses]

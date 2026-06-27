@@ -15,6 +15,7 @@ import {
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
 import { canAccessManagement } from './auth/permissions';
+import { selectCurrentMonth } from './lib/currentMonth';
 
 const Campaigns = lazy(loadCampaignsScreen);
 const Dashboard = lazy(loadDashboardScreen);
@@ -87,7 +88,7 @@ export default function App() {
   const [hubFilters, setHubFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.hub));
   const [focusFilters, setFocusFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.focus));
   const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.agents));
-  const [currentMonth, setCurrentMonth] = useState(() => localStorage.getItem(CURRENT_MONTH_STORAGE_KEY) ?? '');
+  const [currentMonth, setCurrentMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [mgmtSubTab, setMgmtSubTab] = useState<ManagementTab>(loadManagementSubTab);
@@ -115,7 +116,7 @@ export default function App() {
   }, [hubSection]);
 
   useEffect(() => {
-    // Pastreaza luna in care lucram peste refresh (validata in bootstrap fata de lunile disponibile)
+    // Luna in curs se rescrie la bootstrap cu cea mai recenta luna disponibila.
     if (currentMonth) localStorage.setItem(CURRENT_MONTH_STORAGE_KEY, currentMonth);
   }, [currentMonth]);
 
@@ -165,10 +166,7 @@ export default function App() {
         const availableMonths = await getAvailableMonths();
         if (!mounted) return;
         setMonths(availableMonths);
-        // Pastreaza luna salvata daca inca e valida; altfel cade pe cea mai recenta
-        setCurrentMonth((previous) =>
-          previous && availableMonths.includes(previous) ? previous : availableMonths[0] || '',
-        );
+        setCurrentMonth(selectCurrentMonth(availableMonths));
       } catch {
         // ignore — empty state OK
       } finally {

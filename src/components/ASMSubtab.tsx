@@ -11,13 +11,12 @@ import {
   ComposedChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import { formatMonthLabel } from '../lib/dates';
 
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
 function formatMonth(m: string) {
-  const [y, mo] = m.split('-');
-  const labels = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
-  return `${labels[parseInt(mo) - 1]} ${y.slice(2)}`;
+  return formatMonthLabel(m, { year: 'short' });
 }
 
 function pctColor(pct: number | null): string {

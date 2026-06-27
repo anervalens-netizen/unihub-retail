@@ -4,6 +4,8 @@ from typing import Any
 
 import asyncpg
 
+from retail_filters import distribution_location_clause
+
 
 class ExportsRepository:
     def __init__(self, pool: asyncpg.Pool):
@@ -50,7 +52,7 @@ class ExportsRepository:
         params: list[Any] = [months]
         clauses = [
             "agg.import_month = ANY($1::TEXT[])",
-            "s.locatie NOT ILIKE 'TR %'",
+            distribution_location_clause("s"),
         ]
         if not include_closed_stores:
             clauses.append("s.is_active = TRUE")
@@ -201,7 +203,7 @@ class ExportsRepository:
         params: list[Any] = [months]
         clauses = [
             "agg.import_month = ANY($1::TEXT[])",
-            "s.locatie NOT ILIKE 'TR %'",
+            distribution_location_clause("s"),
         ]
         if not include_closed_stores:
             clauses.append("s.is_active = TRUE")
@@ -275,7 +277,7 @@ class ExportsRepository:
         params: list[Any] = [months]
         clauses = [
             "agg.import_month = ANY($1::TEXT[])",
-            "s.locatie NOT ILIKE 'TR %'",
+            distribution_location_clause("s"),
         ]
         if not include_closed_stores:
             clauses.append("s.is_active = TRUE")
