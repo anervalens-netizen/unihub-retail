@@ -348,3 +348,7 @@ build pot concura pe `dist/`.
 - 2026-06-27: `usePersistentState` a fost adoptat in `App.tsx` pentru
   persistarile simple. `currentMonth` a ramas exclus intentionat si continua sa
   fie setat din lista backend de luni disponibile.
+- 2026-06-27: CI backend a fost facut independent de fisierul local
+  `data/visits/visits.db`; `run_tests_isolated.sh` creeaza acum un SQLite
+  temporar pentru testele CRM. Comanda backend CI cu coverage a trecut local:
+  544 passed / 7 skipped, critical coverage PASS.

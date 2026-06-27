@@ -7,9 +7,13 @@ PYTHON="${BACKEND_DIR}/venv/bin/python"
 PYTEST="${BACKEND_DIR}/venv/bin/pytest"
 STAMP="${GITHUB_RUN_ID:-local}-$(date +%s)-$$"
 CONTAINER="unihub-retail-test-${STAMP}"
+VISITS_TEST_DIR=""
 
 cleanup() {
   timeout 30 docker rm -f -v "${CONTAINER}" >/dev/null 2>&1 || true
+  if [[ -n "${VISITS_TEST_DIR}" ]]; then
+    rm -rf "${VISITS_TEST_DIR}"
+  fi
 }
 trap cleanup EXIT
 
@@ -50,6 +54,29 @@ export SENTRY_DSN=
 export VITE_GLITCHTIP_DSN=
 export DB_POOL_MIN_SIZE=1
 export DB_POOL_MAX_SIZE=4
+VISITS_TEST_DIR="$(mktemp -d)"
+mkdir -p "${VISITS_TEST_DIR}/images"
+export VISITS_DB_PATH="${VISITS_TEST_DIR}/visits.db"
+export VISITS_IMAGES_DIR="${VISITS_TEST_DIR}/images"
+
+"${PYTHON}" - <<'PY'
+import os
+import sqlite3
+
+con = sqlite3.connect(os.environ["VISITS_DB_PATH"])
+con.execute(
+    """
+    CREATE TABLE visits (
+      id INTEGER PRIMARY KEY,
+      data_raport TEXT,
+      magazin TEXT,
+      completion_pct REAL
+    )
+    """
+)
+con.commit()
+con.close()
+PY
 
 cd "${BACKEND_DIR}"
 "${PYTHON}" scripts/bootstrap_test_db.py
