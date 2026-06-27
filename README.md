@@ -523,5 +523,6 @@ conectare a testelor la baza Retail de productie.
 - setup local: [LOCAL_SETUP.md](./LOCAL_SETUP.md)
 - arhitectura: [APP_ARCHITECTURE.md](./APP_ARCHITECTURE.md)
 - reguli Codex: [AGENTS.md](./AGENTS.md)
+- plan activ refactoring: [docs/refactoring-plan-current.md](./docs/refactoring-plan-current.md)
 - handover campanii iunie 2026: [docs/HANDOVER-campanii-iunie-2026.md](./docs/HANDOVER-campanii-iunie-2026.md)
 - arhiva de planuri si rapoarte inchise: [docs/archive/README.md](./docs/archive/README.md)

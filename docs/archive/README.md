@@ -10,6 +10,9 @@ automat starea curentă.
 - `grile-integration-plan.md` — planul cutover-ului Grile, finalizat;
 - `salarii-medie-adaugata-2026-06-18.md` — raportul corectiv al calculelor
   salariale.
+- `refactoring-2026-06-27/` — audituri, handover-uri si planuri intermediare
+  folosite pentru refactoring-ul Retail din iunie 2026. Sursa activa este
+  `../refactoring-plan-current.md`.
 
 Sursele active de adevăr sunt:
 
@@ -17,7 +20,8 @@ Sursele active de adevăr sunt:
 2. [`../../APP_ARCHITECTURE.md`](../../APP_ARCHITECTURE.md);
 3. [`../../README.md`](../../README.md);
 4. [`../../LOCAL_SETUP.md`](../../LOCAL_SETUP.md);
-5. documentele business active rămase direct în `docs/`.
+5. [`../refactoring-plan-current.md`](../refactoring-plan-current.md);
+6. documentele business active rămase direct în `docs/`.
 
 Nu executa pași operaționali direct din documentele arhivate fără verificarea
 codului, bazei de date și serviciilor curente.
