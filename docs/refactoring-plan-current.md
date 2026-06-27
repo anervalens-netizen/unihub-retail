@@ -85,7 +85,7 @@ Criteriu de iesire:
 
 ## Milestone 1 - Primitive frontend si query foundation
 
-Status: urmatoarea transa tehnica.
+Status: partial implementat.
 
 Scop: reducem duplicarea si pregatim spargerea componentelor mari fara sa
 schimbam payload-uri sau UI business.
@@ -94,10 +94,10 @@ schimbam payload-uri sau UI business.
 
 Livrabile:
 
-- `src/lib/queryKeys.ts`;
-- key factories stabile pentru dashboard, campaigns, agents, grile, settings
+- [x] `src/lib/queryKeys.ts`;
+- [x] key factories stabile pentru dashboard, campaigns, agents, grile, settings
   acolo unde exista deja query-uri;
-- tipuri suficient de stricte pentru a evita typo-uri in invalidari.
+- [x] tipuri suficient de stricte pentru a evita typo-uri in invalidari.
 
 Criteriu:
 
@@ -108,9 +108,9 @@ Criteriu:
 
 Livrabile:
 
-- hook comun pentru sortare numeric/string/null-safe;
-- teste pentru directie, toggle si chei cu directie default ascendenta;
-- adoptare initiala intr-o componenta cu risc mic.
+- [x] hook comun pentru sortare numeric/string/null-safe;
+- [x] teste pentru directie, toggle si chei cu directie default ascendenta;
+- [x] adoptare initiala in tabelul generic din `Campaigns.tsx`.
 
 Criteriu:
 
@@ -121,9 +121,10 @@ Criteriu:
 
 Livrabile:
 
-- componenta comuna pentru switcherele repetitive;
-- props simple: `options`, `value`, `onChange`, optional `ariaLabel`;
-- test de render/click.
+- [x] componenta comuna pentru switcherele repetitive;
+- [x] props simple: `options`, `value`, `onChange`, `ariaLabel`;
+- [x] test de render server-side;
+- [x] adoptare initiala pentru sectiunile `Campaigns`.
 
 Criteriu:
 
@@ -134,9 +135,9 @@ Criteriu:
 
 Livrabile:
 
-- shell comun pentru drawer lateral: backdrop, close button, title, content;
-- close pe backdrop si Escape unde se potriveste;
-- test de open/close.
+- [x] shell comun pentru drawer lateral: backdrop, close button, title, content;
+- [x] close pe backdrop si Escape;
+- [x] test de render open/closed.
 
 Criteriu:
 
@@ -146,9 +147,9 @@ Criteriu:
 
 Livrabile:
 
-- hook comun pentru localStorage, cu parse fallback robust;
-- teste pentru initializare, update si JSON invalid;
-- adoptare graduala in `App.tsx`/`Agents.tsx`.
+- [x] hook comun pentru localStorage, cu parse fallback robust;
+- [x] teste pentru read/write, string plain, JSON invalid si remove condition;
+- [ ] adoptare graduala in `App.tsx`/`Agents.tsx`.
 
 Criteriu:
 
@@ -158,17 +159,28 @@ Criteriu:
 
 Livrabile:
 
-- `Campaigns.tsx` trece de la fetch/cache manual la TanStack Query;
-- `staleTime: 3 * 60_000`;
-- `placeholderData: keepPreviousData`;
-- query keys din `queryKeys`;
-- test de render pentru separarea metricilor promo vs incentive.
+- [x] `Campaigns.tsx` trece de la fetch/cache manual la TanStack Query;
+- [x] `staleTime: 3 * 60_000`;
+- [x] `placeholderData: keepPreviousData`;
+- [x] query keys din `queryKeys`;
+- [x] test de render pentru separarea metricilor promo vs incentive.
 
 Criteriu:
 
-- `Campaigns.tsx` nu mai foloseste cache manual pentru fluxurile principale;
-- nu se sterge `viewCache.ts`;
-- validare frontend completa + build.
+- [x] `Campaigns.tsx` nu mai foloseste cache manual pentru fluxurile principale;
+- [x] nu se sterge `viewCache.ts`;
+- [x] validare frontend completa + build.
+
+Validare transa:
+
+- `npm run typecheck` - OK;
+- `npm run typecheck:strict` - OK;
+- `npm run lint` - OK;
+- `npm run test` - OK, 18 fisiere / 156 teste;
+- `npm run build` - OK;
+- `sudo systemctl restart unihub-backend.service` - OK;
+- health local si public - OK;
+- jurnal `unihub-backend.service` dupa restart - fara warnings.
 
 ## Milestone 2 - Dashboard pe TanStack Query si split frontend
 
@@ -327,3 +339,7 @@ build pot concura pe `dist/`.
 - 2026-06-27: creat planul activ unic; arhivate documentele vechi de audit,
   roadmap si handover; snapshotul validat anterior a fost commit-uit si impins
   pe `origin/main` ca `0a7c5a1`.
+- 2026-06-27: Milestone 1 partial inchis: adaugate `queryKeys`,
+  `useSortable`, `SegmentedTabs`, `SideDrawer`, `usePersistentState`; `Campaigns`
+  a trecut pe TanStack Query pentru fluxurile principale, iar cache-ul manual cu
+  `isMountedRef`/`viewCache` a fost eliminat din acest ecran.

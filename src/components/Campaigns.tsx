@@ -1,4 +1,5 @@
-import React, { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { type ComponentType, useCallback, useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { FirmaBadge } from './FirmaBadge';
 import {
   BadgePercent,
@@ -47,10 +48,12 @@ import type {
 } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
+import { queryKeys } from '../lib/queryKeys';
 import type { ExportColumn } from '../lib/tableExport';
-import { getCachedView, setCachedView } from '../lib/viewCache';
+import { useSortable, type SortDirection } from '../lib/useSortable';
 import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
+import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
@@ -75,7 +78,9 @@ const emptySnapshot: CampaignSnapshot = {
   products: [],
   stores: [],
 };
-const CAMPAIGNS_CACHE_TTL_MS = 3 * 60 * 1000;
+const EMPTY_FOCUS_HISTORY: FocusHistoryPoint[] = [];
+const EMPTY_CONTESTS: ContestResponse[] = [];
+const CAMPAIGNS_STALE_MS = 3 * 60 * 1000;
 type CampaignCurrentCache = {
   snapshot?: CampaignSnapshot;
   promoData?: CampaignsPromotionsResponse | null;
@@ -89,13 +94,19 @@ const STAT_ACCENT_CLASSES: Record<string, string> = {
   rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20',
 };
 
-const SECTION_TABS: [CampaignSection, string][] = [
-  ['incentive', 'Incentive'],
-  ['promo', 'Promo'],
-  ['concurs', 'Concurs'],
-  ['premium', 'Folii premium'],
-  ['focus', 'Focus'],
+const SECTION_TABS: SegmentedTabOption<CampaignSection>[] = [
+  { value: 'incentive', label: 'Incentive' },
+  { value: 'promo', label: 'Promo' },
+  { value: 'concurs', label: 'Concurs' },
+  { value: 'premium', label: 'Folii premium' },
+  { value: 'focus', label: 'Focus' },
 ];
+
+function getMonthEndDate(month: string): string {
+  const [year = 0, monthIndex = 1] = month.split('-').map(Number);
+  const lastDay = new Date(year, monthIndex, 0).getDate();
+  return `${month}-${String(lastDay).padStart(2, '0')}`;
+}
 
 export function Campaigns({
   currentMonth,
@@ -108,20 +119,8 @@ export function Campaigns({
   const [activeSection, setActiveSection] = useState<CampaignSection>(preferredSection);
   const [historyMonth, setHistoryMonth] = useState(latestMonth);
   const [promoMonth, setPromoMonth] = useState(latestMonth);
-  const [snapshot, setSnapshot] = useState<CampaignSnapshot>(emptySnapshot);
-  const [focusHistory, setFocusHistory] = useState<FocusHistoryPoint[]>([]);
-  const [promoData, setPromoData] = useState<CampaignsPromotionsResponse | null>(null);
   const [selectedPromotionKey, setSelectedPromotionKey] = useState('');
-  const [premiumGlass, setPremiumGlass] = useState<PremiumGlassAnalysis | null>(null);
-  const [contests, setContests] = useState<ContestResponse[]>([]);
   const [selectedContestKey, setSelectedContestKey] = useState('');
-  const [contestLoading, setContestLoading] = useState(false);
-  const [contestError, setContestError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState('');
-  const isMountedRef = useRef(true);
 
   useEffect(() => {
     const fallbackMonth = latestMonth || currentMonth;
@@ -147,193 +146,128 @@ export function Campaigns({
     [filters]
   );
 
-  const currentCacheKey = useMemo(
-    () => `campaigns:current:${activeSection}:${promoMonth}:${selectedPromotionKey}:${JSON.stringify(buildQuery(promoMonth))}`,
-    [activeSection, buildQuery, promoMonth, selectedPromotionKey]
+  const promoQuery = useMemo(() => buildQuery(promoMonth), [buildQuery, promoMonth]);
+  const historyQueryParams = useMemo(
+    () => ({ ...buildQuery(historyMonth), months_back: 12 }),
+    [buildQuery, historyMonth],
   );
-  const historyCacheKey = useMemo(
-    () => `campaigns:history:${historyMonth}:${JSON.stringify({ ...buildQuery(historyMonth), months_back: 12 })}`,
-    [buildQuery, historyMonth]
-  );
+  const shouldLoadPromoData = activeSection === 'promo' || activeSection === 'incentive';
+  const shouldLoadSnapshot = activeSection === 'focus';
+  const shouldLoadPremiumGlass = activeSection === 'premium';
+  const shouldLoadCurrent = shouldLoadPromoData || shouldLoadSnapshot || shouldLoadPremiumGlass;
 
-  const loadCurrentFocus = useCallback(() => {
-    if (!isMountedRef.current) return;
-    const shouldLoadPromoData = activeSection === 'promo' || activeSection === 'incentive';
-    const shouldLoadSnapshot = activeSection === 'focus';
-    const shouldLoadPremiumGlass = activeSection === 'premium';
+  const currentQuery = useQuery({
+    queryKey: queryKeys.campaigns.current(
+      activeSection,
+      promoMonth,
+      selectedPromotionKey,
+      promoQuery,
+    ),
+    enabled: Boolean(promoMonth) && shouldLoadCurrent,
+    staleTime: CAMPAIGNS_STALE_MS,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const result: CampaignCurrentCache = {};
+      const requests: Promise<void>[] = [];
 
-    if (!shouldLoadPromoData && !shouldLoadSnapshot && !shouldLoadPremiumGlass) {
-      setLoading(false);
-      setError('');
-      return;
-    }
-
-    const cached = getCachedView<CampaignCurrentCache>(currentCacheKey, CAMPAIGNS_CACHE_TTL_MS);
-    if (cached.value) {
-      if (cached.value.snapshot) {
-        setSnapshot(cached.value.snapshot);
+      if (shouldLoadSnapshot) {
+        requests.push(
+          getCampaignSnapshot(promoQuery).then((snapshotData) => {
+            result.snapshot = snapshotData;
+          }),
+        );
       }
-      if ('promoData' in cached.value) {
-        setPromoData(cached.value.promoData ?? null);
+
+      if (shouldLoadPromoData) {
+        requests.push(
+          getPromotionsIncentives(`${promoMonth}-01`, getMonthEndDate(promoMonth), {
+            ...promoQuery,
+            ...(selectedPromotionKey && { promotion_key: selectedPromotionKey }),
+          }).then((promoResponse) => {
+            result.promoData = promoResponse;
+          }),
+        );
       }
-      if ('premiumGlass' in cached.value) {
-        setPremiumGlass(cached.value.premiumGlass ?? null);
+
+      if (shouldLoadPremiumGlass) {
+        requests.push(
+          getPremiumGlassAnalysis({
+            ...promoQuery,
+            current_scope: true,
+            include_closed_stores: false,
+          }).then((premiumResponse) => {
+            result.premiumGlass = premiumResponse;
+          }),
+        );
       }
-      setLoading(false);
-      setError('');
-      if (cached.isFresh) {
-        return;
-      }
-    }
 
-    setLoading(true);
-    setError('');
-    const query = buildQuery(promoMonth);
-    const cacheValue: CampaignCurrentCache = {};
-    const requests: Promise<void>[] = [];
+      await Promise.all(requests);
+      return result;
+    },
+  });
 
-    if (shouldLoadSnapshot) {
-      requests.push(
-        getCampaignSnapshot(query).then((snapshotData) => {
-          if (!isMountedRef.current) return;
-          setSnapshot(snapshotData);
-          cacheValue.snapshot = snapshotData;
-        })
-      );
-    }
+  const focusHistoryQuery = useQuery({
+    queryKey: queryKeys.campaigns.history(historyMonth, historyQueryParams),
+    enabled: activeSection === 'focus' && Boolean(historyMonth),
+    staleTime: CAMPAIGNS_STALE_MS,
+    placeholderData: keepPreviousData,
+    queryFn: () => getFocusHistory(historyQueryParams),
+  });
 
-    if (shouldLoadPromoData) {
-      const [yr, mo] = promoMonth.split('-').map(Number);
-      const promoEndDate = `${promoMonth}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`;
-      requests.push(
-        getPromotionsIncentives(`${promoMonth}-01`, promoEndDate, {
-          ...query,
-          ...(selectedPromotionKey && { promotion_key: selectedPromotionKey }),
-        }).then((promoResponse) => {
-          if (!isMountedRef.current) return;
-          const availableKeys = promoResponse.promotions.map((promotion) => promotion.key);
-          if (
-            selectedPromotionKey &&
-            availableKeys.length > 0 &&
-            !availableKeys.includes(selectedPromotionKey)
-          ) {
-            setSelectedPromotionKey(availableKeys[0]);
-          }
-          setPromoData(promoResponse);
-          cacheValue.promoData = promoResponse;
-        })
-      );
-    }
+  const contestsQuery = useQuery({
+    queryKey: queryKeys.campaigns.contests(promoMonth),
+    enabled: activeSection === 'concurs' && Boolean(promoMonth),
+    staleTime: CAMPAIGNS_STALE_MS,
+    placeholderData: keepPreviousData,
+    queryFn: () => getActiveContests(promoMonth),
+  });
 
-    if (shouldLoadPremiumGlass) {
-      requests.push(
-        getPremiumGlassAnalysis({
-          ...query,
-          current_scope: true,
-          include_closed_stores: false,
-        }).then((premiumResponse) => {
-          if (!isMountedRef.current) return;
-          setPremiumGlass(premiumResponse);
-          cacheValue.premiumGlass = premiumResponse;
-        })
-      );
-    }
-
-    Promise.all(requests)
-      .then(() => {
-        if (isMountedRef.current) {
-          setCachedView(currentCacheKey, cacheValue);
-        }
-      })
-      .catch(() => {
-        if (!isMountedRef.current) return;
-        if (shouldLoadSnapshot) setSnapshot(emptySnapshot);
-        if (shouldLoadPromoData) setPromoData(null);
-        if (shouldLoadPremiumGlass) setPremiumGlass(null);
-        setError('Datele pentru campanii si focus nu au putut fi incarcate.');
-      })
-      .finally(() => {
-        if (isMountedRef.current) setLoading(false);
-      });
-  }, [activeSection, buildQuery, currentCacheKey, promoMonth, selectedPromotionKey]);
-
-  const loadFocusHistory = useCallback(() => {
-    if (!isMountedRef.current) return;
-    const cached = getCachedView<FocusHistoryPoint[]>(historyCacheKey, CAMPAIGNS_CACHE_TTL_MS);
-    if (cached.value) {
-      setFocusHistory(cached.value);
-      setHistoryError(cached.value.length === 0 ? 'Nu exista istoric focus pentru filtrarea curenta.' : '');
-      setHistoryLoading(false);
-      if (cached.isFresh) {
-        return;
-      }
-    }
-
-    setHistoryLoading(true);
-    setHistoryError('');
-    getFocusHistory({ ...buildQuery(historyMonth), months_back: 12 })
-      .then((data) => {
-        if (!isMountedRef.current) return;
-        setFocusHistory(data.history);
-        setCachedView(historyCacheKey, data.history);
-        if (data.history.length === 0) {
-          setHistoryError('Nu exista istoric focus pentru filtrarea curenta.');
-        }
-      })
-      .catch(() => {
-        if (!isMountedRef.current) return;
-        setFocusHistory([]);
-        setHistoryError('Istoricul focus nu a putut fi incarcat.');
-      })
-      .finally(() => {
-        if (isMountedRef.current) setHistoryLoading(false);
-      });
-  }, [buildQuery, historyCacheKey, historyMonth]);
-
-  const loadContest = useCallback(() => {
-    if (!isMountedRef.current) return;
-    setContestLoading(true);
-    setContestError('');
-    getActiveContests(promoMonth)
-      .then((data) => {
-        if (!isMountedRef.current) return;
-        setContests(data);
-        setSelectedContestKey((previous) => (
-          data.some((contest) => contest.key === previous) ? previous : (data[0]?.key ?? '')
-        ));
-      })
-      .catch(() => {
-        if (!isMountedRef.current) return;
-        setContests([]);
-        setSelectedContestKey('');
-        setContestError('Concursul nu a putut fi incarcat.');
-      })
-      .finally(() => {
-        if (isMountedRef.current) setContestLoading(false);
-      });
-  }, [promoMonth]);
+  const currentData = currentQuery.data ?? {};
+  const snapshot = currentData.snapshot ?? emptySnapshot;
+  const promoData = currentData.promoData ?? null;
+  const premiumGlass = currentData.premiumGlass ?? null;
+  const focusHistory = focusHistoryQuery.data?.history ?? EMPTY_FOCUS_HISTORY;
+  const contests = contestsQuery.data ?? EMPTY_CONTESTS;
 
   useEffect(() => {
-    isMountedRef.current = true;
-    loadCurrentFocus();
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [loadCurrentFocus]);
+    if (!promoData) return;
+    const availableKeys = promoData.promotions.map((promotion) => promotion.key);
+    if (
+      selectedPromotionKey &&
+      availableKeys.length > 0 &&
+      !availableKeys.includes(selectedPromotionKey)
+    ) {
+      setSelectedPromotionKey(availableKeys[0]);
+    }
+  }, [promoData, selectedPromotionKey]);
 
   useEffect(() => {
-    setFocusHistory([]);
-    setHistoryError('');
-    if (activeSection === 'focus') {
-      loadFocusHistory();
-    }
-  }, [activeSection, historyMonth, loadFocusHistory]);
+    if (activeSection !== 'concurs') return;
+    setSelectedContestKey((previous) => (
+      contests.some((contest) => contest.key === previous)
+        ? previous
+        : (contests[0]?.key ?? '')
+    ));
+  }, [activeSection, contests]);
 
-  useEffect(() => {
-    if (activeSection === 'concurs') {
-      loadContest();
-    }
-  }, [activeSection, loadContest]);
+  const hasCurrentData = !shouldLoadCurrent ||
+    (shouldLoadPromoData && currentData.promoData !== undefined) ||
+    (shouldLoadSnapshot && currentData.snapshot !== undefined) ||
+    (shouldLoadPremiumGlass && currentData.premiumGlass !== undefined);
+  const loading = shouldLoadCurrent && currentQuery.isFetching && !hasCurrentData;
+  const error = currentQuery.isError && !hasCurrentData
+    ? 'Datele pentru campanii si focus nu au putut fi incarcate.'
+    : '';
+  const historyLoading = activeSection === 'focus' && focusHistoryQuery.isFetching && !focusHistoryQuery.data;
+  const historyError = focusHistoryQuery.isError
+    ? 'Istoricul focus nu a putut fi incarcat.'
+    : focusHistoryQuery.isSuccess && focusHistory.length === 0
+      ? 'Nu exista istoric focus pentru filtrarea curenta.'
+      : '';
+  const contestLoading = activeSection === 'concurs' && contestsQuery.isFetching && !contestsQuery.data;
+  const contestError = contestsQuery.isError && !contestsQuery.data
+    ? 'Concursul nu a putut fi incarcat.'
+    : '';
 
   const selectedHistoryPoint = useMemo(
     () =>
@@ -383,27 +317,19 @@ export function Campaigns({
         </p>
       </div>
 
-      <div className="glass flex rounded-2xl p-1">
-        {SECTION_TABS.map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setActiveSection(key)}
-            className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-              activeSection === key
-                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-                : 'text-slate-500'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs<CampaignSection>
+        ariaLabel="Sectiuni Focus"
+        className="glass"
+        options={SECTION_TABS}
+        value={activeSection}
+        onChange={setActiveSection}
+      />
 
       {activeSection === 'concurs' ? (
         contestLoading ? (
           <LoadingCard label="Se incarca concursul..." />
         ) : contestError ? (
-          <ErrorCard message={contestError} onRetry={loadContest} />
+          <ErrorCard message={contestError} onRetry={() => { void contestsQuery.refetch(); }} />
         ) : (
           <>
             <CampaignMonthBar title="Concurs" icon={Trophy} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
@@ -426,7 +352,7 @@ export function Campaigns({
       ) : loading ? (
         <LoadingCard label={loadingLabel} />
       ) : error ? (
-        <ErrorCard message={error} onRetry={loadCurrentFocus} />
+        <ErrorCard message={error} onRetry={() => { void currentQuery.refetch(); }} />
       ) : activeSection === 'promo' ? (
         <>
           <CampaignMonthBar title="Promotie" icon={BadgePercent} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
@@ -789,9 +715,9 @@ export function Campaigns({
           {historyLoading ? (
             <LoadingCard label="Se incarca istoricul focus..." />
           ) : historyError ? (
-            <ErrorCard message={historyError} onRetry={loadFocusHistory} />
+            <ErrorCard message={historyError} onRetry={() => { void focusHistoryQuery.refetch(); }} />
           ) : !selectedHistoryPoint ? (
-            <ErrorCard message="Nu exista indicatori focus pentru luna selectata." onRetry={loadFocusHistory} />
+            <ErrorCard message="Nu exista indicatori focus pentru luna selectata." onRetry={() => { void focusHistoryQuery.refetch(); }} />
           ) : (
             <>
               <div className="glass rounded-3xl p-4">
@@ -1466,25 +1392,6 @@ function DataTable({
   );
 }
 
-type SortDir = 'asc' | 'desc';
-
-function getSortableValue(value: unknown): string | number {
-  if (value === null || value === undefined) return Number.NEGATIVE_INFINITY;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
-  if (typeof value === 'string') {
-    const trimmed = value.trim().replace('%', '');
-    const normalized = trimmed.includes(',')
-      ? trimmed.replace(/\./g, '').replace(',', '.')
-      : trimmed;
-    if (normalized !== '') {
-      const numeric = Number(normalized);
-      if (Number.isFinite(numeric)) return numeric;
-    }
-    return value.toLowerCase();
-  }
-  return String(value).toLowerCase();
-}
-
 interface ColDef<T> {
   key: keyof T | 'rank';
   label: string;
@@ -1506,36 +1413,25 @@ function SortableTable<T extends Record<string, unknown>>({
   rows: T[];
   columns: ColDef<T>[];
   defaultSortKey: keyof T;
-  defaultSortDir?: SortDir;
+  defaultSortDir?: SortDirection;
   maxHeightClass?: string;
   exportFilename: string;
   exportSheetName: string;
 }) {
-  const [sortKey, setSortKey] = useState<keyof T>(defaultSortKey);
-  const [sortDir, setSortDir] = useState<SortDir>(defaultSortDir);
-
-  const sorted = useMemo(() => {
-    const col = columns.find((c) => c.key === sortKey);
-    if (!col || col.key === 'rank') return rows;
-    return [...rows].sort((a, b) => {
-      const av = getSortableValue(a[sortKey as keyof T]);
-      const bv = getSortableValue(b[sortKey as keyof T]);
-      const cmp = typeof av === 'number' && typeof bv === 'number'
-        ? av - bv
-        : String(av).localeCompare(String(bv), 'ro');
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [rows, columns, sortKey, sortDir]);
+  const {
+    sorted,
+    sortKey,
+    direction: sortDir,
+    handleSort: handleSortableSort,
+  } = useSortable<T, keyof T>({
+    rows,
+    key: defaultSortKey,
+    direction: defaultSortDir,
+  });
 
   function handleSort(key: keyof T | 'rank') {
     if (key === 'rank') return;
-    const k = key as keyof T;
-    if (k === sortKey) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(k);
-      setSortDir('desc');
-    }
+    handleSortableSort(key as keyof T);
   }
 
   return (
