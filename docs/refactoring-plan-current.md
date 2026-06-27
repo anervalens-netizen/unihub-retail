@@ -200,7 +200,8 @@ Livrabile:
 - [x] `aggregateDashboardDetails` are test pentru totaluri, ponderari KPI,
   daily aggregation si regula `special_cards` din ultima luna;
 - [x] `queryKeys.dashboard.yearHistory` adaugat si testat;
-- [ ] `Dashboard.tsx` se imparte in hooks de date si subcomponente:
+- [x] data-fetching-ul Dashboard este extras in `useDashboardData`;
+- [ ] `Dashboard.tsx` se imparte in subcomponente:
   `CurrentDashboard`, `HistoryDashboard`, `BreakdownTable`;
 - [ ] sortarile repetitive folosesc `useSortable`.
 
@@ -224,6 +225,16 @@ Validare transa curenta:
 - GitHub Actions CI `28290623749` - OK;
 - `/api/dashboard/all?month=2026-06` local a raspuns `401`, asteptat fara
   sesiune Authentik; nu s-a folosit ca proba de business fara autentificare.
+
+Validare extractie `useDashboardData`:
+
+- `npm run typecheck` - OK;
+- `npm run lint` - OK;
+- `npm run test` - OK, 19 fisiere / 158 teste;
+- `npm run build` - OK;
+- `sudo systemctl restart unihub-backend.service` - OK;
+- health local si public - OK dupa warm-up;
+- jurnal `unihub-backend.service` dupa restart - fara warnings.
 
 ## Milestone 3 - Backend domain boundaries ramase
 

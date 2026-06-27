@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRight,
   Building2,
@@ -25,8 +24,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getDashboardAll, getDashboardHistory, getDashboardHistoryYear } from '../api/dashboard';
-import type { DashboardQuery } from '../api/dashboard';
 import type {
   AgentStat,
   AsmStat,
@@ -36,7 +33,6 @@ import type {
   DashboardAllResponse,
   DashboardSpecialCard,
   DashboardSummary,
-  MonthlyHistoryPoint,
   PeriodComparisonPayload,
   PeriodComparisonPoint,
   PremiumGlassAnalysis,
@@ -44,11 +40,8 @@ import type {
   ReceiptBucketItem,
   RegionalStat,
   StoreStat,
-  YearHistoryPoint,
 } from '../api/types';
-import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../lib/formatters';
-import { queryKeys } from '../lib/queryKeys';
 import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
@@ -73,6 +66,8 @@ import {
   getStoreSortValue,
   sumChartValues,
 } from './dashboard/DashboardWidgets';
+import { DEFAULT_PROMO_INCENTIVE } from './dashboard/dashboardDefaults';
+import { useDashboardData, type AggregatedDashboardDetails } from './dashboard/useDashboardData';
 
 interface DashboardProps {
   currentMonth: string;
@@ -126,26 +121,6 @@ type RegionalSortKey =
   | 'proc_bon2acc'
   | 'prc_focus_acc_qty';
 
-const DEFAULT_PROMO_INCENTIVE: PromoIncentiveSummary = {
-  promo_qty: 0,
-  promo_sales: 0,
-  promo_impact: 0,
-  incentive_qty: 0,
-  incentive_value: 0,
-  incentive_qualified_stores: 0,
-  incentive_qualified_agents: 0,
-};
-const DASHBOARD_STALE_MS = 3 * 60 * 1000;
-const EMPTY_AGENT_STATS: AgentStat[] = [];
-const EMPTY_BRAND_MIX: BrandMixItem[] = [];
-const EMPTY_CATEGORY_MIX: CategoryMixItem[] = [];
-const EMPTY_DAILY_SALES: DailySalesPoint[] = [];
-const EMPTY_HISTORY: MonthlyHistoryPoint[] = [];
-const EMPTY_RECEIPT_BUCKETS: ReceiptBucketItem[] = [];
-const EMPTY_REGIONAL_STATS: RegionalStat[] = [];
-const EMPTY_SPECIAL_CARDS: DashboardSpecialCard[] = [];
-const EMPTY_STORE_STATS: StoreStat[] = [];
-const EMPTY_YEAR_HISTORY: YearHistoryPoint[] = [];
 const TABLE_MAX_HEIGHT_CLASS = 'max-h-[26rem]';
 const HUB_TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-[10.5px]';
 const COMPACT_TH_CLASS = 'px-1.5 py-1.5 align-bottom whitespace-normal text-[10px] leading-[1.05]';
@@ -581,24 +556,6 @@ function aggregateByKey<T>(rows: T[], keyFn: (row: T) => string, merge: (base: T
   return [...map.values()];
 }
 
-interface AggregatedDashboardDetails {
-  summary: DashboardSummary;
-  receiptBucketMix: ReceiptBucketItem[];
-  focusSubcategoryMix: CategoryMixItem[];
-  dailySales: DailySalesPoint[];
-  dailyLastYear: DailySalesPoint[];
-  categoryMix: CategoryMixItem[];
-  brandMix: BrandMixItem[];
-  specialCards: DashboardSpecialCard[];
-  periodComparison: PeriodComparisonPayload | null;
-  promoIncentive: PromoIncentiveSummary;
-  premiumGlass: PremiumGlassAnalysis | null;
-  regionals: RegionalStat[];
-  asms: AsmStat[];
-  stores: StoreStat[];
-  agents: AgentStat[];
-}
-
 export function aggregateDashboardDetails(
   responses: DashboardAllResponse[],
   selectedMonths: string[]
@@ -625,7 +582,6 @@ export function aggregateDashboardDetails(
 }
 
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
-  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [historyMonths, setHistoryMonths] = useState<string[]>([currentMonth]);
@@ -667,18 +623,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     setActiveSection(initialSection);
   }, [initialSection]);
 
-  const buildQuery = useCallback(
-    (month: string) => buildScopedMonthQuery(month, filters),
-    [filters]
-  );
-  const buildHistoryQuery = useCallback(
-    (month: string) => ({
-      ...buildQuery(month),
-      current_scope: true,
-      include_closed_stores: includeClosedStores,
-    }),
-    [buildQuery, includeClosedStores]
-  );
   const selectedHistoryMonths = useMemo(() => {
     const valid = historyMonths.filter((month) => months.includes(month));
     return sortMonthsAsc(valid.length > 0 ? valid : [historyMonth]);
@@ -699,130 +643,54 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     () => formatMonthSelectionLabel(draftSelectedHistoryMonths),
     [draftSelectedHistoryMonths]
   );
-  const currentQueryParams = useMemo(
-    () => buildQuery(currentMonth),
-    [buildQuery, currentMonth]
-  );
-  const historyQueryParams = useMemo(
-    () => ({ ...buildHistoryQuery(historyMonth), months_back: 12 }),
-    [buildHistoryQuery, historyMonth]
-  );
-  const historyDetailQueries = useMemo(
-    () => selectedHistoryMonths.map((month) => buildHistoryQuery(month)),
-    [buildHistoryQuery, selectedHistoryMonths]
-  );
-  const historyDetailQueryParams = useMemo(
-    () => ({
-      selected_months: selectedHistoryMonths,
-      queries: historyDetailQueries,
-    }),
-    [historyDetailQueries, selectedHistoryMonths]
-  );
-  const currentHistoryQueryParams = useMemo(
-    () => ({ ...buildHistoryQuery(currentMonth), months_back: 14 }),
-    [buildHistoryQuery, currentMonth]
-  );
-  const yearHistoryQueryParams = useMemo<Omit<DashboardQuery, 'month'> & { year: number } | null>(() => {
-    if (historyYearFilter === null) return null;
-    const { month: _month, ...filterParams } = buildHistoryQuery(currentMonth);
-    return { ...filterParams, year: historyYearFilter };
-  }, [buildHistoryQuery, currentMonth, historyYearFilter]);
-
-  const currentQuery = useQuery({
-    queryKey: queryKeys.dashboard.current(currentMonth, currentQueryParams),
-    queryFn: () => getDashboardAll(currentQueryParams),
-    staleTime: DASHBOARD_STALE_MS,
+  const {
+    summary,
+    agents,
+    stores,
+    dailySales,
+    dailyLastYear,
+    specialCards,
+    periodComparison,
+    categoryMix,
+    receiptBucketMix,
+    focusSubcategoryMix,
+    brandMix,
+    promoIncentive,
+    premiumGlass,
+    regionals,
+    currentHistory,
+    currentHistoryLoading,
+    yearHistory,
+    yearHistoryLoading,
+    history,
+    historySummary,
+    historyReceiptBucketMix,
+    historyFocusSubcategoryMix,
+    historyDailySales,
+    historyCategoryMix,
+    historyBrandMix,
+    historySpecialCards,
+    historyPromoIncentive,
+    historyPremiumGlass,
+    historyRegionals,
+    historyStores,
+    historyAgents,
+    loading,
+    error,
+    historyLoading,
+    historyError,
+    refetchCurrentData,
+    refetchHistoryData,
+  } = useDashboardData({
+    currentMonth,
+    filters,
+    historyMonth,
+    selectedHistoryMonths,
+    includeClosedStores,
+    activeSection,
+    historyYearFilter,
+    aggregateDetails: aggregateDashboardDetails,
   });
-  const historyQuery = useQuery({
-    queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
-    queryFn: () => getDashboardHistory(historyQueryParams),
-    enabled: activeSection === 'history',
-    staleTime: DASHBOARD_STALE_MS,
-  });
-  const historyDetailQuery = useQuery({
-    queryKey: queryKeys.dashboard.historyDetail(selectedHistoryMonths, historyDetailQueryParams),
-    queryFn: async () => {
-      const responses = await Promise.all(historyDetailQueries.map((query) => getDashboardAll(query)));
-      return aggregateDashboardDetails(responses, selectedHistoryMonths);
-    },
-    enabled: activeSection === 'history' && selectedHistoryMonths.length > 0,
-    staleTime: DASHBOARD_STALE_MS,
-  });
-  const currentHistoryQuery = useQuery({
-    queryKey: queryKeys.dashboard.currentHistory(currentMonth, currentHistoryQueryParams),
-    queryFn: () => getDashboardHistory(currentHistoryQueryParams),
-    enabled: activeSection === 'history',
-    staleTime: DASHBOARD_STALE_MS,
-  });
-  const yearHistoryQuery = useQuery({
-    queryKey: queryKeys.dashboard.yearHistory(historyYearFilter ?? 0, yearHistoryQueryParams ?? { year: 0 }),
-    queryFn: () => getDashboardHistoryYear(yearHistoryQueryParams!),
-    enabled: activeSection === 'history' && yearHistoryQueryParams !== null,
-    staleTime: DASHBOARD_STALE_MS,
-  });
-
-  const summary = currentQuery.data?.summary ?? null;
-  const agents = currentQuery.data?.agents ?? EMPTY_AGENT_STATS;
-  const stores = currentQuery.data?.stores ?? EMPTY_STORE_STATS;
-  const dailySales = currentQuery.data?.daily ?? EMPTY_DAILY_SALES;
-  const dailyLastYear = currentQuery.data?.daily_last_year ?? EMPTY_DAILY_SALES;
-  const specialCards = currentQuery.data?.special_cards ?? EMPTY_SPECIAL_CARDS;
-  const periodComparison = currentQuery.data?.period_comparison ?? null;
-  const categoryMix = currentQuery.data?.category_mix ?? EMPTY_CATEGORY_MIX;
-  const receiptBucketMix = currentQuery.data?.receipt_bucket_mix ?? EMPTY_RECEIPT_BUCKETS;
-  const focusSubcategoryMix = currentQuery.data?.focus_subcategory_mix ?? EMPTY_CATEGORY_MIX;
-  const brandMix = currentQuery.data?.brand_mix ?? EMPTY_BRAND_MIX;
-  const promoIncentive = currentQuery.data?.promo_incentive ?? DEFAULT_PROMO_INCENTIVE;
-  const premiumGlass = currentQuery.data?.premium_glass ?? null;
-  const regionals = currentQuery.data?.regionals ?? EMPTY_REGIONAL_STATS;
-  const currentHistory = currentHistoryQuery.data?.history ?? EMPTY_HISTORY;
-  const currentHistoryLoading = currentHistoryQuery.isPending && activeSection === 'history';
-  const yearHistory = yearHistoryQuery.data?.points ?? EMPTY_YEAR_HISTORY;
-  const yearHistoryLoading = yearHistoryQuery.isPending && activeSection === 'history' && historyYearFilter !== null;
-  const history = historyQuery.data?.history ?? EMPTY_HISTORY;
-  const historySummary = historyDetailQuery.data?.summary ?? null;
-  const historyReceiptBucketMix = historyDetailQuery.data?.receiptBucketMix ?? EMPTY_RECEIPT_BUCKETS;
-  const historyFocusSubcategoryMix = historyDetailQuery.data?.focusSubcategoryMix ?? EMPTY_CATEGORY_MIX;
-  const historyDailySales = historyDetailQuery.data?.dailySales ?? EMPTY_DAILY_SALES;
-  const historyCategoryMix = historyDetailQuery.data?.categoryMix ?? EMPTY_CATEGORY_MIX;
-  const historyBrandMix = historyDetailQuery.data?.brandMix ?? EMPTY_BRAND_MIX;
-  const historySpecialCards = historyDetailQuery.data?.specialCards ?? EMPTY_SPECIAL_CARDS;
-  const historyPromoIncentive = historyDetailQuery.data?.promoIncentive ?? DEFAULT_PROMO_INCENTIVE;
-  const historyPremiumGlass = historyDetailQuery.data?.premiumGlass ?? null;
-  const historyRegionals = historyDetailQuery.data?.regionals ?? EMPTY_REGIONAL_STATS;
-  const historyStores = historyDetailQuery.data?.stores ?? EMPTY_STORE_STATS;
-  const historyAgents = historyDetailQuery.data?.agents ?? EMPTY_AGENT_STATS;
-  const loading = currentQuery.isPending;
-  const error = currentQuery.isError && !currentQuery.data
-    ? currentQuery.error.message || 'Eroare la incarcarea lunii in curs'
-    : null;
-  const historyLoading = activeSection === 'history' && (historyQuery.isPending || historyDetailQuery.isPending);
-  const historyError = activeSection === 'history'
-    ? historyQuery.isError && !historyQuery.data
-      ? historyQuery.error.message || 'Istoricul nu a putut fi incarcat.'
-      : historyDetailQuery.isError && !historyDetailQuery.data
-        ? historyDetailQuery.error.message || 'Istoricul nu a putut fi incarcat.'
-        : !historyLoading && history.length === 0
-          ? 'Nu exista date istorice pentru filtrarea curenta.'
-          : null
-    : null;
-
-  const refetchCurrentData = useCallback(() => {
-    void currentQuery.refetch();
-  }, [currentQuery]);
-  const refetchHistoryData = useCallback(() => {
-    void historyQuery.refetch();
-    void historyDetailQuery.refetch();
-  }, [historyDetailQuery, historyQuery]);
-
-  useEffect(() => {
-    if (!currentQuery.data) return;
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
-      queryFn: () => getDashboardHistory(historyQueryParams),
-      staleTime: DASHBOARD_STALE_MS,
-    });
-  }, [currentQuery.data, historyMonth, historyQueryParams, queryClient]);
 
   useEffect(() => {
     onSectionChange?.(activeSection);
