@@ -212,21 +212,22 @@ class TestGetHistoryByYear:
         assert result.points[1].label == "Oct"
 
     @pytest.mark.asyncio
-    async def test_year_2023_with_aggregate(self, service, mock_repo):
+    async def test_year_2023_prefers_monthly_import_over_aggregate(self, service, mock_repo):
         mock_repo.fetch_year_history_agg.return_value = FakeRow(
             total_sales=Decimal("500000"), total_quantity=5000,
         )
         mock_repo.fetch_year_history_monthly.return_value = [
+            FakeRow(import_month="2023-01", total_sales=Decimal("60000"), total_target=Decimal("0"), total_quantity=300),
             FakeRow(import_month="2023-09", total_sales=Decimal("70000"), total_target=Decimal("80000"), total_quantity=350),
         ]
         result = await service.get_history_by_year(2023, None, None, None, None, None)
         assert len(result.points) == 2
-        assert result.points[0].is_aggregate is True
-        assert result.points[0].label == "Ian–Aug"
-        assert result.points[1].is_aggregate is False
+        assert result.points[0].label == "Ian"
+        assert result.points[1].label == "Sep"
+        mock_repo.fetch_year_history_agg.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_year_2022_aggregate(self, service, mock_repo):
+    async def test_year_2022_aggregate_fallback(self, service, mock_repo):
         mock_repo.fetch_year_history_agg.return_value = FakeRow(
             total_sales=Decimal("600000"), total_quantity=6000,
         )

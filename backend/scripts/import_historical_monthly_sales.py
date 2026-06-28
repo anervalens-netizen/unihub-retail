@@ -36,7 +36,7 @@ BASE_DIR = (
 )
 SOURCE_FILES = [
     BASE_DIR / "Mobiup-istoric.xlsx",
-    BASE_DIR / "Mobicell-istoric.xlsx",
+    BASE_DIR / "mobicell-istoric-bun.xlsx",
 ]
 
 VALUE_TYPE = "Accesorii Valoare"

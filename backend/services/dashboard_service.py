@@ -276,7 +276,52 @@ class DashboardService:
 
         points: list[YearHistoryPoint] = []
 
-        if year <= 2023 and _agent is None:
+        start_month = f"{year}-01"
+        end_month = f"{year}-12"
+
+        rep_params: list[Any] = [start_month, end_month]
+        rep_clauses: list[str] = []
+        p = 3
+        has_site_scope = _site_code is not None
+        for val, col in [
+            (None if has_site_scope else _firma, "s.firma" if current_scope else "agg.firma"),
+            (None if has_site_scope else _regional, "s.regional" if current_scope else "agg.regional"),
+            (None if has_site_scope else _asm, "s.asm" if current_scope else "agg.asm"),
+            (_site_code, "agg.site_code"),
+            (_agent, "agg.agent"),
+        ]:
+            if val is not None:
+                rep_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
+                rep_params.append(val)
+                p += 1
+
+        if current_scope:
+            rep_positions: dict[str, int] = {}
+            offset = 3
+            for key, val in [
+                ("firma", None if has_site_scope else _firma),
+                ("regional", None if has_site_scope else _regional),
+                ("asm", None if has_site_scope else _asm),
+                ("site_code", _site_code),
+                ("agent", _agent),
+            ]:
+                if val is not None:
+                    rep_positions[key] = offset
+                    offset += 1
+            rep_clauses = _expand_current_manager_scope(rep_clauses, rep_positions)
+
+        if current_scope and not include_closed_stores:
+            rep_clauses.append("s.is_active = TRUE")
+
+        rows = await self.repo.fetch_year_history_monthly(rep_clauses, rep_params)
+        visible_rows = [
+            r
+            for r in rows
+            if r["total_sales"] > 0 or r["total_target"] > 0 or r["total_quantity"] > 0
+        ]
+        has_monthly_sales = any(r["total_sales"] > 0 or r["total_quantity"] > 0 for r in visible_rows)
+
+        if year <= 2023 and _agent is None and not has_monthly_sales:
             hist_params: list[Any] = [year]
             hist_clauses: list[str] = []
             if year == 2023:
@@ -315,7 +360,7 @@ class DashboardService:
             if row and row["total_sales"] > 0:
                 points.append(
                     YearHistoryPoint(
-                        label="Ian–Aug" if year == 2023 else "2022",
+                        label="Ian-Aug" if year == 2023 else str(year),
                         sort_key=f"{year}-00",
                         total_sales=row["total_sales"],
                         total_target=Decimal(0),
@@ -324,46 +369,7 @@ class DashboardService:
                     )
                 )
 
-        start_month = f"{year}-09" if year == 2023 else f"{year}-01"
-        end_month = f"{year}-12"
-
-        rep_params: list[Any] = [start_month, end_month]
-        rep_clauses: list[str] = []
-        p = 3
-        has_site_scope = _site_code is not None
-        for val, col in [
-            (None if has_site_scope else _firma, "s.firma" if current_scope else "agg.firma"),
-            (None if has_site_scope else _regional, "s.regional" if current_scope else "agg.regional"),
-            (None if has_site_scope else _asm, "s.asm" if current_scope else "agg.asm"),
-            (_site_code, "agg.site_code"),
-            (_agent, "agg.agent"),
-        ]:
-            if val is not None:
-                rep_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
-                rep_params.append(val)
-                p += 1
-
-        if current_scope:
-            rep_positions: dict[str, int] = {}
-            offset = 3
-            for key, val in [
-                ("firma", None if has_site_scope else _firma),
-                ("regional", None if has_site_scope else _regional),
-                ("asm", None if has_site_scope else _asm),
-                ("site_code", _site_code),
-                ("agent", _agent),
-            ]:
-                if val is not None:
-                    rep_positions[key] = offset
-                    offset += 1
-            rep_clauses = _expand_current_manager_scope(rep_clauses, rep_positions)
-
-        if current_scope and not include_closed_stores:
-            rep_clauses.append("s.is_active = TRUE")
-
-        rows = await self.repo.fetch_year_history_monthly(rep_clauses, rep_params)
-
-        for r in rows:
+        for r in visible_rows:
             month_num = int(r["import_month"][5:7])
             points.append(
                 YearHistoryPoint(

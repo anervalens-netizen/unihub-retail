@@ -269,6 +269,15 @@ class DashboardRepository:
             if ".agent" not in clause
         ]
         where_store = f"AND {' AND '.join(store_clauses)}" if store_clauses else ""
+        historical_clauses = [
+            clause.replace("agg.firma", "hms.firma")
+            .replace("agg.regional", "s.regional")
+            .replace("agg.asm", "s.asm")
+            .replace("agg.site_code", "hms.site_code")
+            for clause in rep_clauses
+            if ".agent" not in clause
+        ]
+        where_historical = f"AND {' AND '.join(historical_clauses)}" if historical_clauses else ""
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -290,11 +299,34 @@ class DashboardRepository:
                       {where_rep}
                     GROUP BY agg.import_month, agg.site_code
                 ),
+                historical_sales AS (
+                    SELECT hms.import_month, hms.site_code,
+                           SUM(hms.total_value) AS total_sales,
+                           SUM(hms.total_qty)::INT AS total_quantity
+                    FROM historical_monthly_sales hms
+                    JOIN stores s ON s.site_code = hms.site_code
+                    WHERE hms.import_month >= $1 AND hms.import_month <= $2
+                      {where_historical}
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM sales_agg sa
+                          WHERE sa.import_month = hms.import_month
+                            AND sa.site_code = hms.site_code
+                      )
+                    GROUP BY hms.import_month, hms.site_code
+                ),
+                combined_sales AS (
+                    SELECT import_month, site_code, total_sales, total_quantity
+                    FROM sales_agg
+                    UNION ALL
+                    SELECT import_month, site_code, total_sales, total_quantity
+                    FROM historical_sales
+                ),
                 month_sales AS (
                     SELECT import_month,
                            SUM(total_sales)          AS total_sales,
                            SUM(total_quantity)::INT  AS total_quantity
-                    FROM sales_agg
+                    FROM combined_sales
                     GROUP BY import_month
                 ),
                 month_targets AS (
