@@ -375,6 +375,116 @@ async def test_calculate_rejects_budget_above_operational_cap(
 
 
 @pytest.mark.asyncio
+async def test_calculate_marks_new_store_when_only_current_forecast_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {
+            "site_code": "NEW01",
+            "locatie": "Magazin nou",
+            "firma": "Mobiup",
+            "regional": "Regional",
+            "asm": "ASM 1",
+        },
+    ]
+    repo.get_source_metrics.return_value = [
+        {
+            "site_code": "NEW01",
+            "import_month": month,
+            "target": Decimal("0"),
+            "realized": Decimal("100000") if month == "2026-05" else Decimal("0"),
+        }
+        for month in ("2023-05", "2023-06", "2024-05", "2024-06", "2025-05", "2025-06", "2026-05")
+    ]
+    monkeypatch.setattr(
+        target_module,
+        "get_forecast_factor",
+        AsyncMock(return_value=Decimal("1")),
+    )
+    repo.save_draft_scenario.return_value = 9
+    service.get_scenario_detail = AsyncMock(return_value={"id": 9})  # type: ignore[method-assign]
+
+    await service.calculate(
+        {
+            "target_month": "2026-06",
+            "total_target": 100000,
+            "min_floor": 10000,
+            "previous_month_floor_pct": 0,
+            "previous_month_cap_pct": 1.7,
+            "expected_revision": 2,
+        }
+    )
+
+    saved_rows = repo.save_draft_scenario.await_args.args[1]
+    details = saved_rows[0]["calculation_details"]
+    assert details["seasonality"]["network_factor"] == 1.0
+    assert details["seasonality"]["store_factor"] is None
+    assert details["seasonality"]["weights"] == {"store": 0.0, "zone": 0.6, "network": 0.4}
+    assert set(details["flags"]) >= {"NEW_STORE", "LOW_HISTORY"}
+
+
+@pytest.mark.asyncio
+async def test_calculate_distributes_uniformly_when_all_estimates_are_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {
+            "site_code": "SITE01",
+            "locatie": "Magazin 1",
+            "firma": "Mobiup",
+            "regional": "Regional",
+            "asm": "ASM 1",
+        },
+        {
+            "site_code": "SITE02",
+            "locatie": "Magazin 2",
+            "firma": "Mobiup",
+            "regional": "Regional",
+            "asm": "ASM 2",
+        },
+    ]
+    months = ("2025-05", "2025-06", "2026-05")
+    repo.get_source_metrics.return_value = [
+        {
+            "site_code": site_code,
+            "import_month": month,
+            "target": Decimal("0"),
+            "realized": Decimal("0"),
+        }
+        for site_code in ("SITE01", "SITE02")
+        for month in months
+    ]
+    monkeypatch.setattr(
+        target_module,
+        "get_forecast_factor",
+        AsyncMock(return_value=Decimal("1")),
+    )
+    repo.save_draft_scenario.return_value = 9
+    service.get_scenario_detail = AsyncMock(return_value={"id": 9})  # type: ignore[method-assign]
+
+    await service.calculate(
+        {
+            "target_month": "2026-06",
+            "total_target": 20000,
+            "min_floor": 10000,
+            "previous_month_floor_pct": 0,
+            "previous_month_cap_pct": 1.7,
+            "expected_revision": 2,
+        }
+    )
+
+    saved_scenario, saved_rows, _expected_revision = repo.save_draft_scenario.await_args.args
+    assert "distribuit uniform" in saved_scenario["warnings"][-1]
+    assert [row["calculated_weight"] for row in saved_rows] == [Decimal("0.5"), Decimal("0.5")]
+    assert all("LOW_HISTORY" in row["flags"] for row in saved_rows)
+    assert sum(row["proposed_target"] for row in saved_rows) == Decimal("20000.00")
+
+
+@pytest.mark.asyncio
 async def test_calculate_weakens_store_weight_when_recent_year_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
