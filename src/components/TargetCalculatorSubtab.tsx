@@ -45,7 +45,9 @@ import { formatCurrency, formatPercent } from '../lib/formatters';
 import { formatMonthLabel, shiftMonth } from '../lib/dates';
 
 const inputCls = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+const compactInputCls = 'rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 const finalInputCls = 'rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-600 dark:bg-amber-950/30 dark:text-slate-100';
+const compactFinalInputCls = 'rounded-xl border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-600 dark:bg-amber-950/30 dark:text-slate-100';
 
 function monthLabel(month: string): string {
   return formatMonthLabel(month);
@@ -443,7 +445,6 @@ export function TargetCalculatorSubtab() {
   const [targetMonth, setTargetMonth] = useState('');
   const [totalTarget, setTotalTarget] = useState('');
   const [minFloor, setMinFloor] = useState('');
-  const [floorPct, setFloorPct] = useState('');
   const [seasonalityMode, setSeasonalityMode] = useState<'multi' | 'single'>('multi');
   const [logicOpen, setLogicOpen] = useState(false);
   const [selectedLocationCodes, setSelectedLocationCodes] = useState<string[]>([]);
@@ -484,7 +485,6 @@ export function TargetCalculatorSubtab() {
       setTargetMonth((current) => current || nextContext.suggested_target_month);
       setTotalTarget((current) => current || String(nextContext.suggested_total_target));
       setMinFloor((current) => current || String(nextContext.default_min_floor));
-      setFloorPct((current) => current || String(nextContext.default_previous_month_floor_pct * 100));
       setSeasonalityMode((current) => current || (nextContext.default_seasonality_years > 1 ? 'multi' : 'single'));
       const activeScenarioId = scenarioRef.current?.id;
       if (activeScenarioId && dirtyRowsRef.current.size === 0) {
@@ -568,6 +568,7 @@ export function TargetCalculatorSubtab() {
   const displayWarnings = useMemo(
     () => scenario?.warnings.filter((warning) => {
       if (warning.startsWith('Formula foloseste sezonalitate')) return false;
+      if (warning.startsWith('Perioada ') && warning.includes('forecastate')) return false;
       return !Array.from(HIDDEN_DISPLAY_SOURCE_MONTHS).some((month) => warning.includes(month));
     }) ?? [],
     [scenario],
@@ -616,8 +617,7 @@ export function TargetCalculatorSubtab() {
   const handleCalculate = async () => {
     const parsedTarget = Number(totalTarget);
     const parsedFloor = Number(minFloor);
-    const parsedPct = Number(floorPct);
-    if (!targetMonth || parsedTarget <= 0 || parsedFloor < 0 || parsedPct < 0) {
+    if (!targetMonth || parsedTarget <= 0 || parsedFloor < 0) {
       setError('Completeaza parametrii de calcul cu valori valide.');
       return;
     }
@@ -642,7 +642,7 @@ export function TargetCalculatorSubtab() {
         target_month: targetMonth,
         total_target: parsedTarget,
         min_floor: parsedFloor,
-        previous_month_floor_pct: parsedPct / 100,
+        previous_month_floor_pct: 0,
         previous_month_cap_pct: context?.default_previous_month_cap_pct ?? 1.7,
         seasonality_years: seasonalityMode === 'multi' ? 3 : 1,
         expected_revision: recalculatingCurrentDraft
@@ -882,7 +882,6 @@ export function TargetCalculatorSubtab() {
               </h2>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 Propunerea se calculeaza si se salveaza ca draft comun pentru magazinele cu vanzari in ultima luna disponibila anterior targetului.
-                Daca referinta curenta este partiala, vanzarile utilizate sunt forecastate din importul disponibil.
               </p>
             </div>
             <button
@@ -895,7 +894,7 @@ export function TargetCalculatorSubtab() {
             </button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <label className="space-y-1 text-xs text-slate-500">
               Luna target
               <input className={`w-full ${inputCls}`} type="month" value={targetMonth} onChange={(event) => setTargetMonth(event.target.value)} />
@@ -907,10 +906,6 @@ export function TargetCalculatorSubtab() {
             <label className="space-y-1 text-xs text-slate-500">
               Prag minim (RON)
               <input className={`w-full ${inputCls}`} type="number" min="0" value={minFloor} onChange={(event) => setMinFloor(event.target.value)} />
-            </label>
-            <label className="space-y-1 text-xs text-slate-500">
-              Floor vs luna anterioara (%)
-              <input className={`w-full ${inputCls}`} type="number" min="0" max="200" step="0.1" value={floorPct} onChange={(event) => setFloorPct(event.target.value)} />
             </label>
             <div className="space-y-1 text-xs text-slate-500">
               Sezonalitate
@@ -966,7 +961,7 @@ export function TargetCalculatorSubtab() {
             {logicOpen && (
               <div className="border-t border-slate-200 px-3 py-3 text-xs leading-5 text-slate-600 dark:border-slate-700 dark:text-slate-300">
                 <p>
-                  Calculatorul porneste de la forecastul lunii curente si il transforma intr-o estimare pentru luna target cu sezonalitate, trend, floor si cap.
+                  Calculatorul porneste de la forecastul lunii curente si il transforma intr-o estimare pentru luna target cu sezonalitate, trend, prag minim si cap.
                 </p>
                 <p className="mt-2 font-semibold text-slate-800 dark:text-slate-100">
                   Estimare bruta = Forecast luna curenta x Factor sezonier folosit x Ajustare trend.
@@ -978,7 +973,7 @@ export function TargetCalculatorSubtab() {
                   In modul Anul trecut se compara luna target cu luna baza din Y-1. In modul Multi-year se folosesc pana la 3 ani, cu pondere mai mare pentru anii recenti; anii fara date suficiente sunt sariti automat.
                 </p>
                 <p className="mt-2">
-                  Propunerea finala distribuie targetul total top-down proportional cu estimarile brute, apoi aplica pragul minim, floor/cap fata de luna anterioara si rotunjirea. Valoarea Final manager ramane decizia editabila si trebuie sa insumeze targetul total la finalizare.
+                  Daca luna curenta este partiala, vanzarile sunt forecastate din importul disponibil si folosite ca baza curenta. Propunerea finala distribuie targetul total top-down proportional cu estimarile brute, apoi aplica pragul minim, cap-ul operational si rotunjirea. Valoarea Final manager ramane decizia editabila si trebuie sa insumeze targetul total la finalizare.
                 </p>
               </div>
             )}
@@ -1167,11 +1162,6 @@ export function TargetCalculatorSubtab() {
               <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                 Baza istorica {regionalFilter === 'all' ? '' : `- ${regionalFilter}`}
               </h3>
-              {sourceChart.some((period) => period.isForecast) && (
-                <p className="mt-1 text-[11px] text-indigo-600 dark:text-indigo-300">
-                  Forecast = valoare proiectata din importul partial si folosita in calcul.
-                </p>
-              )}
               <div className="mt-3 space-y-2 md:hidden">
                 {sourceChart.map((period) => (
                   <div key={period.month} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/60">
@@ -1454,13 +1444,13 @@ export function TargetCalculatorSubtab() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-[1680px] w-full text-xs">
+              <table className="min-w-[1240px] w-full text-[11px]">
                 <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
                   <tr>
-                    <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Locatie</th>
-                    <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Manager</th>
+                    <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold align-bottom">Locatie</th>
+                    <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold align-bottom">Mgr</th>
                     {displaySourceMonths.map((period) => (
-                      <th key={period.month} colSpan={shouldShowHistoricalTarget(period) ? 2 : 1} className={`border-b px-3 py-2 text-center font-semibold ${
+                      <th key={period.month} colSpan={shouldShowHistoricalTarget(period) ? 2 : 1} className={`border-b px-2 py-1.5 text-center font-semibold ${
                         isPreviousYearPeriod(period.role)
                           ? 'border-indigo-200 bg-indigo-100/80 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/35 dark:text-indigo-300'
                           : 'border-slate-200 dark:border-slate-700'
@@ -1470,31 +1460,31 @@ export function TargetCalculatorSubtab() {
                         {forecastMonths.has(period.month) && <p className="text-[9px] uppercase tracking-wide text-sky-600 dark:text-sky-300">Forecast</p>}
                       </th>
                     ))}
-                    <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Sezonalitate</th>
-                    <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Calculat</th>
-                    <th rowSpan={2} className="border-x border-amber-200 bg-amber-100/80 px-3 py-2 text-right font-semibold text-amber-800 align-bottom dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                    <th rowSpan={2} className="px-2 py-1.5 text-right font-semibold align-bottom">Sez.</th>
+                    <th rowSpan={2} className="px-2 py-1.5 text-right font-semibold align-bottom">Calc.</th>
+                    <th rowSpan={2} className="border-x border-amber-200 bg-amber-100/80 px-2 py-1.5 text-right font-semibold text-amber-800 align-bottom dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                       <span className="flex items-center justify-end gap-1">
                         <PencilLine size={12} />
-                        Final manager
+                        Final
                       </span>
                       <span className="mt-1 block text-[9px] uppercase tracking-wide">
                         {scenario.status === 'draft' ? 'De completat' : 'Finalizat'}
                       </span>
                     </th>
-                    <th rowSpan={2} className="px-3 py-2 text-right font-semibold align-bottom">Delta</th>
-                    <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Observatii</th>
+                    <th rowSpan={2} className="px-2 py-1.5 text-right font-semibold align-bottom">Delta</th>
+                    <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold align-bottom">Obs.</th>
                   </tr>
                   <tr>
                     {displaySourceMonths.map((period) => (
                       <Fragment key={period.month}>
                         {shouldShowHistoricalTarget(period) && (
-                          <th className={`px-3 py-2 text-right font-medium ${
+                          <th className={`px-2 py-1.5 text-right font-medium ${
                             isPreviousYearPeriod(period.role)
                               ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
                               : 'text-slate-400'
                           }`}>Target</th>
                         )}
-                        <th className={`px-3 py-2 text-right font-medium ${
+                        <th className={`px-2 py-1.5 text-right font-medium ${
                           isPreviousYearPeriod(period.role)
                             ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
                             : 'text-slate-400'
@@ -1510,23 +1500,23 @@ export function TargetCalculatorSubtab() {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredRows.map((row) => (
                     <tr key={row.site_code}>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-1.5">
                         <button
                           onClick={() => setDetailSiteCode(row.site_code)}
-                          className="text-left font-medium text-slate-800 underline decoration-dotted underline-offset-4 hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
+                          className="text-left font-medium leading-tight text-slate-800 underline decoration-dotted underline-offset-4 hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
                         >
                           {row.locatie}
                         </button>
-                        <p className="text-[10px] text-slate-400">{row.site_code} · {row.firma}</p>
+                        <p className="text-[9px] leading-tight text-slate-400">{row.site_code} · {row.firma}</p>
                       </td>
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.regional}</td>
+                      <td className="px-2 py-1.5 leading-tight text-slate-600 dark:text-slate-300">{row.regional}</td>
                       {displaySourceMonths.map((source) => {
                         const period = row.history.find((history) => history.month === source.month);
                         const showTarget = shouldShowHistoricalTarget(source);
                         return (
                           <Fragment key={source.month}>
                             {showTarget && (
-                              <td className={`px-3 py-2 text-right tabular-nums ${
+                              <td className={`px-2 py-1.5 text-right tabular-nums ${
                                 isPreviousYearPeriod(source.role)
                                   ? 'bg-indigo-50/70 font-medium text-indigo-700 dark:bg-indigo-900/15 dark:text-indigo-300'
                                   : 'text-slate-500 dark:text-slate-400'
@@ -1534,7 +1524,7 @@ export function TargetCalculatorSubtab() {
                                 {formatCurrency(period?.target ?? 0)}
                               </td>
                             )}
-                            <td className={`px-3 py-2 text-right tabular-nums ${
+                            <td className={`px-2 py-1.5 text-right tabular-nums ${
                               isPreviousYearPeriod(source.role)
                                 ? 'bg-indigo-50/70 font-medium text-indigo-800 dark:bg-indigo-900/15 dark:text-indigo-200'
                                 : 'text-slate-700 dark:text-slate-200'
@@ -1554,12 +1544,12 @@ export function TargetCalculatorSubtab() {
                           </Fragment>
                         );
                       })}
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
                         <p className="font-semibold text-slate-800 dark:text-slate-100">{formatFactor(row.calculation_details.seasonality?.used_factor)}</p>
-                        <p className="text-[10px] text-slate-400">
+                        <p className="text-[9px] text-slate-400">
                           LY {formatFactor(row.calculation_details.seasonality?.last_year_store_factor)} · MY {formatFactor(row.calculation_details.seasonality?.multiyear_store_factor)}
                         </p>
-                        <p className="text-[10px] text-slate-400">
+                        <p className="text-[9px] text-slate-400">
                           Trend {formatFactor(row.calculation_details.trend?.used_adjustment)}
                         </p>
                         {(row.calculation_details.flags ?? []).length > 0 && (
@@ -1572,21 +1562,21 @@ export function TargetCalculatorSubtab() {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">
+                      <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">
                         {formatCurrency(row.proposed_target)}
                       </td>
-                      <td className="border-x border-amber-100 bg-amber-50/50 px-3 py-2 text-right dark:border-amber-900 dark:bg-amber-950/10">
+                      <td className="border-x border-amber-100 bg-amber-50/50 px-2 py-1.5 text-right dark:border-amber-900 dark:bg-amber-950/10">
                         <input
                           type="number"
                           min="0"
                           disabled={scenario.status === 'finalized'}
-                          className={`${finalInputCls} w-32 text-right tabular-nums disabled:opacity-70`}
+                          className={`${compactFinalInputCls} w-24 text-right tabular-nums disabled:opacity-70`}
                           value={row.final_target ?? ''}
                           placeholder="Completeaza"
                           onChange={(event) => updateRow(row.site_code, 'final_target', event.target.value === '' ? null : Number(event.target.value))}
                         />
                       </td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
                         row.final_target == null
                           ? 'text-amber-600'
                           : row.final_target - row.proposed_target > 0.01
@@ -1597,10 +1587,10 @@ export function TargetCalculatorSubtab() {
                       }`}>
                         {row.final_target == null ? 'Necompletat' : formatCurrency(row.final_target - row.proposed_target)}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-1.5">
                         <input
                           disabled={scenario.status === 'finalized'}
-                          className={`${inputCls} w-44 disabled:opacity-70`}
+                          className={`${compactInputCls} w-32 disabled:opacity-70`}
                           placeholder="Optional"
                           value={row.note ?? ''}
                           onChange={(event) => updateRow(row.site_code, 'note', event.target.value)}
