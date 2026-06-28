@@ -563,6 +563,12 @@ class TargetCalculatorService:
             elif usable_store_years <= 1 and seasonality_years > 1:
                 weights = WEAK_SEASONALITY_WEIGHTS
                 flags.append("LOW_HISTORY")
+            elif (
+                seasonality_years > 1
+                and any(item["year_offset"] == 1 and item["ratio"] is None for item in store_years)
+            ):
+                weights = WEAK_SEASONALITY_WEIGHTS
+                flags.append("LOW_RECENT_HISTORY")
             if store_ratios and (min(store_ratios) < Decimal("0.50") or max(store_ratios) > Decimal("2.00")):
                 weights = WEAK_SEASONALITY_WEIGHTS
                 flags.append("EXTREME_SEASONALITY")

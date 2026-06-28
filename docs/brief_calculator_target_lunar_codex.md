@@ -10,6 +10,11 @@ Implementarea aleasă în aplicație este `seasonal_blended_multiyear_v1`.
   blended magazin / manager curent / rețea.
 - Multi-year folosește până la 3 ani, cu ponderi mai mari pentru anul recent;
   anii fără date suficiente sunt săriți automat.
+- Lunile istorice sunt citite din `reporting_agent_month`, cu fallback pe
+  `historical_monthly_sales` pentru perioadele importate vechi; reporting-ul
+  curent are prioritate ca să nu se dubleze aceeași lună/magazin.
+- Dacă lipsește Y-1 pentru magazin, dar există Y-2/Y-3, calculatorul marchează
+  `LOW_RECENT_HISTORY` și mută ponderea spre manager/rețea.
 - Tabelul și exportul arată factorul folosit, factorul last-year, factorul
   multi-year, trendul, floor/cap și flag-urile principale.
 - Rezumatul pe manager arată creșterea propunerii față de forecastul lunii

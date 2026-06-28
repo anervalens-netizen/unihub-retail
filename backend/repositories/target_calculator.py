@@ -87,6 +87,24 @@ class TargetCalculatorRepository:
                     WHERE import_month = ANY($1::text[])
                       AND site_code = ANY($2::text[])
                     GROUP BY import_month, site_code
+                ),
+                historical_sales AS (
+                    SELECT hms.import_month, hms.site_code, SUM(hms.total_value) AS realized
+                    FROM historical_monthly_sales hms
+                    WHERE hms.import_month = ANY($1::text[])
+                      AND hms.site_code = ANY($2::text[])
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM sales s
+                          WHERE s.import_month = hms.import_month
+                            AND s.site_code = hms.site_code
+                      )
+                    GROUP BY hms.import_month, hms.site_code
+                ),
+                combined_sales AS (
+                    SELECT import_month, site_code, realized FROM sales
+                    UNION ALL
+                    SELECT import_month, site_code, realized FROM historical_sales
                 )
                 SELECT
                     m.import_month,
@@ -97,7 +115,7 @@ class TargetCalculatorRepository:
                 CROSS JOIN requested_stores st
                 LEFT JOIN store_targets t
                   ON t.import_month = m.import_month AND t.site_code = st.site_code
-                LEFT JOIN sales s
+                LEFT JOIN combined_sales s
                   ON s.import_month = m.import_month AND s.site_code = st.site_code
                 ORDER BY m.import_month, st.site_code
                 """,

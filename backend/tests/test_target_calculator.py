@@ -240,6 +240,21 @@ def make_repository_connection() -> tuple[TargetCalculatorRepository, AsyncMock]
 
 
 @pytest.mark.asyncio
+async def test_source_metrics_falls_back_to_historical_monthly_without_duplicates() -> None:
+    repo, conn = make_repository_connection()
+    conn.fetch = AsyncMock(return_value=[])
+
+    await repo.get_source_metrics(["SITE01"], ["2023-07", "2025-07"])
+
+    sql = conn.fetch.await_args.args[0]
+    assert "historical_monthly_sales hms" in sql
+    assert "NOT EXISTS" in sql
+    assert "combined_sales" in sql
+    assert conn.fetch.await_args.args[1] == ["2023-07", "2025-07"]
+    assert conn.fetch.await_args.args[2] == ["SITE01"]
+
+
+@pytest.mark.asyncio
 async def test_recalculation_replaces_the_single_draft_for_target_month() -> None:
     repo, conn = make_repository_connection()
     conn.fetchrow.return_value = {

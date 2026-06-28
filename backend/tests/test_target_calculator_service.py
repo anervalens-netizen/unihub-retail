@@ -328,6 +328,65 @@ async def test_calculate_flags_extreme_seasonality_and_capped_adjustments(
 
 
 @pytest.mark.asyncio
+async def test_calculate_weakens_store_weight_when_recent_year_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {
+            "site_code": "SITE01",
+            "locatie": "Magazin 1",
+            "firma": "Mobiup",
+            "regional": "Regional",
+            "asm": "ASM 1",
+        },
+    ]
+    realized_by_month = {
+        "2023-05": Decimal("100000"),
+        "2023-06": Decimal("110000"),
+        "2024-05": Decimal("100000"),
+        "2024-06": Decimal("120000"),
+        "2025-05": Decimal("0"),
+        "2025-06": Decimal("0"),
+        "2026-05": Decimal("100000"),
+    }
+    repo.get_source_metrics.return_value = [
+        {
+            "site_code": "SITE01",
+            "import_month": month,
+            "target": Decimal("0"),
+            "realized": realized_by_month[month],
+        }
+        for month in realized_by_month
+    ]
+    monkeypatch.setattr(
+        target_module,
+        "get_forecast_factor",
+        AsyncMock(return_value=Decimal("1")),
+    )
+    repo.save_draft_scenario.return_value = 9
+    service.get_scenario_detail = AsyncMock(return_value={"id": 9})  # type: ignore[method-assign]
+
+    await service.calculate(
+        {
+            "target_month": "2026-06",
+            "total_target": 100000,
+            "min_floor": 10000,
+            "previous_month_floor_pct": 0,
+            "expected_revision": 2,
+        }
+    )
+
+    saved_rows = repo.save_draft_scenario.await_args.args[1]
+    details = saved_rows[0]["calculation_details"]
+    assert "LOW_RECENT_HISTORY" in details["flags"]
+    assert details["seasonality"]["weights"] == {"store": 0.3, "zone": 0.4, "network": 0.3}
+    assert details["seasonality"]["store_years"][0]["ratio"] is None
+    assert details["seasonality"]["store_factor"] == 1.17
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("cohort_month", "cohort", "total_target", "expected_detail"),
     [
