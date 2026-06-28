@@ -328,6 +328,53 @@ async def test_calculate_flags_extreme_seasonality_and_capped_adjustments(
 
 
 @pytest.mark.asyncio
+async def test_calculate_rejects_budget_above_operational_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {
+            "site_code": "SITE01",
+            "locatie": "Magazin 1",
+            "firma": "Mobiup",
+            "regional": "Regional",
+            "asm": "ASM 1",
+        },
+    ]
+    repo.get_source_metrics.return_value = [
+        {
+            "site_code": "SITE01",
+            "import_month": month,
+            "target": Decimal("0"),
+            "realized": Decimal("100000"),
+        }
+        for month in ("2025-05", "2025-06", "2026-05")
+    ]
+    monkeypatch.setattr(
+        target_module,
+        "get_forecast_factor",
+        AsyncMock(return_value=Decimal("1")),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await service.calculate(
+            {
+                "target_month": "2026-06",
+                "total_target": 500000,
+                "min_floor": 10000,
+                "previous_month_floor_pct": 0,
+                "previous_month_cap_pct": 1.7,
+                "expected_revision": 2,
+            }
+        )
+
+    assert exc.value.status_code == 400
+    assert "depaseste cap-ul maxim calculat" in exc.value.detail
+    repo.save_draft_scenario.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_calculate_weakens_store_weight_when_recent_year_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -448,7 +495,7 @@ async def test_calculate_maps_repository_conflicts(
             "site_code": "SITE01",
             "import_month": month,
             "target": Decimal("0"),
-            "realized": Decimal("0"),
+            "realized": Decimal("100000"),
         }
         for month in ("2025-05", "2025-06", "2026-05")
     ]

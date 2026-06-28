@@ -15,6 +15,9 @@ Implementarea aleasă în aplicație este `seasonal_blended_multiyear_v1`.
   curent are prioritate ca să nu se dubleze aceeași lună/magazin.
 - Dacă lipsește Y-1 pentru magazin, dar există Y-2/Y-3, calculatorul marchează
   `LOW_RECENT_HISTORY` și mută ponderea spre manager/rețea.
+- Dacă targetul total introdus depășește suma cap-urilor operaționale calculate,
+  calculul este respins cu mesaj explicit; nu se mai salvează drafturi în care
+  propunerea totală rămâne sub buget.
 - Tabelul și exportul arată factorul folosit, factorul last-year, factorul
   multi-year, trendul, floor/cap și flag-urile principale.
 - Rezumatul pe manager arată creșterea propunerii față de forecastul lunii

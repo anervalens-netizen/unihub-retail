@@ -668,6 +668,16 @@ class TargetCalculatorService:
             for row in calculated_rows:
                 row["calculated_weight"] = row["calculated_weight"] / raw_total
 
+        cap_total = sum((row["cap_target"] for row in calculated_rows), Decimal("0"))
+        if cap_total < total_target:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Targetul total {total_target:,.0f} RON depaseste cap-ul maxim calculat "
+                    f"{cap_total:,.0f} RON. Verifica valoarea bugetului sau mareste cap-ul operational."
+                ).replace(",", "."),
+            )
+
         calculated_rows, allocation_warnings = allocate_with_bounds(calculated_rows, total_target)
         warnings.extend(allocation_warnings)
         for row in calculated_rows:

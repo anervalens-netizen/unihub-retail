@@ -1535,11 +1535,6 @@ export function TargetCalculatorSubtab() {
                                   {period?.is_forecast ? 'Forecast ' : ''}{period?.attainment_pct == null ? '-' : formatPercent(period.attainment_pct)}
                                 </p>
                               )}
-                              {period?.is_forecast && (
-                                <p className="text-[10px] text-slate-400">
-                                  Real: {formatCurrency(period.actual_realized ?? period.realized)}
-                                </p>
-                              )}
                             </td>
                           </Fragment>
                         );
