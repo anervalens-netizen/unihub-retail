@@ -38,6 +38,7 @@ import {
   type TargetRegionalSummary,
   type TargetScenario,
   type TargetScenarioRow,
+  type TargetSourceMonth,
   type TargetStoreDetail,
 } from '../api/targetCalculator';
 import { formatCurrency, formatPercent } from '../lib/formatters';
@@ -54,6 +55,16 @@ function isPreviousYearPeriod(role: string): boolean {
   return role === 'previous_year_reference'
     || role === 'year_over_year'
     || role.startsWith('seasonality_');
+}
+
+const HIDDEN_DISPLAY_SOURCE_MONTHS = new Set(['2023-06', '2023-07']);
+
+function shouldHideSourcePeriod(period: TargetSourceMonth): boolean {
+  return HIDDEN_DISPLAY_SOURCE_MONTHS.has(period.month);
+}
+
+function shouldShowHistoricalTarget(period: { month: string }): boolean {
+  return !period.month.startsWith('2024-');
 }
 
 function sum(values: number[]): number {
@@ -434,6 +445,7 @@ export function TargetCalculatorSubtab() {
   const [minFloor, setMinFloor] = useState('');
   const [floorPct, setFloorPct] = useState('');
   const [seasonalityMode, setSeasonalityMode] = useState<'multi' | 'single'>('multi');
+  const [logicOpen, setLogicOpen] = useState(false);
   const [selectedLocationCodes, setSelectedLocationCodes] = useState<string[]>([]);
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [detailSiteCode, setDetailSiteCode] = useState<string | null>(null);
@@ -526,19 +538,25 @@ export function TargetCalculatorSubtab() {
     });
     return months;
   }, [scenario]);
+  const displaySourceMonths = useMemo(
+    () => scenario?.source_months.filter((period) => !shouldHideSourcePeriod(period)) ?? [],
+    [scenario],
+  );
   const sourceChart = useMemo(() => {
     if (!scenario) return [];
-    return scenario.source_months.map((source) => {
+    return displaySourceMonths.map((source) => {
       const values = filteredRows.map((row) => row.history.find((history) => history.month === source.month));
+      const showTarget = shouldShowHistoricalTarget(source);
       return {
         month: monthLabel(source.month),
-        target: sum(values.map((value) => value?.target ?? 0)),
+        target: showTarget ? sum(values.map((value) => value?.target ?? 0)) : 0,
         realized: sum(values.map((value) => value?.realized ?? 0)),
         actualRealized: sum(values.map((value) => value?.actual_realized ?? value?.realized ?? 0)),
         isForecast: values.some((value) => value?.is_forecast),
+        showTarget,
       };
     });
-  }, [scenario, filteredRows]);
+  }, [scenario, displaySourceMonths, filteredRows]);
   const regionalChart = useMemo(
     () => scenario?.regional_summary.filter((item) => regionalFilter === 'all' || item.regional === regionalFilter) ?? [],
     [scenario, regionalFilter],
@@ -547,6 +565,13 @@ export function TargetCalculatorSubtab() {
     const years = Number(scenario?.calculation_params?.seasonality_years ?? 1);
     return years > 1 ? `Multi-year ${years} ani` : 'Sezonalitate anul trecut';
   }, [scenario]);
+  const displayWarnings = useMemo(
+    () => scenario?.warnings.filter((warning) => {
+      if (warning.startsWith('Formula foloseste sezonalitate')) return false;
+      return !Array.from(HIDDEN_DISPLAY_SOURCE_MONTHS).some((month) => warning.includes(month));
+    }) ?? [],
+    [scenario],
+  );
 
   useEffect(() => {
     const available = new Set(locationOptions.map((row) => row.site_code));
@@ -925,6 +950,40 @@ export function TargetCalculatorSubtab() {
             </div>
           </div>
 
+          <div className="rounded-xl border border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/50">
+            <button
+              type="button"
+              onClick={() => setLogicOpen((open) => !open)}
+              aria-expanded={logicOpen}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
+            >
+              <span className="flex items-center gap-2">
+                <Calculator size={14} className="text-indigo-500" />
+                Logica de calcul si formula
+              </span>
+              <ChevronDown size={14} className={`shrink-0 transition-transform ${logicOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {logicOpen && (
+              <div className="border-t border-slate-200 px-3 py-3 text-xs leading-5 text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                <p>
+                  Calculatorul porneste de la forecastul lunii curente si il transforma intr-o estimare pentru luna target cu sezonalitate, trend, floor si cap.
+                </p>
+                <p className="mt-2 font-semibold text-slate-800 dark:text-slate-100">
+                  Estimare bruta = Forecast luna curenta x Factor sezonier folosit x Ajustare trend.
+                </p>
+                <p className="mt-2">
+                  Factor sezonier folosit = factor magazin x pondere magazin + factor manager x pondere manager + factor retea x pondere retea. Un magazin stabil foloseste 50% / 30% / 20%; istoricul slab muta greutatea spre manager si retea.
+                </p>
+                <p className="mt-2">
+                  In modul Anul trecut se compara luna target cu luna baza din Y-1. In modul Multi-year se folosesc pana la 3 ani, cu pondere mai mare pentru anii recenti; anii fara date suficiente sunt sariti automat.
+                </p>
+                <p className="mt-2">
+                  Propunerea finala distribuie targetul total top-down proportional cu estimarile brute, apoi aplica pragul minim, floor/cap fata de luna anterioara si rotunjirea. Valoarea Final manager ramane decizia editabila si trebuie sa insumeze targetul total la finalizare.
+                </p>
+              </div>
+            )}
+          </div>
+
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Ultima luna cu vanzari: <strong>{monthLabel(context.latest_sales_month)}</strong>.
             Pentru noul target, cohorta curenta contine <strong>{context.active_store_count}</strong> magazine active.
@@ -963,9 +1022,9 @@ export function TargetCalculatorSubtab() {
 
       {scenario && (
         <>
-          {scenario.warnings.length > 0 && (
+          {displayWarnings.length > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300">
-              {scenario.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+              {displayWarnings.map((warning) => <p key={warning}>{warning}</p>)}
             </div>
           )}
 
@@ -1124,11 +1183,13 @@ export function TargetCalculatorSubtab() {
                         </span>
                       )}
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                      <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800">
-                        <p className="uppercase tracking-wide text-slate-400">Target istoric</p>
-                        <p className="mt-1 font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(period.target)}</p>
-                      </div>
+                    <div className={`mt-3 grid gap-2 text-[11px] ${period.showTarget ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      {period.showTarget && (
+                        <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800">
+                          <p className="uppercase tracking-wide text-slate-400">Target istoric</p>
+                          <p className="mt-1 font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatCurrency(period.target)}</p>
+                        </div>
+                      )}
                       <div className="rounded-lg bg-sky-50 p-2 dark:bg-sky-900/20">
                         <p className="uppercase tracking-wide text-sky-500">{period.isForecast ? 'Forecast folosit' : 'Realizat'}</p>
                         <p className="mt-1 font-semibold tabular-nums text-sky-700 dark:text-sky-300">{formatCurrency(period.realized)}</p>
@@ -1149,7 +1210,9 @@ export function TargetCalculatorSubtab() {
                       <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fill: '#94a3b8', fontSize: 10 }} />
                       <Tooltip formatter={(value: number) => formatCurrency(value)} />
                       <Legend />
-                      <Bar dataKey="target" name="Target istoric" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                      {sourceChart.some((period) => period.showTarget) && (
+                        <Bar dataKey="target" name="Target istoric" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                      )}
                       <Bar dataKey="realized" name="Realizat / Forecast folosit" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -1327,17 +1390,21 @@ export function TargetCalculatorSubtab() {
                     </label>
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-                    {row.history.map((period) => (
-                      <div key={period.month} className={`rounded-xl p-2 ${
-                        isPreviousYearPeriod(period.role)
-                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
-                          : 'bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300'
-                      }`}>
-                        <p className="font-semibold">{monthLabel(period.month)}</p>
-                        <p>{formatCurrency(period.target)}</p>
-                        <p className="text-slate-400">{formatCurrency(period.realized)}</p>
-                      </div>
-                    ))}
+                    {displaySourceMonths.map((source) => {
+                      const period = row.history.find((history) => history.month === source.month);
+                      const showTarget = shouldShowHistoricalTarget(source);
+                      return (
+                        <div key={source.month} className={`rounded-xl p-2 ${
+                          isPreviousYearPeriod(source.role)
+                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
+                            : 'bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300'
+                        }`}>
+                          <p className="font-semibold">{monthLabel(source.month)}</p>
+                          {showTarget && <p>{formatCurrency(period?.target ?? 0)}</p>}
+                          <p className="text-slate-400">{formatCurrency(period?.realized ?? 0)}</p>
+                        </div>
+                      );
+                    })}
                   </div>
                   <div className="mt-2 rounded-xl bg-slate-50 p-2 text-[11px] text-slate-500 dark:bg-slate-800/60 dark:text-slate-300">
                     <div className="flex items-center justify-between gap-2">
@@ -1392,8 +1459,8 @@ export function TargetCalculatorSubtab() {
                   <tr>
                     <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Locatie</th>
                     <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Manager</th>
-                    {scenario.source_months.map((period) => (
-                      <th key={period.month} colSpan={2} className={`border-b px-3 py-2 text-center font-semibold ${
+                    {displaySourceMonths.map((period) => (
+                      <th key={period.month} colSpan={shouldShowHistoricalTarget(period) ? 2 : 1} className={`border-b px-3 py-2 text-center font-semibold ${
                         isPreviousYearPeriod(period.role)
                           ? 'border-indigo-200 bg-indigo-100/80 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/35 dark:text-indigo-300'
                           : 'border-slate-200 dark:border-slate-700'
@@ -1418,13 +1485,15 @@ export function TargetCalculatorSubtab() {
                     <th rowSpan={2} className="px-3 py-2 text-left font-semibold align-bottom">Observatii</th>
                   </tr>
                   <tr>
-                    {scenario.source_months.map((period) => (
+                    {displaySourceMonths.map((period) => (
                       <Fragment key={period.month}>
-                        <th className={`px-3 py-2 text-right font-medium ${
-                          isPreviousYearPeriod(period.role)
-                            ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
-                            : 'text-slate-400'
-                        }`}>Target</th>
+                        {shouldShowHistoricalTarget(period) && (
+                          <th className={`px-3 py-2 text-right font-medium ${
+                            isPreviousYearPeriod(period.role)
+                              ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
+                              : 'text-slate-400'
+                          }`}>Target</th>
+                        )}
                         <th className={`px-3 py-2 text-right font-medium ${
                           isPreviousYearPeriod(period.role)
                             ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
@@ -1451,32 +1520,40 @@ export function TargetCalculatorSubtab() {
                         <p className="text-[10px] text-slate-400">{row.site_code} · {row.firma}</p>
                       </td>
                       <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.regional}</td>
-                      {row.history.map((period) => (
-                        <Fragment key={period.month}>
-                          <td className={`px-3 py-2 text-right tabular-nums ${
-                            isPreviousYearPeriod(period.role)
-                              ? 'bg-indigo-50/70 font-medium text-indigo-700 dark:bg-indigo-900/15 dark:text-indigo-300'
-                              : 'text-slate-500 dark:text-slate-400'
-                          }`}>
-                            {formatCurrency(period.target)}
-                          </td>
-                          <td className={`px-3 py-2 text-right tabular-nums ${
-                            isPreviousYearPeriod(period.role)
-                              ? 'bg-indigo-50/70 font-medium text-indigo-800 dark:bg-indigo-900/15 dark:text-indigo-200'
-                              : 'text-slate-700 dark:text-slate-200'
-                          }`}>
-                            {formatCurrency(period.realized)}
-                            <p className="text-[10px] text-slate-400">
-                              {period.is_forecast ? 'Forecast ' : ''}{formatPercent(period.attainment_pct)}
-                            </p>
-                            {period.is_forecast && (
-                              <p className="text-[10px] text-slate-400">
-                                Real: {formatCurrency(period.actual_realized ?? period.realized)}
-                              </p>
+                      {displaySourceMonths.map((source) => {
+                        const period = row.history.find((history) => history.month === source.month);
+                        const showTarget = shouldShowHistoricalTarget(source);
+                        return (
+                          <Fragment key={source.month}>
+                            {showTarget && (
+                              <td className={`px-3 py-2 text-right tabular-nums ${
+                                isPreviousYearPeriod(source.role)
+                                  ? 'bg-indigo-50/70 font-medium text-indigo-700 dark:bg-indigo-900/15 dark:text-indigo-300'
+                                  : 'text-slate-500 dark:text-slate-400'
+                              }`}>
+                                {formatCurrency(period?.target ?? 0)}
+                              </td>
                             )}
-                          </td>
-                        </Fragment>
-                      ))}
+                            <td className={`px-3 py-2 text-right tabular-nums ${
+                              isPreviousYearPeriod(source.role)
+                                ? 'bg-indigo-50/70 font-medium text-indigo-800 dark:bg-indigo-900/15 dark:text-indigo-200'
+                                : 'text-slate-700 dark:text-slate-200'
+                            }`}>
+                              {formatCurrency(period?.realized ?? 0)}
+                              {(showTarget || period?.is_forecast) && (
+                                <p className="text-[10px] text-slate-400">
+                                  {period?.is_forecast ? 'Forecast ' : ''}{period?.attainment_pct == null ? '-' : formatPercent(period.attainment_pct)}
+                                </p>
+                              )}
+                              {period?.is_forecast && (
+                                <p className="text-[10px] text-slate-400">
+                                  Real: {formatCurrency(period.actual_realized ?? period.realized)}
+                                </p>
+                              )}
+                            </td>
+                          </Fragment>
+                        );
+                      })}
                       <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                         <p className="font-semibold text-slate-800 dark:text-slate-100">{formatFactor(row.calculation_details.seasonality?.used_factor)}</p>
                         <p className="text-[10px] text-slate-400">
