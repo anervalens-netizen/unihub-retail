@@ -124,7 +124,7 @@ async def get_monthly_history(
 
 @router.get("/history-year", response_model=YearHistoryResponse)
 async def get_history_by_year(
-    year: int = Query(..., ge=2022, le=2030),
+    year: int = Query(..., ge=2018, le=2030),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,

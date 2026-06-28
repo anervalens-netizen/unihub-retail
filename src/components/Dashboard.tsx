@@ -70,6 +70,8 @@ import {
 import { DEFAULT_PROMO_INCENTIVE } from './dashboard/dashboardDefaults';
 import { useDashboardData, type AggregatedDashboardDetails } from './dashboard/useDashboardData';
 
+const HISTORY_START_YEAR = 2018;
+
 interface DashboardProps {
   currentMonth: string;
   months: string[];
@@ -686,7 +688,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
   const availableYears = useMemo(() => {
     const cy = parseInt(currentMonth.slice(0, 4));
-    return Array.from({ length: cy - 2022 + 1 }, (_, i) => 2022 + i);
+    return Array.from({ length: cy - HISTORY_START_YEAR + 1 }, (_, i) => HISTORY_START_YEAR + i);
   }, [currentMonth]);
 
   const promoSummary = useMemo(() => {
