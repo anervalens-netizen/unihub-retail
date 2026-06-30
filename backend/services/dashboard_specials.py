@@ -3,12 +3,12 @@ from __future__ import annotations
 import calendar
 import json
 import os
-import re
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
 from models import DashboardSpecialCard, DashboardSpecialCardMetric
+from services.phone_models import extract_phone_model_keys
 from services.product_lists import (
     get_data_dir,
     get_repo_root,
@@ -294,36 +294,6 @@ def _product_code_models(rows: list[dict[str, str | None]]) -> dict[str, set[str
         if models:
             out[str(code)] = models
     return out
-
-
-def extract_phone_model_keys(item_name: str) -> set[str]:
-    """Extract normalized phone model keys from Romanian product names."""
-    normalized = (
-        re.sub(r"\s+", " ", str(item_name).upper())
-        .replace("–", "-")
-        .replace("—", "-")
-        .strip()
-    )
-    if " PENTRU " in normalized:
-        normalized = normalized.split(" PENTRU ", maxsplit=1)[1]
-    normalized = normalized.split(" - ", maxsplit=1)[0].strip()
-    if not normalized:
-        return set()
-
-    prefix_tokens: list[str] = []
-    for token in normalized.split():
-        if any(char.isdigit() for char in token):
-            break
-        prefix_tokens.append(token)
-    prefix = " ".join(prefix_tokens)
-    parts = [part.strip() for part in normalized.split("/") if part.strip()]
-    models: set[str] = set()
-    for part in parts or [normalized]:
-        candidate = part
-        if prefix and not candidate.startswith(prefix):
-            candidate = f"{prefix} {candidate}"
-        models.add(re.sub(r"[^A-Z0-9]+", " ", candidate).strip())
-    return {model for model in models if model}
 
 
 def _parse_single_incentive(

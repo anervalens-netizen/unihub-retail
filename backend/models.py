@@ -126,6 +126,18 @@ class PremiumGlassModelStat(BaseModel):
     regular_item_count: int = 0
 
 
+class PremiumGlassSurfaceStat(BaseModel):
+    surface_key: Literal["screen", "camera"]
+    surface_label: str
+    premium_qty: int = 0
+    regular_qty: int = 0
+    total_qty: int = 0
+    premium_sales: Decimal = Decimal(0)
+    regular_sales: Decimal = Decimal(0)
+    total_sales: Decimal = Decimal(0)
+    premium_qty_share_pct: Decimal | None = None
+
+
 class PremiumGlassStoreStat(BaseModel):
     site_code: str
     locatie: str
@@ -179,6 +191,7 @@ class PremiumGlassProductStat(BaseModel):
 class PremiumGlassAnalysis(BaseModel):
     summary: PremiumGlassSummary
     models: list[PremiumGlassModelStat] = Field(default_factory=list)
+    surfaces: list[PremiumGlassSurfaceStat] = Field(default_factory=list)
     managers: list[PremiumGlassManagerStat] = Field(default_factory=list)
     stores: list[PremiumGlassStoreStat] = Field(default_factory=list)
     agents: list[PremiumGlassAgentStat] = Field(default_factory=list)

@@ -128,10 +128,13 @@ provizorii Target 10p, Productivitate 25p, Bon2Acc 20p, Focus 20p, Folii
 Premium 10p si Valoare reper 15p.
 
 Folii Premium sunt calculate pe aceeasi baza ca in Focus: produse din categoria
-`Folii Sticla` cu `SAPPHIRE`, `CERAMIC` sau `CORNING`, raportate la totalul
-foliilor eligibile pentru aceleasi modele tinta din `v_premium_glass_item_models`.
-Indicatorul este materializat in tabela indexata `premium_glass_item_models`;
-view-urile `v_premium_glass_item_models` si `v_premium_glass_products` sunt doar
+`Folii Sticla`, raportate la totalul foliilor eligibile pentru aceleasi modele
+tinta din `v_premium_glass_item_models`. Pentru foliile de ecran, premium
+inseamna nume produs cu `SAPPHIRE`, `CERAMIC` sau `CORNING`. Pentru foliile de
+camera, premium vine din lista operationala `data/folii premium camera.xlsx`,
+coloana `Premium` (`Da`/`nu`), nu din regex. Indicatorul este materializat in
+tabela indexata `premium_glass_item_models`; view-urile
+`v_premium_glass_item_models` si `v_premium_glass_products` sunt doar
 compatibilitate de citire. Nu reintroduce calculul prin regex direct in
 request-uri, pentru ca produce timeout-uri pe filtre combinate manager+magazin.
 

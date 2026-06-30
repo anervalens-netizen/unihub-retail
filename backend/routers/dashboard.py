@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
@@ -82,6 +84,7 @@ async def get_premium_glass(
     asm: str | None = None,
     site_code: str | None = None,
     agent: str | None = None,
+    surface: Literal["all", "screen", "camera"] = Query("all"),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
@@ -93,6 +96,7 @@ async def get_premium_glass(
         asm,
         site_code,
         agent,
+        surface,
         current_scope,
         include_closed_stores,
     )

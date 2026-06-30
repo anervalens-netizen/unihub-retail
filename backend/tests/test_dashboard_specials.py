@@ -150,6 +150,9 @@ def test_extract_phone_model_keys_expands_slash_compatibility() -> None:
     assert extract_phone_model_keys(
         "SET FOLII CAMERA CELLARA SAPPHIRE PENTRU SAMSUNG GALAXY S26 5G/S26 PLUS 5G - NEGRU"
     ) == {"SAMSUNG GALAXY S26 5G", "SAMSUNG GALAXY S26 PLUS 5G"}
+    assert extract_phone_model_keys(
+        "SET FOLII CAMERA CELLARA PENTRU IPHONE 17 PRO/17 PRO MAX CU PIETRICELE - ARGINTIU"
+    ) == {"IPHONE 17 PRO", "IPHONE 17 PRO MAX"}
 
 
 def test_parse_incentive_definition_requires_month_and_file() -> None:

@@ -110,3 +110,73 @@ async def test_premium_glass_deduplicates_multi_model_lines_for_non_model_stats(
     products = {row.item_code: row for row in analysis.products}
     assert products["P1"].qty == 2
     assert products["P1"].model_labels == ["iPhone Pro", "iPhone Pro Max"]
+
+    surfaces = {row.surface_label: row for row in analysis.surfaces}
+    assert surfaces["Ecran"].total_qty == 6
+
+
+@pytest.mark.asyncio
+async def test_premium_glass_surface_stats_deduplicate_camera_multi_model_lines() -> None:
+    rows = [
+        {
+            "id": 1,
+            "item_code": "C1",
+            "item_name": "FOLIE CAMERA PREMIUM IPHONE 17 PRO/17 PRO MAX",
+            "site_code": "S1",
+            "locatie": "Store 1",
+            "firma": "MobiUp",
+            "manager": "Manager 1",
+            "agent": "Agent 1",
+            "is_premium": True,
+            "model_key": "iphone-17-pro",
+            "model_label": "iPhone 17 Pro",
+            "qty": 4,
+            "sales": Decimal("80"),
+        },
+        {
+            "id": 1,
+            "item_code": "C1",
+            "item_name": "FOLIE CAMERA PREMIUM IPHONE 17 PRO/17 PRO MAX",
+            "site_code": "S1",
+            "locatie": "Store 1",
+            "firma": "MobiUp",
+            "manager": "Manager 1",
+            "agent": "Agent 1",
+            "is_premium": True,
+            "model_key": "iphone-17-pro-max",
+            "model_label": "iPhone 17 Pro Max",
+            "qty": 4,
+            "sales": Decimal("80"),
+        },
+        {
+            "id": 2,
+            "item_code": "R1",
+            "item_name": "FOLIE PROTECTIE ECRAN IPHONE 17 PRO",
+            "site_code": "S1",
+            "locatie": "Store 1",
+            "firma": "MobiUp",
+            "manager": "Manager 1",
+            "agent": "Agent 2",
+            "is_premium": False,
+            "model_key": "iphone-17-pro",
+            "model_label": "iPhone 17 Pro",
+            "qty": 3,
+            "sales": Decimal("30"),
+        },
+    ]
+
+    analysis = await get_premium_glass_analysis(
+        FakeConn(rows, target_model_count=2),
+        "2026-06",
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+
+    surfaces = {row.surface_label: row for row in analysis.surfaces}
+    assert surfaces["Camera"].total_qty == 4
+    assert surfaces["Camera"].premium_qty == 4
+    assert surfaces["Ecran"].total_qty == 3
+    assert analysis.summary.total_qty == 7

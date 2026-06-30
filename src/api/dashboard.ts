@@ -3,6 +3,7 @@ import type {
   DashboardAllResponse,
   DashboardHistoryResponse,
   PremiumGlassAnalysis,
+  PremiumGlassSurfaceMode,
   YearHistoryResponse,
 } from './types';
 
@@ -15,6 +16,7 @@ export interface DashboardQuery {
   agent?: string;
   current_scope?: boolean;
   include_closed_stores?: boolean;
+  surface?: PremiumGlassSurfaceMode;
 }
 
 export async function getDashboardAll(query: DashboardQuery): Promise<DashboardAllResponse> {

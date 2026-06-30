@@ -43,6 +43,8 @@ import type {
   PremiumGlassManagerStat,
   PremiumGlassModelStat,
   PremiumGlassStoreStat,
+  PremiumGlassSurfaceStat,
+  PremiumGlassSurfaceMode,
   PromoTopAgent,
   PromoTopStore,
 } from '../api/types';
@@ -126,6 +128,7 @@ export function Campaigns({
   const [promoMonth, setPromoMonth] = useState(latestMonth);
   const [selectedPromotionKey, setSelectedPromotionKey] = useState('');
   const [selectedContestKey, setSelectedContestKey] = useState('');
+  const [premiumSurfaceMode, setPremiumSurfaceMode] = useState<PremiumGlassSurfaceMode>('all');
 
   useEffect(() => {
     const fallbackMonth = latestMonth || currentMonth;
@@ -166,7 +169,7 @@ export function Campaigns({
       activeSection,
       promoMonth,
       selectedPromotionKey,
-      promoQuery,
+      shouldLoadPremiumGlass ? { ...promoQuery, surface: premiumSurfaceMode } : promoQuery,
     ),
     enabled: Boolean(promoMonth) && shouldLoadCurrent,
     staleTime: CAMPAIGNS_STALE_MS,
@@ -198,6 +201,7 @@ export function Campaigns({
         requests.push(
           getPremiumGlassAnalysis({
             ...promoQuery,
+            surface: premiumSurfaceMode,
             current_scope: true,
             include_closed_stores: false,
           }).then((premiumResponse) => {
@@ -710,7 +714,11 @@ export function Campaigns({
           )}
         </>
       ) : activeSection === 'premium' ? (
-        <PremiumGlassFocusSection analysis={premiumGlass} />
+        <PremiumGlassFocusSection
+          analysis={premiumGlass}
+          surfaceMode={premiumSurfaceMode}
+          onSurfaceModeChange={setPremiumSurfaceMode}
+        />
       ) : (
         <>
           <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
@@ -830,24 +838,57 @@ export function Campaigns({
 
 const INCENTIVE_TIER_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
 
-function PremiumGlassFocusSection({ analysis }: { analysis: PremiumGlassAnalysis | null }) {
+const PREMIUM_SURFACE_OPTIONS: Array<{ value: PremiumGlassSurfaceMode; label: string }> = [
+  { value: 'all', label: 'Toate' },
+  { value: 'screen', label: 'Ecran' },
+  { value: 'camera', label: 'Camera' },
+];
+
+function PremiumGlassFocusSection({
+  analysis,
+  surfaceMode,
+  onSurfaceModeChange,
+}: {
+  analysis: PremiumGlassAnalysis | null;
+  surfaceMode: PremiumGlassSurfaceMode;
+  onSurfaceModeChange: (mode: PremiumGlassSurfaceMode) => void;
+}) {
   const summary = analysis?.summary;
-  const modelChartData = (analysis?.models ?? []).slice(0, 8).map((model) => ({
+  const modelChartData = (analysis?.models ?? []).map((model) => ({
     model: model.model_label.replace('Samsung ', 'S. '),
     Premium: model.premium_qty,
     Rest: model.regular_qty,
   }));
+  const modelChartHeight = Math.max(224, modelChartData.length * 30);
 
   return (
     <div className="space-y-3">
       <div className="glass rounded-4xl border border-emerald-100 bg-linear-to-br from-emerald-50 via-white to-white p-4 dark:border-emerald-900/30 dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900">
-        <div className="mb-3 flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-          <Sparkles size={16} />
-          <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Folii Premium</span>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <Sparkles size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Folii Premium</span>
+          </div>
+          <div className="inline-flex rounded-xl border border-emerald-200 bg-white p-1 text-[11px] font-bold shadow-xs dark:border-emerald-900/60 dark:bg-slate-900">
+            {PREMIUM_SURFACE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onSurfaceModeChange(option.value)}
+                className={`rounded-lg px-3 py-1.5 transition ${
+                  surfaceMode === option.value
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 dark:text-slate-300 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-200'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <h4 className="text-base font-black tracking-tight">SAPPHIRE, CERAMIC si CORNING</h4>
+        <h4 className="text-base font-black tracking-tight">Ecran + camera premium</h4>
         <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-          Categoria Folii Sticla, comparata cu restul foliilor pentru iPhone 15/16/17 normal, Pro, Pro Max si Samsung S26 Ultra.
+          Categoria Folii Sticla: ecran premium dupa SAPPHIRE, CERAMIC si CORNING, plus camera premium din lista operationala.
         </p>
         <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Metric label="Total folii" value={formatInt(summary?.total_qty ?? 0)} />
@@ -859,30 +900,33 @@ function PremiumGlassFocusSection({ analysis }: { analysis: PremiumGlassAnalysis
 
       {analysis && (
         <>
-          <div className="glass rounded-3xl p-4">
-            <div className="mb-3">
-              <h3 className="text-sm font-bold">Premium vs rest pe modele</h3>
-              <p className="text-[11px] text-slate-500">Cantitate vanduta pe produsele compatibile</p>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+            <div className="glass rounded-3xl p-4">
+              <div className="mb-3">
+                <h3 className="text-sm font-bold">Premium vs rest pe modele</h3>
+                <p className="text-[11px] text-slate-500">Toate modelele compatibile, inclusiv gama S26</p>
+              </div>
+              <div className="min-w-0" style={{ height: modelChartData.length === 0 ? 224 : modelChartHeight }}>
+                {modelChartData.length === 0 ? (
+                  <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 text-xs font-semibold text-slate-500 dark:bg-slate-800/50">
+                    Nu exista vanzari eligibile pentru filtrarea curenta.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                    <BarChart data={modelChartData} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.15} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis dataKey="model" type="category" width={104} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip formatter={(value: number) => formatInt(value)} />
+                      <Legend />
+                      <Bar dataKey="Premium" stackId="qty" fill="#059669" radius={[0, 6, 6, 0]} />
+                      <Bar dataKey="Rest" stackId="qty" fill="#cbd5e1" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </div>
-            <div className="h-56 min-w-0">
-              {modelChartData.length === 0 ? (
-                <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 text-xs font-semibold text-slate-500 dark:bg-slate-800/50">
-                  Nu exista vanzari eligibile pentru filtrarea curenta.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                  <BarChart data={modelChartData} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.15} />
-                    <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis dataKey="model" type="category" width={92} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(value: number) => formatInt(value)} />
-                    <Legend />
-                    <Bar dataKey="Premium" stackId="qty" fill="#059669" radius={[0, 6, 6, 0]} />
-                    <Bar dataKey="Rest" stackId="qty" fill="#cbd5e1" radius={[0, 6, 6, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+            <PremiumGlassSurfaceBreakdown rows={analysis.surfaces ?? []} />
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             <PremiumGlassModelTable rows={analysis.models} />
@@ -892,6 +936,29 @@ function PremiumGlassFocusSection({ analysis }: { analysis: PremiumGlassAnalysis
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function PremiumGlassSurfaceBreakdown({ rows }: { rows: PremiumGlassSurfaceStat[] }) {
+  return (
+    <div className="glass rounded-3xl p-4">
+      <div className="mb-3">
+        <h3 className="text-sm font-bold">Ecran vs camera</h3>
+        <p className="text-[11px] text-slate-500">Camera vine din lista operationala cu Premium = da/nu</p>
+      </div>
+      <SortableTable<PremiumGlassSurfaceStat & Record<string, unknown>>
+        rows={rows as (PremiumGlassSurfaceStat & Record<string, unknown>)[]}
+        defaultSortKey="total_qty"
+        exportFilename="focus-folii-premium-ecran-camera"
+        exportSheetName="Ecran camera folii"
+        columns={[
+          { key: 'surface_label', label: 'Tip', render: (row) => <span className="font-semibold">{(row as PremiumGlassSurfaceStat).surface_label}</span> },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassSurfaceStat).premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassSurfaceStat).regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassSurfaceStat).premium_qty_share_pct) },
+        ]}
+      />
     </div>
   );
 }

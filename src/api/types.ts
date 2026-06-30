@@ -106,6 +106,18 @@ export interface PremiumGlassModelStat {
   regular_item_count: number;
 }
 
+export interface PremiumGlassSurfaceStat {
+  surface_key: 'screen' | 'camera';
+  surface_label: string;
+  premium_qty: number;
+  regular_qty: number;
+  total_qty: number;
+  premium_sales: number;
+  regular_sales: number;
+  total_sales: number;
+  premium_qty_share_pct: number | null;
+}
+
 export interface PremiumGlassStoreStat {
   site_code: string;
   locatie: string;
@@ -159,11 +171,14 @@ export interface PremiumGlassProductStat {
 export interface PremiumGlassAnalysis {
   summary: PremiumGlassSummary;
   models: PremiumGlassModelStat[];
+  surfaces: PremiumGlassSurfaceStat[];
   managers: PremiumGlassManagerStat[];
   stores: PremiumGlassStoreStat[];
   agents: PremiumGlassAgentStat[];
   products: PremiumGlassProductStat[];
 }
+
+export type PremiumGlassSurfaceMode = 'all' | 'screen' | 'camera';
 
 export interface CampaignOverview {
   month: string;

@@ -542,9 +542,20 @@ function aggregatePremiumGlass(responses: DashboardAllResponse[]): PremiumGlassA
     regular_item_count: Math.max(n(base.regular_item_count), n(item.regular_item_count)),
     premium_qty_share_pct: pct(n(base.premium_qty) + n(item.premium_qty), n(base.total_qty) + n(item.total_qty)),
   })).sort((a, b) => n(b.total_qty) - n(a.total_qty));
+  const surfaces = aggregateByKey(analyses.flatMap((item) => item.surfaces ?? []), (item) => item.surface_key, (base, item) => ({
+    ...base,
+    premium_qty: n(base.premium_qty) + n(item.premium_qty),
+    regular_qty: n(base.regular_qty) + n(item.regular_qty),
+    total_qty: n(base.total_qty) + n(item.total_qty),
+    premium_sales: n(base.premium_sales) + n(item.premium_sales),
+    regular_sales: n(base.regular_sales) + n(item.regular_sales),
+    total_sales: n(base.total_sales) + n(item.total_sales),
+    premium_qty_share_pct: pct(n(base.premium_qty) + n(item.premium_qty), n(base.total_qty) + n(item.total_qty)),
+  })).sort((a, b) => n(b.total_qty) - n(a.total_qty));
   return {
     summary,
     models,
+    surfaces,
     managers: analyses.flatMap((item) => item.managers),
     stores: analyses.flatMap((item) => item.stores),
     agents: analyses.flatMap((item) => item.agents),
@@ -2288,7 +2299,7 @@ function PremiumGlassHubCard({
       </div>
       <CampaignMiniCard
         label={card?.status_label ?? 'Analiza'}
-        title={card?.subtitle ?? 'SAPPHIRE, CERAMIC si CORNING'}
+        title={card?.subtitle ?? 'Ecran + camera premium'}
         status={card?.coverage_note ?? 'Modele tinta verificate din vanzari'}
         metrics={[
           { label: 'Total folii', value: formatInt(summary?.total_qty ?? 0) },

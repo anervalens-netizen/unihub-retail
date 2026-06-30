@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, Literal
 
 from models import (
     DashboardSpecialCard,
@@ -14,6 +14,7 @@ from models import (
     PremiumGlassProductStat,
     PremiumGlassStoreStat,
     PremiumGlassSummary,
+    PremiumGlassSurfaceStat,
 )
 from services.dashboard.utils import _expand_current_manager_scope
 from services.filters import build_scoped_params, scoped_clauses
@@ -36,6 +37,7 @@ def _premium_scope(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    surface: Literal["all", "screen", "camera"],
     *,
     current_scope: bool,
     include_closed_stores: bool,
@@ -68,6 +70,10 @@ def _premium_scope(
             "st.agent NOT ILIKE 'TR%'",
         ]
     )
+    if surface == "camera":
+        clauses.append("st.item_name ILIKE '%CAMERA%'")
+    elif surface == "screen":
+        clauses.append("st.item_name NOT ILIKE '%CAMERA%'")
     return clauses, params
 
 
@@ -146,6 +152,12 @@ def _share_pct(part: int | Decimal, total: int | Decimal) -> Decimal | None:
     )
 
 
+def _surface_for_item(item_name: str) -> tuple[str, str]:
+    if "CAMERA" in item_name.upper():
+        return "camera", "Camera"
+    return "screen", "Ecran"
+
+
 async def get_premium_glass_analysis(
     conn: Any,
     month: str,
@@ -154,6 +166,7 @@ async def get_premium_glass_analysis(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    surface: Literal["all", "screen", "camera"] = "all",
     *,
     current_scope: bool = True,
     include_closed_stores: bool = False,
@@ -165,6 +178,7 @@ async def get_premium_glass_analysis(
         asm,
         site_code,
         agent,
+        surface,
         current_scope=current_scope,
         include_closed_stores=include_closed_stores,
     )
@@ -223,6 +237,7 @@ async def get_premium_glass_analysis(
 
     model_buckets: dict[tuple[str, str], dict[str, Any]] = defaultdict(_zero_split_bucket)
     store_buckets: dict[str, dict[str, Any]] = {}
+    surface_buckets: dict[tuple[str, str], dict[str, Any]] = {}
     manager_buckets: dict[str, dict[str, Any]] = {}
     agent_buckets: dict[tuple[str, str], dict[str, Any]] = {}
     product_buckets: dict[str, dict[str, Any]] = {}
@@ -254,6 +269,7 @@ async def get_premium_glass_analysis(
         agent_name = str(row["agent"])
         manager = str(row["manager"])
         item_code = str(row["item_code"])
+        surface_key, surface_label = _surface_for_item(str(row["item_name"]))
 
         _add_split(summary_bucket, qty, sales, is_premium)
         active_stores.add(site_code)
@@ -261,6 +277,16 @@ async def get_premium_glass_analysis(
         if is_premium:
             premium_active_stores.add(site_code)
             premium_active_agents.add(agent_name)
+
+        surface_bucket = surface_buckets.setdefault(
+            (surface_key, surface_label),
+            {
+                **_zero_split_bucket(),
+                "surface_key": surface_key,
+                "surface_label": surface_label,
+            },
+        )
+        _add_split(surface_bucket, qty, sales, is_premium)
 
         store_bucket = store_buckets.setdefault(
             site_code,
@@ -353,6 +379,13 @@ async def get_premium_glass_analysis(
         }
         for bucket in store_buckets.values()
     ]
+    surface_rows = [
+        {
+            **bucket,
+            "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
+        }
+        for bucket in surface_buckets.values()
+    ]
     manager_rows = [
         {
             **bucket,
@@ -379,6 +412,7 @@ async def get_premium_glass_analysis(
     ]
 
     model_rows.sort(key=lambda r: (-r["total_qty"], r["model_label"]))
+    surface_rows.sort(key=lambda r: (0 if r["surface_key"] == "screen" else 1, r["surface_label"]))
     store_rows.sort(key=lambda r: (-r["premium_qty"], -r["total_qty"], r["locatie"]))
     manager_rows.sort(key=lambda r: (-r["premium_qty"], -r["total_qty"], r["manager"]))
     agent_rows.sort(key=lambda r: (-r["premium_qty"], -r["total_qty"], r["agent"]))
@@ -387,6 +421,7 @@ async def get_premium_glass_analysis(
     return PremiumGlassAnalysis(
         summary=summary,
         models=[PremiumGlassModelStat(**row) for row in model_rows],
+        surfaces=[PremiumGlassSurfaceStat(**row) for row in surface_rows],
         managers=[PremiumGlassManagerStat(**row) for row in manager_rows],
         stores=[PremiumGlassStoreStat(**row) for row in store_rows],
         agents=[PremiumGlassAgentStat(**row) for row in agent_rows],
@@ -400,13 +435,13 @@ def build_premium_glass_card(analysis: PremiumGlassAnalysis) -> DashboardSpecial
     return DashboardSpecialCard(
         key="premium_glass",
         title="Folii Premium",
-        subtitle="SAPPHIRE, CERAMIC si CORNING in categoria Folii Sticla",
+        subtitle="SAPPHIRE, CERAMIC si CORNING pentru ecran + camera premium din lista operationala",
         status="ready" if has_data else "no_data",
         status_label="Activ" if has_data else "Fara date",
         highlight_value=_format_int(summary.premium_qty),
         description="Compara foliile premium cu restul foliilor de sticla pentru aceleasi modele tinta.",
         coverage_note=(
-            "Modele: iPhone 15/16/17 normal, Pro, Pro Max si Samsung S26 Ultra."
+            "Modele: iPhone 15/16/17 si Samsung S26, cu variantele eligibile din lista operationala."
         ),
         metrics=[
             DashboardSpecialCardMetric(label="Premium", value=_format_int(summary.premium_qty)),

@@ -79,6 +79,39 @@ async def test_rebuild_reporting_month_applies_destructive_steps_and_scope_guard
 
 
 @pytest.mark.asyncio
+async def test_refresh_premium_glass_indicators_loads_camera_premium_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = FakeConn()
+    monkeypatch.setattr(
+        reporting_refresh,
+        "_load_premium_camera_rows",
+        lambda: (
+            ["WS81519", "WS81519"],
+            ["Camera S26/S26 Plus", "Camera S26/S26 Plus"],
+            [True, True],
+            ["samsung_s26", "samsung_s26_plus"],
+            ["Samsung S26", "Samsung S26 Plus"],
+        ),
+    )
+
+    await reporting_refresh.refresh_premium_glass_indicators(conn)  # type: ignore[arg-type]
+
+    assert conn.events[0][1] == "TRUNCATE premium_glass_item_models"
+    assert conn.events[1][2] == (
+        ["WS81519", "WS81519"],
+        ["Camera S26/S26 Plus", "Camera S26/S26 Plus"],
+        [True, True],
+        ["samsung_s26", "samsung_s26_plus"],
+        ["Samsung S26", "Samsung S26 Plus"],
+    )
+    sql = conn.events[1][1] or ""
+    assert "camera_products" in sql
+    assert "is_premium_glass" in sql
+    assert conn.events[2][1] == "ANALYZE premium_glass_item_models"
+
+
+@pytest.mark.asyncio
 async def test_list_completed_import_months_uses_completed_snapshots_ordered() -> None:
     conn = FakeConn()
     conn.fetch_rows = [{"import_month": "2026-05"}, {"import_month": "2026-06"}]

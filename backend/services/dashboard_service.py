@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 import asyncpg
 
@@ -200,6 +200,7 @@ class DashboardService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        surface: Literal["all", "screen", "camera"] = "all",
         current_scope: bool = True,
         include_closed_stores: bool = False,
     ) -> PremiumGlassAnalysis:
@@ -212,6 +213,7 @@ class DashboardService:
                 asm,
                 site_code,
                 agent,
+                surface=surface,
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
             )
