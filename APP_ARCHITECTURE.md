@@ -247,7 +247,9 @@ Agenti, calculate din rezultatul promotiei selectate. Incentive afiseaza toate
 randurile disponibile de agenti si magazine, plus `Incentive potential`:
 valoarea care s-ar plati la realizare 100% a targetului, inainte de
 multiplicatorul curent. Tabelele din toate subsectiunile Focus, inclusiv
-Concurs si Folii premium, pot fi exportate in Excel.
+Concurs si Folii premium, pot fi exportate in Excel. Exporturile Focus pe
+randuri de magazine sau agenti includ explicit `Firma` si `Magazin` cand
+payload-ul are acele metadate.
 
 Importul zilnic de vanzari rescrie snapshot-ul lunii prin
 `replace_month_snapshot`, apoi reconstruieste agregatele `reporting_*`. Raportul

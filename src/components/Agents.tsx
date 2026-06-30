@@ -944,6 +944,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
               rows={filteredList}
               columns={[
                 { header: 'Agent', value: (row) => row.agent },
+                { header: 'Firma', value: (row) => row.firma ?? '' },
                 { header: 'Magazin', value: (row) => row.store_name ?? '' },
                 { header: 'Status', value: (row) => row.current_status },
                 { header: 'Nou', value: (row) => row.is_new ? 'Da' : 'Nu' },

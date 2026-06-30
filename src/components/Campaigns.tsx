@@ -108,6 +108,11 @@ function getMonthEndDate(month: string): string {
   return `${month}-${String(lastDay).padStart(2, '0')}`;
 }
 
+function displayStoreName(storeName: string | null | undefined): string {
+  if (!storeName) return '';
+  return storeName.includes(' - ') ? storeName.split(' - ').slice(1).join(' - ') : storeName;
+}
+
 export function Campaigns({
   currentMonth,
   months,
@@ -411,6 +416,12 @@ export function Campaigns({
                     defaultSortKey="promo_bons"
                     exportFilename={`focus-promo-magazine-${promoMonth}-${promoData.selected_promotion_key}`}
                     exportSheetName="Magazine promo"
+                    exportColumns={[
+                      { header: '#', value: (_row, index) => index + 1 },
+                      { header: 'Firma', value: (row) => row.firma },
+                      { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
+                      { header: 'Bonuri', value: (row) => row.promo_bons },
+                    ]}
                     columns={[
                       {
                         key: 'rank',
@@ -462,6 +473,13 @@ export function Campaigns({
                     defaultSortKey="promo_bons"
                     exportFilename={`focus-promo-agenti-${promoMonth}-${promoData.selected_promotion_key}`}
                     exportSheetName="Agenti promo"
+                    exportColumns={[
+                      { header: '#', value: (_row, index) => index + 1 },
+                      { header: 'Agent', value: (row) => row.agent_name },
+                      { header: 'Firma', value: (row) => row.firma },
+                      { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
+                      { header: 'Bonuri', value: (row) => row.promo_bons },
+                    ]}
                     columns={[
                       {
                         key: 'rank',
@@ -526,6 +544,16 @@ export function Campaigns({
                 defaultSortKey="val_incentive"
                 exportFilename={`focus-incentive-agenti-${promoMonth}`}
                 exportSheetName="Agenti incentive"
+                exportColumns={[
+                  { header: '#', value: (_row, index) => index + 1 },
+                  { header: 'Agent', value: (row) => row.agent_name },
+                  { header: 'Firma', value: (row) => row.firma },
+                  { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
+                  { header: '%Prev.', value: (row) => achievementLabel(row.achievement) },
+                  { header: 'Cant.', value: (row) => row.qty_sold },
+                  { header: 'Val Inc.', value: (row) => formatCurrency(row.val_incentive) },
+                  { header: 'Incentive potential', value: (row) => formatCurrency(row.incentive_potential ?? 0) },
+                ]}
                 columns={[
                   {
                     key: 'rank',
@@ -599,6 +627,15 @@ export function Campaigns({
                 defaultSortKey="incentive_value"
                 exportFilename={`focus-incentive-magazine-${promoMonth}`}
                 exportSheetName="Magazine incentive"
+                exportColumns={[
+                  { header: '#', value: (_row, index) => index + 1 },
+                  { header: 'Firma', value: (row) => row.firma },
+                  { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
+                  { header: '%Prev.', value: (row) => achievementLabel(row.achievement) },
+                  { header: 'Cant.', value: (row) => row.qty },
+                  { header: 'Val Inc.', value: (row) => formatCurrency(row.incentive_value) },
+                  { header: 'Incentive potential', value: (row) => formatCurrency(row.incentive_potential ?? 0) },
+                ]}
                 columns={[
                   {
                     key: 'rank',
@@ -919,6 +956,13 @@ function PremiumGlassStoreTable({ rows }: { rows: PremiumGlassStoreStat[] }) {
         defaultSortKey="premium_qty"
         exportFilename="focus-folii-premium-magazine"
         exportSheetName="Magazine folii premium"
+        exportColumns={[
+          { header: 'Firma', value: (row) => row.firma },
+          { header: 'Magazin', value: (row) => row.locatie },
+          { header: 'Premium', value: (row) => row.premium_qty },
+          { header: 'Rest', value: (row) => row.regular_qty },
+          { header: 'Share', value: (row) => formatPercent(row.premium_qty_share_pct) },
+        ]}
         columns={[
           {
             key: 'locatie',
@@ -954,6 +998,14 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
         defaultSortKey="premium_qty"
         exportFilename="focus-folii-premium-agenti"
         exportSheetName="Agenti folii premium"
+        exportColumns={[
+          { header: 'Agent', value: (row) => row.agent },
+          { header: 'Firma', value: (row) => row.firma },
+          { header: 'Magazin', value: (row) => row.locatie },
+          { header: 'Premium', value: (row) => row.premium_qty },
+          { header: 'Rest', value: (row) => row.regular_qty },
+          { header: 'Share', value: (row) => formatPercent(row.premium_qty_share_pct) },
+        ]}
         columns={[
           {
             key: 'agent',
@@ -1409,6 +1461,7 @@ function SortableTable<T extends Record<string, unknown>>({
   maxHeightClass = 'max-h-[360px]',
   exportFilename,
   exportSheetName,
+  exportColumns,
 }: {
   rows: T[];
   columns: ColDef<T>[];
@@ -1417,6 +1470,7 @@ function SortableTable<T extends Record<string, unknown>>({
   maxHeightClass?: string;
   exportFilename: string;
   exportSheetName: string;
+  exportColumns?: ExportColumn<T>[];
 }) {
   const {
     sorted,
@@ -1441,7 +1495,7 @@ function SortableTable<T extends Record<string, unknown>>({
           filename={exportFilename}
           sheetName={exportSheetName}
           rows={sorted}
-          columns={columns.map((column): ExportColumn<T> => ({
+          columns={exportColumns ?? columns.map((column): ExportColumn<T> => ({
             header: column.label,
             value: (row, index): string | number | null | undefined => {
               if (column.exportValue) return column.exportValue(row, index);

@@ -136,6 +136,7 @@ export interface PremiumGlassAgentStat {
   agent: string;
   site_code: string;
   locatie: string;
+  firma: string;
   premium_qty: number;
   regular_qty: number;
   total_qty: number;
@@ -432,6 +433,8 @@ export interface PromoTopAgent {
 
 export interface IncentiveTopAgent {
   agent_name: string;
+  store_name: string;
+  firma: string;
   qty_sold: number;
   val_incentive: number;
   incentive_potential: number;

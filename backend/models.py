@@ -156,6 +156,7 @@ class PremiumGlassAgentStat(BaseModel):
     agent: str
     site_code: str
     locatie: str
+    firma: str
     premium_qty: int = 0
     regular_qty: int = 0
     total_qty: int = 0
@@ -632,6 +633,7 @@ class AgentMovementResponse(BaseModel):
 class AgentListItem(BaseModel):
     agent: str
     store_name: str | None = None
+    firma: str | None = None
     active_in_month: bool
     is_new: bool
     is_reactivated: bool
@@ -813,6 +815,8 @@ class PromoTopAgent(BaseModel):
 
 class IncentiveTopAgent(BaseModel):
     agent_name: str
+    store_name: str = ""
+    firma: str = ""
     qty_sold: int
     val_incentive: float
     incentive_potential: float = 0.0

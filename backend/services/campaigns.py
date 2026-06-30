@@ -532,10 +532,13 @@ class CampaignsService:
                     agent_inc: dict[str, float] = {}
                     agent_potential: dict[str, float] = {}
                     agent_qty: dict[str, int] = {}
-                    agent_sites: dict[str, str] = {}
+                    agent_site_qty: dict[str, dict[str, int]] = {}
+                    agent_store_meta: dict[str, tuple[str, str]] = {}
                     for row in agent_item_rows:
                         ag = str(row["agent"])
                         sc = str(row["site_code"])
+                        loc = str(row["locatie"] or "")
+                        firma_val = str(row["firma"] or "")
                         item_code = str(row["item_code"])
                         excluded = incentive_excluded_ag.get((sc, ag, item_code), 0)
                         adj_net = int(row["qty"]) - excluded
@@ -545,19 +548,34 @@ class CampaignsService:
                         agent_inc[ag] = agent_inc.get(ag, 0.0) + val
                         agent_potential[ag] = agent_potential.get(ag, 0.0) + potential
                         agent_qty[ag] = agent_qty.get(ag, 0) + adj_net
-                        agent_sites[ag] = sc
+                        agent_store_meta[sc] = (loc, firma_val)
+                        agent_site_qty.setdefault(ag, {})
+                        agent_site_qty[ag][sc] = agent_site_qty[ag].get(sc, 0) + q
 
-                    top_agents = sorted(
-                        [
+                    agent_rows: list[IncentiveTopAgent] = []
+                    for ag in agent_inc:
+                        site_quantities = agent_site_qty.get(ag, {})
+                        primary_site = max(
+                            site_quantities,
+                            key=lambda site: (site_quantities[site], site),
+                            default="",
+                        )
+                        loc, firma_val = agent_store_meta.get(primary_site, ("", ""))
+                        store_name = f"{primary_site} - {loc}" if primary_site and loc else primary_site
+                        agent_rows.append(
                             IncentiveTopAgent(
                                 agent_name=ag,
+                                store_name=store_name,
+                                firma=firma_val,
                                 qty_sold=agent_qty[ag],
                                 val_incentive=round(agent_inc[ag], 2),
                                 incentive_potential=round(agent_potential[ag], 2),
-                                achievement=store_achievements.get(agent_sites.get(ag, ""))
+                                achievement=store_achievements.get(primary_site),
                             )
-                            for ag in agent_inc
-                        ],
+                        )
+
+                    top_agents = sorted(
+                        agent_rows,
                         key=lambda x: x.val_incentive,
                         reverse=True,
                     )

@@ -1216,7 +1216,8 @@ class AgentsService:
             top_store AS (
                 SELECT DISTINCT ON (agent)
                     agent,
-                    locatie AS store_name
+                    locatie AS store_name,
+                    firma
                 FROM reporting_agent_month
                 WHERE import_month = $1
                 ORDER BY agent, total_sales DESC
@@ -1224,6 +1225,7 @@ class AgentsService:
             SELECT
                 p.agent,
                 ts.store_name,
+                ts.firma,
                 (lc.import_month IS NOT NULL) AS active_in_month,
                 COALESCE(lc.is_new, false) AS is_new,
                 COALESCE(lc.is_reactivated, false) AS is_reactivated,
@@ -1249,6 +1251,7 @@ class AgentsService:
             AgentListItem(
                 agent=row["agent"],
                 store_name=row["store_name"],
+                firma=row["firma"],
                 active_in_month=row["active_in_month"],
                 is_new=row["is_new"],
                 is_reactivated=row["is_reactivated"],

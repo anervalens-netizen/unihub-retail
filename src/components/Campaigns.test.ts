@@ -71,6 +71,8 @@ function makePromoData(): CampaignsPromotionsResponse {
     top_agents: [
       {
         agent_name: 'Ana Agent',
+        store_name: 'Mobiup - Store Test',
+        firma: 'Mobiup',
         qty_sold: 18,
         val_incentive: 450,
         incentive_potential: 600,

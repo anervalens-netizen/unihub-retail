@@ -293,6 +293,7 @@ async def get_premium_glass_analysis(
                 "agent": agent_name,
                 "site_code": site_code,
                 "locatie": str(row["locatie"]),
+                "firma": str(row["firma"]),
             },
         )
         _add_split(agent_bucket, qty, sales, is_premium)

@@ -65,6 +65,7 @@ export interface AgentMovementResponse {
 export interface AgentListItem {
   agent: string;
   store_name: string | null;
+  firma: string | null;
   active_in_month: boolean;
   is_new: boolean;
   is_reactivated: boolean;

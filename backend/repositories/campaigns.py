@@ -440,7 +440,10 @@ class CampaignsRepository:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
-                SELECT agg.agent, agg.site_code, agg.item_code,
+                SELECT agg.agent, agg.site_code,
+                       MAX(agg.locatie) AS locatie,
+                       MAX(agg.firma) AS firma,
+                       agg.item_code,
                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
                 FROM reporting_item_month agg
                 WHERE {" AND ".join(clauses)}
