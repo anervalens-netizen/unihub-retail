@@ -53,7 +53,7 @@ flowchart LR
 
 | Meniu principal | Scop |
 | --- | --- |
-| Hub | KPI-uri, comparatii perioade, carduri speciale |
+| Hub | KPI-uri, comparatii perioade, carduri speciale, monitorizare AI Forecast |
 | Focus | Incentive, Promo, Concurs, Folii premium, produse focus |
 | Agenti | overview agenti, stabilitate, miscari, salarii, analiza si evaluare |
 | Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target` |
@@ -62,6 +62,12 @@ flowchart LR
 ## Functionalitati majore
 
 - KPI retail si istoric lunar.
+- Hub -> `Luna in curs` -> `AI Forecast` afiseaza ultimul forecast lunar
+  salvat pentru luna curenta sau pentru luna urmatoare generata din luna
+  curenta. Subsectiunea compara forecastul la nivel de retea, manager si
+  magazin cu realizatul importat la zi. Modelul TimesFM/XReg nu ruleaza in
+  requesturile Hub; rularea se face offline, iar rezultatul se importa in
+  tabelele `ai_forecast_*`.
 - Filtre globale firma / regional / magazin / agent.
 - Campanii promo, incentive si concursuri config-driven.
 - Analiza agentilor, lifecycle, salarii.
@@ -191,6 +197,7 @@ Familii de tabele:
 | Tranzactii | `sales_transactions`, `historical_annual_sales` |
 | Campanii | `incentive_campaigns`, `incentive_products` |
 | Reporting | `reporting_agent_*`, `reporting_item_*`, `reporting_focus_item_month`, `reporting_category_month` |
+| AI Forecast | `ai_forecast_runs`, `ai_forecast_store_month`, `ai_forecast_store_day` |
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_targets` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
@@ -203,6 +210,36 @@ actualizeaza structura curenta si marcheaza inactive magazinele care nu mai
 apar. Importurile istorice actualizeaza doar intervalul
 `first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent
 sau sa reactiveze magazine inchise.
+
+### AI Forecast
+
+Forecasturile AI sunt persistate in PostgreSQL si citite prin
+`/api/ai-forecast/current`. Endpointul cauta mai intai o rulare `completed`
+pentru luna ceruta; daca nu exista, cauta o rulare care foloseste luna ceruta
+ca `source_month`, ca Hub sa poata afisa forecastul lunii urmatoare inainte sa
+existe importuri pentru acea luna.
+
+Fluxul operational curent este:
+
+1. TimesFM 2.5 ruleaza in afara aplicatiei, cu XReg calendaristic
+   (`xreg + timesfm`) pe serii lunare.
+2. Backtestul si rularea operationala se fac cu
+   `backend/scripts/run_ai_forecast_xreg.py`. Scriptul trimite batch XReg la
+   serviciul TimesFM, evalueaza lunile tinta fata de realizat si scrie
+   outputurile sub `backend/outputs/ai_forecast/`.
+3. Pentru magazinele cu istoric prea scurt pentru XReg, scriptul foloseste
+   fallback sezonier pe media ultimelor 3 luni, scalata cu sezonalitatea
+   aceleiasi luni din anul anterior. Randurile exportate pastreaza metoda in
+   coloana `method`.
+4. Magazinele inchise in luna sursa pot fi excluse din rulare prin
+   `--exclude-site-code`. Implicit, fluxul exclude inchiderile din iunie 2026:
+   `CRFVUL` si `CRFARENA`.
+5. Rezultatul lunar per magazin se importa cu
+   `backend/scripts/import_ai_forecast.py`.
+6. Curba zilnica este derivata din profilul zilnic al aceleiasi luni din anul
+   precedent, la nivel de magazin, cu fallback uniform.
+7. Hub compara `ai_forecast_store_day` cumulat pana la ultima zi importata cu
+   realizatul din `reporting_agent_day` / `reporting_agent_month`.
 
 ### Campanii si concursuri
 

@@ -29,6 +29,70 @@ class DashboardSummary(BaseModel):
     cartele_qty: int = 0
 
 
+class AiForecastRunInfo(BaseModel):
+    id: int
+    forecast_month: str
+    source_month: str
+    model_name: str
+    model_mode: str
+    variant: str
+    generated_at: datetime
+    metadata: dict = Field(default_factory=dict)
+
+
+class AiForecastSummary(BaseModel):
+    forecast_month: str
+    source_month: str
+    actual_last_date: date | None = None
+    days_elapsed: int = 0
+    days_in_month: int
+    store_count: int
+    forecast_sales: Decimal
+    expected_sales_to_date: Decimal
+    actual_sales: Decimal
+    delta_sales: Decimal
+    delta_pct: Decimal | None = None
+
+
+class AiForecastManagerRow(BaseModel):
+    manager: str
+    store_count: int
+    forecast_sales: Decimal
+    expected_sales_to_date: Decimal
+    actual_sales: Decimal
+    delta_sales: Decimal
+    delta_pct: Decimal | None = None
+
+
+class AiForecastStoreRow(BaseModel):
+    site_code: str
+    locatie: str
+    firma: str
+    regional: str
+    asm: str
+    forecast_sales: Decimal
+    expected_sales_to_date: Decimal
+    actual_sales: Decimal
+    delta_sales: Decimal
+    delta_pct: Decimal | None = None
+
+
+class AiForecastDailyPoint(BaseModel):
+    forecast_date: date
+    forecast_sales: Decimal
+    actual_sales: Decimal
+    cumulative_forecast: Decimal
+    cumulative_actual: Decimal
+
+
+class AiForecastResponse(BaseModel):
+    run: AiForecastRunInfo
+    summary: AiForecastSummary
+    managers: list[AiForecastManagerRow] = Field(default_factory=list)
+    stores: list[AiForecastStoreRow] = Field(default_factory=list)
+    daily: list[AiForecastDailyPoint] = Field(default_factory=list)
+
+
 class ReceiptBucketItem(BaseModel):
     bucket: str
     receipt_count: int

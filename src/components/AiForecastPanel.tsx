@@ -1,0 +1,589 @@
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Bot, Building2, CalendarRange, ChevronDown, Network, Search, Users, X } from 'lucide-react';
+import {
+  Bar,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { getAiForecastCurrent } from '../api/aiForecast';
+import type { AiForecastDailyPoint, AiForecastManagerRow, AiForecastResponse, AiForecastStoreRow } from '../api/types';
+import { formatAmount, formatCurrency, formatInt, formatPercent } from '../lib/formatters';
+import { buildScopedMonthQuery } from '../lib/filterQueries';
+import { queryKeys } from '../lib/queryKeys';
+import type { AppFilters } from './MainLayout';
+import { ExportTableButton } from './ExportTableButton';
+import FirmaBadge from './FirmaBadge';
+import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
+
+interface AiForecastPanelProps {
+  currentMonth: string;
+  filters: AppFilters;
+}
+
+type ForecastDetailSelection =
+  | { type: 'manager'; id: string; label: string }
+  | { type: 'store'; id: string; label: string };
+
+interface DailyCurvePoint {
+  day: string;
+  date: string;
+  isWeekend: boolean;
+  forecastDaily: number;
+  actualDaily: number | null;
+  cumulativeForecast: number;
+  cumulativeActual: number | null;
+}
+
+function deltaTone(value: number) {
+  if (value > 0) return 'text-emerald-600 dark:text-emerald-400';
+  if (value < 0) return 'text-rose-600 dark:text-rose-400';
+  return 'text-slate-600 dark:text-slate-300';
+}
+
+function formatSignedAmount(value: number) {
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${formatAmount(value)}`;
+}
+
+function riskLabel(deltaPct: number | null) {
+  if (deltaPct === null) return 'Fara reper';
+  if (deltaPct >= 3) return 'Peste ritm';
+  if (deltaPct <= -5) return 'Risc';
+  if (deltaPct < 0) return 'Sub ritm';
+  return 'In ritm';
+}
+
+function isWeekendDate(value: string) {
+  const day = new Date(`${value}T00:00:00`).getDay();
+  return day === 0 || day === 6;
+}
+
+function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
+  return points.map((point) => {
+    const hasActual = point.actual_sales > 0 || point.cumulative_actual > 0;
+    return {
+      day: point.forecast_date.slice(-2),
+      date: point.forecast_date,
+      isWeekend: isWeekendDate(point.forecast_date),
+      forecastDaily: point.forecast_sales,
+      actualDaily: hasActual ? point.actual_sales : null,
+      cumulativeForecast: point.cumulative_forecast,
+      cumulativeActual: hasActual ? point.cumulative_actual : null,
+    };
+  });
+}
+
+export function AiForecastPanel({ currentMonth, filters }: AiForecastPanelProps) {
+  const [storeSearch, setStoreSearch] = useState('');
+  const [detailSelection, setDetailSelection] = useState<ForecastDetailSelection | null>(null);
+  const [methodOpen, setMethodOpen] = useState(false);
+  const query = useMemo(() => {
+    const scoped = buildScopedMonthQuery(currentMonth, filters);
+    return {
+      month: scoped.month,
+      firma: scoped.firma,
+      regional: scoped.regional,
+      asm: scoped.asm,
+      site_code: scoped.site_code,
+    };
+  }, [currentMonth, filters]);
+
+  const forecastQuery = useQuery({
+    queryKey: queryKeys.aiForecast.current(currentMonth, query),
+    queryFn: () => getAiForecastCurrent(query),
+    staleTime: 60_000,
+  });
+
+  const detailQuery = useQuery({
+    queryKey: queryKeys.aiForecast.current(currentMonth, {
+      ...query,
+      detail_type: detailSelection?.type ?? null,
+      detail_id: detailSelection?.id ?? null,
+    }),
+    queryFn: () => {
+      if (!detailSelection) throw new Error('Nu exista selectie.');
+      return getAiForecastCurrent({
+        ...query,
+        asm: detailSelection.type === 'manager' ? detailSelection.id : query.asm,
+        site_code: detailSelection.type === 'store' ? detailSelection.id : undefined,
+      });
+    },
+    enabled: detailSelection !== null,
+    staleTime: 60_000,
+  });
+
+  const data = forecastQuery.data;
+  const filteredStores = useMemo(() => {
+    if (!data) return [];
+    const needle = storeSearch.trim().toLocaleLowerCase('ro-RO');
+    if (!needle) return data.stores;
+    return data.stores.filter((store) => {
+      const haystack = `${store.locatie} ${store.site_code} ${store.firma} ${store.asm}`.toLocaleLowerCase('ro-RO');
+      return haystack.includes(needle);
+    });
+  }, [data, storeSearch]);
+
+  const dailyChartData = useMemo(() => (data ? buildDailyCurve(data.daily) : []), [data]);
+
+  if (forecastQuery.isPending) {
+    return <LoadingCard label="Se incarca AI Forecast..." />;
+  }
+
+  if (forecastQuery.isError || !data) {
+    return (
+      <ErrorCard
+        message="Nu exista forecast AI salvat pentru luna curenta sau luna urmatoare."
+        onRetry={() => void forecastQuery.refetch()}
+      />
+    );
+  }
+
+  const { summary, run } = data;
+  const statusText = summary.actual_last_date
+    ? `Realizat importat pana la ${summary.actual_last_date}; comparatia foloseste forecastul cumulat pana in aceeasi zi.`
+    : 'Nu exista inca vanzari importate pentru luna forecastata.';
+
+  return (
+    <div className="space-y-3">
+      <section className="glass rounded-3xl p-4">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Bot size={17} className="text-indigo-500" />
+              <h3 className="text-sm font-bold">AI Forecast — {summary.forecast_month}</h3>
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+              {statusText}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-slate-100 px-3 py-2 text-right text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+            <div>{run.model_mode}</div>
+            <div className="text-slate-400">sursa {summary.source_month}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-6">
+          <Metric label="Forecast luna" value={formatAmount(summary.forecast_sales)} className="p-2.5" />
+          <Metric label="Realizat" value={formatAmount(summary.actual_sales)} className="p-2.5" />
+          <Metric label="Asteptat la zi" value={formatAmount(summary.expected_sales_to_date)} className="p-2.5" />
+          <Metric
+            label="Delta"
+            value={formatSignedAmount(summary.delta_sales)}
+            className={`p-2.5 ${deltaTone(summary.delta_sales)}`}
+          />
+          <Metric label="Delta %" value={formatPercent(summary.delta_pct)} className={`p-2.5 ${deltaTone(summary.delta_sales)}`} />
+          <Metric label="Magazine" value={formatInt(summary.store_count)} className="p-2.5" />
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-slate-200/70 bg-slate-50/80 dark:border-slate-700/70 dark:bg-slate-800/50">
+          <button
+            type="button"
+            onClick={() => setMethodOpen((open) => !open)}
+            className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-xs font-bold text-slate-700 transition-colors hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
+            aria-expanded={methodOpen}
+          >
+            <span>Cum functioneaza AI Forecast</span>
+            <ChevronDown
+              size={15}
+              className={`shrink-0 text-slate-400 transition-transform ${methodOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {methodOpen && (
+            <div className="space-y-3 border-t border-slate-200/70 px-3 pb-3 pt-3 text-[11px] leading-relaxed text-slate-600 dark:border-slate-700/70 dark:text-slate-300">
+              <p>
+                Forecastul lunar este calculat in afara aplicatiei cu TimesFM 2.5 + XReg, pe istoricul lunar per magazin.
+                Pentru magazinele prea noi se foloseste un fallback sezonier. In Hub salvam rezultatul si il comparam cu
+                vanzarile importate la zi; modelul nu ruleaza in requesturile din browser.
+              </p>
+              <div className="grid gap-2 md:grid-cols-2">
+                <ForecastDefinition term="Forecast luna" description="Estimarea pentru intreaga luna forecastata." />
+                <ForecastDefinition term="Asteptat la zi" description="Partea din forecast care ar fi trebuit realizata pana la ultima zi importata." />
+                <ForecastDefinition term="Delta" description="Realizat minus asteptat la zi. Pozitiv inseamna peste ritm." />
+                <ForecastDefinition term="Delta %" description="Delta raportata la asteptatul la zi." />
+                <ForecastDefinition term="WAPE" description="Eroarea absoluta ponderata: suma erorilor absolute impartita la vanzarile reale." />
+                <ForecastDefinition term="Bias" description="Directia erorii totale: pozitiv supraestimeaza, negativ subestimeaza." />
+                <ForecastDefinition term="XReg" description="Regresori externi calendaristici folositi de model: luna, trimestru, zile in luna si sezonalitate." />
+                <ForecastDefinition term="Fallback sezonier" description="Estimare pentru magazine noi, pe media ultimelor luni scalata cu sezonalitatea istorica." />
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="grid gap-3 lg:grid-cols-[1.1fr_1fr]">
+        <ForecastDailyCurveCard
+          title="Curba zilnica forecast"
+          subtitle="Profilul zilnic foloseste distributia din luna similara istorica; weekendurile sunt marcate separat."
+          data={dailyChartData}
+        />
+
+        <div className="glass rounded-3xl p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Network size={16} className="text-indigo-500" />
+            <h3 className="text-sm font-bold">Retea</h3>
+          </div>
+          <div className="space-y-2 text-xs">
+            <ForecastLine label="Model" value={run.model_name} />
+            <ForecastLine label="Varianta" value={run.variant} />
+            <ForecastLine label="Luna sursa" value={summary.source_month} />
+            <ForecastLine label="Zile monitorizate" value={`${summary.days_elapsed}/${summary.days_in_month}`} />
+            <ForecastLine label="Status" value={riskLabel(summary.delta_pct)} valueClassName={deltaTone(summary.delta_sales)} />
+          </div>
+        </div>
+      </section>
+
+      <ForecastManagerTable
+        rows={data.managers}
+        onSelect={(row) => setDetailSelection({ type: 'manager', id: row.manager, label: row.manager })}
+      />
+
+      <section className="glass rounded-3xl p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Building2 size={16} className="text-indigo-500" />
+              <h3 className="text-sm font-bold">Magazine</h3>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              {filteredStores.length} din {data.stores.length} magazine in forecast.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900">
+              <Search size={14} className="text-slate-400" />
+              <input
+                value={storeSearch}
+                onChange={(event) => setStoreSearch(event.target.value)}
+                placeholder="Cauta magazin"
+                className="w-40 bg-transparent outline-none"
+              />
+            </label>
+            <ExportTableButton
+              filename={`ai_forecast_${summary.forecast_month}_magazine`}
+              sheetName={`AI Forecast ${summary.forecast_month}`}
+              rows={filteredStores}
+              columns={[
+                { header: 'Firma', value: (row) => row.firma },
+                { header: 'Magazin', value: (row) => row.locatie },
+                { header: 'ASM', value: (row) => row.asm },
+                { header: 'Forecast', value: (row) => formatCurrency(row.forecast_sales) },
+                { header: 'Asteptat la zi', value: (row) => formatCurrency(row.expected_sales_to_date) },
+                { header: 'Realizat', value: (row) => formatCurrency(row.actual_sales) },
+                { header: 'Delta', value: (row) => formatCurrency(row.delta_sales) },
+                { header: 'Delta %', value: (row) => formatPercent(row.delta_pct) },
+              ]}
+            />
+          </div>
+        </div>
+        <ForecastStoreTable
+          rows={filteredStores}
+          onSelect={(row) => setDetailSelection({ type: 'store', id: row.site_code, label: row.locatie })}
+        />
+      </section>
+
+      {detailSelection && (
+        <ForecastDetailDrawer
+          title={detailSelection.label}
+          type={detailSelection.type}
+          data={detailQuery.data ?? null}
+          isLoading={detailQuery.isPending}
+          isError={detailQuery.isError}
+          onClose={() => setDetailSelection(null)}
+          onRetry={() => void detailQuery.refetch()}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForecastDefinition({ term, description }: { term: string; description: string }) {
+  return (
+    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900/60">
+      <span className="font-bold text-slate-800 dark:text-slate-100">{term}: </span>
+      <span>{description}</span>
+    </div>
+  );
+}
+
+function ForecastDailyCurveCard({
+  title,
+  subtitle,
+  data,
+}: {
+  title: string;
+  subtitle?: string;
+  data: DailyCurvePoint[];
+}) {
+  const weekendDays = data.filter((point) => point.isWeekend).length;
+  const weekendForecast = data
+    .filter((point) => point.isWeekend)
+    .reduce((total, point) => total + point.forecastDaily, 0);
+  const totalForecast = data.reduce((total, point) => total + point.forecastDaily, 0);
+  const weekendShare = totalForecast > 0 ? (weekendForecast / totalForecast) * 100 : null;
+
+  return (
+    <div className="glass rounded-3xl p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <CalendarRange size={16} className="text-indigo-500" />
+            <h3 className="text-sm font-bold">{title}</h3>
+          </div>
+          {subtitle && <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{subtitle}</p>}
+        </div>
+        <div className="shrink-0 rounded-2xl bg-slate-100 px-3 py-2 text-right text-[11px] font-semibold text-slate-500 dark:bg-slate-800">
+          <div>{weekendDays} zile weekend</div>
+          <div className="text-slate-400">{formatPercent(weekendShare)} din forecast</div>
+        </div>
+      </div>
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+          <ComposedChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+            <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis yAxisId="daily" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis
+              yAxisId="cumulative"
+              orientation="right"
+              tick={{ fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              formatter={(value: number, name: string) => [formatAmount(value), name]}
+              labelFormatter={(_label, items) => {
+                const point = items?.[0]?.payload as DailyCurvePoint | undefined;
+                if (!point) return '';
+                return `${point.date}${point.isWeekend ? ' · weekend' : ''}`;
+              }}
+            />
+            <Legend />
+            <Bar yAxisId="daily" dataKey="forecastDaily" name="Profil zilnic" radius={[6, 6, 0, 0]}>
+              {data.map((entry) => (
+                <Cell key={entry.date} fill={entry.isWeekend ? '#f59e0b' : '#a5b4fc'} />
+              ))}
+            </Bar>
+            <Bar yAxisId="daily" dataKey="actualDaily" name="Realizat zilnic" fill="#10b981" radius={[6, 6, 0, 0]} />
+            <Line yAxisId="daily" type="monotone" dataKey="forecastDaily" name="Forecast zilnic" stroke="#f59e0b" strokeWidth={2} dot={false} />
+            <Line yAxisId="cumulative" type="monotone" dataKey="cumulativeForecast" name="Forecast cumulat" stroke="#4f46e5" strokeWidth={2} dot={false} />
+            <Line yAxisId="cumulative" type="monotone" dataKey="cumulativeActual" name="Realizat cumulat" stroke="#059669" strokeWidth={2} dot={false} connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function ForecastLine({ label, value, valueClassName = '' }: { label: string; value: string; valueClassName?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
+      <span className="text-slate-500">{label}</span>
+      <span className={`text-right font-bold text-slate-700 dark:text-slate-200 ${valueClassName}`}>{value}</span>
+    </div>
+  );
+}
+
+function ForecastManagerTable({
+  rows,
+  onSelect,
+}: {
+  rows: AiForecastManagerRow[];
+  onSelect: (row: AiForecastManagerRow) => void;
+}) {
+  return (
+    <section className="glass rounded-3xl p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-indigo-500" />
+            <h3 className="text-sm font-bold">RM / ASM</h3>
+          </div>
+          <p className="text-[11px] text-slate-500">Managerii sunt ordonati dupa forecastul lunar.</p>
+        </div>
+        <ExportTableButton
+          filename="ai_forecast_rm"
+          sheetName="AI Forecast RM"
+          rows={rows}
+          columns={[
+            { header: 'Manager', value: (row) => row.manager },
+            { header: 'Magazine', value: (row) => formatInt(row.store_count) },
+            { header: 'Forecast', value: (row) => formatCurrency(row.forecast_sales) },
+            { header: 'Asteptat la zi', value: (row) => formatCurrency(row.expected_sales_to_date) },
+            { header: 'Realizat', value: (row) => formatCurrency(row.actual_sales) },
+            { header: 'Delta', value: (row) => formatCurrency(row.delta_sales) },
+            { header: 'Delta %', value: (row) => formatPercent(row.delta_pct) },
+          ]}
+        />
+      </div>
+      <div className="overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
+            <tr>
+              <th className="px-3 py-2">Manager</th>
+              <th className="px-3 py-2 text-right">Magazine</th>
+              <th className="px-3 py-2 text-right">Forecast</th>
+              <th className="px-3 py-2 text-right">Asteptat</th>
+              <th className="px-3 py-2 text-right">Realizat</th>
+              <th className="px-3 py-2 text-right">Delta</th>
+              <th className="px-3 py-2 text-right">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={row.manager} className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}>
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => onSelect(row)}
+                    className="font-semibold text-indigo-600 underline-offset-2 hover:underline dark:text-indigo-400"
+                  >
+                    {row.manager}
+                  </button>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatInt(row.store_count)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.forecast_sales)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.expected_sales_to_date)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.actual_sales)}</td>
+                <td className={`px-3 py-2 text-right font-bold tabular-nums ${deltaTone(row.delta_sales)}`}>{formatSignedAmount(row.delta_sales)}</td>
+                <td className={`px-3 py-2 text-right font-semibold ${deltaTone(row.delta_sales)}`}>
+                  {riskLabel(row.delta_pct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ForecastStoreTable({
+  rows,
+  onSelect,
+}: {
+  rows: AiForecastStoreRow[];
+  onSelect: (row: AiForecastStoreRow) => void;
+}) {
+  return (
+    <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
+      <table className="w-full min-w-[900px] text-sm">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
+          <tr>
+            <th className="px-3 py-2">Magazin</th>
+            <th className="px-3 py-2">ASM</th>
+            <th className="px-3 py-2 text-right">Forecast</th>
+            <th className="px-3 py-2 text-right">Asteptat</th>
+            <th className="px-3 py-2 text-right">Realizat</th>
+            <th className="px-3 py-2 text-right">Delta</th>
+            <th className="px-3 py-2 text-right">Delta %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.site_code} className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}>
+              <td className="px-3 py-2">
+                <span className="inline-flex min-w-0 items-center">
+                  <FirmaBadge firma={row.firma} />
+                  <button
+                    type="button"
+                    onClick={() => onSelect(row)}
+                    className="truncate font-semibold text-indigo-600 underline-offset-2 hover:underline dark:text-indigo-400"
+                  >
+                    {row.locatie}
+                  </button>
+                </span>
+              </td>
+              <td className="px-3 py-2 text-slate-500">{row.asm}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.forecast_sales)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.expected_sales_to_date)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.actual_sales)}</td>
+              <td className={`px-3 py-2 text-right font-bold tabular-nums ${deltaTone(row.delta_sales)}`}>
+                {formatSignedAmount(row.delta_sales)}
+              </td>
+              <td className={`px-3 py-2 text-right font-semibold tabular-nums ${deltaTone(row.delta_sales)}`}>
+                {formatPercent(row.delta_pct)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ForecastDetailDrawer({
+  title,
+  type,
+  data,
+  isLoading,
+  isError,
+  onClose,
+  onRetry,
+}: {
+  title: string;
+  type: ForecastDetailSelection['type'];
+  data: AiForecastResponse | null;
+  isLoading: boolean;
+  isError: boolean;
+  onClose: () => void;
+  onRetry: () => void;
+}) {
+  const dailyData = useMemo(() => (data ? buildDailyCurve(data.daily) : []), [data]);
+  const label = type === 'manager' ? 'RM / ASM' : 'Magazin';
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm">
+      <div className="flex h-full w-full max-w-4xl flex-col overflow-y-auto bg-white shadow-2xl dark:bg-slate-950">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-100 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+            <h3 className="truncate text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+            aria-label="Inchide"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-3 p-4">
+          {isLoading ? (
+            <LoadingCard label="Se incarca detaliul forecast..." />
+          ) : isError || !data ? (
+            <ErrorCard message="Detaliul forecast nu a putut fi incarcat." onRetry={onRetry} />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
+                <Metric label="Forecast luna" value={formatAmount(data.summary.forecast_sales)} className="p-2.5" />
+                <Metric label="Realizat" value={formatAmount(data.summary.actual_sales)} className="p-2.5" />
+                <Metric label="Asteptat la zi" value={formatAmount(data.summary.expected_sales_to_date)} className="p-2.5" />
+                <Metric
+                  label="Delta"
+                  value={formatSignedAmount(data.summary.delta_sales)}
+                  className={`p-2.5 ${deltaTone(data.summary.delta_sales)}`}
+                />
+                <Metric label="Delta %" value={formatPercent(data.summary.delta_pct)} className={`p-2.5 ${deltaTone(data.summary.delta_sales)}`} />
+              </div>
+              <ForecastDailyCurveCard
+                title={`Curba zilnica — ${data.summary.forecast_month}`}
+                subtitle="Barele portocalii sunt zile de weekend in profilul forecastului."
+                data={dailyData}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

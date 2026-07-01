@@ -22,6 +22,7 @@ Expune:
 - top magazine
 - panou agenti
 - istoric pe mai multe luni
+- AI Forecast pentru monitorizarea forecastului lunar salvat
 
 Reguli importante in Hub:
 - comparatia perioade foloseste aceeasi fereastra calendaristica pentru luna curenta, luna trecuta si aceeasi luna anul trecut; daca luna curenta este partiala, cutoff-ul este ultima zi cu vanzari importate
@@ -39,6 +40,31 @@ Reguli importante in Hub:
   implicit si pot fi incluse din checkbox-ul `Include magazine inchise`
 - cardul `Evolutie lunara` in modul standard afiseaza ultimele 13 luni
   finalizate plus luna curenta forecastata, cand luna curenta este partiala
+- subsectiunea `AI Forecast` afiseaza ultimul forecast salvat, nu ruleaza
+  modelul in request; compara la nivel de retea, RM si magazin forecastul
+  cumulat la zi cu realizatul importat
+
+Forecasturile AI sunt salvate in tabelele `ai_forecast_runs`,
+`ai_forecast_store_month` si `ai_forecast_store_day`. Importul operational se
+face cu `backend/scripts/import_ai_forecast.py`, dupa rularea externa TimesFM
+XReg. Curba zilnica foloseste distributia pe zile din aceeasi luna a anului
+precedent pentru acelasi magazin.
+
+Backtestul si rularea batch lunara se fac cu:
+
+```bash
+TIMESFM_API_KEY=... backend/venv/bin/python -u backend/scripts/run_ai_forecast_xreg.py \
+  --start-month 2025-07 \
+  --end-month 2026-06 \
+  --history-start-month 2018-01
+```
+
+Scriptul foloseste XReg pentru magazinele cu cel putin 33 luni de context si
+fallback sezonier pentru magazinele prea noi. Outputurile CSV/JSON sunt scrise
+in `backend/outputs/ai_forecast/`; CSV-ul operational se importa apoi cu
+`backend/scripts/import_ai_forecast.py`. Magazinele inchise in luna sursa pot
+fi excluse cu `--exclude-site-code`; implicit sunt excluse inchiderile din
+iunie 2026: `CRFVUL` si `CRFARENA`.
 
 ### Focus
 Focus este separat in 4 sub-sectiuni:

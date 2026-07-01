@@ -14,6 +14,10 @@ export const queryKeys = {
     yearHistory: (year: number, query: QueryKeyParams) =>
       ['dashboard', 'year-history', year, query] as const,
   },
+  aiForecast: {
+    current: (month: string, query: QueryKeyParams) =>
+      ['ai-forecast', 'current', month, query] as const,
+  },
   campaigns: {
     all: ['campaigns'] as const,
     current: (

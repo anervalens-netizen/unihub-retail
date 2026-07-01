@@ -33,6 +33,70 @@ export interface DailySalesPoint {
   receipt_count: number;
 }
 
+export interface AiForecastRunInfo {
+  id: number;
+  forecast_month: string;
+  source_month: string;
+  model_name: string;
+  model_mode: string;
+  variant: string;
+  generated_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AiForecastSummary {
+  forecast_month: string;
+  source_month: string;
+  actual_last_date: string | null;
+  days_elapsed: number;
+  days_in_month: number;
+  store_count: number;
+  forecast_sales: number;
+  expected_sales_to_date: number;
+  actual_sales: number;
+  delta_sales: number;
+  delta_pct: number | null;
+}
+
+export interface AiForecastManagerRow {
+  manager: string;
+  store_count: number;
+  forecast_sales: number;
+  expected_sales_to_date: number;
+  actual_sales: number;
+  delta_sales: number;
+  delta_pct: number | null;
+}
+
+export interface AiForecastStoreRow {
+  site_code: string;
+  locatie: string;
+  firma: string;
+  regional: string;
+  asm: string;
+  forecast_sales: number;
+  expected_sales_to_date: number;
+  actual_sales: number;
+  delta_sales: number;
+  delta_pct: number | null;
+}
+
+export interface AiForecastDailyPoint {
+  forecast_date: string;
+  forecast_sales: number;
+  actual_sales: number;
+  cumulative_forecast: number;
+  cumulative_actual: number;
+}
+
+export interface AiForecastResponse {
+  run: AiForecastRunInfo;
+  summary: AiForecastSummary;
+  managers: AiForecastManagerRow[];
+  stores: AiForecastStoreRow[];
+  daily: AiForecastDailyPoint[];
+}
+
 export interface MonthlyHistoryPoint {
   month: string;
   total_sales: number;

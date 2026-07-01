@@ -59,7 +59,7 @@ from permissions import (
     require_salary_access,
 )
 from rate_limits import AUTH_PROXY_LIMIT, anonymous_rate_limit
-from routers import agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, stores, target_calculator, tasks, visits_report
+from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
 from services.visits_sync import sync_visits_snapshot
@@ -204,6 +204,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 _auth = [Depends(require_auth)]
 
 app.include_router(agents.router, dependencies=_auth)
+app.include_router(ai_forecast.router, dependencies=_auth)
 app.include_router(campaigns.router, dependencies=_auth)
 app.include_router(contests.router, dependencies=_auth)
 app.include_router(dashboard.router, dependencies=_auth)

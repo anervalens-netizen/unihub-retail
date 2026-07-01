@@ -46,6 +46,7 @@ import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { VisiteSubtab } from './VisiteSubtab';
+import { AiForecastPanel } from './AiForecastPanel';
 import { useSortable } from '../lib/useSortable';
 import {
   CampaignMiniCard,
@@ -599,6 +600,7 @@ export function aggregateDashboardDetails(
 
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
+  const [currentMode, setCurrentMode] = useState<'overview' | 'forecast'>('overview');
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
   const [historyMonths, setHistoryMonths] = useState<string[]>([currentMonth]);
   const [draftHistoryMonths, setDraftHistoryMonths] = useState<string[]>([currentMonth]);
@@ -1166,18 +1168,47 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         />
       ) : activeSection === 'current' ? (
         <>
-          <div className="glass rounded-3xl p-4 space-y-4">
+          <div className="glass flex rounded-2xl p-1">
+            <button
+              type="button"
+              onClick={() => setCurrentMode('overview')}
+              className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                currentMode === 'overview'
+                  ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
+                  : 'text-slate-500'
+              }`}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentMode('forecast')}
+              className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                currentMode === 'forecast'
+                  ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
+                  : 'text-slate-500'
+              }`}
+            >
+              AI Forecast
+            </button>
+          </div>
 
-            {/* 1. Header compact */}
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-bold truncate">Overview — {currentMonth}</h3>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{currentStatusLabel}</p>
-              </div>
-              <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:bg-slate-800">
-                {summary.last_sale_date ?? '-'}
-              </span>
-            </div>
+          {currentMode === 'forecast' ? (
+            <AiForecastPanel currentMonth={currentMonth} filters={filters} />
+          ) : (
+            <>
+              <div className="glass rounded-3xl p-4 space-y-4">
+
+                {/* 1. Header compact */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold truncate">Overview — {currentMonth}</h3>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{currentStatusLabel}</p>
+                  </div>
+                  <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:bg-slate-800">
+                    {summary.last_sale_date ?? '-'}
+                  </span>
+                </div>
 
             {/* 2. Bloc financiar cu bara de progres */}
             <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
@@ -1628,6 +1659,8 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
               </table>
             </div>
           </div>
+            </>
+          )}
         </>
       ) : (
         <>
