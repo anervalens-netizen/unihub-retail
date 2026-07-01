@@ -237,6 +237,12 @@ export function Campaigns({
   const premiumGlass = currentData.premiumGlass ?? null;
   const focusHistory = focusHistoryQuery.data?.history ?? EMPTY_FOCUS_HISTORY;
   const contests = contestsQuery.data ?? EMPTY_CONTESTS;
+  const promoSelectionPending = Boolean(
+    shouldLoadPromoData &&
+    selectedPromotionKey &&
+    promoData?.selected_promotion_key &&
+    promoData.selected_promotion_key !== selectedPromotionKey
+  );
 
   useEffect(() => {
     if (!promoData) return;
@@ -260,10 +266,10 @@ export function Campaigns({
   }, [activeSection, contests]);
 
   const hasCurrentData = !shouldLoadCurrent ||
-    (shouldLoadPromoData && currentData.promoData !== undefined) ||
+    (shouldLoadPromoData && currentData.promoData !== undefined && !promoSelectionPending) ||
     (shouldLoadSnapshot && currentData.snapshot !== undefined) ||
     (shouldLoadPremiumGlass && currentData.premiumGlass !== undefined);
-  const loading = shouldLoadCurrent && currentQuery.isFetching && !hasCurrentData;
+  const loading = shouldLoadCurrent && currentQuery.isFetching && (!hasCurrentData || promoSelectionPending);
   const error = currentQuery.isError && !hasCurrentData
     ? 'Datele pentru campanii si focus nu au putut fi incarcate.'
     : '';
