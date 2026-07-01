@@ -560,10 +560,10 @@ export function Campaigns({
                   { header: 'Agent', value: (row) => row.agent_name },
                   { header: 'Firma', value: (row) => row.firma },
                   { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
-                  { header: '%Prev.', value: (row) => achievementLabel(row.achievement) },
-                  { header: 'Cant.', value: (row) => row.qty_sold },
-                  { header: 'Val Inc.', value: (row) => formatCurrency(row.val_incentive) },
-                  { header: 'Incentive potential', value: (row) => formatCurrency(row.incentive_potential ?? 0) },
+                  { header: '%Prev.', value: (row) => row.achievement, format: 'percent' },
+                  { header: 'Cant.', value: (row) => row.qty_sold, format: 'integer' },
+                  { header: 'Val Inc.', value: (row) => row.val_incentive, format: 'currency' },
+                  { header: 'Incentive potential', value: (row) => row.incentive_potential ?? 0, format: 'currency' },
                 ]}
                 columns={[
                   {
@@ -642,10 +642,10 @@ export function Campaigns({
                   { header: '#', value: (_row, index) => index + 1 },
                   { header: 'Firma', value: (row) => row.firma },
                   { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
-                  { header: '%Prev.', value: (row) => achievementLabel(row.achievement) },
-                  { header: 'Cant.', value: (row) => row.qty },
-                  { header: 'Val Inc.', value: (row) => formatCurrency(row.incentive_value) },
-                  { header: 'Incentive potential', value: (row) => formatCurrency(row.incentive_potential ?? 0) },
+                  { header: '%Prev.', value: (row) => row.achievement, format: 'percent' },
+                  { header: 'Cant.', value: (row) => row.qty, format: 'integer' },
+                  { header: 'Val Inc.', value: (row) => row.incentive_value, format: 'currency' },
+                  { header: 'Incentive potential', value: (row) => row.incentive_potential ?? 0, format: 'currency' },
                 ]}
                 columns={[
                   {
