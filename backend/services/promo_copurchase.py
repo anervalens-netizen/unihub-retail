@@ -48,6 +48,10 @@ _promo_actuals_cache: dict[
 ] = {}
 
 
+class PromoActualsError(RuntimeError):
+    """Raised when a configured POS actuals report exists but cannot be used."""
+
+
 @dataclass
 class PromoCoPurchaseResult:
     """Rezultat agregat al regulii co-purchase pentru o luna/perioada/scope dat."""
@@ -286,9 +290,11 @@ async def compute_promo_actuals_from_report(
     """
     actual_units, error = load_promo_actual_units(definition, item_codes=item_codes)
     if actual_units is None:
+        if (definition.get("actuals_source_file") or definition.get("actuals_file")) and error:
+            raise PromoActualsError(error)
         return None
     if error is not None:
-        return None
+        raise PromoActualsError(error)
     if not actual_units:
         return PromoCoPurchaseResult()
 
@@ -445,7 +451,11 @@ async def compute_promo_copurchase(
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
               AND st.sale_date BETWEEN $2 AND $3
-              AND NOT st.is_return{scope_sql}
+              AND NOT st.is_return
+              AND (
+                st.item_code = ANY($4::TEXT[])
+                OR st.item_code = ANY($5::TEXT[])
+              ){scope_sql}
         ),
         bon_totals AS (
             SELECT
@@ -561,7 +571,11 @@ async def compute_promo_trigger_discounted(
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
               AND st.sale_date BETWEEN $2 AND $3
-              AND NOT st.is_return{scope_sql}
+              AND NOT st.is_return
+              AND (
+                st.item_code = ANY($4::TEXT[])
+                OR st.item_code = ANY($5::TEXT[])
+              ){scope_sql}
         ),
         bon_totals AS (
             SELECT
@@ -679,7 +693,11 @@ async def compute_promo_same_model_pair(
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
               AND st.sale_date BETWEEN $2 AND $3
-              AND NOT st.is_return{scope_sql}
+              AND NOT st.is_return
+              AND (
+                st.item_code = ANY($4::TEXT[])
+                OR st.item_code = ANY($6::TEXT[])
+              ){scope_sql}
         ),
         screen_on_bon AS (
             SELECT DISTINCT

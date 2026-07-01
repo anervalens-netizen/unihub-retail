@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
@@ -52,6 +54,7 @@ async def get_promotions_incentives(
     site_code: str | None = None,
     agent: str | None = None,
     promotion_key: str | None = None,
+    view: Literal["all", "promo", "incentive"] = "all",
     svc: CampaignsService = Depends(get_campaigns_service),
 ):
     data = await svc.get_promotions_incentives(
@@ -63,5 +66,6 @@ async def get_promotions_incentives(
         site_code,
         agent,
         promotion_key,
+        view,
     )
     return data

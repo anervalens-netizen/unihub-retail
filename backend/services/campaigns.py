@@ -28,6 +28,7 @@ from services.dashboard_specials import (
 )
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import (
+    PromoActualsError,
     PromoCoPurchaseResult,
     compute_promo_actuals_from_report,
     compute_promo_copurchase,
@@ -78,17 +79,20 @@ async def _compute_promotion_result(
     else:
         promotion_item_codes = list(products["item_codes"])
 
-    actual_result = await compute_promo_actuals_from_report(
-        conn,
-        month=month,
-        definition=definition,
-        item_codes=promotion_item_codes,
-        firma=firma,
-        regional=regional,
-        asm=asm,
-        site_code=site_code,
-        agent=agent,
-    )
+    try:
+        actual_result = await compute_promo_actuals_from_report(
+            conn,
+            month=month,
+            definition=definition,
+            item_codes=promotion_item_codes,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+    except PromoActualsError as exc:
+        return None, promotion_item_codes, rule_type, str(exc)
     if actual_result is not None:
         cutoff_date = promo_actuals_cutoff_date(definition)
         if cutoff_date is None:
@@ -247,6 +251,7 @@ class CampaignsService:
         site_code: str | None,
         agent: str | None,
         promotion_key: str | None = None,
+        view: str = "all",
     ) -> dict:
         from datetime import date as date_cls
 
@@ -270,6 +275,7 @@ class CampaignsService:
             }
             for definition in promotion_definitions
         ]
+        include_incentive = view != "promo"
 
         async with self.pool.acquire() as conn:
             promo_title = (
@@ -281,24 +287,29 @@ class CampaignsService:
                 promotion_definition.get("description", "") if promotion_definition else ""
             )
 
-            incentive_campaign = await get_incentive_campaign(conn, month)
+            incentive_campaign = await get_incentive_campaign(conn, month) if include_incentive else None
             incentive_title = incentive_campaign["title"] if incentive_campaign else ""
             incentive_description = incentive_campaign["description"] if incentive_campaign else ""
 
-            summary = await _fetch_promo_incentive_summary(
-                conn=conn,
-                month=month,
-                firma=firma,
-                regional=regional,
-                asm=asm,
-                site_code=site_code,
-                agent=agent,
-            )
-
-            promo_qty = summary.promo_qty
-            promo_impact = float(summary.promo_impact)
-            incentive_qty = summary.incentive_qty
-            incentive_value = float(summary.incentive_value)
+            if include_incentive:
+                summary = await _fetch_promo_incentive_summary(
+                    conn=conn,
+                    month=month,
+                    firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
+                )
+                promo_qty = summary.promo_qty
+                promo_impact = float(summary.promo_impact)
+                incentive_qty = summary.incentive_qty
+                incentive_value = float(summary.incentive_value)
+            else:
+                promo_qty = 0
+                promo_impact = 0.0
+                incentive_qty = 0
+                incentive_value = 0.0
 
             promo_total_qty = 0
             store_multipliers: dict[str, float] = {}
@@ -355,29 +366,33 @@ class CampaignsService:
                             promo_bonuri_by_agent[_ag] = promo_bonuri_by_agent.get(_ag, 0) + units
                             site_weights = promo_agent_sites.setdefault(_ag, {})
                             site_weights[site] = site_weights.get(site, 0) + units
-                    _merge_excluded_units(incentive_excluded_ag, promo_excluded_ag)
+                    if include_incentive:
+                        _merge_excluded_units(incentive_excluded_ag, promo_excluded_ag)
 
                 selected_key = promotion_definition.get("key")
-                for extra_definition in promotion_definitions:
-                    if extra_definition.get("key") == selected_key:
-                        continue
-                    extra_cp, _extra_item_codes, _extra_rule_type, extra_error = (
-                        await _compute_promotion_result(
-                            conn,
-                            month=month,
-                            definition=extra_definition,
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
+                if include_incentive:
+                    for extra_definition in promotion_definitions:
+                        if extra_definition.get("key") == selected_key:
+                            continue
+                        extra_cp, _extra_item_codes, _extra_rule_type, extra_error = (
+                            await _compute_promotion_result(
+                                conn,
+                                month=month,
+                                definition=extra_definition,
+                                firma=firma,
+                                regional=regional,
+                                asm=asm,
+                                site_code=site_code,
+                                agent=agent,
+                            )
                         )
-                    )
-                    if extra_error is not None or extra_cp is None:
-                        continue
-                    _merge_excluded_units(incentive_excluded_ag, extra_cp.excluded_units)
+                        if extra_error is not None or extra_cp is None:
+                            continue
+                        _merge_excluded_units(incentive_excluded_ag, extra_cp.excluded_units)
 
-                incentive_excluded_si = _excluded_by_site_item(incentive_excluded_ag)
+                    incentive_excluded_si = _excluded_by_site_item(incentive_excluded_ag)
+                else:
+                    incentive_excluded_si = {}
             else:
                 incentive_excluded_si = {}
 

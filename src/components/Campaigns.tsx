@@ -190,6 +190,7 @@ export function Campaigns({
         requests.push(
           getPromotionsIncentives(`${promoMonth}-01`, getMonthEndDate(promoMonth), {
             ...promoQuery,
+            view: activeSection === 'promo' ? 'promo' : 'incentive',
             ...(selectedPromotionKey && { promotion_key: selectedPromotionKey }),
           }).then((promoResponse) => {
             result.promoData = promoResponse;

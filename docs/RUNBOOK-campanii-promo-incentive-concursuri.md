@@ -64,7 +64,7 @@ Tabul **Focus -> Promo** afișează butoane pentru promoțiile active din lună 
 
 Cele 3 promoții iunie au optional `actuals_source_file` către
 `/opt/Mobiup/unihub-retail/data/raport-promo-sursa final iunie.xls`, sheet
-`AccesoriPromoLunar`, cu `actuals_cutoff_date=2026-06-30`.
+`Sheet1`, cu `actuals_cutoff_date=2026-06-30`.
 Raportul are granularitate `SiteCode + Cod` și coloana `Promo Luna Curenta`,
 adică unități la care discountul a fost aplicat efectiv în POS. Când fișierul
 există, aceste unități devin sursa de adevăr pentru promo și pentru excluderea
@@ -79,12 +79,12 @@ regula veche de bonuri. Dacă raportul este suprascris săptămânal pe același
 path, cache-ul se invalidează prin `mtime` și valorile se recitesc automat.
 
 Validare pe raportul final iunie, primit în 2026-07-01:
-- `promotie-actuala-mihai`: 739 unități promo.
-- `folii-ecran-camera-iunie`: 782 unități promo.
-- `capace-huse-cellara-iunie`: 23 unități promo.
-- Total raport POS: 1.544 unități promo.
+- `promotie-actuala-mihai`: 646 unități promo.
+- `folii-ecran-camera-iunie`: 878 unități promo.
+- `capace-huse-cellara-iunie`: 65 unități promo.
+- Total raport POS: 1.589 unități promo.
 - Focus afișează același incentive indiferent de promoția selectată:
-  27.594 unități, 77.282,5 RON.
+  27.549 unități, 77.957,5 RON.
 
 ### 1.2. Rulare iulie 2026
 

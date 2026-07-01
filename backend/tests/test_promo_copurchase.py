@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from services.promo_copurchase import (
+    PromoActualsError,
     PromoCoPurchaseResult,
     compute_promo_actuals_from_report,
     compute_promo_copurchase,
@@ -97,6 +98,34 @@ class TestComputePromoActualsFromReport:
             agent=None,
         )
         assert result is None
+        conn.fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_configured_actuals_report_error_does_not_fallback_to_rules(self, tmp_path):
+        source = tmp_path / "promo_actuals.xlsx"
+        pd.DataFrame(
+            [{"SiteCode": "S1", "Cod": "CL1", "Promo Luna Curenta": 5}]
+        ).to_excel(source, sheet_name="Sheet1", index=False)
+
+        conn = AsyncMock()
+        with pytest.raises(PromoActualsError):
+            await compute_promo_actuals_from_report(
+                conn,
+                month="2026-06",
+                definition={
+                    "actuals_source_file": str(source),
+                    "actuals_sheet": "MissingSheet",
+                    "actuals_cutoff_date": "2026-06-16",
+                    "start_date": date(2026, 6, 1),
+                    "end_date": date(2026, 6, 30),
+                },
+                item_codes=["CL1"],
+                firma=None,
+                regional=None,
+                asm=None,
+                site_code=None,
+                agent=None,
+            )
         conn.fetch.assert_not_called()
 
     @pytest.mark.asyncio

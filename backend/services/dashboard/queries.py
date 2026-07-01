@@ -29,6 +29,7 @@ from services.dashboard_specials import (
 from services.filters import build_scoped_params, scoped_clauses
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import (
+    PromoActualsError,
     PromoCoPurchaseResult,
     compute_promo_actuals_from_report,
     compute_promo_copurchase,
@@ -119,17 +120,20 @@ async def _compute_dashboard_promotion_result(
     else:
         promotion_item_codes = list(products["item_codes"])
 
-    actual_result = await compute_promo_actuals_from_report(
-        conn,
-        month=month,
-        definition=definition,
-        item_codes=promotion_item_codes,
-        firma=firma,
-        regional=regional,
-        asm=asm,
-        site_code=site_code,
-        agent=agent,
-    )
+    try:
+        actual_result = await compute_promo_actuals_from_report(
+            conn,
+            month=month,
+            definition=definition,
+            item_codes=promotion_item_codes,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+        )
+    except PromoActualsError:
+        return PromoCoPurchaseResult()
     if actual_result is not None:
         cutoff_date = promo_actuals_cutoff_date(definition)
         if cutoff_date is None:

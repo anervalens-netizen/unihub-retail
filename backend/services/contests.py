@@ -20,6 +20,8 @@ from services.dashboard_specials import (
     parse_promotion_definition,
 )
 from services.promo_copurchase import (
+    PromoActualsError,
+    PromoCoPurchaseResult,
     compute_promo_actuals_from_report,
     compute_promo_copurchase,
     compute_promo_same_model_pair,
@@ -163,13 +165,16 @@ class ContestsService:
 
                     async with self.pool.acquire() as conn:
                         scope_kwargs = _promo_scope_kwargs(contest.scope)
-                        cp = await compute_promo_actuals_from_report(
-                            conn,
-                            month=month,
-                            definition=promo_def,
-                            item_codes=promo_item_codes,
-                            **scope_kwargs,
-                        )
+                        try:
+                            cp = await compute_promo_actuals_from_report(
+                                conn,
+                                month=month,
+                                definition=promo_def,
+                                item_codes=promo_item_codes,
+                                **scope_kwargs,
+                            )
+                        except PromoActualsError:
+                            cp = PromoCoPurchaseResult()
                         if cp is not None:
                             cutoff_date = promo_actuals_cutoff_date(promo_def)
                             if cutoff_date is not None:
