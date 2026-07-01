@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from openpyxl import Workbook
 
 import services.reporting_refresh as reporting_refresh
 
@@ -109,6 +110,46 @@ async def test_refresh_premium_glass_indicators_loads_camera_premium_rows(
     assert "camera_products" in sql
     assert "is_premium_glass" in sql
     assert conn.events[2][1] == "ANALYZE premium_glass_item_models"
+
+
+def test_load_premium_camera_rows_reads_workbook(tmp_path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Folii Camera"
+    sheet.append(["Cod", "ItemName", "Premium"])
+    sheet.append(["WS81519", "SAMSUNG GALAXY S26 5G/S26 PLUS 5G", "Da"])
+    sheet.append(["", "SAMSUNG GALAXY S26 5G", "Da"])
+    sheet.append(["WS00000", "", "Da"])
+    sheet.append(["WS00001", "Husa simpla", "Nu"])
+    source = tmp_path / "camera.xlsx"
+    workbook.save(source)
+
+    rows = reporting_refresh._load_premium_camera_rows(source)
+
+    assert rows == (
+        ["WS81519", "WS81519"],
+        ["SAMSUNG GALAXY S26 5G/S26 PLUS 5G", "SAMSUNG GALAXY S26 5G/S26 PLUS 5G"],
+        [True, True],
+        ["samsung_s26", "samsung_s26_plus"],
+        ["Samsung S26", "Samsung S26 Plus"],
+    )
+
+
+def test_load_premium_camera_rows_handles_missing_or_invalid_workbook(tmp_path) -> None:
+    assert reporting_refresh._load_premium_camera_rows(tmp_path / "missing.xlsx") == (
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
+
+    workbook = Workbook()
+    workbook.active.append(["Cod", "Premium"])
+    source = tmp_path / "invalid.xlsx"
+    workbook.save(source)
+
+    assert reporting_refresh._load_premium_camera_rows(source) == ([], [], [], [], [])
 
 
 @pytest.mark.asyncio
