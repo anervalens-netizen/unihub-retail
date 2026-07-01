@@ -120,7 +120,7 @@ class TestAgentsList:
     async def test_list_with_rows(self, service, mock_repo):
         mock_repo.get_agents_list.return_value = [
             FakeRow(
-                agent="Agent1", store_name="Store A", active_in_month=True,
+                agent="Agent1", store_name="Store A", firma="F1", active_in_month=True,
                 is_new=True, is_reactivated=False, total_sales=Decimal("5000"),
                 total_quantity=50, current_status="active",
             ),
@@ -128,6 +128,7 @@ class TestAgentsList:
         result = await service.get_agents_list("2026-05", None, None, None, None, None)
         assert len(result.items) == 1
         assert result.items[0].agent == "Agent1"
+        assert result.items[0].firma == "F1"
         assert result.items[0].is_new is True
 
     @pytest.mark.asyncio

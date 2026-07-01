@@ -117,9 +117,9 @@ class TestPromoIncentivesNoConfig:
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=30),
         ]
         mock_repo.fetch_incentive_agent_rows.return_value = [
-            FakeRow(agent="Agent1", site_code="S1", item_code="COD1", qty=20),
+            FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=20),
             *[
-                FakeRow(agent=f"Agent{index}", site_code="S1", item_code="COD1", qty=1)
+                FakeRow(agent=f"Agent{index}", site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=1)
                 for index in range(2, 22)
             ],
         ]
@@ -174,7 +174,7 @@ class TestPromoIncentivesNoConfig:
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=20),
         ]
         mock_repo.fetch_incentive_agent_rows.return_value = [
-            FakeRow(agent="Agent1", site_code="S1", item_code="I1", qty=10),
+            FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=10),
         ]
         result = await service.get_promotions_incentives(
             "2026-05-01", "2026-05-31", None, None, None, None, None
@@ -234,7 +234,7 @@ class TestPromoIncentivesNoConfig:
             FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=10),
         ]
         mock_repo.fetch_incentive_agent_rows.return_value = [
-            FakeRow(agent="Agent1", site_code="S1", item_code="I1", qty=10),
+            FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=10),
         ]
         result = await service.get_promotions_incentives(
             "2026-06-01", "2026-06-30", None, None, None, None, None
@@ -350,8 +350,8 @@ class TestPromoIncentivesNoConfig:
         ]
         service, conn = service_and_conn
         mock_repo.fetch_incentive_agent_rows.return_value = [
-            FakeRow(agent="Agent1", site_code="S1", item_code="I1", qty=5),
-            FakeRow(agent="Agent1", site_code="S1", item_code="I2", qty=5),
+            FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="I1", qty=5),
+            FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="I2", qty=5),
         ]
 
         result = await service.get_promotions_incentives(
