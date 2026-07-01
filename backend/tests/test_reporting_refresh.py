@@ -112,6 +112,25 @@ async def test_refresh_premium_glass_indicators_loads_camera_premium_rows(
 
 
 @pytest.mark.asyncio
+async def test_rebuild_agent_lifecycle_reporting_refreshes_lifecycle_tables() -> None:
+    conn = FakeConn()
+
+    await reporting_refresh.rebuild_agent_lifecycle_reporting(conn)  # type: ignore[arg-type]
+
+    sql = executed_sql(conn)
+    assert sql[0] == "DELETE FROM reporting_agent_lifecycle_month"
+    assert sql[1] == "DELETE FROM reporting_agent_profile"
+    assert "INSERT INTO reporting_agent_lifecycle_month" in sql[2]
+    assert "COUNT(DISTINCT firma)::INT AS active_firma_count" in sql[2]
+    assert "gap_since_prev_active_months" in sql[2]
+    assert "INSERT INTO reporting_agent_profile" in sql[3]
+    assert "COUNT(DISTINCT firma)::INT AS distinct_firma_count" in sql[3]
+    assert "current_status" in sql[3]
+    assert sql[-2] == "ANALYZE reporting_agent_lifecycle_month"
+    assert sql[-1] == "ANALYZE reporting_agent_profile"
+
+
+@pytest.mark.asyncio
 async def test_list_completed_import_months_uses_completed_snapshots_ordered() -> None:
     conn = FakeConn()
     conn.fetch_rows = [{"import_month": "2026-05"}, {"import_month": "2026-06"}]
