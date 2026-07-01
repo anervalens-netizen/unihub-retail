@@ -1,4 +1,4 @@
-# HANDOVER — Campanii Iunie 2026 (Retail)
+# RUNBOOK — Campanii Promo, Incentive și Concursuri (Retail)
 
 **Data:** 2026-05-30 (lucrat peste noapte, Andrei AFK)
 **App:** UniHub Retail — `retail.unihub.ro` (port 9898, `unihub-backend.service`)
@@ -60,11 +60,11 @@ Config-ul live are acum promoții selectabile prin `key`/`promotion_key`:
 
 Tabul **Focus -> Promo** afișează butoane pentru promoțiile active din lună și reîncarcă datele pentru cheia selectată. Cardul promo Hub rămâne pe prima promoție activă din config.
 
-### 1.1. Raport POS de corecție promo — actualizat 2026-06-22
+### 1.1. Raport POS de corecție promo — final iunie
 
 Cele 3 promoții iunie au optional `actuals_source_file` către
-`/opt/Mobiup/docs/raport-promo-sursa-1-21 iunie.xls`, sheet
-`AccesoriPromoLunar`, cu `actuals_cutoff_date=2026-06-21`.
+`/opt/Mobiup/unihub-retail/data/raport-promo-sursa final iunie.xls`, sheet
+`AccesoriPromoLunar`, cu `actuals_cutoff_date=2026-06-30`.
 Raportul are granularitate `SiteCode + Cod` și coloana `Promo Luna Curenta`,
 adică unități la care discountul a fost aplicat efectiv în POS. Când fișierul
 există, aceste unități devin sursa de adevăr pentru promo și pentru excluderea
@@ -78,13 +78,28 @@ Dacă raportul lipsește sau nu este configurat, sistemul revine integral la
 regula veche de bonuri. Dacă raportul este suprascris săptămânal pe același
 path, cache-ul se invalidează prin `mtime` și valorile se recitesc automat.
 
-Validare pe raportul pentru 1-21 iunie, primit în 2026-06-22:
-- `promotie-actuala-mihai`: 439 unități promo.
-- `folii-ecran-camera-iunie`: 502 unități promo.
-- `capace-huse-cellara-iunie`: 36 unități promo.
-- Total raport POS: 977 unități promo.
+Validare pe raportul final iunie, primit în 2026-07-01:
+- `promotie-actuala-mihai`: 739 unități promo.
+- `folii-ecran-camera-iunie`: 782 unități promo.
+- `capace-huse-cellara-iunie`: 23 unități promo.
+- Total raport POS: 1.544 unități promo.
 - Focus afișează același incentive indiferent de promoția selectată:
-  19.724 unități, 58.100 RON.
+  27.594 unități, 77.282,5 RON.
+
+### 1.2. Rulare iulie 2026
+
+În 2026-07-01 au fost adăugate în `data/hub_specials.json` intrări separate
+pentru iulie, ca istoricul iunie să rămână legat de raportul POS final:
+- `promotie-actuala-mihai-iulie`: `2026-07-01` → `2026-07-31`.
+- `folii-ecran-camera-iulie`: `2026-07-01` → `2026-07-31`.
+- `capace-huse-cellara-iulie`: `2026-07-01` → `2026-07-31`.
+
+Intrările de iulie nu au `actuals_source_file`; până la încărcarea unui raport
+POS nou, promoțiile se calculează din regulile pe bonuri după importul zilnic
+de vânzări. Campania incentive `2026-07` a fost clonată în DB din `2026-06`:
+967 produse, aceleași valori 5/10/25 RON, total reward map 5.945 RON. Nu există
+concurs activ pentru iulie; `data/contests.json` rămâne doar cu concursurile
+închise pe 2026-06.
 
 ### 2. Reguli co-purchase — `backend/services/promo_copurchase.py` (helper partajat)
 - **Cheia bonului** = `(sale_date, site_code, agent, bon_nr)` — identică cu logica existentă de bonuri din `reporting_refresh.py`. (`bon_nr` singur NU e unic: ex. „174" apare în 3 magazine — de aceea cheia e compozită.) Coloana de ingest = **„Nr"** (7 cifre).

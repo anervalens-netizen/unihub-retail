@@ -2,7 +2,10 @@
 
 Retail is the source of truth for retail sales, targets, campaigns, salaries, visits reporting, and the active Grile UI.
 
-Read `APP_ARCHITECTURE.md` for module boundaries and `README.md` for setup. Read focused documents under `docs/` for salary-grid or campaign work.
+Read `APP_ARCHITECTURE.md` for module boundaries and `README.md` for setup.
+For promo, incentive, or contest work, read
+`docs/RUNBOOK-campanii-promo-incentive-concursuri.md`; for salary-grid work,
+read the focused salary documents under `docs/`.
 
 ## Runtime
 

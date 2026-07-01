@@ -400,6 +400,6 @@ După Faza 1-3 există helper-ele necesare; acum se pot tăia fișierele mari î
 
 - **NU s-a modificat codul** — analiză read-only.
 - Toate referințele sunt `file:line` și au fost verificate prin citire efectivă (cu `Read` + offset pentru fișierele mari).
-- Sursele de context: `README.md`, `APP_ARCHITECTURE.md`, `AGENTS.md`, `docs/retail-org-analysis.md`, `docs/HANDOVER-campanii-iunie-2026.md`.
+- Sursele de context: `README.md`, `APP_ARCHITECTURE.md`, `AGENTS.md`, `docs/retail-org-analysis.md`, `docs/RUNBOOK-campanii-promo-incentive-concursuri.md`.
 - Validare propusă pentru orice pas de refactor executat ulterior: `npm run typecheck` + `npm run typecheck:strict` + `npm run lint` + `npm run test` + `pytest backend/tests/ -q` + `mypy backend/ --ignore-missing-imports --explicit-package-bases` + `npm run build` (rulează secvențial — typecheck poate race cu Vite build cât `dist/` se regenerează).
 - Invariante business de respectat la refactor (din AGENTS.md): site_code domină scope istoric; excludere Cartele + `TR %`; builder-ele de scope canonice; fără param asyncpg unused; timeout-uri DB doar prin `DB_*_TIMEOUT_MS`; media salarială exclude sub 2000 RON doar din medii; `total_salary` include bonuri masă; alocare target = store target / store selling days × agent selling days; grile `YYYY-MM` + cel mult un run `queued/running` per lună; Calculator Target un draft per lună + revision pentru stale writes (409); promo qualifying receipts ≠ incentive quantity; vizite grupate după TL snapshot-ul autorului.

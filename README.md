@@ -547,5 +547,5 @@ conectare a testelor la baza Retail de productie.
 - arhitectura: [APP_ARCHITECTURE.md](./APP_ARCHITECTURE.md)
 - reguli Codex: [AGENTS.md](./AGENTS.md)
 - plan activ refactoring: [docs/refactoring-plan-current.md](./docs/refactoring-plan-current.md)
-- handover campanii iunie 2026: [docs/HANDOVER-campanii-iunie-2026.md](./docs/HANDOVER-campanii-iunie-2026.md)
+- runbook campanii promo, incentive si concursuri: [docs/RUNBOOK-campanii-promo-incentive-concursuri.md](./docs/RUNBOOK-campanii-promo-incentive-concursuri.md)
 - arhiva de planuri si rapoarte inchise: [docs/archive/README.md](./docs/archive/README.md)
