@@ -64,7 +64,30 @@ async function handleResponse(response: Response): Promise<void> {
   } else if (response.status !== 401) {
     unauthorizedRedirectStarted = false;
   }
-  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    let detail = text;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as { detail?: unknown };
+        if (typeof parsed.detail === 'string') {
+          detail = parsed.detail;
+        } else if (Array.isArray(parsed.detail) && parsed.detail.length > 0) {
+          detail = parsed.detail
+            .map((item) => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object' && 'msg' in item) return String(item.msg);
+              return '';
+            })
+            .filter(Boolean)
+            .join('; ');
+        }
+      } catch {
+        detail = text;
+      }
+    }
+    throw new Error(detail ? `API error: ${response.status} - ${detail}` : `API error: ${response.status}`);
+  }
 }
 
 async function parseResponse<T>(response: Response, responseType: ResponseType = 'json'): Promise<T> {

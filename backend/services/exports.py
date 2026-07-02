@@ -12,6 +12,12 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from repositories.exports import ExportsRepository
+from services.dashboard.queries import _load_dashboard_campaign_context
+from services.dashboard_specials import (
+    load_promotion_rule_products,
+    load_special_cards_config,
+    parse_promotion_definitions,
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +73,11 @@ METRICS = {
     "daily_average": ColumnDef("daily_average", "Medie zilnica", "currency", "KPI"),
     "store_count": ColumnDef("store_count", "Magazine active", "integer", "Identificare"),
     "agent_count": ColumnDef("agent_count", "Agenti activi", "integer", "Identificare"),
+    "incentive_sales": ColumnDef("incentive_sales", "Incentive vanzari", "currency", "Campanii"),
+    "incentive_quantity": ColumnDef("incentive_quantity", "Incentive cantitate", "integer", "Campanii"),
+    "incentive_bonus": ColumnDef("incentive_bonus", "Incentive bonus", "currency", "Campanii"),
+    "promo_sales": ColumnDef("promo_sales", "Promo vanzari", "currency", "Campanii"),
+    "promo_quantity": ColumnDef("promo_quantity", "Promo cantitate", "integer", "Campanii"),
 }
 
 EVOLUTION_METRICS = {
@@ -80,6 +91,11 @@ EVOLUTION_METRICS = {
         "prc_focus_acc_qty",
         "target",
         "target_progress_pct",
+        "incentive_sales",
+        "incentive_quantity",
+        "incentive_bonus",
+        "promo_sales",
+        "promo_quantity",
     ]
 }
 DAILY_EVOLUTION_METRICS = {
@@ -91,6 +107,11 @@ DAILY_EVOLUTION_METRICS = {
         "avg_receipt_value",
         "proc_bon2acc",
         "prc_focus_acc_qty",
+        "incentive_sales",
+        "incentive_quantity",
+        "incentive_bonus",
+        "promo_sales",
+        "promo_quantity",
     ]
 }
 
@@ -176,8 +197,8 @@ class ExportsService:
         months = sorted({str(item) for item in request.get("months", []) if item})
         if not months:
             raise ExportValidationError("Selecteaza cel putin o luna.")
-        if len(months) > 24:
-            raise ExportValidationError("Selectia poate contine maxim 24 luni.")
+        if len(months) > 144:
+            raise ExportValidationError("Selectia poate contine maxim 144 luni.")
 
         dimensions = self._valid_keys(
             request.get("dimensions"),
@@ -210,12 +231,16 @@ class ExportsService:
 
         filters = self._normalize_filters(request.get("filters") or {})
         include_closed_stores = bool(request.get("include_closed_stores", False))
+        campaign_codes_by_month = self._campaign_codes_by_month(months)
+        campaign_exclusions_by_month = await self._campaign_exclusions_by_month(months, filters)
 
         total_records = await self.repo.fetch_report_rows(
             dataset=dataset,
             months=months,
             filters=filters,
             include_closed_stores=include_closed_stores,
+            campaign_codes_by_month=campaign_codes_by_month,
+            campaign_exclusions_by_month=campaign_exclusions_by_month,
         )
         rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
         for record in total_records:
@@ -228,6 +253,8 @@ class ExportsService:
                 months=months,
                 filters=filters,
                 include_closed_stores=include_closed_stores,
+                campaign_codes_by_month=campaign_codes_by_month,
+                campaign_exclusions_by_month=campaign_exclusions_by_month,
                 period="month",
             )
             self._attach_period_metrics(
@@ -244,6 +271,8 @@ class ExportsService:
                 months=months,
                 filters=filters,
                 include_closed_stores=include_closed_stores,
+                campaign_codes_by_month=campaign_codes_by_month,
+                campaign_exclusions_by_month=campaign_exclusions_by_month,
                 period="day",
             )
             self._attach_period_metrics(
@@ -308,6 +337,11 @@ class ExportsService:
                 months=request["months"],
                 filters=self._normalize_filters(request.get("filters") or {}),
                 include_closed_stores=bool(request.get("include_closed_stores", False)),
+                campaign_codes_by_month=self._campaign_codes_by_month(request["months"]),
+                campaign_exclusions_by_month=await self._campaign_exclusions_by_month(
+                    request["months"],
+                    self._normalize_filters(request.get("filters") or {}),
+                ),
             )
             self._add_daily_evolution_sheet(
                 wb,
@@ -323,12 +357,14 @@ class ExportsService:
 
     async def _preview_daily_comparison(self, request: dict[str, Any]) -> dict[str, Any]:
         months, metrics, levels, filters, include_closed_stores = self._daily_comparison_params(request)
+        campaign_codes_by_month = self._campaign_codes_by_month(months)
         preview_level = "general" if "general" in levels else levels[0]
         records = await self.repo.fetch_daily_comparison_rows(
             level=preview_level,
             months=months,
             filters=filters,
             include_closed_stores=include_closed_stores,
+            campaign_codes_by_month=campaign_codes_by_month,
         )
         table = self._daily_comparison_table(
             level=preview_level,
@@ -346,6 +382,7 @@ class ExportsService:
 
     async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
         months, metrics, levels, filters, include_closed_stores = self._daily_comparison_params(request)
+        campaign_codes_by_month = self._campaign_codes_by_month(months)
         wb = Workbook()
         first_sheet = True
         total_rows = 0
@@ -356,6 +393,7 @@ class ExportsService:
                 months=months,
                 filters=filters,
                 include_closed_stores=include_closed_stores,
+                campaign_codes_by_month=campaign_codes_by_month,
             )
             table = self._daily_comparison_table(
                 level=level,
@@ -483,7 +521,68 @@ class ExportsService:
             "daily_average": self._ratio(total_sales, working_days),
             "store_count": int(row["store_count"] or 0),
             "agent_count": int(row["agent_count"] or 0),
+            "incentive_sales": Decimal(row["incentive_sales"] or 0),
+            "incentive_quantity": int(row["incentive_quantity"] or 0),
+            "incentive_bonus": Decimal(row["incentive_bonus"] or 0),
+            "promo_sales": Decimal(row["promo_sales"] or 0),
+            "promo_quantity": int(row["promo_quantity"] or 0),
         }
+
+    def _campaign_codes_by_month(self, months: list[str]) -> dict[str, list[str]]:
+        config, error = load_special_cards_config()
+        if error is not None:
+            return {}
+
+        out: dict[str, list[str]] = {}
+        for month in months:
+            definitions, definitions_error = parse_promotion_definitions(config, month)
+            if definitions_error is not None:
+                continue
+            codes: set[str] = set()
+            for definition in definitions:
+                products, products_error = load_promotion_rule_products(definition)
+                if products_error is not None or products is None:
+                    continue
+                rule_type = definition.get("rule_type") or "selected_item_copurchase"
+                if rule_type in {"same_model_screen_camera", "trigger_discounted"}:
+                    codes.update(str(code) for code in products.get("discounted_codes", []))
+                else:
+                    codes.update(str(code) for code in products.get("item_codes", []))
+            if codes:
+                out[month] = sorted(codes)
+        return out
+
+    async def _campaign_exclusions_by_month(
+        self,
+        months: list[str],
+        filters: dict[str, list[str]],
+    ) -> dict[str, dict[tuple[str, str, str], int]]:
+        pool = getattr(self.repo, "pool", None)
+        if pool is None:
+            return {}
+
+        def csv_filter(key: str) -> str | None:
+            values = [value for value in filters.get(key, []) if value]
+            return ",".join(values) if values else None
+
+        out: dict[str, dict[tuple[str, str, str], int]] = {}
+        async with pool.acquire() as conn:
+            for month in months:
+                context = await _load_dashboard_campaign_context(
+                    conn,
+                    month,
+                    firma=csv_filter("firma"),
+                    regional=csv_filter("regional"),
+                    asm=csv_filter("asm"),
+                    site_code=csv_filter("site_code"),
+                    agent=csv_filter("agent"),
+                )
+                if context.promo_excluded_units:
+                    out[month] = {
+                        (str(site), str(agent), str(item)): int(units)
+                        for (site, agent, item), units in context.promo_excluded_units.items()
+                    }
+        return out
 
     def _row_key(self, row: Any, dataset: str) -> tuple[Any, ...]:
         key_fields = {

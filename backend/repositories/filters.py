@@ -29,7 +29,10 @@ class FiltersRepository:
                 SELECT DISTINCT snap.import_month
                 FROM import_snapshots snap
                 WHERE snap.status = 'completed'
-                ORDER BY snap.import_month DESC
+                UNION
+                SELECT DISTINCT hms.import_month
+                FROM historical_monthly_sales hms
+                ORDER BY import_month DESC
                 """,
             )
         return [row["import_month"] for row in rows]

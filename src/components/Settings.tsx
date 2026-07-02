@@ -43,6 +43,20 @@ const DEFAULT_EXPORT_METRICS = [
 ];
 const DEFAULT_DAILY_COMPARISON_METRICS = ['total_sales'];
 const DEFAULT_COMPARISON_LEVELS = ['general', 'asms', 'stores', 'agents'];
+const MONTH_LABELS = [
+  'Ianuarie',
+  'Februarie',
+  'Martie',
+  'Aprilie',
+  'Mai',
+  'Iunie',
+  'Iulie',
+  'August',
+  'Septembrie',
+  'Octombrie',
+  'Noiembrie',
+  'Decembrie',
+];
 type ExportMode = 'table' | 'daily_comparison';
 type SettingsSection = 'imports' | 'exports' | 'preferences';
 
@@ -78,6 +92,7 @@ export function Settings({
   const [preview, setPreview] = useState<ExportPreview | null>(null);
   const [exportMessage, setExportMessage] = useState('');
   const [exportBusy, setExportBusy] = useState(false);
+  const [selectedMonthYear, setSelectedMonthYear] = useState('');
 
   useEffect(() => {
     if (!canImportSales && section === 'imports') {
@@ -140,6 +155,22 @@ export function Settings({
     [catalog, exportDataset]
   );
 
+  const availableYears = useMemo(
+    () => Array.from(new Set(months.map((month) => month.slice(0, 4)))).sort((a, b) => Number(b) - Number(a)),
+    [months],
+  );
+
+  const monthsForSelectedYear = useMemo(
+    () => months.filter((month) => month.startsWith(`${selectedMonthYear}-`)),
+    [months, selectedMonthYear],
+  );
+
+  useEffect(() => {
+    if (!selectedMonthYear && availableYears[0]) {
+      setSelectedMonthYear(availableYears[0]);
+    }
+  }, [availableYears, selectedMonthYear]);
+
   const exportRequest = useMemo<ExportRequest>(() => {
     const effectiveDailyMetrics = exportMode === 'daily_comparison'
       ? (dailyMetrics.length > 0 ? dailyMetrics : DEFAULT_DAILY_COMPARISON_METRICS)
@@ -156,9 +187,7 @@ export function Settings({
       filters: exportFilters,
       include_closed_stores: includeClosedStores,
       preview_limit: 100,
-      filename: exportMode === 'daily_comparison'
-        ? `export_retail_evolutie_zilnica_${exportMonths.join('_')}`
-        : `export_retail_${exportDataset}_${exportMonths.join('_')}`,
+      filename: formatExportFilename(exportMode, exportDataset, exportMonths),
     };
   }, [
     comparisonLevels,
@@ -257,14 +286,32 @@ export function Settings({
     setPreview(null);
   };
 
+  const toggleMonth = (month: string) => {
+    setExportMonths((current) => toggleValue(current, month, true).sort());
+    setPreview(null);
+  };
+
+  const selectVisibleYearMonths = () => {
+    setExportMonths((current) => Array.from(new Set([...current, ...monthsForSelectedYear])).sort());
+    setPreview(null);
+  };
+
+  const clearVisibleYearMonths = () => {
+    setExportMonths((current) => {
+      const remaining = current.filter((month) => !month.startsWith(`${selectedMonthYear}-`));
+      return remaining.length > 0 ? remaining : current;
+    });
+    setPreview(null);
+  };
+
   const handlePreviewExport = async () => {
     try {
       setExportBusy(true);
       setExportMessage('');
       const data = await previewExport(exportRequest);
       setPreview(data);
-    } catch {
-      setExportMessage('Preview-ul nu a putut fi generat. Verifica selectia.');
+    } catch (error) {
+      setExportMessage(formatExportError(error, 'Preview-ul nu a putut fi generat. Verifica selectia.'));
     } finally {
       setExportBusy(false);
     }
@@ -276,8 +323,8 @@ export function Settings({
       setExportMessage('');
       const blob = await downloadExport(exportRequest);
       downloadBlob(blob, `${exportRequest.filename || 'export_retail'}.xlsx`);
-    } catch {
-      setExportMessage('Exportul nu a putut fi generat. Verifica selectia.');
+    } catch (error) {
+      setExportMessage(formatExportError(error, 'Exportul nu a putut fi generat. Verifica selectia.'));
     } finally {
       setExportBusy(false);
     }
@@ -461,30 +508,42 @@ export function Settings({
               )}
 
               <FieldBlock title="Luni">
-                <div className="max-h-36 space-y-1 overflow-auto rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-                  {months.map((month) => (
-                    <CheckRow
-                      key={month}
-                      label={month}
-                      checked={exportMonths.includes(month)}
-                      onChange={() => {
-                        setExportMonths((current) => toggleValue(current, month, true).sort());
-                        setPreview(null);
-                      }}
-                    />
-                  ))}
-                </div>
+                <MonthSelector
+                  years={availableYears}
+                  selectedYear={selectedMonthYear}
+                  onYearChange={setSelectedMonthYear}
+                  months={monthsForSelectedYear}
+                  selectedMonths={exportMonths}
+                  onMonthToggle={toggleMonth}
+                  onAddMonth={(month) => {
+                    if (!exportMonths.includes(month)) toggleMonth(month);
+                  }}
+                  onSelectYear={selectVisibleYearMonths}
+                  onClearYear={clearVisibleYearMonths}
+                />
               </FieldBlock>
 
               <FieldBlock title="Optiuni">
-                <CheckRow
-                  label="Include magazine inchise"
-                  checked={includeClosedStores}
-                  onChange={() => {
-                    setIncludeClosedStores((value) => !value);
-                    setPreview(null);
-                  }}
-                />
+                <div className="space-y-1 rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                  <CheckRow
+                    label="Include magazine inchise"
+                    checked={includeClosedStores}
+                    onChange={() => {
+                      setIncludeClosedStores((value) => !value);
+                      setPreview(null);
+                    }}
+                  />
+                  {exportMode === 'table' && (
+                    <CheckRow
+                      label="Vanzare lunara pe perioada selectata"
+                      checked={monthlyMetrics.includes('total_sales')}
+                      onChange={() => {
+                        setMonthlyMetrics((current) => toggleValue(current, 'total_sales'));
+                        setPreview(null);
+                      }}
+                    />
+                  )}
+                </div>
               </FieldBlock>
             </div>
           </div>
@@ -642,6 +701,110 @@ export function Settings({
       )}
     </div>
   );
+}
+
+function MonthSelector({
+  years,
+  selectedYear,
+  onYearChange,
+  months,
+  selectedMonths,
+  onMonthToggle,
+  onAddMonth,
+  onSelectYear,
+  onClearYear,
+}: {
+  years: string[];
+  selectedYear: string;
+  onYearChange: (year: string) => void;
+  months: string[];
+  selectedMonths: string[];
+  onMonthToggle: (month: string) => void;
+  onAddMonth: (month: string) => void;
+  onSelectYear: () => void;
+  onClearYear: () => void;
+}) {
+  const selectedInYear = months.filter((month) => selectedMonths.includes(month)).length;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <select
+          value={selectedYear}
+          onChange={(event) => onYearChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
+        >
+          {years.map((year) => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+        <select
+          value=""
+          onChange={(event) => {
+            if (event.target.value) onAddMonth(event.target.value);
+          }}
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
+        >
+          <option value="">Adauga luna</option>
+          {months.map((month) => (
+            <option key={month} value={month}>
+              {formatMonthLabel(month)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+        <span>{selectedMonths.length} luni selectate · {selectedInYear} in {selectedYear}</span>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={onSelectYear}
+            className="rounded-lg border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Tot anul
+          </button>
+          <button
+            type="button"
+            onClick={onClearYear}
+            className="rounded-lg border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Curata anul
+          </button>
+        </div>
+      </div>
+      <div className="mt-2 grid max-h-36 gap-1 overflow-auto sm:grid-cols-2">
+        {months.map((month) => (
+          <CheckRow
+            key={month}
+            label={formatMonthLabel(month)}
+            checked={selectedMonths.includes(month)}
+            onChange={() => onMonthToggle(month)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatMonthLabel(month: string): string {
+  const index = Number(month.slice(5, 7)) - 1;
+  return `${MONTH_LABELS[index] ?? month.slice(5, 7)} ${month.slice(0, 4)}`;
+}
+
+function formatExportFilename(mode: ExportMode, dataset: string, months: string[]): string {
+  const sortedMonths = [...months].sort();
+  const suffix = sortedMonths.length <= 4
+    ? sortedMonths.join('_')
+    : `${sortedMonths[0]}_${sortedMonths[sortedMonths.length - 1]}_${sortedMonths.length}luni`;
+  return mode === 'daily_comparison'
+    ? `export_retail_evolutie_zilnica_${suffix}`
+    : `export_retail_${dataset}_${suffix}`;
+}
+
+function formatExportError(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  const detail = error.message.replace(/^API error: \d+\s*-?\s*/i, '').trim();
+  return detail || fallback;
 }
 
 function ModeButton({

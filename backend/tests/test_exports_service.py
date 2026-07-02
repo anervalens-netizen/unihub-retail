@@ -67,6 +67,11 @@ def row(**overrides: Any) -> dict[str, Any]:
         "working_days": 2,
         "store_count": 1,
         "agent_count": 1,
+        "incentive_sales": Decimal("0"),
+        "incentive_quantity": 0,
+        "incentive_bonus": Decimal("0"),
+        "promo_sales": Decimal("0"),
+        "promo_quantity": 0,
     }
     defaults.update(overrides)
     for key in ("total_sales", "target"):
@@ -201,11 +206,11 @@ async def test_report_validation_limits_months_and_daily_width() -> None:
     with pytest.raises(ExportValidationError, match="cel putin o luna"):
         await service.build_report({"dataset": "stores", "months": []})
 
-    with pytest.raises(ExportValidationError, match="maxim 24 luni"):
+    with pytest.raises(ExportValidationError, match="maxim 144 luni"):
         await service.build_report(
             {
                 "dataset": "stores",
-                "months": [f"2024-{index:02d}" for index in range(1, 26)],
+                "months": [f"2024-{index:02d}" for index in range(1, 146)],
             }
         )
 

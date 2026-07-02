@@ -27,7 +27,7 @@ class ExportRequest(BaseModel):
 
     export_mode: str = "table"
     dataset: str
-    months: list[str] = Field(min_length=1, max_length=24)
+    months: list[str] = Field(min_length=1, max_length=144)
     dimensions: list[str] = Field(default_factory=list)
     metrics: list[str] = Field(default_factory=list)
     monthly_metrics: list[str] = Field(default_factory=list)
@@ -36,7 +36,7 @@ class ExportRequest(BaseModel):
     filters: ExportFilters = Field(default_factory=ExportFilters)
     include_closed_stores: bool = False
     preview_limit: int = Field(default=100, ge=1, le=500)
-    filename: str | None = Field(default=None, max_length=120)
+    filename: str | None = None
 
 
 async def get_exports_service() -> ExportsService:
