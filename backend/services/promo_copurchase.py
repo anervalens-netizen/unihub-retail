@@ -452,10 +452,7 @@ async def compute_promo_copurchase(
             WHERE st.import_month = $1
               AND st.sale_date BETWEEN $2 AND $3
               AND NOT st.is_return
-              AND (
-                st.item_code = ANY($4::TEXT[])
-                OR st.item_code = ANY($5::TEXT[])
-              ){scope_sql}
+              {scope_sql}
         ),
         bon_totals AS (
             SELECT

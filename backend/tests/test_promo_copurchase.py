@@ -81,6 +81,30 @@ class TestComputePromoCoPurchase:
         assert result.excluded_units[("S1", "Agent1", "CL1")] == 4
         assert result.excluded_by_site_item()[("S1", "CL1")] == 4
 
+    @pytest.mark.asyncio
+    async def test_site_code_csv_scope_is_not_used_as_item_code_array(self):
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
+
+        await compute_promo_copurchase(
+            conn,
+            month="2026-07",
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+            item_codes=["CL1", "CL2"],
+            firma=None,
+            regional=None,
+            asm=None,
+            site_code="FOCCRARF,CRFFEER",
+            agent=None,
+        )
+
+        sql = conn.fetch.await_args.args[0]
+        assert "st.item_code = ANY($4::TEXT[])" in sql
+        assert "st.item_code = ANY($5::TEXT[])" not in sql
+        assert "st.site_code = ANY(string_to_array($5::TEXT, ','))" in sql
+        assert conn.fetch.await_args.args[5] == "FOCCRARF,CRFFEER"
+
 
 class TestComputePromoActualsFromReport:
     @pytest.mark.asyncio
