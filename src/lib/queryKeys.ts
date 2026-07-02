@@ -17,6 +17,8 @@ export const queryKeys = {
   aiForecast: {
     current: (month: string, query: QueryKeyParams) =>
       ['ai-forecast', 'current', month, query] as const,
+    rolling12: (month: string, query: QueryKeyParams) =>
+      ['ai-forecast', 'rolling-12', month, query] as const,
   },
   campaigns: {
     all: ['campaigns'] as const,

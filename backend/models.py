@@ -33,6 +33,8 @@ class AiForecastRunInfo(BaseModel):
     id: int
     forecast_month: str
     source_month: str
+    metric: Literal["sales_value", "units"] = "sales_value"
+    horizon: Literal["current_month", "rolling_12m"] = "current_month"
     model_name: str
     model_mode: str
     variant: str
@@ -91,6 +93,56 @@ class AiForecastResponse(BaseModel):
     managers: list[AiForecastManagerRow] = Field(default_factory=list)
     stores: list[AiForecastStoreRow] = Field(default_factory=list)
     daily: list[AiForecastDailyPoint] = Field(default_factory=list)
+
+
+class AiForecastRollingSummary(BaseModel):
+    source_month: str
+    start_month: str
+    end_month: str
+    month_count: int
+    store_count: int
+    forecast_sales: Decimal
+    actual_sales: Decimal | None = None
+    delta_sales: Decimal | None = None
+    delta_pct: Decimal | None = None
+
+
+class AiForecastRollingMonthlyPoint(BaseModel):
+    forecast_month: str
+    store_count: int
+    forecast_sales: Decimal
+    actual_sales: Decimal | None = None
+    delta_sales: Decimal | None = None
+    delta_pct: Decimal | None = None
+
+
+class AiForecastRollingManagerRow(BaseModel):
+    manager: str
+    store_count: int
+    forecast_sales: Decimal
+    actual_sales: Decimal | None = None
+    delta_sales: Decimal | None = None
+    delta_pct: Decimal | None = None
+
+
+class AiForecastRollingStoreRow(BaseModel):
+    site_code: str
+    locatie: str
+    firma: str
+    regional: str
+    asm: str
+    forecast_sales: Decimal
+    actual_sales: Decimal | None = None
+    delta_sales: Decimal | None = None
+    delta_pct: Decimal | None = None
+
+
+class AiForecastRollingResponse(BaseModel):
+    runs: list[AiForecastRunInfo] = Field(default_factory=list)
+    summary: AiForecastRollingSummary
+    months: list[AiForecastRollingMonthlyPoint] = Field(default_factory=list)
+    managers: list[AiForecastRollingManagerRow] = Field(default_factory=list)
+    stores: list[AiForecastRollingStoreRow] = Field(default_factory=list)
 
 
 class ReceiptBucketItem(BaseModel):

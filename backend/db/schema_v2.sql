@@ -1389,6 +1389,10 @@ CREATE TABLE IF NOT EXISTS ai_forecast_runs (
     id BIGSERIAL PRIMARY KEY,
     forecast_month TEXT NOT NULL,
     source_month TEXT NOT NULL,
+    metric TEXT NOT NULL DEFAULT 'sales_value'
+        CHECK (metric IN ('sales_value', 'units')),
+    horizon TEXT NOT NULL DEFAULT 'current_month'
+        CHECK (horizon IN ('current_month', 'rolling_12m')),
     model_name TEXT NOT NULL,
     model_mode TEXT NOT NULL,
     variant TEXT NOT NULL,
@@ -1399,11 +1403,23 @@ CREATE TABLE IF NOT EXISTS ai_forecast_runs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE ai_forecast_runs
+    ADD COLUMN IF NOT EXISTS metric TEXT NOT NULL DEFAULT 'sales_value';
+
+ALTER TABLE ai_forecast_runs
+    ADD COLUMN IF NOT EXISTS horizon TEXT NOT NULL DEFAULT 'current_month';
+
 CREATE INDEX IF NOT EXISTS idx_ai_forecast_runs_month_status
     ON ai_forecast_runs(forecast_month, status, generated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_ai_forecast_runs_source_status
     ON ai_forecast_runs(source_month, status, generated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_forecast_runs_metric_horizon_month
+    ON ai_forecast_runs(metric, horizon, forecast_month, status, generated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_forecast_runs_anchor_month
+    ON ai_forecast_runs((metadata->>'anchor_month'), metric, horizon, forecast_month, status, generated_at DESC);
 
 CREATE TABLE IF NOT EXISTS ai_forecast_store_month (
     run_id BIGINT NOT NULL REFERENCES ai_forecast_runs(id) ON DELETE CASCADE,

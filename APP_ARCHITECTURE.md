@@ -62,12 +62,12 @@ flowchart LR
 ## Functionalitati majore
 
 - KPI retail si istoric lunar.
-- Hub -> `Luna in curs` -> `AI Forecast` afiseaza ultimul forecast lunar
-  salvat pentru luna curenta sau pentru luna urmatoare generata din luna
-  curenta. Subsectiunea compara forecastul la nivel de retea, manager si
-  magazin cu realizatul importat la zi. Modelul TimesFM/XReg nu ruleaza in
-  requesturile Hub; rularea se face offline, iar rezultatul se importa in
-  tabelele `ai_forecast_*`.
+- Hub -> `Luna in curs` -> `AI Forecast` afiseaza forecasturi salvate offline,
+  cu doua comutatoare: `Luna curenta / 12 luni` si `Valoare / Bucati`.
+  Pentru luna curenta compara forecastul cumulat la zi cu realizatul importat
+  la nivel de retea, manager si magazin. Pentru `12 luni` afiseaza prognoza
+  lunara agregata pe retea, RM si magazin. Modelul TimesFM/XReg nu ruleaza in
+  requesturile Hub; rezultatele sunt importate in tabelele `ai_forecast_*`.
 - Filtre globale firma / regional / magazin / agent.
 - Campanii promo, incentive si concursuri config-driven.
 - Analiza agentilor, lifecycle, salarii.
@@ -213,20 +213,25 @@ sau sa reactiveze magazine inchise.
 
 ### AI Forecast
 
-Forecasturile AI sunt persistate in PostgreSQL si citite prin
-`/api/ai-forecast/current`. Endpointul cauta mai intai o rulare `completed`
-pentru luna ceruta; daca nu exista, cauta o rulare care foloseste luna ceruta
-ca `source_month`, ca Hub sa poata afisa forecastul lunii urmatoare inainte sa
-existe importuri pentru acea luna.
+Forecasturile AI sunt persistate in PostgreSQL. `ai_forecast_runs` marcheaza
+fiecare rulare cu `metric` (`sales_value` sau `units`) si `horizon`
+(`current_month` sau `rolling_12m`). `/api/ai-forecast/current` citeste ultima
+rulare `completed` pentru luna si metrica ceruta; daca nu exista, cauta o
+rulare care foloseste luna ceruta ca `source_month`, ca Hub sa poata afisa
+forecastul lunii urmatoare inainte sa existe importuri pentru acea luna.
+`/api/ai-forecast/rolling-12` citeste cele 12 rulări lunare salvate pentru
+urmatoarele 12 luni, ancorate prin `metadata.anchor_month`.
 
 Fluxul operational curent este:
 
 1. TimesFM 2.5 ruleaza in afara aplicatiei, cu XReg calendaristic
    (`xreg + timesfm`) pe serii lunare.
 2. Backtestul si rularea operationala se fac cu
-   `backend/scripts/run_ai_forecast_xreg.py`. Scriptul trimite batch XReg la
-   serviciul TimesFM, evalueaza lunile tinta fata de realizat si scrie
-   outputurile sub `backend/outputs/ai_forecast/`.
+   `backend/scripts/run_ai_forecast_xreg.py`. Scriptul poate prognoza
+   `sales_value` sau `units`. Pentru backtest ruleaza fiecare luna cu contextul
+   disponibil pana in luna precedenta; pentru operational `--operational`
+   trimite un singur forecast multi-step, fara sa introduca luni viitoare cu
+   zero in context. Outputurile sunt scrise sub `backend/outputs/ai_forecast/`.
 3. Pentru magazinele cu istoric prea scurt pentru XReg, scriptul foloseste
    fallback sezonier pe media ultimelor 3 luni, scalata cu sezonalitatea
    aceleiasi luni din anul anterior. Randurile exportate pastreaza metoda in
@@ -235,7 +240,9 @@ Fluxul operational curent este:
    `--exclude-site-code`. Implicit, fluxul exclude inchiderile din iunie 2026:
    `CRFVUL` si `CRFARENA`.
 5. Rezultatul lunar per magazin se importa cu
-   `backend/scripts/import_ai_forecast.py`.
+   `backend/scripts/import_ai_forecast.py`. Pentru `current_month`, importul
+   genereaza si `ai_forecast_store_day`; pentru `rolling_12m`, creeaza cate o
+   rulare lunara si nu genereaza curba zilnica.
 6. Curba zilnica este derivata din profilul zilnic al aceleiasi luni din anul
    precedent, la nivel de magazin, dar este aliniata pe calendarul lunii
    forecastate prin ordinalul zilei din saptamana (ex. prima sambata la prima

@@ -9,9 +9,13 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from typing import Any, Literal
 
 import asyncpg
 from dotenv import find_dotenv, load_dotenv
+
+
+MetricName = Literal["sales_value", "units"]
 
 
 def month_dates(month: str) -> list[date]:
@@ -25,8 +29,9 @@ def month_dates(month: str) -> list[date]:
     return [start + timedelta(days=offset) for offset in range(days)]
 
 
-def money(value: Decimal) -> Decimal:
-    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+def metric_value(value: Decimal, metric: MetricName) -> Decimal:
+    quantizer = Decimal("1") if metric == "units" else Decimal("0.01")
+    return value.quantize(quantizer, rounding=ROUND_HALF_UP)
 
 
 def parse_decimal(value: str | None) -> Decimal:
@@ -51,11 +56,13 @@ async def fetch_daily_weights(
     reference_month: str,
     forecast_month: str,
     site_codes: list[str],
+    metric: MetricName,
 ) -> dict[str, list[tuple[date, Decimal]]]:
     forecast_dates = month_dates(forecast_month)
+    metric_column = "total_quantity" if metric == "units" else "total_sales"
     rows = await conn.fetch(
-        """
-        SELECT site_code, sale_date, COALESCE(SUM(total_sales), 0)::NUMERIC(14, 2) AS total_sales
+        f"""
+        SELECT site_code, sale_date, COALESCE(SUM({metric_column}), 0)::NUMERIC(14, 2) AS total_metric
         FROM reporting_agent_day
         WHERE import_month = $1
           AND site_code = ANY($2::TEXT[])
@@ -66,7 +73,7 @@ async def fetch_daily_weights(
     )
     by_site_day: dict[str, dict[date, Decimal]] = defaultdict(dict)
     for row in rows:
-        by_site_day[row["site_code"]][row["sale_date"]] = row["total_sales"]
+        by_site_day[row["site_code"]][row["sale_date"]] = row["total_metric"]
 
     weights: dict[str, list[tuple[date, Decimal]]] = {}
     uniform = Decimal("1") / Decimal(len(forecast_dates))
@@ -106,118 +113,183 @@ async def fetch_daily_weights(
     return weights
 
 
+def load_forecast_rows(args: argparse.Namespace) -> list[dict[str, str]]:
+    forecast_rows: list[dict[str, str]] = []
+    with Path(args.csv).open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            row_metric = row.get("metric")
+            if row_metric and row_metric != args.metric:
+                continue
+            if row.get("target_month"):
+                target_month = row["target_month"]
+                if args.start_month and target_month < args.start_month:
+                    continue
+                if args.end_month and target_month > args.end_month:
+                    continue
+                forecast_value = row.get("forecast") or row.get("forecast_sales")
+                if forecast_value is None:
+                    continue
+                forecast_rows.append(
+                    {
+                        **row,
+                        "target_month": target_month,
+                        "forecast": forecast_value,
+                    }
+                )
+            elif row.get("scenario") == args.scenario and row.get("mode") == args.mode:
+                if not args.forecast_month:
+                    raise RuntimeError("--forecast-month este necesar pentru CSV-ul legacy fara target_month")
+                forecast_rows.append(
+                    {
+                        **row,
+                        "target_month": args.forecast_month,
+                        "forecast": row["forecast"],
+                    }
+                )
+    if not forecast_rows:
+        raise RuntimeError("Nu am gasit randuri de forecast pentru filtrele cerute.")
+    return forecast_rows
+
+
 async def import_forecast(args: argparse.Namespace) -> int:
     load_dotenv(find_dotenv())
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("DATABASE_URL lipseste din .env")
 
-    forecast_rows: list[dict[str, str]] = []
-    with Path(args.csv).open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            if row.get("scenario") == args.scenario and row.get("mode") == args.mode:
-                forecast_rows.append(row)
-    if not forecast_rows:
-        raise RuntimeError(f"Nu am gasit randuri pentru scenario={args.scenario!r}, mode={args.mode!r}")
+    forecast_rows = load_forecast_rows(args)
+    rows_by_month: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in forecast_rows:
+        rows_by_month[row["target_month"]].append(row)
 
-    site_codes = [row["site_code"] for row in forecast_rows]
     conn = await asyncpg.connect(database_url)
+    imported_run_ids: list[int] = []
     try:
-        existing = await conn.fetchval(
-            """
-            SELECT id
-            FROM ai_forecast_runs
-            WHERE forecast_month = $1
-              AND model_name = $2
-              AND model_mode = $3
-              AND variant = $4
-              AND status = 'completed'
-            ORDER BY generated_at DESC, id DESC
-            LIMIT 1
-            """,
-            args.forecast_month,
-            args.model_name,
-            args.mode,
-            args.variant,
-        )
-        if existing and not args.replace:
-            print(f"Forecast existent: run_id={existing}. Foloseste --replace pentru reimport.")
-            return int(existing)
-        if existing and args.replace:
-            await conn.execute("DELETE FROM ai_forecast_runs WHERE id = $1", existing)
-
-        weights = await fetch_daily_weights(
-            conn,
-            reference_month=args.daily_profile_month,
-            forecast_month=args.forecast_month,
-            site_codes=site_codes,
-        )
         async with conn.transaction():
-            run_id = await conn.fetchval(
-                """
-                INSERT INTO ai_forecast_runs (
-                    forecast_month, source_month, model_name, model_mode,
-                    variant, status, generated_at, metadata
-                )
-                VALUES ($1, $2, $3, $4, $5, 'completed', $6, $7::JSONB)
-                RETURNING id
-                """,
-                args.forecast_month,
-                args.source_month,
-                args.model_name,
-                args.mode,
-                args.variant,
-                datetime.now(),
-                json.dumps(
-                    {
-                        "imported_from": str(Path(args.csv).resolve()),
-                        "scenario": args.scenario,
-                        "daily_profile_month": args.daily_profile_month,
-                        "daily_profile_method": "weekday_occurrence_share",
-                    }
-                ),
-            )
-            for row in forecast_rows:
-                site_code = row["site_code"]
-                forecast_sales = money(parse_decimal(row["forecast"]))
-                await conn.execute(
+            for target_month in sorted(rows_by_month):
+                month_rows = rows_by_month[target_month]
+                site_codes = [row["site_code"] for row in month_rows]
+                existing = await conn.fetchval(
                     """
-                    INSERT INTO ai_forecast_store_month (run_id, site_code, forecast_sales, metadata)
-                    VALUES ($1, $2, $3, $4::JSONB)
+                    SELECT id
+                    FROM ai_forecast_runs
+                    WHERE forecast_month = $1
+                      AND model_name = $2
+                      AND model_mode = $3
+                      AND variant = $4
+                      AND metric = $5
+                      AND horizon = $6
+                      AND status = 'completed'
+                    ORDER BY generated_at DESC, id DESC
+                    LIMIT 1
                     """,
-                    run_id,
-                    site_code,
-                    forecast_sales,
-                    json.dumps({"locatie": row.get("locatie"), "firma": row.get("firma")}),
+                    target_month,
+                    args.model_name,
+                    args.mode,
+                    args.variant,
+                    args.metric,
+                    args.horizon,
                 )
-                daily_allocations: list[tuple[date, Decimal]] = []
-                running = Decimal("0")
-                site_weights = weights[site_code]
-                for forecast_date, weight in site_weights[:-1]:
-                    value = money(forecast_sales * weight)
-                    running += value
-                    daily_allocations.append((forecast_date, value))
-                daily_allocations.append((site_weights[-1][0], money(forecast_sales - running)))
-                await conn.executemany(
+                if existing and not args.replace:
+                    print(f"Forecast existent pentru {target_month}: run_id={existing}. Foloseste --replace pentru reimport.")
+                    imported_run_ids.append(int(existing))
+                    continue
+                if existing and args.replace:
+                    await conn.execute("DELETE FROM ai_forecast_runs WHERE id = $1", existing)
+
+                weights: dict[str, list[tuple[date, Decimal]]] = {}
+                if args.horizon == "current_month":
+                    weights = await fetch_daily_weights(
+                        conn,
+                        reference_month=args.daily_profile_month,
+                        forecast_month=target_month,
+                        site_codes=site_codes,
+                        metric=args.metric,
+                    )
+
+                metadata: dict[str, Any] = {
+                    "imported_from": str(Path(args.csv).resolve()),
+                    "scenario": args.scenario,
+                    "metric": args.metric,
+                    "horizon": args.horizon,
+                }
+                if args.anchor_month:
+                    metadata["anchor_month"] = args.anchor_month
+                if args.horizon == "current_month":
+                    metadata["daily_profile_month"] = args.daily_profile_month
+                    metadata["daily_profile_method"] = "weekday_occurrence_share"
+
+                source_month = args.source_month or month_rows[0].get("source_month") or ""
+                if not source_month:
+                    raise RuntimeError("--source-month lipseste si CSV-ul nu contine source_month")
+
+                run_id = await conn.fetchval(
                     """
-                    INSERT INTO ai_forecast_store_day (run_id, forecast_date, site_code, forecast_sales)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO ai_forecast_runs (
+                        forecast_month, source_month, metric, horizon, model_name, model_mode,
+                        variant, status, generated_at, metadata
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', $8, $9::JSONB)
+                    RETURNING id
                     """,
-                    [(run_id, forecast_date, site_code, value) for forecast_date, value in daily_allocations],
+                    target_month,
+                    source_month,
+                    args.metric,
+                    args.horizon,
+                    args.model_name,
+                    args.mode,
+                    args.variant,
+                    datetime.now(),
+                    json.dumps(metadata),
                 )
+                for row in month_rows:
+                    site_code = row["site_code"]
+                    forecast_sales = metric_value(parse_decimal(row["forecast"]), args.metric)
+                    await conn.execute(
+                        """
+                        INSERT INTO ai_forecast_store_month (run_id, site_code, forecast_sales, metadata)
+                        VALUES ($1, $2, $3, $4::JSONB)
+                        """,
+                        run_id,
+                        site_code,
+                        forecast_sales,
+                        json.dumps({"locatie": row.get("locatie"), "firma": row.get("firma")}),
+                    )
+                    if args.horizon == "current_month":
+                        daily_allocations: list[tuple[date, Decimal]] = []
+                        running = Decimal("0")
+                        site_weights = weights[site_code]
+                        for forecast_date, weight in site_weights[:-1]:
+                            value = metric_value(forecast_sales * weight, args.metric)
+                            running += value
+                            daily_allocations.append((forecast_date, value))
+                        daily_allocations.append((site_weights[-1][0], metric_value(forecast_sales - running, args.metric)))
+                        await conn.executemany(
+                            """
+                            INSERT INTO ai_forecast_store_day (run_id, forecast_date, site_code, forecast_sales)
+                            VALUES ($1, $2, $3, $4)
+                            """,
+                            [(run_id, forecast_date, site_code, value) for forecast_date, value in daily_allocations],
+                        )
+                imported_run_ids.append(int(run_id))
     finally:
         await conn.close()
 
-    print(f"Importat forecast AI run_id={run_id}, magazine={len(forecast_rows)}")
-    return int(run_id)
+    print(f"Importat forecast AI run_ids={imported_run_ids}, randuri={len(forecast_rows)}")
+    return imported_run_ids[-1]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Importa un forecast AI lunar in tabelele Retail.")
     parser.add_argument("--csv", required=True, help="CSV-ul cu randuri per magazin")
-    parser.add_argument("--forecast-month", required=True)
-    parser.add_argument("--source-month", required=True)
+    parser.add_argument("--forecast-month", default=None)
+    parser.add_argument("--start-month", default=None)
+    parser.add_argument("--end-month", default=None)
+    parser.add_argument("--source-month", default=None)
+    parser.add_argument("--anchor-month", default=None)
+    parser.add_argument("--metric", choices=["sales_value", "units"], default="sales_value")
+    parser.add_argument("--horizon", choices=["current_month", "rolling_12m"], default="current_month")
     parser.add_argument("--scenario", default="forecast_2026_07_june_scaled")
     parser.add_argument("--mode", default="xreg + timesfm")
     parser.add_argument("--variant", default="monthly_xreg_june_scaled")

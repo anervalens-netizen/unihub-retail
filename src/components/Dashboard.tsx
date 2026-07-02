@@ -2436,6 +2436,7 @@ function PerformanceDetailDrawer({
     : monthlyMetric === 'bon2acc'
       ? '#0f766e'
       : '#db2777';
+  const showMonthlyTargetLines = detail?.level !== 'agent';
 
   return (
     <SideDrawer
@@ -2527,11 +2528,17 @@ function PerformanceDetailDrawer({
                       {monthlyMetric === 'sales' ? (
                         <>
                           <YAxis yAxisId="sales" tick={{ fontSize: 10 }} tickFormatter={(value) => formatAmount(Number(value))} width={58} />
-                          <YAxis yAxisId="percent" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(value) => `${value}%`} width={38} />
+                          {showMonthlyTargetLines && (
+                            <YAxis yAxisId="percent" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(value) => `${value}%`} width={38} />
+                          )}
                           <Tooltip formatter={(value: number, name: string) => [name.includes('%') ? formatPercent(value) : formatCurrency(value), name]} />
                           <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill={monthlyMetricColor} radius={[4, 4, 0, 0]} />
-                          <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                          <Line yAxisId="percent" type="monotone" dataKey="targetPct" name="Target %" stroke="#10b981" strokeWidth={2} dot={false} connectNulls />
+                          {showMonthlyTargetLines && (
+                            <>
+                              <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                              <Line yAxisId="percent" type="monotone" dataKey="targetPct" name="Target %" stroke="#10b981" strokeWidth={2} dot={false} connectNulls />
+                            </>
+                          )}
                         </>
                       ) : (
                         <>

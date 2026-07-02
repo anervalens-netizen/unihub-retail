@@ -22,7 +22,7 @@ Expune:
 - top magazine
 - panou agenti
 - istoric pe mai multe luni
-- AI Forecast pentru monitorizarea forecastului lunar salvat
+- AI Forecast pentru monitorizarea forecasturilor salvate pe luna curenta si 12 luni
 
 Reguli importante in Hub:
 - comparatia perioade foloseste aceeasi fereastra calendaristica pentru luna curenta, luna trecuta si aceeasi luna anul trecut; daca luna curenta este partiala, cutoff-ul este ultima zi cu vanzari importate
@@ -40,16 +40,21 @@ Reguli importante in Hub:
   implicit si pot fi incluse din checkbox-ul `Include magazine inchise`
 - cardul `Evolutie lunara` in modul standard afiseaza ultimele 13 luni
   finalizate plus luna curenta forecastata, cand luna curenta este partiala
-- subsectiunea `AI Forecast` afiseaza ultimul forecast salvat, nu ruleaza
-  modelul in request; compara la nivel de retea, RM si magazin forecastul
-  cumulat la zi cu realizatul importat
+- subsectiunea `AI Forecast` afiseaza forecasturi salvate, nu ruleaza modelul
+  in request; are comutatoare pentru `Luna curenta / 12 luni` si
+  `Valoare / Bucati`
+- modul `Luna curenta` compara la nivel de retea, RM si magazin forecastul
+  cumulat la zi cu realizatul importat; modul `12 luni` afiseaza prognoza
+  lunara pe urmatoarele 12 luni
 
 Forecasturile AI sunt salvate in tabelele `ai_forecast_runs`,
 `ai_forecast_store_month` si `ai_forecast_store_day`. Importul operational se
 face cu `backend/scripts/import_ai_forecast.py`, dupa rularea externa TimesFM
-XReg. Curba zilnica foloseste distributia pe zile din aceeasi luna a anului
-precedent pentru acelasi magazin, aliniata pe calendarul lunii forecastate prin
-ordinalul zilei din saptamana.
+XReg. Fiecare rulare este marcata prin `metric` (`sales_value` sau `units`) si
+`horizon` (`current_month` sau `rolling_12m`). Curba zilnica se genereaza doar
+pentru `current_month` si foloseste distributia pe zile din aceeasi luna a
+anului precedent pentru acelasi magazin, aliniata pe calendarul lunii
+forecastate prin ordinalul zilei din saptamana.
 
 Backtestul si rularea batch lunara se fac cu:
 
@@ -57,7 +62,8 @@ Backtestul si rularea batch lunara se fac cu:
 TIMESFM_API_KEY=... backend/venv/bin/python -u backend/scripts/run_ai_forecast_xreg.py \
   --start-month 2025-07 \
   --end-month 2026-06 \
-  --history-start-month 2018-01
+  --history-start-month 2018-01 \
+  --metric sales_value
 ```
 
 Scriptul foloseste XReg pentru magazinele cu cel putin 33 luni de context si
@@ -66,6 +72,30 @@ in `backend/outputs/ai_forecast/`; CSV-ul operational se importa apoi cu
 `backend/scripts/import_ai_forecast.py`. Magazinele inchise in luna sursa pot
 fi excluse cu `--exclude-site-code`; implicit sunt excluse inchiderile din
 iunie 2026: `CRFVUL` si `CRFARENA`.
+
+Pentru forecast operational pe urmatoarele 12 luni se ruleaza multi-step din
+ultima luna istorica sigura si se importa doar lunile care trebuie afisate:
+
+```bash
+TIMESFM_API_KEY=... backend/venv/bin/python -u backend/scripts/run_ai_forecast_xreg.py \
+  --start-month 2026-07 \
+  --end-month 2027-07 \
+  --source-month 2026-06 \
+  --operational \
+  --history-start-month 2018-01 \
+  --metric units
+
+backend/venv/bin/python backend/scripts/import_ai_forecast.py \
+  --csv backend/outputs/ai_forecast/xreg_backtest_store_units_2026-07_to_2027-07.csv \
+  --start-month 2026-08 \
+  --end-month 2027-07 \
+  --source-month 2026-06 \
+  --anchor-month 2026-07 \
+  --metric units \
+  --horizon rolling_12m \
+  --variant rolling_12m_xreg_units_v1_excl_closed \
+  --replace
+```
 
 ### Focus
 Focus este separat in 4 sub-sectiuni:

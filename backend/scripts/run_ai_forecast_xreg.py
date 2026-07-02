@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import asyncpg
 from dotenv import load_dotenv
@@ -23,6 +23,7 @@ DEFAULT_API_URL = "http://100.74.73.114:8000/forecast_xreg"
 DEFAULT_OUTPUT_DIR = Path("backend/outputs/ai_forecast")
 MIN_CONTEXT = 33
 DEFAULT_EXCLUDED_SITE_CODES = ["CRFVUL", "CRFARENA"]
+MetricName = Literal["sales_value", "units"]
 
 
 @dataclass(frozen=True)
@@ -78,8 +79,9 @@ def month_features(months: list[str], base_year: int) -> dict[str, list[Any]]:
     return features
 
 
-def money(value: Any) -> Decimal:
-    return Decimal(str(value)).quantize(Decimal("0.01"))
+def metric_value(value: Any, metric: MetricName) -> Decimal:
+    quantizer = Decimal("1") if metric == "units" else Decimal("0.01")
+    return Decimal(str(value)).quantize(quantizer)
 
 
 def pct(numerator: Decimal, denominator: Decimal) -> Decimal | None:
@@ -118,18 +120,21 @@ async def fetch_monthly_sales(
     site_codes: list[str],
     start_month: str,
     end_month: str,
+    metric: MetricName,
 ) -> dict[tuple[str, str], Decimal]:
+    reporting_column = "total_quantity" if metric == "units" else "total_sales"
+    historical_column = "total_qty" if metric == "units" else "total_value"
     rows = await conn.fetch(
-        """
+        f"""
         WITH sales AS (
-            SELECT import_month, site_code, SUM(total_sales)::NUMERIC(14, 2) AS total_sales
+            SELECT import_month, site_code, SUM({reporting_column})::NUMERIC(14, 2) AS total_metric
             FROM reporting_agent_month
             WHERE site_code = ANY($1::TEXT[])
               AND import_month BETWEEN $2 AND $3
             GROUP BY import_month, site_code
         ),
         historical AS (
-            SELECT hms.import_month, hms.site_code, SUM(hms.total_value)::NUMERIC(14, 2) AS total_sales
+            SELECT hms.import_month, hms.site_code, SUM(hms.{historical_column})::NUMERIC(14, 2) AS total_metric
             FROM historical_monthly_sales hms
             WHERE hms.site_code = ANY($1::TEXT[])
               AND hms.import_month BETWEEN $2 AND $3
@@ -141,28 +146,29 @@ async def fetch_monthly_sales(
               )
             GROUP BY hms.import_month, hms.site_code
         )
-        SELECT import_month, site_code, total_sales
+        SELECT import_month, site_code, total_metric
         FROM sales
         UNION ALL
-        SELECT import_month, site_code, total_sales
+        SELECT import_month, site_code, total_metric
         FROM historical
         """,
         site_codes,
         start_month,
         end_month,
     )
-    return {(row["site_code"], row["import_month"]): row["total_sales"] for row in rows}
+    return {(row["site_code"], row["import_month"]): row["total_metric"] for row in rows}
 
 
 def build_payload(
     *,
     stores: list[StoreInfo],
     sales: dict[tuple[str, str], Decimal],
-    target_month: str,
+    target_months: list[str],
+    source_month: str,
     history_start_month: str,
     min_context: int,
+    metric: MetricName,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, str]]]:
-    source_month = add_month(target_month, -1)
     full_history = month_range(history_start_month, source_month)
     base_year = int(history_start_month[:4])
 
@@ -182,7 +188,7 @@ def build_payload(
     skipped: list[dict[str, str]] = []
 
     for store in stores:
-        values = [money(sales.get((store.site_code, month), Decimal("0"))) for month in full_history]
+        values = [metric_value(sales.get((store.site_code, month), Decimal("0")), metric) for month in full_history]
         first_non_zero = next((idx for idx, value in enumerate(values) if value > 0), None)
         if first_non_zero is None:
             skipped.append({"site_code": store.site_code, "reason": "no_history"})
@@ -200,7 +206,7 @@ def build_payload(
             )
             continue
 
-        covariate_months = context_months + [target_month]
+        covariate_months = context_months + target_months
         features = month_features(covariate_months, base_year)
 
         series_ids.append(store.site_code)
@@ -221,13 +227,12 @@ def build_payload(
                 "asm": store.asm,
                 "first_input_month": context_months[0],
                 "source_month": source_month,
-                "target_month": target_month,
                 "context_months": len(context_values),
             }
         )
 
     payload = {
-        "horizon": 1,
+        "horizon": len(target_months),
         "inputs": inputs,
         "series_ids": series_ids,
         "dynamic_categorical_covariates": dynamic_categorical,
@@ -253,43 +258,50 @@ def post_forecast(api_url: str, api_key: str, payload: dict[str, Any], timeout: 
         raise RuntimeError(f"TimesFM HTTP {exc.code}: {detail}") from exc
 
 
-def parse_predictions(response: dict[str, Any]) -> dict[str, Decimal]:
-    predictions: dict[str, Decimal] = {}
+def parse_predictions(response: dict[str, Any], *, metric: MetricName) -> dict[str, list[Decimal]]:
+    predictions: dict[str, list[Decimal]] = {}
     for row in response.get("series", []):
         values = row.get("point_forecast") or []
         if values:
-            predictions[str(row["series_id"])] = money(values[0])
+            predictions[str(row["series_id"])] = [metric_value(value, metric) for value in values]
     return predictions
 
 
 def build_result_rows(
     *,
-    target_month: str,
+    target_months: list[str],
     meta_rows: list[dict[str, Any]],
     actuals: dict[tuple[str, str], Decimal],
-    predictions: dict[str, Decimal],
+    predictions: dict[str, list[Decimal]],
+    metric: MetricName,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for meta in meta_rows:
         site_code = meta["site_code"]
-        forecast = predictions.get(site_code)
-        if forecast is None:
+        site_predictions = predictions.get(site_code)
+        if not site_predictions:
             continue
-        actual = money(actuals.get((site_code, target_month), Decimal("0")))
-        error = forecast - actual
-        abs_error = abs(error)
-        rows.append(
-            {
-                **meta,
-                "method": "model_xreg",
-                "actual_sales": actual,
-                "forecast_sales": forecast,
-                "error_sales": error,
-                "abs_error_sales": abs_error,
-                "error_pct": pct(error, actual),
-                "abs_error_pct": pct(abs_error, actual),
-            }
-        )
+        for index, target_month in enumerate(target_months):
+            if index >= len(site_predictions):
+                break
+            forecast = site_predictions[index]
+            actual = metric_value(actuals.get((site_code, target_month), Decimal("0")), metric)
+            error = forecast - actual
+            abs_error = abs(error)
+            rows.append(
+                {
+                    **meta,
+                    "metric": metric,
+                    "target_month": target_month,
+                    "method": "model_xreg",
+                    "actual_sales": actual,
+                    "forecast_sales": forecast,
+                    "error_sales": error,
+                    "abs_error_sales": abs_error,
+                    "error_pct": pct(error, actual),
+                    "abs_error_pct": pct(abs_error, actual),
+                }
+            )
     return rows
 
 
@@ -299,22 +311,32 @@ def seasonal_last3_fallback(
     target_month: str,
     sales: dict[tuple[str, str], Decimal],
     site_codes: list[str],
+    metric: MetricName,
+    known_values: dict[tuple[str, str], Decimal] | None = None,
+    max_reference_month: str | None = None,
 ) -> tuple[Decimal, str]:
+    known_values = known_values or {}
+
+    def get_value(code: str, month: str) -> Decimal:
+        return metric_value(known_values.get((code, month), sales.get((code, month), Decimal("0"))), metric)
+
     prior_months = [add_month(target_month, offset) for offset in (-3, -2, -1)]
-    store_values = [money(sales.get((site_code, month), Decimal("0"))) for month in prior_months]
+    store_values = [get_value(site_code, month) for month in prior_months]
     positive_values = [value for value in store_values if value > 0]
     if not positive_values:
         return Decimal("0"), "fallback_zero_history"
 
     reference_month = add_month(target_month, -12)
+    while max_reference_month is not None and reference_month > max_reference_month:
+        reference_month = add_month(reference_month, -12)
     reference_prior_months = [add_month(reference_month, offset) for offset in (-3, -2, -1)]
     reference_total = sum(
-        (money(sales.get((code, reference_month), Decimal("0"))) for code in site_codes),
+        (metric_value(sales.get((code, reference_month), Decimal("0")), metric) for code in site_codes),
         Decimal("0"),
     )
     reference_prior_total = sum(
         (
-            money(sales.get((code, month), Decimal("0")))
+            metric_value(sales.get((code, month), Decimal("0")), metric)
             for code in site_codes
             for month in reference_prior_months
         ),
@@ -326,7 +348,7 @@ def seasonal_last3_fallback(
         seasonal_multiplier = reference_total / reference_prior_average
 
     store_average = sum(positive_values, Decimal("0")) / Decimal(len(positive_values))
-    return money(store_average * seasonal_multiplier), "fallback_seasonal_last3"
+    return metric_value(store_average * seasonal_multiplier, metric), "fallback_seasonal_last3"
 
 
 def build_fallback_rows(
@@ -335,6 +357,10 @@ def build_fallback_rows(
     stores: list[StoreInfo],
     existing_site_codes: set[str],
     sales: dict[tuple[str, str], Decimal],
+    metric: MetricName,
+    known_values: dict[tuple[str, str], Decimal] | None = None,
+    source_month: str | None = None,
+    max_reference_month: str | None = None,
 ) -> list[dict[str, Any]]:
     site_codes = [store.site_code for store in stores]
     rows: list[dict[str, Any]] = []
@@ -346,14 +372,18 @@ def build_fallback_rows(
             target_month=target_month,
             sales=sales,
             site_codes=site_codes,
+            metric=metric,
+            known_values=known_values,
+            max_reference_month=max_reference_month,
         )
-        actual = money(sales.get((store.site_code, target_month), Decimal("0")))
+        actual = metric_value(sales.get((store.site_code, target_month), Decimal("0")), metric)
         error = forecast - actual
         abs_error = abs(error)
         rows.append(
             {
+                "metric": metric,
                 "target_month": target_month,
-                "source_month": add_month(target_month, -1),
+                "source_month": source_month or add_month(target_month, -1),
                 "site_code": store.site_code,
                 "locatie": store.locatie,
                 "firma": store.firma,
@@ -429,58 +459,124 @@ async def run(args: argparse.Namespace) -> int:
             site_codes=site_codes,
             start_month=args.history_start_month,
             end_month=args.end_month,
+            metric=args.metric,
         )
 
-        for target_month in target_months:
+        if args.operational:
+            source_month = args.source_month or add_month(args.start_month, -1)
             payload, meta_rows, skipped = build_payload(
                 stores=stores,
                 sales=sales,
-                target_month=target_month,
+                target_months=target_months,
+                source_month=source_month,
                 history_start_month=args.history_start_month,
                 min_context=args.min_context,
+                metric=args.metric,
             )
             if not payload["inputs"]:
-                raise RuntimeError(f"Nicio serie eligibila pentru {target_month}.")
+                raise RuntimeError("Nicio serie eligibila pentru rularea operationala.")
             started = datetime.now()
             response = post_forecast(args.api_url, api_key, payload, args.timeout)
             latency = (datetime.now() - started).total_seconds()
-            predictions = parse_predictions(response)
+            predictions = parse_predictions(response, metric=args.metric)
             result_rows = build_result_rows(
-                target_month=target_month,
+                target_months=target_months,
                 meta_rows=meta_rows,
                 actuals=sales,
                 predictions=predictions,
+                metric=args.metric,
             )
             predicted_sites = {row["site_code"] for row in result_rows}
             if args.include_fallback:
-                result_rows.extend(
-                    build_fallback_rows(
+                known_values: dict[tuple[str, str], Decimal] = {}
+                for target_month in target_months:
+                    fallback_rows = build_fallback_rows(
                         target_month=target_month,
                         stores=stores,
                         existing_site_codes=predicted_sites,
                         sales=sales,
+                        metric=args.metric,
+                        known_values=known_values,
+                        source_month=source_month,
+                        max_reference_month=source_month,
                     )
-                )
+                    for row in fallback_rows:
+                        known_values[(row["site_code"], target_month)] = row["forecast_sales"]
+                    result_rows.extend(fallback_rows)
             all_rows.extend(result_rows)
             for skipped_row in skipped:
-                skipped_rows.append({"target_month": target_month, **skipped_row})
-            summary = summarize_month(target_month, result_rows, len(skipped))
-            summary["latency_sec"] = round(latency, 3)
-            summary_rows.append(summary)
-            print(
-                f"{target_month}: stores={summary['stores_forecasted']} "
-                f"model={summary['stores_model']} fallback={summary['stores_fallback']} "
-                f"actual={summary['actual_sales']} forecast={summary['forecast_sales']} "
-                f"bias={summary['bias_pct']}% wape={summary['wape_pct']}% latency={summary['latency_sec']}s"
-            )
+                skipped_rows.append({"target_month": ",".join(target_months), **skipped_row})
+            for target_month in target_months:
+                month_rows = [row for row in result_rows if row["target_month"] == target_month]
+                summary = summarize_month(target_month, month_rows, len(skipped))
+                summary["metric"] = args.metric
+                summary["latency_sec"] = round(latency, 3)
+                summary_rows.append(summary)
+                print(
+                    f"{target_month}: stores={summary['stores_forecasted']} "
+                    f"model={summary['stores_model']} fallback={summary['stores_fallback']} "
+                    f"actual={summary['actual_sales']} forecast={summary['forecast_sales']} "
+                    f"bias={summary['bias_pct']}% wape={summary['wape_pct']}% latency={summary['latency_sec']}s"
+                )
+        else:
+            for target_month in target_months:
+                payload, meta_rows, skipped = build_payload(
+                    stores=stores,
+                    sales=sales,
+                    target_months=[target_month],
+                    source_month=add_month(target_month, -1),
+                    history_start_month=args.history_start_month,
+                    min_context=args.min_context,
+                    metric=args.metric,
+                )
+                if not payload["inputs"]:
+                    raise RuntimeError(f"Nicio serie eligibila pentru {target_month}.")
+                started = datetime.now()
+                response = post_forecast(args.api_url, api_key, payload, args.timeout)
+                latency = (datetime.now() - started).total_seconds()
+                predictions = parse_predictions(response, metric=args.metric)
+                result_rows = build_result_rows(
+                    target_months=[target_month],
+                    meta_rows=meta_rows,
+                    actuals=sales,
+                    predictions=predictions,
+                    metric=args.metric,
+                )
+                predicted_sites = {row["site_code"] for row in result_rows}
+                if args.include_fallback:
+                    result_rows.extend(
+                        build_fallback_rows(
+                            target_month=target_month,
+                            stores=stores,
+                            existing_site_codes=predicted_sites,
+                            sales=sales,
+                            metric=args.metric,
+                            source_month=add_month(target_month, -1),
+                            max_reference_month=add_month(target_month, -1),
+                        )
+                    )
+                all_rows.extend(result_rows)
+                for skipped_row in skipped:
+                    skipped_rows.append({"target_month": target_month, **skipped_row})
+                summary = summarize_month(target_month, result_rows, len(skipped))
+                summary["metric"] = args.metric
+                summary["latency_sec"] = round(latency, 3)
+                summary_rows.append(summary)
+                print(
+                    f"{target_month}: stores={summary['stores_forecasted']} "
+                    f"model={summary['stores_model']} fallback={summary['stores_fallback']} "
+                    f"actual={summary['actual_sales']} forecast={summary['forecast_sales']} "
+                    f"bias={summary['bias_pct']}% wape={summary['wape_pct']}% latency={summary['latency_sec']}s"
+                )
     finally:
         await conn.close()
 
-    suffix = f"{args.start_month}_to_{args.end_month}"
+    suffix = f"{args.metric}_{args.start_month}_to_{args.end_month}"
     write_csv(
         output_dir / f"xreg_backtest_summary_{suffix}.csv",
         summary_rows,
         [
+            "metric",
             "target_month",
             "stores_forecasted",
             "stores_model",
@@ -498,6 +594,7 @@ async def run(args: argparse.Namespace) -> int:
         output_dir / f"xreg_backtest_store_{suffix}.csv",
         all_rows,
         [
+            "metric",
             "target_month",
             "source_month",
             "site_code",
@@ -527,6 +624,7 @@ async def run(args: argparse.Namespace) -> int:
     overall_forecast = sum((row["forecast_sales"] for row in all_rows), Decimal("0"))
     overall_abs_error = sum((row["abs_error_sales"] for row in all_rows), Decimal("0"))
     overall = {
+        "metric": args.metric,
         "start_month": args.start_month,
         "end_month": args.end_month,
         "target_months": len(target_months),
@@ -549,6 +647,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ruleaza TimesFM/XReg lunar si evalueaza backtestul pe magazine active.")
     parser.add_argument("--start-month", required=True, help="Prima luna tinta, YYYY-MM.")
     parser.add_argument("--end-month", required=True, help="Ultima luna tinta, YYYY-MM.")
+    parser.add_argument("--metric", choices=["sales_value", "units"], default="sales_value")
+    parser.add_argument(
+        "--operational",
+        action="store_true",
+        help="Ruleaza o singura prognoza multi-step pentru intervalul cerut.",
+    )
+    parser.add_argument(
+        "--source-month",
+        default=None,
+        help="Ultima luna istorica folosita in modul --operational. Implicit luna anterioara startului.",
+    )
     parser.add_argument("--history-start-month", default="2018-01")
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
     parser.add_argument("--api-key", default=None)

@@ -37,12 +37,17 @@ export interface AiForecastRunInfo {
   id: number;
   forecast_month: string;
   source_month: string;
+  metric: AiForecastMetric;
+  horizon: AiForecastHorizon;
   model_name: string;
   model_mode: string;
   variant: string;
   generated_at: string;
   metadata: Record<string, unknown>;
 }
+
+export type AiForecastMetric = 'sales_value' | 'units';
+export type AiForecastHorizon = 'current_month' | 'rolling_12m';
 
 export interface AiForecastSummary {
   forecast_month: string;
@@ -95,6 +100,56 @@ export interface AiForecastResponse {
   managers: AiForecastManagerRow[];
   stores: AiForecastStoreRow[];
   daily: AiForecastDailyPoint[];
+}
+
+export interface AiForecastRollingSummary {
+  source_month: string;
+  start_month: string;
+  end_month: string;
+  month_count: number;
+  store_count: number;
+  forecast_sales: number;
+  actual_sales: number | null;
+  delta_sales: number | null;
+  delta_pct: number | null;
+}
+
+export interface AiForecastRollingMonthlyPoint {
+  forecast_month: string;
+  store_count: number;
+  forecast_sales: number;
+  actual_sales: number | null;
+  delta_sales: number | null;
+  delta_pct: number | null;
+}
+
+export interface AiForecastRollingManagerRow {
+  manager: string;
+  store_count: number;
+  forecast_sales: number;
+  actual_sales: number | null;
+  delta_sales: number | null;
+  delta_pct: number | null;
+}
+
+export interface AiForecastRollingStoreRow {
+  site_code: string;
+  locatie: string;
+  firma: string;
+  regional: string;
+  asm: string;
+  forecast_sales: number;
+  actual_sales: number | null;
+  delta_sales: number | null;
+  delta_pct: number | null;
+}
+
+export interface AiForecastRollingResponse {
+  runs: AiForecastRunInfo[];
+  summary: AiForecastRollingSummary;
+  months: AiForecastRollingMonthlyPoint[];
+  managers: AiForecastRollingManagerRow[];
+  stores: AiForecastRollingStoreRow[];
 }
 
 export interface MonthlyHistoryPoint {
