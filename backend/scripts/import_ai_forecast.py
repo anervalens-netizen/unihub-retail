@@ -35,6 +35,16 @@ def parse_decimal(value: str | None) -> Decimal:
     return Decimal(str(value))
 
 
+def weekday_occurrence(day: date) -> int:
+    occurrence = 0
+    for month_day in month_dates(day.strftime("%Y-%m")):
+        if month_day > day:
+            break
+        if month_day.weekday() == day.weekday():
+            occurrence += 1
+    return occurrence
+
+
 async def fetch_daily_weights(
     conn: asyncpg.Connection,
     *,
@@ -54,21 +64,44 @@ async def fetch_daily_weights(
         reference_month,
         site_codes,
     )
-    by_site: dict[str, dict[int, Decimal]] = defaultdict(dict)
+    by_site_day: dict[str, dict[date, Decimal]] = defaultdict(dict)
     for row in rows:
-        by_site[row["site_code"]][row["sale_date"].day] = row["total_sales"]
+        by_site_day[row["site_code"]][row["sale_date"]] = row["total_sales"]
 
     weights: dict[str, list[tuple[date, Decimal]]] = {}
     uniform = Decimal("1") / Decimal(len(forecast_dates))
     for site_code in site_codes:
-        reference_values = by_site.get(site_code, {})
-        total = sum(reference_values.values(), Decimal("0"))
-        if total <= 0:
+        reference_values = by_site_day.get(site_code, {})
+        if sum(reference_values.values(), Decimal("0")) <= 0:
             weights[site_code] = [(day, uniform) for day in forecast_dates]
             continue
+
+        by_weekday_occurrence: dict[tuple[int, int], Decimal] = {}
+        weekday_totals: dict[int, Decimal] = defaultdict(Decimal)
+        weekday_counts: dict[int, int] = defaultdict(int)
+        for reference_date, value in reference_values.items():
+            weekday = reference_date.weekday()
+            by_weekday_occurrence[(weekday, weekday_occurrence(reference_date))] = value
+            weekday_totals[weekday] += value
+            weekday_counts[weekday] += 1
+
+        projected_values: list[tuple[date, Decimal]] = []
+        for forecast_date in forecast_dates:
+            weekday = forecast_date.weekday()
+            occurrence = weekday_occurrence(forecast_date)
+            projected = by_weekday_occurrence.get((weekday, occurrence))
+            if projected is None and weekday_counts[weekday] > 0:
+                projected = weekday_totals[weekday] / Decimal(weekday_counts[weekday])
+            projected_values.append((forecast_date, projected or Decimal("0")))
+
+        projected_total = sum((value for _, value in projected_values), Decimal("0"))
+        if projected_total <= 0:
+            weights[site_code] = [(day, uniform) for day in forecast_dates]
+            continue
+
         site_weights: list[tuple[date, Decimal]] = []
-        for day in forecast_dates:
-            site_weights.append((day, reference_values.get(day.day, Decimal("0")) / total))
+        for forecast_date, value in projected_values:
+            site_weights.append((forecast_date, value / projected_total))
         weights[site_code] = site_weights
     return weights
 
@@ -141,7 +174,7 @@ async def import_forecast(args: argparse.Namespace) -> int:
                         "imported_from": str(Path(args.csv).resolve()),
                         "scenario": args.scenario,
                         "daily_profile_month": args.daily_profile_month,
-                        "daily_profile_method": "same_store_day_share",
+                        "daily_profile_method": "weekday_occurrence_share",
                     }
                 ),
             )

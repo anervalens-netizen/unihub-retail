@@ -21,7 +21,7 @@ import { queryKeys } from '../lib/queryKeys';
 import type { AppFilters } from './MainLayout';
 import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
-import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
+import { ErrorCard, LoadingCard, Metric, SortableHeader } from './dashboard/DashboardWidgets';
 
 interface AiForecastPanelProps {
   currentMonth: string;
@@ -31,6 +31,16 @@ interface AiForecastPanelProps {
 type ForecastDetailSelection =
   | { type: 'manager'; id: string; label: string }
   | { type: 'store'; id: string; label: string };
+type ForecastSortDirection = 'asc' | 'desc';
+type ManagerSortKey = keyof Pick<
+  AiForecastManagerRow,
+  'manager' | 'store_count' | 'forecast_sales' | 'expected_sales_to_date' | 'actual_sales' | 'delta_sales' | 'delta_pct'
+>;
+type StoreSortKey = keyof Pick<
+  AiForecastStoreRow,
+  'locatie' | 'asm' | 'forecast_sales' | 'expected_sales_to_date' | 'actual_sales' | 'delta_sales' | 'delta_pct'
+>;
+type ForecastSortKey = ManagerSortKey | StoreSortKey;
 
 interface DailyCurvePoint {
   day: string;
@@ -79,6 +89,37 @@ function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
       cumulativeActual: hasActual ? point.cumulative_actual : null,
     };
   });
+}
+
+const NUMERIC_SORT_KEYS = new Set<ForecastSortKey>([
+  'store_count',
+  'forecast_sales',
+  'expected_sales_to_date',
+  'actual_sales',
+  'delta_sales',
+  'delta_pct',
+]);
+
+function compareForecastValues(
+  key: ForecastSortKey,
+  a: string | number | null | undefined,
+  b: string | number | null | undefined
+) {
+  if (a === null || a === undefined) return b === null || b === undefined ? 0 : -1;
+  if (b === null || b === undefined) return 1;
+  if (NUMERIC_SORT_KEYS.has(key)) {
+    const aNumber = Number(a);
+    const bNumber = Number(b);
+    if (Number.isNaN(aNumber)) return Number.isNaN(bNumber) ? 0 : -1;
+    if (Number.isNaN(bNumber)) return 1;
+    return aNumber - bNumber;
+  }
+  return String(a).localeCompare(String(b), 'ro-RO', { sensitivity: 'base' });
+}
+
+function nextSortDirection(currentKey: string, nextKey: string, currentDirection: ForecastSortDirection) {
+  if (currentKey === nextKey) return currentDirection === 'asc' ? 'desc' : 'asc';
+  return nextKey === 'manager' || nextKey === 'locatie' || nextKey === 'asm' ? 'asc' : 'desc';
 }
 
 export function AiForecastPanel({ currentMonth, filters }: AiForecastPanelProps) {
@@ -221,7 +262,7 @@ export function AiForecastPanel({ currentMonth, filters }: AiForecastPanelProps)
       <section className="grid gap-3 lg:grid-cols-[1.1fr_1fr]">
         <ForecastDailyCurveCard
           title="Curba zilnica forecast"
-          subtitle="Profilul zilnic foloseste distributia din luna similara istorica; weekendurile sunt marcate separat."
+          subtitle="Profilul zilnic foloseste luna similara istorica, aliniata pe zilele saptamanii din calendarul curent; weekendurile sunt marcate separat."
           data={dailyChartData}
         />
 
@@ -372,7 +413,7 @@ function ForecastDailyCurveCard({
               ))}
             </Bar>
             <Bar yAxisId="daily" dataKey="actualDaily" name="Realizat zilnic" fill="#10b981" radius={[6, 6, 0, 0]} />
-            <Line yAxisId="daily" type="monotone" dataKey="forecastDaily" name="Forecast zilnic" stroke="#f59e0b" strokeWidth={2} dot={false} />
+            <Line yAxisId="daily" type="monotone" dataKey="forecastDaily" name="Forecast zilnic" stroke="#334155" strokeWidth={2} dot={false} />
             <Line yAxisId="cumulative" type="monotone" dataKey="cumulativeForecast" name="Forecast cumulat" stroke="#4f46e5" strokeWidth={2} dot={false} />
             <Line yAxisId="cumulative" type="monotone" dataKey="cumulativeActual" name="Realizat cumulat" stroke="#059669" strokeWidth={2} dot={false} connectNulls />
           </ComposedChart>
@@ -398,6 +439,20 @@ function ForecastManagerTable({
   rows: AiForecastManagerRow[];
   onSelect: (row: AiForecastManagerRow) => void;
 }) {
+  const [sortKey, setSortKey] = useState<ManagerSortKey>('forecast_sales');
+  const [sortDirection, setSortDirection] = useState<ForecastSortDirection>('desc');
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const result = compareForecastValues(sortKey, a[sortKey], b[sortKey]);
+      const directed = sortDirection === 'asc' ? result : -result;
+      return directed || a.manager.localeCompare(b.manager, 'ro-RO', { sensitivity: 'base' });
+    });
+  }, [rows, sortDirection, sortKey]);
+  const handleSort = (key: ManagerSortKey) => {
+    setSortDirection((direction) => nextSortDirection(sortKey, key, direction));
+    setSortKey(key);
+  };
+
   return (
     <section className="glass rounded-3xl p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -411,7 +466,7 @@ function ForecastManagerTable({
         <ExportTableButton
           filename="ai_forecast_rm"
           sheetName="AI Forecast RM"
-          rows={rows}
+          rows={sortedRows}
           columns={[
             { header: 'Manager', value: (row) => row.manager },
             { header: 'Magazine', value: (row) => formatInt(row.store_count) },
@@ -427,17 +482,17 @@ function ForecastManagerTable({
         <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
             <tr>
-              <th className="px-3 py-2">Manager</th>
-              <th className="px-3 py-2 text-right">Magazine</th>
-              <th className="px-3 py-2 text-right">Forecast</th>
-              <th className="px-3 py-2 text-right">Asteptat</th>
-              <th className="px-3 py-2 text-right">Realizat</th>
-              <th className="px-3 py-2 text-right">Delta</th>
-              <th className="px-3 py-2 text-right">Status</th>
+              <SortableHeader label="Manager" active={sortKey === 'manager'} direction={sortDirection} onClick={() => handleSort('manager')} className="px-3 py-2" />
+              <SortableHeader label="Magazine" active={sortKey === 'store_count'} direction={sortDirection} onClick={() => handleSort('store_count')} className="px-3 py-2 text-right" align="right" />
+              <SortableHeader label="Forecast" active={sortKey === 'forecast_sales'} direction={sortDirection} onClick={() => handleSort('forecast_sales')} className="px-3 py-2 text-right" align="right" />
+              <SortableHeader label="Asteptat" active={sortKey === 'expected_sales_to_date'} direction={sortDirection} onClick={() => handleSort('expected_sales_to_date')} className="px-3 py-2 text-right" align="right" />
+              <SortableHeader label="Realizat" active={sortKey === 'actual_sales'} direction={sortDirection} onClick={() => handleSort('actual_sales')} className="px-3 py-2 text-right" align="right" />
+              <SortableHeader label="Delta" active={sortKey === 'delta_sales'} direction={sortDirection} onClick={() => handleSort('delta_sales')} className="px-3 py-2 text-right" align="right" />
+              <SortableHeader label="Delta %" active={sortKey === 'delta_pct'} direction={sortDirection} onClick={() => handleSort('delta_pct')} className="px-3 py-2 text-right" align="right" />
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
+            {sortedRows.map((row, index) => (
               <tr key={row.manager} className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}>
                 <td className="px-3 py-2">
                   <button
@@ -453,8 +508,8 @@ function ForecastManagerTable({
                 <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.expected_sales_to_date)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{formatAmount(row.actual_sales)}</td>
                 <td className={`px-3 py-2 text-right font-bold tabular-nums ${deltaTone(row.delta_sales)}`}>{formatSignedAmount(row.delta_sales)}</td>
-                <td className={`px-3 py-2 text-right font-semibold ${deltaTone(row.delta_sales)}`}>
-                  {riskLabel(row.delta_pct)}
+                <td className={`px-3 py-2 text-right font-semibold tabular-nums ${deltaTone(row.delta_sales)}`}>
+                  {formatPercent(row.delta_pct)}
                 </td>
               </tr>
             ))}
@@ -472,22 +527,36 @@ function ForecastStoreTable({
   rows: AiForecastStoreRow[];
   onSelect: (row: AiForecastStoreRow) => void;
 }) {
+  const [sortKey, setSortKey] = useState<StoreSortKey>('forecast_sales');
+  const [sortDirection, setSortDirection] = useState<ForecastSortDirection>('desc');
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const result = compareForecastValues(sortKey, a[sortKey], b[sortKey]);
+      const directed = sortDirection === 'asc' ? result : -result;
+      return directed || a.locatie.localeCompare(b.locatie, 'ro-RO', { sensitivity: 'base' });
+    });
+  }, [rows, sortDirection, sortKey]);
+  const handleSort = (key: StoreSortKey) => {
+    setSortDirection((direction) => nextSortDirection(sortKey, key, direction));
+    setSortKey(key);
+  };
+
   return (
     <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
       <table className="w-full min-w-[900px] text-sm">
         <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
           <tr>
-            <th className="px-3 py-2">Magazin</th>
-            <th className="px-3 py-2">ASM</th>
-            <th className="px-3 py-2 text-right">Forecast</th>
-            <th className="px-3 py-2 text-right">Asteptat</th>
-            <th className="px-3 py-2 text-right">Realizat</th>
-            <th className="px-3 py-2 text-right">Delta</th>
-            <th className="px-3 py-2 text-right">Delta %</th>
+            <SortableHeader label="Magazin" active={sortKey === 'locatie'} direction={sortDirection} onClick={() => handleSort('locatie')} className="px-3 py-2" />
+            <SortableHeader label="ASM" active={sortKey === 'asm'} direction={sortDirection} onClick={() => handleSort('asm')} className="px-3 py-2" />
+            <SortableHeader label="Forecast" active={sortKey === 'forecast_sales'} direction={sortDirection} onClick={() => handleSort('forecast_sales')} className="px-3 py-2 text-right" align="right" />
+            <SortableHeader label="Asteptat" active={sortKey === 'expected_sales_to_date'} direction={sortDirection} onClick={() => handleSort('expected_sales_to_date')} className="px-3 py-2 text-right" align="right" />
+            <SortableHeader label="Realizat" active={sortKey === 'actual_sales'} direction={sortDirection} onClick={() => handleSort('actual_sales')} className="px-3 py-2 text-right" align="right" />
+            <SortableHeader label="Delta" active={sortKey === 'delta_sales'} direction={sortDirection} onClick={() => handleSort('delta_sales')} className="px-3 py-2 text-right" align="right" />
+            <SortableHeader label="Delta %" active={sortKey === 'delta_pct'} direction={sortDirection} onClick={() => handleSort('delta_pct')} className="px-3 py-2 text-right" align="right" />
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
+          {sortedRows.map((row, index) => (
             <tr key={row.site_code} className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}>
               <td className="px-3 py-2">
                 <span className="inline-flex min-w-0 items-center">
@@ -577,7 +646,7 @@ function ForecastDetailDrawer({
               </div>
               <ForecastDailyCurveCard
                 title={`Curba zilnica — ${data.summary.forecast_month}`}
-                subtitle="Barele portocalii sunt zile de weekend in profilul forecastului."
+                subtitle="Profilul zilnic este aliniat pe zilele saptamanii din calendarul curent; barele portocalii sunt weekend."
                 data={dailyData}
               />
             </>

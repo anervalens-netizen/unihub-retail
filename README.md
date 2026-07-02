@@ -48,7 +48,8 @@ Forecasturile AI sunt salvate in tabelele `ai_forecast_runs`,
 `ai_forecast_store_month` si `ai_forecast_store_day`. Importul operational se
 face cu `backend/scripts/import_ai_forecast.py`, dupa rularea externa TimesFM
 XReg. Curba zilnica foloseste distributia pe zile din aceeasi luna a anului
-precedent pentru acelasi magazin.
+precedent pentru acelasi magazin, aliniata pe calendarul lunii forecastate prin
+ordinalul zilei din saptamana.
 
 Backtestul si rularea batch lunara se fac cu:
 

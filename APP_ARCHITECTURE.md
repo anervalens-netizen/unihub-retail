@@ -237,7 +237,9 @@ Fluxul operational curent este:
 5. Rezultatul lunar per magazin se importa cu
    `backend/scripts/import_ai_forecast.py`.
 6. Curba zilnica este derivata din profilul zilnic al aceleiasi luni din anul
-   precedent, la nivel de magazin, cu fallback uniform.
+   precedent, la nivel de magazin, dar este aliniata pe calendarul lunii
+   forecastate prin ordinalul zilei din saptamana (ex. prima sambata la prima
+   sambata). Fallback-ul este uniform cand lipseste profilul.
 7. Hub compara `ai_forecast_store_day` cumulat pana la ultima zi importata cu
    realizatul din `reporting_agent_day` / `reporting_agent_month`.
 
