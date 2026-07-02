@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from decimal import Decimal
 from io import BytesIO
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from openpyxl import Workbook
 from openpyxl import load_workbook
 
+import services.exports as exports_module
 from services.exports import (
     COMPARISON_LEVELS,
     ExportValidationError,
@@ -453,6 +455,101 @@ def test_attach_period_metrics_skips_unknown_row_and_sheet_helpers() -> None:
         first_data_col=2,
     )
     assert sheet._charts == []
+
+
+def test_campaign_codes_by_month_handles_config_and_rule_variants(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = ExportsService(FakeRepo())  # type: ignore[arg-type]
+
+    monkeypatch.setattr(exports_module, "load_special_cards_config", lambda: ({}, "missing config"))
+    assert service._campaign_codes_by_month(["2026-06"]) == {}
+
+    def parse_definitions(_config: dict[str, Any], month: str) -> tuple[list[dict[str, Any]], str | None]:
+        if month == "2026-05":
+            return [], "invalid month"
+        return [
+            {"id": "screen", "rule_type": "same_model_screen_camera"},
+            {"id": "trigger", "rule_type": "trigger_discounted"},
+            {"id": "selected"},
+            {"id": "none"},
+            {"id": "error"},
+        ], None
+
+    def load_products(definition: dict[str, Any]) -> tuple[dict[str, list[Any]] | None, str | None]:
+        definition_id = definition["id"]
+        if definition_id == "none":
+            return None, None
+        if definition_id == "error":
+            return {}, "bad products"
+        if definition_id in {"screen", "trigger"}:
+            return {"discounted_codes": [f"D-{definition_id}"], "item_codes": ["ignored"]}, None
+        return {"item_codes": ["I-selected", 7], "discounted_codes": ["ignored"]}, None
+
+    monkeypatch.setattr(exports_module, "load_special_cards_config", lambda: ({"promos": []}, None))
+    monkeypatch.setattr(exports_module, "parse_promotion_definitions", parse_definitions)
+    monkeypatch.setattr(exports_module, "load_promotion_rule_products", load_products)
+
+    assert service._campaign_codes_by_month(["2026-05", "2026-06"]) == {
+        "2026-06": ["7", "D-screen", "D-trigger", "I-selected"]
+    }
+
+
+@pytest.mark.asyncio
+async def test_campaign_exclusions_by_month_reads_pool_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeAcquire:
+        async def __aenter__(self) -> str:
+            return "conn"
+
+        async def __aexit__(self, *_args: Any) -> None:
+            return None
+
+    class FakePool:
+        def acquire(self) -> FakeAcquire:
+            return FakeAcquire()
+
+    repo = FakeRepo()
+    repo.pool = FakePool()  # type: ignore[attr-defined]
+    service = ExportsService(repo)  # type: ignore[arg-type]
+    calls: list[dict[str, Any]] = []
+
+    async def load_context(conn: Any, month: str, **kwargs: Any) -> SimpleNamespace:
+        calls.append({"conn": conn, "month": month, **kwargs})
+        units = {} if month == "2026-05" else {("S001", "Agent 1", 123): "2"}
+        return SimpleNamespace(promo_excluded_units=units)
+
+    monkeypatch.setattr(exports_module, "_load_dashboard_campaign_context", load_context)
+
+    result = await service._campaign_exclusions_by_month(
+        ["2026-05", "2026-06"],
+        {
+            "firma": ["Mobiup", ""],
+            "regional": ["RM 1"],
+            "asm": ["ASM 1"],
+            "site_code": ["S001"],
+            "agent": ["Agent 1"],
+        },
+    )
+
+    assert result == {"2026-06": {("S001", "Agent 1", "123"): 2}}
+    assert calls == [
+        {
+            "conn": "conn",
+            "month": "2026-05",
+            "firma": "Mobiup",
+            "regional": "RM 1",
+            "asm": "ASM 1",
+            "site_code": "S001",
+            "agent": "Agent 1",
+        },
+        {
+            "conn": "conn",
+            "month": "2026-06",
+            "firma": "Mobiup",
+            "regional": "RM 1",
+            "asm": "ASM 1",
+            "site_code": "S001",
+            "agent": "Agent 1",
+        },
+    ]
 
 
 def test_daily_evolution_sheet_skips_empty_metrics_and_missing_values() -> None:
