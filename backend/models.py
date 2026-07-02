@@ -404,6 +404,36 @@ class RegionalStats(BaseModel):
     prc_focus_acc_qty: Decimal | None
 
 
+class PerformancePeerRow(BaseModel):
+    label: str
+    sublabel: str | None = None
+    total_sales: Decimal
+    target_progress_pct: Decimal | None = None
+    forecast_target_pct: Decimal | None = None
+    proc_bon2acc: Decimal | None = None
+    prc_focus_acc_qty: Decimal | None = None
+    rank: int
+    is_selected: bool = False
+
+
+class PerformanceDetailResponse(BaseModel):
+    level: Literal["regional", "store", "agent"]
+    key: str
+    title: str
+    subtitle: str | None = None
+    month: str
+    summary: DashboardSummary
+    history: list[MonthlyHistoryPoint] = Field(default_factory=list)
+    daily: list[DailySalesPoint] = Field(default_factory=list)
+    score: int
+    score_label: str
+    note: str
+    strengths: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    peer_rows: list[PerformancePeerRow] = Field(default_factory=list)
+    context_summary: DashboardSummary | None = None
+
+
 class AsmStats(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

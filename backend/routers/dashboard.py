@@ -9,6 +9,7 @@ from models import (
     DailySalesPoint,
     DashboardAllResponse,
     DashboardHistoryResponse,
+    PerformanceDetailResponse,
     DashboardSpecialCardsResponse,
     DashboardSummary,
     PremiumGlassAnalysis,
@@ -140,4 +141,32 @@ async def get_history_by_year(
 ) -> YearHistoryResponse:
     return await svc.get_history_by_year(
         year, firma, regional, asm, site_code, agent, current_scope, include_closed_stores
+    )
+
+
+@router.get("/performance-detail", response_model=PerformanceDetailResponse)
+async def get_performance_detail(
+    month: str = Query(...),
+    level: Literal["regional", "store", "agent"] = Query(...),
+    key: str = Query(...),
+    firma: str | None = None,
+    regional: str | None = None,
+    asm: str | None = None,
+    site_code: str | None = None,
+    agent: str | None = None,
+    current_scope: bool = Query(True),
+    include_closed_stores: bool = Query(False),
+    svc: DashboardService = Depends(get_dashboard_service),
+) -> PerformanceDetailResponse:
+    return await svc.get_performance_detail(
+        month,
+        level,
+        key,
+        firma,
+        regional,
+        asm,
+        site_code,
+        agent,
+        current_scope,
+        include_closed_stores,
     )

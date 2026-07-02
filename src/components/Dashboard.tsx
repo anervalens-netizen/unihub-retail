@@ -24,6 +24,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { getPerformanceDetail } from '../api/dashboard';
 import type {
   AgentStat,
   AsmStat,
@@ -35,6 +36,8 @@ import type {
   DashboardSummary,
   PeriodComparisonPayload,
   PeriodComparisonPoint,
+  PerformanceDetailLevel,
+  PerformanceDetailResponse,
   PremiumGlassAnalysis,
   PromoIncentiveSummary,
   ReceiptBucketItem,
@@ -47,6 +50,7 @@ import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { VisiteSubtab } from './VisiteSubtab';
 import { AiForecastPanel } from './AiForecastPanel';
+import { SideDrawer } from './common/SideDrawer';
 import { useSortable } from '../lib/useSortable';
 import {
   CampaignMiniCard,
@@ -82,6 +86,12 @@ interface DashboardProps {
 }
 
 type DashboardSection = 'current' | 'history' | 'visits';
+type PerformanceSelection = {
+  level: PerformanceDetailLevel;
+  key: string;
+  site_code?: string;
+};
+type MonthlyPerformanceMetric = 'sales' | 'bon2acc' | 'focus';
 type StoreSortKey =
   | 'locatie'
   | 'site_code'
@@ -608,6 +618,10 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
   const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
   const [includeClosedStores, setIncludeClosedStores] = useState(false);
+  const [performanceSelection, setPerformanceSelection] = useState<PerformanceSelection | null>(null);
+  const [performanceDetail, setPerformanceDetail] = useState<PerformanceDetailResponse | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
+  const [performanceError, setPerformanceError] = useState('');
   const historyMonthDropdownRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -698,6 +712,43 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   useEffect(() => {
     onSectionChange?.(activeSection);
   }, [activeSection, onSectionChange]);
+
+  useEffect(() => {
+    if (!performanceSelection) {
+      setPerformanceDetail(null);
+      setPerformanceError('');
+      setPerformanceLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setPerformanceLoading(true);
+    setPerformanceError('');
+    getPerformanceDetail({
+      month: currentMonth,
+      level: performanceSelection.level,
+      key: performanceSelection.key,
+      firma: filters.firma,
+      site_code: performanceSelection.site_code,
+      current_scope: true,
+      include_closed_stores: false,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setPerformanceDetail(data);
+      })
+      .catch((errorValue: unknown) => {
+        if (cancelled) return;
+        const message = errorValue instanceof Error ? errorValue.message.replace(/^API error: \d+\s*-?\s*/i, '') : '';
+        setPerformanceError(message || 'Detaliul nu a putut fi incarcat.');
+        setPerformanceDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPerformanceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentMonth, filters.firma, performanceSelection]);
 
   const availableYears = useMemo(() => {
     const cy = parseInt(currentMonth.slice(0, 4));
@@ -1113,6 +1164,9 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const regionalColumnsVisible = CURRENT_REGIONAL_COLUMNS;
   const storeColumnsVisible = CURRENT_STORE_COLUMNS;
   const agentColumnsVisible = CURRENT_AGENT_COLUMNS;
+  const openPerformanceDetail = (selection: PerformanceSelection) => {
+    setPerformanceSelection(selection);
+  };
 
   return (
     <div className="space-y-3 p-3 pb-24 lg:pb-6 pt-2">
@@ -1502,7 +1556,16 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       key={regional.regional}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>{regional.regional}</td>
+                      <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>
+                        <button
+                          type="button"
+                          onClick={() => openPerformanceDetail({ level: 'regional', key: regional.regional })}
+                          className="max-w-full truncate text-left font-semibold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
+                          title="Detalii performanta"
+                        >
+                          {regional.regional}
+                        </button>
+                      </td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(regional.target)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(regional.total_vanzari)}</td>
                       <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(regional.proc_realizare_target)}</td>
@@ -1571,10 +1634,15 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
                       <td className={`max-w-32 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>
-                        <span className="inline-flex min-w-0 items-center">
+                        <button
+                          type="button"
+                          onClick={() => openPerformanceDetail({ level: 'store', key: store.site_code })}
+                          className="inline-flex min-w-0 max-w-full items-center text-left font-semibold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
+                          title="Detalii performanta"
+                        >
                           <FirmaBadge firma={store.firma} />
                           <span className="truncate">{store.locatie}</span>
-                        </span>
+                        </button>
                       </td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.target)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.total_vanzari)}</td>
@@ -1642,7 +1710,16 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       key={`${agentRow.agent}-${agentRow.site_code}`}
                       className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
                     >
-                      <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.agent}</td>
+                      <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>
+                        <button
+                          type="button"
+                          onClick={() => openPerformanceDetail({ level: 'agent', key: agentRow.agent, site_code: agentRow.site_code })}
+                          className="max-w-full truncate text-left font-bold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
+                          title="Detalii performanta"
+                        >
+                          {agentRow.agent}
+                        </button>
+                      </td>
                       <td className={`max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.locatie}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.target ?? 0)}</td>
                       <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatAmount(agentRow.total_vanzari)}</td>
@@ -2298,8 +2375,292 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           )}
         </>
       )}
+      <PerformanceDetailDrawer
+        open={performanceSelection !== null}
+        detail={performanceDetail}
+        loading={performanceLoading}
+        error={performanceError}
+        onClose={() => setPerformanceSelection(null)}
+      />
     </div>
   );
+}
+
+function PerformanceDetailDrawer({
+  open,
+  detail,
+  loading,
+  error,
+  onClose,
+}: {
+  open: boolean;
+  detail: PerformanceDetailResponse | null;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  const [monthlyMetric, setMonthlyMetric] = useState<MonthlyPerformanceMetric>('sales');
+  const historyData = useMemo(
+    () => (detail?.history ?? []).map((point) => ({
+      month: point.month,
+      sales: Number(point.month === detail?.month ? (detail.summary.forecast_sales ?? point.total_sales ?? 0) : (point.total_sales ?? 0)),
+      target: Number(point.total_target ?? 0),
+      targetPct: point.month === detail?.month
+        ? (detail.summary.forecast_target_progress_pct ?? point.target_progress_pct ?? null)
+        : (point.target_progress_pct ?? null),
+      bon2acc: point.proc_bon2acc ?? null,
+      focus: point.prc_focus_acc_qty ?? null,
+    })),
+    [detail],
+  );
+  const dailyData = useMemo(
+    () => (detail?.daily ?? []).map((point) => ({
+      day: Number(point.sale_date.slice(8, 10)),
+      sales: Number(point.total_sales ?? 0),
+      qty: point.total_quantity ?? 0,
+      receipts: point.receipt_count ?? 0,
+    })),
+    [detail],
+  );
+  const selectedPeer = detail?.peer_rows.find((row) => row.is_selected) ?? null;
+  const agentStoreShare = detail?.context_summary && detail.context_summary.total_sales > 0
+    ? Number(detail.summary.total_sales) * 100 / Number(detail.context_summary.total_sales)
+    : null;
+  const monthlyMetricLabel = monthlyMetric === 'sales'
+    ? 'Vanzare'
+    : monthlyMetric === 'bon2acc'
+      ? 'ProcBon2Acc'
+      : 'PrcFocus/AccQtty';
+  const monthlyMetricColor = monthlyMetric === 'sales'
+    ? '#4f46e5'
+    : monthlyMetric === 'bon2acc'
+      ? '#0f766e'
+      : '#db2777';
+
+  return (
+    <SideDrawer
+      open={open}
+      onClose={onClose}
+      title={detail ? `Performanta · ${detail.title}` : 'Performanta'}
+      widthClassName="w-full max-w-5xl"
+    >
+      <div className="space-y-4 p-4">
+        {loading && <LoadingCard label="Incarc detaliile de performanta..." />}
+        {error && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+            {error}
+          </div>
+        )}
+        {detail && (
+          <>
+            <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <div className="text-xs font-bold uppercase text-slate-400">Scor performanta</div>
+                <div className="mt-2 flex items-end gap-2">
+                  <div className={`text-5xl font-black ${scoreToneClass(detail.score)}`}>{detail.score}</div>
+                  <div className="pb-1 text-sm font-bold text-slate-600 dark:text-slate-300">{detail.score_label}</div>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-slate-100 dark:bg-slate-800">
+                  <div className={`h-2 rounded-full ${scoreBarClass(detail.score)}`} style={{ width: `${detail.score}%` }} />
+                </div>
+                {selectedPeer && (
+                  <div className="mt-3 text-xs font-semibold text-slate-500">
+                    Rank {selectedPeer.rank}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{detail.title}</h3>
+                  {detail.subtitle && <p className="text-xs text-slate-500">{detail.subtitle}</p>}
+                </div>
+                <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{detail.note}</p>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <DetailMetric label="Vanzari" value={formatCurrency(detail.summary.total_sales)} />
+                  <DetailMetric label="Target" value={formatPercent(detail.summary.target_progress_pct)} />
+                  <DetailMetric label="Forecast" value={formatPercent(detail.summary.forecast_target_progress_pct)} />
+                  <DetailMetric label="Medie zilnica" value={formatCurrency(detail.summary.daily_average ?? 0)} />
+                  <DetailMetric label="Bon2Acc" value={formatPercent(detail.summary.proc_bon2acc)} />
+                  <DetailMetric label="Focus" value={formatPercent(detail.summary.prc_focus_acc_qty)} />
+                  <DetailMetric label="Bonuri" value={formatInt(detail.summary.total_receipts)} />
+                  <DetailMetric label={detail.level === 'agent' ? 'Zile lucrate' : 'Zile active'} value={formatInt(detail.summary.working_days)} />
+                </div>
+                {detail.context_summary && (
+                  <div className="mt-3 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-200">
+                    Magazin: {formatCurrency(detail.context_summary.total_sales)} · contributie agent {agentStoreShare !== null ? formatPercent(agentStoreShare) : '-'}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold">Evolutie lunara</h3>
+                  <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+                    {[
+                      { key: 'sales', label: 'Vanzare' },
+                      { key: 'bon2acc', label: 'ProcBon2Acc' },
+                      { key: 'focus', label: 'PrcFocus/AccQtty' },
+                    ].map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setMonthlyMetric(option.key as MonthlyPerformanceMetric)}
+                        className={`rounded-lg px-2 py-1 text-[11px] font-bold transition ${
+                          monthlyMetric === option.key
+                            ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
+                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={historyData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                      {monthlyMetric === 'sales' ? (
+                        <>
+                          <YAxis yAxisId="sales" tick={{ fontSize: 10 }} tickFormatter={(value) => formatAmount(Number(value))} width={58} />
+                          <YAxis yAxisId="percent" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(value) => `${value}%`} width={38} />
+                          <Tooltip formatter={(value: number, name: string) => [name.includes('%') ? formatPercent(value) : formatCurrency(value), name]} />
+                          <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill={monthlyMetricColor} radius={[4, 4, 0, 0]} />
+                          <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                          <Line yAxisId="percent" type="monotone" dataKey="targetPct" name="Target %" stroke="#10b981" strokeWidth={2} dot={false} connectNulls />
+                        </>
+                      ) : (
+                        <>
+                          <YAxis yAxisId="percent" tick={{ fontSize: 10 }} tickFormatter={(value) => `${value}%`} width={48} />
+                          <Tooltip formatter={(value: number) => [formatPercent(value), monthlyMetricLabel]} />
+                          <Line yAxisId="percent" type="monotone" dataKey={monthlyMetric} name={monthlyMetricLabel} stroke={monthlyMetricColor} strokeWidth={3} dot={{ r: 3 }} connectNulls />
+                        </>
+                      )}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <h3 className="mb-3 text-sm font-bold">Evolutie zilnica</h3>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={dailyData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => formatAmount(Number(value))} width={58} />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} labelFormatter={(label) => `Ziua ${label}`} />
+                      <Area type="monotone" dataKey="sales" name="Vanzari" stroke="#4f46e5" fill="#c7d2fe" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <h3 className="mb-3 text-sm font-bold">Semnale</h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <SignalList title="Puncte bune" items={detail.strengths} empty="Fara semnale pozitive clare." tone="good" />
+                  <SignalList title="De urmarit" items={detail.risks} empty="Fara risc major pe KPI." tone="risk" />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <h3 className="mb-3 text-sm font-bold">
+                  {detail.level === 'agent' ? 'Colegi acelasi magazin' : detail.level === 'store' ? 'Magazine acelasi RM' : 'RM comparabili'}
+                </h3>
+                <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
+                      <tr>
+                        <th className="px-2 py-2 text-left">Nume</th>
+                        <th className="px-2 py-2 text-right">Vanzari</th>
+                        <th className="px-2 py-2 text-right">%</th>
+                        <th className="px-2 py-2 text-right">Rank</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.peer_rows.map((row) => (
+                        <tr key={`${row.rank}-${row.label}`} className={row.is_selected ? 'bg-indigo-50 font-bold text-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200' : 'border-t border-slate-100 dark:border-slate-800'}>
+                          <td className="px-2 py-2">
+                            <div className="max-w-44 truncate">{row.label}</div>
+                            {row.sublabel && <div className="max-w-44 truncate text-[10px] text-slate-500">{row.sublabel}</div>}
+                          </td>
+                          <td className="px-2 py-2 text-right">{formatAmount(row.total_sales)}</td>
+                          <td className="px-2 py-2 text-right">{formatPercent(row.target_progress_pct)}</td>
+                          <td className="px-2 py-2 text-right">{row.rank}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </SideDrawer>
+  );
+}
+
+function DetailMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/70">
+      <div className="text-[10px] font-bold uppercase text-slate-400">{label}</div>
+      <div className="mt-1 truncate text-sm font-black text-slate-800 dark:text-slate-100">{value}</div>
+    </div>
+  );
+}
+
+function SignalList({
+  title,
+  items,
+  empty,
+  tone,
+}: {
+  title: string;
+  items: string[];
+  empty: string;
+  tone: 'good' | 'risk';
+}) {
+  return (
+    <div>
+      <div className="mb-2 text-xs font-bold text-slate-700 dark:text-slate-200">{title}</div>
+      <div className="space-y-1">
+        {(items.length ? items : [empty]).map((item) => (
+          <div
+            key={item}
+            className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
+              tone === 'good'
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'
+            }`}
+          >
+            {item}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function scoreToneClass(score: number): string {
+  if (score >= 85) return 'text-emerald-600';
+  if (score >= 70) return 'text-indigo-600';
+  if (score >= 55) return 'text-amber-600';
+  return 'text-rose-600';
+}
+
+function scoreBarClass(score: number): string {
+  if (score >= 85) return 'bg-emerald-500';
+  if (score >= 70) return 'bg-indigo-500';
+  if (score >= 55) return 'bg-amber-500';
+  return 'bg-rose-500';
 }
 
 function PremiumGlassHubCard({

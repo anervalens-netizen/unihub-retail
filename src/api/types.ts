@@ -347,6 +347,38 @@ export interface RegionalStat {
   prc_focus_acc_qty: number | null;
 }
 
+export type PerformanceDetailLevel = 'regional' | 'store' | 'agent';
+
+export interface PerformancePeerRow {
+  label: string;
+  sublabel: string | null;
+  total_sales: number;
+  target_progress_pct: number | null;
+  forecast_target_pct: number | null;
+  proc_bon2acc: number | null;
+  prc_focus_acc_qty: number | null;
+  rank: number;
+  is_selected: boolean;
+}
+
+export interface PerformanceDetailResponse {
+  level: PerformanceDetailLevel;
+  key: string;
+  title: string;
+  subtitle: string | null;
+  month: string;
+  summary: DashboardSummary;
+  history: MonthlyHistoryPoint[];
+  daily: DailySalesPoint[];
+  score: number;
+  score_label: string;
+  note: string;
+  strengths: string[];
+  risks: string[];
+  peer_rows: PerformancePeerRow[];
+  context_summary: DashboardSummary | null;
+}
+
 export interface AsmStat {
   asm: string;
   regional: string;

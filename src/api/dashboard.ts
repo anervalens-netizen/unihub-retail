@@ -2,6 +2,8 @@ import { client } from './client';
 import type {
   DashboardAllResponse,
   DashboardHistoryResponse,
+  PerformanceDetailLevel,
+  PerformanceDetailResponse,
   PremiumGlassAnalysis,
   PremiumGlassSurfaceMode,
   YearHistoryResponse,
@@ -40,5 +42,12 @@ export async function getDashboardHistoryYear(
 
 export async function getPremiumGlassAnalysis(query: DashboardQuery): Promise<PremiumGlassAnalysis> {
   const { data } = await client.get<PremiumGlassAnalysis>('/api/dashboard/premium-glass', { params: query });
+  return data;
+}
+
+export async function getPerformanceDetail(
+  query: DashboardQuery & { level: PerformanceDetailLevel; key: string }
+): Promise<PerformanceDetailResponse> {
+  const { data } = await client.get<PerformanceDetailResponse>('/api/dashboard/performance-detail', { params: query });
   return data;
 }
