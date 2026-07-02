@@ -96,6 +96,7 @@ export default function App() {
   const [focusFilters, setFocusFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.focus));
   const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.agents));
   const [currentMonth, setCurrentMonth] = useState('');
+  const [focusFilterMonth, setFocusFilterMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [mgmtSubTab, setMgmtSubTab] = usePersistentState<ManagementTab>(
@@ -114,6 +115,13 @@ export default function App() {
     // Luna in curs se rescrie la bootstrap cu cea mai recenta luna disponibila.
     if (currentMonth) localStorage.setItem(CURRENT_MONTH_STORAGE_KEY, currentMonth);
   }, [currentMonth]);
+
+  useEffect(() => {
+    if (!currentMonth) return;
+    setFocusFilterMonth((previous) => (
+      previous && months.includes(previous) ? previous : currentMonth
+    ));
+  }, [currentMonth, months]);
 
   useEffect(() => {
     localStorage.setItem(FILTER_STORAGE_KEYS.hub, JSON.stringify(hubFilters));
@@ -206,6 +214,9 @@ export default function App() {
       : activeTab === 'agents'
         ? setAgentsFilters
         : setHubFilters;
+  const activeFilterMonth = activeTab === 'focus'
+    ? (focusFilterMonth || currentMonth)
+    : currentMonth;
   const screenFallback = (
     <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">
       Se incarca ecranul...
@@ -237,7 +248,7 @@ export default function App() {
       setIsFilterOpen={setIsFilterOpen}
       filters={activeFilters}
       setFilters={setActiveFilters}
-      filterMonth={currentMonth}
+      filterMonth={activeFilterMonth}
       theme={theme}
       setTheme={setTheme}
       showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
@@ -264,6 +275,7 @@ export default function App() {
             filters={focusFilters}
             preferredSection={campaignsSection}
             onSectionChange={setCampaignsSection}
+            onFilterMonthChange={setFocusFilterMonth}
           />
         )}
         {activeTab === 'agents' && currentMonth && (

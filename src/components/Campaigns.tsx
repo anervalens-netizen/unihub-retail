@@ -66,6 +66,7 @@ interface CampaignsProps {
   filters: AppFilters;
   preferredSection: CampaignSection;
   onSectionChange: (section: CampaignSection) => void;
+  onFilterMonthChange?: (month: string) => void;
 }
 
 const emptySnapshot: CampaignSnapshot = {
@@ -121,6 +122,7 @@ export function Campaigns({
   filters,
   preferredSection,
   onSectionChange,
+  onFilterMonthChange,
 }: CampaignsProps) {
   const latestMonth = useMemo(() => months[0] ?? currentMonth, [months, currentMonth]);
   const [activeSection, setActiveSection] = useState<CampaignSection>(preferredSection);
@@ -148,6 +150,10 @@ export function Campaigns({
   useEffect(() => {
     onSectionChange(activeSection);
   }, [activeSection, onSectionChange]);
+
+  useEffect(() => {
+    if (promoMonth) onFilterMonthChange?.(promoMonth);
+  }, [promoMonth, onFilterMonthChange]);
 
   const buildQuery = useCallback(
     (month: string) => buildScopedMonthQuery(month, filters),
