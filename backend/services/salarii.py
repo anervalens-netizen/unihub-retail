@@ -85,6 +85,58 @@ class SalariiService:
 
     async def get_agent_history(self, cnp: str) -> dict:
         rows = await self.repo.fetch_agent_history(cnp)
+        return self._format_agent_history(rows)
+
+    async def get_agent_history_by_retail_code(
+        self,
+        *,
+        agent_code: str,
+        site_code: str,
+    ) -> dict:
+        link = await self.repo.fetch_agent_salary_link(
+            agent_code=agent_code,
+            site_code=site_code,
+        )
+        if not link:
+            return {
+                "link": None,
+                "records": [],
+                "total": 0.0,
+                "avg": 0.0,
+                "month_count": 0,
+                "avg_month_count": 0,
+            }
+
+        link_payload = {
+            "agent_code": link["agent_code"],
+            "site_code": link["site_code"],
+            "salary_full_name": link["salary_full_name"],
+            "salary_cnp": link["salary_cnp"],
+            "match_status": link["match_status"],
+            "match_source": link["match_source"],
+            "confidence": link["confidence"],
+            "effective_from_month": link["effective_from_month"],
+            "note": link["note"],
+        }
+        if link["match_status"] == "unknown" or not link["salary_full_name"]:
+            return {
+                "link": link_payload,
+                "records": [],
+                "total": 0.0,
+                "avg": 0.0,
+                "month_count": 0,
+                "avg_month_count": 0,
+            }
+
+        rows = await self.repo.fetch_agent_history_by_salary_link(
+            salary_full_name=link["salary_full_name"],
+            salary_cnp=link["salary_cnp"],
+        )
+        result = self._format_agent_history(rows)
+        result["link"] = link_payload
+        return result
+
+    def _format_agent_history(self, rows) -> dict:
         if not rows:
             return {
                 "records": [],

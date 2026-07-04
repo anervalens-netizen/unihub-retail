@@ -25,6 +25,8 @@ import {
   YAxis,
 } from 'recharts';
 import { getPerformanceDetail } from '../api/dashboard';
+import { fetchSalaryAgentHistoryByRetailCode } from '../api/salarii';
+import type { SalaryAgentHistory } from '../api/salarii';
 import type {
   AgentStat,
   AsmStat,
@@ -74,6 +76,9 @@ import {
 } from './dashboard/DashboardWidgets';
 import { DEFAULT_PROMO_INCENTIVE } from './dashboard/dashboardDefaults';
 import { useDashboardData, type AggregatedDashboardDetails } from './dashboard/useDashboardData';
+import { useAuth } from '../auth/AuthContext';
+import { canAccessSalaries } from '../auth/permissions';
+import { SalaryAgentBarChart } from './SalaryAgentBarChart';
 
 const HISTORY_START_YEAR = 2018;
 
@@ -609,6 +614,8 @@ export function aggregateDashboardDetails(
 }
 
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
+  const { user } = useAuth();
+  const canViewSalaries = canAccessSalaries(user?.profile, user?.access_token);
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
   const [currentMode, setCurrentMode] = useState<'overview' | 'forecast'>('overview');
   const [historyMonth, setHistoryMonth] = useState(currentMonth);
@@ -2377,9 +2384,11 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       )}
       <PerformanceDetailDrawer
         open={performanceSelection !== null}
+        selection={performanceSelection}
         detail={performanceDetail}
         loading={performanceLoading}
         error={performanceError}
+        canViewSalaries={canViewSalaries}
         onClose={() => setPerformanceSelection(null)}
       />
     </div>
@@ -2388,18 +2397,25 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
 function PerformanceDetailDrawer({
   open,
+  selection,
   detail,
   loading,
   error,
+  canViewSalaries,
   onClose,
 }: {
   open: boolean;
+  selection: PerformanceSelection | null;
   detail: PerformanceDetailResponse | null;
   loading: boolean;
   error: string;
+  canViewSalaries: boolean;
   onClose: () => void;
 }) {
   const [monthlyMetric, setMonthlyMetric] = useState<MonthlyPerformanceMetric>('sales');
+  const [salaryHistory, setSalaryHistory] = useState<SalaryAgentHistory | null>(null);
+  const [salaryLoading, setSalaryLoading] = useState(false);
+  const [salaryError, setSalaryError] = useState('');
   const historyData = useMemo(
     () => (detail?.history ?? []).map((point) => ({
       month: point.month,
@@ -2437,6 +2453,37 @@ function PerformanceDetailDrawer({
       ? '#0f766e'
       : '#db2777';
   const showMonthlyTargetLines = detail?.level !== 'agent';
+
+  useEffect(() => {
+    if (!open || !canViewSalaries || detail?.level !== 'agent' || !selection?.site_code) {
+      setSalaryHistory(null);
+      setSalaryLoading(false);
+      setSalaryError('');
+      return undefined;
+    }
+    let cancelled = false;
+    setSalaryLoading(true);
+    setSalaryError('');
+    setSalaryHistory(null);
+    fetchSalaryAgentHistoryByRetailCode({
+      agent_code: detail.key,
+      site_code: selection.site_code,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setSalaryHistory(data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSalaryError('Salariile nu au putut fi incarcate.');
+      })
+      .finally(() => {
+        if (!cancelled) setSalaryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewSalaries, detail?.key, detail?.level, open, selection?.site_code]);
 
   return (
     <SideDrawer
@@ -2552,6 +2599,14 @@ function PerformanceDetailDrawer({
                 </div>
               </div>
 
+              {detail.level === 'agent' && canViewSalaries && (
+                <AgentSalarySummaryCard
+                  history={salaryHistory}
+                  loading={salaryLoading}
+                  error={salaryError}
+                />
+              )}
+
               <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <h3 className="mb-3 text-sm font-bold">Evolutie zilnica</h3>
                 <div className="h-64">
@@ -2620,6 +2675,84 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/70">
       <div className="text-[10px] font-bold uppercase text-slate-400">{label}</div>
       <div className="mt-1 truncate text-sm font-black text-slate-800 dark:text-slate-100">{value}</div>
+    </div>
+  );
+}
+
+function AgentSalarySummaryCard({
+  history,
+  loading,
+  error,
+}: {
+  history: SalaryAgentHistory | null;
+  loading: boolean;
+  error: string;
+}) {
+  const link = history?.link ?? null;
+  const hasRecords = !!history && history.records.length > 0;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold">Salarii</h3>
+          {link?.salary_full_name ? (
+            <p className="text-xs text-slate-500">
+              {link.salary_full_name}
+              {link.match_source === 'manual' ? ' · confirmat manual' : ' · mapare automata'}
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500">Mapare cod-agent spre nume salarial</p>
+          )}
+        </div>
+      </div>
+
+      {loading && (
+        <div className="flex h-40 items-center justify-center text-xs font-semibold text-slate-500">
+          Se incarca salariile...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && !history?.link && (
+        <div className="rounded-xl bg-slate-50 px-3 py-4 text-xs font-semibold text-slate-500 dark:bg-slate-800/70">
+          Nu exista inca mapare salariala pentru codul acestui agent.
+        </div>
+      )}
+
+      {!loading && !error && link?.match_status === 'unknown' && (
+        <div className="rounded-xl bg-amber-50 px-3 py-4 text-xs font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          Agent marcat ca necunoscut. Poate aparea automat dupa urmatorul import de salarii.
+          {link.note ? <div className="mt-2 font-medium opacity-80">{link.note}</div> : null}
+        </div>
+      )}
+
+      {!loading && !error && link?.match_status === 'confirmed' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            <DetailMetric label="Total" value={formatCurrency(history?.total ?? 0)} />
+            <DetailMetric label="Luni" value={formatInt(history?.month_count ?? 0)} />
+            <DetailMetric label="Medie" value={formatCurrency(history?.avg ?? 0)} />
+          </div>
+          {hasRecords ? (
+            <SalaryAgentBarChart data={history.records} />
+          ) : (
+            <div className="rounded-xl bg-slate-50 px-3 py-4 text-xs font-semibold text-slate-500 dark:bg-slate-800/70">
+              Numele este confirmat, dar nu exista inca randuri de salarii pentru el.
+            </div>
+          )}
+          {history && history.month_count > 0 && (
+            <div className="text-[11px] font-semibold text-slate-500">
+              Media foloseste {history.avg_month_count}/{history.month_count} luni cu salariu de cel putin 2.000 RON.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

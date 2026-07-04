@@ -72,6 +72,18 @@ async def agent_history(
     return await svc.get_agent_history(cnp)
 
 
+@router.get("/agents/history-by-retail-code")
+async def agent_history_by_retail_code(
+    agent_code: str = Query(...),
+    site_code: str = Query(...),
+    svc: SalariiService = Depends(get_salarii_service),
+):
+    return await svc.get_agent_history_by_retail_code(
+        agent_code=agent_code,
+        site_code=site_code,
+    )
+
+
 @router.get("/summary")
 async def salarii_summary(
     company_name: str | None = Query(None),

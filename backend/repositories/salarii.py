@@ -396,6 +396,50 @@ class SalariiRepository:
                 cnp,
             )
 
+    async def fetch_agent_salary_link(
+        self,
+        *,
+        agent_code: str,
+        site_code: str,
+    ) -> asyncpg.Record | None:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                SELECT agent_code, site_code, salary_full_name, salary_cnp,
+                       match_status, match_source, confidence, effective_from_month, note
+                FROM agent_salary_links
+                WHERE agent_code = $1
+                  AND site_code = $2
+                """,
+                agent_code,
+                site_code,
+            )
+
+    async def fetch_agent_history_by_salary_link(
+        self,
+        *,
+        salary_full_name: str,
+        salary_cnp: str | None,
+    ) -> list[asyncpg.Record]:
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                SELECT year, month, company_name, total_salary, site_code, locatie
+                FROM salary_records
+                WHERE (
+                    NULLIF(BTRIM($1::TEXT), '') IS NOT NULL
+                    AND NULLIF(BTRIM(cnp), '') = NULLIF(BTRIM($1::TEXT), '')
+                )
+                OR (
+                    NULLIF(BTRIM($1::TEXT), '') IS NULL
+                    AND LOWER(BTRIM(full_name)) = LOWER(BTRIM($2))
+                )
+                ORDER BY year DESC, month DESC, company_name
+                """,
+                salary_cnp,
+                salary_full_name,
+            )
+
     async def fetch_latest_month(
         self,
         *,

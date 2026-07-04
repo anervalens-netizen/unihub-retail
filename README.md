@@ -458,6 +458,13 @@ Pentru afisare, randurile sunt consolidate pe `locatie + company_name`, nu pe
 part-time sau coduri istorice diferite pentru aceeasi locatie. Consolidarea se
 face doar in query-ul de citire; tabela `salary_records` ramane nemodificata.
 
+Codurile de agent din raportarea Retail sunt legate de numele salariale prin
+`agent_salary_links` (`agent_code + site_code -> salary_full_name`). Maparile
+confirmate manual si cele automate sunt persistente; cazurile neclare se
+marcheaza `unknown`, ca sa poata fi completate dupa importuri viitoare. Drawerul
+din **Hub -> Luna in curs -> Overview -> Agenti** citeste aceasta mapare si
+afiseaza sumarul salarial doar pentru utilizatorii cu acces la Salarii.
+
 Importul lunar se ruleaza cu scriptul dedicat, intai dry-run si apoi `--apply`:
 
 ```bash

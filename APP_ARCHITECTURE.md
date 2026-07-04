@@ -76,6 +76,10 @@ flowchart LR
   primesc 403. Frontend-ul ascunde tabul, dar backend-ul ramane autoritativ.
   Accesul permis/refuzat si exporturile din tab sunt logate fara CNP sau
   valori salariale.
+- Hub -> `Luna in curs` -> `Overview` foloseste `agent_salary_links` ca sa
+  lege codul de agent din reporting de numele din `salary_records` si sa
+  afiseze sumarul salarial in drawerul de performanta al agentului. Endpointul
+  ramane sub `/salarii`, deci respecta acelasi RBAC ca tabul Salarii.
 - RBAC-ul Retail este centralizat in `backend/permissions.py`. Rapoartele
   generale raman disponibile utilizatorilor autentificati, dar Management,
   HR, Calculator Target si exporturile server-side cer rol managerial
@@ -198,7 +202,7 @@ Familii de tabele:
 | Campanii | `incentive_campaigns`, `incentive_products` |
 | Reporting | `reporting_agent_*`, `reporting_item_*`, `reporting_focus_item_month`, `reporting_category_month` |
 | AI Forecast | `ai_forecast_runs`, `ai_forecast_store_month`, `ai_forecast_store_day` |
-| Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_targets` |
+| Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_salary_links`, `agent_targets` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
 

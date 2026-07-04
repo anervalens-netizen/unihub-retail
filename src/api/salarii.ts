@@ -39,11 +39,24 @@ export interface SalaryAgentHistoryRecord {
 }
 
 export interface SalaryAgentHistory {
+  link?: AgentSalaryLink | null;
   records: SalaryAgentHistoryRecord[];
   total: number;
   avg: number;
   month_count: number;
   avg_month_count: number;
+}
+
+export interface AgentSalaryLink {
+  agent_code: string;
+  site_code: string;
+  salary_full_name: string | null;
+  salary_cnp: string | null;
+  match_status: 'confirmed' | 'unknown';
+  match_source: 'auto' | 'manual';
+  confidence: 'high' | 'medium' | 'low' | 'unknown';
+  effective_from_month: string | null;
+  note: string | null;
 }
 
 export interface SalaryComparisonPoint {
@@ -119,6 +132,14 @@ export async function fetchSalaryAgents(params: {
 
 export async function fetchSalaryAgentHistory(cnp: string): Promise<SalaryAgentHistory> {
   const res = await client.get<SalaryAgentHistory>(`/salarii/agents/history/${encodeURIComponent(cnp)}`);
+  return res.data;
+}
+
+export async function fetchSalaryAgentHistoryByRetailCode(params: {
+  agent_code: string;
+  site_code: string;
+}): Promise<SalaryAgentHistory> {
+  const res = await client.get<SalaryAgentHistory>('/salarii/agents/history-by-retail-code', { params });
   return res.data;
 }
 
