@@ -57,6 +57,9 @@ _RO_MONTHS = {
     7: "Iul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
 }
 
+AGENT_FORECAST_WORKING_DAYS = Decimal("15")
+_MONEY = Decimal("0.01")
+
 
 class DashboardService:
     def __init__(self, repo: DashboardRepository, pool: asyncpg.Pool):
@@ -537,6 +540,7 @@ class DashboardService:
         )
 
         if level == "agent" and effective_site_code:
+            summary = self._apply_agent_working_days_forecast(summary)
             context_summary = await self.get_summary(
                 month,
                 None,
@@ -569,6 +573,23 @@ class DashboardService:
             risks=risks,
             peer_rows=peer_rows,
             context_summary=context_summary,
+        )
+
+    def _apply_agent_working_days_forecast(self, summary: DashboardSummary) -> DashboardSummary:
+        if summary.is_month_final or summary.daily_average is None:
+            return summary
+
+        forecast_sales = (summary.daily_average * AGENT_FORECAST_WORKING_DAYS).quantize(_MONEY)
+        forecast_target_progress_pct = (
+            (forecast_sales * Decimal(100) / summary.total_target).quantize(_MONEY)
+            if summary.total_target > 0
+            else None
+        )
+        return summary.model_copy(
+            update={
+                "forecast_sales": forecast_sales,
+                "forecast_target_progress_pct": forecast_target_progress_pct,
+            }
         )
 
     def _performance_score(self, summary: DashboardSummary) -> int:

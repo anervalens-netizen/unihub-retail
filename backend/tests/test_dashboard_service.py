@@ -113,6 +113,33 @@ class TestGetSummary:
         call = mock_repo.fetch_summary.call_args
         assert call[0][1] == ["2026-05", "SITE01", "Agent1"]
 
+    def test_agent_forecast_uses_15_working_days(self, service):
+        summary = DashboardSummary(**_make_summary_row(
+            total_sales=Decimal("12000"),
+            total_target=Decimal("30000"),
+            daily_average=Decimal("800"),
+            forecast_sales=Decimal("62000"),
+            forecast_target_progress_pct=Decimal("206.67"),
+            is_month_final=False,
+        ))
+
+        result = service._apply_agent_working_days_forecast(summary)
+
+        assert result.forecast_sales == Decimal("12000.00")
+        assert result.forecast_target_progress_pct == Decimal("40.00")
+
+    def test_agent_forecast_keeps_final_month_actual(self, service):
+        summary = DashboardSummary(**_make_summary_row(
+            daily_average=Decimal("800"),
+            forecast_sales=Decimal("12000"),
+            forecast_target_progress_pct=Decimal("40.00"),
+            is_month_final=True,
+        ))
+
+        result = service._apply_agent_working_days_forecast(summary)
+
+        assert result is summary
+
 
 class TestGetDailySales:
     @pytest.mark.asyncio

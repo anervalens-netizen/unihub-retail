@@ -21,7 +21,6 @@ import type {
   AiForecastResponse,
   AiForecastRollingManagerRow,
   AiForecastRollingMonthlyPoint,
-  AiForecastRollingResponse,
   AiForecastRollingStoreRow,
   AiForecastStoreRow,
 } from '../api/types';
@@ -826,7 +825,7 @@ function ForecastDailyCurveCard({
       </div>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-          <ComposedChart data={data}>
+          <ComposedChart data={data} barCategoryGap="45%" barGap="-100%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
             <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
             <YAxis yAxisId="daily" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -846,13 +845,12 @@ function ForecastDailyCurveCard({
               }}
             />
             <Legend />
-            <Bar yAxisId="daily" dataKey="forecastDaily" name="Profil zilnic" radius={[6, 6, 0, 0]}>
+            <Bar yAxisId="daily" dataKey="forecastDaily" name="Forecast zilnic" fillOpacity={0.72} radius={[6, 6, 0, 0]}>
               {data.map((entry) => (
                 <Cell key={entry.date} fill={entry.isWeekend ? '#f59e0b' : '#a5b4fc'} />
               ))}
             </Bar>
-            <Bar yAxisId="daily" dataKey="actualDaily" name="Realizat zilnic" fill="#10b981" radius={[6, 6, 0, 0]} />
-            <Line yAxisId="daily" type="monotone" dataKey="forecastDaily" name="Forecast zilnic" stroke="#334155" strokeWidth={2} dot={false} />
+            <Bar yAxisId="daily" dataKey="actualDaily" name="Realizat zilnic" fill="#10b981" fillOpacity={0.88} radius={[6, 6, 0, 0]} />
             <Line yAxisId="cumulative" type="monotone" dataKey="cumulativeForecast" name="Forecast cumulat" stroke="#4f46e5" strokeWidth={2} dot={false} />
             <Line yAxisId="cumulative" type="monotone" dataKey="cumulativeActual" name="Realizat cumulat" stroke="#059669" strokeWidth={2} dot={false} connectNulls />
           </ComposedChart>

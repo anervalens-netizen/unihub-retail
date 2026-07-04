@@ -2480,7 +2480,7 @@ function PerformanceDetailDrawer({
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <DetailMetric label="Vanzari" value={formatCurrency(detail.summary.total_sales)} />
                   <DetailMetric label="Target" value={formatPercent(detail.summary.target_progress_pct)} />
-                  <DetailMetric label="Forecast" value={formatPercent(detail.summary.forecast_target_progress_pct)} />
+                  <DetailMetric label={detail.level === 'agent' ? 'Forecast 15 zile' : 'Forecast'} value={formatPercent(detail.summary.forecast_target_progress_pct)} />
                   <DetailMetric label="Medie zilnica" value={formatCurrency(detail.summary.daily_average ?? 0)} />
                   <DetailMetric label="Bon2Acc" value={formatPercent(detail.summary.proc_bon2acc)} />
                   <DetailMetric label="Focus" value={formatPercent(detail.summary.prc_focus_acc_qty)} />

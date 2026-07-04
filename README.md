@@ -40,6 +40,8 @@ Reguli importante in Hub:
   implicit si pot fi incluse din checkbox-ul `Include magazine inchise`
 - cardul `Evolutie lunara` in modul standard afiseaza ultimele 13 luni
   finalizate plus luna curenta forecastata, cand luna curenta este partiala
+- in detaliul de performanta pe agent, forecastul lunii curente foloseste
+  media zilnica a agentului inmultita cu 15 zile lucrate estimate
 - subsectiunea `AI Forecast` afiseaza forecasturi salvate, nu ruleaza modelul
   in request; are comutatoare pentru `Luna curenta / 12 luni` si
   `Valoare / Bucati`
