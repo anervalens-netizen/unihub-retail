@@ -22,6 +22,8 @@ def mock_repo():
     repo.fetch_evolution_single_company = AsyncMock(return_value=[])
     repo.fetch_agents_summary = AsyncMock(return_value={"items": [], "total": 0})
     repo.fetch_agent_history = AsyncMock(return_value=[])
+    repo.fetch_agent_salary_link = AsyncMock(return_value=None)
+    repo.fetch_agent_history_by_salary_link = AsyncMock(return_value=[])
     repo.fetch_latest_month = AsyncMock(return_value=None)
     repo.fetch_summary_by_site = AsyncMock(return_value=[])
     repo.fetch_trend = AsyncMock(return_value=[])
@@ -193,6 +195,89 @@ class TestSalariiAgentHistory:
         assert result["month_count"] == 2
         assert result["avg_month_count"] == 1
         assert result["avg"] == 3000.0
+
+    @pytest.mark.asyncio
+    async def test_agent_history_by_retail_code_without_link(self, service, mock_repo):
+        result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
+
+        assert result == {
+            "link": None,
+            "records": [],
+            "total": 0.0,
+            "avg": 0.0,
+            "month_count": 0,
+            "avg_month_count": 0,
+        }
+        mock_repo.fetch_agent_salary_link.assert_awaited_once_with(agent_code="AG1", site_code="S1")
+        mock_repo.fetch_agent_history_by_salary_link.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_agent_history_by_retail_code_with_unknown_link(self, service, mock_repo):
+        mock_repo.fetch_agent_salary_link.return_value = FakeRow(
+            agent_code="AG1",
+            site_code="S1",
+            salary_full_name=None,
+            salary_cnp=None,
+            match_status="unknown",
+            match_source="manual",
+            confidence="unknown",
+            effective_from_month="2026-06",
+            note="Fara potrivire",
+        )
+
+        result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
+
+        assert result["link"] == {
+            "agent_code": "AG1",
+            "site_code": "S1",
+            "salary_full_name": None,
+            "salary_cnp": None,
+            "match_status": "unknown",
+            "match_source": "manual",
+            "confidence": "unknown",
+            "effective_from_month": "2026-06",
+            "note": "Fara potrivire",
+        }
+        assert result["records"] == []
+        assert result["total"] == 0.0
+        assert result["avg"] == 0.0
+        assert result["month_count"] == 0
+        assert result["avg_month_count"] == 0
+        mock_repo.fetch_agent_history_by_salary_link.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_agent_history_by_retail_code_with_matched_link(self, service, mock_repo):
+        mock_repo.fetch_agent_salary_link.return_value = FakeRow(
+            agent_code="AG1",
+            site_code="S1",
+            salary_full_name="Ana Popescu",
+            salary_cnp="1234567890123",
+            match_status="confirmed",
+            match_source="manual",
+            confidence="high",
+            effective_from_month="2026-06",
+            note="Confirmat manual",
+        )
+        mock_repo.fetch_agent_history_by_salary_link.return_value = [
+            FakeRow(total_salary=Decimal("3000"), month=4, year=2026, company_name="F1"),
+            FakeRow(total_salary=Decimal("3500"), month=5, year=2026, company_name="F1"),
+        ]
+
+        result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
+
+        assert result["link"]["salary_full_name"] == "Ana Popescu"
+        assert result["records"] == [
+            {"total_salary": 3000.0, "month": 4, "year": 2026, "company_name": "F1"},
+            {"total_salary": 3500.0, "month": 5, "year": 2026, "company_name": "F1"},
+        ]
+        assert result["total"] == 6500.0
+        assert result["avg"] == 3250.0
+        assert result["month_count"] == 2
+        assert result["avg_month_count"] == 2
+        mock_repo.fetch_agent_history_by_salary_link.assert_awaited_once_with(
+            salary_full_name="Ana Popescu",
+            salary_cnp="1234567890123",
+        )
 
 
 class TestSalariiSummary:

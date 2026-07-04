@@ -306,13 +306,13 @@ async def main() -> None:
         candidates: list[tuple[float, str, dict[str, Any], str]] = []
 
         for salary_row in latest_by_store.get(site_code, []):
-            score, reason = _score_code_name(agent_code, salary_row["full_name"])
-            candidates.append((score, reason, salary_row, "latest_salary"))
+            candidate_score, reason = _score_code_name(agent_code, salary_row["full_name"])
+            candidates.append((candidate_score, reason, salary_row, "latest_salary"))
 
         if not candidates or max(item[0] for item in candidates) < 75:
             for salary_row in history_by_store.get(site_code, []):
-                score, reason = _score_code_name(agent_code, salary_row["full_name"])
-                candidates.append((score - 20, f"history: {reason}", salary_row, "salary_history"))
+                candidate_score, reason = _score_code_name(agent_code, salary_row["full_name"])
+                candidates.append((candidate_score - 20, f"history: {reason}", salary_row, "salary_history"))
 
         candidates.sort(key=lambda item: item[0], reverse=True)
         best = candidates[0] if candidates else None
@@ -323,20 +323,20 @@ async def main() -> None:
         salary_locatie = ""
         reason = ""
         second_candidate = ""
-        score: float | str = ""
-        gap: float | str = ""
+        match_score: float | str = ""
+        score_gap: float | str = ""
         status = "no_salary_candidate"
         confidence = "none"
 
         if best:
-            score = round(best[0], 1)
+            match_score = round(best[0], 1)
             reason = best[1]
             salary_row = best[2]
             matched_name = salary_row["full_name"]
             salary_company = salary_row.get("company_name", "")
             salary_locatie = salary_row.get("locatie", "")
             gap_value = best[0] - (second[0] if second else -999)
-            gap = round(gap_value, 1)
+            score_gap = round(gap_value, 1)
             status, confidence = _classify(best[0], gap_value)
             if second:
                 second_candidate = f"{second[2]['full_name']} ({second[0]:.0f})"
@@ -352,8 +352,8 @@ async def main() -> None:
             salary_locatie = ""
             status = "matched" if manual_name else "unknown"
             confidence = str(manual_override.get("confidence") or ("high" if manual_name else "unknown"))
-            score = ""
-            gap = ""
+            match_score = ""
+            score_gap = ""
             reason = "manual override"
             second_candidate = ""
 
@@ -383,8 +383,8 @@ async def main() -> None:
                 "confidence": confidence,
                 "status": status,
                 "match_source": match_source,
-                "score": score,
-                "score_gap": gap,
+                "score": match_score,
+                "score_gap": score_gap,
                 "reason": reason,
                 "note": note,
                 "second_candidate": second_candidate,

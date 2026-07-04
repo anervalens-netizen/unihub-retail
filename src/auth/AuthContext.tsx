@@ -11,10 +11,13 @@ import {
 import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
 
 // ── OIDC config ──────────────────────────────────────────────────────
-const OIDC_AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY ?? `${window.location.origin}/auth/proxy/application/o/unihub-retail/`;
+const browserOrigin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
+const browserStorage = typeof window === 'undefined' ? undefined : window.localStorage;
+
+const OIDC_AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY ?? `${browserOrigin}/auth/proxy/application/o/unihub-retail/`;
 const OIDC_CLIENT_ID = import.meta.env.VITE_OIDC_CLIENT_ID ?? '4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t';
-const OIDC_REDIRECT_URI = import.meta.env.VITE_OIDC_REDIRECT_URI ?? `${window.location.origin}/auth/callback`;
-const OIDC_POST_LOGOUT_URI = import.meta.env.VITE_OIDC_POST_LOGOUT_URI ?? window.location.origin;
+const OIDC_REDIRECT_URI = import.meta.env.VITE_OIDC_REDIRECT_URI ?? `${browserOrigin}/auth/callback`;
+const OIDC_POST_LOGOUT_URI = import.meta.env.VITE_OIDC_POST_LOGOUT_URI ?? browserOrigin;
 
 const userManager = new UserManager({
   authority: OIDC_AUTHORITY,
@@ -25,7 +28,7 @@ const userManager = new UserManager({
   scope: 'openid profile email offline_access',
   automaticSilentRenew: true,
   monitorSession: false, // authentik session monitoring not needed
-  userStore: new WebStorageStateStore({ store: window.localStorage }),
+  userStore: browserStorage ? new WebStorageStateStore({ store: browserStorage }) : undefined,
 });
 
 async function getStoredOrRenewedUser(): Promise<User | null> {
