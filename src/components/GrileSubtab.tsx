@@ -375,12 +375,12 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
   );
 }
 
-const GRILE_MONTH_KEY = 'unihub_grile_month';
+const LEGACY_GRILE_MONTH_KEY = 'unihub_grile_month';
 
 export function GrileSubtab() {
-  // month gol = lasa backend-ul sa aleaga ultima luna cu vanzari importate;
-  // daca a fost ales explicit, il pastram peste refresh (localStorage)
-  const [month, setMonth] = useState(() => localStorage.getItem(GRILE_MONTH_KEY) ?? '');
+  // month gol = lasa backend-ul sa aleaga ultima luna operationala;
+  // selectiile vechi nu se persista, ca inchiderea de luna sa nu blocheze UI-ul pe luna anterioara.
+  const [month, setMonth] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const qc = useQueryClient();
 
@@ -398,10 +398,9 @@ export function GrileSubtab() {
     if (!month && data?.month) setMonth(data.month);
   }, [data?.month, month]);
 
-  // Pastreaza luna selectata peste refresh
   useEffect(() => {
-    if (month) localStorage.setItem(GRILE_MONTH_KEY, month);
-  }, [month]);
+    localStorage.removeItem(LEGACY_GRILE_MONTH_KEY);
+  }, []);
 
   const runMut = useMutation({
     mutationFn: () => runGrileCheck(month),
