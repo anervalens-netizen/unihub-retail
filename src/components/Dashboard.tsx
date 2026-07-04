@@ -2430,12 +2430,30 @@ function PerformanceDetailDrawer({
     [detail],
   );
   const dailyData = useMemo(
-    () => (detail?.daily ?? []).map((point) => ({
-      day: Number(point.sale_date.slice(8, 10)),
-      sales: Number(point.total_sales ?? 0),
-      qty: point.total_quantity ?? 0,
-      receipts: point.receipt_count ?? 0,
-    })),
+    () => {
+      if (!detail) return [];
+      const valuesByDay = new Map(
+        detail.daily.map((point) => [
+          Number(point.sale_date.slice(8, 10)),
+          {
+            sales: Number(point.total_sales ?? 0),
+            qty: point.total_quantity ?? 0,
+            receipts: point.receipt_count ?? 0,
+          },
+        ]),
+      );
+      const daysInMonth = detail.summary.days_in_month ?? daysInMonthFromKey(detail.month);
+      return Array.from({ length: daysInMonth }, (_, index) => {
+        const day = index + 1;
+        const value = valuesByDay.get(day);
+        return {
+          day,
+          sales: value?.sales ?? null,
+          qty: value?.qty ?? null,
+          receipts: value?.receipts ?? null,
+        };
+      });
+    },
     [detail],
   );
   const selectedPeer = detail?.peer_rows.find((row) => row.is_selected) ?? null;
@@ -2511,6 +2529,11 @@ function PerformanceDetailDrawer({
                 <div className="mt-3 h-2 rounded-full bg-slate-100 dark:bg-slate-800">
                   <div className={`h-2 rounded-full ${scoreBarClass(detail.score)}`} style={{ width: `${detail.score}%` }} />
                 </div>
+                <div className="mt-3 grid grid-cols-3 gap-1 text-center">
+                  <ScorePart label="Target" value={formatScorePoints(detail.score_breakdown.target_points)} />
+                  <ScorePart label="Bon2Acc" value={formatScorePoints(detail.score_breakdown.bon2acc_points)} />
+                  <ScorePart label="Focus" value={formatScorePoints(detail.score_breakdown.focus_points)} />
+                </div>
                 {selectedPeer && (
                   <div className="mt-3 text-xs font-semibold text-slate-500">
                     Rank {selectedPeer.rank}
@@ -2518,13 +2541,13 @@ function PerformanceDetailDrawer({
                 )}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 sm:p-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{detail.title}</h3>
                   {detail.subtitle && <p className="text-xs text-slate-500">{detail.subtitle}</p>}
                 </div>
-                <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{detail.note}</p>
-                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-700 dark:text-slate-200 sm:mt-3 sm:text-sm">{detail.note}</p>
+                <div className="mt-3 grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
                   <DetailMetric label="Vanzari" value={formatCurrency(detail.summary.total_sales)} />
                   <DetailMetric label="Target" value={formatPercent(detail.summary.target_progress_pct)} />
                   <DetailMetric label={detail.level === 'agent' ? 'Forecast 15 zile' : 'Forecast'} value={formatPercent(detail.summary.forecast_target_progress_pct)} />
@@ -2535,8 +2558,10 @@ function PerformanceDetailDrawer({
                   <DetailMetric label={detail.level === 'agent' ? 'Zile lucrate' : 'Zile active'} value={formatInt(detail.summary.working_days)} />
                 </div>
                 {detail.context_summary && (
-                  <div className="mt-3 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-200">
-                    Magazin: {formatCurrency(detail.context_summary.total_sales)} · contributie agent {agentStoreShare !== null ? formatPercent(agentStoreShare) : '-'}
+                  <div className="mt-3 flex flex-wrap gap-x-1.5 gap-y-0.5 rounded-xl bg-indigo-50 px-3 py-2 text-[11px] font-semibold leading-tight text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-200 sm:text-xs">
+                    <span>Magazin: {formatCurrency(detail.context_summary.total_sales)}</span>
+                    <span className="hidden sm:inline">·</span>
+                    <span>contributie agent {agentStoreShare !== null ? formatPercent(agentStoreShare) : '-'}</span>
                   </div>
                 )}
               </div>
@@ -2611,13 +2636,13 @@ function PerformanceDetailDrawer({
                 <h3 className="mb-3 text-sm font-bold">Evolutie zilnica</h3>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={dailyData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                    <ComposedChart data={dailyData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                      <XAxis dataKey="day" interval={0} tick={{ fontSize: 9 }} />
                       <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => formatAmount(Number(value))} width={58} />
                       <Tooltip formatter={(value: number) => formatCurrency(value)} labelFormatter={(label) => `Ziua ${label}`} />
-                      <Area type="monotone" dataKey="sales" name="Vanzari" stroke="#4f46e5" fill="#c7d2fe" strokeWidth={2} />
-                    </AreaChart>
+                      <Line type="monotone" dataKey="sales" name="Vanzari" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 4 }} connectNulls={false} />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -2672,11 +2697,31 @@ function PerformanceDetailDrawer({
 
 function DetailMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/70">
-      <div className="text-[10px] font-bold uppercase text-slate-400">{label}</div>
-      <div className="mt-1 truncate text-sm font-black text-slate-800 dark:text-slate-100">{value}</div>
+    <div className="min-w-0 rounded-xl bg-slate-50 px-2.5 py-2 dark:bg-slate-800/70 sm:px-3">
+      <div className="truncate text-[9px] font-bold uppercase text-slate-400 sm:text-[10px]">{label}</div>
+      <div className="mt-1 truncate text-[13px] font-black text-slate-800 dark:text-slate-100 sm:text-sm">{value}</div>
     </div>
   );
+}
+
+function ScorePart({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-1.5 py-1.5 dark:bg-slate-800/70">
+      <div className="truncate text-[9px] font-bold uppercase text-slate-400">{label}</div>
+      <div className="mt-0.5 text-[11px] font-black tabular-nums text-slate-700 dark:text-slate-200">{value}</div>
+    </div>
+  );
+}
+
+function formatScorePoints(value: number | null | undefined) {
+  if (value === null || value === undefined) return '-';
+  return `${Number(value).toFixed(1)}p`;
+}
+
+function daysInMonthFromKey(monthKey: string) {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!year || !month) return 31;
+  return new Date(year, month, 0).getDate();
 }
 
 function AgentSalarySummaryCard({

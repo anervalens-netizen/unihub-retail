@@ -40,8 +40,12 @@ Reguli importante in Hub:
   implicit si pot fi incluse din checkbox-ul `Include magazine inchise`
 - cardul `Evolutie lunara` in modul standard afiseaza ultimele 13 luni
   finalizate plus luna curenta forecastata, cand luna curenta este partiala
-- in detaliul de performanta pe agent, forecastul lunii curente foloseste
-  media zilnica a agentului inmultita cu 15 zile lucrate estimate
+- in detaliul de performanta pe agent, scorul foloseste targetul efectiv al
+  agentului, iar forecastul lunii curente foloseste media zilnica a agentului
+  inmultita cu 15 zile lucrate estimate
+- in acelasi detaliu, Bon2Acc este notat pe praguri: sub 20% critic scazut,
+  20-29% scazut, 30-35% ok, peste 35% foarte bine; Focus este scazut sub 6%, ok
+  intre 6-8% si bun peste 8%
 - subsectiunea `AI Forecast` afiseaza forecasturi salvate, nu ruleaza modelul
   in request; are comutatoare pentru `Luna curenta / 12 luni` si
   `Valoare / Bucati`

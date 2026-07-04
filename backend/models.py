@@ -468,6 +468,12 @@ class PerformancePeerRow(BaseModel):
     is_selected: bool = False
 
 
+class PerformanceScoreBreakdown(BaseModel):
+    target_points: Decimal
+    bon2acc_points: Decimal
+    focus_points: Decimal
+
+
 class PerformanceDetailResponse(BaseModel):
     level: Literal["regional", "store", "agent"]
     key: str
@@ -478,6 +484,7 @@ class PerformanceDetailResponse(BaseModel):
     history: list[MonthlyHistoryPoint] = Field(default_factory=list)
     daily: list[DailySalesPoint] = Field(default_factory=list)
     score: int
+    score_breakdown: PerformanceScoreBreakdown
     score_label: str
     note: str
     strengths: list[str] = Field(default_factory=list)

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from models import DashboardSummary, DailySalesPoint, PremiumGlassAnalysis, PremiumGlassSummary
+from models import AgentStats, DashboardSummary, DailySalesPoint, MonthlyHistoryPoint, PremiumGlassAnalysis, PremiumGlassSummary
 from services.dashboard.queries import DashboardCampaignContext
 from services.dashboard_service import DashboardService
 
@@ -139,6 +139,163 @@ class TestGetSummary:
         result = service._apply_agent_working_days_forecast(summary)
 
         assert result is summary
+
+    def test_agent_target_summary_uses_agent_target(self, service):
+        summary = DashboardSummary(**_make_summary_row(
+            total_sales=Decimal("12000"),
+            total_target=Decimal("90000"),
+            target_progress_pct=Decimal("13.33"),
+            forecast_target_progress_pct=Decimal("40.00"),
+        ))
+        agent_stats = AgentStats(
+            import_month="2026-05",
+            agent="Agent1",
+            site_code="SITE01",
+            locatie="Magazin 1",
+            firma="FirmaA",
+            regional="R1",
+            asm="A1",
+            acc_qty_realizat=10,
+            nr_bonuri=8,
+            nr_bon2acc=4,
+            proc_bon2acc=Decimal("50.00"),
+            total_vanzari=Decimal("12000"),
+            zile_lucrate=10,
+            medie_zilnica=Decimal("1200"),
+            acc_focus_qty=2,
+            prc_focus_acc_qty=Decimal("20.00"),
+            target=Decimal("30000"),
+            proc_realizare_target=Decimal("40.00"),
+        )
+
+        result = service._apply_agent_target_summary(summary, agent_stats)
+
+        assert result.total_target == Decimal("30000")
+        assert result.target_progress_pct == Decimal("40.00")
+        assert result.forecast_target_progress_pct == Decimal("40.00")
+
+    def test_performance_signals_compare_current_forecast_to_history(self, service):
+        summary = DashboardSummary(**_make_summary_row(
+            month="2026-05",
+            total_sales=Decimal("8000"),
+            forecast_sales=Decimal("13000"),
+            is_month_final=False,
+        ))
+        history = [
+            MonthlyHistoryPoint(
+                month="2026-02",
+                total_sales=Decimal("10000"),
+                total_target=Decimal("0"),
+                target_progress_pct=None,
+                total_quantity=0,
+                total_receipts=0,
+                proc_bon2acc=None,
+                prc_focus_acc_qty=None,
+                total_stores=1,
+                total_agents=1,
+                working_days=1,
+                daily_average=Decimal("10000"),
+            ),
+            MonthlyHistoryPoint(
+                month="2026-03",
+                total_sales=Decimal("10000"),
+                total_target=Decimal("0"),
+                target_progress_pct=None,
+                total_quantity=0,
+                total_receipts=0,
+                proc_bon2acc=None,
+                prc_focus_acc_qty=None,
+                total_stores=1,
+                total_agents=1,
+                working_days=1,
+                daily_average=Decimal("10000"),
+            ),
+            MonthlyHistoryPoint(
+                month="2026-04",
+                total_sales=Decimal("10000"),
+                total_target=Decimal("0"),
+                target_progress_pct=None,
+                total_quantity=0,
+                total_receipts=0,
+                proc_bon2acc=None,
+                prc_focus_acc_qty=None,
+                total_stores=1,
+                total_agents=1,
+                working_days=1,
+                daily_average=Decimal("10000"),
+            ),
+        ]
+
+        strengths, risks = service._performance_signals(summary, history, "agent")
+        note = service._performance_note(summary, history, "Bun", [], "agent")
+
+        assert "Agentul este peste media ultimelor 3 luni." in strengths
+        assert "Agentul este sub media ultimelor 3 luni." not in risks
+        assert "+30.0% vs media ultimelor 3 luni" in note
+
+    def test_performance_score_uses_requested_bon2acc_and_focus_bands(self, service):
+        weak = DashboardSummary(**_make_summary_row(
+            target_progress_pct=Decimal("0"),
+            forecast_target_progress_pct=None,
+            proc_bon2acc=Decimal("19.99"),
+            prc_focus_acc_qty=Decimal("5.99"),
+        ))
+        ok = DashboardSummary(**_make_summary_row(
+            target_progress_pct=Decimal("0"),
+            forecast_target_progress_pct=None,
+            proc_bon2acc=Decimal("30.00"),
+            prc_focus_acc_qty=Decimal("6.00"),
+        ))
+        strong = DashboardSummary(**_make_summary_row(
+            target_progress_pct=Decimal("0"),
+            forecast_target_progress_pct=None,
+            proc_bon2acc=Decimal("35.01"),
+            prc_focus_acc_qty=Decimal("8.01"),
+        ))
+
+        assert service._performance_score(service._performance_score_breakdown(weak)) == 0
+        assert service._performance_score(service._performance_score_breakdown(ok)) == 27
+        assert service._performance_score(service._performance_score_breakdown(strong)) == 40
+
+    def test_performance_score_breakdown_explains_score(self, service):
+        summary = DashboardSummary(**_make_summary_row(
+            target_progress_pct=Decimal("13.05"),
+            forecast_target_progress_pct=Decimal("97.89"),
+            proc_bon2acc=Decimal("37.70"),
+            prc_focus_acc_qty=Decimal("1.11"),
+        ))
+
+        breakdown = service._performance_score_breakdown(summary)
+
+        assert breakdown.target_points == Decimal("48.9")
+        assert breakdown.bon2acc_points == Decimal("20.0")
+        assert breakdown.focus_points == Decimal("0.0")
+        assert service._performance_score(breakdown) == 69
+
+    def test_performance_signals_use_requested_bon2acc_and_focus_bands(self, service):
+        very_weak = DashboardSummary(**_make_summary_row(
+            proc_bon2acc=Decimal("19.99"),
+            prc_focus_acc_qty=Decimal("5.99"),
+        ))
+        ok = DashboardSummary(**_make_summary_row(
+            proc_bon2acc=Decimal("30.00"),
+            prc_focus_acc_qty=Decimal("6.00"),
+        ))
+        strong = DashboardSummary(**_make_summary_row(
+            proc_bon2acc=Decimal("35.01"),
+            prc_focus_acc_qty=Decimal("8.01"),
+        ))
+
+        _strengths, risks = service._performance_signals(very_weak, [], "agent")
+        assert "Bon2Acc este critic scazut, sub 20%." in risks
+        assert "Focus-ul este scazut, sub 6%." in risks
+
+        strengths, risks = service._performance_signals(ok, [], "agent")
+        assert not any("Bon2Acc" in item or "Focus" in item for item in strengths + risks)
+
+        strengths, _risks = service._performance_signals(strong, [], "agent")
+        assert "Bon2Acc este foarte bine, peste 35%." in strengths
+        assert "Focus-ul este bun, peste 8%." in strengths
 
 
 class TestGetDailySales:

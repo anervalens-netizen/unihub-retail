@@ -27,6 +27,7 @@ from models import (
     PremiumGlassAnalysis,
     PerformanceDetailResponse,
     PerformancePeerRow,
+    PerformanceScoreBreakdown,
     RegionalStats,
     AsmStats,
 )
@@ -58,6 +59,7 @@ _RO_MONTHS = {
 }
 
 AGENT_FORECAST_WORKING_DAYS = Decimal("15")
+PERFORMANCE_COMPONENT_WEIGHT = Decimal("20")
 _MONEY = Decimal("0.01")
 
 
@@ -418,6 +420,7 @@ class DashboardService:
         subtitle: str | None = None
         peer_rows: list[PerformancePeerRow] = []
         context_summary: DashboardSummary | None = None
+        selected_agent_stats: AgentStats | None = None
 
         async with self.pool.acquire() as conn:
             if level == "regional":
@@ -487,6 +490,7 @@ class DashboardService:
                 selected_agent = agents[0] if agents else None
                 if selected_agent is None:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agentul nu are date in luna selectata.")
+                selected_agent_stats = selected_agent
                 effective_site_code = selected_agent.site_code
                 title = selected_agent.agent
                 subtitle = f"{selected_agent.locatie} · {selected_agent.firma}"
@@ -539,7 +543,8 @@ class DashboardService:
             ),
         )
 
-        if level == "agent" and effective_site_code:
+        if level == "agent" and effective_site_code and selected_agent_stats is not None:
+            summary = self._apply_agent_target_summary(summary, selected_agent_stats)
             summary = self._apply_agent_working_days_forecast(summary)
             context_summary = await self.get_summary(
                 month,
@@ -552,7 +557,8 @@ class DashboardService:
                 include_closed_stores=include_closed_stores,
             )
 
-        score = self._performance_score(summary)
+        score_breakdown = self._performance_score_breakdown(summary)
+        score = self._performance_score(score_breakdown)
         score_label = self._score_label(score)
         strengths, risks = self._performance_signals(summary, history_response.history, level)
         note = self._performance_note(summary, history_response.history, score_label, peer_rows, level)
@@ -567,12 +573,28 @@ class DashboardService:
             history=history_response.history,
             daily=daily,
             score=score,
+            score_breakdown=score_breakdown,
             score_label=score_label,
             note=note,
             strengths=strengths,
             risks=risks,
             peer_rows=peer_rows,
             context_summary=context_summary,
+        )
+
+    def _apply_agent_target_summary(self, summary: DashboardSummary, agent_stats: AgentStats) -> DashboardSummary:
+        target = agent_stats.target or Decimal(0)
+        target_progress_pct = (
+            (summary.total_sales * Decimal(100) / target).quantize(_MONEY)
+            if target > 0
+            else None
+        )
+        return summary.model_copy(
+            update={
+                "total_target": target,
+                "target_progress_pct": target_progress_pct,
+                "forecast_target_progress_pct": target_progress_pct,
+            }
         )
 
     def _apply_agent_working_days_forecast(self, summary: DashboardSummary) -> DashboardSummary:
@@ -592,14 +614,49 @@ class DashboardService:
             }
         )
 
-    def _performance_score(self, summary: DashboardSummary) -> int:
+    def _performance_score_breakdown(self, summary: DashboardSummary) -> PerformanceScoreBreakdown:
         target_pct = summary.forecast_target_progress_pct or summary.target_progress_pct or Decimal(0)
         bon_pct = summary.proc_bon2acc or Decimal(0)
         focus_pct = summary.prc_focus_acc_qty or Decimal(0)
-        target_score = min(max(float(target_pct), 0.0), 120.0) / 120.0 * 60.0
-        bon_score = min(max(float(bon_pct), 0.0), 60.0) / 60.0 * 20.0
-        focus_score = min(max(float(focus_pct), 0.0), 35.0) / 35.0 * 20.0
-        return max(0, min(100, round(target_score + bon_score + focus_score)))
+        target_score = (
+            min(max(target_pct, Decimal(0)), Decimal(120)) / Decimal(120) * Decimal(60)
+        ).quantize(Decimal("0.1"))
+        bon_score = self._bon2acc_score(bon_pct)
+        focus_score = self._focus_score(focus_pct)
+        return PerformanceScoreBreakdown(
+            target_points=target_score,
+            bon2acc_points=bon_score,
+            focus_points=focus_score,
+        )
+
+    def _performance_score(self, breakdown: PerformanceScoreBreakdown) -> int:
+        score = breakdown.target_points + breakdown.bon2acc_points + breakdown.focus_points
+        return max(0, min(100, round(float(score))))
+
+    def _bon2acc_score(self, value: Decimal) -> Decimal:
+        if value > Decimal("35"):
+            points = PERFORMANCE_COMPONENT_WEIGHT
+        elif value >= Decimal("30"):
+            points = PERFORMANCE_COMPONENT_WEIGHT * Decimal(2) / Decimal(3)
+        elif value >= Decimal("20"):
+            points = PERFORMANCE_COMPONENT_WEIGHT / Decimal(3)
+        else:
+            points = Decimal(0)
+        return points.quantize(Decimal("0.1"))
+
+    def _focus_score(self, value: Decimal) -> Decimal:
+        if value > Decimal("8"):
+            points = PERFORMANCE_COMPONENT_WEIGHT
+        elif value >= Decimal("6"):
+            points = PERFORMANCE_COMPONENT_WEIGHT * Decimal(2) / Decimal(3)
+        else:
+            points = Decimal(0)
+        return points.quantize(Decimal("0.1"))
+
+    def _performance_trend_sales(self, summary: DashboardSummary) -> Decimal:
+        if not summary.is_month_final and summary.forecast_sales is not None:
+            return summary.forecast_sales
+        return summary.total_sales
 
     def _score_label(self, score: int) -> str:
         if score >= 85:
@@ -624,21 +681,24 @@ class DashboardService:
         elif target_pct is not None and target_pct < 85:
             risks.append("Ritmul proiectat este sub 85% din target.")
 
-        if summary.proc_bon2acc is not None and summary.proc_bon2acc >= 40:
-            strengths.append("Bon2Acc este peste pragul operational de 40%.")
-        elif summary.proc_bon2acc is not None and summary.proc_bon2acc < 25:
-            risks.append("Bon2Acc este sub 25%, merita urmarit in coaching.")
+        if summary.proc_bon2acc is not None and summary.proc_bon2acc > 35:
+            strengths.append("Bon2Acc este foarte bine, peste 35%.")
+        elif summary.proc_bon2acc is not None and summary.proc_bon2acc < 20:
+            risks.append("Bon2Acc este critic scazut, sub 20%.")
+        elif summary.proc_bon2acc is not None and summary.proc_bon2acc < 30:
+            risks.append("Bon2Acc este scazut, sub 30%.")
 
-        if summary.prc_focus_acc_qty is not None and summary.prc_focus_acc_qty >= 25:
-            strengths.append("Mixul de focus este sanatos fata de cantitatea totala.")
-        elif summary.prc_focus_acc_qty is not None and summary.prc_focus_acc_qty < 15:
-            risks.append("Focus-ul este redus in mixul de accesorii.")
+        if summary.prc_focus_acc_qty is not None and summary.prc_focus_acc_qty > 8:
+            strengths.append("Focus-ul este bun, peste 8%.")
+        elif summary.prc_focus_acc_qty is not None and summary.prc_focus_acc_qty < 6:
+            risks.append("Focus-ul este scazut, sub 6%.")
 
         previous = [point for point in history if point.month < summary.month and point.total_sales > 0][-3:]
         if previous:
             avg_previous = sum((point.total_sales for point in previous), Decimal(0)) / Decimal(len(previous))
             if avg_previous > 0:
-                delta_pct = (summary.total_sales - avg_previous) * Decimal(100) / avg_previous
+                trend_sales = self._performance_trend_sales(summary)
+                delta_pct = (trend_sales - avg_previous) * Decimal(100) / avg_previous
                 entity_label = "agentul" if level == "agent" else "zona"
                 if delta_pct >= 10:
                     strengths.append(f"{entity_label.capitalize()} este peste media ultimelor 3 luni.")
@@ -662,7 +722,8 @@ class DashboardService:
         if previous:
             avg_previous = sum((point.total_sales for point in previous), Decimal(0)) / Decimal(len(previous))
             if avg_previous > 0:
-                delta_pct = (summary.total_sales - avg_previous) * Decimal(100) / avg_previous
+                trend_sales = self._performance_trend_sales(summary)
+                delta_pct = (trend_sales - avg_previous) * Decimal(100) / avg_previous
                 trend_text = f"{delta_pct:+.1f}% vs media ultimelor 3 luni"
         selected_peer = next((peer for peer in peer_rows if peer.is_selected), None)
         peer_text = f"rank {selected_peer.rank} in grupul comparabil" if selected_peer else "fara comparatie peer"

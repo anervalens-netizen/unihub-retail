@@ -416,6 +416,12 @@ export interface PerformancePeerRow {
   is_selected: boolean;
 }
 
+export interface PerformanceScoreBreakdown {
+  target_points: number;
+  bon2acc_points: number;
+  focus_points: number;
+}
+
 export interface PerformanceDetailResponse {
   level: PerformanceDetailLevel;
   key: string;
@@ -426,6 +432,7 @@ export interface PerformanceDetailResponse {
   history: MonthlyHistoryPoint[];
   daily: DailySalesPoint[];
   score: number;
+  score_breakdown: PerformanceScoreBreakdown;
   score_label: string;
   note: string;
   strengths: string[];
