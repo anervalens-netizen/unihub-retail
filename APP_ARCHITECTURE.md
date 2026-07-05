@@ -230,7 +230,11 @@ Fluxul operational curent este:
 
 1. TimesFM 2.5 ruleaza in afara aplicatiei, cu XReg calendaristic
    (`xreg + timesfm`) pe serii lunare.
-2. Backtestul si rularea operationala se fac cu
+2. Backtestul comparativ se face cu
+   `backend/scripts/run_ai_forecast_backtest.py`, care compara baseline-uri
+   locale (`seasonal_naive`, `seasonal_moving_average`, `seasonal_last3`) cu
+   TimesFM simplu si modurile XReg (`xreg + timesfm`, `timesfm + xreg`) pe
+   aceeasi fereastra walk-forward. Rularea operationala se face cu
    `backend/scripts/run_ai_forecast_xreg.py`. Scriptul poate prognoza
    `sales_value` sau `units`. Pentru backtest ruleaza fiecare luna cu contextul
    disponibil pana in luna precedenta; pentru operational `--operational`

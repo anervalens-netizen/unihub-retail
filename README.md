@@ -62,7 +62,35 @@ pentru `current_month` si foloseste distributia pe zile din aceeasi luna a
 anului precedent pentru acelasi magazin, aliniata pe calendarul lunii
 forecastate prin ordinalul zilei din saptamana.
 
-Backtestul si rularea batch lunara se fac cu:
+Backtestul comparativ se face inainte de schimbari de model, ca sa compare
+baseline-uri simple cu TimesFM/XReg pe aceeasi fereastra istorica:
+
+```bash
+backend/venv/bin/python -u backend/scripts/run_ai_forecast_backtest.py \
+  --start-month 2025-07 \
+  --end-month 2026-06 \
+  --history-start-month 2018-01 \
+  --metric sales_value \
+  --models seasonal_naive,seasonal_moving_average,seasonal_last3
+```
+
+Cand serviciul TimesFM este disponibil, acelasi script poate rula si modelele
+remote:
+
+```bash
+TIMESFM_API_KEY=... backend/venv/bin/python -u backend/scripts/run_ai_forecast_backtest.py \
+  --start-month 2025-07 \
+  --end-month 2026-06 \
+  --history-start-month 2018-01 \
+  --metric sales_value \
+  --models all
+```
+
+Outputurile comparative sunt scrise in `backend/outputs/ai_forecast/` ca
+`backtest_comparison_*`, cu randuri per magazin/luna/model, sumar lunar si
+metrici pe retea/RM/ASM/magazin.
+
+Backtestul XReg operational si rularea batch lunara se fac cu:
 
 ```bash
 TIMESFM_API_KEY=... backend/venv/bin/python -u backend/scripts/run_ai_forecast_xreg.py \
