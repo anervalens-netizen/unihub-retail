@@ -54,7 +54,7 @@ async def test_salarii_service_overview():
     pool = await get_pool()
     repo = SalariiRepository(pool)
     svc = SalariiService(repo)
-    result = await svc.get_overview(None, None, None)
+    result = await svc.get_overview(None, None, None, None)
     assert isinstance(result, dict)
     assert "total" in result
 

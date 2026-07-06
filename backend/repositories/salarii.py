@@ -45,7 +45,11 @@ def _salary_scope(
         else:
             add(f"{col('company_name')} = ${{position}}", company_name)
     if site_code:
-        add(f"{col('site_code')} = ${{position}}", site_code)
+        site_codes = [value.strip() for value in site_code.split(",") if value.strip()]
+        if len(site_codes) > 1:
+            add(f"{col('site_code')} = ANY(${{position}}::TEXT[])", site_codes)
+        elif site_codes:
+            add(f"{col('site_code')} = ${{position}}", site_codes[0])
     if regional:
         add("st.regional = ${position}", regional)
     if asm:
@@ -69,12 +73,14 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
+        site_code: str | None,
         regional: str | None,
         asm: str | None,
     ) -> dict:
         join_block, where_block, params = _salary_scope(
             salary_alias="sr",
             company_name=company_name,
+            site_code=site_code,
             regional=regional,
             asm=asm,
         )
@@ -163,12 +169,14 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
+        site_code: str | None,
         regional: str | None,
         asm: str | None,
     ) -> list[asyncpg.Record]:
         join_block, where_block, params = _salary_scope(
             salary_alias="sr",
             company_name=company_name,
+            site_code=site_code,
             regional=regional,
             asm=asm,
         )
@@ -206,12 +214,14 @@ class SalariiRepository:
         self,
         *,
         company_name: str,
+        site_code: str | None,
         regional: str | None,
         asm: str | None,
     ) -> list[asyncpg.Record]:
         join_block, where_block, params = _salary_scope(
             salary_alias="sr",
             company_name=company_name,
+            site_code=site_code,
             regional=regional,
             asm=asm,
         )
@@ -444,12 +454,14 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
+        site_code: str | None,
         regional: str | None,
         asm: str | None,
     ) -> asyncpg.Record | None:
         join_block, where_block, params = _salary_scope(
             salary_alias="sr",
             company_name=company_name,
+            site_code=site_code,
             regional=regional,
             asm=asm,
         )

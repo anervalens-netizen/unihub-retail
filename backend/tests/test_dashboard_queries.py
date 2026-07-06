@@ -236,6 +236,7 @@ class TestFetchPeriodComparison:
             total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
             cartele_qty=12,
             working_days=22, daily_average=Decimal("4545"), avg_receipt_value=Decimal("333"),
+            medie_produs=Decimal("200"),
             proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
         )
         mock_conn.fetchrow.return_value = row
@@ -252,6 +253,7 @@ class TestFetchPeriodComparison:
             total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
             cartele_qty=12,
             working_days=6, daily_average=Decimal("16666.67"), avg_receipt_value=Decimal("333.33"),
+            medie_produs=Decimal("200"),
             proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
         )
         mock_conn.fetchrow.side_effect = [meta_row, data_row, data_row, data_row]
@@ -271,6 +273,7 @@ class TestFetchPeriodComparison:
             total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
             cartele_qty=12,
             working_days=22, daily_average=Decimal("4545"), avg_receipt_value=Decimal("333"),
+            medie_produs=Decimal("200"),
             proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
         )
         mock_conn.fetch.return_value = [FakeRow(site_code="OPEN01"), FakeRow(site_code="OPEN02")]
@@ -294,6 +297,7 @@ class TestFetchPeriodComparison:
             total_sales=Decimal("100000"), total_quantity=500, total_receipts=300,
             cartele_qty=12,
             working_days=22, daily_average=Decimal("4545"), avg_receipt_value=Decimal("333"),
+            medie_produs=Decimal("200"),
             proc_bon2acc=Decimal("60.0"), prc_focus_acc_qty=Decimal("25.0"),
         )
         mock_conn.fetch.return_value = [FakeRow(site_code="MOVED01")]

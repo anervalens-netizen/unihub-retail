@@ -24,6 +24,7 @@ function summary(month: string, overrides: Partial<DashboardSummary>): Dashboard
     total_agents: 0,
     working_days: 0,
     daily_average: null,
+    medie_produs: null,
     is_month_final: true,
     last_sale_date: `${month}-28`,
     imported_day_of_month: null,
@@ -49,6 +50,7 @@ function store(month: string, siteCode: string): StoreStat {
     target: 0,
     proc_realizare_target: null,
     forecast_target_pct: null,
+    medie_produs: null,
     promo_qty: 0,
     incentive_qty: 0,
   };
@@ -70,6 +72,7 @@ function agent(month: string, siteCode: string, name: string): AgentStat {
     total_vanzari: 0,
     zile_lucrate: 1,
     medie_zilnica: null,
+    medie_produs: null,
     acc_focus_qty: 0,
     prc_focus_acc_qty: null,
     target: 0,

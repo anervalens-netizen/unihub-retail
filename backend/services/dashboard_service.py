@@ -130,6 +130,7 @@ class DashboardService:
                 total_agents=0,
                 working_days=0,
                 daily_average=None,
+                medie_produs=None,
                 is_month_final=True,
                 last_sale_date=None,
                 imported_day_of_month=None,

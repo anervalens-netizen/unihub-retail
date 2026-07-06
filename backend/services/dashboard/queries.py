@@ -424,7 +424,12 @@ async def _fetch_store_stats_rows(
                 WHEN COALESCE(MAX(stg.target_value), 0) > 0
                 THEN ROUND(COALESCE(SUM(fd.total_sales), 0) * MAX(fm.forecast_factor) * 100.0 / MAX(stg.target_value), 2)
                 ELSE NULL
-            END AS forecast_target_pct
+            END AS forecast_target_pct,
+            CASE
+                WHEN COALESCE(SUM(fd.total_quantity), 0) > 0
+                THEN ROUND(COALESCE(SUM(fd.total_sales), 0) / SUM(fd.total_quantity), 2)
+                ELSE NULL
+            END AS medie_produs
         FROM filtered_days fd
         CROSS JOIN forecast_meta fm
         LEFT JOIN store_targets stg
@@ -632,6 +637,11 @@ async def _fetch_agent_stats_rows(
                 THEN ROUND(agg.total_sales / agg.working_days, 2)
                 ELSE NULL
             END AS medie_zilnica,
+            CASE
+                WHEN agg.total_quantity > 0
+                THEN ROUND(agg.total_sales / agg.total_quantity, 2)
+                ELSE NULL
+            END AS medie_produs,
             agg.focus_quantity AS acc_focus_qty,
             CASE
                 WHEN agg.total_quantity > 0
@@ -837,6 +847,11 @@ async def _fetch_regional_stats(
                 ELSE NULL
             END AS medie_zilnica,
             CASE
+                WHEN rb.qty_total > 0
+                THEN ROUND(rb.total_vanzari / rb.qty_total, 2)
+                ELSE NULL
+            END AS medie_produs,
+            CASE
                 WHEN rb.nr_bonuri > 0
                 THEN ROUND(rb.receipt_2plus_count * 100.0 / rb.nr_bonuri, 2)
                 ELSE NULL
@@ -1019,6 +1034,11 @@ async def _fetch_asm_stats(
                 THEN ROUND(ab.total_vanzari / ab.zile_active, 2)
                 ELSE NULL
             END AS medie_zilnica,
+            CASE
+                WHEN ab.qty_total > 0
+                THEN ROUND(ab.total_vanzari / ab.qty_total, 2)
+                ELSE NULL
+            END AS medie_produs,
             CASE
                 WHEN ab.nr_bonuri > 0
                 THEN ROUND(ab.receipt_2plus_count * 100.0 / ab.nr_bonuri, 2)
@@ -1234,6 +1254,7 @@ async def _fetch_period_comparison(
                 COUNT(DISTINCT fd.sale_date)::INT AS working_days,
                 ROUND(COALESCE(SUM(fd.total_sales), 0) / NULLIF(COUNT(DISTINCT fd.sale_date), 0), 2) AS daily_average,
                 ROUND(COALESCE(SUM(fd.total_sales), 0) / NULLIF(COALESCE(SUM(fd.receipt_count), 0), 0), 2) AS avg_receipt_value,
+                ROUND(COALESCE(SUM(fd.total_sales), 0) / NULLIF(COALESCE(SUM(fd.total_quantity), 0), 0), 2) AS medie_produs,
                 ROUND(
                     COALESCE(SUM(fd.receipt_2plus_count), 0) * 100.0
                     / NULLIF(COALESCE(SUM(fd.receipt_count), 0), 0),
@@ -1261,6 +1282,7 @@ async def _fetch_period_comparison(
                 working_days=row["working_days"] if row else 0,
                 daily_average=row["daily_average"] if row else None,
                 avg_receipt_value=row["avg_receipt_value"] if row else None,
+                medie_produs=row["medie_produs"] if row else None,
                 proc_bon2acc=row["proc_bon2acc"] if row else None,
                 prc_focus_acc_qty=row["prc_focus_acc_qty"] if row else None,
             )

@@ -22,6 +22,7 @@ class DashboardSummary(BaseModel):
     total_agents: int
     working_days: int
     daily_average: Decimal | None
+    medie_produs: Decimal | None = None
     is_month_final: bool = True
     last_sale_date: date | None = None
     imported_day_of_month: int | None = None
@@ -171,6 +172,7 @@ class MonthlyHistoryPoint(BaseModel):
     total_agents: int
     working_days: int
     daily_average: Decimal | None
+    medie_produs: Decimal | None = None
 
 
 class DashboardSpecialCardMetric(BaseModel):
@@ -408,6 +410,7 @@ class AgentStats(BaseModel):
     total_vanzari: Decimal
     zile_lucrate: int
     medie_zilnica: Decimal | None
+    medie_produs: Decimal | None = None
     acc_focus_qty: int
     prc_focus_acc_qty: Decimal | None
     target: Decimal | None = None
@@ -433,6 +436,7 @@ class StoreStats(BaseModel):
     target: Decimal
     proc_realizare_target: Decimal | None
     forecast_target_pct: Decimal | None = None
+    medie_produs: Decimal | None = None
     promo_qty: int = 0
     incentive_qty: int = 0
 
@@ -452,6 +456,7 @@ class RegionalStats(BaseModel):
     promo_qty: int = 0
     incentive_qty: int = 0
     medie_zilnica: Decimal | None
+    medie_produs: Decimal | None = None
     proc_bon2acc: Decimal | None
     prc_focus_acc_qty: Decimal | None
 
@@ -508,6 +513,7 @@ class AsmStats(BaseModel):
     promo_qty: int = 0
     incentive_qty: int = 0
     medie_zilnica: Decimal | None
+    medie_produs: Decimal | None = None
     proc_bon2acc: Decimal | None
     prc_focus_acc_qty: Decimal | None
 
@@ -720,6 +726,7 @@ class PeriodComparisonPoint(BaseModel):
     working_days: int
     daily_average: Decimal | None
     avg_receipt_value: Decimal | None
+    medie_produs: Decimal | None = None
     proc_bon2acc: Decimal | None
     prc_focus_acc_qty: Decimal | None
 

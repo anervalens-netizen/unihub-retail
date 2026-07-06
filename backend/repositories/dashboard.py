@@ -39,7 +39,11 @@ class DashboardRepository:
                         ROUND(
                             COALESCE(SUM(fd.total_sales), 0) / NULLIF(COUNT(DISTINCT fd.sale_date), 0),
                             2
-                        ) AS daily_average
+                        ) AS daily_average,
+                        ROUND(
+                            COALESCE(SUM(fd.total_sales), 0) / NULLIF(COALESCE(SUM(fd.total_quantity), 0), 0),
+                            2
+                        ) AS medie_produs
                     FROM filtered_days fd
                     GROUP BY fd.import_month
                 ),
@@ -114,6 +118,7 @@ class DashboardRepository:
                     ss.total_agents,
                     ss.working_days,
                     ss.daily_average,
+                    ss.medie_produs,
                     COALESCE(mm.is_month_final, true) AS is_month_final,
                     ls.last_sale_date,
                     CASE
@@ -208,7 +213,8 @@ class DashboardRepository:
                         COUNT(DISTINCT fd.site_code)::INT AS total_stores,
                         COUNT(DISTINCT fd.agent)::INT AS total_agents,
                         COUNT(DISTINCT fd.sale_date)::INT AS working_days,
-                        ROUND(COALESCE(SUM(fd.total_sales), 0) / NULLIF(COUNT(DISTINCT fd.sale_date), 0), 2) AS daily_average
+                        ROUND(COALESCE(SUM(fd.total_sales), 0) / NULLIF(COUNT(DISTINCT fd.sale_date), 0), 2) AS daily_average,
+                        ROUND(COALESCE(SUM(fd.total_sales), 0) / NULLIF(COALESCE(SUM(fd.total_quantity), 0), 0), 2) AS medie_produs
                     FROM filtered_days fd
                     GROUP BY fd.import_month
                 ),
@@ -238,7 +244,8 @@ class DashboardRepository:
                     COALESCE(ss.total_stores, 0) AS total_stores,
                     COALESCE(ss.total_agents, 0) AS total_agents,
                     COALESCE(ss.working_days, 0) AS working_days,
-                    COALESCE(ss.daily_average, 0) AS daily_average
+                    COALESCE(ss.daily_average, 0) AS daily_average,
+                    COALESCE(ss.medie_produs, 0) AS medie_produs
                 FROM recent_months rm
                 LEFT JOIN sales_summary ss ON ss.month = rm.import_month
                 LEFT JOIN target_summary ts ON ts.month = rm.import_month

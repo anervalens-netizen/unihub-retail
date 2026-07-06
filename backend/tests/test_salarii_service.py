@@ -50,7 +50,7 @@ class TestSalariiOverview:
             "avg_agent_month_count": 0,
             "avg_salary": Decimal("0"),
         }
-        result = await service.get_overview(None, None, None)
+        result = await service.get_overview(None, None, None, None)
         assert result["months_span"] is None
         assert result["total"] == Decimal("0")
         assert result["avg_salary"] == 0
@@ -67,7 +67,7 @@ class TestSalariiOverview:
             "avg_agent_month_count": 35,
             "avg_salary": Decimal("4100"),
         }
-        result = await service.get_overview(None, None, None)
+        result = await service.get_overview(None, None, None, None)
         assert result["months_span"] == [2024, 1, 2026, 5]
         assert result["total"] == Decimal("150000")
         assert result["avg_salary"] == Decimal("4100")
@@ -85,10 +85,11 @@ class TestSalariiOverview:
             "avg_agent_month_count": 18,
             "avg_salary": Decimal("3200"),
         }
-        result = await service.get_overview("FirmaA", "Region1", "Asm1")
+        result = await service.get_overview("FirmaA", "SITE01", "Region1", "Asm1")
         assert result["months_span"] == [2025, 6, 2026, 3]
         assert mock_repo.fetch_overview.call_args.kwargs == {
             "company_name": "FirmaA",
+            "site_code": "SITE01",
             "regional": "Region1",
             "asm": "Asm1",
         }
@@ -100,7 +101,7 @@ class TestSalariiEvolution:
         mock_repo.fetch_evolution_main.return_value = [
             FakeRow(month="2026-04", total=Decimal("10000"), mobicell=Decimal("5000"), mobiup=Decimal("5000")),
         ]
-        result = await service.get_evolution(None, None, None)
+        result = await service.get_evolution(None, None, None, None)
         assert len(result) == 1
 
     @pytest.mark.asyncio
@@ -108,7 +109,7 @@ class TestSalariiEvolution:
         mock_repo.fetch_evolution_single_company.return_value = [
             FakeRow(month="2026-04", total=Decimal("7000")),
         ]
-        result = await service.get_evolution("FirmaA", None, None)
+        result = await service.get_evolution("FirmaA", None, None, None)
         assert len(result) == 1
         assert result[0]["total"] == 7000.0
         assert result[0]["mobicell"] == 0.0
@@ -116,10 +117,11 @@ class TestSalariiEvolution:
     @pytest.mark.asyncio
     async def test_evolution_with_regional_asm(self, service, mock_repo):
         mock_repo.fetch_evolution_main.return_value = []
-        result = await service.get_evolution(None, "Region1", "Asm1")
+        result = await service.get_evolution(None, "SITE01", "Region1", "Asm1")
         call = mock_repo.fetch_evolution_main.call_args
         assert call.kwargs == {
             "company_name": None,
+            "site_code": "SITE01",
             "regional": "Region1",
             "asm": "Asm1",
         }
@@ -127,10 +129,11 @@ class TestSalariiEvolution:
     @pytest.mark.asyncio
     async def test_evolution_company_with_regional(self, service, mock_repo):
         mock_repo.fetch_evolution_single_company.return_value = []
-        result = await service.get_evolution("FirmaA", "Region1", None)
+        result = await service.get_evolution("FirmaA", "SITE01", "Region1", None)
         call = mock_repo.fetch_evolution_single_company.call_args
         assert call.kwargs == {
             "company_name": "FirmaA",
+            "site_code": "SITE01",
             "regional": "Region1",
             "asm": None,
         }

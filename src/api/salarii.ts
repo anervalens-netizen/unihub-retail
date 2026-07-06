@@ -97,6 +97,7 @@ export interface SalaryAgentsSummaryResponse {
 
 export async function fetchSalariiOverview(params?: {
   company_name?: string;
+  site_code?: string;
   regional?: string;
   asm?: string;
 }): Promise<SalariiOverview> {
@@ -106,6 +107,7 @@ export async function fetchSalariiOverview(params?: {
 
 export async function fetchSalaryEvolution(params?: {
   company_name?: string;
+  site_code?: string;
   regional?: string;
   asm?: string;
 }): Promise<SalaryEvolutionPoint[]> {

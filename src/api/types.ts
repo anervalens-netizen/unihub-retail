@@ -13,6 +13,7 @@ export interface DashboardSummary {
   total_agents: number;
   working_days: number;
   daily_average: number | null;
+  medie_produs: number | null;
   is_month_final: boolean;
   last_sale_date: string | null;
   imported_day_of_month: number | null;
@@ -165,6 +166,7 @@ export interface MonthlyHistoryPoint {
   total_agents: number;
   working_days: number;
   daily_average: number | null;
+  medie_produs: number | null;
 }
 
 export interface DashboardSpecialCardMetric {
@@ -358,6 +360,7 @@ export interface AgentStat {
   total_vanzari: number;
   zile_lucrate: number;
   medie_zilnica: number | null;
+  medie_produs: number | null;
   acc_focus_qty: number;
   prc_focus_acc_qty: number | null;
   target: number | null;
@@ -381,6 +384,7 @@ export interface StoreStat {
   target: number;
   proc_realizare_target: number | null;
   forecast_target_pct: number | null;
+  medie_produs: number | null;
   promo_qty: number;
   incentive_qty: number;
 }
@@ -398,6 +402,7 @@ export interface RegionalStat {
   promo_qty: number;
   incentive_qty: number;
   medie_zilnica: number | null;
+  medie_produs: number | null;
   proc_bon2acc: number | null;
   prc_focus_acc_qty: number | null;
 }
@@ -454,6 +459,7 @@ export interface AsmStat {
   promo_qty: number;
   incentive_qty: number;
   medie_zilnica: number | null;
+  medie_produs: number | null;
   proc_bon2acc: number | null;
   prc_focus_acc_qty: number | null;
 }
@@ -561,6 +567,7 @@ export interface PeriodComparisonPoint {
   working_days: number;
   daily_average: number | null;
   avg_receipt_value: number | null;
+  medie_produs: number | null;
   proc_bon2acc: number | null;
   prc_focus_acc_qty: number | null;
 }

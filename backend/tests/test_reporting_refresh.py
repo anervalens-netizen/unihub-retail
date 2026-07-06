@@ -39,6 +39,15 @@ def executed_sql(conn: FakeConn) -> list[str]:
     return [sql or "" for kind, sql, _args in conn.events if kind == "execute"]
 
 
+def test_premium_glass_screen_targets_exclude_samsung_s26_plus() -> None:
+    sql = reporting_refresh._PREMIUM_GLASS_INSERT_SQL
+
+    assert "('samsung_s26_plus'" not in sql
+    assert "SAMSUNG GALAXY S26 PLUS|S26 PLUS" not in sql
+    assert "('samsung_s26', 'Samsung S26'" in sql
+    assert "('samsung_s26_ultra', 'Samsung S26 Ultra'" in sql
+
+
 @pytest.mark.asyncio
 async def test_rebuild_reporting_month_applies_destructive_steps_and_scope_guards() -> None:
     conn = FakeConn()

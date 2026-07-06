@@ -917,7 +917,7 @@ function PremiumGlassFocusSection({
             <div className="glass rounded-3xl p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-bold">Premium vs rest pe modele</h3>
-                <p className="text-[11px] text-slate-500">Toate modelele compatibile, inclusiv gama S26</p>
+                <p className="text-[11px] text-slate-500">Modelele compatibile pe suprafata selectata</p>
               </div>
               <div className="min-w-0" style={{ height: modelChartData.length === 0 ? 224 : modelChartHeight }}>
                 {modelChartData.length === 0 ? (

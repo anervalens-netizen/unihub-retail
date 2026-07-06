@@ -31,21 +31,23 @@ async def get_salarii_service() -> SalariiService:
 @router.get("/overview")
 async def salarii_overview(
     company_name: str | None = Query(None),
+    site_code: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
-    return await svc.get_overview(company_name, regional, asm)
+    return await svc.get_overview(company_name, site_code, regional, asm)
 
 
 @router.get("/evolution")
 async def salarii_evolution(
     company_name: str | None = Query(None),
+    site_code: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
-    return await svc.get_evolution(company_name, regional, asm)
+    return await svc.get_evolution(company_name, site_code, regional, asm)
 
 
 @router.get("/agents/summary")

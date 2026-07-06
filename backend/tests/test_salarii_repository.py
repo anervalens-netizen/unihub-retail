@@ -68,6 +68,7 @@ async def test_overview_total_includes_low_salary_but_average_excludes_it() -> N
         repo = SalariiRepository(await get_pool())
         data = await repo.fetch_overview(
             company_name=None,
+            site_code=None,
             regional=TEST_REGION,
             asm=None,
         )

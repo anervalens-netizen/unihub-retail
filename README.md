@@ -27,7 +27,8 @@ Expune:
 Reguli importante in Hub:
 - comparatia perioade foloseste aceeasi fereastra calendaristica pentru luna curenta, luna trecuta si aceeasi luna anul trecut; daca luna curenta este partiala, cutoff-ul este ultima zi cu vanzari importate
 - comparatia perioade este like-for-like: include in toate cele trei coloane doar magazinele cu vanzari Retail in luna analizata; la filtre RM/firma, istoricul urmareste aceleasi magazine chiar daca au fost realocate intre timp
-- KPI-urile de vanzari, cantitate, bonuri si medii exclud categoria `Cartele`
+- KPI-urile de vanzari, cantitate, bonuri si medii exclud categoria `Cartele`;
+  `Medie produs` inseamna `vanzari / cantitate` pe acelasi scope
 - randul `Cartele` este informativ si este calculat separat din tranzactiile brute
 - magazinele/locatiile de distributie cu nume `TR ...` sunt excluse din calculele Retail
 - in Hub exista un singur layer operational de management; rapoartele pastreaza
@@ -223,7 +224,8 @@ Folii Premium sunt calculate pe aceeasi baza ca in Focus: produse din categoria
 tinta din `v_premium_glass_item_models`. Pentru foliile de ecran, premium
 inseamna nume produs cu `SAPPHIRE`, `CERAMIC` sau `CORNING`. Pentru foliile de
 camera, premium vine din lista operationala `data/folii premium camera.xlsx`,
-coloana `Premium` (`Da`/`nu`), nu din regex. Indicatorul este materializat in
+coloana `Premium` (`Da`/`nu`), nu din regex. Samsung S26 Plus este eligibil
+doar pentru foliile de camera, nu pentru foliile de ecran. Indicatorul este materializat in
 tabela indexata `premium_glass_item_models`; view-urile
 `v_premium_glass_item_models` si `v_premium_glass_products` sunt doar
 compatibilitate de citire. Nu reintroduce calculul prin regex direct in
@@ -476,6 +478,10 @@ Observatii de calitate a datelor:
 - unele randuri Mobiup nu au `site_code` cand locatia HR nu poate fi mapata sigur la un magazin Retail;
 - randurile fara `site_code` intra in totaluri si in istoricul agentilor, dar nu intra corect in filtrele pe magazin/regional/ASM;
 - cateva randuri istorice Mobicell au CNP gol in sursa initiala; read model-ul foloseste numele normalizat ca fallback si elimina duplicatele complet identice.
+
+Filtrele globale din **Agenti -> Salarii** se aplica pe toate cardurile din
+tab. Filtrul de magazin este transmis ca `site_code` catre overview, evolutie,
+summary, trend si lista de agenti.
 
 Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
 unitar pe valorile agent-luna de cel putin `2.000 RON`. Identitatea principala

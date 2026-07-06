@@ -19,7 +19,8 @@ type StoreSortKey =
   | 'nr_bonuri'
   | 'nr_agenti'
   | 'zile_active'
-  | 'medie_zilnica';
+  | 'medie_zilnica'
+  | 'medie_produs';
 type AgentSortKey =
   | 'locatie'
   | 'agent'
@@ -32,6 +33,7 @@ type AgentSortKey =
   | 'nr_bonuri'
   | 'zile_lucrate'
   | 'medie_zilnica'
+  | 'medie_produs'
   | 'proc_bon2acc'
   | 'prc_focus_acc_qty';
 type RegionalSortKey =
@@ -45,6 +47,7 @@ type RegionalSortKey =
   | 'qty_total'
   | 'nr_bonuri'
   | 'medie_zilnica'
+  | 'medie_produs'
   | 'proc_bon2acc'
   | 'prc_focus_acc_qty';
 type AsmSortKey =
@@ -58,6 +61,7 @@ type AsmSortKey =
   | 'qty_total'
   | 'nr_bonuri'
   | 'medie_zilnica'
+  | 'medie_produs'
   | 'proc_bon2acc'
   | 'prc_focus_acc_qty';
 
@@ -319,6 +323,7 @@ export function PeriodTable({
     { label: 'Bonuri',       fn: (p) => formatInt(p.total_receipts) },
     { label: 'Zile',         fn: (p) => formatInt(p.working_days) },
     { label: 'Med. zilnica', fn: (p) => formatAmount(p.daily_average ?? 0) },
+    { label: 'Med. produs',  fn: (p) => formatAmount(p.medie_produs ?? 0) },
     { label: 'Med. bon',     fn: (p) => formatAmount(p.avg_receipt_value ?? 0) },
     { label: 'Bon2Acc',      fn: (p) => formatPercent(p.proc_bon2acc) },
     { label: 'Focus/Acc',    fn: (p) => formatPercent(p.prc_focus_acc_qty) },

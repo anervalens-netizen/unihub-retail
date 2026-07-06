@@ -49,7 +49,6 @@ WITH target_models(model_key, model_label, model_regex, exclude_regex) AS (
         ('iphone_17_pro', 'iPhone 17 Pro', 'IPHONE 17 PRO|17 PRO/', 'IPHONE 17 PRO MAX|17 PRO MAX'),
         ('iphone_17_pro_max', 'iPhone 17 Pro Max', 'IPHONE 17 PRO MAX|17 PRO MAX', NULL),
         ('samsung_s26', 'Samsung S26', 'SAMSUNG GALAXY S26 5G|S26 5G', 'S26 PLUS|S26 ULTRA'),
-        ('samsung_s26_plus', 'Samsung S26 Plus', 'SAMSUNG GALAXY S26 PLUS|S26 PLUS', 'S26 ULTRA'),
         ('samsung_s26_ultra', 'Samsung S26 Ultra', 'SAMSUNG GALAXY S26 ULTRA|S26 ULTRA', NULL)
 ),
 camera_products AS (

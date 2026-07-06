@@ -22,6 +22,7 @@ import { SalaryDrawer } from './SalaryDrawer';
 import { ExportTableButton } from './ExportTableButton';
 import { SortableHeader } from './dashboard/DashboardWidgets';
 import { formatMonthSpanLabel } from '../lib/dates';
+import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 
 type SortDir = 'asc' | 'desc';
 interface SortState<K extends string> { key: K; dir: SortDir }
@@ -136,9 +137,10 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
   const PAGE_SIZE = 50;
 
-  const filterCompany = globalFilters?.firma !== 'Toate' ? globalFilters?.firma : undefined;
-  const filterRegional = globalFilters?.rm !== 'Toti' ? globalFilters?.rm : undefined;
-  const filterAsm = globalFilters?.asm !== 'Toti' ? globalFilters?.asm : undefined;
+  const filterCompany = globalFilters?.firma !== ALL_FIRMS ? globalFilters?.firma : undefined;
+  const filterRegional = globalFilters?.rm !== ALL_SCOPE ? globalFilters?.rm : undefined;
+  const filterAsm = globalFilters?.asm !== ALL_SCOPE ? globalFilters?.asm : undefined;
+  const filterSiteCode = globalFilters?.magazin !== ALL_STORES ? globalFilters?.magazin : undefined;
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -148,15 +150,15 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const loadOverview = useCallback(async () => {
     try {
       const [ov, ev] = await Promise.all([
-        fetchSalariiOverview({ company_name: filterCompany, regional: filterRegional, asm: filterAsm }),
-        fetchSalaryEvolution({ company_name: filterCompany, regional: filterRegional, asm: filterAsm }),
+        fetchSalariiOverview({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm }),
+        fetchSalaryEvolution({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm }),
       ]);
       setOverview(ov);
       setEvolution(ev);
     } catch (e) {
       console.error('Failed to load overview:', e);
     }
-  }, [filterCompany, filterRegional, filterAsm]);
+  }, [filterCompany, filterSiteCode, filterRegional, filterAsm]);
 
   const loadSummary = useCallback(async () => {
     setLoadingCards(true);
@@ -166,7 +168,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       if (selectedSummaryMonth && /^\d{4}-\d{2}$/.test(selectedSummaryMonth)) {
         [year, month] = selectedSummaryMonth.split('-').map(Number);
       }
-      const data = await fetchSalarySummary({ company_name: filterCompany, regional: filterRegional, asm: filterAsm, year, month });
+      const data = await fetchSalarySummary({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm, year, month });
       setSummary(data.items || []);
       setSummaryMonth(data.month);
     } catch (e) {
@@ -174,19 +176,19 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     } finally {
       setLoadingCards(false);
     }
-  }, [filterCompany, filterRegional, filterAsm, selectedSummaryMonth]);
+  }, [filterCompany, filterSiteCode, filterRegional, filterAsm, selectedSummaryMonth]);
 
   const loadTrend = useCallback(async () => {
     setLoadingCards(true);
     try {
-      const data = await fetchSalaryTrend({ company_name: filterCompany, regional: filterRegional, asm: filterAsm });
+      const data = await fetchSalaryTrend({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm });
       setTrend(data || []);
     } catch (e) {
       console.error('Failed to load trend:', e);
     } finally {
       setLoadingCards(false);
     }
-  }, [filterCompany, filterRegional, filterAsm]);
+  }, [filterCompany, filterSiteCode, filterRegional, filterAsm]);
 
   const loadAgents = useCallback(
     async (offset = 0) => {
@@ -195,6 +197,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         const res = await fetchSalaryAgents({
           q: debouncedSearch || undefined,
           company_name: filterCompany,
+          site_code: filterSiteCode,
           regional: filterRegional,
           asm: filterAsm,
           limit: PAGE_SIZE,
@@ -208,7 +211,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         setLoading(false);
       }
     },
-    [debouncedSearch, filterCompany, filterRegional, filterAsm]
+    [debouncedSearch, filterCompany, filterSiteCode, filterRegional, filterAsm]
   );
 
   useEffect(() => { loadOverview(); }, [loadOverview]);

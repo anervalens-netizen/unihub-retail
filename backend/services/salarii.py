@@ -8,10 +8,15 @@ class SalariiService:
         self.repo = repo
 
     async def get_overview(
-        self, company_name: str | None, regional: str | None, asm: str | None
+        self,
+        company_name: str | None,
+        site_code: str | None,
+        regional: str | None,
+        asm: str | None,
     ) -> dict:
         data = await self.repo.fetch_overview(
             company_name=company_name,
+            site_code=site_code,
             regional=regional,
             asm=asm,
         )
@@ -39,11 +44,16 @@ class SalariiService:
         }
 
     async def get_evolution(
-        self, company_name: str | None, regional: str | None, asm: str | None
+        self,
+        company_name: str | None,
+        site_code: str | None,
+        regional: str | None,
+        asm: str | None,
     ) -> list[dict]:
         if company_name:
             rows = await self.repo.fetch_evolution_single_company(
                 company_name=company_name,
+                site_code=site_code,
                 regional=regional,
                 asm=asm,
             )
@@ -54,6 +64,7 @@ class SalariiService:
 
         rows = await self.repo.fetch_evolution_main(
             company_name=company_name,
+            site_code=site_code,
             regional=regional,
             asm=asm,
         )
@@ -177,6 +188,7 @@ class SalariiService:
         if year is None or month is None:
             latest = await self.repo.fetch_latest_month(
                 company_name=company_name,
+                site_code=site_code,
                 regional=regional,
                 asm=asm,
             )
