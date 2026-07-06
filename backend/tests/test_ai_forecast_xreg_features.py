@@ -66,3 +66,36 @@ def test_v1_payload_keeps_legacy_covariate_schema() -> None:
     assert set(payload["dynamic_categorical_covariates"]) == {"month", "quarter", "year"}
     assert set(payload["static_categorical_covariates"]) == {"firma", "regional", "asm"}
     assert "is_summer" not in payload["dynamic_numerical_covariates"]
+
+
+def test_v3_payload_keeps_v1_schema_and_adds_seasonality_only() -> None:
+    store = StoreInfo(
+        site_code="S001",
+        locatie="Store 1",
+        firma="Mobiup",
+        regional="RM 1",
+        asm="ASM 1",
+    )
+    history_months = month_range("2023-10", "2026-06")
+    sales = {("S001", month): Decimal("100") for month in history_months}
+
+    payload, _, skipped = build_payload(
+        stores=[store],
+        sales=sales,
+        target_months=["2026-07"],
+        source_month="2026-06",
+        history_start_month="2023-10",
+        min_context=33,
+        metric="sales_value",
+        feature_profile="v3",
+    )
+
+    assert not skipped
+    assert payload["feature_profile"] == "v3"
+    assert set(payload["dynamic_categorical_covariates"]) == {"month", "quarter", "year", "season"}
+    assert "price_regime" not in payload["dynamic_categorical_covariates"]
+    assert payload["dynamic_categorical_covariates"]["season"][0][-1] == "summer"
+    assert payload["dynamic_numerical_covariates"]["is_summer"][0][-1] == 1.0
+    assert payload["dynamic_numerical_covariates"]["is_peak_season"][0][-1] == 1.0
+    assert "is_post_price_change" not in payload["dynamic_numerical_covariates"]
+    assert payload["static_categorical_covariates"]["store_age_bucket"] == ["24_47m"]

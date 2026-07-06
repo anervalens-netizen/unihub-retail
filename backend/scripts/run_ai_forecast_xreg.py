@@ -24,7 +24,7 @@ DEFAULT_OUTPUT_DIR = Path("backend/outputs/ai_forecast")
 MIN_CONTEXT = 33
 DEFAULT_EXCLUDED_SITE_CODES = ["CRFVUL", "CRFARENA"]
 MetricName = Literal["sales_value", "units"]
-FeatureProfile = Literal["v1", "v2"]
+FeatureProfile = Literal["v1", "v2", "v3"]
 
 
 @dataclass(frozen=True)
@@ -91,6 +91,26 @@ def covariate_schema(profile: FeatureProfile) -> tuple[list[str], list[str], lis
             ["month", "quarter", "year"],
             ["year_index", "month_number", "quarter_number", "days_in_month", "month_sin", "month_cos"],
             ["firma", "regional", "asm"],
+        )
+    if profile == "v3":
+        return (
+            ["month", "quarter", "year", "season"],
+            [
+                "year_index",
+                "month_number",
+                "quarter_number",
+                "days_in_month",
+                "month_sin",
+                "month_cos",
+                "is_summer",
+                "is_december",
+                "is_january",
+                "is_q4",
+                "is_peak_season",
+                "month_in_quarter",
+                "months_since_opening",
+            ],
+            ["firma", "regional", "asm", "store_age_bucket"],
         )
     return (
         ["month", "quarter", "season", "price_regime"],
@@ -752,7 +772,7 @@ def main() -> None:
         help="Ultima luna istorica folosita in modul --operational. Implicit luna anterioara startului.",
     )
     parser.add_argument("--history-start-month", default="2018-01")
-    parser.add_argument("--feature-profile", choices=["v1", "v2"], default="v1")
+    parser.add_argument("--feature-profile", choices=["v1", "v2", "v3"], default="v1")
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--env-file", default="/opt/Mobiup/unihub-retail/.env")
