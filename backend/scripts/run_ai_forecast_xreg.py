@@ -24,6 +24,7 @@ DEFAULT_OUTPUT_DIR = Path("backend/outputs/ai_forecast")
 MIN_CONTEXT = 33
 DEFAULT_EXCLUDED_SITE_CODES = ["CRFVUL", "CRFARENA"]
 MetricName = Literal["sales_value", "units"]
+FeatureProfile = Literal["v1", "v2"]
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,75 @@ def month_range(start: str, end: str) -> list[str]:
     return months
 
 
-def month_features(months: list[str], base_year: int) -> dict[str, list[Any]]:
+def month_distance(start: str, end: str) -> int:
+    start_year, start_month = map(int, start.split("-"))
+    end_year, end_month = map(int, end.split("-"))
+    return (end_year - start_year) * 12 + (end_month - start_month)
+
+
+def season_name(month_number: int) -> str:
+    if month_number in (12, 1, 2):
+        return "winter"
+    if month_number in (3, 4, 5):
+        return "spring"
+    if month_number in (6, 7, 8):
+        return "summer"
+    return "autumn"
+
+
+def price_regime(month: str) -> str:
+    if month == "2025-08":
+        return "price_transition"
+    if month >= "2025-09":
+        return "post_price_change"
+    return "pre_price_change"
+
+
+def store_age_bucket(context_months: int) -> str:
+    if context_months < 12:
+        return "lt_12m"
+    if context_months < 24:
+        return "12_23m"
+    if context_months < 48:
+        return "24_47m"
+    return "48m_plus"
+
+
+def covariate_schema(profile: FeatureProfile) -> tuple[list[str], list[str], list[str]]:
+    if profile == "v1":
+        return (
+            ["month", "quarter", "year"],
+            ["year_index", "month_number", "quarter_number", "days_in_month", "month_sin", "month_cos"],
+            ["firma", "regional", "asm"],
+        )
+    return (
+        ["month", "quarter", "season", "price_regime"],
+        [
+            "year_index",
+            "month_number",
+            "quarter_number",
+            "days_in_month",
+            "month_sin",
+            "month_cos",
+            "is_summer",
+            "is_december",
+            "is_january",
+            "is_q4",
+            "is_peak_season",
+            "month_in_quarter",
+            "months_since_opening",
+            "is_post_price_change",
+        ],
+        ["firma", "regional", "asm", "store_age_bucket"],
+    )
+
+
+def month_features(
+    months: list[str],
+    base_year: int,
+    *,
+    first_input_month: str | None = None,
+) -> dict[str, list[Any]]:
     features: dict[str, list[Any]] = {
         "month": [],
         "quarter": [],
@@ -61,6 +130,16 @@ def month_features(months: list[str], base_year: int) -> dict[str, list[Any]]:
         "days_in_month": [],
         "month_sin": [],
         "month_cos": [],
+        "season": [],
+        "price_regime": [],
+        "is_summer": [],
+        "is_december": [],
+        "is_january": [],
+        "is_q4": [],
+        "is_peak_season": [],
+        "month_in_quarter": [],
+        "months_since_opening": [],
+        "is_post_price_change": [],
     }
     for month in months:
         year, month_number = map(int, month.split("-"))
@@ -76,6 +155,18 @@ def month_features(months: list[str], base_year: int) -> dict[str, list[Any]]:
         features["days_in_month"].append(float(days))
         features["month_sin"].append(math.sin(angle))
         features["month_cos"].append(math.cos(angle))
+        features["season"].append(season_name(month_number))
+        features["price_regime"].append(price_regime(month))
+        features["is_summer"].append(float(month_number in (6, 7, 8)))
+        features["is_december"].append(float(month_number == 12))
+        features["is_january"].append(float(month_number == 1))
+        features["is_q4"].append(float(quarter == 4))
+        features["is_peak_season"].append(float(month_number in (7, 8, 12)))
+        features["month_in_quarter"].append(float((month_number - 1) % 3 + 1))
+        features["months_since_opening"].append(
+            float(month_distance(first_input_month, month) + 1) if first_input_month else 0.0
+        )
+        features["is_post_price_change"].append(float(price_regime(month) == "post_price_change"))
     return features
 
 
@@ -168,22 +259,17 @@ def build_payload(
     history_start_month: str,
     min_context: int,
     metric: MetricName,
+    feature_profile: FeatureProfile = "v1",
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, str]]]:
     full_history = month_range(history_start_month, source_month)
     base_year = int(history_start_month[:4])
+    dynamic_categorical_names, dynamic_numerical_names, static_categorical_names = covariate_schema(feature_profile)
 
     inputs: list[list[float]] = []
     series_ids: list[str] = []
-    dynamic_categorical: dict[str, list[list[Any]]] = {"month": [], "quarter": [], "year": []}
-    dynamic_numerical: dict[str, list[list[float]]] = {
-        "year_index": [],
-        "month_number": [],
-        "quarter_number": [],
-        "days_in_month": [],
-        "month_sin": [],
-        "month_cos": [],
-    }
-    static_categorical: dict[str, list[str]] = {"firma": [], "regional": [], "asm": []}
+    dynamic_categorical: dict[str, list[list[Any]]] = {name: [] for name in dynamic_categorical_names}
+    dynamic_numerical: dict[str, list[list[float]]] = {name: [] for name in dynamic_numerical_names}
+    static_categorical: dict[str, list[str]] = {name: [] for name in static_categorical_names}
     rows_meta: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
 
@@ -207,17 +293,19 @@ def build_payload(
             continue
 
         covariate_months = context_months + target_months
-        features = month_features(covariate_months, base_year)
+        features = month_features(covariate_months, base_year, first_input_month=context_months[0])
 
         series_ids.append(store.site_code)
         inputs.append([float(value) for value in context_values])
-        for name in dynamic_categorical:
+        for name in dynamic_categorical_names:
             dynamic_categorical[name].append(features[name])
-        for name in dynamic_numerical:
+        for name in dynamic_numerical_names:
             dynamic_numerical[name].append([float(value) for value in features[name]])
         static_categorical["firma"].append(store.firma)
         static_categorical["regional"].append(store.regional)
         static_categorical["asm"].append(store.asm)
+        if "store_age_bucket" in static_categorical:
+            static_categorical["store_age_bucket"].append(store_age_bucket(len(context_values)))
         rows_meta.append(
             {
                 "site_code": store.site_code,
@@ -239,6 +327,7 @@ def build_payload(
         "dynamic_numerical_covariates": dynamic_numerical,
         "static_categorical_covariates": static_categorical,
         "xreg_mode": "xreg + timesfm",
+        "feature_profile": feature_profile,
     }
     return payload, rows_meta, skipped
 
@@ -472,6 +561,7 @@ async def run(args: argparse.Namespace) -> int:
                 history_start_month=args.history_start_month,
                 min_context=args.min_context,
                 metric=args.metric,
+                feature_profile=args.feature_profile,
             )
             if not payload["inputs"]:
                 raise RuntimeError("Nicio serie eligibila pentru rularea operationala.")
@@ -528,6 +618,7 @@ async def run(args: argparse.Namespace) -> int:
                     history_start_month=args.history_start_month,
                     min_context=args.min_context,
                     metric=args.metric,
+                    feature_profile=args.feature_profile,
                 )
                 if not payload["inputs"]:
                     raise RuntimeError(f"Nicio serie eligibila pentru {target_month}.")
@@ -571,7 +662,8 @@ async def run(args: argparse.Namespace) -> int:
     finally:
         await conn.close()
 
-    suffix = f"{args.metric}_{args.start_month}_to_{args.end_month}"
+    profile_prefix = "" if args.feature_profile == "v1" else f"{args.feature_profile}_"
+    suffix = f"{args.metric}_{profile_prefix}{args.start_month}_to_{args.end_month}"
     write_csv(
         output_dir / f"xreg_backtest_summary_{suffix}.csv",
         summary_rows,
@@ -625,6 +717,7 @@ async def run(args: argparse.Namespace) -> int:
     overall_abs_error = sum((row["abs_error_sales"] for row in all_rows), Decimal("0"))
     overall = {
         "metric": args.metric,
+        "feature_profile": args.feature_profile,
         "start_month": args.start_month,
         "end_month": args.end_month,
         "target_months": len(target_months),
@@ -659,6 +752,7 @@ def main() -> None:
         help="Ultima luna istorica folosita in modul --operational. Implicit luna anterioara startului.",
     )
     parser.add_argument("--history-start-month", default="2018-01")
+    parser.add_argument("--feature-profile", choices=["v1", "v2"], default="v1")
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--env-file", default="/opt/Mobiup/unihub-retail/.env")
