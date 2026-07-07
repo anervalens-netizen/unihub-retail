@@ -335,7 +335,7 @@ export function Campaigns({
       <div>
         <h1 className="text-xl font-bold tracking-tight">Focus</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Incentive, promo si concurs folosesc luna {promoMonth}; istoricul focus se analizeaza separat.
+          Incentive, promo, concurs si folii premium folosesc luna {promoMonth}; istoricul focus se analizeaza separat.
         </p>
       </div>
 
@@ -727,11 +727,14 @@ export function Campaigns({
           )}
         </>
       ) : activeSection === 'premium' ? (
-        <PremiumGlassFocusSection
-          analysis={premiumGlass}
-          surfaceMode={premiumSurfaceMode}
-          onSurfaceModeChange={setPremiumSurfaceMode}
-        />
+        <>
+          <CampaignMonthBar title="Folii premium" icon={Sparkles} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
+          <PremiumGlassFocusSection
+            analysis={premiumGlass}
+            surfaceMode={premiumSurfaceMode}
+            onSurfaceModeChange={setPremiumSurfaceMode}
+          />
+        </>
       ) : (
         <>
           <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">

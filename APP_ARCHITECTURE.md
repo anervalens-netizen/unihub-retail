@@ -366,6 +366,29 @@ vizuale cauzate de contracte duble, part-time sau site_code-uri istorice pentru
 aceeasi locatie. Consolidarea este doar la nivel de query/read model si nu
 modifica randurile din `salary_records`.
 
+### Grila de salarizare ASM (Management -> Manageri)
+
+Pentru ASM-ii activati (momentan `Mihai Condorateanu`), subsectiunea
+„Grila salarizare" din randul expandat al managerului calculeaza
+salariul dupa grila de comisionare ASM: salariu fix 4.000 lei + comision
+realizare target zona + comision pe insula/locatie (per `site_code`,
+insumat) + comision omogenitate (>50% insule cu minimum 99% realizare) +
+comision Acc Focus. Calculul ruleaza in `services/asm_salary.py` (modul
+pur, fara DB, testat unitar) si este expus prin
+`GET /api/hr/asm-salary/{asm_name}?month=`, sub `require_salary_access`
+(acelasi set de roluri ca tabul Salarii). Pentru luna curenta partiala
+comisioanele folosesc procentul prognozat la final de luna
+(`forecast_factor` din `services/forecast.py`); pentru lunile incheiate
+se folosesc valorile finale. Acc Focus % este un raport de cantitati,
+astfel ca nu se scaleaza cu forecast_factor. Pragurile din grila
+(79/84/89/94/99/109, Acc Focus 5/5,5/6/6,5/7) includ deja regula
+„1% sub prag", deci se folosesc exact ca atare, fara o alta toleranta
+suplimentara. Grila este un calcul de comisionare independent de
+`salary_records` (care ramane sursa de payroll a tabului Agenti ->
+Salarii); datele pe insule provin din `reporting_agent_month` agregat
+per `site_code` si din `store_targets`, cu apartenenta ASM curenta
+(`stores.asm`), consistent cu istoricul ASM.
+
 ### Targete agent
 
 Tabela `agent_targets` este un override optional pentru targetele reale per

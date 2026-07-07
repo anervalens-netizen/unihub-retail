@@ -89,3 +89,56 @@ export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmH
   const { data } = await client.get<AsmHistoryPoint[]>(`/api/hr/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
   return data;
 }
+
+export interface AsmSalaryIsland {
+  site_code: string;
+  locatie: string;
+  firma: string;
+  total_sales: number;
+  total_target: number;
+  target_pct: number | null;
+  forecast_sales: number;
+  forecast_target_pct: number | null;
+  pct_used: number | null;
+  commission: number;
+}
+
+export interface AsmSalaryBreakdown {
+  asm: string;
+  month: string;
+  is_forecast: boolean;
+  forecast_factor: number;
+  fixed_salary: number;
+  zone: {
+    total_sales: number;
+    total_target: number;
+    target_pct: number | null;
+    forecast_sales: number;
+    forecast_target_pct: number | null;
+    pct_used: number | null;
+    commission: number;
+  };
+  islands: AsmSalaryIsland[];
+  islands_commission: number;
+  homogeneity: {
+    islands_count: number;
+    qualifying_count: number;
+    qualifying_pct: number;
+    min_pct: number;
+    eligible: boolean;
+    commission: number;
+  };
+  acc_focus: {
+    pct: number;
+    commission: number;
+  };
+  total_salary: number;
+}
+
+export async function fetchAsmSalary(asm: string, month: string): Promise<AsmSalaryBreakdown> {
+  const { data } = await client.get<AsmSalaryBreakdown>(
+    `/api/hr/asm-salary/${encodeURIComponent(asm)}`,
+    { params: { month } },
+  );
+  return data;
+}

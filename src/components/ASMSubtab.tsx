@@ -7,6 +7,7 @@ import {
   type AsmHistoryPoint,
 } from '../api/hr';
 import { fetchScores, type StoreScore } from '../api/crm';
+import { AsmSalaryGrila } from './AsmSalaryGrila';
 import {
   ComposedChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
@@ -14,6 +15,9 @@ import {
 import { formatMonthLabel } from '../lib/dates';
 
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
+
+/** ASM-ii pentru care se afișează subsecțiunea „Grilă salarizare" în Manageri. */
+const SALARY_GRILA_ASMS = new Set(['Mihai Condorateanu']);
 
 function formatMonth(m: string) {
   return formatMonthLabel(m, { year: 'short' });
@@ -108,7 +112,7 @@ function ManagerStoreCards({ stores }: { stores: StoreScore[] }) {
   );
 }
 
-function ASMRow({ row, stores }: { row: AsmPerformance; stores: StoreScore[] }) {
+function ASMRow({ row, stores, month }: { row: AsmPerformance; stores: StoreScore[]; month: string }) {
   const [expanded, setExpanded] = useState(false);
   const [history, setHistory] = useState<AsmHistoryPoint[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -231,6 +235,11 @@ function ASMRow({ row, stores }: { row: AsmPerformance; stores: StoreScore[] }) 
       {/* Expanded history chart */}
       {expanded && (
         <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/50">
+          {SALARY_GRILA_ASMS.has(row.asm) && (
+            <div className="mb-3">
+              <AsmSalaryGrila asm={row.asm} defaultMonth={month} />
+            </div>
+          )}
           {loadingHistory ? (
             <div className="text-center text-slate-400 text-xs py-4">Se încarcă...</div>
           ) : history.length === 0 ? (
@@ -350,6 +359,7 @@ export function ASMSubtab() {
           <ASMRow
             key={row.asm}
             row={row}
+            month={month}
             stores={storeScores.filter((store) => store.asm === row.asm || store.regional === row.asm)}
           />
         ))}

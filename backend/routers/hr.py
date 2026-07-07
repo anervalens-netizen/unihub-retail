@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
+from auth import AuthClaims
 from db.connection import get_pool
+from permissions import require_salary_access
 from repositories.hr import HrRepository
 from services.hr import HrService
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
+logger = logging.getLogger(__name__)
 
 
 class LeaveRequestCreate(BaseModel):
@@ -82,3 +87,21 @@ async def get_asm_perf_history(
     svc: HrService = Depends(get_hr_service),
 ):
     return await svc.get_asm_performance_history(asm_name, months)
+
+
+@router.get("/asm-salary/{asm_name}")
+async def get_asm_salary(
+    asm_name: str,
+    month: str = Query(...),
+    svc: HrService = Depends(get_hr_service),
+    claims: AuthClaims = Depends(require_salary_access),
+):
+    """Defalcarea salariului ASM după grila de comisionare.
+
+    Returnează salariu fix + comisioane (zonă, insule, omogenitate, Acc Focus)
+    cu prognoză pentru luna curentă parțială și valori finale pentru lunile
+    încheiate. Accesul este autorizat ca resursă salarială (același set de
+    roluri ca tabul Salarii) și logat fără CNP sau valori salariale.
+    """
+    logger.info("asm_salary_access subject=%s asm=%s month=%s", claims.sub, asm_name, month)
+    return await svc.get_asm_salary(asm_name, month)

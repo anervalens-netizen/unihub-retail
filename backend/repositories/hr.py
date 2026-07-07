@@ -202,3 +202,46 @@ class HrRepository:
                 WHERE snap.import_month = to_char(now(), 'YYYY-MM')
                 """,
             )
+
+    async def get_asm_store_breakdown(self, asm_name: str, month: str) -> list[asyncpg.Record]:
+        """Date pe magazin (insulă) pentru un ASM și o lună, pentru grila salarială.
+
+        Agregă `reporting_agent_month` per site_code (un magazin poate avea
+        mai mulți agenți). Include magazinele din zona ASM-ului care au target
+        sau vânzări în luna cerută; magazinele fără target și fără vânzări
+        (ex. închise) sunt excluse. `stores.asm` reflectă apartenența curentă,
+        consistent cu `get_asm_performance_rows` și istoricul ASM.
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                WITH store_sales AS (
+                    SELECT
+                        ram.site_code,
+                        COALESCE(SUM(ram.total_sales), 0)    AS total_sales,
+                        COALESCE(SUM(ram.focus_quantity), 0) AS focus_quantity,
+                        COALESCE(SUM(ram.total_quantity), 0) AS total_quantity
+                    FROM reporting_agent_month ram
+                    WHERE ram.import_month = $1
+                    GROUP BY ram.site_code
+                )
+                SELECT
+                    s.site_code,
+                    s.locatie,
+                    s.firma,
+                    COALESCE(st.target_value, 0)   AS target_value,
+                    COALESCE(ss.total_sales, 0)    AS total_sales,
+                    COALESCE(ss.focus_quantity, 0) AS focus_quantity,
+                    COALESCE(ss.total_quantity, 0) AS total_quantity
+                FROM stores s
+                LEFT JOIN store_targets st
+                  ON st.site_code = s.site_code AND st.import_month = $1
+                LEFT JOIN store_sales ss
+                  ON ss.site_code = s.site_code
+                WHERE s.asm = $2
+                  AND (st.site_code IS NOT NULL OR ss.site_code IS NOT NULL)
+                ORDER BY s.locatie, s.firma
+                """,
+                month,
+                asm_name,
+            )

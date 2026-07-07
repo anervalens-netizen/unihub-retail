@@ -5,6 +5,7 @@ import datetime
 from fastapi import HTTPException
 
 from repositories.hr import HrRepository
+from services.asm_salary import compute_asm_salary
 from services.forecast import get_forecast_factor
 
 
@@ -109,3 +110,29 @@ class HrService:
                 "avg_duration": sq.get("avg_duration"),
             })
         return result
+
+    async def get_asm_salary(self, asm_name: str, month: str) -> dict:
+        """Defalcarea salariului ASM după grila de comisionare.
+
+        Combină datele pe magazin (repo) cu factorul de prognoză la final de
+        lună și deleagă calculul pur către `services.asm_salary`. Pentru luna
+        curentă parțială comisioanele se bazează pe procentul prognozat; pentru
+        lunile încheiate pe valorile actuale.
+        """
+        records = await self.repo.get_asm_store_breakdown(asm_name, month)
+        stores = [
+            {
+                "site_code": r["site_code"],
+                "locatie": r["locatie"],
+                "firma": r["firma"],
+                "target_value": float(r["target_value"] or 0),
+                "total_sales": float(r["total_sales"] or 0),
+                "focus_quantity": float(r["focus_quantity"] or 0),
+                "total_quantity": float(r["total_quantity"] or 0),
+            }
+            for r in records
+        ]
+        async with self.repo.pool.acquire() as conn:
+            forecast_factor = await get_forecast_factor(conn, month)
+        breakdown = compute_asm_salary(stores, forecast_factor)
+        return {"asm": asm_name, "month": month, **breakdown}
