@@ -108,13 +108,15 @@ in `backend/outputs/ai_forecast/`; CSV-ul operational se importa apoi cu
 fi excluse cu `--exclude-site-code`; implicit sunt excluse inchiderile din
 iunie 2026: `CRFVUL` si `CRFARENA`.
 
-Decizie operationala 2026-07-06: pentru iulie 2026 raman in aplicatie valorile
-`xreg_timesfm` cu profilul `v1` (`monthly_xreg_standard_v2_excl_closed`,
-74 magazine active, 3.884.172 RON). Profilul experimental `v2` a forecastat
-mai sus pentru iulie 2026 (aprox. 3.944m RON si 42.724 bucati), deci se
-pastreaza ca scenariu de urmarit, dar nu se promoveaza in aplicatie pana la
-analiza de final de iulie. Pe backtestul 2025-07..2026-06, `v1` a ramas mai
-stabil decat `v2` pe valoare, iar `v3` a fost practic identic cu `v1`.
+Decizie operationala actualizata 2026-07-09: pentru iulie 2026 aplicatia
+foloseste profilul `xreg_timesfm v2`, importat ca
+`monthly_xreg_v2_excl_closed` pentru valoare si
+`monthly_xreg_units_v2_excl_closed` pentru bucati. Forecastul curent este
+3.943.570 RON si 42.724 bucati pe 74 magazine active. Profilul `v1`
+(`monthly_xreg_standard_v2_excl_closed`, 3.884.172 RON si 42.114 bucati) ramane
+benchmark stabil pentru analiza de final de iulie. Pe backtestul
+2025-07..2026-06, `v1` a ramas mai stabil decat `v2` pe valoare, iar `v3` a
+fost practic identic cu `v1`.
 
 Pentru forecast operational pe urmatoarele 12 luni se ruleaza multi-step din
 ultima luna istorica sigura si se importa doar lunile care trebuie afisate:

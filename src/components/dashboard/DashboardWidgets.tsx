@@ -147,39 +147,6 @@ export function KpiPerformanceCard({
   );
 }
 
-export function CampaignMiniCard({
-  label,
-  title,
-  status,
-  metrics,
-  footer,
-}: {
-  label: string;
-  title: string;
-  status: string;
-  metrics: Array<{ label: string; value: string }>;
-  footer: string;
-}) {
-  return (
-    <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/60">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-        <div className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">{status}</div>
-      </div>
-      <div className="text-base font-bold leading-tight">{title}</div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="rounded-2xl bg-white/70 px-3 py-2 dark:bg-slate-900/30">
-            <div className="text-[11px] uppercase tracking-wide text-slate-500">{metric.label}</div>
-            <div className="mt-1 text-sm font-bold">{metric.value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 text-xs leading-relaxed text-slate-500">{footer}</div>
-    </div>
-  );
-}
-
 export function CompactPieSection({
   title,
   emptyLabel,

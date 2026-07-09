@@ -258,12 +258,14 @@ Fluxul operational curent este:
 7. Hub compara `ai_forecast_store_day` cumulat pana la ultima zi importata cu
    realizatul din `reporting_agent_day` / `reporting_agent_month`.
 
-Decizie de model valabila la 2026-07-06: rularea afisata in aplicatie pentru
-iulie 2026 ramane `xreg + timesfm` profil `v1` (`monthly_xreg_standard_v2_excl_closed`,
-3.884.172 RON pe 74 magazine active). Profilul `v2` a ridicat forecastul pentru
-iulie 2026 spre 3.944m RON si ramane challenger pentru analiza de final de
-iulie, dar nu se importa peste valorile curente pana nu exista realizatul lunii
-si o comparatie finala. Profilul `v3` nu a adus imbunatatire fata de `v1`.
+Decizie de model actualizata la 2026-07-09: rularea afisata in aplicatie pentru
+iulie 2026 foloseste `xreg + timesfm` profil `v2`, importat ca
+`monthly_xreg_v2_excl_closed` pentru valoare si
+`monthly_xreg_units_v2_excl_closed` pentru bucati. Forecastul curent este
+3.943.570 RON si 42.724 bucati pe 74 magazine active. Profilul `v1`
+(`monthly_xreg_standard_v2_excl_closed`, 3.884.172 RON si 42.114 bucati) ramane
+benchmark stabil pentru analiza de final de iulie. Profilul `v3` nu a adus
+imbunatatire fata de `v1`.
 
 ### Campanii si concursuri
 

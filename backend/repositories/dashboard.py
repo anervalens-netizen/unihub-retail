@@ -166,6 +166,11 @@ class DashboardRepository:
             for clause in sales_clauses
             if ".agent" not in clause
         ]
+        return_store_clauses = [
+            clause.replace("agg.", "st.") if "agent" in clause else clause.replace("agg.", "s.")
+            for clause in sales_clauses
+            if "import_month" not in clause
+        ]
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -227,6 +232,18 @@ class DashboardRepository:
                     WHERE stg.import_month IN (SELECT import_month FROM recent_months)
                       {" AND " + " AND ".join(target_store_clauses) if target_store_clauses else ""}
                     GROUP BY stg.import_month
+                ),
+                return_summary AS (
+                    SELECT
+                        st.import_month AS month,
+                        COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+                    FROM sales_transactions st
+                    JOIN stores s ON s.site_code = st.site_code
+                    WHERE st.import_month >= TO_CHAR(($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month', 'YYYY-MM')
+                      AND st.import_month <= $1
+                      AND NOT st.is_cartela
+                      {" AND " + " AND ".join(return_store_clauses) if return_store_clauses else ""}
+                    GROUP BY st.import_month
                 )
                 SELECT
                     rm.import_month AS month,
@@ -245,10 +262,12 @@ class DashboardRepository:
                     COALESCE(ss.total_agents, 0) AS total_agents,
                     COALESCE(ss.working_days, 0) AS working_days,
                     COALESCE(ss.daily_average, 0) AS daily_average,
-                    COALESCE(ss.medie_produs, 0) AS medie_produs
+                    COALESCE(ss.medie_produs, 0) AS medie_produs,
+                    COALESCE(rs.return_receipt_count, 0)::INT AS return_receipt_count
                 FROM recent_months rm
                 LEFT JOIN sales_summary ss ON ss.month = rm.import_month
                 LEFT JOIN target_summary ts ON ts.month = rm.import_month
+                LEFT JOIN return_summary rs ON rs.month = rm.import_month
                 ORDER BY rm.import_month ASC
                 """,
                 *params,

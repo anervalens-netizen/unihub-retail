@@ -38,6 +38,7 @@ function makeAgent(overrides: Partial<AgentStat> = {}): AgentStat {
     proc_realizare_target: 66.67,
     promo_qty: 5,
     incentive_qty: 3,
+    return_receipt_count: 0,
     ...overrides,
   };
 }
@@ -61,6 +62,7 @@ function makeStore(overrides: Partial<StoreStat> = {}): StoreStat {
     medie_produs: 250,
     promo_qty: 10,
     incentive_qty: 5,
+    return_receipt_count: 0,
     ...overrides,
   };
 }
@@ -82,6 +84,7 @@ function makeRegional(overrides: Partial<RegionalStat> = {}): RegionalStat {
     medie_produs: 250,
     proc_bon2acc: 62,
     prc_focus_acc_qty: 25,
+    return_receipt_count: 0,
     ...overrides,
   };
 }

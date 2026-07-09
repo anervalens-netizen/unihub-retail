@@ -1141,6 +1141,11 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
         <div>
           <div className="text-3xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div>
           <div className="text-[11px] text-slate-500">bucati vandute</div>
+          {promoData && (
+            <div className="mt-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+              {formatInt(promoData.incentive_qualified_qty)} calificate
+            </div>
+          )}
         </div>
         <div>
           <div className="text-3xl font-black text-indigo-600">
@@ -1149,6 +1154,35 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
           <div className="text-[11px] text-slate-500">valoare incentive</div>
         </div>
       </div>
+
+      {/* Magazine & agenti calificati */}
+      {promoData && (
+        <div className="mb-4 border-t border-indigo-100 pt-3 dark:border-indigo-900/30">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400">
+                <Building2 size={16} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-black leading-tight">{formatInt(promoData.incentive_qualified_stores)}</div>
+                <div className="text-[11px] text-slate-500">magazine calificate</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400">
+                <Sparkles size={16} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-lg font-black leading-tight">{formatInt(promoData.incentive_qualified_agents)}</div>
+                <div className="text-[11px] text-slate-500">agenti calificati</div>
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-[10px] leading-snug text-slate-400">
+            Calificare: 100% din target pe magazin = incentive intreg, peste 90% = jumatate.
+          </p>
+        </div>
+      )}
 
       {/* Pie chart pe tiere de reward */}
       {pieData.length > 0 && (

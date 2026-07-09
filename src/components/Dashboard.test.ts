@@ -3,7 +3,6 @@ import { aggregateDashboardDetails } from './Dashboard';
 import type {
   AgentStat,
   DashboardAllResponse,
-  DashboardSpecialCard,
   DashboardSummary,
   StoreStat,
 } from '../api/types';
@@ -53,6 +52,7 @@ function store(month: string, siteCode: string): StoreStat {
     medie_produs: null,
     promo_qty: 0,
     incentive_qty: 0,
+    return_receipt_count: 0,
   };
 }
 
@@ -79,20 +79,7 @@ function agent(month: string, siteCode: string, name: string): AgentStat {
     proc_realizare_target: null,
     promo_qty: 0,
     incentive_qty: 0,
-  };
-}
-
-function specialCard(title: string): DashboardSpecialCard {
-  return {
-    key: 'promotion',
-    title,
-    subtitle: null,
-    status: 'ready',
-    status_label: 'Activ',
-    highlight_value: '1',
-    description: 'Card test',
-    coverage_note: null,
-    metrics: [],
+    return_receipt_count: 0,
   };
 }
 
@@ -147,7 +134,6 @@ describe('aggregateDashboardDetails', () => {
       daily_last_year: [
         { sale_date: '2025-05-01', total_sales: 35, total_quantity: 7, receipt_count: 3 },
       ],
-      special_cards: [specialCard('Promo mai')],
     });
     const second = response('2026-06', {
       summary: summary('2026-06', {
@@ -170,7 +156,6 @@ describe('aggregateDashboardDetails', () => {
       daily_last_year: [
         { sale_date: '2025-06-01', total_sales: 55, total_quantity: 5, receipt_count: 5 },
       ],
-      special_cards: [specialCard('Promo iunie')],
     });
 
     const aggregate = aggregateDashboardDetails([first, second], ['2026-05', '2026-06']);
@@ -195,6 +180,5 @@ describe('aggregateDashboardDetails', () => {
       { sale_date: 'zi-02', total_sales: 80, total_quantity: 8, receipt_count: 8 },
     ]);
     expect(aggregate.dailyLastYear).toEqual([]);
-    expect(aggregate.specialCards[0].title).toBe('Promo iunie');
   });
 });

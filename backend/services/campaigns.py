@@ -305,11 +305,17 @@ class CampaignsService:
                 promo_impact = float(summary.promo_impact)
                 incentive_qty = summary.incentive_qty
                 incentive_value = float(summary.incentive_value)
+                incentive_qualified_qty = summary.incentive_qualified_qty
+                incentive_qualified_stores = summary.incentive_qualified_stores
+                incentive_qualified_agents = summary.incentive_qualified_agents
             else:
                 promo_qty = 0
                 promo_impact = 0.0
                 incentive_qty = 0
                 incentive_value = 0.0
+                incentive_qualified_qty = 0
+                incentive_qualified_stores = 0
+                incentive_qualified_agents = 0
 
             promo_total_qty = 0
             store_multipliers: dict[str, float] = {}
@@ -636,6 +642,9 @@ class CampaignsService:
                 "incentive_description": incentive_description,
                 "incentive_qty": incentive_qty,
                 "incentive_value": incentive_value,
+                "incentive_qualified_qty": incentive_qualified_qty,
+                "incentive_qualified_stores": incentive_qualified_stores,
+                "incentive_qualified_agents": incentive_qualified_agents,
                 "incentive_product_count": incentive_product_count,
                 "incentive_categories": incentive_categories,
             }

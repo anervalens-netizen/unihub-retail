@@ -9,12 +9,9 @@ import type {
   CategoryMixItem,
   DailySalesPoint,
   DashboardAllResponse,
-  DashboardSpecialCard,
   DashboardSummary,
   MonthlyHistoryPoint,
   PeriodComparisonPayload,
-  PremiumGlassAnalysis,
-  PromoIncentiveSummary,
   ReceiptBucketItem,
   RegionalStat,
   StoreStat,
@@ -23,7 +20,7 @@ import type {
 import { buildScopedMonthQuery } from '../../lib/filterQueries';
 import { queryKeys } from '../../lib/queryKeys';
 import type { AppFilters } from '../MainLayout';
-import { DASHBOARD_STALE_MS, DEFAULT_PROMO_INCENTIVE } from './dashboardDefaults';
+import { DASHBOARD_STALE_MS } from './dashboardDefaults';
 
 type DashboardSection = 'current' | 'history' | 'visits';
 
@@ -35,10 +32,7 @@ export interface AggregatedDashboardDetails {
   dailyLastYear: DailySalesPoint[];
   categoryMix: CategoryMixItem[];
   brandMix: BrandMixItem[];
-  specialCards: DashboardSpecialCard[];
   periodComparison: PeriodComparisonPayload | null;
-  promoIncentive: PromoIncentiveSummary;
-  premiumGlass: PremiumGlassAnalysis | null;
   regionals: RegionalStat[];
   asms: AsmStat[];
   stores: StoreStat[];
@@ -66,7 +60,6 @@ const EMPTY_DAILY_SALES: DailySalesPoint[] = [];
 const EMPTY_HISTORY: MonthlyHistoryPoint[] = [];
 const EMPTY_RECEIPT_BUCKETS: ReceiptBucketItem[] = [];
 const EMPTY_REGIONAL_STATS: RegionalStat[] = [];
-const EMPTY_SPECIAL_CARDS: DashboardSpecialCard[] = [];
 const EMPTY_STORE_STATS: StoreStat[] = [];
 const EMPTY_YEAR_HISTORY: YearHistoryPoint[] = [];
 
@@ -182,14 +175,11 @@ export function useDashboardData({
     stores: currentQuery.data?.stores ?? EMPTY_STORE_STATS,
     dailySales: currentQuery.data?.daily ?? EMPTY_DAILY_SALES,
     dailyLastYear: currentQuery.data?.daily_last_year ?? EMPTY_DAILY_SALES,
-    specialCards: currentQuery.data?.special_cards ?? EMPTY_SPECIAL_CARDS,
     periodComparison: currentQuery.data?.period_comparison ?? null,
     categoryMix: currentQuery.data?.category_mix ?? EMPTY_CATEGORY_MIX,
     receiptBucketMix: currentQuery.data?.receipt_bucket_mix ?? EMPTY_RECEIPT_BUCKETS,
     focusSubcategoryMix: currentQuery.data?.focus_subcategory_mix ?? EMPTY_CATEGORY_MIX,
     brandMix: currentQuery.data?.brand_mix ?? EMPTY_BRAND_MIX,
-    promoIncentive: currentQuery.data?.promo_incentive ?? DEFAULT_PROMO_INCENTIVE,
-    premiumGlass: currentQuery.data?.premium_glass ?? null,
     regionals: currentQuery.data?.regionals ?? EMPTY_REGIONAL_STATS,
     currentHistory: currentHistoryQuery.data?.history ?? EMPTY_HISTORY,
     currentHistoryLoading: currentHistoryQuery.isPending && activeSection === 'history',
@@ -202,9 +192,6 @@ export function useDashboardData({
     historyDailySales: historyDetailQuery.data?.dailySales ?? EMPTY_DAILY_SALES,
     historyCategoryMix: historyDetailQuery.data?.categoryMix ?? EMPTY_CATEGORY_MIX,
     historyBrandMix: historyDetailQuery.data?.brandMix ?? EMPTY_BRAND_MIX,
-    historySpecialCards: historyDetailQuery.data?.specialCards ?? EMPTY_SPECIAL_CARDS,
-    historyPromoIncentive: historyDetailQuery.data?.promoIncentive ?? DEFAULT_PROMO_INCENTIVE,
-    historyPremiumGlass: historyDetailQuery.data?.premiumGlass ?? null,
     historyRegionals: historyDetailQuery.data?.regionals ?? EMPTY_REGIONAL_STATS,
     historyStores: historyDetailQuery.data?.stores ?? EMPTY_STORE_STATS,
     historyAgents: historyDetailQuery.data?.agents ?? EMPTY_AGENT_STATS,

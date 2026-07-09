@@ -166,6 +166,7 @@ class MonthlyHistoryPoint(BaseModel):
     target_progress_pct: Decimal | None
     total_quantity: int
     total_receipts: int
+    return_receipt_count: int = 0
     proc_bon2acc: Decimal | None
     prc_focus_acc_qty: Decimal | None
     total_stores: int
@@ -209,6 +210,7 @@ class PromoIncentiveSummary(BaseModel):
     promo_impact: Decimal = Decimal(0)
     incentive_qty: int = 0
     incentive_value: Decimal = Decimal(0)
+    incentive_qualified_qty: int = 0
     incentive_qualified_stores: int = 0
     incentive_qualified_agents: int = 0
 
@@ -417,6 +419,7 @@ class AgentStats(BaseModel):
     proc_realizare_target: Decimal | None = None
     promo_qty: int = 0
     incentive_qty: int = 0
+    return_receipt_count: int = 0
 
 
 class StoreStats(BaseModel):
@@ -439,6 +442,7 @@ class StoreStats(BaseModel):
     medie_produs: Decimal | None = None
     promo_qty: int = 0
     incentive_qty: int = 0
+    return_receipt_count: int = 0
 
 
 class RegionalStats(BaseModel):
@@ -459,6 +463,7 @@ class RegionalStats(BaseModel):
     medie_produs: Decimal | None = None
     proc_bon2acc: Decimal | None
     prc_focus_acc_qty: Decimal | None
+    return_receipt_count: int = 0
 
 
 class PerformancePeerRow(BaseModel):

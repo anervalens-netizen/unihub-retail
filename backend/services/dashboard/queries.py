@@ -362,6 +362,15 @@ async def _fetch_store_stats_rows(
         month_position=1,
     )
     clauses = query_clauses or ["true"]
+    return_clauses = _scope_clauses(
+        positions,
+        current_scope=True,
+        include_closed_stores=include_closed_stores or not current_scope,
+        source_alias="st",
+        month_alias="st.import_month",
+        month_position=1,
+    )
+    return_clauses_sql = " AND ".join(return_clauses)
     return await conn.fetch(
         f"""
         WITH filtered_days AS (
@@ -401,6 +410,18 @@ async def _fetch_store_stats_rows(
                 WHERE import_month = $1
             ) rid ON true
             WHERE snap.import_month = $1
+        ),
+        return_summary AS (
+            SELECT
+                st.import_month,
+                st.site_code,
+                COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+            FROM sales_transactions st
+            JOIN stores s ON s.site_code = st.site_code
+            WHERE st.import_month = $1
+              AND NOT st.is_cartela
+              AND {return_clauses_sql}
+            GROUP BY st.import_month, st.site_code
         )
         SELECT
             fd.import_month,
@@ -429,19 +450,24 @@ async def _fetch_store_stats_rows(
                 WHEN COALESCE(SUM(fd.total_quantity), 0) > 0
                 THEN ROUND(COALESCE(SUM(fd.total_sales), 0) / SUM(fd.total_quantity), 2)
                 ELSE NULL
-            END AS medie_produs
+            END AS medie_produs,
+            COALESCE(rs.return_receipt_count, 0)::INT AS return_receipt_count
         FROM filtered_days fd
         CROSS JOIN forecast_meta fm
         LEFT JOIN store_targets stg
             ON stg.import_month = fd.import_month
             AND stg.site_code = fd.site_code
+        LEFT JOIN return_summary rs
+            ON rs.import_month = fd.import_month
+            AND rs.site_code = fd.site_code
         GROUP BY
             fd.import_month,
             fd.site_code,
             fd.locatie,
             fd.firma,
             fd.regional,
-            fd.asm
+            fd.asm,
+            rs.return_receipt_count
         ORDER BY proc_realizare_target DESC NULLS LAST, total_vanzari DESC, fd.locatie ASC
         """,
         *params,
@@ -567,6 +593,15 @@ async def _fetch_agent_stats_rows(
     )
     if current_scope and not include_closed_stores:
         agent_clauses.append("agg.is_active = true")
+    return_clauses = _scope_clauses(
+        positions,
+        current_scope=True,
+        include_closed_stores=include_closed_stores or not current_scope,
+        source_alias="st",
+        month_alias="st.import_month",
+        month_position=1,
+    )
+    return_clauses_sql = " AND ".join(return_clauses)
     rows = await conn.fetch(
         f"""
         WITH store_agent_counts AS (
@@ -577,6 +612,19 @@ async def _fetch_agent_stats_rows(
             FROM reporting_agent_month
             WHERE import_month = $1
             GROUP BY import_month, site_code
+        ),
+        return_summary AS (
+            SELECT
+                st.import_month,
+                st.site_code,
+                st.agent,
+                COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+            FROM sales_transactions st
+            JOIN stores s ON s.site_code = st.site_code
+            WHERE st.import_month = $1
+              AND NOT st.is_cartela
+              AND {return_clauses_sql}
+            GROUP BY st.import_month, st.site_code, st.agent
         ),
         agent_base AS (
             SELECT
@@ -653,8 +701,13 @@ async def _fetch_agent_stats_rows(
                 WHEN agg.effective_target > 0
                 THEN ROUND(agg.total_sales * 100.0 / agg.effective_target, 2)
                 ELSE NULL
-            END AS proc_realizare_target
+            END AS proc_realizare_target,
+            COALESCE(rs.return_receipt_count, 0)::INT AS return_receipt_count
         FROM agent_base agg
+        LEFT JOIN return_summary rs
+            ON rs.import_month = agg.import_month
+            AND rs.site_code = agg.site_code
+            AND rs.agent = agg.agent
         WHERE {" AND ".join(agent_clauses)}
         ORDER BY agg.total_sales DESC, agg.agent ASC
         """,
@@ -767,6 +820,15 @@ async def _fetch_regional_stats(
         month_position=1,
     )
     clauses = query_clauses or ["true"]
+    return_clauses = _scope_clauses(
+        positions,
+        current_scope=True,
+        include_closed_stores=include_closed_stores or not current_scope,
+        source_alias="st",
+        month_alias="st.import_month",
+        month_position=1,
+    )
+    return_clauses_sql = " AND ".join(return_clauses)
     rows = await conn.fetch(
         f"""
         WITH regional_base AS (
@@ -821,6 +883,17 @@ async def _fetch_regional_stats(
                 WHERE import_month = $1
             ) rid ON true
             WHERE snap.import_month = $1
+        ),
+        return_summary AS (
+            SELECT
+                s.regional,
+                COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+            FROM sales_transactions st
+            JOIN stores s ON s.site_code = st.site_code
+            WHERE st.import_month = $1
+              AND NOT st.is_cartela
+              AND {return_clauses_sql}
+            GROUP BY s.regional
         )
         SELECT
             rb.import_month,
@@ -860,10 +933,12 @@ async def _fetch_regional_stats(
                 WHEN rb.qty_total > 0
                 THEN ROUND(rb.focus_quantity * 100.0 / rb.qty_total, 2)
                 ELSE NULL
-            END AS prc_focus_acc_qty
+            END AS prc_focus_acc_qty,
+            COALESCE(rs.return_receipt_count, 0)::INT AS return_receipt_count
         FROM regional_base rb
         CROSS JOIN forecast_meta fm
         LEFT JOIN regional_targets rt ON rt.regional = rb.regional
+        LEFT JOIN return_summary rs ON rs.regional = rb.regional
         ORDER BY rb.total_vanzari DESC, rb.regional ASC
         """,
         *params,
@@ -1546,6 +1621,7 @@ async def _fetch_promo_incentive_summary(
     promo_sales: Decimal = Decimal("0")
     incentive_qty = 0
     incentive_value: Decimal = Decimal("0")
+    incentive_qualified_qty = 0
     incentive_qualified_stores = 0
     incentive_qualified_agents = 0
     promo_excluded_units = campaign_context.promo_excluded_units
@@ -1666,7 +1742,17 @@ async def _fetch_promo_incentive_summary(
             ))
 
             qualified_store_codes = [sc for sc, v in achievements.items() if v is not None and v >= 0.9]
+            qualified_store_set = set(qualified_store_codes)
             incentive_qualified_stores = len(qualified_store_codes)
+            incentive_qualified_qty = sum(
+                max(
+                    0,
+                    int(r["qty"])
+                    - promo_excluded_by_site_item.get((r["site_code"], r["item_code"]), 0),
+                )
+                for r in item_rows
+                if r["site_code"] in qualified_store_set
+            )
             incentive_qualified_agents = 0
             if qualified_store_codes:
                 aq_row = await conn.fetchrow(
@@ -1688,6 +1774,7 @@ async def _fetch_promo_incentive_summary(
         promo_impact=promo_impact,
         incentive_qty=incentive_qty,
         incentive_value=incentive_value,
+        incentive_qualified_qty=incentive_qualified_qty,
         incentive_qualified_stores=incentive_qualified_stores,
         incentive_qualified_agents=incentive_qualified_agents,
     )

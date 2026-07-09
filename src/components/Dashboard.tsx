@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight,
   Building2,
   CalendarRange,
   ChevronDown,
   MapPin,
   PieChart as PieChartIcon,
-  Sparkles,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -34,14 +32,11 @@ import type {
   CategoryMixItem,
   DailySalesPoint,
   DashboardAllResponse,
-  DashboardSpecialCard,
   DashboardSummary,
   PeriodComparisonPayload,
   PeriodComparisonPoint,
   PerformanceDetailLevel,
   PerformanceDetailResponse,
-  PremiumGlassAnalysis,
-  PromoIncentiveSummary,
   ReceiptBucketItem,
   RegionalStat,
   StoreStat,
@@ -55,7 +50,6 @@ import { AiForecastPanel } from './AiForecastPanel';
 import { SideDrawer } from './common/SideDrawer';
 import { useSortable } from '../lib/useSortable';
 import {
-  CampaignMiniCard,
   CompactCurrency,
   CompactPieSection,
   DeltaCard,
@@ -74,7 +68,6 @@ import {
   getStoreSortValue,
   sumChartValues,
 } from './dashboard/DashboardWidgets';
-import { DEFAULT_PROMO_INCENTIVE } from './dashboard/dashboardDefaults';
 import { useDashboardData, type AggregatedDashboardDetails } from './dashboard/useDashboardData';
 import { useAuth } from '../auth/AuthContext';
 import { canAccessSalaries } from '../auth/permissions';
@@ -96,7 +89,7 @@ type PerformanceSelection = {
   key: string;
   site_code?: string;
 };
-type MonthlyPerformanceMetric = 'sales' | 'bon2acc' | 'focus';
+type MonthlyPerformanceMetric = 'sales' | 'bon2acc' | 'focus' | 'returns';
 type StoreSortKey =
   | 'locatie'
   | 'site_code'
@@ -110,7 +103,8 @@ type StoreSortKey =
   | 'nr_agenti'
   | 'zile_active'
   | 'medie_zilnica'
-  | 'medie_produs';
+  | 'medie_produs'
+  | 'return_receipt_count';
 type AgentSortKey =
   | 'locatie'
   | 'agent'
@@ -125,7 +119,8 @@ type AgentSortKey =
   | 'medie_zilnica'
   | 'medie_produs'
   | 'proc_bon2acc'
-  | 'prc_focus_acc_qty';
+  | 'prc_focus_acc_qty'
+  | 'return_receipt_count';
 
 type RegionalSortKey =
   | 'regional'
@@ -140,7 +135,8 @@ type RegionalSortKey =
   | 'medie_zilnica'
   | 'medie_produs'
   | 'proc_bon2acc'
-  | 'prc_focus_acc_qty';
+  | 'prc_focus_acc_qty'
+  | 'return_receipt_count';
 
 const TABLE_MAX_HEIGHT_CLASS = 'max-h-[26rem]';
 const HUB_TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-[10.5px]';
@@ -170,6 +166,7 @@ const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
   { key: 'qty_total', label: 'Cantitate' },
   { key: 'medie_produs', label: 'Medie produs' },
   { key: 'nr_bonuri', label: 'Nr bonuri' },
+  { key: 'return_receipt_count', label: 'Retururi' },
   { key: 'nr_agenti', label: 'Agenti' },
   { key: 'zile_active', label: 'Zile active' },
 ];
@@ -185,6 +182,7 @@ const AGENT_COLUMNS: Array<{ key: AgentSortKey; label: string }> = [
   { key: 'acc_qty_realizat', label: 'Cantitate' },
   { key: 'medie_produs', label: 'Medie produs' },
   { key: 'nr_bonuri', label: 'Nr bonuri' },
+  { key: 'return_receipt_count', label: 'Retururi' },
   { key: 'zile_lucrate', label: 'Zile lucrate' },
   { key: 'medie_zilnica', label: 'Medie zilnica' },
   { key: 'proc_bon2acc', label: 'ProcBon2Acc' },
@@ -363,7 +361,7 @@ function aggregateRegionals(rows: RegionalStat[][]): RegionalStat[] {
   for (const group of rows) {
     for (const row of group) {
       const key = row.regional;
-      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, promo_qty: 0, incentive_qty: 0, medie_zilnica: null, medie_produs: null, proc_bon2acc: null, prc_focus_acc_qty: null };
+      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, promo_qty: 0, incentive_qty: 0, medie_zilnica: null, medie_produs: null, proc_bon2acc: null, prc_focus_acc_qty: null, return_receipt_count: 0 };
       current.total_vanzari += n(row.total_vanzari);
       current.qty_total += n(row.qty_total);
       current.nr_bonuri += n(row.nr_bonuri);
@@ -372,6 +370,7 @@ function aggregateRegionals(rows: RegionalStat[][]): RegionalStat[] {
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
       current.incentive_qty += n(row.incentive_qty);
+      current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
       currentWeighted.bon2 += (n(row.proc_bon2acc) / 100) * n(row.nr_bonuri);
       currentWeighted.focus += (n(row.prc_focus_acc_qty) / 100) * n(row.qty_total);
@@ -436,7 +435,7 @@ function aggregateStores(rows: StoreStat[][]): StoreStat[] {
   const map = new Map<string, StoreStat>();
   for (const group of rows) {
     for (const row of group) {
-      const current = map.get(row.site_code) ?? { ...row, import_month: '', total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, medie_produs: null, promo_qty: 0, incentive_qty: 0 };
+      const current = map.get(row.site_code) ?? { ...row, import_month: '', total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, medie_produs: null, promo_qty: 0, incentive_qty: 0, return_receipt_count: 0 };
       current.total_vanzari += n(row.total_vanzari);
       current.qty_total = n(current.qty_total) + n(row.qty_total);
       current.nr_bonuri += n(row.nr_bonuri);
@@ -445,6 +444,7 @@ function aggregateStores(rows: StoreStat[][]): StoreStat[] {
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
       current.incentive_qty += n(row.incentive_qty);
+      current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       map.set(row.site_code, current);
     }
   }
@@ -463,7 +463,7 @@ function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
   for (const group of rows) {
     for (const row of group) {
       const key = `${row.site_code}:${row.agent}`;
-      const current = map.get(key) ?? { ...row, import_month: '', acc_qty_realizat: 0, nr_bonuri: 0, nr_bon2acc: 0, proc_bon2acc: null, total_vanzari: 0, zile_lucrate: 0, medie_zilnica: null, medie_produs: null, acc_focus_qty: 0, prc_focus_acc_qty: null, target: 0, proc_realizare_target: null, promo_qty: 0, incentive_qty: 0 };
+      const current = map.get(key) ?? { ...row, import_month: '', acc_qty_realizat: 0, nr_bonuri: 0, nr_bon2acc: 0, proc_bon2acc: null, total_vanzari: 0, zile_lucrate: 0, medie_zilnica: null, medie_produs: null, acc_focus_qty: 0, prc_focus_acc_qty: null, target: 0, proc_realizare_target: null, promo_qty: 0, incentive_qty: 0, return_receipt_count: 0 };
       current.acc_qty_realizat += n(row.acc_qty_realizat);
       current.nr_bonuri += n(row.nr_bonuri);
       current.nr_bon2acc += n(row.nr_bon2acc);
@@ -473,6 +473,7 @@ function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
       current.target = n(current.target) + n(row.target);
       current.promo_qty += n(row.promo_qty);
       current.incentive_qty += n(row.incentive_qty);
+      current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       map.set(key, current);
     }
   }
@@ -486,21 +487,6 @@ function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
     prc_focus_acc_qty: pct(row.acc_focus_qty, row.acc_qty_realizat),
     proc_realizare_target: pct(row.total_vanzari, n(row.target)),
   }));
-}
-
-function aggregatePromoIncentive(rows: PromoIncentiveSummary[]): PromoIncentiveSummary {
-  return rows.reduce<PromoIncentiveSummary>(
-    (acc, item) => ({
-      promo_qty: acc.promo_qty + n(item.promo_qty),
-      promo_sales: acc.promo_sales + n(item.promo_sales),
-      promo_impact: acc.promo_impact + n(item.promo_impact),
-      incentive_qty: acc.incentive_qty + n(item.incentive_qty),
-      incentive_value: acc.incentive_value + n(item.incentive_value),
-      incentive_qualified_stores: Math.max(acc.incentive_qualified_stores, n(item.incentive_qualified_stores)),
-      incentive_qualified_agents: Math.max(acc.incentive_qualified_agents, n(item.incentive_qualified_agents)),
-    }),
-    { ...DEFAULT_PROMO_INCENTIVE }
-  );
 }
 
 function aggregatePeriodComparisons(rows: Array<PeriodComparisonPayload | null>): PeriodComparisonPayload | null {
@@ -536,70 +522,6 @@ function aggregatePeriodComparisons(rows: Array<PeriodComparisonPayload | null>)
   };
 }
 
-function aggregatePremiumGlass(responses: DashboardAllResponse[]): PremiumGlassAnalysis | null {
-  const analyses = responses.map((response) => response.premium_glass).filter((value): value is PremiumGlassAnalysis => value !== null);
-  if (analyses.length === 0) return null;
-  const summary = analyses.reduce<PremiumGlassAnalysis['summary']>(
-    (acc, item) => ({
-      ...acc,
-      total_qty: acc.total_qty + n(item.summary.total_qty),
-      total_sales: acc.total_sales + n(item.summary.total_sales),
-      premium_qty: acc.premium_qty + n(item.summary.premium_qty),
-      premium_sales: acc.premium_sales + n(item.summary.premium_sales),
-      regular_qty: acc.regular_qty + n(item.summary.regular_qty),
-      regular_sales: acc.regular_sales + n(item.summary.regular_sales),
-      active_stores: Math.max(acc.active_stores, n(item.summary.active_stores)),
-      active_agents: Math.max(acc.active_agents, n(item.summary.active_agents)),
-      premium_active_stores: Math.max(acc.premium_active_stores, n(item.summary.premium_active_stores)),
-      premium_active_agents: Math.max(acc.premium_active_agents, n(item.summary.premium_active_agents)),
-      target_model_count: Math.max(acc.target_model_count, n(item.summary.target_model_count)),
-    }),
-    { ...analyses[0].summary, total_qty: 0, total_sales: 0, premium_qty: 0, premium_sales: 0, regular_qty: 0, regular_sales: 0, active_stores: 0, active_agents: 0, premium_active_stores: 0, premium_active_agents: 0, target_model_count: 0 }
-  );
-  summary.premium_qty_share_pct = pct(summary.premium_qty, summary.total_qty);
-  summary.premium_sales_share_pct = pct(summary.premium_sales, summary.total_sales);
-  const models = aggregateByKey(analyses.flatMap((item) => item.models), (item) => item.model_key, (base, item) => ({
-    ...base,
-    premium_qty: n(base.premium_qty) + n(item.premium_qty),
-    regular_qty: n(base.regular_qty) + n(item.regular_qty),
-    total_qty: n(base.total_qty) + n(item.total_qty),
-    premium_sales: n(base.premium_sales) + n(item.premium_sales),
-    regular_sales: n(base.regular_sales) + n(item.regular_sales),
-    total_sales: n(base.total_sales) + n(item.total_sales),
-    premium_item_count: Math.max(n(base.premium_item_count), n(item.premium_item_count)),
-    regular_item_count: Math.max(n(base.regular_item_count), n(item.regular_item_count)),
-    premium_qty_share_pct: pct(n(base.premium_qty) + n(item.premium_qty), n(base.total_qty) + n(item.total_qty)),
-  })).sort((a, b) => n(b.total_qty) - n(a.total_qty));
-  const surfaces = aggregateByKey(analyses.flatMap((item) => item.surfaces ?? []), (item) => item.surface_key, (base, item) => ({
-    ...base,
-    premium_qty: n(base.premium_qty) + n(item.premium_qty),
-    regular_qty: n(base.regular_qty) + n(item.regular_qty),
-    total_qty: n(base.total_qty) + n(item.total_qty),
-    premium_sales: n(base.premium_sales) + n(item.premium_sales),
-    regular_sales: n(base.regular_sales) + n(item.regular_sales),
-    total_sales: n(base.total_sales) + n(item.total_sales),
-    premium_qty_share_pct: pct(n(base.premium_qty) + n(item.premium_qty), n(base.total_qty) + n(item.total_qty)),
-  })).sort((a, b) => n(b.total_qty) - n(a.total_qty));
-  return {
-    summary,
-    models,
-    surfaces,
-    managers: analyses.flatMap((item) => item.managers),
-    stores: analyses.flatMap((item) => item.stores),
-    agents: analyses.flatMap((item) => item.agents),
-    products: analyses.flatMap((item) => item.products),
-  };
-}
-
-function aggregateByKey<T>(rows: T[], keyFn: (row: T) => string, merge: (base: T, row: T) => T): T[] {
-  const map = new Map<string, T>();
-  for (const row of rows) {
-    const key = keyFn(row);
-    map.set(key, map.has(key) ? merge(map.get(key)!, row) : { ...row });
-  }
-  return [...map.values()];
-}
-
 export function aggregateDashboardDetails(
   responses: DashboardAllResponse[],
   selectedMonths: string[]
@@ -614,10 +536,7 @@ export function aggregateDashboardDetails(
     dailyLastYear: selectedMonths.length === 1 ? (latest.daily_last_year ?? []) : [],
     categoryMix: aggregateCategoryMix(responses.map((response) => response.category_mix)),
     brandMix: aggregateBrandMix(responses.map((response) => response.brand_mix)),
-    specialCards: latest.special_cards,
     periodComparison: aggregatePeriodComparisons(responses.map((response) => response.period_comparison)),
-    promoIncentive: aggregatePromoIncentive(responses.map((response) => response.promo_incentive ?? DEFAULT_PROMO_INCENTIVE)),
-    premiumGlass: selectedMonths.length === 1 ? latest.premium_glass ?? null : aggregatePremiumGlass(responses),
     regionals: aggregateRegionals(responses.map((response) => response.regionals ?? [])),
     asms: aggregateAsms(responses.map((response) => response.asms ?? [])),
     stores: aggregateStores(responses.map((response) => response.stores ?? [])),
@@ -685,14 +604,11 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     stores,
     dailySales,
     dailyLastYear,
-    specialCards,
     periodComparison,
     categoryMix,
     receiptBucketMix,
     focusSubcategoryMix,
     brandMix,
-    promoIncentive,
-    premiumGlass,
     regionals,
     currentHistory,
     currentHistoryLoading,
@@ -705,9 +621,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     historyDailySales,
     historyCategoryMix,
     historyBrandMix,
-    historySpecialCards,
-    historyPromoIncentive,
-    historyPremiumGlass,
     historyRegionals,
     historyStores,
     historyAgents,
@@ -773,13 +686,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     const cy = parseInt(currentMonth.slice(0, 4));
     return Array.from({ length: cy - HISTORY_START_YEAR + 1 }, (_, i) => HISTORY_START_YEAR + i);
   }, [currentMonth]);
-
-  const promoSummary = useMemo(() => {
-    const promotion = specialCards.find((card) => card.key === 'promotion');
-    const incentive = specialCards.find((card) => card.key === 'incentive');
-    const premium = specialCards.find((card) => card.key === 'premium_glass');
-    return { promotion, incentive, premium };
-  }, [specialCards]);
 
   const dailyChartData = useMemo(() => {
     const lastYearMap = new Map<string, number>();
@@ -951,22 +857,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     return `Luna in curs ${currentMonth} este inca in actualizare pana in ziua ${summary.imported_day_of_month ?? '-'} din ${summary.days_in_month ?? '-'}.`;
   }, [summary, currentMonth]);
 
-  const handleOpenFocus = useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent('unihub:navigate', {
-        detail: { tab: 'focus', section: 'promo' },
-      })
-    );
-  }, []);
-
-  const handleOpenPremiumFocus = useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent('unihub:navigate', {
-        detail: { tab: 'focus', section: 'focus' },
-      })
-    );
-  }, []);
-
   const handleToggleHistoryMonth = useCallback((month: string) => {
     const isSelected = draftSelectedHistoryMonths.includes(month);
     if (isSelected && draftSelectedHistoryMonths.length === 1) {
@@ -1086,13 +976,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       })),
     [historyBrandMix]
   );
-
-  const historyPromoSummary = useMemo(() => {
-    const promotion = historySpecialCards.find((card) => card.key === 'promotion');
-    const incentive = historySpecialCards.find((card) => card.key === 'incentive');
-    const premium = historySpecialCards.find((card) => card.key === 'premium_glass');
-    return { promotion, incentive, premium };
-  }, [historySpecialCards]);
 
   const brandMixChartData = useMemo(
     () =>
@@ -1357,8 +1240,17 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
             <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
               <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
               <Metric label="Accesorii" value={formatInt(summary.total_quantity)} className="p-2" />
-              <Metric label="Magazine" value={formatInt(summary.total_stores)} className="p-2" />
-              <Metric label="Agenti" value={formatInt(summary.total_agents)} className="p-2" />
+              <Metric
+                label="Magazine / Agenți"
+                value={
+                  <span className="flex items-baseline gap-1.5">
+                    <span>{formatInt(summary.total_stores)}</span>
+                    <span className="text-slate-300 dark:text-slate-600">/</span>
+                    <span>{formatInt(summary.total_agents)}</span>
+                  </span>
+                }
+                className="p-2"
+              />
               <Metric label="Zile lucrate" value={formatInt(summary.working_days)} className="p-2" />
               <Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} className="p-2" />
               <Metric label="Medie produs" value={formatAmount(summary.medie_produs ?? 0)} className="p-2" />
@@ -1380,7 +1272,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3">
             <div className="glass rounded-3xl p-4 overflow-hidden min-w-0">
               <div className="mb-4 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
@@ -1420,59 +1312,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 </div>
               )}
             </div>
-
-            <button
-              type="button"
-              onClick={handleOpenFocus}
-              className="glass rounded-3xl p-4 text-left transition hover:shadow-xl"
-            >
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={16} className="text-indigo-500" />
-                  <h3 className="text-sm font-bold">Promo & incentive</h3>
-                </div>
-                <div className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600">
-                  Deschide Focus
-                  <ArrowRight size={14} />
-                </div>
-              </div>
-              <div className="grid gap-3">
-                {promoSummary.promotion &&
-                  promoSummary.promotion.status !== 'missing_config' && (
-                    <CampaignMiniCard
-                      label="Promo"
-                      title={promoSummary.promotion.title}
-                      status={promoSummary.promotion.status_label ?? 'Fara date'}
-                      metrics={[
-                        { label: 'Cantitate', value: formatInt(promoIncentive.promo_qty) },
-                        { label: 'Impact', value: formatAmount(promoIncentive.promo_impact) },
-                      ]}
-                      footer={`Vanzari promo: ${formatAmount(promoIncentive.promo_sales)}`}
-                    />
-                  )}
-                <CampaignMiniCard
-                  label="Incentive"
-                  title={promoSummary.incentive?.title ?? 'Incentive neconfigurat'}
-                  status={promoSummary.incentive?.status_label ?? 'Fara date'}
-                  metrics={[
-                    { label: 'Cantitate', value: formatInt(promoIncentive.incentive_qty) },
-                    { label: 'Valoare', value: formatAmount(promoIncentive.incentive_value) },
-                    ...(promoSummary.incentive ? [
-                      { label: 'Magazine calificate', value: formatInt(promoIncentive.incentive_qualified_stores) },
-                      { label: 'Agenți calificați', value: formatInt(promoIncentive.incentive_qualified_agents) },
-                    ] : []),
-                  ]}
-                  footer={promoSummary.incentive?.coverage_note ?? 'Bonus per unitate eligibila'}
-                />
-              </div>
-            </button>
           </div>
-
-          <PremiumGlassHubCard
-            analysis={premiumGlass}
-            card={promoSummary.premium}
-            onOpenFocus={handleOpenPremiumFocus}
-          />
 
           <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
             <div className="glass rounded-3xl p-4">
@@ -1629,6 +1469,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
                   { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
                   { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                  { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
                   { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
                   { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
                 ]}
@@ -1675,6 +1516,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.medie_produs ?? 0)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(store.return_receipt_count)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
                     </tr>
@@ -1706,6 +1548,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
                     { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
                     { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                    { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
                     { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
                     { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
                     { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
@@ -1753,6 +1596,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_produs ?? 0)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
+                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(agentRow.return_receipt_count)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_zilnica ?? 0)}</td>
                       <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
@@ -2064,10 +1908,20 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
                   <Metric label="Bonuri" value={formatInt(historySummary?.total_receipts ?? selectedHistoryPoint.total_receipts)} className="p-2" />
                   <Metric label="Accesorii" value={formatInt(historySummary?.total_quantity ?? selectedHistoryPoint.total_quantity)} className="p-2" />
-                  <Metric label="Magazine" value={formatInt(historySummary?.total_stores ?? selectedHistoryPoint.total_stores)} className="p-2" />
-                  <Metric label="Agenti" value={formatInt(historySummary?.total_agents ?? selectedHistoryPoint.total_agents)} className="p-2" />
+                  <Metric
+                    label="Magazine / Agenți"
+                    value={
+                      <span className="flex items-baseline gap-1.5">
+                        <span>{formatInt(historySummary?.total_stores ?? selectedHistoryPoint.total_stores)}</span>
+                        <span className="text-slate-300 dark:text-slate-600">/</span>
+                        <span>{formatInt(historySummary?.total_agents ?? selectedHistoryPoint.total_agents)}</span>
+                      </span>
+                    }
+                    className="p-2"
+                  />
                   <Metric label="Zile lucrate" value={formatInt(historySummary?.working_days ?? selectedHistoryPoint.working_days)} className="p-2" />
                   <Metric label="Med. zilnica" value={formatAmount(historySummary?.daily_average ?? selectedHistoryPoint.daily_average ?? 0)} className="p-2" />
+                  <Metric label="Medie produs" value={formatAmount(historySummary?.medie_produs ?? selectedHistoryPoint.medie_produs ?? 0)} className="p-2" />
                   <Metric
                     label="Val. medie bon"
                     value={formatAmount(
@@ -2084,59 +1938,6 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                   />
                 </div>
               </div>
-
-              {/* Promo & Incentive — only rendered when at least one card is active */}
-              {(() => {
-                const showPromo = historyPromoSummary.promotion &&
-                  !['missing_config', 'inactive'].includes(historyPromoSummary.promotion.status);
-                const showIncentive = historyPromoSummary.incentive &&
-                  !['missing_config', 'inactive'].includes(historyPromoSummary.incentive.status);
-                if (!showPromo && !showIncentive) return null;
-                return (
-                  <div className="glass rounded-3xl p-4">
-                    <div className="mb-4 flex items-center gap-2">
-                      <Sparkles size={16} className="text-indigo-500" />
-                      <h3 className="text-sm font-bold">Promo & incentive</h3>
-                    </div>
-                    <div className="grid gap-3">
-                      {showPromo && (
-                        <CampaignMiniCard
-                          label="Promo"
-                          title={historyPromoSummary.promotion!.title}
-                          status={historyPromoSummary.promotion!.status_label ?? 'Fara date'}
-                          metrics={[
-                            { label: 'Cantitate', value: formatInt(historyPromoIncentive.promo_qty) },
-                            { label: 'Impact', value: formatAmount(historyPromoIncentive.promo_impact) },
-                          ]}
-                          footer={`Vanzari promo: ${formatAmount(historyPromoIncentive.promo_sales)}`}
-                        />
-                      )}
-                      {showIncentive && (
-                        <CampaignMiniCard
-                          label="Incentive"
-                          title={historyPromoSummary.incentive!.title}
-                          status={historyPromoSummary.incentive!.status_label ?? 'Fara date'}
-                          metrics={[
-                            { label: 'Cantitate', value: formatInt(historyPromoIncentive.incentive_qty) },
-                            { label: 'Valoare', value: formatAmount(historyPromoIncentive.incentive_value) },
-                            ...(historyPromoSummary.incentive ? [
-                              { label: 'Magazine calificate', value: formatInt(historyPromoIncentive.incentive_qualified_stores) },
-                              { label: 'Agenți calificați', value: formatInt(historyPromoIncentive.incentive_qualified_agents) },
-                            ] : []),
-                          ]}
-                          footer={historyPromoSummary.incentive!.coverage_note ?? 'Bonus per unitate eligibila'}
-                        />
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <PremiumGlassHubCard
-                analysis={historyPremiumGlass}
-                card={historyPromoSummary.premium}
-                onOpenFocus={handleOpenPremiumFocus}
-              />
 
               {/* Evolutie zilnica + Top categorii si branduri */}
               <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
@@ -2282,6 +2083,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
                       { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
                       { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                      { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
                       { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
                       { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
                     ]}
@@ -2321,6 +2123,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
+                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(store.return_receipt_count)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
                         </tr>
@@ -2351,6 +2154,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
                       { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
                       { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                      { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
                       { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
                       { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
                       { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
@@ -2388,6 +2192,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                           <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_realizare_target)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
+                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(agentRow.return_receipt_count)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_zilnica ?? 0)}</td>
                           <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
@@ -2446,6 +2251,7 @@ function PerformanceDetailDrawer({
         : (point.target_progress_pct ?? null),
       bon2acc: point.proc_bon2acc ?? null,
       focus: point.prc_focus_acc_qty ?? null,
+      returns: Number(point.return_receipt_count ?? 0),
     })),
     [detail],
   );
@@ -2484,13 +2290,18 @@ function PerformanceDetailDrawer({
     ? 'Vanzare'
     : monthlyMetric === 'bon2acc'
       ? 'ProcBon2Acc'
-      : 'PrcFocus/AccQtty';
+      : monthlyMetric === 'focus'
+        ? 'PrcFocus/AccQtty'
+        : 'Retururi';
   const monthlyMetricColor = monthlyMetric === 'sales'
     ? '#4f46e5'
     : monthlyMetric === 'bon2acc'
       ? '#0f766e'
-      : '#db2777';
-  const showMonthlyTargetLines = detail?.level !== 'agent';
+      : monthlyMetric === 'focus'
+        ? '#db2777'
+        : '#dc2626';
+  const showMonthlyTargetLines = detail?.level !== 'agent' && monthlyMetric === 'sales';
+  const isReturnsMetric = monthlyMetric === 'returns';
 
   useEffect(() => {
     if (!open || !canViewSalaries || detail?.level !== 'agent' || !selection?.site_code) {
@@ -2596,6 +2407,7 @@ function PerformanceDetailDrawer({
                       { key: 'sales', label: 'Vanzare' },
                       { key: 'bon2acc', label: 'ProcBon2Acc' },
                       { key: 'focus', label: 'PrcFocus/AccQtty' },
+                      { key: 'returns', label: 'Retururi' },
                     ].map((option) => (
                       <button
                         key={option.key}
@@ -2603,7 +2415,9 @@ function PerformanceDetailDrawer({
                         onClick={() => setMonthlyMetric(option.key as MonthlyPerformanceMetric)}
                         className={`rounded-lg px-2 py-1 text-[11px] font-bold transition ${
                           monthlyMetric === option.key
-                            ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
+                            ? option.key === 'returns'
+                              ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950 dark:text-rose-400'
+                              : 'bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                             : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
                         }`}
                       >
@@ -2617,7 +2431,13 @@ function PerformanceDetailDrawer({
                     <ComposedChart data={historyData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                      {monthlyMetric === 'sales' ? (
+                      {isReturnsMetric ? (
+                        <>
+                          <YAxis yAxisId="returns" tick={{ fontSize: 10 }} tickFormatter={(value) => formatInt(Number(value))} width={48} allowDecimals={false} />
+                          <Tooltip formatter={(value: number) => [formatInt(value), 'Retururi']} labelFormatter={(label) => `Luna ${label}`} />
+                          <Bar yAxisId="returns" dataKey="returns" name="Retururi" fill={monthlyMetricColor} radius={[4, 4, 0, 0]} />
+                        </>
+                      ) : monthlyMetric === 'sales' ? (
                         <>
                           <YAxis yAxisId="sales" tick={{ fontSize: 10 }} tickFormatter={(value) => formatAmount(Number(value))} width={58} />
                           {showMonthlyTargetLines && (
@@ -2866,52 +2686,4 @@ function scoreBarClass(score: number): string {
   if (score >= 70) return 'bg-indigo-500';
   if (score >= 55) return 'bg-amber-500';
   return 'bg-rose-500';
-}
-
-function PremiumGlassHubCard({
-  analysis,
-  card,
-  onOpenFocus,
-}: {
-  analysis: PremiumGlassAnalysis | null;
-  card?: DashboardSpecialCard;
-  onOpenFocus: () => void;
-}) {
-  const summary = analysis?.summary;
-  const topModel = analysis?.models[0] ?? null;
-
-  return (
-    <button
-      type="button"
-      onClick={onOpenFocus}
-      className="glass w-full rounded-3xl p-4 text-left transition hover:shadow-xl"
-    >
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-indigo-500" />
-          <h3 className="text-sm font-bold">Folii Premium</h3>
-        </div>
-        <div className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600">
-          Detalii in Focus
-          <ArrowRight size={14} />
-        </div>
-      </div>
-      <CampaignMiniCard
-        label={card?.status_label ?? 'Analiza'}
-        title={card?.subtitle ?? 'Ecran + camera premium'}
-        status={card?.coverage_note ?? 'Modele tinta verificate din vanzari'}
-        metrics={[
-          { label: 'Total folii', value: formatInt(summary?.total_qty ?? 0) },
-          { label: 'Premium', value: formatInt(summary?.premium_qty ?? 0) },
-          { label: 'Rest', value: formatInt(summary?.regular_qty ?? 0) },
-          { label: 'Share cant.', value: formatPercent(summary?.premium_qty_share_pct ?? null) },
-        ]}
-        footer={
-          topModel
-            ? `Model lider: ${topModel.model_label}, ${formatInt(topModel.premium_qty)} premium vs ${formatInt(topModel.regular_qty)} rest`
-            : 'Nu exista vanzari eligibile pentru filtrarea curenta'
-        }
-      />
-    </button>
-  );
 }

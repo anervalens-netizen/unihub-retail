@@ -160,6 +160,7 @@ export interface MonthlyHistoryPoint {
   target_progress_pct: number | null;
   total_quantity: number;
   total_receipts: number;
+  return_receipt_count: number;
   proc_bon2acc: number | null;
   prc_focus_acc_qty: number | null;
   total_stores: number;
@@ -367,6 +368,7 @@ export interface AgentStat {
   proc_realizare_target: number | null;
   promo_qty: number;
   incentive_qty: number;
+  return_receipt_count: number;
 }
 
 export interface StoreStat {
@@ -387,6 +389,7 @@ export interface StoreStat {
   medie_produs: number | null;
   promo_qty: number;
   incentive_qty: number;
+  return_receipt_count: number;
 }
 
 export interface RegionalStat {
@@ -405,6 +408,7 @@ export interface RegionalStat {
   medie_produs: number | null;
   proc_bon2acc: number | null;
   prc_focus_acc_qty: number | null;
+  return_receipt_count: number;
 }
 
 export type PerformanceDetailLevel = 'regional' | 'store' | 'agent';
@@ -649,6 +653,9 @@ export interface CampaignsPromotionsResponse {
   incentive_description: string;
   incentive_qty: number;
   incentive_value: number;
+  incentive_qualified_qty: number;
+  incentive_qualified_stores: number;
+  incentive_qualified_agents: number;
   incentive_product_count: number;
   incentive_categories: IncentiveCategory[];
   has_active_promotion: boolean;
