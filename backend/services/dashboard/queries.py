@@ -1795,8 +1795,6 @@ async def _fetch_promo_incentive_summary(
                                 **definition,
                                 "start_date": range_start,
                                 "end_date": range_end,
-                                "actuals_source_file": None,
-                                "actuals_file": None,
                             },
                             firma=firma,
                             regional=regional,

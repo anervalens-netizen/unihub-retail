@@ -6,7 +6,7 @@ import { Download, Eye, FileSpreadsheet, LineChart as LineChartIcon, SlidersHori
 import { downloadExport, getExportCatalog, previewExport } from '../api/exports';
 import type { ExportCatalog, ExportColumnDef, ExportFilters, ExportPreview, ExportRequest } from '../api/exports';
 import { getAvailableMonths, getFilterOptions } from '../api/filters';
-import { getImportHistory, getImportJobStatus, uploadSalesFile } from '../api/imports';
+import { getImportHistory, getImportJobStatus, uploadPromoActualsFile, uploadSalesFile } from '../api/imports';
 import type { FilterOptions, ImportHistoryEntry } from '../api/types';
 import { cn } from '../lib/utils';
 import { getCachedView, setCachedView } from '../lib/viewCache';
@@ -72,6 +72,11 @@ export function Settings({
   const canUseExports = canExportReports(user?.profile, user?.access_token);
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [promoActualsFile, setPromoActualsFile] = useState<File | null>(null);
+  const [promoActualsMonth, setPromoActualsMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [promoActualsCutoff, setPromoActualsCutoff] = useState(() => new Date().toISOString().slice(0, 10));
+  const [promoActualsUploading, setPromoActualsUploading] = useState(false);
+  const [promoActualsMessage, setPromoActualsMessage] = useState('');
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
@@ -275,6 +280,28 @@ export function Settings({
     }
   };
 
+  const handlePromoActualsUpload = async () => {
+    if (!promoActualsFile) return;
+    try {
+      setPromoActualsUploading(true);
+      setPromoActualsMessage('');
+      const result = await uploadPromoActualsFile(
+        promoActualsFile,
+        promoActualsMonth,
+        promoActualsCutoff,
+      );
+      setPromoActualsMessage(
+        `Raport aplicat: ${result.promo_units.toLocaleString('ro-RO')} unități promo, `
+        + `cutoff ${result.cutoff_date}, ${result.updated_promotions} promoții actualizate.`,
+      );
+      setPromoActualsFile(null);
+    } catch (error) {
+      setPromoActualsMessage(formatExportError(error, 'Importul raportului promo a eșuat.'));
+    } finally {
+      setPromoActualsUploading(false);
+    }
+  };
+
   const handleDatasetChange = (dataset: string) => {
     const nextDataset = catalog?.datasets.find((item) => item.key === dataset);
     setExportDataset(dataset);
@@ -454,6 +481,67 @@ export function Settings({
                   : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
               }`}>
                 {message}
+              </div>
+            )}
+          </div>
+
+          <div className="glass rounded-3xl p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <FileSpreadsheet size={16} className="text-emerald-600" />
+              <h3 className="text-sm font-bold">Import tabel promo firmă</h3>
+            </div>
+            <div className="mb-3 grid gap-2 sm:grid-cols-2">
+              <label className="text-[11px] font-semibold text-slate-500">
+                Luna raportului
+                <input
+                  type="month"
+                  value={promoActualsMonth}
+                  onChange={(event) => setPromoActualsMonth(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+              <label className="text-[11px] font-semibold text-slate-500">
+                Raport până la data
+                <input
+                  type="date"
+                  value={promoActualsCutoff}
+                  onChange={(event) => setPromoActualsCutoff(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+            </div>
+            <label
+              htmlFor="upload-promo-actuals-file"
+              className={cn(
+                'mb-3 flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed px-3 py-3 transition-colors',
+                promoActualsFile
+                  ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/20'
+                  : 'border-slate-300 bg-slate-50 hover:border-emerald-400 dark:border-slate-600 dark:bg-slate-800/60',
+              )}
+            >
+              <Upload size={18} className={promoActualsFile ? 'text-emerald-600' : 'text-slate-400'} />
+              <span className="min-w-0 truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {promoActualsFile ? promoActualsFile.name : 'Selectează raportul firmei (.xls sau .xlsx)'}
+              </span>
+              <input
+                id="upload-promo-actuals-file"
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(event) => setPromoActualsFile(event.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void handlePromoActualsUpload()}
+              disabled={!promoActualsFile || promoActualsUploading}
+              className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-emerald-500/25 disabled:opacity-60"
+            >
+              {promoActualsUploading ? 'Se validează și se aplică...' : 'Importă raport promo'}
+            </button>
+            {promoActualsMessage && (
+              <div className="mt-3 rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                {promoActualsMessage}
               </div>
             )}
           </div>

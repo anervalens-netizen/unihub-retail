@@ -570,6 +570,15 @@ class ImportResponse(BaseModel):
     is_month_final: bool
 
 
+class PromoActualImportResponse(BaseModel):
+    import_month: str
+    cutoff_date: date
+    filename: str
+    report_rows: int
+    promo_units: int
+    updated_promotions: int
+
+
 class ImportJobStatus(BaseModel):
     job_id: str
     status: str

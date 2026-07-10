@@ -101,6 +101,12 @@ flowchart LR
   retry, iar checkpointurile incerte blocheaza reluarea automata pana la
   verificare manuala.
 - Import vanzari si refresh reporting agregat.
+- Setari -> Importuri permite si incarcarea raportului POS de promo al firmei:
+  administratorul selecteaza luna si data cutoff, iar aplicatia valideaza foaia
+  `AccesoriPromoLunar` (SiteCode, Cod, Promo Luna Curenta), pastreaza fisierul
+  sub `data/promo_actuals/` si il leaga automat de promotiile active ale lunii.
+  Pana la cutoff raportul devine sursa de adevar pentru Focus si exporturi;
+  dupa cutoff calculul continua din regula pe bonuri.
 - Importul de vanzari este rezervat administratorilor, accepta numai Excel in
   limita configurata (implicit 32 MB) si ruleaza exclusiv in worker. Hash-ul
   continutului deduplica retry-urile aflate deja in coada, iar DB permite un
@@ -115,7 +121,8 @@ flowchart LR
   respectiv `Evolutie zilnica` pentru comparatii intre luni sau ani. Exportul
   `Incentive pe produs` are coloane fixe pentru categorie, subcategorie, cod,
   produs, excluderi promo, cantitati eligibile si plata calculata la nivel de
-  magazin, astfel incat totalurile sa ramana aliniate cu Focus. Toate modurile
+  magazin. Respecta acelasi filtru `Include magazine inchise` ca celelalte
+  dataseturi, astfel incat totalurile sa poata fi comparate direct. Toate modurile
   de export au selector comun cu ani, luni si zile bifabile; zilele selectate
   se aplica fiecarei luni rezultate din combinatia an-luna. Modul
   zilnic genereaza workbook cu foi separate `General`, `ASM`, `Magazine` si

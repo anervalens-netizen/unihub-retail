@@ -18,6 +18,7 @@ from services.dashboard.queries import (
     _load_dashboard_campaign_context,
 )
 from services.incentive_db import get_incentive_campaign
+from services.promo_copurchase import promo_actuals_cutoff_date
 from services.dashboard_specials import (
     load_promotion_rule_products,
     load_special_cards_config,
@@ -210,12 +211,13 @@ class ExportsService:
         if len(months) > 144:
             raise ExportValidationError("Selectia poate contine maxim 144 luni.")
         selected_days = self._selected_days(request)
+        include_closed_stores = bool(request.get("include_closed_stores", False))
 
         if dataset == "incentive_products":
             return await self._build_incentive_products_report(
                 months=months,
                 filters=self._normalize_filters(request.get("filters") or {}),
-                include_closed_stores=True,
+                include_closed_stores=include_closed_stores,
                 selected_days=selected_days,
             )
 
@@ -249,7 +251,6 @@ class ExportsService:
             raise ExportValidationError("Prea multe coloane zilnice. Redu lunile sau metricile zilnice.")
 
         filters = self._normalize_filters(request.get("filters") or {})
-        include_closed_stores = bool(request.get("include_closed_stores", False))
         campaign_codes_by_month = self._campaign_codes_by_month(months)
         campaign_exclusions_by_month = await self._campaign_exclusions_by_month(
             months, filters, selected_days
@@ -790,16 +791,33 @@ class ExportsService:
                                 range_start = range_end = selected_date
                         ranges.append((range_start, range_end))
                         for range_start, range_end in ranges:
+                            scoped_definition = {
+                                **definition,
+                                "start_date": range_start,
+                                "end_date": range_end,
+                            }
+                            # A POS report contains a cumulative actual through its
+                            # cutoff. Use it only when the selected range fully
+                            # contains that reported interval; otherwise the
+                            # report cannot be split reliably by day.
+                            if definition.get("actuals_source_file") or definition.get("actuals_file"):
+                                cutoff_date = promo_actuals_cutoff_date(definition)
+                                use_actuals = (
+                                    range_start > cutoff_date
+                                    if cutoff_date is not None
+                                    else range_start <= definition["start_date"] and range_end >= definition["end_date"]
+                                ) or (
+                                    cutoff_date is not None
+                                    and range_start <= definition["start_date"]
+                                    and range_end >= cutoff_date
+                                )
+                                if not use_actuals:
+                                    scoped_definition["actuals_source_file"] = None
+                                    scoped_definition["actuals_file"] = None
                             result = await _compute_dashboard_promotion_result(
                                 conn,
                                 month=month,
-                                definition={
-                                    **definition,
-                                    "start_date": range_start,
-                                    "end_date": range_end,
-                                    "actuals_source_file": None,
-                                    "actuals_file": None,
-                                },
+                                definition=scoped_definition,
                                 firma=csv_filter("firma"),
                                 regional=csv_filter("regional"),
                                 asm=csv_filter("asm"),

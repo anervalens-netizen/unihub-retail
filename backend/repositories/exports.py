@@ -262,18 +262,39 @@ class ExportsRepository:
         period_group = ", agg.import_month" if period == "month" else ""
         campaign_has_agent_detail = dataset == "agents" or bool(filters.get("agent")) or period == "day"
         campaign_source = "reporting_item_day agg"
+        campaign_product_agent_select = "raw_agent" if campaign_has_agent_detail else "NULL::TEXT"
+        campaign_product_agent_group = ", raw_agent" if campaign_has_agent_detail else ""
         if period == "day":
             campaign_excluded_expr = "0"
+            campaign_reported_expr = "0"
             campaign_excluded_join = ""
+            promo_sales_expr = "SUM(total_sales) FILTER (WHERE is_promo)"
+            promo_quantity_expr = "SUM(net_quantity) FILTER (WHERE is_promo)"
         elif campaign_has_agent_detail:
             campaign_excluded_expr = """
+                LEAST(
+                    GREATEST(agg.net_quantity, 0),
+                    GREATEST(
+                        0,
+                        COALESCE(eai.units, 0) - COALESCE(
+                            SUM(GREATEST(agg.net_quantity, 0)) OVER (
+                                PARTITION BY agg.import_month, agg.site_code, agg.agent, agg.item_code
+                                ORDER BY agg.sale_date
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                            ),
+                            0
+                        )
+                    )
+                )
+            """
+            campaign_reported_expr = """
                 CASE WHEN ROW_NUMBER() OVER (
                     PARTITION BY agg.import_month, agg.site_code, agg.agent, agg.item_code
                     ORDER BY agg.sale_date
                 ) = 1 THEN COALESCE(eai.units, 0) ELSE 0 END
             """
             campaign_excluded_join = """
-                    LEFT JOIN excluded_agent_item eai
+                LEFT JOIN excluded_agent_item eai
                         ON eai.import_month = agg.import_month
                         AND eai.site_code = agg.site_code
                         AND eai.agent = agg.agent
@@ -281,17 +302,45 @@ class ExportsRepository:
             """
         else:
             campaign_excluded_expr = """
+                LEAST(
+                    GREATEST(agg.net_quantity, 0),
+                    GREATEST(
+                        0,
+                        COALESCE(esi.units, 0) - COALESCE(
+                            SUM(GREATEST(agg.net_quantity, 0)) OVER (
+                                PARTITION BY agg.import_month, agg.site_code, agg.item_code
+                                ORDER BY agg.sale_date, agg.agent
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                            ),
+                            0
+                        )
+                    )
+                )
+            """
+            campaign_reported_expr = """
                 CASE WHEN ROW_NUMBER() OVER (
                     PARTITION BY agg.import_month, agg.site_code, agg.item_code
                     ORDER BY agg.sale_date, agg.agent
                 ) = 1 THEN COALESCE(esi.units, 0) ELSE 0 END
             """
             campaign_excluded_join = """
-                    LEFT JOIN excluded_site_item esi
-                        ON esi.import_month = agg.import_month
-                        AND esi.site_code = agg.site_code
-                        AND esi.item_code = agg.item_code
+                LEFT JOIN excluded_site_item esi
+                    ON esi.import_month = agg.import_month
+                    AND esi.site_code = agg.site_code
+                    AND esi.item_code = agg.item_code
             """
+
+        if period != "day":
+            promo_sales_expr = """
+                SUM(
+                    CASE
+                        WHEN is_promo AND net_quantity > 0
+                            THEN promo_excluded_quantity::NUMERIC * total_sales / net_quantity
+                        ELSE 0
+                    END
+                )
+            """
+            promo_quantity_expr = "SUM(promo_reported_quantity)"
 
         async with self.pool.acquire() as conn:
             return await conn.fetch(
@@ -350,15 +399,8 @@ class ExportsRepository:
                         agg.net_quantity,
                         ip.reward_value,
                         pc.item_code IS NOT NULL AS is_promo,
-                        CASE
-                            WHEN ip.item_code IS NOT NULL THEN GREATEST(0, agg.net_quantity - LEAST(GREATEST(agg.net_quantity, 0), {campaign_excluded_expr}))
-                            ELSE agg.net_quantity
-                        END AS incentive_net_quantity,
-                        CASE
-                            WHEN ip.item_code IS NOT NULL AND agg.net_quantity > 0
-                                THEN (GREATEST(0, agg.net_quantity - LEAST(GREATEST(agg.net_quantity, 0), {campaign_excluded_expr}))::NUMERIC * agg.total_sales / agg.net_quantity)
-                            ELSE agg.total_sales
-                        END AS incentive_total_sales
+                        {campaign_reported_expr} AS promo_reported_quantity,
+                        {campaign_excluded_expr} AS promo_excluded_quantity
                     FROM {campaign_source}
                     JOIN stores s ON s.site_code = agg.site_code
                     LEFT JOIN incentive_campaigns ic
@@ -374,16 +416,45 @@ class ExportsRepository:
                     WHERE {" AND ".join(clauses)}
                       AND (ip.item_code IS NOT NULL OR pc.item_code IS NOT NULL)
                 ),
+                campaign_product AS (
+                    SELECT
+                        {field_alias_select},
+                        period_key,
+                        raw_site_code,
+                        {campaign_product_agent_select} AS raw_agent,
+                        item_code,
+                        reward_value,
+                        is_promo,
+                        COALESCE(SUM(total_sales), 0) AS total_sales,
+                        COALESCE(SUM(net_quantity), 0)::INT AS net_quantity,
+                        COALESCE(SUM(promo_reported_quantity), 0)::INT AS promo_reported_quantity,
+                        COALESCE(SUM(promo_excluded_quantity), 0)::INT AS promo_excluded_quantity
+                    FROM campaign_filtered
+                    GROUP BY
+                        {field_aliases}, period_key, raw_site_code{campaign_product_agent_group},
+                        item_code, reward_value, is_promo
+                ),
                 campaign_base AS (
                     SELECT
                         {field_alias_select},
                         period_key,
-                        COALESCE(SUM(incentive_total_sales) FILTER (WHERE reward_value IS NOT NULL), 0) AS incentive_sales,
-                        COALESCE(SUM(incentive_net_quantity) FILTER (WHERE reward_value IS NOT NULL), 0)::INT AS incentive_quantity,
-                        COALESCE(SUM(incentive_net_quantity * reward_value) FILTER (WHERE reward_value IS NOT NULL), 0) AS incentive_bonus,
-                        COALESCE(SUM(total_sales) FILTER (WHERE is_promo), 0) AS promo_sales,
-                        COALESCE(SUM(net_quantity) FILTER (WHERE is_promo), 0)::INT AS promo_quantity
-                    FROM campaign_filtered
+                        COALESCE(SUM(
+                            CASE
+                                WHEN reward_value IS NOT NULL AND net_quantity > 0 THEN
+                                    GREATEST(0, net_quantity - promo_excluded_quantity)::NUMERIC
+                                    * total_sales / net_quantity
+                                ELSE 0
+                            END
+                        ), 0) AS incentive_sales,
+                        COALESCE(SUM(
+                            GREATEST(0, net_quantity - promo_excluded_quantity)
+                        ) FILTER (WHERE reward_value IS NOT NULL), 0)::INT AS incentive_quantity,
+                        COALESCE(SUM(
+                            GREATEST(0, net_quantity - promo_excluded_quantity) * reward_value
+                        ) FILTER (WHERE reward_value IS NOT NULL), 0) AS incentive_bonus,
+                        COALESCE({promo_sales_expr}, 0) AS promo_sales,
+                        COALESCE({promo_quantity_expr}, 0)::INT AS promo_quantity
+                    FROM campaign_product
                     GROUP BY {field_aliases}, period_key
                 ),
                 base AS (

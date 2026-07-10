@@ -321,7 +321,7 @@ async def test_incentive_product_report_uses_focus_store_product_rules() -> None
         "paid_full_quantity": 8, "paid_half_quantity": 4, "unpaid_quantity": 0,
         "qualified_ui_quantity": 12, "potential_value": 60.0, "paid_value": 50.0,
     }]
-    assert repo.product_calls[0]["include_closed_stores"] is True
+    assert repo.product_calls[0]["include_closed_stores"] is False
 
 
 @pytest.mark.asyncio

@@ -533,8 +533,6 @@ class CampaignsService:
                                     **definition,
                                     "start_date": period_start_date,
                                     "end_date": period_end_date,
-                                    "actuals_source_file": None,
-                                    "actuals_file": None,
                                 },
                                 firma=firma,
                                 regional=regional,

@@ -65,12 +65,7 @@ def month_overlaps_period(month: str, start_date: date, end_date: date) -> bool:
 
 
 def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
-    configured_path = os.getenv("UNIHUB_HUB_SPECIALS_CONFIG")
-    config_path = (
-        resolve_path(configured_path, get_repo_root())
-        if configured_path
-        else get_data_dir() / "hub_specials.json"
-    )
+    config_path = get_special_cards_config_path()
     if not config_path.exists():
         return EMPTY_SPECIAL_CARDS_CONFIG.copy(), None
 
@@ -94,6 +89,15 @@ def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
     result = payload, None
     _special_config_cache[cache_key] = result
     return result
+
+
+def get_special_cards_config_path() -> Path:
+    configured_path = os.getenv("UNIHUB_HUB_SPECIALS_CONFIG")
+    return (
+        resolve_path(configured_path, get_repo_root())
+        if configured_path
+        else get_data_dir() / "hub_specials.json"
+    )
 
 
 def _parse_single_promotion(

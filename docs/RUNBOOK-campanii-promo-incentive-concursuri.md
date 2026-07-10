@@ -94,9 +94,13 @@ pentru iulie, ca istoricul iunie să rămână legat de raportul POS final:
 - `folii-ecran-camera-iulie`: `2026-07-01` → `2026-07-31`.
 - `capace-huse-cellara-iulie`: `2026-07-01` → `2026-07-31`.
 
-Intrările de iulie nu au `actuals_source_file`; până la încărcarea unui raport
-POS nou, promoțiile se calculează din regulile pe bonuri după importul zilnic
-de vânzări. Campania incentive `2026-07` are doua mecanisme persistate prin
+Raportul POS al firmei pentru `2026-07-01` → `2026-07-09`, primit în
+`data/promo 1-9 iulie raport firma.xls`, este configurat ca sursă de adevăr
+pentru cele trei promoții iulie, cu `actuals_cutoff_date=2026-07-09`.
+Confirmă 662 unități reduse: 217 pentru promoția de accesorii, 419 pentru
+folii ecran/cameră și 26 pentru capac/husă Cellara. După cutoff, aplicația
+completează automat cu regula pe bonuri până la următorul raport POS. Campania
+incentive `2026-07` are doua mecanisme persistate prin
 `incentive_products.valid_from/valid_to`:
 - `2026-07-01` → `2026-07-09`: 967 produse, valori 5/10/25 RON;
 - `2026-07-10` → `2026-07-31`: 201 produse, valori 5/10/15/30 RON, din
