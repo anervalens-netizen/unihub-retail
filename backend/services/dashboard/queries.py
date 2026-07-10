@@ -1700,11 +1700,16 @@ async def _fetch_promo_incentive_summary(
 
     promo_qty = 0
     promo_sales: Decimal = Decimal("0")
+    incentive_sold_qty = 0
     incentive_qty = 0
     incentive_value: Decimal = Decimal("0")
     incentive_qualified_qty = 0
     incentive_qualified_stores = 0
+    incentive_qualified_stores_full = 0
+    incentive_qualified_stores_half = 0
     incentive_qualified_agents = 0
+    incentive_qualified_agents_full = 0
+    incentive_qualified_agents_half = 0
     promo_excluded_units = campaign_context.promo_excluded_units
     selected_promotion_result = campaign_context.selected_promotion_result
     if selected_promotion_result is not None:
@@ -1858,6 +1863,7 @@ async def _fetch_promo_incentive_summary(
                 ), 0)
                 return max(0, int(row["qty"]) - excluded)
 
+            incentive_sold_qty = sum(int(row["qty"] or 0) for row in item_rows)
             incentive_qty = sum(eligible_qty(row) for row in item_rows)
             incentive_value = Decimal(str(
                 sum(
@@ -1870,13 +1876,43 @@ async def _fetch_promo_incentive_summary(
 
             qualified_store_codes = [sc for sc, v in achievements.items() if v is not None and v >= 0.9]
             qualified_store_set = set(qualified_store_codes)
+            qualified_full_store_codes = [sc for sc, v in achievements.items() if v is not None and v >= 1.0]
+            qualified_half_store_codes = [sc for sc, v in achievements.items() if v is not None and 0.9 <= v < 1.0]
             incentive_qualified_stores = len(qualified_store_codes)
+            incentive_qualified_stores_full = len(qualified_full_store_codes)
+            incentive_qualified_stores_half = len(qualified_half_store_codes)
             incentive_qualified_qty = sum(
                 eligible_qty(r)
                 for r in item_rows
                 if r["site_code"] in qualified_store_set
             )
             incentive_qualified_agents = 0
+            incentive_qualified_agents_full = 0
+            incentive_qualified_agents_half = 0
+            if qualified_full_store_codes:
+                full_row = await conn.fetchrow(
+                    """
+                    SELECT COUNT(DISTINCT agent) AS cnt
+                    FROM reporting_agent_month
+                    WHERE import_month = $1
+                      AND site_code = ANY($2)
+                      AND agent IS NOT NULL AND agent != '-'
+                    """,
+                    month, qualified_full_store_codes,
+                )
+                incentive_qualified_agents_full = int(full_row["cnt"] or 0) if full_row else 0
+            if qualified_half_store_codes:
+                half_row = await conn.fetchrow(
+                    """
+                    SELECT COUNT(DISTINCT agent) AS cnt
+                    FROM reporting_agent_month
+                    WHERE import_month = $1
+                      AND site_code = ANY($2)
+                      AND agent IS NOT NULL AND agent != '-'
+                    """,
+                    month, qualified_half_store_codes,
+                )
+                incentive_qualified_agents_half = int(half_row["cnt"] or 0) if half_row else 0
             if qualified_store_codes:
                 aq_row = await conn.fetchrow(
                     """
@@ -1895,11 +1931,16 @@ async def _fetch_promo_incentive_summary(
         promo_qty=promo_qty,
         promo_sales=promo_sales,
         promo_impact=promo_impact,
+        incentive_sold_qty=incentive_sold_qty,
         incentive_qty=incentive_qty,
         incentive_value=incentive_value,
         incentive_qualified_qty=incentive_qualified_qty,
         incentive_qualified_stores=incentive_qualified_stores,
+        incentive_qualified_stores_full=incentive_qualified_stores_full,
+        incentive_qualified_stores_half=incentive_qualified_stores_half,
         incentive_qualified_agents=incentive_qualified_agents,
+        incentive_qualified_agents_full=incentive_qualified_agents_full,
+        incentive_qualified_agents_half=incentive_qualified_agents_half,
     )
 
 

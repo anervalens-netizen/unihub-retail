@@ -43,11 +43,16 @@ function makePromoData(): CampaignsPromotionsResponse {
     incentive_title: 'Incentive test',
     incentive_description: 'Cantitate incentive neta',
     incentive_qty: 18,
+    incentive_sold_qty: 25,
     incentive_value: 450,
     incentive_potential: 600,
     incentive_qualified_qty: 12,
-    incentive_qualified_stores: 2,
-    incentive_qualified_agents: 3,
+    incentive_qualified_stores: 4,
+    incentive_qualified_stores_full: 3,
+    incentive_qualified_stores_half: 1,
+    incentive_qualified_agents: 7,
+    incentive_qualified_agents_full: 5,
+    incentive_qualified_agents_half: 2,
     incentive_product_count: 5,
     incentive_categories: [],
     incentive_periods: [],
@@ -131,9 +136,18 @@ describe('Campaigns', () => {
     const html = renderCampaigns('incentive');
 
     expect(html).toContain('Incentive test');
+    expect(html).toContain('unitati vandute');
     expect(html).toContain('unitati eligibile dupa promo');
     expect(html).toContain('incentive calculat acum');
-    expect(html).toContain('potential la calificare 100%');
+    expect(html).not.toContain('potential la calificare 100%');
     expect(html).toContain('18');
+    expect(html).toContain('25');
+    expect(html).toContain('magazine calificate');
+    expect(html).toContain('agenti calificati');
+    expect(html).toContain('Magazine · 100%+');
+    expect(html).toContain('Magazine · 90–99,99%');
+    expect(html).toContain('agenti la acest prag');
+    expect(html).toContain('3');
+    expect(html).toContain('5');
   });
 });

@@ -208,11 +208,16 @@ class PromoIncentiveSummary(BaseModel):
     promo_qty: int = 0
     promo_sales: Decimal = Decimal(0)
     promo_impact: Decimal = Decimal(0)
+    incentive_sold_qty: int = 0
     incentive_qty: int = 0
     incentive_value: Decimal = Decimal(0)
     incentive_qualified_qty: int = 0
     incentive_qualified_stores: int = 0
+    incentive_qualified_stores_full: int = 0
+    incentive_qualified_stores_half: int = 0
     incentive_qualified_agents: int = 0
+    incentive_qualified_agents_full: int = 0
+    incentive_qualified_agents_half: int = 0
 
 
 class PremiumGlassSummary(BaseModel):
@@ -1047,8 +1052,16 @@ class CampaignsPromotionsResponse(BaseModel):
     incentive_title: str = ""
     incentive_description: str = ""
     incentive_qty: int = 0
+    incentive_sold_qty: int = 0
     incentive_value: float = 0.0
     incentive_potential: float = 0.0
+    incentive_qualified_qty: int = 0
+    incentive_qualified_stores: int = 0
+    incentive_qualified_stores_full: int = 0
+    incentive_qualified_stores_half: int = 0
+    incentive_qualified_agents: int = 0
+    incentive_qualified_agents_full: int = 0
+    incentive_qualified_agents_half: int = 0
     incentive_product_count: int = 0
     incentive_categories: list[IncentiveCategory] = Field(default_factory=list)
     incentive_periods: list[IncentivePeriodStat] = Field(default_factory=list)

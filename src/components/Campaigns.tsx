@@ -548,8 +548,6 @@ export function Campaigns({
 
           <IncentiveCard promoData={promoData} />
 
-          <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
-
           {promoData && promoData.top_agents.length > 0 && (
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
@@ -725,6 +723,8 @@ export function Campaigns({
               />
             </div>
           )}
+
+          <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
         </>
       ) : activeSection === 'premium' ? (
         <>
@@ -1137,10 +1137,10 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-200 py-3 sm:grid-cols-4 dark:border-slate-700">
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_sold_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati vandute</div></div>
         <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati eligibile dupa promo</div></div>
-        <div><div className="text-2xl font-black text-indigo-600">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] text-slate-500">incentive calculat acum</div></div>
-        <div><div className="text-2xl font-black text-emerald-600">{promoData ? formatCurrency(promoData.incentive_potential) : '-'}</div><div className="text-[11px] text-slate-500">potential la calificare 100%</div></div>
         <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati in magazine calificate</div></div>
+        <div><div className="text-2xl font-black text-indigo-600">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] text-slate-500">incentive calculat acum</div></div>
       </div>
 
       {periods.length > 0 && (
@@ -1162,12 +1162,48 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
       )}
 
       {promoData && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-          <div className="flex gap-4 text-slate-500">
-            <span><strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_stores)}</strong> magazine calificate</span>
-            <span><strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents)}</strong> agenti</span>
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-slate-200 pb-3 dark:border-slate-700">
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900 dark:text-slate-100">{formatInt(promoData.incentive_qualified_stores)}</span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">magazine calificate</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents)}</span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">agenti calificati</span>
+              </div>
+            </div>
+            <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">90–99,99% = 50% · minimum 100% = integral</div>
           </div>
-          <div className="font-semibold text-slate-500">90–99,99% = 50% · minimum 100% = integral</div>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-emerald-200 bg-white p-3 dark:border-emerald-900/50 dark:bg-slate-900/60">
+              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-400">
+                <span>Magazine · 100%+</span>
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">integral</span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{formatInt(promoData.incentive_qualified_stores_full)}</div>
+                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">magazine</div>
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                <strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents_full)}</strong> agenti la acest prag
+              </div>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-white p-3 dark:border-amber-900/50 dark:bg-slate-900/60">
+              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-400">
+                <span>Magazine · 90–99,99%</span>
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">50%</span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <div className="text-3xl font-black text-amber-700 dark:text-amber-400">{formatInt(promoData.incentive_qualified_stores_half)}</div>
+                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">magazine</div>
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                <strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents_half)}</strong> agenti la acest prag
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

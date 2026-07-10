@@ -305,19 +305,29 @@ class CampaignsService:
                 )
                 promo_qty = summary.promo_qty
                 promo_impact = float(summary.promo_impact)
+                incentive_sold_qty = summary.incentive_sold_qty
                 incentive_qty = summary.incentive_qty
                 incentive_value = float(summary.incentive_value)
                 incentive_qualified_qty = summary.incentive_qualified_qty
                 incentive_qualified_stores = summary.incentive_qualified_stores
+                incentive_qualified_stores_full = summary.incentive_qualified_stores_full
+                incentive_qualified_stores_half = summary.incentive_qualified_stores_half
                 incentive_qualified_agents = summary.incentive_qualified_agents
+                incentive_qualified_agents_full = summary.incentive_qualified_agents_full
+                incentive_qualified_agents_half = summary.incentive_qualified_agents_half
             else:
                 promo_qty = 0
                 promo_impact = 0.0
+                incentive_sold_qty = 0
                 incentive_qty = 0
                 incentive_value = 0.0
                 incentive_qualified_qty = 0
                 incentive_qualified_stores = 0
+                incentive_qualified_stores_full = 0
+                incentive_qualified_stores_half = 0
                 incentive_qualified_agents = 0
+                incentive_qualified_agents_full = 0
+                incentive_qualified_agents_half = 0
 
             promo_total_qty = 0
             store_multipliers: dict[str, float] = {}
@@ -481,6 +491,7 @@ class CampaignsService:
             incentive_categories: list[IncentiveCategory] = []
             incentive_periods: list[IncentivePeriodStat] = []
             incentive_category_breakdown: list[IncentiveCategoryBreakdown] = []
+            incentive_sold_qty = 0
             incentive_potential = 0.0
             incentive_product_count = 0
 
@@ -561,6 +572,7 @@ class CampaignsService:
                     period_totals: dict[tuple[str, str], list[float]] = {}
                     category_totals: dict[str, list[float]] = {}
                     tier_totals: dict[str, list[float]] = {}
+                    incentive_sold_qty = 0
                     incentive_qty = 0
                     incentive_value = 0.0
                     incentive_potential = 0.0
@@ -576,7 +588,9 @@ class CampaignsService:
                             or incentive_campaign.get("reward_map", {}).get(row["item_code"], 0)
                         )
                         excluded = period_excluded_si.get((period_start, period_end, sc, str(row["item_code"])), 0)
-                        qty = max(0, int(row["qty"] or 0) - excluded)
+                        raw_qty = int(row["qty"] or 0)
+                        incentive_sold_qty += raw_qty
+                        qty = max(0, raw_qty - excluded)
                         potential = qty * reward_val
                         value = potential * store_multipliers.get(sc, 0)
                         incentive_qty += qty
@@ -741,11 +755,16 @@ class CampaignsService:
                 "incentive_title": incentive_title,
                 "incentive_description": incentive_description,
                 "incentive_qty": incentive_qty,
+                "incentive_sold_qty": incentive_sold_qty,
                 "incentive_value": incentive_value,
                 "incentive_potential": incentive_potential,
                 "incentive_qualified_qty": incentive_qualified_qty,
                 "incentive_qualified_stores": incentive_qualified_stores,
+                "incentive_qualified_stores_full": incentive_qualified_stores_full,
+                "incentive_qualified_stores_half": incentive_qualified_stores_half,
                 "incentive_qualified_agents": incentive_qualified_agents,
+                "incentive_qualified_agents_full": incentive_qualified_agents_full,
+                "incentive_qualified_agents_half": incentive_qualified_agents_half,
                 "incentive_product_count": incentive_product_count,
                 "incentive_categories": incentive_categories,
                 "incentive_periods": incentive_periods,

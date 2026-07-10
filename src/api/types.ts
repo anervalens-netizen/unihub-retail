@@ -670,11 +670,16 @@ export interface CampaignsPromotionsResponse {
   incentive_title: string;
   incentive_description: string;
   incentive_qty: number;
+  incentive_sold_qty: number;
   incentive_value: number;
   incentive_potential: number;
   incentive_qualified_qty: number;
   incentive_qualified_stores: number;
+  incentive_qualified_stores_full: number;
+  incentive_qualified_stores_half: number;
   incentive_qualified_agents: number;
+  incentive_qualified_agents_full: number;
+  incentive_qualified_agents_half: number;
   incentive_product_count: number;
   incentive_categories: IncentiveCategory[];
   incentive_periods: IncentivePeriodStat[];
