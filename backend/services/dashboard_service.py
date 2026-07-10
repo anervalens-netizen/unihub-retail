@@ -39,6 +39,7 @@ from services.dashboard.queries import (
     _fetch_brand_mix,
     _fetch_category_mix,
     _fetch_focus_subcategory_mix,
+    _fetch_daily_last_year_for_current_cohort,
     _fetch_period_comparison,
     _fetch_promo_incentive_summary,
     _fetch_receipt_bucket_mix,
@@ -878,18 +879,19 @@ class DashboardService:
             )
 
         async def get_daily_last_year_data() -> list[DailySalesPoint]:
-            year, mon = month.split("-")
-            last_year_month = f"{int(year) - 1}-{mon}"
-            return await self.get_daily_sales(
-                last_year_month,
-                firma,
-                regional,
-                asm,
-                site_code,
-                agent,
-                current_scope=current_scope,
-                include_closed_stores=include_closed_stores,
-            )
+            async with self.pool.acquire() as conn:
+                rows = await _fetch_daily_last_year_for_current_cohort(
+                    conn,
+                    month,
+                    firma,
+                    regional,
+                    asm,
+                    site_code,
+                    agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
+                )
+            return [DailySalesPoint(**dict(row)) for row in rows]
 
         async def get_period_comparison_data(
             target_metric: str = "sales",

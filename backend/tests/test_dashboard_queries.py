@@ -1,6 +1,7 @@
 """Unit tests for services/dashboard/queries.py — mock conn, test param assembly and call patterns."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -12,6 +13,7 @@ from services.dashboard.queries import (
     _fetch_asm_stats,
     _fetch_brand_mix,
     _fetch_category_mix,
+    _fetch_daily_last_year_for_current_cohort,
     _fetch_focus_subcategory_mix,
     _fetch_period_comparison,
     _fetch_period_comparison_cutoff_day,
@@ -316,6 +318,60 @@ class TestFetchPeriodComparison:
         assert "agg.firma = ANY" not in previous_sql
         assert "agg.agent = ANY" in previous_sql
         assert previous_call.args[4:] == ("AG01", ["MOVED01"])
+
+
+class TestFetchDailyLastYearForCurrentCohort:
+    @pytest.mark.asyncio
+    async def test_limits_last_year_to_current_store_cohort(self, mock_conn):
+        daily_row = FakeRow(
+            sale_date=date(2025, 7, 1),
+            total_sales=Decimal("1000"),
+            total_quantity=10,
+            receipt_count=8,
+        )
+        mock_conn.fetch.side_effect = [
+            [FakeRow(site_code="OPEN01"), FakeRow(site_code="OPEN02")],
+            [daily_row],
+        ]
+
+        result = await _fetch_daily_last_year_for_current_cohort(
+            mock_conn,
+            "2026-07",
+            firma="Retail",
+            regional="RM curent",
+            asm=None,
+            site_code=None,
+            agent="AG01",
+            current_scope=True,
+        )
+
+        assert result == [daily_row]
+        active_sql = mock_conn.fetch.call_args_list[0].args[0]
+        daily_call = mock_conn.fetch.call_args_list[1]
+        daily_sql = daily_call.args[0]
+        assert "JOIN stores s ON s.site_code = agg.site_code" in active_sql
+        assert "s.is_active = true" in active_sql
+        assert "agg.site_code = ANY($3::TEXT[])" in daily_sql
+        assert "agg.regional = ANY" not in daily_sql
+        assert "agg.firma = ANY" not in daily_sql
+        assert daily_call.args[1:] == ("2025-07", "AG01", ["OPEN01", "OPEN02"])
+
+    @pytest.mark.asyncio
+    async def test_no_current_cohort_returns_empty_without_daily_query(self, mock_conn):
+        mock_conn.fetch.return_value = []
+
+        result = await _fetch_daily_last_year_for_current_cohort(
+            mock_conn,
+            "2026-07",
+            firma=None,
+            regional=None,
+            asm=None,
+            site_code=None,
+            agent=None,
+        )
+
+        assert result == []
+        mock_conn.fetch.assert_awaited_once()
 
 
 class TestFetchCategoryMix:

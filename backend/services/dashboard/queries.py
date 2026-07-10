@@ -1370,6 +1370,87 @@ async def _fetch_period_comparison(
     )
 
 
+async def _fetch_daily_last_year_for_current_cohort(
+    conn: Any,
+    month: str,
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
+) -> list[Any]:
+    year, mon = month.split("-")
+    last_year_month = f"{int(year) - 1}-{mon}"
+
+    baseline_params, baseline_positions = build_scoped_params(
+        [month],
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+    )
+    baseline_clauses = _scope_clauses(
+        baseline_positions,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
+        month_alias="agg.import_month",
+        month_position=1,
+    )
+    active_rows = await conn.fetch(
+        f"""
+        SELECT DISTINCT agg.site_code
+        FROM reporting_agent_day agg
+        {_scope_join(current_scope)}
+        WHERE {" AND ".join(baseline_clauses)}
+        """,
+        *baseline_params,
+    )
+    active_store_codes = [r["site_code"] for r in active_rows]
+    if not active_store_codes:
+        return []
+
+    params, positions = build_scoped_params(
+        [last_year_month],
+        # Historical daily comparison follows the current-store cohort. Applying
+        # historical ownership again would drop stores moved between RMs.
+        firma=None,
+        regional=None,
+        asm=None,
+        site_code=None,
+        agent=agent,
+    )
+    query_clauses = _scope_clauses(
+        positions,
+        current_scope=False,
+        include_closed_stores=include_closed_stores,
+    )
+    store_pos = len(params) + 1
+    params.append(active_store_codes)
+    query_clauses.append(f"agg.site_code = ANY(${store_pos}::TEXT[])")
+    clauses = [
+        "agg.import_month = $1",
+        *query_clauses,
+    ]
+
+    return await conn.fetch(
+        f"""
+        SELECT
+            agg.sale_date,
+            COALESCE(SUM(agg.total_sales), 0) AS total_sales,
+            COALESCE(SUM(agg.total_quantity), 0)::INT AS total_quantity,
+            COALESCE(SUM(agg.receipt_count), 0)::INT AS receipt_count
+        FROM reporting_agent_day agg
+        WHERE {" AND ".join(clauses)}
+        GROUP BY agg.sale_date
+        ORDER BY agg.sale_date ASC
+        """,
+        *params,
+    )
+
+
 async def _fetch_period_comparison_cutoff_day(conn: Any, month: str) -> int:
     row = await conn.fetchrow(
         """
