@@ -456,9 +456,9 @@ def load_incentive_reward_map(
 
 def incentive_multiplier(achievement: float) -> float:
     """Map store target achievement ratio to incentive multiplier (0.0, 0.5, or 1.0)."""
-    if achievement >= 0.99:
+    if achievement >= 1.0:
         return 1.0
-    if achievement >= 0.89:
+    if achievement >= 0.9:
         return 0.5
     return 0.0
 

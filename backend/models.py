@@ -1007,6 +1007,24 @@ class IncentiveCategory(BaseModel):
     value: float
 
 
+class IncentivePeriodStat(BaseModel):
+    label: str
+    start_date: str
+    end_date: str
+    product_count: int
+    reward_values: list[float] = Field(default_factory=list)
+    qty: int = 0
+    potential: float = 0.0
+    value: float = 0.0
+
+
+class IncentiveCategoryBreakdown(BaseModel):
+    label: str
+    qty: int
+    potential: float
+    value: float
+
+
 class CampaignPromotionOption(BaseModel):
     key: str
     label: str
@@ -1030,8 +1048,11 @@ class CampaignsPromotionsResponse(BaseModel):
     incentive_description: str = ""
     incentive_qty: int = 0
     incentive_value: float = 0.0
+    incentive_potential: float = 0.0
     incentive_product_count: int = 0
     incentive_categories: list[IncentiveCategory] = Field(default_factory=list)
+    incentive_periods: list[IncentivePeriodStat] = Field(default_factory=list)
+    incentive_category_breakdown: list[IncentiveCategoryBreakdown] = Field(default_factory=list)
     has_active_promotion: bool = False
     top_stores: list[PromoTopStore] = Field(default_factory=list)
     promo_agents: list[PromoTopAgent] = Field(default_factory=list)

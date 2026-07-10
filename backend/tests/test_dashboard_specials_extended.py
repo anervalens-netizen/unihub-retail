@@ -59,8 +59,14 @@ class TestIncentiveMultiplier:
         assert incentive_multiplier(0.5) == 0.0
 
     def test_at_threshold(self):
-        result = incentive_multiplier(0.89)
+        result = incentive_multiplier(0.9)
         assert result == 0.5
+
+    def test_old_half_threshold_is_not_eligible(self):
+        assert incentive_multiplier(0.89) == 0.0
+
+    def test_99_percent_is_still_half(self):
+        assert incentive_multiplier(0.99) == 0.5
 
     def test_above_target(self):
         result = incentive_multiplier(1.1)

@@ -109,9 +109,15 @@ flowchart LR
   reconciliaza imediat lease-urile intrerupte.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
   builder Excel controlat server-side cu doua moduri: `Tabel detaliat` pentru
-  Agenti, Magazine, RM si ASM cu filtre pe luni/agent/magazin/firma/RM/ASM,
+  Agenti, Magazine, RM, ASM si `Incentive pe produs` cu filtre pe
+  luni/agent/magazin/firma/RM/ASM,
   coloane bifabile, evolutii lunare/zilnice, preview si download `.xlsx`;
-  respectiv `Evolutie zilnica` pentru comparatii intre luni sau ani. Modul
+  respectiv `Evolutie zilnica` pentru comparatii intre luni sau ani. Exportul
+  `Incentive pe produs` are coloane fixe pentru categorie, subcategorie, cod,
+  produs, excluderi promo, cantitati eligibile si plata calculata la nivel de
+  magazin, astfel incat totalurile sa ramana aliniate cu Focus. Toate modurile
+  de export au selector comun cu ani, luni si zile bifabile; zilele selectate
+  se aplica fiecarei luni rezultate din combinatia an-luna. Modul
   zilnic genereaza workbook cu foi separate `General`, `ASM`, `Magazine` si
   `Agenti`, aliniaza valorile pe ziua lunii, adauga delta intre doua luni
   selectate si pune graficul line doar pe foaia `General`.
@@ -272,6 +278,10 @@ imbunatatire fata de `v1`.
 Campaniile incentive per-produs sunt persistate in PostgreSQL:
 `incentive_campaigns` si `incentive_products`. Valorile per cod pot fi
 importate din Excel cu `backend/scripts/import_incentive_campaign.py`.
+`incentive_products.valid_from/valid_to` permite mai multe mecanisme in aceeasi
+luna; vanzarea foloseste lista si reward-ul active la data sa, iar rezultatele
+per perioada se insumeaza inaintea multiplicatorului lunar. Pragurile sunt
+exact 90% pentru plata 50% si 100% pentru plata integrala.
 
 Promotiile speciale si concursurile sunt configurate prin JSON-uri
 operationale din `data/`, care sunt gitignored pe server:
@@ -309,7 +319,8 @@ In interfata Focus, fiecare promotie are tabele separate pentru Magazine si
 Agenti, calculate din rezultatul promotiei selectate. Incentive afiseaza toate
 randurile disponibile de agenti si magazine, plus `Incentive potential`:
 valoarea care s-ar plati la realizare 100% a targetului, inainte de
-multiplicatorul curent. Tabelele din toate subsectiunile Focus, inclusiv
+multiplicatorul curent. Sumarul Incentive separa mecanismele active in aceeasi
+luna si include distributia pe subcategorii. Tabelele din toate subsectiunile Focus, inclusiv
 Concurs si Folii premium, pot fi exportate in Excel. Exporturile Focus pe
 randuri de magazine sau agenti includ explicit `Firma` si `Magazin` cand
 payload-ul are acele metadate.

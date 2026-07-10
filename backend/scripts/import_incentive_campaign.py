@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,7 +43,12 @@ def normalize(col: str) -> str:
     return col.lower().strip().replace(" ", "_").replace("-", "_")
 
 
-def load_excel(path: Path, sheet: str, header_row: int = 0) -> list[dict]:
+def load_excel(
+    path: Path,
+    sheet: str,
+    header_row: int = 0,
+    reward_overrides: dict[str, float] | None = None,
+) -> list[dict]:
     df = pd.read_excel(str(path), sheet_name=sheet, header=header_row)
     df = df.rename(columns=lambda c: normalize(str(c)))
 
@@ -67,12 +73,23 @@ def load_excel(path: Path, sheet: str, header_row: int = 0) -> list[dict]:
             skipped += 1
             continue
         try:
+            if pd.isna(row[reward_col]):
+                raise ValueError("missing reward")
             reward = float(row[reward_col])
         except (TypeError, ValueError):
-            skipped += 1
-            continue
+            override = (reward_overrides or {}).get(code)
+            if override is None:
+                skipped += 1
+                continue
+            reward = override
         name = str(row[name_col]).strip() if name_col and pd.notna(row.get(name_col)) else None
-        records.append({"item_code": code, "item_name": name, "reward_value": reward})
+        records.append({
+            "item_code": code,
+            "item_name": name,
+            "reward_value": reward,
+            "category": str(row.get("categorie")).strip() if pd.notna(row.get("categorie")) else None,
+            "subcategory": str(row.get("subcategorie")).strip() if pd.notna(row.get("subcategorie")) else None,
+        })
 
     print(f"  {len(records)} produse valide, {skipped} rânduri sărite")
     return records
@@ -92,7 +109,18 @@ async def main(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     print(f"Citesc fișierul: {file_path.name} [sheet={args.sheet}, header={args.header}]")
-    records = load_excel(file_path, args.sheet, header_row=args.header)
+    reward_overrides: dict[str, float] = {}
+    for value in args.reward_override:
+        code, separator, raw_reward = value.partition("=")
+        if not separator or not code.strip():
+            raise ValueError("--reward-override trebuie sa fie COD=VALOARE")
+        reward_overrides[code.strip()] = float(raw_reward)
+    records = load_excel(
+        file_path,
+        args.sheet,
+        header_row=args.header,
+        reward_overrides=reward_overrides,
+    )
 
     if not records:
         print("EROARE: nicio înregistrare validă în fișier.")
@@ -101,6 +129,19 @@ async def main(args: argparse.Namespace) -> None:
     reward_vals = sorted(set(r["reward_value"] for r in records))
     print(f"  Valori reward unice: {reward_vals}")
     print(f"  Campanie: {args.month} — {args.title}")
+
+    month_start = date.fromisoformat(f"{args.month}-01")
+    if month_start.month == 12:
+        next_month = date(month_start.year + 1, 1, 1)
+    else:
+        next_month = date(month_start.year, month_start.month + 1, 1)
+    valid_from = date.fromisoformat(args.valid_from) if args.valid_from else month_start
+    valid_to = date.fromisoformat(args.valid_to) if args.valid_to else date.fromordinal(next_month.toordinal() - 1)
+    if valid_from.month != month_start.month or valid_from.year != month_start.year:
+        raise ValueError("--valid-from trebuie sa fie in luna campaniei")
+    if valid_to.month != month_start.month or valid_to.year != month_start.year or valid_to < valid_from:
+        raise ValueError("--valid-to trebuie sa fie in luna campaniei si dupa --valid-from")
+    print(f"  Perioada: {valid_from} - {valid_to}")
 
     if args.dry_run:
         print("\n*** DRY RUN — nu se scrie nimic ***")
@@ -129,7 +170,12 @@ async def main(args: argparse.Namespace) -> None:
                 item_code TEXT NOT NULL,
                 item_name TEXT,
                 reward_value NUMERIC(10, 2) NOT NULL,
-                UNIQUE (campaign_id, item_code)
+                valid_from DATE NOT NULL,
+                valid_to DATE NOT NULL,
+                category TEXT,
+                subcategory TEXT,
+                source_file TEXT,
+                UNIQUE (campaign_id, item_code, valid_from, valid_to)
             )
             """
         )
@@ -152,23 +198,35 @@ async def main(args: argparse.Namespace) -> None:
                 args.description or None,
             )
 
-            # Șterge produsele vechi și reinserează
+            # Inlocuieste doar perioada importata, pastrand celelalte mecanisme ale lunii.
             await conn.execute(
-                "DELETE FROM incentive_products WHERE campaign_id = $1", campaign_id
+                "DELETE FROM incentive_products WHERE campaign_id = $1 AND valid_from = $2 AND valid_to = $3",
+                campaign_id,
+                valid_from,
+                valid_to,
             )
             await conn.executemany(
                 """
-                INSERT INTO incentive_products (campaign_id, item_code, item_name, reward_value)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO incentive_products (
+                    campaign_id, item_code, item_name, reward_value,
+                    valid_from, valid_to, category, subcategory, source_file
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """,
                 [
-                    (campaign_id, r["item_code"], r["item_name"], r["reward_value"])
+                    (
+                        campaign_id, r["item_code"], r["item_name"], r["reward_value"],
+                        valid_from, valid_to, r["category"], r["subcategory"], str(file_path),
+                    )
                     for r in records
                 ],
             )
 
         count = await conn.fetchval(
-            "SELECT COUNT(*) FROM incentive_products WHERE campaign_id = $1", campaign_id
+            "SELECT COUNT(*) FROM incentive_products WHERE campaign_id = $1 AND valid_from = $2 AND valid_to = $3",
+            campaign_id,
+            valid_from,
+            valid_to,
         )
         print(f"\nImportat cu succes! Campanie ID={campaign_id}, {count} produse.")
 
@@ -186,4 +244,12 @@ if __name__ == "__main__":
     parser.add_argument("--sheet", default="Sheet1", help="Numele sheet-ului (default: Sheet1)")
     parser.add_argument("--header", type=int, default=0, help="Rândul cu header (0=primul, 1=al doilea etc.)")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--valid-from", default="", help="Prima zi de valabilitate (YYYY-MM-DD)")
+    parser.add_argument("--valid-to", default="", help="Ultima zi de valabilitate (YYYY-MM-DD)")
+    parser.add_argument(
+        "--reward-override",
+        action="append",
+        default=[],
+        help="Completeaza explicit o valoare lipsa: COD=VALOARE",
+    )
     asyncio.run(main(parser.parse_args()))

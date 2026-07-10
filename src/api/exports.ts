@@ -39,6 +39,7 @@ export interface ExportRequest {
   monthly_metrics: string[];
   daily_metrics: string[];
   comparison_levels?: string[];
+  selected_days?: number[];
   filters: ExportFilters;
   include_closed_stores: boolean;
   preview_limit?: number;

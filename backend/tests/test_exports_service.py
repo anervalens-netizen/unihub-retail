@@ -4,6 +4,7 @@ from decimal import Decimal
 from io import BytesIO
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from openpyxl import Workbook
@@ -94,6 +95,7 @@ async def test_preview_builds_monthly_and_daily_columns_without_db() -> None:
             "metrics": ["total_sales", "target_progress_pct", "avg_receipt_value"],
             "monthly_metrics": ["total_sales"],
             "daily_metrics": ["total_sales"],
+            "selected_days": list(range(1, 10)),
             "preview_limit": 10,
         }
     )
@@ -108,6 +110,7 @@ async def test_preview_builds_monthly_and_daily_columns_without_db() -> None:
     assert result["rows"][0]["target_progress_pct"] == 125.0
     assert result["rows"][0]["avg_receipt_value"] == 250.0
     assert repo.report_calls[0]["months"] == ["2026-05", "2026-06"]
+    assert all(call["selected_days"] == list(range(1, 10)) for call in repo.report_calls)
 
 
 @pytest.mark.asyncio
@@ -129,6 +132,9 @@ async def test_preview_rejects_invalid_or_too_wide_requests() -> None:
     with pytest.raises(ExportValidationError, match="Selectie invalida pentru metrici"):
         await service.preview({"dataset": "stores", "months": ["2026-06"], "metrics": ["unknown"]})
 
+    with pytest.raises(ExportValidationError, match="cel putin o zi"):
+        await service.preview({"dataset": "stores", "months": ["2026-06"], "selected_days": []})
+
 
 @pytest.mark.asyncio
 async def test_daily_comparison_preview_computes_delta_rows() -> None:
@@ -142,6 +148,7 @@ async def test_daily_comparison_preview_computes_delta_rows() -> None:
             "months": ["2026-05", "2026-06"],
             "daily_metrics": ["total_sales"],
             "comparison_levels": ["general"],
+            "selected_days": [1, 9],
             "preview_limit": 2,
         }
     )
@@ -154,14 +161,15 @@ async def test_daily_comparison_preview_computes_delta_rows() -> None:
         "delta:total_sales",
         "delta_pct:total_sales",
     ]
-    assert result["total_rows"] == 31
-    assert result["truncated"] is True
+    assert result["total_rows"] == 2
+    assert result["truncated"] is False
     assert result["rows"][0]["day_of_month"] == 1
     assert result["rows"][0]["2026-05:total_sales"] == 100.0
     assert result["rows"][0]["2026-06:total_sales"] == 150.0
     assert result["rows"][0]["delta:total_sales"] == 50.0
     assert result["rows"][0]["delta_pct:total_sales"] == 50.0
     assert repo.daily_comparison_calls[0]["level"] == "general"
+    assert repo.daily_comparison_calls[0]["selected_days"] == [1, 9]
 
 
 @pytest.mark.asyncio
@@ -194,6 +202,7 @@ def test_catalog_exposes_datasets_metrics_and_comparison_levels() -> None:
         "stores",
         "regionals",
         "asms",
+        "incentive_products",
     }
     assert {item["key"] for item in catalog["comparison_levels"]} == set(
         COMPARISON_LEVELS
@@ -252,6 +261,67 @@ async def test_preview_limit_truncates_regular_report() -> None:
     assert result["total_rows"] == 2
     assert len(result["rows"]) == 1
     assert result["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_incentive_product_report_uses_focus_store_product_rules() -> None:
+    class PoolContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+    class ProductRepo(FakeRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.pool = SimpleNamespace(acquire=lambda: PoolContext())
+            self.product_calls: list[dict[str, Any]] = []
+
+        async def fetch_incentive_product_rows(self, **kwargs: Any) -> list[dict[str, Any]]:
+            self.product_calls.append(kwargs)
+            return [
+                {
+                    "site_code": "S1", "item_code": "P1", "item_name": "Produs 1",
+                    "category": "Accesorii", "subcategory": "Capace", "reward_value": Decimal("5"),
+                    "net_quantity": 10, "positive_quantity": 10, "return_quantity": 0,
+                },
+                {
+                    "site_code": "S2", "item_code": "P1", "item_name": "Produs 1",
+                    "category": "Accesorii", "subcategory": "Capace", "reward_value": Decimal("5"),
+                    "net_quantity": 4, "positive_quantity": 5, "return_quantity": -1,
+                },
+            ]
+
+    repo = ProductRepo()
+    service = ExportsService(repo)  # type: ignore[arg-type]
+    service._campaign_exclusions_by_month = AsyncMock(return_value={  # type: ignore[method-assign]
+        "2026-06": {("S1", "Agent 1", "P1"): 2},
+    })
+    with (
+        patch("services.exports.get_incentive_campaign", new_callable=AsyncMock, return_value={"id": 1}),
+        patch(
+            "services.exports._get_store_incentive_multipliers",
+            new_callable=AsyncMock,
+            return_value=({"S1": 1.0, "S2": 0.5}, {"S1": 1.0, "S2": 0.9}),
+        ),
+    ):
+        result = await service.build_report({
+            "dataset": "incentive_products",
+            "months": ["2026-06"],
+            "filters": {},
+            "include_closed_stores": False,
+        })
+
+    assert result["rows"] == [{
+        "month": "2026-06", "category": "Accesorii", "subcategory": "Capace",
+        "item_code": "P1", "item_name": "Produs 1", "reward_value": 5.0,
+        "positive_quantity": 15, "return_quantity": -1, "net_quantity": 14,
+        "promo_excluded_quantity": 2, "eligible_quantity": 12, "paid_quantity": 12,
+        "paid_full_quantity": 8, "paid_half_quantity": 4, "unpaid_quantity": 0,
+        "qualified_ui_quantity": 12, "potential_value": 60.0, "paid_value": 50.0,
+    }]
+    assert repo.product_calls[0]["include_closed_stores"] is True
 
 
 @pytest.mark.asyncio
@@ -318,7 +388,7 @@ async def test_daily_comparison_xlsx_writes_requested_levels_and_charts() -> Non
     assert workbook.sheetnames == ["General", "Magazine", "Configuratie"]
     assert len(workbook["General"]._charts) == 1
     assert len(workbook["Magazine"]._charts) == 1
-    assert workbook["Configuratie"]["B6"].value == "Da"
+    assert workbook["Configuratie"]["B7"].value == "Da"
     assert filename == "comparatie___iunie.xlsx"
     assert [call["level"] for call in repo.daily_comparison_calls] == [
         "general",

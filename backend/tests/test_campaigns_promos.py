@@ -360,7 +360,7 @@ class TestPromoIncentivesNoConfig:
 
         assert result["promo_qualifying_bons"] == 1
         assert result["incentive_qty"] == 7
-        assert result["incentive_value"] == 75.0
+        assert result["incentive_value"] == 50.0
         assert result["top_agents"][0].qty_sold == 7
         assert result["top_agents"][0].val_incentive == 50.0
 

@@ -631,6 +631,24 @@ export interface IncentiveCategory {
   value: number;
 }
 
+export interface IncentivePeriodStat {
+  label: string;
+  start_date: string;
+  end_date: string;
+  product_count: number;
+  reward_values: number[];
+  qty: number;
+  potential: number;
+  value: number;
+}
+
+export interface IncentiveCategoryBreakdown {
+  label: string;
+  qty: number;
+  potential: number;
+  value: number;
+}
+
 export interface CampaignPromotionOption {
   key: string;
   label: string;
@@ -653,11 +671,14 @@ export interface CampaignsPromotionsResponse {
   incentive_description: string;
   incentive_qty: number;
   incentive_value: number;
+  incentive_potential: number;
   incentive_qualified_qty: number;
   incentive_qualified_stores: number;
   incentive_qualified_agents: number;
   incentive_product_count: number;
   incentive_categories: IncentiveCategory[];
+  incentive_periods: IncentivePeriodStat[];
+  incentive_category_breakdown: IncentiveCategoryBreakdown[];
   has_active_promotion: boolean;
   top_stores: PromoTopStore[];
   promo_agents: PromoTopAgent[];

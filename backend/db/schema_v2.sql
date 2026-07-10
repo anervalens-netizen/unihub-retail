@@ -323,11 +323,19 @@ CREATE TABLE IF NOT EXISTS incentive_products (
     item_code TEXT NOT NULL,
     item_name TEXT,
     reward_value NUMERIC(10, 2) NOT NULL,
-    UNIQUE (campaign_id, item_code)
+    valid_from DATE NOT NULL,
+    valid_to DATE NOT NULL,
+    category TEXT,
+    subcategory TEXT,
+    source_file TEXT,
+    CHECK (valid_to >= valid_from),
+    UNIQUE (campaign_id, item_code, valid_from, valid_to)
 );
 
 CREATE INDEX IF NOT EXISTS idx_incentive_products_campaign ON incentive_products(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_incentive_products_code ON incentive_products(item_code);
+CREATE INDEX IF NOT EXISTS idx_incentive_products_validity
+    ON incentive_products(campaign_id, valid_from, valid_to, item_code);
 
 CREATE TABLE IF NOT EXISTS historical_annual_sales (
     site_code TEXT NOT NULL REFERENCES stores(site_code),

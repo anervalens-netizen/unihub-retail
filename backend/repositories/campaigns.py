@@ -406,13 +406,32 @@ class CampaignsRepository:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
+                WITH item_categories AS (
+                    SELECT item_code,
+                           COALESCE(NULLIF(TRIM(MAX(category)), ''), 'Necategorizat') AS category,
+                           COALESCE(NULLIF(TRIM(MAX(subcategory)), ''), NULLIF(TRIM(MAX(category)), ''), 'Necategorizat') AS subcategory
+                    FROM sales_transactions
+                    WHERE import_month = $2
+                    GROUP BY item_code
+                )
                 SELECT agg.site_code, MAX(agg.locatie) AS locatie,
                        MAX(agg.firma) AS firma,
                        agg.item_code,
+                       ip.valid_from,
+                       ip.valid_to,
+                       ip.reward_value,
+                       COALESCE(MAX(ip.category), MAX(categories.category), 'Necategorizat') AS category,
+                       COALESCE(MAX(ip.subcategory), MAX(categories.subcategory), 'Necategorizat') AS subcategory,
                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
-                FROM reporting_item_month agg
+                FROM reporting_item_day agg
+                JOIN incentive_campaigns ic ON ic.month = agg.import_month
+                JOIN incentive_products ip
+                  ON ip.campaign_id = ic.id
+                 AND ip.item_code = agg.item_code
+                 AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
+                LEFT JOIN item_categories categories ON categories.item_code = agg.item_code
                 WHERE {" AND ".join(clauses)}
-                GROUP BY agg.site_code, agg.item_code
+                GROUP BY agg.site_code, agg.item_code, ip.valid_from, ip.valid_to, ip.reward_value
                 """,
                 *params,
             )
@@ -440,15 +459,34 @@ class CampaignsRepository:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
+                WITH item_categories AS (
+                    SELECT item_code,
+                           COALESCE(NULLIF(TRIM(MAX(category)), ''), 'Necategorizat') AS category,
+                           COALESCE(NULLIF(TRIM(MAX(subcategory)), ''), NULLIF(TRIM(MAX(category)), ''), 'Necategorizat') AS subcategory
+                    FROM sales_transactions
+                    WHERE import_month = $2
+                    GROUP BY item_code
+                )
                 SELECT agg.agent, agg.site_code,
                        MAX(agg.locatie) AS locatie,
                        MAX(agg.firma) AS firma,
                        agg.item_code,
+                       ip.valid_from,
+                       ip.valid_to,
+                       ip.reward_value,
+                       COALESCE(MAX(ip.category), MAX(categories.category), 'Necategorizat') AS category,
+                       COALESCE(MAX(ip.subcategory), MAX(categories.subcategory), 'Necategorizat') AS subcategory,
                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
-                FROM reporting_item_month agg
+                FROM reporting_item_day agg
+                JOIN incentive_campaigns ic ON ic.month = agg.import_month
+                JOIN incentive_products ip
+                  ON ip.campaign_id = ic.id
+                 AND ip.item_code = agg.item_code
+                 AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
+                LEFT JOIN item_categories categories ON categories.item_code = agg.item_code
                 WHERE {" AND ".join(clauses)}
                   AND agg.agent IS NOT NULL AND agg.agent != '-'
-                GROUP BY agg.agent, agg.site_code, agg.item_code
+                GROUP BY agg.agent, agg.site_code, agg.item_code, ip.valid_from, ip.valid_to, ip.reward_value
                 """,
                 *params,
             )

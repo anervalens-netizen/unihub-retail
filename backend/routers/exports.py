@@ -33,6 +33,7 @@ class ExportRequest(BaseModel):
     monthly_metrics: list[str] = Field(default_factory=list)
     daily_metrics: list[str] = Field(default_factory=list)
     comparison_levels: list[str] = Field(default_factory=list)
+    selected_days: list[int] = Field(default_factory=lambda: list(range(1, 32)), max_length=31)
     filters: ExportFilters = Field(default_factory=ExportFilters)
     include_closed_stores: bool = False
     preview_limit: int = Field(default=100, ge=1, le=500)

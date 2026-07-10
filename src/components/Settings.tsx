@@ -57,8 +57,10 @@ const MONTH_LABELS = [
   'Noiembrie',
   'Decembrie',
 ];
+const ALL_DAYS = Array.from({ length: 31 }, (_, index) => index + 1);
 type ExportMode = 'table' | 'daily_comparison';
 type SettingsSection = 'imports' | 'exports' | 'preferences';
+const INCENTIVE_PRODUCTS_DATASET = 'incentive_products';
 
 export function Settings({
   theme,
@@ -81,7 +83,9 @@ export function Settings({
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [exportMode, setExportMode] = useState<ExportMode>('table');
   const [exportDataset, setExportDataset] = useState('agents');
-  const [exportMonths, setExportMonths] = useState<string[]>([]);
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [selectedMonthNumbers, setSelectedMonthNumbers] = useState<string[]>([]);
+  const [selectedDays, setSelectedDays] = useState<number[]>(ALL_DAYS);
   const [exportDimensions, setExportDimensions] = useState<string[]>([]);
   const [exportMetrics, setExportMetrics] = useState<string[]>(DEFAULT_EXPORT_METRICS);
   const [monthlyMetrics, setMonthlyMetrics] = useState<string[]>([]);
@@ -92,7 +96,6 @@ export function Settings({
   const [preview, setPreview] = useState<ExportPreview | null>(null);
   const [exportMessage, setExportMessage] = useState('');
   const [exportBusy, setExportBusy] = useState(false);
-  const [selectedMonthYear, setSelectedMonthYear] = useState('');
 
   useEffect(() => {
     if (!canImportSales && section === 'imports') {
@@ -133,7 +136,10 @@ export function Settings({
         if (cancelled) return;
         setCatalog(catalogData);
         setMonths(monthData);
-        setExportMonths((current) => current.length > 0 ? current : monthData.slice(0, 1));
+        if (monthData[0]) {
+          setSelectedYears((current) => current.length > 0 ? current : [monthData[0].slice(0, 4)]);
+          setSelectedMonthNumbers((current) => current.length > 0 ? current : [monthData[0].slice(5, 7)]);
+        }
         const defaultDataset = catalogData.datasets.find((item) => item.key === exportDataset) ?? catalogData.datasets[0];
         if (defaultDataset) {
           setExportDataset(defaultDataset.key);
@@ -154,22 +160,37 @@ export function Settings({
     () => catalog?.datasets.find((item) => item.key === exportDataset) ?? null,
     [catalog, exportDataset]
   );
+  const isIncentiveProductsExport = exportMode === 'table' && exportDataset === INCENTIVE_PRODUCTS_DATASET;
 
   const availableYears = useMemo(
     () => Array.from(new Set(months.map((month) => month.slice(0, 4)))).sort((a, b) => Number(b) - Number(a)),
     [months],
   );
 
-  const monthsForSelectedYear = useMemo(
-    () => months.filter((month) => month.startsWith(`${selectedMonthYear}-`)),
-    [months, selectedMonthYear],
+  const availableMonthNumbers = useMemo(
+    () => Array.from(new Set(
+      months
+        .filter((month) => selectedYears.includes(month.slice(0, 4)))
+        .map((month) => month.slice(5, 7)),
+    )).sort(),
+    [months, selectedYears],
   );
 
   useEffect(() => {
-    if (!selectedMonthYear && availableYears[0]) {
-      setSelectedMonthYear(availableYears[0]);
-    }
-  }, [availableYears, selectedMonthYear]);
+    if (availableMonthNumbers.length === 0) return;
+    setSelectedMonthNumbers((current) => {
+      const valid = current.filter((month) => availableMonthNumbers.includes(month));
+      return valid.length > 0 ? valid : [availableMonthNumbers[0]];
+    });
+  }, [availableMonthNumbers]);
+
+  const exportMonths = useMemo(
+    () => months.filter((month) => (
+      selectedYears.includes(month.slice(0, 4))
+      && selectedMonthNumbers.includes(month.slice(5, 7))
+    )).sort(),
+    [months, selectedMonthNumbers, selectedYears],
+  );
 
   const exportRequest = useMemo<ExportRequest>(() => {
     const effectiveDailyMetrics = exportMode === 'daily_comparison'
@@ -184,10 +205,11 @@ export function Settings({
       monthly_metrics: exportMode === 'table' ? monthlyMetrics : [],
       daily_metrics: effectiveDailyMetrics,
       comparison_levels: exportMode === 'daily_comparison' ? comparisonLevels : [],
+      selected_days: selectedDays,
       filters: exportFilters,
       include_closed_stores: includeClosedStores,
       preview_limit: 100,
-      filename: formatExportFilename(exportMode, exportDataset, exportMonths),
+      filename: formatExportFilename(exportMode, exportDataset, exportMonths, selectedDays),
     };
   }, [
     comparisonLevels,
@@ -200,6 +222,7 @@ export function Settings({
     exportMonths,
     includeClosedStores,
     monthlyMetrics,
+    selectedDays,
   ]);
 
   const handleUpload = async () => {
@@ -286,21 +309,22 @@ export function Settings({
     setPreview(null);
   };
 
-  const toggleMonth = (month: string) => {
-    setExportMonths((current) => toggleValue(current, month, true).sort());
+  const toggleYear = (year: string) => {
+    setSelectedYears((current) => toggleValue(current, year, true).sort());
     setPreview(null);
   };
 
-  const selectVisibleYearMonths = () => {
-    setExportMonths((current) => Array.from(new Set([...current, ...monthsForSelectedYear])).sort());
+  const toggleMonthNumber = (month: string) => {
+    setSelectedMonthNumbers((current) => toggleValue(current, month, true).sort());
     setPreview(null);
   };
 
-  const clearVisibleYearMonths = () => {
-    setExportMonths((current) => {
-      const remaining = current.filter((month) => !month.startsWith(`${selectedMonthYear}-`));
-      return remaining.length > 0 ? remaining : current;
-    });
+  const toggleDay = (day: number) => {
+    setSelectedDays((current) => toggleValue(
+      current.map(String),
+      String(day),
+      true,
+    ).map(Number).sort((left, right) => left - right));
     setPreview(null);
   };
 
@@ -460,7 +484,7 @@ export function Settings({
         </>
       ) : (
         <div className="space-y-3">
-          <div className="glass rounded-3xl p-4">
+          <div className="glass relative z-40 overflow-visible rounded-3xl p-4">
             <div className="mb-3 flex items-center gap-2">
               <SlidersHorizontal size={16} className="text-indigo-500" />
               <h3 className="text-sm font-bold">Builder export Excel</h3>
@@ -483,7 +507,7 @@ export function Settings({
               />
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-3">
+            <div className="grid gap-3 lg:grid-cols-4">
               {exportMode === 'table' ? (
                 <FieldBlock title="Dataset">
                   <select
@@ -507,33 +531,43 @@ export function Settings({
                 </FieldBlock>
               )}
 
-              <FieldBlock title="Luni">
-                <MonthSelector
-                  years={availableYears}
-                  selectedYear={selectedMonthYear}
-                  onYearChange={setSelectedMonthYear}
-                  months={monthsForSelectedYear}
-                  selectedMonths={exportMonths}
-                  onMonthToggle={toggleMonth}
-                  onAddMonth={(month) => {
-                    if (!exportMonths.includes(month)) toggleMonth(month);
-                  }}
-                  onSelectYear={selectVisibleYearMonths}
-                  onClearYear={clearVisibleYearMonths}
-                />
-              </FieldBlock>
+              <div className="lg:col-span-2">
+                <FieldBlock title="Perioada">
+                  <PeriodSelector
+                    years={availableYears}
+                    selectedYears={selectedYears}
+                    onYearToggle={toggleYear}
+                    monthNumbers={availableMonthNumbers}
+                    selectedMonthNumbers={selectedMonthNumbers}
+                    onMonthToggle={toggleMonthNumber}
+                    selectedDays={selectedDays}
+                    onDayToggle={toggleDay}
+                    onSelectAllDays={() => {
+                      setSelectedDays(ALL_DAYS);
+                      setPreview(null);
+                    }}
+                    onSelectFirstNineDays={() => {
+                      setSelectedDays(ALL_DAYS.slice(0, 9));
+                      setPreview(null);
+                    }}
+                    selectedMonthCount={exportMonths.length}
+                  />
+                </FieldBlock>
+              </div>
 
               <FieldBlock title="Optiuni">
                 <div className="space-y-1 rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-                  <CheckRow
-                    label="Include magazine inchise"
-                    checked={includeClosedStores}
-                    onChange={() => {
-                      setIncludeClosedStores((value) => !value);
-                      setPreview(null);
-                    }}
-                  />
-                  {exportMode === 'table' && (
+                  {!isIncentiveProductsExport && (
+                    <CheckRow
+                      label="Include magazine inchise"
+                      checked={includeClosedStores}
+                      onChange={() => {
+                        setIncludeClosedStores((value) => !value);
+                        setPreview(null);
+                      }}
+                    />
+                  )}
+                  {exportMode === 'table' && !isIncentiveProductsExport && (
                     <CheckRow
                       label="Vanzare lunara pe perioada selectata"
                       checked={monthlyMetrics.includes('total_sales')}
@@ -548,7 +582,7 @@ export function Settings({
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="relative z-0 grid gap-3 lg:grid-cols-2">
             <div className="glass rounded-3xl p-4">
               <h3 className="mb-3 text-sm font-bold">Filtre</h3>
               <FilterBlock title="Firma" values={filterOptions?.firme ?? []} selected={exportFilters.firma} onToggle={(value) => toggleFilter('firma', value)} />
@@ -563,6 +597,11 @@ export function Settings({
                 {exportMode === 'table' ? 'Coloane' : 'Grafic si tabele'}
               </h3>
               {exportMode === 'table' ? (
+                isIncentiveProductsExport ? (
+                  <p className="rounded-2xl bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                    Coloane fixe: categorie, subcategorie, produs, vanzari, excluderi promo, unitati eligibile si plata. Vanzarile respecta zilele bifate; pragul de plata ramane lunar, ca in Focus.
+                  </p>
+                ) : (
                 <>
                   <ColumnBlock
                     title="Identificare"
@@ -606,6 +645,7 @@ export function Settings({
                     </p>
                   )}
                 </>
+                )
               ) : (
                 <>
                   <ColumnBlock
@@ -648,7 +688,7 @@ export function Settings({
                 <button
                   type="button"
                   onClick={() => void handlePreviewExport()}
-                  disabled={exportBusy || exportMonths.length === 0}
+                  disabled={exportBusy || exportMonths.length === 0 || selectedDays.length === 0}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
                   <Eye size={14} />
@@ -657,7 +697,7 @@ export function Settings({
                 <button
                   type="button"
                   onClick={() => void handleDownloadExport()}
-                  disabled={exportBusy || exportMonths.length === 0}
+                  disabled={exportBusy || exportMonths.length === 0 || selectedDays.length === 0}
                   className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 disabled:opacity-60"
                 >
                   <Download size={14} />
@@ -703,102 +743,102 @@ export function Settings({
   );
 }
 
-function MonthSelector({
+function PeriodSelector({
   years,
-  selectedYear,
-  onYearChange,
-  months,
-  selectedMonths,
+  selectedYears,
+  onYearToggle,
+  monthNumbers,
+  selectedMonthNumbers,
   onMonthToggle,
-  onAddMonth,
-  onSelectYear,
-  onClearYear,
+  selectedDays,
+  onDayToggle,
+  onSelectAllDays,
+  onSelectFirstNineDays,
+  selectedMonthCount,
 }: {
   years: string[];
-  selectedYear: string;
-  onYearChange: (year: string) => void;
-  months: string[];
-  selectedMonths: string[];
+  selectedYears: string[];
+  onYearToggle: (year: string) => void;
+  monthNumbers: string[];
+  selectedMonthNumbers: string[];
   onMonthToggle: (month: string) => void;
-  onAddMonth: (month: string) => void;
-  onSelectYear: () => void;
-  onClearYear: () => void;
+  selectedDays: number[];
+  onDayToggle: (day: number) => void;
+  onSelectAllDays: () => void;
+  onSelectFirstNineDays: () => void;
+  selectedMonthCount: number;
 }) {
-  const selectedInYear = months.filter((month) => selectedMonths.includes(month)).length;
-
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <select
-          value={selectedYear}
-          onChange={(event) => onYearChange(event.target.value)}
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
-        >
+    <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <PeriodDropdown label="Ani" summary={selectedYears.join(', ')}>
           {years.map((year) => (
-            <option key={year} value={year}>{year}</option>
+            <CheckRow key={year} label={year} checked={selectedYears.includes(year)} onChange={() => onYearToggle(year)} />
           ))}
-        </select>
-        <select
-          value=""
-          onChange={(event) => {
-            if (event.target.value) onAddMonth(event.target.value);
-          }}
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold outline-none dark:border-slate-700 dark:bg-slate-800"
+        </PeriodDropdown>
+        <PeriodDropdown
+          label="Luni"
+          summary={selectedMonthNumbers.length <= 2
+            ? selectedMonthNumbers.map((month) => MONTH_LABELS[Number(month) - 1] ?? month).join(', ')
+            : `${selectedMonthNumbers.length} selectate`}
         >
-          <option value="">Adauga luna</option>
-          {months.map((month) => (
-            <option key={month} value={month}>
-              {formatMonthLabel(month)}
-            </option>
+          {monthNumbers.map((month) => (
+            <CheckRow
+              key={month}
+              label={MONTH_LABELS[Number(month) - 1] ?? month}
+              checked={selectedMonthNumbers.includes(month)}
+              onChange={() => onMonthToggle(month)}
+            />
           ))}
-        </select>
+        </PeriodDropdown>
+        <PeriodDropdown label="Zile" summary={selectedDays.length === 31 ? 'Toata luna' : `${selectedDays.length} selectate`}>
+          <div className="mb-2 flex gap-1">
+            <button type="button" onClick={onSelectAllDays} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold dark:border-slate-700">
+              Toate
+            </button>
+            <button type="button" onClick={onSelectFirstNineDays} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold dark:border-slate-700">
+              Primele 9
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {ALL_DAYS.map((day) => (
+              <CheckRow key={day} label={String(day)} checked={selectedDays.includes(day)} onChange={() => onDayToggle(day)} />
+            ))}
+          </div>
+        </PeriodDropdown>
       </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
-        <span>{selectedMonths.length} luni selectate · {selectedInYear} in {selectedYear}</span>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={onSelectYear}
-            className="rounded-lg border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Tot anul
-          </button>
-          <button
-            type="button"
-            onClick={onClearYear}
-            className="rounded-lg border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Curata anul
-          </button>
-        </div>
-      </div>
-      <div className="mt-2 grid max-h-36 gap-1 overflow-auto sm:grid-cols-2">
-        {months.map((month) => (
-          <CheckRow
-            key={month}
-            label={formatMonthLabel(month)}
-            checked={selectedMonths.includes(month)}
-            onChange={() => onMonthToggle(month)}
-          />
-        ))}
+      <div className="text-[11px] font-semibold text-slate-500">
+        {selectedMonthCount} luni rezultate · {selectedDays.length === 31 ? 'toate zilele' : `zilele ${selectedDays.join(', ')}`}
       </div>
     </div>
   );
 }
 
-function formatMonthLabel(month: string): string {
-  const index = Number(month.slice(5, 7)) - 1;
-  return `${MONTH_LABELS[index] ?? month.slice(5, 7)} ${month.slice(0, 4)}`;
+function PeriodDropdown({ label, summary, children }: { label: string; summary: string; children: ReactNode }) {
+  return (
+    <details className="relative open:z-50 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+      <summary className="cursor-pointer list-none px-2 py-2 text-xs font-bold text-slate-600 dark:text-slate-200">
+        <span className="block text-[10px] uppercase text-slate-400">{label}</span>
+        <span>{summary}</span>
+      </summary>
+      <div className="absolute left-0 z-[60] mt-1 max-h-72 min-w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        {children}
+      </div>
+    </details>
+  );
 }
 
-function formatExportFilename(mode: ExportMode, dataset: string, months: string[]): string {
+function formatExportFilename(mode: ExportMode, dataset: string, months: string[], days: number[]): string {
   const sortedMonths = [...months].sort();
   const suffix = sortedMonths.length <= 4
     ? sortedMonths.join('_')
     : `${sortedMonths[0]}_${sortedMonths[sortedMonths.length - 1]}_${sortedMonths.length}luni`;
+  const daySuffix = days.length === 31
+    ? ''
+    : `_zile_${days.length <= 10 ? days.join('-') : `${days.length}selectate`}`;
   return mode === 'daily_comparison'
-    ? `export_retail_evolutie_zilnica_${suffix}`
-    : `export_retail_${dataset}_${suffix}`;
+    ? `export_retail_evolutie_zilnica_${suffix}${daySuffix}`
+    : `export_retail_${dataset}_${suffix}${daySuffix}`;
 }
 
 function formatExportError(error: unknown, fallback: string): string {

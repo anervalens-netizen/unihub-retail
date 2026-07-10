@@ -96,8 +96,15 @@ pentru iulie, ca istoricul iunie să rămână legat de raportul POS final:
 
 Intrările de iulie nu au `actuals_source_file`; până la încărcarea unui raport
 POS nou, promoțiile se calculează din regulile pe bonuri după importul zilnic
-de vânzări. Campania incentive `2026-07` a fost clonată în DB din `2026-06`:
-967 produse, aceleași valori 5/10/25 RON, total reward map 5.945 RON. Nu există
+de vânzări. Campania incentive `2026-07` are doua mecanisme persistate prin
+`incentive_products.valid_from/valid_to`:
+- `2026-07-01` → `2026-07-09`: 967 produse, valori 5/10/25 RON;
+- `2026-07-10` → `2026-07-31`: 201 produse, valori 5/10/15/30 RON, din
+  `/opt/Mobiup/docs/Coduri Incentive Mobiup-Mobicell Iulie 2026.xls`.
+Codul `CL49076`, cu valoare lipsa in fisier, este importat explicit cu 30 RON,
+conform matricei de categorii confirmate. Calificarea se aplica o singura data
+pe targetul lunar: 90%-99,99% plateste 50%, iar minimum 100% plateste integral.
+Nu există
 concurs activ pentru iulie; `data/contests.json` rămâne doar cu concursurile
 închise pe 2026-06.
 

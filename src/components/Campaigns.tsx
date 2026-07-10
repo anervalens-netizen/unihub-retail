@@ -17,11 +17,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -37,6 +34,7 @@ import type {
   ContestResponse,
   FocusHistoryPoint,
   IncentiveCategory,
+  IncentiveCategoryBreakdown,
   IncentiveTopAgent,
   PremiumGlassAnalysis,
   PremiumGlassAgentStat,
@@ -550,6 +548,8 @@ export function Campaigns({
 
           <IncentiveCard promoData={promoData} />
 
+          <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
+
           {promoData && promoData.top_agents.length > 0 && (
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
@@ -852,8 +852,6 @@ export function Campaigns({
   );
 }
 
-const INCENTIVE_TIER_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
-
 const PREMIUM_SURFACE_OPTIONS: Array<{ value: PremiumGlassSurfaceMode; label: string }> = [
   { value: 'all', label: 'Toate' },
   { value: 'screen', label: 'Ecran' },
@@ -1112,124 +1110,102 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
 }
 
 function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse | null }) {
-  const categories: IncentiveCategory[] = promoData?.incentive_categories ?? [];
-  const pieData = categories.map((cat) => ({ name: cat.label, value: cat.qty }));
-  const totalQty = categories.reduce((sum, c) => sum + c.qty, 0);
+  const tiers: IncentiveCategory[] = promoData?.incentive_categories ?? [];
+  const periods = promoData?.incentive_periods ?? [];
 
   return (
-    <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
-      {/* Header */}
-      <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-        <Gift size={16} />
-        <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Incentive</span>
-      </div>
-      <div className="mb-1">
-        <h4 className="text-base font-black tracking-tight">{promoData?.incentive_title || 'Incentive'}</h4>
-        {promoData?.incentive_description && (
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.incentive_description}</p>
-        )}
-        {promoData && promoData.incentive_product_count > 0 && (
-          <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
-            <Tag size={11} />
-            <span>{promoData.incentive_product_count} coduri eligibile</span>
-          </div>
-        )}
-      </div>
-
-      {/* Stats principale */}
-      <div className="mb-4 grid grid-cols-2 gap-3">
+    <div className="glass rounded-4xl border border-indigo-100 p-4 dark:border-indigo-900/30">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-3xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div>
-          <div className="text-[11px] text-slate-500">bucati vandute</div>
-          {promoData && (
-            <div className="mt-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
-              {formatInt(promoData.incentive_qualified_qty)} calificate
-            </div>
-          )}
-        </div>
-        <div>
-          <div className="text-3xl font-black text-indigo-600">
-            {promoData ? formatCurrency(promoData.incentive_value) : '-'}
+          <div className="mb-2 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+            <Gift size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Incentive</span>
           </div>
-          <div className="text-[11px] text-slate-500">valoare incentive</div>
-        </div>
-      </div>
-
-      {/* Magazine & agenti calificati */}
-      {promoData && (
-        <div className="mb-4 border-t border-indigo-100 pt-3 dark:border-indigo-900/30">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400">
-                <Building2 size={16} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-black leading-tight">{formatInt(promoData.incentive_qualified_stores)}</div>
-                <div className="text-[11px] text-slate-500">magazine calificate</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400">
-                <Sparkles size={16} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-lg font-black leading-tight">{formatInt(promoData.incentive_qualified_agents)}</div>
-                <div className="text-[11px] text-slate-500">agenti calificati</div>
-              </div>
-            </div>
-          </div>
-          <p className="mt-2 text-[10px] leading-snug text-slate-400">
-            Calificare: 100% din target pe magazin = incentive intreg, peste 90% = jumatate.
+          <h4 className="text-base font-black tracking-tight">{promoData?.incentive_title || 'Incentive'}</h4>
+          <p className="mt-1 max-w-3xl text-xs text-slate-500 dark:text-slate-300">
+            {periods.length > 1
+              ? 'Valoarea fiecarui produs este cea activa la data vanzarii. Calificarea se aplica o singura data, pe targetul lunar al magazinului.'
+              : promoData?.incentive_description || 'Bonus calculat pe produs eligibil vandut.'}
           </p>
         </div>
-      )}
-
-      {/* Pie chart pe tiere de reward */}
-      {pieData.length > 0 && (
-        <div className="mb-4 border-t border-indigo-100 pt-3 dark:border-indigo-900/30">
-          <h5 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Distributie pe tier</h5>
-          <div className="flex items-center gap-4">
-            <div className="h-[120px] w-[120px] shrink-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={32}
-                    outerRadius={52}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {pieData.map((_, index) => (
-                      <Cell key={index} fill={INCENTIVE_TIER_COLORS[index % INCENTIVE_TIER_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: number, name: string) => [
-                      `${formatInt(value)} buc (${totalQty > 0 ? Math.round((value / totalQty) * 100) : 0}%)`,
-                      name,
-                    ]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="min-w-0 flex-1 space-y-1">
-              {categories.map((cat, index) => (
-                <div key={cat.label} className="flex items-center gap-2 text-xs">
-                  <div
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ background: INCENTIVE_TIER_COLORS[index % INCENTIVE_TIER_COLORS.length] }}
-                  />
-                  <span className="min-w-0 flex-1 truncate font-semibold">{cat.label}</span>
-                  <span className="shrink-0 font-black text-indigo-600">{formatInt(cat.qty)}</span>
-                </div>
-              ))}
-            </div>
+        {promoData && promoData.incentive_product_count > 0 && (
+          <div className="flex items-center gap-1 rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+            <Tag size={11} />
+            {formatInt(promoData.incentive_product_count)} coduri unice
           </div>
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-200 py-3 sm:grid-cols-4 dark:border-slate-700">
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati eligibile dupa promo</div></div>
+        <div><div className="text-2xl font-black text-indigo-600">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] text-slate-500">incentive calculat acum</div></div>
+        <div><div className="text-2xl font-black text-emerald-600">{promoData ? formatCurrency(promoData.incentive_potential) : '-'}</div><div className="text-[11px] text-slate-500">potential la calificare 100%</div></div>
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati in magazine calificate</div></div>
+      </div>
+
+      {periods.length > 0 && (
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {periods.map((period) => (
+            <div key={`${period.start_date}-${period.end_date}`} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <div><div className="text-xs font-black">{period.label}</div><div className="text-[10px] text-slate-500">{period.start_date} – {period.end_date} · {formatInt(period.product_count)} coduri</div></div>
+                <div className="text-right text-xs font-black text-indigo-600">{formatCurrency(period.value)}</div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500">
+                <span><strong className="text-slate-700 dark:text-slate-200">{formatInt(period.qty)}</strong> unitati</span>
+                <span><strong className="text-slate-700 dark:text-slate-200">{formatCurrency(period.potential)}</strong> potential</span>
+                <span>{period.reward_values.map((value) => `${formatInt(value)} RON`).join(' · ')}</span>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
+      {promoData && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+          <div className="flex gap-4 text-slate-500">
+            <span><strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_stores)}</strong> magazine calificate</span>
+            <span><strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents)}</strong> agenti</span>
+          </div>
+          <div className="font-semibold text-slate-500">90–99,99% = 50% · minimum 100% = integral</div>
+        </div>
+      )}
+
+      {tiers.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-[10px] dark:border-slate-700">
+          <span className="font-bold uppercase text-slate-400">Tier-uri vandute</span>
+          {tiers.map((tier) => <span key={tier.label} className="rounded-full bg-indigo-50 px-2 py-1 font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">{tier.label}: {formatInt(tier.qty)}</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IncentiveCategoryCard({ promoData, month }: { promoData: CampaignsPromotionsResponse | null; month: string }) {
+  const rows: IncentiveCategoryBreakdown[] = promoData?.incentive_category_breakdown ?? [];
+  if (rows.length === 0) return null;
+  const maxPotential = Math.max(...rows.map((row) => row.potential), 1);
+
+  return (
+    <div className="glass rounded-4xl border border-indigo-100 p-4 dark:border-indigo-900/30">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div><div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400"><BadgePercent size={16} /><span className="text-[11px] font-bold uppercase tracking-[0.22em]">Categorii incentive</span></div><p className="mt-1 text-[11px] text-slate-500">Cantitate eligibila si valoare dupa mecanismul activ la data vanzarii.</p></div>
+        <ExportTableButton filename={`focus-incentive-categorii-${month}`} sheetName="Categorii incentive" rows={rows} columns={[
+          { header: 'Categorie', value: (row) => row.label },
+          { header: 'Cantitate', value: (row) => row.qty, format: 'integer' },
+          { header: 'Potential', value: (row) => row.potential, format: 'currency' },
+          { header: 'Incentive calculat', value: (row) => row.value, format: 'currency' },
+        ]} />
+      </div>
+      <div className="grid gap-x-6 gap-y-2 md:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="min-w-0">
+            <div className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-semibold" title={row.label}>{row.label}</span><span className="font-black">{formatInt(row.qty)}</span><span className="w-20 text-right font-black text-indigo-600">{formatCurrency(row.value)}</span></div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.max(2, (row.potential / maxPotential) * 100)}%` }} /></div>
+            <div className="mt-0.5 text-[10px] text-slate-400">Potential {formatCurrency(row.potential)}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1675,8 +1651,8 @@ function SortableTable<T extends Record<string, unknown>>({
 
 function achievementColor(ach: number | null): string {
   if (ach === null || ach === undefined) return 'text-slate-400';
-  if (ach >= 0.99) return 'text-emerald-600 font-black';
-  if (ach >= 0.89) return 'text-amber-500 font-semibold';
+  if (ach >= 1) return 'text-emerald-600 font-black';
+  if (ach >= 0.9) return 'text-amber-500 font-semibold';
   return 'text-red-500';
 }
 

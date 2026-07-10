@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from models import PromoIncentiveSummary
 from services.dashboard.queries import DashboardCampaignContext
 from services.dashboard.specials_data import _get_special_cards_data
 
@@ -73,6 +74,11 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
             "services.dashboard.specials_data._get_store_incentive_multipliers",
             new_callable=AsyncMock,
             return_value=({"S1": 1.0}, {"S1": 1.0}),
+        ),
+        patch(
+            "services.dashboard.specials_data._fetch_promo_incentive_summary",
+            new_callable=AsyncMock,
+            return_value=PromoIncentiveSummary(incentive_qty=4, incentive_value=40),
         ),
     ):
         cards = await _get_special_cards_data(

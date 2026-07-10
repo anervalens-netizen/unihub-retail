@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from typing import Any
@@ -12,7 +12,12 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from repositories.exports import ExportsRepository
-from services.dashboard.queries import _load_dashboard_campaign_context
+from services.dashboard.queries import (
+    _compute_dashboard_promotion_result,
+    _get_store_incentive_multipliers,
+    _load_dashboard_campaign_context,
+)
+from services.incentive_db import get_incentive_campaign
 from services.dashboard_specials import (
     load_promotion_rule_products,
     load_special_cards_config,
@@ -48,6 +53,11 @@ DATASETS = {
         "label": "ASM",
         "description": "Rand pe ASM.",
         "dimensions": ["regional", "asm"],
+    },
+    "incentive_products": {
+        "label": "Incentive pe produs",
+        "description": "Produse incentive, categorii, excluderi promo si plata calculata pe pragul fiecarui magazin.",
+        "dimensions": [],
     },
 }
 
@@ -199,6 +209,15 @@ class ExportsService:
             raise ExportValidationError("Selecteaza cel putin o luna.")
         if len(months) > 144:
             raise ExportValidationError("Selectia poate contine maxim 144 luni.")
+        selected_days = self._selected_days(request)
+
+        if dataset == "incentive_products":
+            return await self._build_incentive_products_report(
+                months=months,
+                filters=self._normalize_filters(request.get("filters") or {}),
+                include_closed_stores=True,
+                selected_days=selected_days,
+            )
 
         dimensions = self._valid_keys(
             request.get("dimensions"),
@@ -232,7 +251,9 @@ class ExportsService:
         filters = self._normalize_filters(request.get("filters") or {})
         include_closed_stores = bool(request.get("include_closed_stores", False))
         campaign_codes_by_month = self._campaign_codes_by_month(months)
-        campaign_exclusions_by_month = await self._campaign_exclusions_by_month(months, filters)
+        campaign_exclusions_by_month = await self._campaign_exclusions_by_month(
+            months, filters, selected_days
+        )
 
         total_records = await self.repo.fetch_report_rows(
             dataset=dataset,
@@ -241,6 +262,7 @@ class ExportsService:
             include_closed_stores=include_closed_stores,
             campaign_codes_by_month=campaign_codes_by_month,
             campaign_exclusions_by_month=campaign_exclusions_by_month,
+            selected_days=selected_days,
         )
         rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
         for record in total_records:
@@ -255,6 +277,7 @@ class ExportsService:
                 include_closed_stores=include_closed_stores,
                 campaign_codes_by_month=campaign_codes_by_month,
                 campaign_exclusions_by_month=campaign_exclusions_by_month,
+                selected_days=selected_days,
                 period="month",
             )
             self._attach_period_metrics(
@@ -273,6 +296,7 @@ class ExportsService:
                 include_closed_stores=include_closed_stores,
                 campaign_codes_by_month=campaign_codes_by_month,
                 campaign_exclusions_by_month=campaign_exclusions_by_month,
+                selected_days=selected_days,
                 period="day",
             )
             self._attach_period_metrics(
@@ -290,6 +314,160 @@ class ExportsService:
             "columns": columns,
             "rows": [self._public_row(row, columns) for row in rows],
         }
+
+    async def _build_incentive_products_report(
+        self,
+        *,
+        months: list[str],
+        filters: dict[str, list[str]],
+        include_closed_stores: bool,
+        selected_days: list[int] | None,
+    ) -> dict[str, Any]:
+        columns = [
+            {"key": "month", "label": "Luna", "type": "text", "group": "Perioada"},
+            {"key": "category", "label": "Categorie", "type": "text", "group": "Produs"},
+            {"key": "subcategory", "label": "Subcategorie", "type": "text", "group": "Produs"},
+            {"key": "item_code", "label": "Cod produs", "type": "text", "group": "Produs"},
+            {"key": "item_name", "label": "Produs", "type": "text", "group": "Produs"},
+            {"key": "reward_value", "label": "Reward/unitate RON", "type": "currency", "group": "Incentive"},
+            {"key": "positive_quantity", "label": "Vandute pozitive", "type": "integer", "group": "Vanzari"},
+            {"key": "return_quantity", "label": "Retururi", "type": "integer", "group": "Vanzari"},
+            {"key": "net_quantity", "label": "Vandute net", "type": "integer", "group": "Vanzari"},
+            {"key": "promo_excluded_quantity", "label": "Excluse promo", "type": "integer", "group": "Incentive"},
+            {"key": "eligible_quantity", "label": "Eligibile dupa promo", "type": "integer", "group": "Incentive"},
+            {"key": "paid_quantity", "label": "Buc. platite >0", "type": "integer", "group": "Plata"},
+            {"key": "paid_full_quantity", "label": "Buc. platite 100%", "type": "integer", "group": "Plata"},
+            {"key": "paid_half_quantity", "label": "Buc. platite 50%", "type": "integer", "group": "Plata"},
+            {"key": "unpaid_quantity", "label": "Neplatite", "type": "integer", "group": "Plata"},
+            {"key": "qualified_ui_quantity", "label": "Calificate UI", "type": "integer", "group": "Plata"},
+            {"key": "potential_value", "label": "Valoare potentiala RON", "type": "currency", "group": "Incentive"},
+            {"key": "paid_value", "label": "RON platiti", "type": "currency", "group": "Plata"},
+        ]
+        pool = getattr(self.repo, "pool", None)
+        if pool is None:
+            raise ExportValidationError("Exportul incentive nu are conexiune la baza de date.")
+
+        def csv_filter(key: str) -> str | None:
+            values = [value for value in filters.get(key, []) if value]
+            return ",".join(values) if values else None
+
+        rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+        async with pool.acquire() as conn:
+            for month in months:
+                campaign = await get_incentive_campaign(conn, month)
+                if campaign is None:
+                    continue
+                period_exclusions: dict[tuple[str, str, str], int] = {}
+                periods = campaign.get("periods") or []
+                if len(periods) <= 1:
+                    month_exclusions = await self._campaign_exclusions_by_month(
+                        [month], filters, selected_days
+                    )
+                    for (site_code_value, _agent, item_code_value), units in month_exclusions.get(month, {}).items():
+                        key = (
+                            periods[0]["valid_from"].isoformat() if periods else "",
+                            site_code_value,
+                            item_code_value,
+                        )
+                        period_exclusions[key] = period_exclusions.get(key, 0) + units
+                else:
+                    requested_days = set(selected_days or range(1, 32))
+                    for period in periods:
+                        period_days = [
+                            day for day in requested_days
+                            if period["valid_from"].day <= day <= period["valid_to"].day
+                        ]
+                        if not period_days:
+                            continue
+                        period_result = await self._campaign_exclusions_by_month(
+                            [month], filters, sorted(period_days)
+                        )
+                        for (site_code_value, _agent, item_code_value), units in period_result.get(month, {}).items():
+                            key = (period["valid_from"].isoformat(), site_code_value, item_code_value)
+                            period_exclusions[key] = period_exclusions.get(key, 0) + units
+                multipliers, achievements = await _get_store_incentive_multipliers(
+                    conn,
+                    month,
+                    firma=csv_filter("firma"),
+                    regional=csv_filter("regional"),
+                    asm=csv_filter("asm"),
+                    site_code=csv_filter("site_code"),
+                    current_scope=True,
+                    include_closed_stores=include_closed_stores,
+                )
+                records = await self.repo.fetch_incentive_product_rows(
+                    month=month,
+                    filters=filters,
+                    include_closed_stores=include_closed_stores,
+                    selected_days=selected_days,
+                )
+                for record in records:
+                    reward = Decimal(record["reward_value"] or 0)
+                    row_key = (
+                        month,
+                        record["category"],
+                        record["subcategory"],
+                        record["item_code"],
+                        record["item_name"],
+                        reward,
+                    )
+                    row = rows_by_key.setdefault(row_key, {
+                        "month": month,
+                        "category": record["category"],
+                        "subcategory": record["subcategory"],
+                        "item_code": record["item_code"],
+                        "item_name": record["item_name"],
+                        "reward_value": reward,
+                        "positive_quantity": 0,
+                        "return_quantity": 0,
+                        "net_quantity": 0,
+                        "promo_excluded_quantity": 0,
+                        "eligible_quantity": 0,
+                        "paid_quantity": 0,
+                        "paid_full_quantity": 0,
+                        "paid_half_quantity": 0,
+                        "unpaid_quantity": 0,
+                        "qualified_ui_quantity": 0,
+                        "potential_value": Decimal(0),
+                        "paid_value": Decimal(0),
+                    })
+                    net_quantity = int(record["net_quantity"] or 0)
+                    # Exclusions cannot reduce a store-product below zero. This
+                    # is the same clipping used by Focus for promo incentive.
+                    excluded_quantity = min(
+                        max(0, net_quantity),
+                        int(period_exclusions.get((
+                            record.get("valid_from").isoformat() if record.get("valid_from") else "",
+                            record["site_code"],
+                            record["item_code"],
+                        ), 0)),
+                    )
+                    eligible_quantity = max(0, net_quantity - excluded_quantity)
+                    multiplier = Decimal(str(multipliers.get(record["site_code"], 0)))
+                    achievement = achievements.get(record["site_code"])
+                    row["positive_quantity"] += int(record["positive_quantity"] or 0)
+                    row["return_quantity"] += int(record["return_quantity"] or 0)
+                    row["net_quantity"] += net_quantity
+                    row["promo_excluded_quantity"] += excluded_quantity
+                    row["eligible_quantity"] += eligible_quantity
+                    row["potential_value"] += eligible_quantity * reward
+                    row["paid_value"] += eligible_quantity * reward * multiplier
+                    if multiplier > 0:
+                        row["paid_quantity"] += eligible_quantity
+                    else:
+                        row["unpaid_quantity"] += eligible_quantity
+                    if multiplier == 1:
+                        row["paid_full_quantity"] += eligible_quantity
+                    elif multiplier > 0:
+                        row["paid_half_quantity"] += eligible_quantity
+                    if achievement is not None and achievement >= 0.9:
+                        row["qualified_ui_quantity"] += eligible_quantity
+
+        rows = [self._public_row(row, columns) for row in rows_by_key.values()]
+        rows.sort(key=lambda row: (
+            str(row["month"]), str(row["category"]), str(row["subcategory"]), str(row["item_code"])
+        ))
+        return {"columns": columns, "rows": rows}
 
     async def build_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
         if request.get("export_mode") == "daily_comparison":
@@ -325,6 +503,8 @@ class ExportsService:
         cfg.append(["Optiune", "Valoare"])
         cfg.append(["Dataset", DATASETS[request["dataset"]]["label"]])
         cfg.append(["Luni", ", ".join(request["months"])])
+        selected_days = self._selected_days(request)
+        cfg.append(["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
         cfg.append(["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
         cfg.append(["Randuri", len(rows)])
         for cell in cfg[1]:
@@ -341,7 +521,9 @@ class ExportsService:
                 campaign_exclusions_by_month=await self._campaign_exclusions_by_month(
                     request["months"],
                     self._normalize_filters(request.get("filters") or {}),
+                    selected_days,
                 ),
+                selected_days=selected_days,
             )
             self._add_daily_evolution_sheet(
                 wb,
@@ -352,11 +534,14 @@ class ExportsService:
 
         stream = BytesIO()
         wb.save(stream)
-        filename = request.get("filename") or f"export_retail_{request['dataset']}_{'_'.join(request['months'])}.xlsx"
+        filename = request.get("filename") or (
+            f"export_retail_{request['dataset']}_{'_'.join(request['months'])}"
+            f"{self._days_filename_suffix(selected_days)}.xlsx"
+        )
         return stream.getvalue(), self._safe_filename(str(filename))
 
     async def _preview_daily_comparison(self, request: dict[str, Any]) -> dict[str, Any]:
-        months, metrics, levels, filters, include_closed_stores = self._daily_comparison_params(request)
+        months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
         campaign_codes_by_month = self._campaign_codes_by_month(months)
         preview_level = "general" if "general" in levels else levels[0]
         records = await self.repo.fetch_daily_comparison_rows(
@@ -365,12 +550,14 @@ class ExportsService:
             filters=filters,
             include_closed_stores=include_closed_stores,
             campaign_codes_by_month=campaign_codes_by_month,
+            selected_days=selected_days,
         )
         table = self._daily_comparison_table(
             level=preview_level,
             months=months,
             metrics=metrics,
             records=records,
+            selected_days=selected_days,
         )
         limit = int(request.get("preview_limit") or 100)
         return {
@@ -381,7 +568,7 @@ class ExportsService:
         }
 
     async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
-        months, metrics, levels, filters, include_closed_stores = self._daily_comparison_params(request)
+        months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
         campaign_codes_by_month = self._campaign_codes_by_month(months)
         wb = Workbook()
         first_sheet = True
@@ -394,12 +581,14 @@ class ExportsService:
                 filters=filters,
                 include_closed_stores=include_closed_stores,
                 campaign_codes_by_month=campaign_codes_by_month,
+                selected_days=selected_days,
             )
             table = self._daily_comparison_table(
                 level=level,
                 months=months,
                 metrics=metrics,
                 records=records,
+                selected_days=selected_days,
             )
             sheet_name = COMPARISON_LEVELS[level]["sheet"]
             ws = wb.active if first_sheet else wb.create_sheet(sheet_name)
@@ -419,6 +608,7 @@ class ExportsService:
         cfg.append(["Optiune", "Valoare"])
         cfg.append(["Tip export", "Evolutie zilnica comparativa"])
         cfg.append(["Luni", ", ".join(months)])
+        cfg.append(["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
         cfg.append(["Metrici zilnice", ", ".join(DAILY_EVOLUTION_METRICS[item].label for item in metrics)])
         cfg.append(["Niveluri", ", ".join(str(COMPARISON_LEVELS[item]["label"]) for item in levels)])
         cfg.append(["Include magazine inchise", "Da" if include_closed_stores else "Nu"])
@@ -431,7 +621,10 @@ class ExportsService:
 
         stream = BytesIO()
         wb.save(stream)
-        filename = request.get("filename") or f"export_retail_evolutie_zilnica_{'_'.join(months)}.xlsx"
+        filename = request.get("filename") or (
+            f"export_retail_evolutie_zilnica_{'_'.join(months)}"
+            f"{self._days_filename_suffix(selected_days)}.xlsx"
+        )
         return stream.getvalue(), self._safe_filename(str(filename))
 
     def _base_row(self, record: Any, dimensions: list[str], metrics: list[str]) -> dict[str, Any]:
@@ -556,6 +749,7 @@ class ExportsService:
         self,
         months: list[str],
         filters: dict[str, list[str]],
+        selected_days: list[int] | None = None,
     ) -> dict[str, dict[tuple[str, str, str], int]]:
         pool = getattr(self.repo, "pool", None)
         if pool is None:
@@ -568,6 +762,57 @@ class ExportsService:
         out: dict[str, dict[tuple[str, str, str], int]] = {}
         async with pool.acquire() as conn:
             for month in months:
+                if selected_days:
+                    config, config_error = load_special_cards_config()
+                    definitions, definitions_error = parse_promotion_definitions(config, month)
+                    if config_error is not None or definitions_error is not None:
+                        continue
+                    month_units: dict[tuple[str, str, str], int] = {}
+                    for definition in definitions:
+                        selected_dates: list[date] = []
+                        year, month_number = (int(value) for value in month.split("-", 1))
+                        for day_number in selected_days:
+                            try:
+                                selected_date = date(year, month_number, day_number)
+                            except ValueError:
+                                continue
+                            if definition["start_date"] <= selected_date <= definition["end_date"]:
+                                selected_dates.append(selected_date)
+                        if not selected_dates:
+                            continue
+                        ranges: list[tuple[date, date]] = []
+                        range_start = range_end = selected_dates[0]
+                        for selected_date in selected_dates[1:]:
+                            if selected_date == range_end + timedelta(days=1):
+                                range_end = selected_date
+                            else:
+                                ranges.append((range_start, range_end))
+                                range_start = range_end = selected_date
+                        ranges.append((range_start, range_end))
+                        for range_start, range_end in ranges:
+                            result = await _compute_dashboard_promotion_result(
+                                conn,
+                                month=month,
+                                definition={
+                                    **definition,
+                                    "start_date": range_start,
+                                    "end_date": range_end,
+                                    "actuals_source_file": None,
+                                    "actuals_file": None,
+                                },
+                                firma=csv_filter("firma"),
+                                regional=csv_filter("regional"),
+                                asm=csv_filter("asm"),
+                                site_code=csv_filter("site_code"),
+                                agent=csv_filter("agent"),
+                            )
+                            if result is None:
+                                continue
+                            for key, units in result.excluded_units.items():
+                                month_units[key] = month_units.get(key, 0) + units
+                    if month_units:
+                        out[month] = month_units
+                    continue
                 context = await _load_dashboard_campaign_context(
                     conn,
                     month,
@@ -599,7 +844,7 @@ class ExportsService:
     def _daily_comparison_params(
         self,
         request: dict[str, Any],
-    ) -> tuple[list[str], list[str], list[str], dict[str, list[str]], bool]:
+    ) -> tuple[list[str], list[str], list[str], dict[str, list[str]], bool, list[int] | None]:
         months = sorted({str(item) for item in request.get("months", []) if item})
         if not months:
             raise ExportValidationError("Selecteaza cel putin o luna.")
@@ -623,7 +868,7 @@ class ExportsService:
         )
         filters = self._normalize_filters(request.get("filters") or {})
         include_closed_stores = bool(request.get("include_closed_stores", False))
-        return months, metrics, levels, filters, include_closed_stores
+        return months, metrics, levels, filters, include_closed_stores, self._selected_days(request)
 
     def _daily_comparison_table(
         self,
@@ -632,6 +877,7 @@ class ExportsService:
         months: list[str],
         metrics: list[str],
         records: list[Any],
+        selected_days: list[int] | None = None,
     ) -> dict[str, Any]:
         dimensions = list(COMPARISON_LEVELS[level]["dimensions"])
         columns: list[dict[str, str]] = [
@@ -683,11 +929,12 @@ class ExportsService:
         if level == "general" and not dimension_labels:
             dimension_labels[()] = {}
         max_day = self._max_days_for_months(months)
+        days = selected_days or list(range(1, max_day + 1))
         rows: list[dict[str, Any]] = []
 
         for dim_key in sorted(dimension_labels, key=lambda item: tuple(str(value or "") for value in item)):
             dim_values = dimension_labels[dim_key]
-            for day in range(1, max_day + 1):
+            for day in days:
                 row: dict[str, Any] = {dimension: dim_values.get(dimension) for dimension in dimensions}
                 row["day_of_month"] = day
                 for metric in metrics:
@@ -720,6 +967,27 @@ class ExportsService:
             "rows": [self._public_row(row, columns) for row in rows],
             "max_day": max_day,
         }
+
+    def _selected_days(self, request: dict[str, Any]) -> list[int] | None:
+        raw_days = request.get("selected_days")
+        if raw_days is None:
+            return None
+        try:
+            days = sorted({int(day) for day in raw_days})
+        except (TypeError, ValueError) as exc:
+            raise ExportValidationError("Selectia zilelor este invalida.") from exc
+        if not days:
+            raise ExportValidationError("Selecteaza cel putin o zi.")
+        invalid = [day for day in days if day < 1 or day > 31]
+        if invalid:
+            raise ExportValidationError("Zilele trebuie sa fie intre 1 si 31.")
+        return None if days == list(range(1, 32)) else days
+
+    def _days_filename_suffix(self, selected_days: list[int] | None) -> str:
+        if not selected_days:
+            return ""
+        value = "-".join(str(day) for day in selected_days) if len(selected_days) <= 10 else f"{len(selected_days)}selectate"
+        return f"_zile_{value}"
 
     def _max_days_for_months(self, months: list[str]) -> int:
         max_day = 0

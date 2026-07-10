@@ -7,6 +7,7 @@ from db.connection import get_pool
 from models import DashboardSpecialCard
 from services.dashboard.queries import (
     DashboardCampaignContext,
+    _fetch_promo_incentive_summary,
     _get_store_incentive_multipliers,
     _load_dashboard_campaign_context,
 )
@@ -69,9 +70,11 @@ async def _get_special_cards_data(
     )
 
     if incentive_campaign is not None:
-        reward_map = incentive_campaign["reward_map"]
-        if reward_map:
-            incentive_codes = list(reward_map.keys())
+        incentive_codes = list(
+            incentive_campaign.get("item_codes")
+            or incentive_campaign.get("reward_map", {}).keys()
+        )
+        if incentive_codes:
             params, positions = build_scoped_params(
                 [month, incentive_codes],
                 firma=firma,
@@ -144,6 +147,16 @@ async def _get_special_cards_data(
                 store_multipliers, _ = await _get_store_incentive_multipliers(
                     conn, month, firma, regional, asm, site_code
                 )
+                summary = await _fetch_promo_incentive_summary(
+                    conn,
+                    month,
+                    firma,
+                    regional,
+                    asm,
+                    site_code,
+                    agent,
+                    campaign_context=campaign_context,
+                )
             net_qty = 0
             pos_qty = 0
             ret_qty = 0
@@ -160,14 +173,14 @@ async def _get_special_cards_data(
                 ret_qty += int(r["return_quantity"])
                 incentive_value += (
                     max(0, adj_net)
-                    * reward_map.get(code, 0)
+                    * incentive_campaign.get("reward_map", {}).get(code, 0)
                     * store_multipliers.get(site, 0)
                 )
             incentive_stats = {
-                "net_quantity": net_qty,
-                "positive_quantity": pos_qty,
+                "net_quantity": summary.incentive_qty,
+                "positive_quantity": summary.incentive_qty,
                 "return_quantity": ret_qty,
-                "incentive_value": incentive_value,
+                "incentive_value": float(summary.incentive_value),
                 "active_stores": int(meta_row["active_stores"]) if meta_row else 0,
                 "active_agents": int(meta_row["active_agents"]) if meta_row else 0,
                 "active_codes": int(meta_row["active_codes"]) if meta_row else 0,

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -493,7 +493,7 @@ async def _enrich_store_stats_with_campaign(
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
     incentive_campaign = await get_incentive_campaign(conn, month)
-    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
+    incentive_codes = list(incentive_campaign.get("item_codes") or incentive_campaign.get("reward_map", {}).keys()) if incentive_campaign else None
     promotion_codes = (
         promotion_definition["item_codes"] if promotion_definition is not None else []
     )
@@ -721,7 +721,7 @@ async def _fetch_agent_stats_rows(
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
     incentive_campaign = await get_incentive_campaign(conn, month)
-    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
+    incentive_codes = list(incentive_campaign.get("item_codes") or incentive_campaign.get("reward_map", {}).keys()) if incentive_campaign else None
     promotion_codes = (
         promotion_definition["item_codes"] if promotion_definition is not None else []
     )
@@ -951,7 +951,7 @@ async def _fetch_regional_stats(
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
     incentive_campaign = await get_incentive_campaign(conn, month)
-    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
+    incentive_codes = list(incentive_campaign.get("item_codes") or incentive_campaign.get("reward_map", {}).keys()) if incentive_campaign else None
     promotion_codes = (
         promotion_definition["item_codes"] if promotion_definition is not None else []
     )
@@ -1138,7 +1138,7 @@ async def _fetch_asm_stats(
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
     incentive_campaign = await get_incentive_campaign(conn, month)
-    incentive_codes = list(incentive_campaign["reward_map"].keys()) if incentive_campaign else None
+    incentive_codes = list(incentive_campaign.get("item_codes") or incentive_campaign.get("reward_map", {}).keys()) if incentive_campaign else None
     promotion_codes = (
         promotion_definition["item_codes"] if promotion_definition is not None else []
     )
@@ -1759,11 +1759,54 @@ async def _fetch_promo_incentive_summary(
         )
 
     if incentive_campaign is not None:
-        reward_map = incentive_campaign["reward_map"]
-        if reward_map:
-            incentive_codes = list(reward_map.keys())
+        campaign_periods = incentive_campaign.get("periods") or []
+        incentive_codes = incentive_campaign.get("item_codes") or list(
+            incentive_campaign.get("reward_map", {}).keys()
+        )
+        if not campaign_periods and incentive_codes:
+            year, month_number = (int(value) for value in month.split("-", 1))
+            month_start = date(year, month_number, 1)
+            month_end = date(year + (month_number == 12), 1 if month_number == 12 else month_number + 1, 1) - timedelta(days=1)
+            campaign_periods = [{"valid_from": month_start, "valid_to": month_end}]
+        if incentive_codes:
+            period_excluded_si: dict[tuple[str, str, str, str], int] = {}
+            if len(campaign_periods) <= 1:
+                if campaign_periods:
+                    period_start = campaign_periods[0]["valid_from"].isoformat()
+                    period_end = campaign_periods[0]["valid_to"].isoformat()
+                    for (sc, code), units in promo_excluded_by_site_item.items():
+                        period_excluded_si[(period_start, period_end, sc, code)] = units
+            else:
+                for period in campaign_periods:
+                    for definition in campaign_context.promotion_definitions:
+                        range_start = max(period["valid_from"], definition["start_date"])
+                        range_end = min(period["valid_to"], definition["end_date"])
+                        if range_start > range_end:
+                            continue
+                        result = await _compute_dashboard_promotion_result(
+                            conn,
+                            month=month,
+                            definition={
+                                **definition,
+                                "start_date": range_start,
+                                "end_date": range_end,
+                                "actuals_source_file": None,
+                                "actuals_file": None,
+                            },
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
+                        )
+                        if result is None:
+                            continue
+                        for (sc, _ag, code), units in result.excluded_units.items():
+                            key = (period["valid_from"].isoformat(), period["valid_to"].isoformat(), sc, code)
+                            period_excluded_si[key] = period_excluded_si.get(key, 0) + units
+
             incentive_params, incentive_positions = build_scoped_params(
-                [month, incentive_codes],
+                [month],
                 firma=firma,
                 regional=regional,
                 asm=asm,
@@ -1772,7 +1815,6 @@ async def _fetch_promo_incentive_summary(
             )
             incentive_clauses = [
                 "agg.import_month = $1",
-                "agg.item_code = ANY($2::TEXT[])",
             ]
             incentive_query_clauses = _scope_clauses(
                 incentive_positions,
@@ -1783,11 +1825,17 @@ async def _fetch_promo_incentive_summary(
             item_rows = await conn.fetch(
                 f"""
                 SELECT agg.site_code, agg.item_code,
+                       ip.valid_from, ip.valid_to, ip.reward_value,
                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
-                FROM reporting_item_month agg
+                FROM reporting_item_day agg
                 {_scope_join(current_scope)}
+                JOIN incentive_campaigns ic ON ic.month = agg.import_month
+                JOIN incentive_products ip
+                  ON ip.campaign_id = ic.id
+                 AND ip.item_code = agg.item_code
+                 AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
                 WHERE {" AND ".join(incentive_clauses)}
-                GROUP BY agg.site_code, agg.item_code
+                GROUP BY agg.site_code, agg.item_code, ip.valid_from, ip.valid_to, ip.reward_value
                 """,
                 *incentive_params,
             )
@@ -1801,22 +1849,20 @@ async def _fetch_promo_incentive_summary(
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
             )
-            incentive_qty = sum(
-                max(
-                    0,
-                    int(r["qty"])
-                    - promo_excluded_by_site_item.get((r["site_code"], r["item_code"]), 0),
-                )
-                for r in item_rows
-            )
+            def eligible_qty(row: Any) -> int:
+                row_valid_from = row.get("valid_from") or campaign_periods[0]["valid_from"]
+                row_valid_to = row.get("valid_to") or campaign_periods[0]["valid_to"]
+                excluded = period_excluded_si.get((
+                    row_valid_from.isoformat(), row_valid_to.isoformat(),
+                    str(row["site_code"]), str(row["item_code"]),
+                ), 0)
+                return max(0, int(row["qty"]) - excluded)
+
+            incentive_qty = sum(eligible_qty(row) for row in item_rows)
             incentive_value = Decimal(str(
                 sum(
-                    max(
-                        0,
-                        int(r["qty"])
-                        - promo_excluded_by_site_item.get((r["site_code"], r["item_code"]), 0),
-                    )
-                    * reward_map.get(r["item_code"], 0)
+                    eligible_qty(r)
+                    * float(r.get("reward_value") or incentive_campaign.get("reward_map", {}).get(r["item_code"], 0))
                     * store_multipliers.get(r["site_code"], 0)
                     for r in item_rows
                 )
@@ -1826,11 +1872,7 @@ async def _fetch_promo_incentive_summary(
             qualified_store_set = set(qualified_store_codes)
             incentive_qualified_stores = len(qualified_store_codes)
             incentive_qualified_qty = sum(
-                max(
-                    0,
-                    int(r["qty"])
-                    - promo_excluded_by_site_item.get((r["site_code"], r["item_code"]), 0),
-                )
+                eligible_qty(r)
                 for r in item_rows
                 if r["site_code"] in qualified_store_set
             )

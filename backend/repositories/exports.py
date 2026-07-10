@@ -11,6 +11,88 @@ class ExportsRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
+    async def fetch_incentive_product_rows(
+        self,
+        *,
+        month: str,
+        filters: dict[str, list[str]],
+        include_closed_stores: bool,
+        selected_days: list[int] | None = None,
+    ) -> list[asyncpg.Record]:
+        """Return incentive sales at the store-product grain used by Focus."""
+        params: list[Any] = [month]
+        clauses = [
+            "agg.import_month = $1",
+            distribution_location_clause("s"),
+        ]
+        if not include_closed_stores:
+            clauses.append("s.is_active = TRUE")
+
+        filter_columns = {
+            "firma": "s.firma",
+            "regional": "s.regional",
+            "asm": "s.asm",
+            "site_code": "agg.site_code",
+            "agent": "agg.agent",
+        }
+        for key, column in filter_columns.items():
+            values = [value for value in filters.get(key, []) if value]
+            if values:
+                params.append(values)
+                clauses.append(f"{column} = ANY(${len(params)}::TEXT[])")
+        if selected_days:
+            params.append(selected_days)
+            clauses.append(f"EXTRACT(DAY FROM agg.sale_date)::INT = ANY(${len(params)}::INT[])")
+
+        item_source = "reporting_item_day"
+
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                f"""
+                WITH item_categories AS (
+                    SELECT
+                        import_month,
+                        item_code,
+                        COALESCE(NULLIF(TRIM(MAX(category)), ''), 'Necategorizat') AS category,
+                        COALESCE(
+                            NULLIF(TRIM(MAX(subcategory)), ''),
+                            NULLIF(TRIM(MAX(category)), ''),
+                            'Necategorizat'
+                        ) AS subcategory
+                    FROM sales_transactions
+                    WHERE import_month = $1
+                    GROUP BY import_month, item_code
+                )
+                SELECT
+                    agg.import_month,
+                    agg.site_code,
+                    agg.item_code,
+                    COALESCE(MAX(ip.item_name), MAX(agg.item_name), agg.item_code) AS item_name,
+                    COALESCE(MAX(categories.category), 'Necategorizat') AS category,
+                    COALESCE(MAX(categories.subcategory), 'Necategorizat') AS subcategory,
+                    MAX(ip.reward_value) AS reward_value,
+                    ip.valid_from,
+                    ip.valid_to,
+                    COALESCE(SUM(agg.net_quantity), 0)::INT AS net_quantity,
+                    COALESCE(SUM(agg.positive_quantity), 0)::INT AS positive_quantity,
+                    COALESCE(SUM(agg.return_quantity), 0)::INT AS return_quantity
+                FROM {item_source} agg
+                JOIN stores s ON s.site_code = agg.site_code
+                JOIN incentive_campaigns campaign ON campaign.month = agg.import_month
+                JOIN incentive_products ip
+                    ON ip.campaign_id = campaign.id
+                    AND ip.item_code = agg.item_code
+                    AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
+                LEFT JOIN item_categories categories
+                    ON categories.import_month = agg.import_month
+                    AND categories.item_code = agg.item_code
+                WHERE {" AND ".join(clauses)}
+                GROUP BY agg.import_month, agg.site_code, agg.item_code, ip.valid_from, ip.valid_to
+                ORDER BY category, subcategory, agg.item_code, agg.site_code
+                """,
+                *params,
+            )
+
     async def fetch_report_rows(
         self,
         *,
@@ -20,6 +102,7 @@ class ExportsRepository:
         include_closed_stores: bool,
         campaign_codes_by_month: dict[str, list[str]] | None = None,
         campaign_exclusions_by_month: dict[str, dict[tuple[str, str, str], int]] | None = None,
+        selected_days: list[int] | None = None,
         period: str | None = None,
     ) -> list[asyncpg.Record]:
         dataset_fields = {
@@ -84,6 +167,9 @@ class ExportsRepository:
                 historical_column = historical_filter_columns.get(key)
                 if historical_column is not None:
                     historical_clauses.append(f"{historical_column} = ANY(${len(params)}::TEXT[])")
+        if selected_days:
+            params.append(selected_days)
+            clauses.append(f"EXTRACT(DAY FROM agg.sale_date)::INT = ANY(${len(params)}::INT[])")
 
         promo_months: list[str] = []
         promo_codes: list[str] = []
@@ -147,7 +233,7 @@ class ExportsRepository:
             "day": "NULL::TEXT",
         }[period]
         historical_union = ""
-        if dataset != "agents" and period != "day":
+        if dataset != "agents" and period != "day" and not selected_days:
             historical_union = f"""
                     UNION ALL
                     SELECT
@@ -175,29 +261,17 @@ class ExportsRepository:
         period_select = ", agg.import_month AS target_month" if period == "month" else ""
         period_group = ", agg.import_month" if period == "month" else ""
         campaign_has_agent_detail = dataset == "agents" or bool(filters.get("agent")) or period == "day"
-        if period == "day":
-            campaign_source = "reporting_item_day agg"
-        elif campaign_has_agent_detail:
-            campaign_source = "reporting_item_month agg"
-        else:
-            campaign_source = """
-                    (
-                        SELECT
-                            import_month,
-                            site_code,
-                            NULL::TEXT AS agent,
-                            item_code,
-                            COALESCE(SUM(total_sales), 0) AS total_sales,
-                            COALESCE(SUM(net_quantity), 0)::INT AS net_quantity
-                        FROM reporting_item_month
-                        GROUP BY import_month, site_code, item_code
-                    ) agg
-            """
+        campaign_source = "reporting_item_day agg"
         if period == "day":
             campaign_excluded_expr = "0"
             campaign_excluded_join = ""
         elif campaign_has_agent_detail:
-            campaign_excluded_expr = "COALESCE(eai.units, 0)"
+            campaign_excluded_expr = """
+                CASE WHEN ROW_NUMBER() OVER (
+                    PARTITION BY agg.import_month, agg.site_code, agg.agent, agg.item_code
+                    ORDER BY agg.sale_date
+                ) = 1 THEN COALESCE(eai.units, 0) ELSE 0 END
+            """
             campaign_excluded_join = """
                     LEFT JOIN excluded_agent_item eai
                         ON eai.import_month = agg.import_month
@@ -206,7 +280,12 @@ class ExportsRepository:
                         AND eai.item_code = agg.item_code
             """
         else:
-            campaign_excluded_expr = "COALESCE(esi.units, 0)"
+            campaign_excluded_expr = """
+                CASE WHEN ROW_NUMBER() OVER (
+                    PARTITION BY agg.import_month, agg.site_code, agg.item_code
+                    ORDER BY agg.sale_date, agg.agent
+                ) = 1 THEN COALESCE(esi.units, 0) ELSE 0 END
+            """
             campaign_excluded_join = """
                     LEFT JOIN excluded_site_item esi
                         ON esi.import_month = agg.import_month
@@ -287,6 +366,7 @@ class ExportsRepository:
                     LEFT JOIN incentive_products ip
                         ON ip.campaign_id = ic.id
                         AND ip.item_code = agg.item_code
+                        AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
                     LEFT JOIN promo_codes pc
                         ON pc.import_month = agg.import_month
                         AND pc.item_code = agg.item_code
@@ -407,6 +487,7 @@ class ExportsRepository:
         include_closed_stores: bool,
         campaign_codes_by_month: dict[str, list[str]] | None = None,
         campaign_exclusions_by_month: dict[str, dict[tuple[str, str, str], int]] | None = None,
+        selected_days: list[int] | None = None,
     ) -> list[asyncpg.Record]:
         params: list[Any] = [months]
         clauses = [
@@ -428,6 +509,9 @@ class ExportsRepository:
             if values:
                 params.append(values)
                 clauses.append(f"{column} = ANY(${len(params)}::TEXT[])")
+        if selected_days:
+            params.append(selected_days)
+            clauses.append(f"EXTRACT(DAY FROM agg.sale_date)::INT = ANY(${len(params)}::INT[])")
 
         promo_months: list[str] = []
         promo_codes: list[str] = []
@@ -477,7 +561,10 @@ class ExportsRepository:
                     FROM reporting_item_day agg
                     JOIN stores s ON s.site_code = agg.site_code
                     LEFT JOIN incentive_campaigns ic ON ic.month = agg.import_month
-                    LEFT JOIN incentive_products ip ON ip.campaign_id = ic.id AND ip.item_code = agg.item_code
+                    LEFT JOIN incentive_products ip
+                      ON ip.campaign_id = ic.id
+                     AND ip.item_code = agg.item_code
+                     AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
                     LEFT JOIN promo_codes pc ON pc.import_month = agg.import_month AND pc.item_code = agg.item_code
                     WHERE {" AND ".join(clauses)}
                       AND (ip.item_code IS NOT NULL OR pc.item_code IS NOT NULL)
@@ -507,6 +594,7 @@ class ExportsRepository:
         filters: dict[str, list[str]],
         include_closed_stores: bool,
         campaign_codes_by_month: dict[str, list[str]] | None = None,
+        selected_days: list[int] | None = None,
     ) -> list[asyncpg.Record]:
         level_fields = {
             "general": [],
@@ -548,6 +636,9 @@ class ExportsRepository:
             if values:
                 params.append(values)
                 clauses.append(f"{column} = ANY(${len(params)}::TEXT[])")
+        if selected_days:
+            params.append(selected_days)
+            clauses.append(f"EXTRACT(DAY FROM agg.sale_date)::INT = ANY(${len(params)}::INT[])")
 
         promo_months: list[str] = []
         promo_codes: list[str] = []
@@ -612,7 +703,10 @@ class ExportsRepository:
                     FROM reporting_item_day agg
                     JOIN stores s ON s.site_code = agg.site_code
                     LEFT JOIN incentive_campaigns ic ON ic.month = agg.import_month
-                    LEFT JOIN incentive_products ip ON ip.campaign_id = ic.id AND ip.item_code = agg.item_code
+                    LEFT JOIN incentive_products ip
+                      ON ip.campaign_id = ic.id
+                     AND ip.item_code = agg.item_code
+                     AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
                     LEFT JOIN promo_codes pc ON pc.import_month = agg.import_month AND pc.item_code = agg.item_code
                     WHERE {" AND ".join(clauses)}
                       AND (ip.item_code IS NOT NULL OR pc.item_code IS NOT NULL)
