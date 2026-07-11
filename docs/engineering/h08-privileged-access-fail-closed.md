@@ -99,6 +99,9 @@ Missing OIDC subject disables the query without an infinite pending state.
 The API client accepts only the exact boolean `can_view` payload. QueryClient
 tests cover initial/refetch failures, cached data, same-subject remount and
 subject isolation; the static gate also covers all P&L UI consumers.
+Authentication bootstrap is included in the effective permission-pending state,
+so a persisted P&L subtab is not reset before OIDC finishes; denial after auth
+or capability validation still resets it fail-closed.
 
 ## Startup validation
 

@@ -15,7 +15,7 @@ import {
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
 import { canAccessManagement } from './auth/permissions';
-import { shouldResetPnlSubtab } from './auth/pnlAccess';
+import { pnlPermissionIsPending, shouldResetPnlSubtab } from './auth/pnlAccess';
 import { usePnlCapability } from './auth/usePnlCapability';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { usePersistentState } from './lib/usePersistentState';
@@ -72,10 +72,14 @@ export default function App() {
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
   const hasManagementAccess = canAccessManagement(user?.profile, user?.access_token);
   const verifiedSubject = typeof user?.profile.sub === 'string' ? user.profile.sub : undefined;
-  const { permissionPending: isPnlPermissionPending, hasPnlAccess } = usePnlCapability(
+  const { permissionPending: isPnlCapabilityPending, hasPnlAccess } = usePnlCapability(
     isAuthenticated,
     verifiedSubject,
     hasManagementAccess,
+  );
+  const isPnlPermissionPending = pnlPermissionIsPending(
+    isAuthLoading,
+    isPnlCapabilityPending,
   );
 
   useEffect(() => {

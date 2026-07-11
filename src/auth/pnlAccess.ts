@@ -5,6 +5,13 @@ export function hasPnlCapability(
   return hasManagementAccess && canView === true;
 }
 
+export function pnlPermissionIsPending(
+  isAuthLoading: boolean,
+  isCapabilityPending: boolean,
+): boolean {
+  return isAuthLoading || isCapabilityPending;
+}
+
 export function shouldResetPnlSubtab(
   isPermissionPending: boolean,
   hasPnlAccess: boolean,

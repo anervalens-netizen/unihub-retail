@@ -174,5 +174,4 @@ def test_static_gate_removes_email_authorization_from_routers_and_example() -> N
     for path in files:
         content = path.read_text()
         assert not any(value in content for value in forbidden), path
-        if path.name != "App.tsx":
-            assert not re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", content), path
+        assert not re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", content), path
