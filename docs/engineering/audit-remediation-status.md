@@ -92,7 +92,7 @@ These items are not automatically considered to close an audit finding unless th
 
 **Status:** technically complete on the integration branch; deployment pending
 **Draft PR:** #30
-**Implementation commit:** pending H-08 commit
+**Implementation commit:** `487a2ac7c599cf1116c58894d95452016edadba8`
 **CI:** pending final PR run; local policy/config/router tests, mypy and full
 backend/frontend checks are required before merge.
 
