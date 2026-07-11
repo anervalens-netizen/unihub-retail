@@ -48,6 +48,12 @@ replaced with `[REDACTED]` in message, traceback, path and stderr output.
 `traceback_text`, `logger_path` and `extra_json`; it never retains a
 `LogRecord`, traceback frames, request object or `exc_info`.
 
+`extra_json` is always valid JSON or `None`. If the redacted full payload is
+larger than 8,000 characters it is replaced by the valid JSON envelope
+`{"_truncated":true,"preview":"..."}`; the final JSON text is never sliced.
+Traversal is bounded to 64 items with iterator slicing (and direct slicing for
+lists/tuples), so large mappings, sets and generators are not materialized.
+
 ## Suggested state/lifecycle
 
 ```text
@@ -86,6 +92,16 @@ closing up to the configured timeout, counts remaining queue items as
 clears all references. Backend shutdown order is: `close_arq_pool`,
 `detach_db_error_handler`, then `close_db_pool`.
 
+Callback state (`accepting`, loop/generation and pending callbacks) is guarded
+by a lock. Timed-out callbacks are invalidated by generation and counted once;
+late callbacks are ignored without decrementing a reset counter. Queued and
+in-flight events are identity-counted once as `shutdown_drop`, while an idle
+consumer adds no drop. Shutdown emits a single bounded aggregate stderr line:
+`DB_ERROR_LOG_DROP reason=shutdown_drop count=N`.
+
+The lifespan cleanup chain is protected by nested `finally` blocks, so all
+three shutdown steps are attempted after a startup or prior-cleanup failure.
+
 ## Required tests
 
 - `logger.exception()` produces a persisted traceback containing the exception type/message.
@@ -102,6 +118,11 @@ The focused H-16 suite covers the above plus an isolated PostgreSQL
 `logger.exception()` round trip, bounded queue overflow, acquire/execute
 failure fallback, timeout, repeated attach/detach and the generic FastAPI 500
 handler. Google and Sentry are not called by these tests.
+
+Review-hardening tests additionally cover valid truncated JSONB persistence,
+bounded iterable traversal, broken `repr`, all textual secret variants,
+explicit acquire failure with consumer continuation, in-flight cancellation,
+idle detach and startup/cleanup failure ordering.
 
 ## Rollback
 

@@ -84,29 +84,35 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
 async def lifespan(_: FastAPI):
     validate_required_env_vars()
     await init_db_pool()
-    current_pool = await get_pool()
-    attach_db_error_handler(current_pool)
-    schema_applied = await ensure_schema_current()
-    logger.info("Database schema %s", "applied" if schema_applied else "already current")
-    migrations = await apply_pending_migrations()
-    if migrations:
-        logger.info("Applied %d migrations: %s", len(migrations), ", ".join(migrations))
-    else:
-        logger.info("No pending migrations")
-    await prewarm_pool()
-    current_pool = await get_pool()
-    async with current_pool.acquire() as conn:
-        synced = await sync_visits_snapshot(conn)
-        logger.info("visits_snapshot synced at boot: %d rows", synced)
-    prewarm_special_cards_cache()
-    await get_arq_pool()
-    logger.info("arq worker pool initialized")
-    current_pool = await get_pool()
-    await update_business_metrics(current_pool)
-    yield
-    await close_arq_pool()
-    await detach_db_error_handler()
-    await close_db_pool()
+    try:
+        current_pool = await get_pool()
+        attach_db_error_handler(current_pool)
+        schema_applied = await ensure_schema_current()
+        logger.info("Database schema %s", "applied" if schema_applied else "already current")
+        migrations = await apply_pending_migrations()
+        if migrations:
+            logger.info("Applied %d migrations: %s", len(migrations), ", ".join(migrations))
+        else:
+            logger.info("No pending migrations")
+        await prewarm_pool()
+        current_pool = await get_pool()
+        async with current_pool.acquire() as conn:
+            synced = await sync_visits_snapshot(conn)
+            logger.info("visits_snapshot synced at boot: %d rows", synced)
+        prewarm_special_cards_cache()
+        await get_arq_pool()
+        logger.info("arq worker pool initialized")
+        current_pool = await get_pool()
+        await update_business_metrics(current_pool)
+        yield
+    finally:
+        try:
+            await close_arq_pool()
+        finally:
+            try:
+                await detach_db_error_handler()
+            finally:
+                await close_db_pool()
 
 
 app = FastAPI(title="UniHub API", lifespan=lifespan)

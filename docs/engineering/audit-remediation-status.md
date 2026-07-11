@@ -158,6 +158,8 @@ Completed:
 - stable dropped-event Prometheus reasons and direct non-recursive stderr fallback;
 - idempotent attach and controlled detach before PostgreSQL pool shutdown;
 - isolated PostgreSQL regression coverage for traceback persistence and redaction.
+- review hardening for valid bounded JSONB extras, iterator-safe redaction,
+  exact shutdown accounting and guaranteed lifespan cleanup.
 
 No schema migration, production DB write, intentional production error, Sentry
 event, deployment or service restart was performed while implementing H-16.

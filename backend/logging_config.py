@@ -21,7 +21,9 @@ import sys
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import islice
 from typing import Any
+from collections.abc import Iterable
 
 from prometheus_client import Counter
 
@@ -160,6 +162,13 @@ def _safe_key_text(key: Any) -> str:
         return f"<{type(key).__name__}>"
 
 
+def _safe_repr(value: Any) -> str:
+    try:
+        return _redact_text(repr(value), 2000)
+    except Exception:  # noqa: BLE001 - logging must not escape
+        return f"<{type(value).__module__}.{type(value).__qualname__}>"
+
+
 def _is_sensitive_key(key: Any) -> bool:
     normalized = _safe_key_text(key).casefold()
     return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
@@ -193,7 +202,7 @@ def _redact_extra(
     try:
         if isinstance(value, dict):
             output: dict[str, Any] = {}
-            for key, item in list(value.items())[:_REDACTION_MAX_ITEMS]:
+            for key, item in islice(value.items(), _REDACTION_MAX_ITEMS):
                 safe_key = _safe_key_text(key)
                 output[safe_key] = (
                     "[REDACTED]"
@@ -206,7 +215,7 @@ def _redact_extra(
                     )
                 )
             return output
-        if isinstance(value, (list, tuple, set, frozenset)):
+        if isinstance(value, (list, tuple)):
             return [
                 _redact_extra(
                     item,
@@ -214,9 +223,19 @@ def _redact_extra(
                     seen=seen,
                     budget=budget,
                 )
-                for item in list(value)[:_REDACTION_MAX_ITEMS]
+                for item in value[:_REDACTION_MAX_ITEMS]
             ]
-        return f"<{type(value).__module__}.{type(value).__qualname__}>"
+        if isinstance(value, Iterable):
+            return [
+                _redact_extra(
+                    item,
+                    depth=depth + 1,
+                    seen=seen,
+                    budget=budget,
+                )
+                for item in islice(iter(value), _REDACTION_MAX_ITEMS)
+            ]
+        return _safe_repr(value)
     finally:
         seen.discard(value_id)
 
@@ -255,6 +274,20 @@ def _bounded_json_dumps(value: Any, limit: int) -> str:
         else:
             high = middle - 1
     return best
+
+
+def serialize_bounded_extra_json(value: Any, limit: int = _EXTRA_JSON_LIMIT) -> str:
+    """Redact and encode extra data as valid JSON within the JSONB budget."""
+
+    safe_value = _redact_extra(value)
+    encoded = _json_dumps(safe_value)
+    if len(encoded) <= limit:
+        return encoded
+    preview_source = _redact_text(encoded, limit)
+    return _bounded_json_dumps(
+        {"_truncated": True, "preview": preview_source},
+        limit,
+    )
 
 
 class JSONFormatter(logging.Formatter):
@@ -494,6 +527,7 @@ class DBErrorHandler(logging.Handler):
         self._pending_callbacks = 0
         self._callback_generation = 0
         self._inflight_event: DBErrorEvent | None = None
+        self._shutdown_counted_event_ids: set[int] = set()
         self._queue_size = queue_size
         self._write_timeout = write_timeout
         self._drain_timeout = drain_timeout
@@ -571,14 +605,7 @@ class DBErrorHandler(logging.Handler):
             if key not in _HANDLER_SKIP_FIELDS
             and not key.startswith("_")
         }
-        extra_json = (
-            _bounded_json_dumps(
-                _redact_extra(extra_data),
-                _EXTRA_JSON_LIMIT,
-            )
-            if extra_data
-            else None
-        )
+        extra_json = serialize_bounded_extra_json(extra_data) if extra_data else None
         return DBErrorEvent(
             message=message,
             traceback_text=traceback_text,
@@ -592,14 +619,16 @@ class DBErrorHandler(logging.Handler):
         *,
         accepted_before_close: bool = False,
     ) -> None:
-        queue = self._queue
+        with self._state_lock:
+            queue = self._queue
+            accepting = self._accepting
         if queue is None:
             self._drop(
                 "shutdown_drop" if accepted_before_close else "loop_unavailable",
                 event=event,
             )
             return
-        if not self._accepting and not accepted_before_close:
+        if not accepting and not accepted_before_close:
             self._drop("loop_unavailable", event=event)
             return
         try:
@@ -680,16 +709,31 @@ class DBErrorHandler(logging.Handler):
         assert queue is not None
         while True:
             event = await queue.get()
-            self._inflight_event = event
+            with self._state_lock:
+                self._inflight_event = event
             try:
                 await self._persist(event)
             except asyncio.CancelledError:
                 if self._closing:
-                    self._drop("shutdown_drop", event=event)
+                    self._count_shutdown_events([event])
                 raise
             finally:
-                self._inflight_event = None
+                with self._state_lock:
+                    self._inflight_event = None
                 queue.task_done()
+
+    def _count_shutdown_events(self, events: list[DBErrorEvent]) -> None:
+        with self._state_lock:
+            new_events = [event for event in events if id(event) not in self._shutdown_counted_event_ids]
+            self._shutdown_counted_event_ids.update(id(event) for event in new_events)
+        if new_events:
+            DB_ERROR_LOG_DROPPED_TOTAL.labels(reason="shutdown_drop").inc(len(new_events))
+            _stderr_shutdown_fallback(len(new_events))
+
+    def _count_shutdown_callbacks(self, count: int) -> None:
+        if count > 0:
+            DB_ERROR_LOG_DROPPED_TOTAL.labels(reason="shutdown_drop").inc(count)
+            _stderr_shutdown_fallback(count)
 
     async def _persist(self, event: DBErrorEvent) -> None:
         try:
@@ -754,8 +798,7 @@ class DBErrorHandler(logging.Handler):
                 self._pending_callbacks = 0
                 if callback_generation == self._callback_generation:
                     self._callback_generation += 1
-            for _ in range(stale_callbacks):
-                self._drop("shutdown_drop")
+            self._count_shutdown_callbacks(stale_callbacks)
 
         if queue is not None:
             try:
@@ -768,7 +811,7 @@ class DBErrorHandler(logging.Handler):
                     except asyncio.QueueEmpty:
                         break
                     queue.task_done()
-                    self._drop("shutdown_drop", event=dropped)
+                    self._count_shutdown_events([dropped])
 
         if consumer is not None and not consumer.done():
             consumer.cancel()
@@ -780,8 +823,10 @@ class DBErrorHandler(logging.Handler):
                 # Cancellation is already requested. Avoid blocking shutdown
                 # indefinitely; count the uncertain in-flight event once and
                 # consume any eventual task exception.
-                if self._inflight_event is not None:
-                    self._drop("shutdown_drop", event=self._inflight_event)
+                with self._state_lock:
+                    inflight_event = self._inflight_event
+                if inflight_event is not None:
+                    self._count_shutdown_events([inflight_event])
                 consumer.add_done_callback(_consume_task_result)
 
         with self._state_lock:
@@ -791,6 +836,8 @@ class DBErrorHandler(logging.Handler):
             self._consumer = None
             self._accepting = False
             self._closing = False
+            # Late callbacks see the new generation and never decrement this
+            # counter or re-count the callbacks already accounted above.
             self._pending_callbacks = 0
             self._callback_generation += 1
             self._inflight_event = None
@@ -817,6 +864,14 @@ def _stderr_fallback(
     )
     try:
         sys.stderr.write(line + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _stderr_shutdown_fallback(count: int) -> None:
+    try:
+        sys.stderr.write(f"DB_ERROR_LOG_DROP reason=shutdown_drop count={count}\n"[:1000])
         sys.stderr.flush()
     except Exception:
         pass
