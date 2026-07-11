@@ -53,11 +53,42 @@ def google_sheets_value(value: object) -> object:
 
 
 def sanitize_dataframe_text(frame: Any) -> Any:
-    """Copy a pandas-like table and neutralize only its textual columns."""
+    """Copy a pandas-like table and neutralize textual cells only.
+
+    Missing values remain blank instead of becoming the literal strings ``nan``
+    or ``<NA>``.  Object, pandas string, categorical and compatible extension
+    text columns are covered while numeric columns retain their native dtype.
+    """
+    import pandas as pd
+
     safe_frame = frame.copy()
     for column in safe_frame.columns:
-        if str(safe_frame[column].dtype) in {"object", "string"}:
-            safe_frame[column] = safe_frame[column].map(spreadsheet_cell_value)
+        series = safe_frame[column]
+        dtype = series.dtype
+        kind = getattr(dtype, "kind", None)
+        is_textual = (
+            kind in {"O", "U", "S"}
+            or isinstance(dtype, pd.StringDtype)
+            or isinstance(dtype, pd.CategoricalDtype)
+        )
+        if not is_textual:
+            continue
+
+        def sanitize_value(value: object) -> object:
+            try:
+                missing = pd.isna(value)
+                try:
+                    if bool(missing):
+                        return None
+                except (TypeError, ValueError):
+                    pass
+            except Exception:
+                pass
+            return spreadsheet_cell_value(value)
+
+        # Convert extension/categorical columns to object so neutralized values
+        # that are not part of the original category set can be assigned safely.
+        safe_frame[column] = series.astype("object").map(sanitize_value)
     return safe_frame
 
 
