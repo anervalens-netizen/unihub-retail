@@ -86,6 +86,29 @@ These items are not automatically considered to close an audit finding unless th
 - [ ] Add liveness/readiness/dependency health separation.
 - [ ] Add runbooks, SLOs, alerts and service hardening.
 
+## Active implementation
+
+### H-03 — Canonical return receipt identity
+
+**Status:** in progress  
+**Draft PR:** #30
+
+Completed on the integration branch:
+
+- ADR defining `sale_date + site_code + normalized_agent + bon_nr` as the canonical identity;
+- centralized, alias-validated SQL expression helper;
+- unit tests for the helper and unsafe alias rejection;
+- read-only month-level production reconciliation query;
+- documented deploy and rollback procedure.
+
+Remaining before H-03 can be closed:
+
+- wire the helper into every store, agent, regional and historical return aggregation;
+- add a PostgreSQL collision fixture covering duplicate `bon_nr` across dates, stores and agents;
+- run the read-only reconciliation and record aggregate deltas only;
+- obtain business approval for the KPI definition;
+- pass CI and complete a production verification after the wave is merged.
+
 ## Acceptance model
 
 A finding is closed only when:
@@ -99,6 +122,4 @@ A finding is closed only when:
 
 ## Current status
 
-`Wave 0 — started`
-
-The branch was created from the deployed `main` baseline. The next implementation step is a current-code revalidation of Wave 1 findings, followed by small, independently reviewable commits on this branch.
+`Wave 0 — rebaseline in progress; Wave 1/H-03 implementation started`
