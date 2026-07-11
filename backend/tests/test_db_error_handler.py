@@ -214,7 +214,8 @@ async def test_cross_thread_callback_backlog_is_bounded(
     )
     deferred_loop = _DeferredLoop()
     handler._loop = cast(Any, deferred_loop)
-    handler._queue = asyncio.Queue(maxsize=1)
+    queue: asyncio.Queue[logging_config.DBErrorEvent] = asyncio.Queue(maxsize=1)
+    handler._queue = queue
     handler._accepting = True
     handler._callback_generation = 1
 
@@ -236,7 +237,7 @@ async def test_cross_thread_callback_backlog_is_bounded(
     callback, args = deferred_loop.callbacks.pop()
     callback(*args)
     assert handler._pending_callbacks == 0
-    assert handler._queue.qsize() == 1
+    assert queue.qsize() == 1
     assert "DB_ERROR_LOG_DROP reason=queue_full" in capsys.readouterr().err
 
 
