@@ -48,7 +48,7 @@ These items are not automatically considered to close an audit finding unless th
 - [x] H-16 DB error logging reliability and bounded failure path — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs — runtime/offline writers and DataFrame missing-value handling are review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-08 Remove privileged real-email fallbacks and fail closed — technically complete; production deploy pending dedicated-group provisioning.
-- [ ] H-15 Remove generated business reports and obsolete backup assets from Git HEAD.
+- [x] H-15 Generated-artifact inventory complete; removal, governed storage and coordinated history-purge decisions pending owner approval.
 
 ### Wave 2 — Privacy and identity
 
@@ -95,7 +95,7 @@ These items are not automatically considered to close an audit finding unless th
 **Implementation commit:** `487a2ac7c599cf1116c58894d95452016edadba8`
 **P&L owner-policy hardening:** `07718960c2ff55d53ebb2284ba4886c8025cc07b`
 **Capability-cache hardening:** `a841d7dfdbb2bba7e917df0e9c0a89630851e0de`
-**Auth-bootstrap wiring hardening:** pending current H-08 commit
+**Auth-bootstrap wiring hardening:** `78361285a97b24bdf1c505da6ae0e8b86092ac47`
 **CI:** pending final PR run; local policy/config/router tests, mypy and full
 backend/frontend checks are required before merge.
 
