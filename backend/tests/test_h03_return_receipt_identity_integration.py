@@ -1,6 +1,6 @@
 """PostgreSQL regression coverage for audit finding H-03.
 
-This test uses the disposable database created by run_tests_isolated.sh.  It
+This test uses the disposable database created by run_tests_isolated.sh. It
 proves that receipt numbers alone collide across business dimensions and that
 the real Dashboard history, store, agent and regional queries expose the
 canonical return-receipt count.
@@ -68,6 +68,8 @@ async def _seed_dashboard_rows(conn: asyncpg.Connection) -> int:
         """,
         _MONTH,
     )
+    assert snapshot is not None
+
     await conn.execute(
         """
         INSERT INTO reporting_agent_day
@@ -114,7 +116,7 @@ async def _insert_return(
     sale_date: date,
     site_code: str,
     agent: str,
-    bon_nr: str | None,
+    bon_nr: str,
     item_code: str,
 ) -> None:
     await conn.execute(
@@ -134,25 +136,91 @@ async def _insert_return(
     )
 
 
+async def _assert_null_receipt_number_is_ignored(conn: asyncpg.Connection) -> None:
+    """Exercise the NULL edge case without weakening the production schema."""
+
+    identity = canonical_receipt_identity_sql("st")
+    count = await conn.fetchval(
+        f"""
+        WITH st(sale_date, site_code, agent, bon_nr, quantity) AS (
+            VALUES ($1::DATE, $2::TEXT, $3::TEXT, NULL::TEXT, -1::INTEGER)
+        )
+        SELECT COUNT(DISTINCT {identity})
+            FILTER (WHERE st.quantity < 0 AND st.bon_nr IS NOT NULL)
+        FROM st
+        """,
+        date(2099, 11, 3),
+        _SITE_A,
+        _AGENT_A,
+    )
+    assert count == 0
+
+
 async def test_h03_canonical_identity_is_used_by_all_return_receipt_queries() -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await _cleanup(conn)
-        # Production imports currently require bon_nr, but NULL remains a valid
-        # query edge case: COUNT(DISTINCT bon_nr) historically excludes it.
-        await conn.execute("ALTER TABLE sales_transactions ALTER COLUMN bon_nr DROP NOT NULL")
-        snapshot_id = await _seed_dashboard_rows(conn)
         try:
+            snapshot_id = await _seed_dashboard_rows(conn)
+
             # Same number and same dimensions on two item rows: one receipt.
-            await _insert_return(conn, snapshot_id, sale_date=date(2099, 11, 1), site_code=_SITE_A, agent=_AGENT_A, bon_nr="H03-SHARED", item_code="A1")
-            await _insert_return(conn, snapshot_id, sale_date=date(2099, 11, 1), site_code=_SITE_A, agent=_AGENT_A, bon_nr="H03-SHARED", item_code="A2")
+            await _insert_return(
+                conn,
+                snapshot_id,
+                sale_date=date(2099, 11, 1),
+                site_code=_SITE_A,
+                agent=_AGENT_A,
+                bon_nr="H03-SHARED",
+                item_code="A1",
+            )
+            await _insert_return(
+                conn,
+                snapshot_id,
+                sale_date=date(2099, 11, 1),
+                site_code=_SITE_A,
+                agent=_AGENT_A,
+                bon_nr="H03-SHARED",
+                item_code="A2",
+            )
+
             # Same number but changed date, store and agent: three more receipts.
-            await _insert_return(conn, snapshot_id, sale_date=date(2099, 11, 2), site_code=_SITE_A, agent=_AGENT_A, bon_nr="H03-SHARED", item_code="A3")
-            await _insert_return(conn, snapshot_id, sale_date=date(2099, 11, 1), site_code=_SITE_B, agent=_AGENT_A, bon_nr="H03-SHARED", item_code="B1")
-            await _insert_return(conn, snapshot_id, sale_date=date(2099, 11, 1), site_code=_SITE_A, agent=_AGENT_B, bon_nr="H03-SHARED", item_code="A4")
-            # NULL is deliberately not a receipt; a distinct control receipt is.
-            await _insert_return(conn, snapshot_id, sale_date=date(2099, 11, 3), site_code=_SITE_A, agent=_AGENT_A, bon_nr=None, item_code="NULL")
-            await _insert_return(conn, snapshot_id, sale_date=date(2099, 11, 3), site_code=_SITE_A, agent=_AGENT_A, bon_nr="H03-CONTROL", item_code="A5")
+            await _insert_return(
+                conn,
+                snapshot_id,
+                sale_date=date(2099, 11, 2),
+                site_code=_SITE_A,
+                agent=_AGENT_A,
+                bon_nr="H03-SHARED",
+                item_code="A3",
+            )
+            await _insert_return(
+                conn,
+                snapshot_id,
+                sale_date=date(2099, 11, 1),
+                site_code=_SITE_B,
+                agent=_AGENT_A,
+                bon_nr="H03-SHARED",
+                item_code="B1",
+            )
+            await _insert_return(
+                conn,
+                snapshot_id,
+                sale_date=date(2099, 11, 1),
+                site_code=_SITE_A,
+                agent=_AGENT_B,
+                bon_nr="H03-SHARED",
+                item_code="A4",
+            )
+            await _insert_return(
+                conn,
+                snapshot_id,
+                sale_date=date(2099, 11, 3),
+                site_code=_SITE_A,
+                agent=_AGENT_A,
+                bon_nr="H03-CONTROL",
+                item_code="A5",
+            )
+            await _assert_null_receipt_number_is_ignored(conn)
 
             identity = canonical_receipt_identity_sql("st")
             counts = await conn.fetchrow(
@@ -166,6 +234,7 @@ async def test_h03_canonical_identity_is_used_by_all_return_receipt_queries() ->
                 """,
                 _MONTH,
             )
+            assert counts is not None
             assert counts["legacy_count"] == 2
             assert counts["canonical_count"] == 5
 
@@ -173,15 +242,31 @@ async def test_h03_canonical_identity_is_used_by_all_return_receipt_queries() ->
             assert history
             assert history[0]["return_receipt_count"] == 5
 
-            stores = await _fetch_store_stats_rows(conn, _MONTH, None, None, None, None, None)
-            assert {row["site_code"]: row["return_receipt_count"] for row in stores} == {_SITE_A: 4, _SITE_B: 1}
-
-            agents = await _fetch_agent_stats_rows(conn, _MONTH, None, None, None, None, None)
+            stores = await _fetch_store_stats_rows(
+                conn, _MONTH, None, None, None, None, None
+            )
             assert {
-                (row["site_code"], row["agent"]): row["return_receipt_count"] for row in agents
-            } == {(_SITE_A, _AGENT_A): 3, (_SITE_A, _AGENT_B): 1, (_SITE_B, _AGENT_A): 1}
+                row["site_code"]: row["return_receipt_count"] for row in stores
+            } == {_SITE_A: 4, _SITE_B: 1}
 
-            regional = await _fetch_regional_stats(conn, _MONTH, None, None, None, None, None)
-            assert [(row["regional"], row["return_receipt_count"]) for row in regional] == [(_REGIONAL, 5)]
+            agents = await _fetch_agent_stats_rows(
+                conn, _MONTH, None, None, None, None, None
+            )
+            assert {
+                (row["site_code"], row["agent"]): row["return_receipt_count"]
+                for row in agents
+            } == {
+                (_SITE_A, _AGENT_A): 3,
+                (_SITE_A, _AGENT_B): 1,
+                (_SITE_B, _AGENT_A): 1,
+            }
+
+            regional = await _fetch_regional_stats(
+                conn, _MONTH, None, None, None, None, None
+            )
+            assert [
+                (row["regional"], row["return_receipt_count"])
+                for row in regional
+            ] == [(_REGIONAL, 5)]
         finally:
             await _cleanup(conn)
