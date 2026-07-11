@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
@@ -21,7 +21,13 @@ class FakeJob:
 
 
 class FakeQueue:
-    def __init__(self, events: list[str], *, result: FakeJob | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        result: FakeJob | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.events = events
         self.result = result
         self.error = error
@@ -40,7 +46,7 @@ def _patch_reservation(
     events: list[str],
     reservation: MonthlyOperationReservation,
     attach_result: bool = True,
-) -> tuple[Any, AsyncMock, AsyncMock]:
+) -> tuple[Any, AsyncMock]:
     db_pool = object()
 
     async def reserve(*args: Any, **kwargs: Any) -> MonthlyOperationReservation:
@@ -58,7 +64,7 @@ def _patch_reservation(
     monkeypatch.setattr(grile_monthly, "reserve_monthly_operation", reserve)
     monkeypatch.setattr(grile_monthly, "attach_monthly_operation_job", attach)
     monkeypatch.setattr(grile_monthly, "fail_monthly_operation", fail)
-    return db_pool, fail, AsyncMock(wraps=attach)
+    return db_pool, fail
 
 
 async def test_h11_monthly_enqueue_persists_job_id_before_queue_publish(
@@ -90,7 +96,7 @@ async def test_h11_monthly_enqueue_does_not_publish_when_attachment_is_rejected(
 ) -> None:
     events: list[str] = []
     reservation = MonthlyOperationReservation(status="enqueued", operation_id=43)
-    _, fail, _ = _patch_reservation(
+    _, fail = _patch_reservation(
         monkeypatch,
         events=events,
         reservation=reservation,
@@ -116,7 +122,11 @@ async def test_h11_monthly_enqueue_failure_transitions_queued_reservation_to_fai
 ) -> None:
     events: list[str] = []
     reservation = MonthlyOperationReservation(status="enqueued", operation_id=44)
-    _, fail, _ = _patch_reservation(monkeypatch, events=events, reservation=reservation)
+    db_pool, fail = _patch_reservation(
+        monkeypatch,
+        events=events,
+        reservation=reservation,
+    )
     queue = FakeQueue(
         events,
         result=None if publish_mode == "none" else FakeJob("unused"),
@@ -129,7 +139,7 @@ async def test_h11_monthly_enqueue_failure_transitions_queued_reservation_to_fai
 
     assert events == ["reserve", "attach", "enqueue"]
     fail.assert_awaited_once_with(
-        pytest.ANY,
+        db_pool,
         44,
         error_message="Jobul lunar Grile nu a putut fi adaugat in coada",
     )
@@ -145,7 +155,11 @@ async def test_h11_existing_monthly_reservation_bypasses_queue_publication(
         job_id="grile-monthly:45",
         operation={"status": "running"},
     )
-    _, fail, _ = _patch_reservation(monkeypatch, events=events, reservation=reservation)
+    _, fail = _patch_reservation(
+        monkeypatch,
+        events=events,
+        reservation=reservation,
+    )
     queue = FakeQueue(events, result=FakeJob("unexpected"))
     get_queue = AsyncMock(return_value=queue)
     monkeypatch.setattr(jobs, "get_arq_pool", get_queue)
