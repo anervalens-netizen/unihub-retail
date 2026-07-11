@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi import HTTPException
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from starlette.requests import Request
 
 from auth import AuthClaims
@@ -36,6 +38,33 @@ def claims(sub: str = "subject-1") -> AuthClaims:
         exp=0,
         raw={},
     )
+
+
+def _api_route_contexts(app: Any) -> list[RouteContext]:
+    """Flatten direct and included routers across supported FastAPI versions."""
+    return [
+        route
+        for route in iter_route_contexts(app.routes)
+        if isinstance(route.original_route, APIRoute)
+    ]
+
+
+def _route_path(route: RouteContext) -> str:
+    assert route.path is not None
+    return route.path
+
+
+def _route_methods(route: RouteContext) -> set[str]:
+    assert route.methods is not None
+    return route.methods
+
+
+def _route_dependency_names(route: RouteContext) -> set[str]:
+    assert route.dependant is not None
+    return {
+        getattr(route_dependency.call, "__name__", "")
+        for route_dependency in route.dependant.dependencies
+    }
 
 
 def test_in_memory_limiter_blocks_until_window_expires() -> None:
@@ -79,13 +108,6 @@ async def test_rate_limit_key_uses_user_and_forwarded_ip() -> None:
         await enforce_rate_limit(forwarded_request, policy, claims("user-a"), limiter)
 
 
-def _route_dependency_names(route: APIRoute) -> set[str]:
-    return {
-        getattr(route_dependency.call, "__name__", "")
-        for route_dependency in route.dependant.dependencies
-    }
-
-
 def test_sensitive_routes_have_rate_limit_dependencies() -> None:
     from main import app
 
@@ -106,10 +128,9 @@ def test_sensitive_routes_have_rate_limit_dependencies() -> None:
     }
 
     routes = {
-        (method, route.path): route
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
+        (method, _route_path(route)): route
+        for route in _api_route_contexts(app)
+        for method in _route_methods(route)
     }
 
     for route_key, dependency_name in expected.items():

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi import HTTPException
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from starlette.requests import Request
 
 from auth import AuthClaims
@@ -49,6 +51,33 @@ def request() -> Request:
     )
 
 
+def _api_route_contexts(app: Any) -> list[RouteContext]:
+    """Flatten direct and included routers across supported FastAPI versions."""
+    return [
+        route
+        for route in iter_route_contexts(app.routes)
+        if isinstance(route.original_route, APIRoute)
+    ]
+
+
+def _route_path(route: RouteContext) -> str:
+    assert route.path is not None
+    return route.path
+
+
+def _route_methods(route: RouteContext) -> set[str]:
+    assert route.methods is not None
+    return route.methods
+
+
+def _dependency_calls(route: RouteContext) -> set[object]:
+    assert route.dependant is not None
+    return {
+        route_dependency.call
+        for route_dependency in route.dependant.dependencies
+    }
+
+
 @pytest.mark.parametrize(
     "group",
     [
@@ -87,17 +116,13 @@ def test_every_salary_route_uses_the_salary_dependency() -> None:
 
     salary_routes = [
         route
-        for route in app.routes
-        if isinstance(route, APIRoute) and route.path.startswith("/salarii")
+        for route in _api_route_contexts(app)
+        if _route_path(route).startswith("/salarii")
     ]
 
     assert salary_routes
     for route in salary_routes:
-        dependency_calls = {
-            dependency.call
-            for dependency in route.dependant.dependencies
-        }
-        assert require_salary_access in dependency_calls
+        assert require_salary_access in _dependency_calls(route)
 
 
 @pytest.mark.parametrize("group", ["unihub-admin", "authentik Admins"])
@@ -163,16 +188,12 @@ def test_every_import_route_uses_the_import_admin_dependency() -> None:
 
     import_routes = [
         route
-        for route in app.routes
-        if isinstance(route, APIRoute) and route.path.startswith("/api/import")
+        for route in _api_route_contexts(app)
+        if _route_path(route).startswith("/api/import")
     ]
     assert import_routes
     for route in import_routes:
-        dependency_calls = {
-            dependency.call
-            for dependency in route.dependant.dependencies
-        }
-        assert require_import_admin in dependency_calls
+        assert require_import_admin in _dependency_calls(route)
 
 
 def test_sensitive_management_routes_use_role_dependencies() -> None:
@@ -183,20 +204,17 @@ def test_sensitive_management_routes_use_role_dependencies() -> None:
         "/api/hr": require_management_access,
         "/api/target-calculator": require_management_access,
     }
+    api_routes = _api_route_contexts(app)
 
     for prefix, dependency in expected.items():
         routes = [
             route
-            for route in app.routes
-            if isinstance(route, APIRoute) and route.path.startswith(prefix)
+            for route in api_routes
+            if _route_path(route).startswith(prefix)
         ]
         assert routes, prefix
         for route in routes:
-            dependency_calls = {
-                route_dependency.call
-                for route_dependency in route.dependant.dependencies
-            }
-            assert dependency in dependency_calls, route.path
+            assert dependency in _dependency_calls(route), _route_path(route)
 
 
 def test_business_write_routes_use_business_write_dependency() -> None:
@@ -212,19 +230,21 @@ def test_business_write_routes_use_business_write_dependency() -> None:
 
     routes = [
         route
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        and any(method in route.methods for method, path in expected_routes if path == route.path)
+        for route in _api_route_contexts(app)
+        if any(
+            method in _route_methods(route)
+            for method, path in expected_routes
+            if path == _route_path(route)
+        )
     ]
-    seen = {(next(iter(route.methods & {"POST", "PATCH", "DELETE"})), route.path) for route in routes}
+    seen = {
+        (next(iter(_route_methods(route) & {"POST", "PATCH", "DELETE"})), _route_path(route))
+        for route in routes
+    }
     assert expected_routes <= seen
 
     for route in routes:
-        dependency_calls = {
-            route_dependency.call
-            for route_dependency in route.dependant.dependencies
-        }
-        assert require_business_write_access in dependency_calls, route.path
+        assert require_business_write_access in _dependency_calls(route), _route_path(route)
 
 
 def test_target_row_write_uses_target_owner_dependency() -> None:
@@ -233,15 +253,10 @@ def test_target_row_write_uses_target_owner_dependency() -> None:
 
     route = next(
         route
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/target-calculator/scenarios/{scenario_id}/rows"
+        for route in _api_route_contexts(app)
+        if _route_path(route) == "/api/target-calculator/scenarios/{scenario_id}/rows"
     )
-    dependency_calls = {
-        route_dependency.call
-        for route_dependency in route.dependant.dependencies
-    }
-    assert require_target_owner in dependency_calls
+    assert require_target_owner in _dependency_calls(route)
 
 
 @pytest.mark.asyncio
