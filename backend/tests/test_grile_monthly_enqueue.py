@@ -88,6 +88,7 @@ async def test_h11_monthly_enqueue_persists_job_id_before_queue_publish(
     assert result.operation_id == 42
     assert result.job_id == "grile-monthly:42"
     queue.enqueue_job.assert_awaited_once()
+    assert queue.enqueue_job.await_args is not None
     assert queue.enqueue_job.await_args.kwargs["_job_id"] == "grile-monthly:42"
 
 
