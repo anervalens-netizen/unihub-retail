@@ -1,6 +1,6 @@
 """Potriveste codurile de agent din reporting cu numele din salarii.
 
-Script read-only pe DB. Genereaza un CSV in reports/ cu potriviri automate si
+Script read-only pe DB. Genereaza un CSV privat in backend/outputs/ cu potriviri automate si
 cazuri de verificat manual.
 """
 
@@ -9,19 +9,29 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import os
 import re
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, TextIO
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUTPUT = REPO_ROOT / "backend" / "outputs" / "agent_code_name_matches.csv"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from backend.db.connection import close_db_pool, init_db_pool
 from backend.services.spreadsheet_safety import csv_cell_value
+
+
+def _open_private_csv(path: Path) -> TextIO:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    os.fchmod(fd, 0o600)
+    return open(fd, "w", newline="", encoding="utf-8", closefd=True)
 
 MANUAL_OVERRIDES: dict[tuple[str, str], dict[str, str | None]] = {
     ("AFIARAD", "ARDELEANC"): {
@@ -273,8 +283,9 @@ async def main() -> None:
     parser.add_argument("--reporting-month", help="Implicit: ultima luna din reporting_agent_month")
     parser.add_argument(
         "--output",
-        default="reports/agent_code_name_matches.csv",
-        help="Fisier CSV generat",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help="Fisier CSV privat generat; implicit in backend/outputs",
     )
     parser.add_argument(
         "--apply-db",
@@ -398,9 +409,8 @@ async def main() -> None:
             }
         )
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", newline="", encoding="utf-8") as handle:
+    output_path: Path = args.output.expanduser()
+    with _open_private_csv(output_path) as handle:
         writer = csv.DictWriter(handle, fieldnames=list(output_rows[0].keys()))
         writer.writeheader()
         writer.writerows([{key: csv_cell_value(value) for key, value in row.items()} for row in output_rows])
