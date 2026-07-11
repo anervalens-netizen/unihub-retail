@@ -93,6 +93,31 @@ def _require_group_access(
     return claims
 
 
+def require_privileged_access(
+    *,
+    request: Request,
+    claims: AuthClaims,
+    allowed: bool,
+    resource: str,
+    detail: str,
+    fallback_route: str,
+) -> AuthClaims:
+    """Audit a dedicated privileged decision without exposing token details."""
+    route_template = _route_template(request, fallback_route)
+    decision = "allowed" if allowed else "denied"
+    log = logger.info if allowed else logger.warning
+    log(
+        "privileged_access decision=%s resource=%s subject=%s route=%s",
+        decision,
+        resource,
+        claims.sub,
+        route_template,
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+    return claims
+
+
 def require_salary_access(
     request: Request,
     claims: AuthClaims = Depends(require_auth),

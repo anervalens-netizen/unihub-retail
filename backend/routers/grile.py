@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import os
 import re
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from permissions import require_privileged_access
+from privileged_access import GRILE_FINALIZER_GROUPS_ENV, has_configured_group
 from rate_limits import GRILE_JOB_LIMIT, rate_limit
 from repositories.grile import GrileRepository
 from services.grile import _run_to_dict, get_overview, resolve_month
@@ -18,7 +19,6 @@ from services.jobs import enqueue_grile_check, enqueue_grile_monthly, get_job_st
 router = APIRouter(prefix="/api/grile", tags=["grile"])
 
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-DEFAULT_GRILE_ADMINS = "aner.valens@gmail.com"
 
 
 # ── verificare (read-only) ────────────────────────────────────────────────────
@@ -64,21 +64,21 @@ async def grile_run_status(month: str | None = Query(default=None)) -> dict[str,
 # ── inchidere luna (WRITE Google Sheets — doar admin) ──────────────────────────
 
 def can_grile_admin(claims: AuthClaims) -> bool:
-    allowed = {
-        e.strip().casefold()
-        for e in os.getenv("GRILE_FINALIZER_EMAILS", DEFAULT_GRILE_ADMINS).split(",")
-        if e.strip()
-    }
-    return claims.email.strip().casefold() in allowed
+    return has_configured_group(claims.groups, GRILE_FINALIZER_GROUPS_ENV)
 
 
-def require_grile_admin(claims: AuthClaims = Depends(require_auth)) -> AuthClaims:
-    if not can_grile_admin(claims):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inchiderea de luna (finalizare/arhiva/reset) e limitata la administratorul grilelor.",
-        )
-    return claims
+def require_grile_admin(
+    request: Request,
+    claims: AuthClaims = Depends(require_auth),
+) -> AuthClaims:
+    return require_privileged_access(
+        request=request,
+        claims=claims,
+        allowed=can_grile_admin(claims),
+        resource="grile_monthly",
+        detail="Inchiderea de luna (finalizare/arhiva/reset) e limitata la administratorul grilelor.",
+        fallback_route="/api/grile/monthly",
+    )
 
 
 class MonthlyRunRequest(BaseModel):

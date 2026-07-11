@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 from datetime import date
 
@@ -8,21 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from permissions import can_access_management
 from repositories.store_pnl import StorePnlRepository
 from services.store_pnl import StorePnlService
 
 router = APIRouter(prefix="/api/store-pnl", tags=["store-pnl"])
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-DEFAULT_OWNER_EMAILS = "aner.valens@gmail.com"
 
 
 def can_access_store_pnl(claims: AuthClaims) -> bool:
-    configured = os.getenv(
-        "PNL_OWNER_EMAILS",
-        os.getenv("TARGET_CALCULATOR_FINALIZER_EMAILS", DEFAULT_OWNER_EMAILS),
-    )
-    allowed = {email.strip().casefold() for email in configured.split(",") if email.strip()}
-    return claims.email.strip().casefold() in allowed
+    return can_access_management(claims)
 
 
 def require_store_pnl_owner(claims: AuthClaims = Depends(require_auth)) -> AuthClaims:

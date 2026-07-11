@@ -67,6 +67,25 @@ Router functions such as `can_finalize_targets()` and `can_grile_admin()` may
 remain as compatibility wrappers, but they must delegate to the central group
 policy and must not read email allowlists.
 
+## Implemented remediation
+
+`backend/privileged_access.py` is the import-safe policy boundary. It exposes
+`parse_group_list`, `configured_groups`, `has_configured_group` and
+`privileged_access_config_errors`, plus the exact group and deprecated-email
+environment variable names. Parsing is all-or-nothing: missing, empty or
+invalid values yield no runtime access; invalid configured values are reported
+at startup without echoing their contents.
+
+The Target Calculator and Grile router compatibility wrappers now use only the
+verified OIDC `groups` claim. `permissions.require_privileged_access` records
+only decision, resource, verified subject and route template for actual
+privileged dependencies. It deliberately excludes email, raw groups, tokens,
+request payloads and financial values. Broad administrator, manager, HR and
+hub-service groups receive no implicit bypass.
+
+The separate P&L owner endpoint no longer consumes either the Target email
+variable or any email allowlist; it uses the existing management-group policy.
+
 ## Startup validation
 
 For `UNIHUB_ENV=production`, `validate_required_env_vars()` must report clear,
@@ -161,3 +180,12 @@ No database migration is involved.  Reverting the code restores the old
 behavior but also reopens the security finding and is therefore an emergency
 rollback only.  The preferred recovery for access problems is to correct the
 Authentik group assignment or service environment and restart the backend.
+
+## Forward fix and deployment status
+
+No Authentik object, service environment, database schema or persisted job
+actor was changed by H-08. Deployment remains pending: provision the dedicated
+groups and service environment first, then deploy and perform the controlled
+permission-only verification above. If access is missing, correct the group
+claim or group environment configuration rather than restoring email-based
+authorization.

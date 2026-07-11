@@ -8,6 +8,13 @@ import pytest
 from config import ConfigError, get_visits_db_path, get_visits_images_dir, validate_required_env_vars, _is_production
 
 
+def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_GROUPS", "target-role")
+    monkeypatch.setenv("GRILE_FINALIZER_GROUPS", "grile-role")
+    monkeypatch.delenv("TARGET_CALCULATOR_FINALIZER_EMAILS", raising=False)
+    monkeypatch.delenv("GRILE_FINALIZER_EMAILS", raising=False)
+
+
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNIHUB_ENV", "production")
     assert _is_production() is True
@@ -65,6 +72,7 @@ def test_config_requires_visits_db_in_production(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
     monkeypatch.setenv("UNIHUB_ENV", "production")
     monkeypatch.setenv("VISITS_DB_PATH", "/nonexistent/path.db")
+    _set_privileged_groups(monkeypatch)
     with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
         validate_required_env_vars()
 
@@ -80,6 +88,7 @@ def test_config_rejects_empty_visits_db_in_production(monkeypatch: pytest.Monkey
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
     monkeypatch.setenv("UNIHUB_ENV", "production")
     monkeypatch.setenv("VISITS_DB_PATH", "   ")
+    _set_privileged_groups(monkeypatch)
     with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
         validate_required_env_vars()
 
@@ -92,5 +101,6 @@ def test_config_rejects_directory_as_visits_db_in_production(
     dir_path = tmp_path / "a_directory"
     dir_path.mkdir()
     monkeypatch.setenv("VISITS_DB_PATH", str(dir_path))
+    _set_privileged_groups(monkeypatch)
     with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
         validate_required_env_vars()

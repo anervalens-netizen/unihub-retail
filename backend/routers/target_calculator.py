@@ -1,40 +1,40 @@
 from __future__ import annotations
 
-import os
 import re
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from permissions import require_privileged_access
+from privileged_access import TARGET_FINALIZER_GROUPS_ENV, has_configured_group
 from rate_limits import REPORT_EXPORT_LIMIT, TARGET_MUTATION_LIMIT, rate_limit
 from repositories.target_calculator import TargetCalculatorRepository
 from services.target_calculator import TargetCalculatorService
 
 router = APIRouter(prefix="/api/target-calculator", tags=["target-calculator"])
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-DEFAULT_FINALIZER_EMAILS = "aner.valens@gmail.com"
 
 
 def can_finalize_targets(claims: AuthClaims) -> bool:
-    allowed_emails = {
-        email.strip().casefold()
-        for email in os.getenv("TARGET_CALCULATOR_FINALIZER_EMAILS", DEFAULT_FINALIZER_EMAILS).split(",")
-        if email.strip()
-    }
-    return claims.email.strip().casefold() in allowed_emails
+    return has_configured_group(claims.groups, TARGET_FINALIZER_GROUPS_ENV)
 
 
-def require_target_owner(claims: AuthClaims = Depends(require_auth)) -> AuthClaims:
-    if not can_finalize_targets(claims):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Doar proprietarul calculatorului poate calcula sau publica targetele finale.",
-        )
-    return claims
+def require_target_owner(
+    request: Request,
+    claims: AuthClaims = Depends(require_auth),
+) -> AuthClaims:
+    return require_privileged_access(
+        request=request,
+        claims=claims,
+        allowed=can_finalize_targets(claims),
+        resource="target_calculator_finalization",
+        detail="Doar proprietarul calculatorului poate calcula sau publica targetele finale.",
+        fallback_route="/api/target-calculator/scenarios",
+    )
 
 
 class TargetCalculationRequest(BaseModel):

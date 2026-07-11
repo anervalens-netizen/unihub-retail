@@ -47,7 +47,7 @@ These items are not automatically considered to close an audit finding unless th
 - [x] H-11 Grile monthly idempotency/state transitions — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-16 DB error logging reliability and bounded failure path — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs — runtime/offline writers and DataFrame missing-value handling are review-hardened and CI-green; production deploy pending Wave 1 release.
-- [ ] H-08 Remove privileged real-email fallbacks and fail closed — revalidated and specified; implementation next.
+- [x] H-08 Remove privileged real-email fallbacks and fail closed — technically complete; production deploy pending dedicated-group provisioning.
 - [ ] H-15 Remove generated business reports and obsolete backup assets from Git HEAD.
 
 ### Wave 2 — Privacy and identity
@@ -87,6 +87,34 @@ These items are not automatically considered to close an audit finding unless th
 - [ ] Add runbooks, SLOs, alerts and service hardening.
 
 ## Implemented findings
+
+### H-08 — Privileged access fail-closed
+
+**Status:** technically complete on the integration branch; deployment pending
+**Draft PR:** #30
+**Implementation commit:** pending H-08 commit
+**CI:** pending final PR run; local policy/config/router tests, mypy and full
+backend/frontend checks are required before merge.
+
+Completed:
+
+- dedicated Target and Grile OIDC group policies, parsed all-or-nothing at
+  runtime with no import-time environment cache;
+- removal of email authorization and broad-role fallback from the two
+  privileged capabilities;
+- removal of the residual P&L email-owner fallback in favor of its existing
+  management-group access policy;
+- production validation requiring both group lists and rejecting deprecated
+  email variables;
+- structured allow/deny audit events limited to resource, verified subject and
+  route template;
+- static regression gate and router/config tests covering fail-closed behavior.
+
+Remaining before deployment:
+
+- create and assign the dedicated groups in Authentik;
+- emit the groups claim and configure both backend service variables;
+- merge, deploy and run the non-destructive permission verification.
 
 ### H-12 — Spreadsheet formula neutralization
 

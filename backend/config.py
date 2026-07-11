@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from privileged_access import privileged_access_config_errors
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_VISITS_DB_PATH = _REPO_ROOT / "data" / "visits" / "visits.db"
 DEFAULT_VISITS_IMAGES_DIR = _REPO_ROOT / "data" / "visits" / "images"
@@ -62,6 +64,8 @@ def validate_required_env_vars() -> None:
                 f"VISITS_DB_PATH={visits_path_raw} nu există sau nu e fișier "
                 "(obligatoriu în producție; Vizite + Management depind de el)"
             )
+
+    errors.extend(privileged_access_config_errors(_is_production()))
 
     if errors:
         raise ConfigError(
