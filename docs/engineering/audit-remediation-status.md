@@ -43,7 +43,7 @@ These items are not automatically considered to close an audit finding unless th
 
 ### Wave 1 — Immediate correctness and security
 
-- [ ] H-03 Canonical return receipt identity and regression fixtures.
+- [x] H-03 Canonical return receipt identity and regression fixtures — implemented, reconciled and CI-green; production deploy pending Wave 1 release.
 - [ ] H-11 Grile monthly idempotency/state transitions.
 - [ ] H-16 DB error logging reliability and bounded failure path.
 - [ ] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs.
@@ -86,28 +86,42 @@ These items are not automatically considered to close an audit finding unless th
 - [ ] Add liveness/readiness/dependency health separation.
 - [ ] Add runbooks, SLOs, alerts and service hardening.
 
-## Active implementation
+## Implemented findings
 
 ### H-03 — Canonical return receipt identity
 
-**Status:** in progress  
-**Draft PR:** #30
+**Status:** implemented on integration branch; business approval and production deploy pending  
+**Draft PR:** #30  
+**Implementation commit:** `3ed251b6fa193a635a3a3f400a2ac422b84af039`  
+**Review hardening commit:** `3aa0a5e56fc765ad3482bc12353b2494f857aa4d`  
+**CI:** run #255 passed backend mypy/tests and frontend typecheck/tests/build.
 
-Completed on the integration branch:
+Completed:
 
 - ADR defining `sale_date + site_code + normalized_agent + bon_nr` as the canonical identity;
 - centralized, alias-validated SQL expression helper;
 - unit tests for the helper and unsafe alias rejection;
 - helper wired into Dashboard historical, store, agent and regional return aggregations;
-- isolated PostgreSQL collision fixture proving the legacy undercount and canonical counts;
+- isolated PostgreSQL collision fixture proving legacy `2` versus canonical `5` and exercising the real queries;
+- the fixture preserves the production `bon_nr NOT NULL` schema constraint while testing NULL semantics in an isolated CTE;
 - read-only month-level production reconciliation query;
 - documented deploy and rollback procedure.
 
-Remaining before H-03 can be closed:
+Production reconciliation executed in an explicit read-only transaction and rolled back:
 
-- run the read-only reconciliation and record aggregate deltas only;
-- obtain business approval for the KPI definition;
-- pass CI and complete a production verification after the wave is merged.
+- period: `2023-09` through `2026-07`;
+- months checked: `35`;
+- canonical return receipts checked: `26,211`;
+- months with a delta: `0`;
+- colliding receipt numbers: `0` in every checked month;
+- absolute and relative delta: `0` / `0.00%` in every checked month;
+- no raw receipt number, agent identity or transaction row was copied into this ledger.
+
+Remaining before H-03 is operationally closed:
+
+- explicit business-owner approval of the canonical identity;
+- merge as part of the approved Wave 1 release;
+- backend deployment and post-deploy Dashboard/health verification.
 
 ## Acceptance model
 
@@ -122,4 +136,4 @@ A finding is closed only when:
 
 ## Current status
 
-`Wave 0 — rebaseline in progress; Wave 1/H-03 implementation started`
+`Wave 0 — rebaseline in progress; Wave 1/H-03 implementation validated; H-11 revalidation next`
