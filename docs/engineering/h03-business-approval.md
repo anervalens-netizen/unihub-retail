@@ -1,8 +1,8 @@
 # H-03 business approval record
 
-## Decision requested
+## Approved decision
 
-Approve the canonical return-receipt identity used by UniHub Retail Dashboard metrics:
+The canonical return-receipt identity used by UniHub Retail Dashboard metrics is:
 
 ```text
 sale_date + site_code + normalized agent + bon_nr
@@ -19,8 +19,11 @@ A NULL receipt number is not counted. Agent names are trimmed; blank/NULL agent 
 - A synthetic PostgreSQL fixture demonstrates the legacy undercount and validates all affected Dashboard query levels.
 - No database migration or data rewrite is involved.
 
-## Approval state
+## Approval
 
-**Pending explicit business-owner confirmation.**
+- **Decision:** approved
+- **Approver role:** business owner / application owner
+- **Approval date:** 2026-07-11
+- **Approved wording:** “Aprob cheia canonică a bonului de retur: data vânzării + magazin + agent normalizat + număr bon.”
 
-When approved, record the approver role, date and decision in this file. Do not include personal identifiers beyond what is required for the engineering audit trail.
+The approval was provided explicitly during the audit-remediation review. No personal identifier is stored in this record.
