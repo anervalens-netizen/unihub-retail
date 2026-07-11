@@ -15,10 +15,10 @@ const TABS: { id: ManagementTab; label: string }[] = [
 interface Props {
   activeSubTab?: ManagementTab;
   setActiveSubTab?: (tab: ManagementTab) => void;
-  canAccessPnl?: boolean;
+  hasPnlAccess?: boolean;
 }
 
-export function Management({ activeSubTab, setActiveSubTab, canAccessPnl = false }: Props) {
+export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false }: Props) {
   const [localTab, setLocalTab] = useState<ManagementTab>('asm');
 
   const activeTab = activeSubTab ?? localTab;
@@ -31,7 +31,7 @@ export function Management({ activeSubTab, setActiveSubTab, canAccessPnl = false
     <div className="flex flex-col h-full">
       {/* Sub-navigare — vizibilă doar pe mobile (pe desktop controlată din sidebar) */}
       <div className="lg:hidden flex gap-1 overflow-x-auto px-4 pt-4 pb-2 border-b border-slate-200 dark:border-slate-700">
-        {TABS.filter((tab) => tab.id !== 'pnl' || canAccessPnl).map((tab) => (
+        {TABS.filter((tab) => tab.id !== 'pnl' || hasPnlAccess).map((tab) => (
           <button
             key={tab.id}
             onClick={() => setTab(tab.id)}
@@ -51,7 +51,7 @@ export function Management({ activeSubTab, setActiveSubTab, canAccessPnl = false
         {activeTab === 'asm' && <ASMSubtab />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
         {activeTab === 'grile' && <GrileSubtab />}
-        {activeTab === 'pnl' && canAccessPnl && <PnlSubtab />}
+        {activeTab === 'pnl' && hasPnlAccess && <PnlSubtab />}
       </div>
     </div>
   );

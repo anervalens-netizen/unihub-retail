@@ -21,6 +21,7 @@ Authorization moves to dedicated OIDC group claims:
 ```text
 TARGET_CALCULATOR_FINALIZER_GROUPS=unihub-target-finalizer
 GRILE_FINALIZER_GROUPS=unihub-grile-admin
+STORE_PNL_ACCESS_GROUPS=unihub-pnl-owner
 ```
 
 These names are deployment recommendations, not hidden code fallbacks.  The
@@ -84,7 +85,11 @@ request payloads and financial values. Broad administrator, manager, HR and
 hub-service groups receive no implicit bypass.
 
 The separate P&L owner endpoint no longer consumes either the Target email
-variable or any email allowlist; it uses the existing management-group policy.
+variable or any email allowlist. It requires both the existing management
+group policy and the explicit `STORE_PNL_ACCESS_GROUPS` intersection, so
+neither condition alone grants access. `GET /api/store-pnl/permissions` is the
+single capability source for the frontend; its `can_view` response is queried
+per verified OIDC subject and defaults fail-closed on loading or API failure.
 
 ## Startup validation
 

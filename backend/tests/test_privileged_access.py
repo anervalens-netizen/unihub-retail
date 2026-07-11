@@ -10,14 +10,18 @@ from auth import AuthClaims
 from config import ConfigError, validate_required_env_vars
 from privileged_access import (
     DEPRECATED_GRILE_EMAILS_ENV,
+    DEPRECATED_PNL_OWNER_EMAILS_ENV,
     DEPRECATED_TARGET_EMAILS_ENV,
+    DEPRECATED_VITE_PNL_OWNER_EMAILS_ENV,
     GRILE_FINALIZER_GROUPS_ENV,
+    STORE_PNL_ACCESS_GROUPS_ENV,
     TARGET_FINALIZER_GROUPS_ENV,
     configured_groups,
     has_configured_group,
     parse_group_list,
 )
 from routers.grile import can_grile_admin, require_grile_admin
+from routers.store_pnl import can_access_store_pnl
 from routers.target_calculator import can_finalize_targets, require_target_owner
 
 
@@ -56,6 +60,7 @@ def test_invalid_policy_is_not_partially_accepted(monkeypatch: pytest.MonkeyPatc
 def test_dedicated_groups_are_isolated_and_broad_groups_do_not_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(TARGET_FINALIZER_GROUPS_ENV, "unihub-target-finalizer")
     monkeypatch.setenv(GRILE_FINALIZER_GROUPS_ENV, "unihub-grile-admin")
+    monkeypatch.setenv(STORE_PNL_ACCESS_GROUPS_ENV, "unihub-pnl-owner")
     assert can_finalize_targets(_claims(["UNIHUB-TARGET-FINALIZER"])) is True
     assert can_grile_admin(_claims(["UNIHUB-GRILE-ADMIN"])) is True
     assert can_grile_admin(_claims(["unihub-target-finalizer"])) is False
@@ -64,6 +69,9 @@ def test_dedicated_groups_are_isolated_and_broad_groups_do_not_bypass(monkeypatc
         assert can_finalize_targets(_claims([group])) is False
         assert can_grile_admin(_claims([group])) is False
     assert can_finalize_targets(_claims([], "historical@example.invalid")) is False
+    assert can_access_store_pnl(_claims(["unihub-pnl-owner"])) is False
+    assert can_finalize_targets(_claims(["unihub-pnl-owner"])) is False
+    assert can_grile_admin(_claims(["unihub-pnl-owner"])) is False
 
 
 def test_privileged_dependencies_audit_allowed_and_denied_without_email_or_groups(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
@@ -89,12 +97,15 @@ def _set_production_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("VISITS_DB_PATH", str(visits))
     monkeypatch.delenv(DEPRECATED_TARGET_EMAILS_ENV, raising=False)
     monkeypatch.delenv(DEPRECATED_GRILE_EMAILS_ENV, raising=False)
+    monkeypatch.delenv(DEPRECATED_PNL_OWNER_EMAILS_ENV, raising=False)
+    monkeypatch.delenv(DEPRECATED_VITE_PNL_OWNER_EMAILS_ENV, raising=False)
 
 
 def test_production_requires_valid_groups_and_rejects_deprecated_emails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _set_production_base(monkeypatch, tmp_path)
     monkeypatch.setenv(TARGET_FINALIZER_GROUPS_ENV, "target-role")
     monkeypatch.setenv(GRILE_FINALIZER_GROUPS_ENV, "grile-role")
+    monkeypatch.setenv(STORE_PNL_ACCESS_GROUPS_ENV, "pnl-role")
     validate_required_env_vars()
     monkeypatch.delenv(TARGET_FINALIZER_GROUPS_ENV)
     with pytest.raises(ConfigError, match=TARGET_FINALIZER_GROUPS_ENV):
@@ -104,6 +115,10 @@ def test_production_requires_valid_groups_and_rejects_deprecated_emails(monkeypa
     with pytest.raises(ConfigError, match=GRILE_FINALIZER_GROUPS_ENV):
         validate_required_env_vars()
     monkeypatch.setenv(GRILE_FINALIZER_GROUPS_ENV, "grile-role")
+    monkeypatch.delenv(STORE_PNL_ACCESS_GROUPS_ENV)
+    with pytest.raises(ConfigError, match=STORE_PNL_ACCESS_GROUPS_ENV):
+        validate_required_env_vars()
+    monkeypatch.setenv(STORE_PNL_ACCESS_GROUPS_ENV, "pnl-role")
     monkeypatch.setenv(TARGET_FINALIZER_GROUPS_ENV, "email@example.invalid")
     with pytest.raises(ConfigError, match=TARGET_FINALIZER_GROUPS_ENV):
         validate_required_env_vars()
@@ -115,6 +130,14 @@ def test_production_requires_valid_groups_and_rejects_deprecated_emails(monkeypa
     monkeypatch.setenv(DEPRECATED_GRILE_EMAILS_ENV, "legacy@example.invalid")
     with pytest.raises(ConfigError, match=DEPRECATED_GRILE_EMAILS_ENV):
         validate_required_env_vars()
+    monkeypatch.delenv(DEPRECATED_GRILE_EMAILS_ENV)
+    monkeypatch.setenv(DEPRECATED_PNL_OWNER_EMAILS_ENV, "legacy@example.invalid")
+    with pytest.raises(ConfigError, match=DEPRECATED_PNL_OWNER_EMAILS_ENV):
+        validate_required_env_vars()
+    monkeypatch.delenv(DEPRECATED_PNL_OWNER_EMAILS_ENV)
+    monkeypatch.setenv(DEPRECATED_VITE_PNL_OWNER_EMAILS_ENV, "legacy@example.invalid")
+    with pytest.raises(ConfigError, match=DEPRECATED_VITE_PNL_OWNER_EMAILS_ENV):
+        validate_required_env_vars()
 
 
 def test_development_missing_groups_starts_but_denies(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,15 +145,17 @@ def test_development_missing_groups_starts_but_denies(monkeypatch: pytest.Monkey
     monkeypatch.setenv("UNIHUB_ENV", "development")
     monkeypatch.delenv(TARGET_FINALIZER_GROUPS_ENV, raising=False)
     monkeypatch.delenv(GRILE_FINALIZER_GROUPS_ENV, raising=False)
+    monkeypatch.delenv(STORE_PNL_ACCESS_GROUPS_ENV, raising=False)
     validate_required_env_vars()
     assert can_finalize_targets(_claims([])) is False
     assert can_grile_admin(_claims([])) is False
+    assert can_access_store_pnl(_claims(["unihub-manager"])) is False
 
 
 def test_static_gate_removes_email_authorization_from_routers_and_example() -> None:
     root = Path(__file__).resolve().parents[2]
-    files = [root / "backend/routers/target_calculator.py", root / "backend/routers/grile.py", root / ".env.example"]
-    forbidden = ("DEFAULT_FINALIZER_EMAILS", "DEFAULT_GRILE_ADMINS", "TARGET_CALCULATOR_FINALIZER_EMAILS", "GRILE_FINALIZER_EMAILS", "@gmail.com")
+    files = [root / "backend/routers/target_calculator.py", root / "backend/routers/grile.py", root / "backend/routers/store_pnl.py", root / "src/auth/permissions.ts", root / "src/auth/permissions.test.ts", root / ".env.example"]
+    forbidden = ("DEFAULT_FINALIZER_EMAILS", "DEFAULT_GRILE_ADMINS", "TARGET_CALCULATOR_FINALIZER_EMAILS", "GRILE_FINALIZER_EMAILS", "PNL_OWNER_EMAILS", "VITE_PNL_OWNER_EMAILS", "@gmail.com")
     for path in files:
         content = path.read_text()
         assert not any(value in content for value in forbidden), path

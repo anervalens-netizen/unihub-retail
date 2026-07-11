@@ -1,7 +1,9 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { MainLayout, type AppFilters } from './components/MainLayout';
 
 import { getAvailableMonths } from './api/filters';
+import { getPnlPermissions } from './api/storePnl';
 import { defaultAppFilters } from './lib/filterValues';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 import { sanitizeActiveTab } from './lib/navigationAccess';
@@ -14,7 +16,8 @@ import {
 } from './screenLoaders';
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
-import { canAccessManagement, canAccessPnl } from './auth/permissions';
+import { canAccessManagement } from './auth/permissions';
+import { hasPnlCapability, shouldResetPnlSubtab } from './auth/pnlAccess';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { usePersistentState } from './lib/usePersistentState';
 
@@ -69,7 +72,14 @@ function loadSavedFilters(key: string): AppFilters {
 export default function App() {
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
   const hasManagementAccess = canAccessManagement(user?.profile, user?.access_token);
-  const hasPnlAccess = canAccessPnl(user?.profile);
+  const verifiedSubject = typeof user?.profile.sub === 'string' ? user.profile.sub : undefined;
+  const pnlPermissionsQuery = useQuery({
+    queryKey: ['store-pnl-permissions', verifiedSubject],
+    queryFn: getPnlPermissions,
+    enabled: isAuthenticated && Boolean(verifiedSubject),
+  });
+  const isPnlPermissionPending = isAuthenticated && (!verifiedSubject || pnlPermissionsQuery.isPending);
+  const hasPnlAccess = hasPnlCapability(hasManagementAccess, pnlPermissionsQuery.data?.can_view);
 
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);
@@ -113,10 +123,10 @@ export default function App() {
   }, [activeTab, hasManagementAccess, setActiveTab]);
 
   useEffect(() => {
-    if (!hasPnlAccess && mgmtSubTab === 'pnl') {
+    if (shouldResetPnlSubtab(isPnlPermissionPending, hasPnlAccess, mgmtSubTab)) {
       setMgmtSubTab('asm');
     }
-  }, [hasPnlAccess, mgmtSubTab, setMgmtSubTab]);
+  }, [hasPnlAccess, isPnlPermissionPending, mgmtSubTab, setMgmtSubTab]);
 
   useEffect(() => {
     // Luna in curs se rescrie la bootstrap cu cea mai recenta luna disponibila.
@@ -264,7 +274,7 @@ export default function App() {
       userEmail={user?.profile.email ?? undefined}
       onLogout={logout}
       canAccessManagement={hasManagementAccess}
-      canAccessPnl={hasPnlAccess}
+      hasPnlAccess={hasPnlAccess}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
@@ -293,7 +303,7 @@ export default function App() {
           <Management
             activeSubTab={mgmtSubTab}
             setActiveSubTab={setMgmtSubTab}
-            canAccessPnl={hasPnlAccess}
+            hasPnlAccess={hasPnlAccess}
           />
         )}
         {activeTab === 'settings' && (

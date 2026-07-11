@@ -14,7 +14,7 @@ interface Props {
   setTheme: (theme: string) => void;
   errorCount?: number;
   canAccessManagement?: boolean;
-  canAccessPnl?: boolean;
+  hasPnlAccess?: boolean;
 }
 
 export function DesktopSidebar({
@@ -26,7 +26,7 @@ export function DesktopSidebar({
   setTheme,
   errorCount = 0,
   canAccessManagement = true,
-  canAccessPnl = false,
+  hasPnlAccess = false,
 }: Props) {
   const [mgmtExpanded, setMgmtExpanded] = useState(activeTab === 'management');
 
@@ -107,7 +107,7 @@ export function DesktopSidebar({
                       className="overflow-hidden"
                     >
                       <div className="mt-0.5 space-y-0.5 pb-1">
-                        {MGMT_SUBTABS.filter((sub) => !('ownerOnly' in sub) || canAccessPnl).map((sub) => {
+                        {MGMT_SUBTABS.filter((sub) => !('ownerOnly' in sub) || hasPnlAccess).map((sub) => {
                           const SubIcon = sub.icon;
                           const isSubActive = activeTab === 'management' && mgmtSubTab === sub.id;
                           return (

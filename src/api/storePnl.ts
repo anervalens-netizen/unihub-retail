@@ -39,6 +39,15 @@ export interface PnlOverview {
   stores: PnlStore[];
 }
 
+export interface PnlPermissions {
+  can_view: boolean;
+}
+
+export async function getPnlPermissions(): Promise<PnlPermissions> {
+  const { data } = await client.get<PnlPermissions>("/api/store-pnl/permissions");
+  return data;
+}
+
 export async function getPnlMonths(): Promise<PnlMonth[]> {
   const { data } = await client.get<{ months: PnlMonth[] }>(
     "/api/store-pnl/months",

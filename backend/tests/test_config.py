@@ -11,8 +11,11 @@ from config import ConfigError, get_visits_db_path, get_visits_images_dir, valid
 def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_GROUPS", "target-role")
     monkeypatch.setenv("GRILE_FINALIZER_GROUPS", "grile-role")
+    monkeypatch.setenv("STORE_PNL_ACCESS_GROUPS", "pnl-role")
     monkeypatch.delenv("TARGET_CALCULATOR_FINALIZER_EMAILS", raising=False)
     monkeypatch.delenv("GRILE_FINALIZER_EMAILS", raising=False)
+    monkeypatch.delenv("PNL_OWNER_EMAILS", raising=False)
+    monkeypatch.delenv("VITE_PNL_OWNER_EMAILS", raising=False)
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:
