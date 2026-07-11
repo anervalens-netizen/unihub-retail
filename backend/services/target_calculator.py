@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from services.spreadsheet_safety import append_openpyxl_row
 
 from repositories.target_calculator import (
     TargetCalculatorRepository,
@@ -854,7 +855,7 @@ class TargetCalculatorService:
             "Target propus", "Target final", "Diferenta final-propus", "Ajustat manual",
             "Flag-uri", "Observatii",
         ])
-        sheet.append(headers)
+        append_openpyxl_row(sheet, headers)
         history_by_month: dict[str, dict[str, Any]]
         for row in scenario["rows"]:
             history_by_month = {period["month"]: period for period in row["history"]}
@@ -892,19 +893,19 @@ class TargetCalculatorService:
                 ", ".join(details.get("flags") or []),
                 row["note"] or "",
             ])
-            sheet.append(values)
+            append_openpyxl_row(sheet, values)
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
 
         summary = workbook.create_sheet("Rezumat manageri")
-        summary.append([
+        append_openpyxl_row(summary, [
             "Regional", "Magazine", "Floor", "Target propus", "Target final", "Diferenta",
             "Luna curenta", "Forecast luna curenta", "% crestere propus vs luna curenta",
             "Baza anul trecut", "Target anul trecut", "Realizat baza anul trecut",
             "Realizat target anul trecut", "% crestere anul trecut",
         ])
         for row in scenario["regional_summary"]:
-            summary.append([
+            append_openpyxl_row(summary, [
                 row["regional"], row["store_count"], row["floor_total"],
                 row["proposed_total"], row["final_total"], row["final_total"] - row["proposed_total"],
                 row.get("current_month"), row.get("current_forecast_total"), row.get("proposed_growth_vs_current_pct"),
@@ -914,27 +915,27 @@ class TargetCalculatorService:
             ])
 
         parameters = workbook.create_sheet("Parametri")
-        parameters.append(["Parametru", "Valoare"])
-        parameters.append(["Scenariu", scenario["id"]])
-        parameters.append(["Status", scenario["status"]])
-        parameters.append(["Luna target", scenario["target_month"]])
-        parameters.append(["Luna cohorta magazine active", scenario["cohort_month"]])
-        parameters.append(["Target total", scenario["total_target"]])
-        parameters.append(["Prag minim absolut", scenario["min_floor"]])
-        parameters.append(["Floor fata de luna precedenta", scenario["previous_month_floor_pct"]])
-        parameters.append(["Metoda", scenario["calculation_method"]])
+        append_openpyxl_row(parameters, ["Parametru", "Valoare"])
+        append_openpyxl_row(parameters, ["Scenariu", scenario["id"]])
+        append_openpyxl_row(parameters, ["Status", scenario["status"]])
+        append_openpyxl_row(parameters, ["Luna target", scenario["target_month"]])
+        append_openpyxl_row(parameters, ["Luna cohorta magazine active", scenario["cohort_month"]])
+        append_openpyxl_row(parameters, ["Target total", scenario["total_target"]])
+        append_openpyxl_row(parameters, ["Prag minim absolut", scenario["min_floor"]])
+        append_openpyxl_row(parameters, ["Floor fata de luna precedenta", scenario["previous_month_floor_pct"]])
+        append_openpyxl_row(parameters, ["Metoda", scenario["calculation_method"]])
         for key, value in (scenario.get("calculation_params") or {}).items():
-            parameters.append([f"Parametru {key}", json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value])
+            append_openpyxl_row(parameters, [f"Parametru {key}", json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value])
         for item in scenario["source_months"]:
-            parameters.append([item["label"], item["month"]])
+            append_openpyxl_row(parameters, [item["label"], item["month"]])
         for item in scenario["source_summary"]:
             if item["is_forecast"]:
-                parameters.append([
+                append_openpyxl_row(parameters, [
                     f"Forecast {item['month']}",
                     f"{item['forecast_factor']:.4f}x; importat {item['actual_realized']:.2f}; folosit {item['realized']:.2f}",
                 ])
         for warning in scenario["warnings"]:
-            parameters.append(["Atentionare", warning])
+            append_openpyxl_row(parameters, ["Atentionare", warning])
 
         for worksheet in workbook.worksheets:
             header_fill = PatternFill("solid", fgColor="4F46E5")

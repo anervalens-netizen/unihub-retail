@@ -46,7 +46,7 @@ These items are not automatically considered to close an audit finding unless th
 - [x] H-03 Canonical return receipt identity and regression fixtures — implemented, reconciled, business-approved and CI-green; production deploy pending Wave 1 release.
 - [x] H-11 Grile monthly idempotency/state transitions — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-16 DB error logging reliability and bounded failure path — implemented and isolated-test verified; production deploy pending Wave 1 release.
-- [ ] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs.
+- [x] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs — runtime XLSX writers remediated and isolated-test verified; production deploy pending Wave 1 release.
 - [ ] H-08 Remove privileged real-email fallbacks and fail closed.
 - [ ] H-15 Remove generated business reports and obsolete backup assets from Git HEAD.
 
@@ -164,7 +164,7 @@ Completed:
 No schema migration, production DB write, intentional production error, Sentry
 event, deployment or service restart was performed while implementing H-16.
 
-Remaining before H-11 is operationally closed:
+Remaining before H-16 is operationally closed:
 
 - merge as part of the approved Wave 1 release;
 - backend/worker deployment;

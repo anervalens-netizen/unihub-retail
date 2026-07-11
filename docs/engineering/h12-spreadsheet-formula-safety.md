@@ -54,6 +54,19 @@ def google_sheets_value(value: object) -> object:
 
 Equivalent names are acceptable, but there must be one source of truth.
 
+## Implemented boundary
+
+`services.spreadsheet_safety` provides `TrustedFormula`,
+`spreadsheet_cell_value`, `set_openpyxl_cell` and `append_openpyxl_row`.
+Untrusted dangerous-prefix text receives a leading apostrophe and is written
+with explicit string type; native numbers, `Decimal`, booleans and dates retain
+their types. Only `TrustedFormula`, validated to start with `=`, can produce an
+OpenPyXL formula cell.
+
+The boundary is used by Retail exports, Target Calculator and Grile. The two
+Grile salary formulas remain exactly `=SUM(E2:J2,M2)` and `=K2-M2` for the
+first data row; names, stores, errors and Google-derived metadata are text.
+
 ## XLSX rules
 
 - Untrusted formula-looking strings must be stored as text, not OpenPyXL `data_type='f'`.

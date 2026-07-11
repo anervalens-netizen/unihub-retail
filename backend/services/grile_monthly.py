@@ -25,6 +25,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from services.spreadsheet_safety import TrustedFormula, append_openpyxl_row
 
 RO_MONTHS = [
     "", "Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
@@ -963,7 +964,7 @@ def build_workbook(
     ws_audit = wb.create_sheet("Audit")
 
     for ws in (wb["Mobiup"], wb["Mobicell"]):
-        ws.append(HEADERS)
+        append_openpyxl_row(ws, HEADERS)
 
     counters = {"Mobiup": 1, "Mobicell": 1}
     for row in rows:
@@ -971,12 +972,16 @@ def build_workbook(
             continue
         ws = wb[row.company]
         metadata = metadata_by_company_store.get((row.company, row.store), {})
-        ws.append(make_output_row(row, counters[row.company], metadata))
+        output_row = make_output_row(row, counters[row.company], metadata)
+        output_row[10] = TrustedFormula(output_row[10])
+        output_row[11] = TrustedFormula(output_row[11])
+        append_openpyxl_row(ws, output_row)
         counters[row.company] += 1
 
-    ws_audit.append(AUDIT_HEADERS)
+    append_openpyxl_row(ws_audit, AUDIT_HEADERS)
     for row in rows:
-        ws_audit.append(
+        append_openpyxl_row(
+            ws_audit,
             [
                 row.company,
                 row.store,
