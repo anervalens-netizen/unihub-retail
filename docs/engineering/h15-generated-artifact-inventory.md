@@ -62,3 +62,14 @@ decizie business înainte de eliminare. Recomandări `.gitignore` neaplicate:
 `/reports/`, `/public.bak-*/`, `/backend/outputs/`; nu globuri globale pentru
 XLSX/CSV/JSON. Storage țintă: object storage guvernat cu retention/audit;
 arhivă server securizată doar temporar. Nu s-a creat, mutat sau copiat nimic.
+
+## Curățare HEAD executată
+
+La 2026-07-12 au fost eliminate din Git HEAD exact 22 `reports/**` și 8 PNG
+din `public.bak-logo-20260626-155400/**` (30 total), după arhivare din commitul
+`43e39f3efd36b91dadd847d3279523021e166069`. Arhiva securizată este
+`/opt/Mobiup/secure-archive/unihub-retail/h15/unihub-retail-h15-head-43e39f3efd36.tar.gz`,
+SHA-256 `568a43ed5e9f6d23e3fe7ba8b97e8209af558e354e336b083173e7f34a6e15c7`,
+owner `root:root`, mode `0600`; gzip și 30 intrări au fost verificate.
+Campanii-promo și docs/archive au rămas tracked. History purge nu a fost
+executat și necesită proces separat aprobat.
