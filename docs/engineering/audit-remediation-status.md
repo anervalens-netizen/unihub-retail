@@ -45,7 +45,7 @@ These items are not automatically considered to close an audit finding unless th
 
 - [x] H-03 Canonical return receipt identity and regression fixtures — implemented, reconciled, business-approved and CI-green; production deploy pending Wave 1 release.
 - [x] H-11 Grile monthly idempotency/state transitions — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
-- [ ] H-16 DB error logging reliability and bounded failure path.
+- [x] H-16 DB error logging reliability and bounded failure path — implemented and isolated-test verified; production deploy pending Wave 1 release.
 - [ ] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs.
 - [ ] H-08 Remove privileged real-email fallbacks and fail closed.
 - [ ] H-15 Remove generated business reports and obsolete backup assets from Git HEAD.
@@ -146,6 +146,22 @@ Completed:
 
 No schema migration, Google operation, deployment, restart or production PostgreSQL write was performed while implementing H-11.
 
+### H-16 — DB error logging reliability and bounded failure path
+
+**Status:** implemented on integration branch; production deploy pending
+**Draft PR:** #30
+
+Completed:
+
+- immutable, bounded DB error events and recursive secret/CNP redaction;
+- one bounded queue and consumer per process, with timeout-bounded persistence;
+- stable dropped-event Prometheus reasons and direct non-recursive stderr fallback;
+- idempotent attach and controlled detach before PostgreSQL pool shutdown;
+- isolated PostgreSQL regression coverage for traceback persistence and redaction.
+
+No schema migration, production DB write, intentional production error, Sentry
+event, deployment or service restart was performed while implementing H-16.
+
 Remaining before H-11 is operationally closed:
 
 - merge as part of the approved Wave 1 release;
@@ -165,4 +181,4 @@ A finding is closed only when:
 
 ## Current status
 
-`Wave 0 — rebaseline in progress; Wave 1/H-03 approved and H-11 review-hardened; H-16 revalidation next`
+`Wave 0 — rebaseline in progress; Wave 1/H-03, H-11 and H-16 implementations validated`

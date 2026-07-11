@@ -6,7 +6,7 @@
 
 The current handler also creates one independent task per ERROR record. During an error storm this is unbounded, competes for the same PostgreSQL pool that may already be failing, and has no controlled shutdown or queue-drain behavior.
 
-## Required behavior
+## Implemented behavior
 
 1. Tracebacks are formatted with a real `logging.Formatter` and persisted when the DB sink is healthy.
 2. ERROR records are converted synchronously into an immutable, size-bounded event before asynchronous persistence. Do not retain traceback frame objects in the queue.
@@ -23,6 +23,30 @@ The current handler also creates one independent task per ERROR record. During a
 8. Message, traceback and JSON extra sizes remain bounded before insertion.
 9. Handler attachment is idempotent. Shutdown detaches/drains or cancels the consumer with a bounded timeout before the DB pool is closed.
 10. The application remains available if the DB logging sink fails; the primary stream/Sentry logging path remains independent.
+
+## Bounds, metric and redaction
+
+- `DB_ERROR_LOG_QUEUE_SIZE=256`, clamped to `1..4096`.
+- `DB_ERROR_LOG_WRITE_TIMEOUT_SECONDS=2.0`, clamped to `0.1..30` seconds for
+  the whole acquire plus INSERT operation.
+- `DB_ERROR_LOG_DRAIN_TIMEOUT_SECONDS=2.0`, clamped to `0.1..30` seconds.
+- event limits: message 2,000 characters, traceback 4,000, extra JSON 8,000,
+  stderr fallback 1,000.
+
+`db_error_log_dropped_total{reason}` uses only the stable reasons
+`format_error`, `queue_full`, `loop_unavailable`, `persist_timeout`,
+`persist_error` and `shutdown_drop`.
+
+Extra values are recursively materialized with depth and collection bounds.
+Keys are case-insensitively redacted when they contain `authorization`,
+`cookie`, `token`, `secret`, `password`, `cnp`, `salary_cnp`,
+`client_secret`, `refresh_token` or `access_token`. Bearer credentials,
+password/token/secret key-value text and 13-digit CNP-like values are also
+replaced with `[REDACTED]` in message, traceback, path and stderr output.
+
+`DBErrorEvent` is frozen and contains only materialized `message`,
+`traceback_text`, `logger_path` and `extra_json`; it never retains a
+`LogRecord`, traceback frames, request object or `exc_info`.
 
 ## Suggested state/lifecycle
 
@@ -44,6 +68,24 @@ detached -> attached/running -> closing -> detached
 - If persistence times out or fails, increment the drop metric once and use direct stderr fallback once.
 - If the queue is full, drop the new event rather than evicting or blocking.
 
+The fallback uses only direct bounded `sys.stderr` output. It never calls a
+logger or any logging-framework API, so a database sink failure cannot recurse
+into this handler.
+
+## Lifecycle and shutdown
+
+`attach_db_error_handler(pool)` runs in an active event loop. It captures that
+loop, creates one queue and one consumer, and repeated calls reuse the same
+handler/consumer while updating the pool reference deterministically. `emit()`
+creates an event synchronously and uses `call_soon_threadsafe` for a
+non-blocking `put_nowait`; it never awaits PostgreSQL.
+
+`detach_db_error_handler()` stops new accepts, drains events accepted before
+closing up to the configured timeout, counts remaining queue items as
+`shutdown_drop`, cancels/awaits the consumer, removes the root handler and
+clears all references. Backend shutdown order is: `close_arq_pool`,
+`detach_db_error_handler`, then `close_db_pool`.
+
 ## Required tests
 
 - `logger.exception()` produces a persisted traceback containing the exception type/message.
@@ -55,6 +97,11 @@ detached -> attached/running -> closing -> detached
 - repeated attach does not add duplicate handlers or workers.
 - detach completes within a bounded timeout when the DB sink is blocked.
 - normal JSON/text logging behavior remains unchanged.
+
+The focused H-16 suite covers the above plus an isolated PostgreSQL
+`logger.exception()` round trip, bounded queue overflow, acquire/execute
+failure fallback, timeout, repeated attach/detach and the generic FastAPI 500
+handler. Google and Sentry are not called by these tests.
 
 ## Rollback
 

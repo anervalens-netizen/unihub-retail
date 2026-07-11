@@ -10,7 +10,7 @@ import logging
 from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 
-from logging_config import attach_db_error_handler, setup_logging
+from logging_config import attach_db_error_handler, detach_db_error_handler, setup_logging
 
 setup_logging()
 
@@ -105,6 +105,7 @@ async def lifespan(_: FastAPI):
     await update_business_metrics(current_pool)
     yield
     await close_arq_pool()
+    await detach_db_error_handler()
     await close_db_pool()
 
 
@@ -187,7 +188,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     request_id = getattr(request.state, "request_id", normalize_request_id(None))
     token = bind_request_id(request_id)
     try:
-        logger.warning(
+        logger.error(
             "unhandled request exception",
             extra={"method": request.method, "path": request.url.path},
             exc_info=(type(exc), exc, exc.__traceback__),
