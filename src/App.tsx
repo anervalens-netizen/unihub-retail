@@ -14,7 +14,9 @@ import {
 } from './screenLoaders';
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
-import { canAccessManagement, canAccessPnl } from './auth/permissions';
+import { canAccessManagement } from './auth/permissions';
+import { pnlPermissionIsPending, shouldResetPnlSubtab } from './auth/pnlAccess';
+import { usePnlCapability } from './auth/usePnlCapability';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { usePersistentState } from './lib/usePersistentState';
 
@@ -69,7 +71,16 @@ function loadSavedFilters(key: string): AppFilters {
 export default function App() {
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
   const hasManagementAccess = canAccessManagement(user?.profile, user?.access_token);
-  const hasPnlAccess = canAccessPnl(user?.profile);
+  const verifiedSubject = typeof user?.profile.sub === 'string' ? user.profile.sub : undefined;
+  const { permissionPending: isPnlCapabilityPending, hasPnlAccess } = usePnlCapability(
+    isAuthenticated,
+    verifiedSubject,
+    hasManagementAccess,
+  );
+  const isPnlPermissionPending = pnlPermissionIsPending(
+    isAuthLoading,
+    isPnlCapabilityPending,
+  );
 
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);
@@ -113,10 +124,10 @@ export default function App() {
   }, [activeTab, hasManagementAccess, setActiveTab]);
 
   useEffect(() => {
-    if (!hasPnlAccess && mgmtSubTab === 'pnl') {
+    if (shouldResetPnlSubtab(isPnlPermissionPending, hasPnlAccess, mgmtSubTab)) {
       setMgmtSubTab('asm');
     }
-  }, [hasPnlAccess, mgmtSubTab, setMgmtSubTab]);
+  }, [hasPnlAccess, isPnlPermissionPending, mgmtSubTab, setMgmtSubTab]);
 
   useEffect(() => {
     // Luna in curs se rescrie la bootstrap cu cea mai recenta luna disponibila.
@@ -264,7 +275,7 @@ export default function App() {
       userEmail={user?.profile.email ?? undefined}
       onLogout={logout}
       canAccessManagement={hasManagementAccess}
-      canAccessPnl={hasPnlAccess}
+      hasPnlAccess={hasPnlAccess}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
@@ -293,7 +304,7 @@ export default function App() {
           <Management
             activeSubTab={mgmtSubTab}
             setActiveSubTab={setMgmtSubTab}
-            canAccessPnl={hasPnlAccess}
+            hasPnlAccess={hasPnlAccess}
           />
         )}
         {activeTab === 'settings' && (

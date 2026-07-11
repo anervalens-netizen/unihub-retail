@@ -39,6 +39,23 @@ export interface PnlOverview {
   stores: PnlStore[];
 }
 
+export interface PnlPermissions {
+  can_view: boolean;
+}
+
+export async function getPnlPermissions(): Promise<PnlPermissions> {
+  const { data } = await client.get<PnlPermissions>("/api/store-pnl/permissions");
+  if (
+    !data
+    || typeof data !== "object"
+    || typeof data.can_view !== "boolean"
+    || Object.keys(data).some((key) => key !== "can_view")
+  ) {
+    throw new Error("Invalid P&L permissions response");
+  }
+  return data;
+}
+
 export async function getPnlMonths(): Promise<PnlMonth[]> {
   const { data } = await client.get<{ months: PnlMonth[] }>(
     "/api/store-pnl/months",

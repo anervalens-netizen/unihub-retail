@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from auth import AuthClaims
 from db.connection import close_db_pool, get_pool
@@ -31,12 +32,12 @@ from services.target_calculator import (
 )
 
 
-def auth_claims(email: str) -> AuthClaims:
+def auth_claims(email: str, groups: list[str] | None = None) -> AuthClaims:
     return AuthClaims(
         sub=email,
         email=email,
         preferred_username=email,
-        groups=[],
+        groups=groups or [],
         iss="test",
         aud="test",
         iat=0,
@@ -59,22 +60,29 @@ def test_source_months_are_derived_from_target_month() -> None:
     assert CALCULATION_METHOD == "seasonal_blended_multiyear_v1"
 
 
-def test_only_owner_can_finalize_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("TARGET_CALCULATOR_FINALIZER_EMAILS", raising=False)
+def _request(path: str) -> Request:
+    request = Request({"type": "http", "method": "POST", "path": path, "headers": []})
+    request.scope["route"] = SimpleNamespace(path=path)
+    return request
 
-    assert can_finalize_targets(auth_claims("aner.valens@gmail.com")) is True
-    assert can_finalize_targets(auth_claims("elena.minca@example.com")) is False
+
+def test_only_dedicated_group_can_finalize(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TARGET_CALCULATOR_FINALIZER_GROUPS", raising=False)
+    assert can_finalize_targets(auth_claims("owner@example.invalid")) is False
+    monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_GROUPS", "unihub-target-finalizer")
+    assert can_finalize_targets(auth_claims("owner@example.invalid", ["UNIHUB-TARGET-FINALIZER"])) is True
+    assert can_finalize_targets(auth_claims("owner@example.invalid", ["unihub-admin"])) is False
 
     with pytest.raises(HTTPException) as exc_info:
-        require_target_owner(auth_claims("elena.minca@example.com"))
+        require_target_owner(_request("/api/target-calculator/scenarios/calculate"), auth_claims("owner@example.invalid"))
     assert exc_info.value.status_code == 403
 
 
-def test_finalizer_allowlist_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_EMAILS", "owner@example.com, backup@example.com")
+def test_target_finalizer_groups_are_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_GROUPS", "target-one, target-two")
 
-    assert can_finalize_targets(auth_claims("BACKUP@example.com")) is True
-    assert can_finalize_targets(auth_claims("aner.valens@gmail.com")) is False
+    assert can_finalize_targets(auth_claims("owner@example.invalid", ["TARGET-TWO"])) is True
+    assert can_finalize_targets(auth_claims("owner@example.invalid", ["unihub-grile-admin"])) is False
 
 
 def test_partial_reference_sales_are_projected_for_calculation() -> None:

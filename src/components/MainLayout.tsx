@@ -40,7 +40,7 @@ interface MainLayoutProps {
   userEmail?: string;
   onLogout?: () => void;
   canAccessManagement?: boolean;
-  canAccessPnl?: boolean;
+  hasPnlAccess?: boolean;
 }
 
 const emptyOptions: FilterOptions = {
@@ -78,7 +78,7 @@ export function MainLayout({
   userEmail,
   onLogout,
   canAccessManagement = true,
-  canAccessPnl = false,
+  hasPnlAccess = false,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
 
@@ -157,7 +157,7 @@ export function MainLayout({
         setTheme={setTheme}
         errorCount={errorCount}
         canAccessManagement={canAccessManagement}
-        canAccessPnl={canAccessPnl}
+        hasPnlAccess={hasPnlAccess}
       />
 
       <div className="flex flex-col flex-1 min-w-0 min-h-0">

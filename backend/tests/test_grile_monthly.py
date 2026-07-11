@@ -2,6 +2,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from services.spreadsheet_safety import TrustedFormula
 from services.grile_monthly import (
     ExtractedAgentRow,
     RESET_RANGES,
@@ -65,8 +66,10 @@ def test_make_output_row_uses_new_salary_formulas():
     assert output[:6] == [1, "Andrei Stancu", "Park Lake", "Agent Test", 2600, 300]
     assert output[7] == 25
     assert output[9] == 150
-    assert output[10] == "=SUM(E2:J2,M2)"
-    assert output[11] == "=K2-M2"
+    assert isinstance(output[10], TrustedFormula)
+    assert isinstance(output[11], TrustedFormula)
+    assert output[10].expression == "=SUM(E2:J2,M2)"
+    assert output[11].expression == "=K2-M2"
     assert output[12] == 480
 
 

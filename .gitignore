@@ -37,6 +37,10 @@ entities.json
 # External audit work products may contain copied runtime secrets.
 reports/audit/
 
+# Generated business reports and retired public-asset snapshots stay outside Git.
+/reports/
+/public.bak-*/
+
 # Grile — Google service account (secret, read-only Sheets)
 backend/config/google/
 backend/config/google/*.json

@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
+from services.receipt_identity import canonical_receipt_identity_sql
+
 
 class DashboardRepository:
     def __init__(self, pool: asyncpg.Pool):
@@ -161,6 +163,7 @@ class DashboardRepository:
         self, sales_clauses: list[str], params: list[Any], current_scope: bool = False
     ) -> list[asyncpg.Record]:
         store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+        return_receipt_identity = canonical_receipt_identity_sql("st")
         target_store_clauses = [
             clause.replace("agg.", "s.").replace("s.agent", "agg.agent")
             for clause in sales_clauses
@@ -236,7 +239,11 @@ class DashboardRepository:
                 return_summary AS (
                     SELECT
                         st.import_month AS month,
-                        COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+                        COUNT(DISTINCT {return_receipt_identity})
+                            FILTER (
+                                WHERE st.quantity < 0
+                                  AND st.bon_nr IS NOT NULL
+                            ) AS return_receipt_count
                     FROM sales_transactions st
                     JOIN stores s ON s.site_code = st.site_code
                     WHERE st.import_month >= TO_CHAR(($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month', 'YYYY-MM')

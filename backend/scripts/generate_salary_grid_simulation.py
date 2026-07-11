@@ -65,6 +65,7 @@ from import_salary_records import (  # noqa: E402
     normalize_text,
 )
 from services.grile_agent_targets import candidate_agent_codes  # noqa: E402
+from services.spreadsheet_safety import sanitize_dataframe_text  # noqa: E402
 
 load_dotenv(REPO_DIR / ".env")
 
@@ -1796,34 +1797,34 @@ async def generate(output: Path, comparison_output: Path) -> dict[str, Any]:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        simulation_totals.to_excel(writer, sheet_name="Total scenarii", index=False)
-        simulation_summary.to_excel(writer, sheet_name="Sumar simulare", index=False)
-        simulation.to_excel(writer, sheet_name="Simulare completa", index=False)
-        rules_frame().to_excel(writer, sheet_name="Reguli", index=False)
+        sanitize_dataframe_text(simulation_totals).to_excel(writer, sheet_name="Total scenarii", index=False)
+        sanitize_dataframe_text(simulation_summary).to_excel(writer, sheet_name="Sumar simulare", index=False)
+        sanitize_dataframe_text(simulation).to_excel(writer, sheet_name="Simulare completa", index=False)
+        sanitize_dataframe_text(rules_frame()).to_excel(writer, sheet_name="Reguli", index=False)
     _format_workbook(output)
 
     comparison_output.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(comparison_output, engine="openpyxl") as writer:
-        comparison_notes.to_excel(writer, sheet_name="Citeste intai", index=False)
-        comparison_totals.to_excel(writer, sheet_name="Total scenarii", index=False)
-        monthly_summary.to_excel(writer, sheet_name="Sumar lunar", index=False)
-        manager_summary.to_excel(writer, sheet_name="Sumar ASM", index=False)
-        old_grid_summary.to_excel(
+        sanitize_dataframe_text(comparison_notes).to_excel(writer, sheet_name="Citeste intai", index=False)
+        sanitize_dataframe_text(comparison_totals).to_excel(writer, sheet_name="Total scenarii", index=False)
+        sanitize_dataframe_text(monthly_summary).to_excel(writer, sheet_name="Sumar lunar", index=False)
+        sanitize_dataframe_text(manager_summary).to_excel(writer, sheet_name="Sumar ASM", index=False)
+        sanitize_dataframe_text(old_grid_summary).to_excel(
             writer,
             sheet_name="Control grila veche Mai",
             index=False,
         )
-        old_grid_detail.to_excel(
+        sanitize_dataframe_text(old_grid_detail).to_excel(
             writer,
             sheet_name="Detaliu grila veche Mai",
             index=False,
         )
-        comparable.to_excel(writer, sheet_name="Comparatie eligibili", index=False)
-        salary_source.to_excel(writer, sheet_name="Salarii sursa", index=False)
-        excluded.to_excel(writer, sheet_name="Exclusi comparatie", index=False)
-        salary_unmatched.to_excel(writer, sheet_name="Mapari de verificat", index=False)
-        audit.to_excel(writer, sheet_name="Audit acoperire", index=False)
-        rules_frame().to_excel(writer, sheet_name="Reguli", index=False)
+        sanitize_dataframe_text(comparable).to_excel(writer, sheet_name="Comparatie eligibili", index=False)
+        sanitize_dataframe_text(salary_source).to_excel(writer, sheet_name="Salarii sursa", index=False)
+        sanitize_dataframe_text(excluded).to_excel(writer, sheet_name="Exclusi comparatie", index=False)
+        sanitize_dataframe_text(salary_unmatched).to_excel(writer, sheet_name="Mapari de verificat", index=False)
+        sanitize_dataframe_text(audit).to_excel(writer, sheet_name="Audit acoperire", index=False)
+        sanitize_dataframe_text(rules_frame()).to_excel(writer, sheet_name="Reguli", index=False)
     _format_workbook(comparison_output)
 
     return {

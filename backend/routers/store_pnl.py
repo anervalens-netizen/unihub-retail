@@ -1,34 +1,40 @@
 from __future__ import annotations
 
-import os
 import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from permissions import can_access_management, require_privileged_access
+from privileged_access import STORE_PNL_ACCESS_GROUPS_ENV, has_configured_group
 from repositories.store_pnl import StorePnlRepository
 from services.store_pnl import StorePnlService
 
 router = APIRouter(prefix="/api/store-pnl", tags=["store-pnl"])
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-DEFAULT_OWNER_EMAILS = "aner.valens@gmail.com"
 
 
 def can_access_store_pnl(claims: AuthClaims) -> bool:
-    configured = os.getenv(
-        "PNL_OWNER_EMAILS",
-        os.getenv("TARGET_CALCULATOR_FINALIZER_EMAILS", DEFAULT_OWNER_EMAILS),
+    return (
+        can_access_management(claims)
+        and has_configured_group(claims.groups, STORE_PNL_ACCESS_GROUPS_ENV)
     )
-    allowed = {email.strip().casefold() for email in configured.split(",") if email.strip()}
-    return claims.email.strip().casefold() in allowed
 
 
-def require_store_pnl_owner(claims: AuthClaims = Depends(require_auth)) -> AuthClaims:
-    if not can_access_store_pnl(claims):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="P&L este disponibil doar proprietarului configurat.")
-    return claims
+def require_store_pnl_owner(
+    request: Request,
+    claims: AuthClaims = Depends(require_auth),
+) -> AuthClaims:
+    return require_privileged_access(
+        request=request,
+        claims=claims,
+        allowed=can_access_store_pnl(claims),
+        resource="store_pnl",
+        detail="Accesul la P&L nu este disponibil pentru acest utilizator.",
+        fallback_route="/api/store-pnl",
+    )
 
 
 def parse_month(value: str) -> date:
@@ -40,6 +46,12 @@ def parse_month(value: str) -> date:
 
 async def get_service() -> StorePnlService:
     return StorePnlService(StorePnlRepository(await get_pool()))
+
+
+@router.get("/permissions")
+async def pnl_permissions(claims: AuthClaims = Depends(require_auth)) -> dict[str, bool]:
+    """Capability display endpoint; it intentionally does not emit audit events."""
+    return {"can_view": can_access_store_pnl(claims)}
 
 
 @router.get("/months")

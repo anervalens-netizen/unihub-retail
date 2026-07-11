@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
+from services.spreadsheet_safety import append_openpyxl_row
 
 from repositories.exports import ExportsRepository
 from services.dashboard.queries import (
@@ -481,13 +482,13 @@ class ExportsService:
 
         columns = result["columns"]
         rows = result["rows"]
-        ws.append([column["label"] for column in columns])
+        append_openpyxl_row(ws, [column["label"] for column in columns])
         for cell in ws[1]:
             cell.font = Font(bold=True, color="1f2937")
             cell.fill = PatternFill("solid", fgColor="EEF2FF")
 
         for row in rows:
-            ws.append([row.get(column["key"]) for column in columns])
+            append_openpyxl_row(ws, [row.get(column["key"]) for column in columns])
 
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
@@ -501,13 +502,13 @@ class ExportsService:
                     cell.number_format = number_format
 
         cfg = wb.create_sheet("Configuratie")
-        cfg.append(["Optiune", "Valoare"])
-        cfg.append(["Dataset", DATASETS[request["dataset"]]["label"]])
-        cfg.append(["Luni", ", ".join(request["months"])])
+        append_openpyxl_row(cfg, ["Optiune", "Valoare"])
+        append_openpyxl_row(cfg, ["Dataset", DATASETS[request["dataset"]]["label"]])
+        append_openpyxl_row(cfg, ["Luni", ", ".join(request["months"])])
         selected_days = self._selected_days(request)
-        cfg.append(["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
-        cfg.append(["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
-        cfg.append(["Randuri", len(rows)])
+        append_openpyxl_row(cfg, ["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
+        append_openpyxl_row(cfg, ["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
+        append_openpyxl_row(cfg, ["Randuri", len(rows)])
         for cell in cfg[1]:
             cell.font = Font(bold=True)
         cfg.column_dimensions["A"].width = 24
@@ -606,15 +607,15 @@ class ExportsService:
             )
 
         cfg = wb.create_sheet("Configuratie")
-        cfg.append(["Optiune", "Valoare"])
-        cfg.append(["Tip export", "Evolutie zilnica comparativa"])
-        cfg.append(["Luni", ", ".join(months)])
-        cfg.append(["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
-        cfg.append(["Metrici zilnice", ", ".join(DAILY_EVOLUTION_METRICS[item].label for item in metrics)])
-        cfg.append(["Niveluri", ", ".join(str(COMPARISON_LEVELS[item]["label"]) for item in levels)])
-        cfg.append(["Include magazine inchise", "Da" if include_closed_stores else "Nu"])
-        cfg.append(["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
-        cfg.append(["Randuri", total_rows])
+        append_openpyxl_row(cfg, ["Optiune", "Valoare"])
+        append_openpyxl_row(cfg, ["Tip export", "Evolutie zilnica comparativa"])
+        append_openpyxl_row(cfg, ["Luni", ", ".join(months)])
+        append_openpyxl_row(cfg, ["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
+        append_openpyxl_row(cfg, ["Metrici zilnice", ", ".join(DAILY_EVOLUTION_METRICS[item].label for item in metrics)])
+        append_openpyxl_row(cfg, ["Niveluri", ", ".join(str(COMPARISON_LEVELS[item]["label"]) for item in levels)])
+        append_openpyxl_row(cfg, ["Include magazine inchise", "Da" if include_closed_stores else "Nu"])
+        append_openpyxl_row(cfg, ["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
+        append_openpyxl_row(cfg, ["Randuri", total_rows])
         for cell in cfg[1]:
             cell.font = Font(bold=True)
         cfg.column_dimensions["A"].width = 28
@@ -1100,13 +1101,13 @@ class ExportsService:
         *,
         header_fill: str,
     ) -> None:
-        ws.append([column["label"] for column in columns])
+        append_openpyxl_row(ws, [column["label"] for column in columns])
         for cell in ws[1]:
             cell.font = Font(bold=True, color="1f2937")
             cell.fill = PatternFill("solid", fgColor=header_fill)
 
         for row in rows:
-            ws.append([row.get(column["key"]) for column in columns])
+            append_openpyxl_row(ws, [row.get(column["key"]) for column in columns])
 
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
@@ -1180,7 +1181,7 @@ class ExportsService:
                 else:
                     headers.append(f"Delta {definition.label}")
                     headers.append(f"Delta % {definition.label}")
-        ws.append(headers)
+        append_openpyxl_row(ws, headers)
         for cell in ws[1]:
             cell.font = Font(bold=True, color="1f2937")
             cell.fill = PatternFill("solid", fgColor="DCFCE7")
@@ -1205,7 +1206,7 @@ class ExportsService:
                         row.append(None)
                         if DAILY_EVOLUTION_METRICS[metric].type != "percent":
                             row.append(None)
-            ws.append(row)
+            append_openpyxl_row(ws, row)
 
         ws.freeze_panes = "B2"
         ws.auto_filter.ref = ws.dimensions
