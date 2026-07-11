@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
-from collections.abc import Callable
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Callable
+from typing import Any, cast
 
 import pytest
 import pytest_asyncio
@@ -49,8 +49,37 @@ class _Pool:
         return _Acquire(self._enter)
 
 
-def _record(message: str = "db handler test", *, extra: dict[str, Any] | None = None) -> logging.LogRecord:
-    record = logging.LogRecord("tests.db_error", logging.ERROR, __file__, 1, message, (), None)
+class _DeferredLoop:
+    """Minimal loop facade that deliberately does not execute callbacks."""
+
+    def __init__(self) -> None:
+        self.callbacks: list[tuple[Callable[..., Any], tuple[Any, ...]]] = []
+
+    def is_closed(self) -> bool:
+        return False
+
+    def call_soon_threadsafe(
+        self,
+        callback: Callable[..., Any],
+        *args: Any,
+    ) -> None:
+        self.callbacks.append((callback, args))
+
+
+def _record(
+    message: str = "db handler test",
+    *,
+    extra: dict[str, Any] | None = None,
+) -> logging.LogRecord:
+    record = logging.LogRecord(
+        "tests.db_error",
+        logging.ERROR,
+        __file__,
+        1,
+        message,
+        (),
+        None,
+    )
     for key, value in (extra or {}).items():
         setattr(record, key, value)
     return record
@@ -66,16 +95,29 @@ async def test_logger_exception_persists_traceback_and_redacts_isolated_postgres
             raise ValueError(marker)
         except ValueError:
             logger.exception(
-                "failed token=super-secret %s", marker,
-                extra={"Authorization": "Bearer secret-value", "nested": [{"salary_cnp": "1234567890123"}]},
+                "failed token=super-secret %s",
+                marker,
+                extra={
+                    "Authorization": "Bearer secret-value",
+                    "nested": [{"salary_cnp": "1234567890123"}],
+                },
             )
         await logging_config.detach_db_error_handler()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT message, traceback, extra FROM error_logs WHERE message LIKE $1 ORDER BY id DESC LIMIT 1",
+                """
+                SELECT message, traceback, extra
+                FROM error_logs
+                WHERE message LIKE $1
+                ORDER BY id DESC
+                LIMIT 1
+                """,
                 f"%{marker}%",
             )
-            await conn.execute("DELETE FROM error_logs WHERE message LIKE $1", f"%{marker}%")
+            await conn.execute(
+                "DELETE FROM error_logs WHERE message LIKE $1",
+                f"%{marker}%",
+            )
         assert row is not None
         assert "ValueError" in row["traceback"] and marker in row["traceback"]
         assert "super-secret" not in row["message"]
@@ -87,23 +129,120 @@ async def test_logger_exception_persists_traceback_and_redacts_isolated_postgres
 
 
 async def test_event_redaction_limits_and_unserializable_values() -> None:
-    handler = logging_config.DBErrorHandler(queue_size=1, write_timeout=1, drain_timeout=1)
+    handler = logging_config.DBErrorHandler(
+        queue_size=1,
+        write_timeout=1,
+        drain_timeout=1,
+    )
+    large_payload = {
+        f"field_{index}": "x" * 10_000
+        for index in range(12)
+    }
     record = _record(
-        "Bearer abc.def.ghi password=hunter2 cnp=1234567890123 " + "m" * 3000,
+        (
+            "Bearer abc.def.ghi password=hunter2 "
+            "cnp=1234567890123 postgresql://user:secret@db/retail "
+            + "m" * 3000
+        ),
         extra={
             "Cookie": "session-value",
-            "nested": [{"access_token": "access-value", "safe": object()}],
-            "payload": "x" * 10000,
+            "nested": [
+                {
+                    "access_token": "access-value",
+                    "safe": object(),
+                }
+            ],
+            "payload": large_payload,
+            "not_finite": float("nan"),
         },
     )
     event = handler._event_from_record(record)
+
     assert len(event.message) == 2000
-    assert "hunter2" not in event.message and "1234567890123" not in event.message
-    assert event.extra_json is not None and len(event.extra_json) <= 8000
-    assert "session-value" not in event.extra_json and "access-value" not in event.extra_json
+    assert "hunter2" not in event.message
+    assert "1234567890123" not in event.message
+    assert "user:secret" not in event.message
+    assert event.extra_json is not None
+    assert len(event.extra_json) <= 8000
+    parsed = json.loads(event.extra_json)
+    assert parsed["_truncated"] is True
+    assert "session-value" not in event.extra_json
+    assert "access-value" not in event.extra_json
 
 
-async def test_queue_is_bounded_and_failure_fallback_does_not_recurse(capsys: pytest.CaptureFixture[str]) -> None:
+async def test_primary_text_and_json_formatters_redact_sensitive_values() -> None:
+    record = _record(
+        (
+            "Authorization: Bearer raw-token "
+            "refresh_token=refresh-value "
+            "cnp=1234567890123"
+        ),
+        extra={
+            "Cookie": "session-value",
+            "client_secret": "client-value",
+            "nested": {"access_token": "access-value"},
+        },
+    )
+
+    text_output = logging_config.RedactingTextFormatter(
+        "%(message)s"
+    ).format(record)
+    json_output = logging_config.JSONFormatter().format(record)
+    parsed = json.loads(json_output)
+
+    for secret in (
+        "raw-token",
+        "refresh-value",
+        "1234567890123",
+        "session-value",
+        "client-value",
+        "access-value",
+    ):
+        assert secret not in text_output
+        assert secret not in json_output
+    assert parsed["Cookie"] == "[REDACTED]"
+    assert parsed["client_secret"] == "[REDACTED]"
+
+
+async def test_cross_thread_callback_backlog_is_bounded(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    handler = logging_config.DBErrorHandler(
+        queue_size=1,
+        write_timeout=1,
+        drain_timeout=1,
+    )
+    deferred_loop = _DeferredLoop()
+    handler._loop = cast(Any, deferred_loop)
+    handler._queue = asyncio.Queue(maxsize=1)
+    handler._accepting = True
+    handler._callback_generation = 1
+
+    before = logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(
+        reason="queue_full"
+    )._value.get()
+    handler.emit(_record("first"))
+    handler.emit(_record("second"))
+
+    assert len(deferred_loop.callbacks) == 1
+    assert handler._pending_callbacks == 1
+    assert (
+        logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(
+            reason="queue_full"
+        )._value.get()
+        == before + 1
+    )
+
+    callback, args = deferred_loop.callbacks.pop()
+    callback(*args)
+    assert handler._pending_callbacks == 0
+    assert handler._queue.qsize() == 1
+    assert "DB_ERROR_LOG_DROP reason=queue_full" in capsys.readouterr().err
+
+
+async def test_queue_is_bounded_and_failure_fallback_does_not_recurse(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     entered = asyncio.Event()
 
     async def block_forever() -> None:
@@ -114,55 +253,124 @@ async def test_queue_is_bounded_and_failure_fallback_does_not_recurse(capsys: py
         async def execute(self, *_args: Any) -> None:
             await block_forever()
 
-    handler = logging_config.DBErrorHandler(queue_size=1, write_timeout=30, drain_timeout=0.1)
-    handler.attach(_Pool(lambda: _BlockingConn()), asyncio.get_running_loop())
-    before = logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(reason="queue_full")._value.get()
+    handler = logging_config.DBErrorHandler(
+        queue_size=1,
+        write_timeout=30,
+        drain_timeout=0.1,
+    )
+    handler.attach(
+        _Pool(lambda: _BlockingConn()),
+        asyncio.get_running_loop(),
+    )
+    before = logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(
+        reason="queue_full"
+    )._value.get()
     handler.emit(_record("first"))
     await asyncio.wait_for(entered.wait(), timeout=1)
     handler.emit(_record("second"))
     handler.emit(_record("third"))
     await asyncio.sleep(0)
-    assert logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(reason="queue_full")._value.get() == before + 1
+
+    assert (
+        logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(
+            reason="queue_full"
+        )._value.get()
+        == before + 1
+    )
     assert handler._consumer is not None
     await handler.detach()
     assert "DB_ERROR_LOG_DROP reason=queue_full" in capsys.readouterr().err
 
 
-async def test_persist_error_and_timeout_are_bounded(capsys: pytest.CaptureFixture[str]) -> None:
+async def test_execute_failure_uses_redacted_non_recursive_fallback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class _BrokenConn:
         async def execute(self, *_args: Any) -> None:
-            raise RuntimeError("DATABASE_URL=postgresql://secret")
+            raise RuntimeError("DATABASE_URL=postgresql://user:secret@db")
 
-    handler = logging_config.DBErrorHandler(queue_size=2, write_timeout=0.1, drain_timeout=0.1)
-    handler.attach(_Pool(lambda: _BrokenConn()), asyncio.get_running_loop())
+    handler = logging_config.DBErrorHandler(
+        queue_size=2,
+        write_timeout=0.1,
+        drain_timeout=0.1,
+    )
+    handler.attach(
+        _Pool(lambda: _BrokenConn()),
+        asyncio.get_running_loop(),
+    )
     handler.emit(_record("password=hunter2"))
     await handler.detach()
+
     stderr = capsys.readouterr().err
     assert "persist_error" in stderr
-    assert "hunter2" not in stderr and "postgresql://secret" not in stderr
+    assert "hunter2" not in stderr
+    assert "user:secret" not in stderr
 
 
-async def test_persist_timeout_is_counted_and_consumer_finishes(capsys: pytest.CaptureFixture[str]) -> None:
+async def test_acquire_failure_uses_same_bounded_failure_path(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_acquire() -> Any:
+        raise RuntimeError("access_token=acquire-secret")
+
+    handler = logging_config.DBErrorHandler(
+        queue_size=1,
+        write_timeout=0.1,
+        drain_timeout=0.1,
+    )
+    handler.attach(
+        _Pool(fail_acquire),
+        asyncio.get_running_loop(),
+    )
+    handler.emit(_record("acquire failure"))
+    await handler.detach()
+
+    stderr = capsys.readouterr().err
+    assert "persist_error" in stderr
+    assert "acquire-secret" not in stderr
+
+
+async def test_persist_timeout_is_counted_and_consumer_finishes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class _SlowConn:
         async def execute(self, *_args: Any) -> None:
             await asyncio.Event().wait()
 
-    handler = logging_config.DBErrorHandler(queue_size=1, write_timeout=0.05, drain_timeout=0.2)
-    before = logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(reason="persist_timeout")._value.get()
-    handler.attach(_Pool(lambda: _SlowConn()), asyncio.get_running_loop())
+    handler = logging_config.DBErrorHandler(
+        queue_size=1,
+        write_timeout=0.05,
+        drain_timeout=0.2,
+    )
+    before = logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(
+        reason="persist_timeout"
+    )._value.get()
+    handler.attach(
+        _Pool(lambda: _SlowConn()),
+        asyncio.get_running_loop(),
+    )
     handler.emit(_record("timeout event"))
     await handler.detach()
-    assert logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(reason="persist_timeout")._value.get() == before + 1
+
+    assert (
+        logging_config.DB_ERROR_LOG_DROPPED_TOTAL.labels(
+            reason="persist_timeout"
+        )._value.get()
+        == before + 1
+    )
     assert "persist_timeout" in capsys.readouterr().err
 
 
 async def test_attach_detach_is_idempotent_and_emit_outside_lifecycle_is_safe() -> None:
+    logging.getLogger("tests.h16.lifecycle").error("ignored before attach")
     pool = await get_pool()
     logging_config.attach_db_error_handler(pool)
     first = logging_config._db_handler_instance
     logging_config.attach_db_error_handler(pool)
+
     assert logging_config._db_handler_instance is first
     assert first is not None and first._consumer is not None
+
     await logging_config.detach_db_error_handler()
     await logging_config.detach_db_error_handler()
     assert logging_config._db_handler_instance is None
@@ -174,11 +382,29 @@ async def test_main_unhandled_exception_logs_at_error_without_changing_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from starlette.requests import Request
+
     import main
 
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(main.logger, "error", lambda *_args, **kwargs: calls.append(kwargs))
-    request = Request({"type": "http", "method": "GET", "path": "/boom", "headers": [], "state": {}})
-    response = await main.unhandled_exception_handler(request, RuntimeError("boom"))
+    monkeypatch.setattr(
+        main.logger,
+        "error",
+        lambda *_args, **kwargs: calls.append(kwargs),
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/boom",
+            "headers": [],
+            "state": {},
+        }
+    )
+    response = await main.unhandled_exception_handler(
+        request,
+        RuntimeError("boom"),
+    )
+
     assert response.status_code == 500
-    assert calls and calls[0]["exc_info"][1].args == ("boom",)
+    assert calls
+    assert calls[0]["exc_info"][1].args == ("boom",)
