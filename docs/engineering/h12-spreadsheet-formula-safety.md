@@ -66,6 +66,14 @@ OpenPyXL formula cell.
 The boundary is used by Retail exports, Target Calculator and Grile. The two
 Grile salary formulas remain exactly `=SUM(E2:J2,M2)` and `=K2-M2` for the
 first data row; names, stores, errors and Google-derived metadata are text.
+`append_openpyxl_row` tracks its last logical row so a row beginning with
+`None` (including an all-`None` row) cannot be overwritten. Write-only
+worksheets are rejected explicitly because their append-only model cannot use
+the per-cell safety writer.
+
+The same boundary now protects human-opened offline DataFrame and CSV reports:
+`sanitize_dataframe_text` transforms only text columns while preserving native
+numeric values, and CSV scripts pass every field through `csv_cell_value`.
 
 ## XLSX rules
 
@@ -143,6 +151,9 @@ A focused static regression test may inspect known writer modules or centralize 
 - Intentional Grile formulas remain formulas and retain their exact expressions.
 - Native negative numbers remain numbers.
 - No UI/API/export schema changes are introduced beyond neutralization.
+- Runtime writer regression tests monkeypatch `Worksheet.append` to fail and
+  inspect all generated worksheet XML; untrusted payloads never appear in
+  `<f>` tags, while the Grile workbook contains only its two trusted formulas.
 - Full mypy and isolated PostgreSQL test suites pass.
 - No production files, Google Sheets or databases are modified during implementation.
 

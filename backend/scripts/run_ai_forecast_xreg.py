@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 import asyncpg
 from dotenv import load_dotenv
+from services.spreadsheet_safety import csv_cell_value
 
 
 DEFAULT_API_URL = "http://100.74.73.114:8000/forecast_xreg"
@@ -538,7 +539,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: row.get(key) for key in fieldnames})
+            writer.writerow({key: csv_cell_value(row.get(key)) for key in fieldnames})
 
 
 async def run(args: argparse.Namespace) -> int:

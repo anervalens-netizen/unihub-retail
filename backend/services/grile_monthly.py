@@ -912,8 +912,8 @@ def make_output_row(row: ExtractedAgentRow, nr: int, metadata: dict[str, Any]) -
         row.extra_location_commission,
         metadata.get("Incentive lunar", ""),
         row.extra_hours_pay,
-        f"=SUM(E{excel_row}:J{excel_row},M{excel_row})",
-        f"=K{excel_row}-M{excel_row}",
+        TrustedFormula(f"=SUM(E{excel_row}:J{excel_row},M{excel_row})"),
+        TrustedFormula(f"=K{excel_row}-M{excel_row}"),
         row.bonuri,
         metadata.get("Data angajarii", ""),
         metadata.get("Data plecarii", ""),
@@ -972,10 +972,7 @@ def build_workbook(
             continue
         ws = wb[row.company]
         metadata = metadata_by_company_store.get((row.company, row.store), {})
-        output_row = make_output_row(row, counters[row.company], metadata)
-        output_row[10] = TrustedFormula(output_row[10])
-        output_row[11] = TrustedFormula(output_row[11])
-        append_openpyxl_row(ws, output_row)
+        append_openpyxl_row(ws, make_output_row(row, counters[row.company], metadata))
         counters[row.company] += 1
 
     append_openpyxl_row(ws_audit, AUDIT_HEADERS)

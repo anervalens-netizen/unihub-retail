@@ -42,6 +42,7 @@ from generate_salary_grid_simulation import (
     candidate_agent_codes,
     fetch_data,
 )
+from services.spreadsheet_safety import sanitize_dataframe_text
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REPO_DIR = BACKEND_DIR.parent
@@ -595,9 +596,9 @@ async def generate(output: Path) -> dict[str, Any]:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        summary.to_excel(writer, sheet_name="Sumar", index=False)
-        comparison.to_excel(writer, sheet_name="Comparatie agenti", index=False)
-        rules_frame().to_excel(writer, sheet_name="Reguli", index=False)
+        sanitize_dataframe_text(summary).to_excel(writer, sheet_name="Sumar", index=False)
+        sanitize_dataframe_text(comparison).to_excel(writer, sheet_name="Comparatie agenti", index=False)
+        sanitize_dataframe_text(rules_frame()).to_excel(writer, sheet_name="Reguli", index=False)
     format_workbook(output)
 
     return {

@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from backend.db.connection import close_db_pool, init_db_pool
+from backend.services.spreadsheet_safety import csv_cell_value
 
 MANUAL_OVERRIDES: dict[tuple[str, str], dict[str, str | None]] = {
     ("AFIARAD", "ARDELEANC"): {
@@ -402,7 +403,7 @@ async def main() -> None:
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(output_rows[0].keys()))
         writer.writeheader()
-        writer.writerows(output_rows)
+        writer.writerows([{key: csv_cell_value(value) for key, value in row.items()} for row in output_rows])
 
     if args.apply_db:
         await _upsert_agent_salary_links(output_rows)

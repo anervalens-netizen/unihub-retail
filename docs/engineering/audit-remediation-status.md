@@ -46,7 +46,7 @@ These items are not automatically considered to close an audit finding unless th
 - [x] H-03 Canonical return receipt identity and regression fixtures — implemented, reconciled, business-approved and CI-green; production deploy pending Wave 1 release.
 - [x] H-11 Grile monthly idempotency/state transitions — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-16 DB error logging reliability and bounded failure path — implemented and isolated-test verified; production deploy pending Wave 1 release.
-- [x] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs — runtime XLSX writers remediated and isolated-test verified; production deploy pending Wave 1 release.
+- [x] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs — implementation and final writer hardening verified locally; CI/deploy pending Wave 1 release.
 - [ ] H-08 Remove privileged real-email fallbacks and fail closed.
 - [ ] H-15 Remove generated business reports and obsolete backup assets from Git HEAD.
 
@@ -87,6 +87,26 @@ These items are not automatically considered to close an audit finding unless th
 - [ ] Add runbooks, SLOs, alerts and service hardening.
 
 ## Implemented findings
+
+### H-12 — Spreadsheet formula neutralization
+
+**Status:** technically complete on the integration branch; production deploy pending
+**Draft PR:** #30
+**Implementation commit:** `3e67adb7aa86c1f315154c3abeabd618684a1701`
+**Final hardening:** current H-12 writer-bypass closure commit
+**CI:** pending the final PR run; local isolated writers, full backend suite,
+mypy and frontend checks are required before merge.
+
+Completed:
+
+- all runtime XLSX rows route through the central safety boundary, including
+  Exports daily-comparison Configuratie;
+- Grile constructs its two formulas as `TrustedFormula` at origin;
+- writer-level tests block raw `Worksheet.append` and inspect XLSX XML;
+- human-opened offline XLSX/CSV reports are neutralized while retaining native
+  numeric columns;
+- deployment remains explicitly pending and no real Sheets or business data
+  was used for the verification.
 
 ### H-03 — Canonical return receipt identity
 
