@@ -93,7 +93,7 @@ These items are not automatically considered to close an audit finding unless th
 **Status:** technically complete on the integration branch; deployment pending
 **Draft PR:** #30
 **Implementation commit:** `487a2ac7c599cf1116c58894d95452016edadba8`
-**P&L owner-policy hardening:** pending current H-08 commit
+**P&L owner-policy hardening:** `07718960c2ff55d53ebb2284ba4886c8025cc07b`
 **CI:** pending final PR run; local policy/config/router tests, mypy and full
 backend/frontend checks are required before merge.
 
