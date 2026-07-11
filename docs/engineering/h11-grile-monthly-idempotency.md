@@ -1,8 +1,8 @@
-# H-11 Grile monthly idempotency and state-transition plan
+# H-11 Grile monthly idempotency and state transitions
 
 ## Revalidated defect
 
-`run_monthly_op()` currently calls `start_monthly_operation()`. When the atomic `queued -> running` update returns false, it prints that the operation was already started or finished, but then continues into `finalize_month()`, `archive_month()` or `reset_month()`. It subsequently calls `finish_monthly_operation()` unconditionally.
+`run_monthly_op()` previously called `start_monthly_operation()`. When the atomic `queued -> running` update returned false, it printed that the operation was already started or finished, but then continued into `finalize_month()`, `archive_month()` or `reset_month()`. It subsequently called `finish_monthly_operation()` unconditionally.
 
 A duplicate ARQ delivery can therefore repeat local/Google side effects and overwrite a terminal or concurrently running operation row.
 
@@ -14,40 +14,54 @@ A duplicate ARQ delivery can therefore repeat local/Google side effects and over
 - completed live-reset deduplication for the same scope;
 - per-store live-reset checkpoints and heartbeat updates.
 
-## Required implementation
+## Implemented state machine
 
-1. Replace the boolean start result with a typed snapshot containing one of:
+`MonthlyOperationStartResult` now contains `status`, `operation_id`, the current
+operation snapshot and, where persisted, a safe copy of its result. `status` is
+strictly one of:
    - `started`;
    - `already_running`;
    - `already_completed`;
    - `already_failed`;
    - `not_found`.
-2. Keep `queued -> running` as an atomic compare-and-set update.
-3. If the worker does not acquire `started`, return without calling any operation implementation, heartbeat or finish mutation.
-4. Preserve the existing job-result contract used by the frontend. Add explicit metadata such as `idempotent_replay` and `operation_status`; do not turn a harmless duplicate delivery into a second side effect.
-5. Terminal rows (`completed`/`failed`) must never be overwritten by a late duplicate worker.
-6. `finish_monthly_operation()` must update only a row currently in `running` state and report whether the transition was applied.
-7. `fail_monthly_operation()` may transition only `queued` or `running` rows and must not overwrite terminal state.
-8. A missing operation ID fails deterministically without executing an operation.
-9. Direct/manual execution with `operation_id=None` remains supported and retains current behavior.
-10. Do not modify Google Sheets or production data while validating this finding.
+Start uses `UPDATE ... WHERE id = $1 AND status = 'queued' RETURNING *`; only
+the worker receiving `started` may execute business work. A failed compare-and-
+set reads the current row without changing it.
 
-## Required tests
+Allowed transitions are `queued -> running`, `running -> completed|failed`,
+and `queued -> failed` when enqueueing fails. `finish_monthly_operation()` and
+`fail_monthly_operation()` return whether their guarded transition applied.
+`attach_monthly_operation_job()` writes only while the row is still `queued`.
 
-- two concurrent starts for the same queued operation: exactly one acquires `started`;
-- duplicate delivery while row is `running`: zero calls to finalize/archive/reset and no row mutation;
-- duplicate delivery after `completed`: zero side effects and stored result remains unchanged;
-- duplicate delivery after `failed`: zero side effects and error/result remains unchanged;
-- missing operation ID: zero side effects;
-- late finish cannot overwrite `completed` or `failed`;
-- enqueue failure can still move `queued -> failed`;
-- direct execution without an operation ID still runs once;
-- live-reset checkpoint tests continue to pass;
-- full isolated PostgreSQL suite, mypy and frontend checks remain green.
+Duplicate worker contract:
+
+- `already_running`: returns a no-op result with `idempotent_replay: true` and
+  `operation_status: running`.
+- `already_completed`: returns a safe copy of the stored result with replay
+  metadata; it does not rewrite the row.
+- `already_failed`: returns a failed replay result without rewriting error or
+  result.
+- `not_found`: returns a deterministic failed no-op result with zero side
+  effects.
+
+In all four cases no finalize/archive/reset implementation, heartbeat, finish,
+checkpoint, output-file, or Google adapter is called. Direct execution with
+`operation_id=None` still executes once.
+
+## Verification
+
+The isolated PostgreSQL tests cover concurrent starts, duplicate delivery in
+`running`/`completed`/`failed`, missing IDs, guarded late finishes, allowed and
+refused fail transitions, direct execution and all three operations. Existing
+stale/uncertain/reset-checkpoint tests remain in the same suite. All H-11
+operation implementations and Google-facing adapters are mocked in the new
+duplicate-delivery tests; no real Google operation was executed.
 
 ## Rollback
 
-Revert the H-11 implementation commit. No database migration is expected. If a schema change becomes necessary, stop and document an expand/rollback plan before implementation.
+Revert the H-11 implementation commit. No database migration was added. The
+previous behavior is restored by code revert only; no production data rollback
+is required.
 
 ## Release verification
 

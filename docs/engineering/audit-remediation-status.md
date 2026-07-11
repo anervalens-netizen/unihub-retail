@@ -44,7 +44,7 @@ These items are not automatically considered to close an audit finding unless th
 ### Wave 1 — Immediate correctness and security
 
 - [x] H-03 Canonical return receipt identity and regression fixtures — implemented, reconciled and CI-green; production deploy pending Wave 1 release.
-- [ ] H-11 Grile monthly idempotency/state transitions.
+- [x] H-11 Grile monthly idempotency/state transitions — implemented and isolated-test verified; production deploy pending Wave 1 release.
 - [ ] H-16 DB error logging reliability and bounded failure path.
 - [ ] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs.
 - [ ] H-08 Remove privileged real-email fallbacks and fail closed.
@@ -123,6 +123,24 @@ Remaining before H-03 is operationally closed:
 - merge as part of the approved Wave 1 release;
 - backend deployment and post-deploy Dashboard/health verification.
 
+### H-11 — Grile monthly idempotency and state transitions
+
+**Status:** implemented on integration branch; production deploy pending
+**Draft PR:** #30
+
+Completed:
+
+- typed `MonthlyOperationStartResult` for atomic worker acquisition;
+- guarded `queued -> running`, `running -> completed|failed` and
+  `queued -> failed` transitions without terminal-row overwrite;
+- no-op/replay worker responses for duplicate and missing operation IDs;
+- job attachment guarded to queued operations;
+- isolated PostgreSQL concurrency and duplicate-delivery tests for finalize,
+  archive and reset, with Google-facing calls mocked.
+
+No schema migration, Google operation, deployment, restart or production
+PostgreSQL write was performed while implementing H-11.
+
 ## Acceptance model
 
 A finding is closed only when:
@@ -136,4 +154,4 @@ A finding is closed only when:
 
 ## Current status
 
-`Wave 0 — rebaseline in progress; Wave 1/H-03 implementation validated; H-11 revalidation next`
+`Wave 0 — rebaseline in progress; Wave 1/H-03 and H-11 implementations validated`

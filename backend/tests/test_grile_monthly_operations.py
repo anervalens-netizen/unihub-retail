@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -12,9 +13,11 @@ from db.connection import close_db_pool, get_pool
 from services.grile_monthly import (
     GrileMonthlyRetryBlockedError,
     StoreEntry,
+    fail_monthly_operation,
     finish_monthly_operation,
     reserve_monthly_operation,
     reset_month,
+    start_monthly_operation,
 )
 
 
@@ -63,6 +66,8 @@ async def test_monthly_operation_reservation_serializes_same_month() -> None:
 
         assert sorted(item.status for item in reservations) == ["already_running", "enqueued"]
         active = next(item for item in reservations if item.status == "enqueued")
+        started = await start_monthly_operation(pool, active.operation_id)
+        assert started.status == "started"
 
         await finish_monthly_operation(
             pool,
@@ -300,3 +305,182 @@ async def test_live_reset_checkpoint_skips_already_completed_store(
     finally:
         await _cleanup(month)
         await close_db_pool()
+
+
+async def _insert_operation(
+    month: str,
+    *,
+    status: str = "queued",
+    result: dict[str, Any] | None = None,
+    error_message: str | None = None,
+) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        return int(
+            await conn.fetchval(
+                """
+                INSERT INTO grile_monthly_operations
+                    (op, closing_month, dry_run, status, result, error_message, finished_at, heartbeat_at)
+                VALUES
+                    ('finalize', $1, true, $2, $3::jsonb, $4,
+                     CASE WHEN $2 IN ('completed', 'failed') THEN now() ELSE NULL END,
+                     now())
+                RETURNING id
+                """,
+                month,
+                status,
+                None if result is None else json.dumps(result),
+                error_message,
+            )
+        )
+
+
+async def test_h11_concurrent_start_allows_exactly_one_worker() -> None:
+    month = "2099-10"
+    await _cleanup(month)
+    pool = await get_pool()
+    try:
+        operation_id = await _insert_operation(month)
+        first, second = await asyncio.gather(
+            start_monthly_operation(pool, operation_id),
+            start_monthly_operation(pool, operation_id),
+        )
+        assert sorted([first.status, second.status]) == ["already_running", "started"]
+        async with pool.acquire() as conn:
+            assert await conn.fetchval(
+                "SELECT status FROM grile_monthly_operations WHERE id = $1", operation_id
+            ) == "running"
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+@pytest.mark.parametrize("op", ["finalize", "archive", "reset"])
+@pytest.mark.parametrize("state", ["running", "completed", "failed"])
+async def test_h11_duplicate_worker_delivery_has_no_side_effects(
+    op: str,
+    state: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    month = f"2099-{11 if op == 'finalize' else 12:02d}"
+    await _cleanup(month)
+    pool = await get_pool()
+    stored_result = {"op": op, "status": "success", "output": "original", "exit_code": 0}
+    operation_id = await _insert_operation(
+        month,
+        status=state,
+        result=stored_result if state == "completed" else None,
+        error_message="original failure" if state == "failed" else None,
+    )
+    try:
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=pool))
+        for name in ("finalize_month", "archive_month", "reset_month", "heartbeat_monthly_operation", "finish_monthly_operation"):
+            monkeypatch.setattr(grile_monthly, name, AsyncMock())
+
+        async with pool.acquire() as conn:
+            before = await conn.fetchrow(
+                "SELECT status, result, error_message, finished_at, heartbeat_at FROM grile_monthly_operations WHERE id = $1",
+                operation_id,
+            )
+        replay = await grile_monthly.run_monthly_op(
+            op=op, month=month, dry_run=True, operation_id=operation_id
+        )
+        async with pool.acquire() as conn:
+            after = await conn.fetchrow(
+                "SELECT status, result, error_message, finished_at, heartbeat_at FROM grile_monthly_operations WHERE id = $1",
+                operation_id,
+            )
+
+        assert dict(after) == dict(before)
+        assert replay["idempotent_replay"] is True
+        assert replay["operation_status"] == state
+        for name in ("finalize_month", "archive_month", "reset_month", "heartbeat_monthly_operation", "finish_monthly_operation"):
+            getattr(grile_monthly, name).assert_not_awaited()
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+async def test_h11_missing_operation_is_deterministic_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import AsyncMock
+
+    pool = await get_pool()
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=pool))
+    for name in ("finalize_month", "archive_month", "reset_month", "heartbeat_monthly_operation", "finish_monthly_operation"):
+        monkeypatch.setattr(grile_monthly, name, AsyncMock())
+    result = await grile_monthly.run_monthly_op(
+        op="finalize", month="2099-01", operation_id=987654321
+    )
+    assert result["status"] == "failed"
+    assert result["operation_status"] == "not_found"
+    for name in ("finalize_month", "archive_month", "reset_month", "heartbeat_monthly_operation", "finish_monthly_operation"):
+        getattr(grile_monthly, name).assert_not_awaited()
+    await close_db_pool()
+
+
+@pytest.mark.parametrize("terminal", ["completed", "failed"])
+async def test_h11_late_finish_cannot_overwrite_terminal_row(terminal: str) -> None:
+    month = f"2098-{1 if terminal == 'completed' else 2:02d}"
+    await _cleanup(month)
+    pool = await get_pool()
+    try:
+        operation_id = await _insert_operation(
+            month,
+            status=terminal,
+            result={"status": "success", "output": "kept"},
+            error_message="kept error" if terminal == "failed" else None,
+        )
+        changed = await finish_monthly_operation(
+            pool, operation_id, result={"status": "success", "output": "late"}
+        )
+        assert changed is False
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT status, result, error_message FROM grile_monthly_operations WHERE id = $1", operation_id
+            )
+        assert row["status"] == terminal
+        persisted_result = row["result"]
+        if isinstance(persisted_result, str):
+            persisted_result = json.loads(persisted_result)
+        assert persisted_result["output"] == "kept"
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+@pytest.mark.parametrize("source", ["queued", "running", "completed", "failed"])
+async def test_h11_fail_only_transitions_nonterminal_rows(source: str) -> None:
+    month_number = ["queued", "running", "completed", "failed"].index(source) + 1
+    month = f"2097-{month_number:02d}"
+    await _cleanup(month)
+    pool = await get_pool()
+    try:
+        operation_id = await _insert_operation(month, status=source, error_message="kept")
+        changed = await fail_monthly_operation(pool, operation_id, error_message="new error")
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT status, error_message FROM grile_monthly_operations WHERE id = $1", operation_id
+            )
+        assert changed is (source in {"queued", "running"})
+        assert row["status"] == ("failed" if changed else source)
+        assert row["error_message"] == ("new error" if changed else "kept")
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+@pytest.mark.parametrize("op", ["finalize", "archive", "reset"])
+async def test_h11_direct_execution_without_operation_id_runs_once(
+    op: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    pool = object()
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=pool))
+    for name in ("finalize_month", "archive_month", "reset_month"):
+        monkeypatch.setattr(grile_monthly, name, AsyncMock())
+    result = await grile_monthly.run_monthly_op(op=op, month="2099-03", dry_run=True)
+    assert result["status"] == "success"
+    getattr(grile_monthly, f"{op}_month").assert_awaited_once()

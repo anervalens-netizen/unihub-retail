@@ -241,7 +241,7 @@ async def test_operation_state_helpers_issue_expected_updates() -> None:
     pool = fake_pool(conn)
 
     await grile.attach_monthly_operation_job(pool, operation_id=1, job_id="job-1")
-    assert await grile.start_monthly_operation(pool, 1) is False
+    assert (await grile.start_monthly_operation(pool, 1)).status == "started"
     await grile.heartbeat_monthly_operation(pool, 1)
     await grile.fail_monthly_operation(pool, 1, error_message="failed")
     await grile.ensure_reset_items(
@@ -734,7 +734,11 @@ async def test_run_monthly_op_dispatches_and_finishes(
 ) -> None:
     pool = object()
     monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=pool))
-    monkeypatch.setattr(grile, "start_monthly_operation", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        grile,
+        "start_monthly_operation",
+        AsyncMock(return_value=grile.MonthlyOperationStartResult("started", 9)),
+    )
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "finalize_month", AsyncMock())
     monkeypatch.setattr(grile, "archive_month", AsyncMock())

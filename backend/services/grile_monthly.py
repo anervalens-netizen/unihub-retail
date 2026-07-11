@@ -146,6 +146,22 @@ class MonthlyOperationReservation:
     operation: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class MonthlyOperationStartResult:
+    """Result of the atomic queued -> running worker transition."""
+
+    status: Literal[
+        "started",
+        "already_running",
+        "already_completed",
+        "already_failed",
+        "not_found",
+    ]
+    operation_id: int
+    operation: dict[str, Any] | None = None
+    result: dict[str, Any] | None = None
+
+
 class GrileMonthlyRetryBlockedError(RuntimeError):
     """Raised when a live reset has uncertain Google-side effects."""
 
@@ -326,6 +342,15 @@ def _operation_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
     return data
 
 
+def _safe_operation_result(operation: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return an independent copy of a persisted JSON result for replays."""
+
+    result = operation.get("result") if operation is not None else None
+    if not isinstance(result, dict):
+        return None
+    return json.loads(json.dumps(result, ensure_ascii=False))
+
+
 async def reserve_monthly_operation(
     pool: asyncpg.Pool,
     *,
@@ -502,32 +527,72 @@ async def attach_monthly_operation_job(
     *,
     operation_id: int,
     job_id: str,
-) -> None:
+) -> bool:
     async with pool.acquire() as conn:
-        await conn.execute(
+        row = await conn.fetchrow(
             """
             UPDATE grile_monthly_operations
             SET job_id = $2, heartbeat_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND status = 'queued'
+            RETURNING id
             """,
             operation_id,
             job_id,
         )
+    return row is not None
 
 
-async def start_monthly_operation(pool: asyncpg.Pool, operation_id: int) -> bool:
+async def start_monthly_operation(
+    pool: asyncpg.Pool, operation_id: int
+) -> MonthlyOperationStartResult:
     async with pool.acquire() as conn:
-        result = await conn.execute(
+        started = await conn.fetchrow(
             """
             UPDATE grile_monthly_operations
             SET status = 'running',
                 started_at = COALESCE(started_at, now()),
                 heartbeat_at = now()
             WHERE id = $1 AND status = 'queued'
+            RETURNING *
             """,
             operation_id,
         )
-    return result == "UPDATE 1"
+        if started is not None:
+            operation = _operation_to_dict(started)
+            return MonthlyOperationStartResult(
+                status="started",
+                operation_id=operation_id,
+                operation=operation,
+                result=_safe_operation_result(operation),
+            )
+
+        current = await conn.fetchrow(
+            "SELECT * FROM grile_monthly_operations WHERE id = $1",
+            operation_id,
+        )
+
+    if current is None:
+        return MonthlyOperationStartResult(status="not_found", operation_id=operation_id)
+
+    operation = _operation_to_dict(current)
+    current_status = str(current["status"])
+    status: Literal["already_running", "already_completed", "already_failed"]
+    if current_status == "running":
+        status = "already_running"
+    elif current_status == "completed":
+        status = "already_completed"
+    elif current_status == "failed":
+        status = "already_failed"
+    else:
+        # A queued row can only be observed if a new worker race reserved it
+        # after our failed CAS; never execute it without owning the transition.
+        status = "already_running"
+    return MonthlyOperationStartResult(
+        status=status,
+        operation_id=operation_id,
+        operation=operation,
+        result=_safe_operation_result(operation),
+    )
 
 
 async def heartbeat_monthly_operation(pool: asyncpg.Pool, operation_id: int) -> None:
@@ -548,10 +613,10 @@ async def finish_monthly_operation(
     *,
     result: dict[str, Any],
     error_message: str | None = None,
-) -> None:
+) -> bool:
     status = "completed" if result.get("status") == "success" else "failed"
     async with pool.acquire() as conn:
-        await conn.execute(
+        row = await conn.fetchrow(
             """
             UPDATE grile_monthly_operations
             SET status = $2,
@@ -559,13 +624,15 @@ async def finish_monthly_operation(
                 error_message = $4,
                 finished_at = now(),
                 heartbeat_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND status = 'running'
+            RETURNING id
             """,
             operation_id,
             status,
             json.dumps(result, ensure_ascii=False),
             error_message,
         )
+    return row is not None
 
 
 async def fail_monthly_operation(
@@ -573,20 +640,22 @@ async def fail_monthly_operation(
     operation_id: int,
     *,
     error_message: str,
-) -> None:
+) -> bool:
     async with pool.acquire() as conn:
-        await conn.execute(
+        row = await conn.fetchrow(
             """
             UPDATE grile_monthly_operations
             SET status = 'failed',
                 error_message = $2,
                 finished_at = now(),
                 heartbeat_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND status IN ('queued', 'running')
+            RETURNING id
             """,
             operation_id,
             error_message,
         )
+    return row is not None
 
 
 async def ensure_reset_items(
@@ -1255,15 +1324,40 @@ async def run_monthly_op(
 
     pool = await get_pool()
     month_label = ro_month_label(month)
+
+    if operation_id is not None:
+        start = await start_monthly_operation(pool, operation_id)
+        if start.status != "started":
+            if start.status == "already_completed" and start.result is not None:
+                replay = dict(start.result)
+                replay.update(
+                    {
+                        "operation_id": operation_id,
+                        "operation_status": "completed",
+                        "idempotent_replay": True,
+                    }
+                )
+                return replay
+
+            operation_status = start.status.removeprefix("already_")
+            return {
+                "op": op,
+                "month_label": month_label,
+                "status": "failed" if start.status in {"already_failed", "not_found"} else "no_op",
+                "output": f"Operation {operation_id} was not started: {start.status}.",
+                "exit_code": -1 if start.status == "not_found" else 0,
+                "dry_run": dry_run if op == "reset" else None,
+                "operation_id": operation_id,
+                "operation_status": operation_status,
+                "idempotent_replay": True,
+            }
+
     buffer = io.StringIO()
     status = "success"
     exit_code = 0
 
     async def _run() -> None:
         if operation_id is not None:
-            started = await start_monthly_operation(pool, operation_id)
-            if not started:
-                print(f"Operation {operation_id} was already started or finished.", flush=True)
             await heartbeat_monthly_operation(pool, operation_id)
         if op == "finalize":
             await finalize_month(pool, month_label, only=only)
@@ -1299,6 +1393,7 @@ async def run_monthly_op(
     }
     if operation_id is not None:
         result["operation_id"] = operation_id
+        result["operation_status"] = "completed" if status == "success" else "failed"
         await finish_monthly_operation(
             pool,
             operation_id,
