@@ -45,6 +45,14 @@ export interface PnlPermissions {
 
 export async function getPnlPermissions(): Promise<PnlPermissions> {
   const { data } = await client.get<PnlPermissions>("/api/store-pnl/permissions");
+  if (
+    !data
+    || typeof data !== "object"
+    || typeof data.can_view !== "boolean"
+    || Object.keys(data).some((key) => key !== "can_view")
+  ) {
+    throw new Error("Invalid P&L permissions response");
+  }
   return data;
 }
 

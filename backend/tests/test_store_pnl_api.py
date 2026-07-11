@@ -8,7 +8,7 @@ from routers.store_pnl import can_access_store_pnl, pnl_permissions, require_sto
 
 
 def claims(email: str, groups: list[str] | None = None) -> AuthClaims:
-    return AuthClaims(email, email, email, groups or [], "issuer", "audience", 0, 1, {})
+    return AuthClaims("subject-1", email, "owner", groups or [], "issuer", "audience", 0, 1, {})
 
 
 def request(path: str) -> Request:
@@ -34,8 +34,9 @@ def test_store_pnl_dependency_audits_without_sensitive_claims(monkeypatch: pytes
         with pytest.raises(HTTPException) as exc_info:
             require_store_pnl_owner(request("/api/store-pnl/overview"), claims("other@example.invalid", ["unihub-manager"]))
     assert exc_info.value.status_code == 403
-    assert "resource=store_pnl subject=owner@example.invalid route=/api/store-pnl/months" in caplog.text
+    assert "resource=store_pnl subject=subject-1 route=/api/store-pnl/months" in caplog.text
     assert "decision=denied resource=store_pnl" in caplog.text
+    assert "owner@example.invalid" not in caplog.text
     assert "pnl-owner" not in caplog.text
 
 

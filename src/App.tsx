@@ -1,9 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { MainLayout, type AppFilters } from './components/MainLayout';
 
 import { getAvailableMonths } from './api/filters';
-import { getPnlPermissions } from './api/storePnl';
 import { defaultAppFilters } from './lib/filterValues';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 import { sanitizeActiveTab } from './lib/navigationAccess';
@@ -17,7 +15,8 @@ import {
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
 import { canAccessManagement } from './auth/permissions';
-import { hasPnlCapability, shouldResetPnlSubtab } from './auth/pnlAccess';
+import { shouldResetPnlSubtab } from './auth/pnlAccess';
+import { usePnlCapability } from './auth/usePnlCapability';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { usePersistentState } from './lib/usePersistentState';
 
@@ -73,13 +72,11 @@ export default function App() {
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
   const hasManagementAccess = canAccessManagement(user?.profile, user?.access_token);
   const verifiedSubject = typeof user?.profile.sub === 'string' ? user.profile.sub : undefined;
-  const pnlPermissionsQuery = useQuery({
-    queryKey: ['store-pnl-permissions', verifiedSubject],
-    queryFn: getPnlPermissions,
-    enabled: isAuthenticated && Boolean(verifiedSubject),
-  });
-  const isPnlPermissionPending = isAuthenticated && (!verifiedSubject || pnlPermissionsQuery.isPending);
-  const hasPnlAccess = hasPnlCapability(hasManagementAccess, pnlPermissionsQuery.data?.can_view);
+  const { permissionPending: isPnlPermissionPending, hasPnlAccess } = usePnlCapability(
+    isAuthenticated,
+    verifiedSubject,
+    hasManagementAccess,
+  );
 
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);

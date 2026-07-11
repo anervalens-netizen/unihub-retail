@@ -13,5 +13,6 @@ describe('P&L capability state', () => {
     expect(shouldResetPnlSubtab(true, false, 'pnl')).toBe(false);
     expect(shouldResetPnlSubtab(false, false, 'pnl')).toBe(true);
     expect(shouldResetPnlSubtab(false, true, 'pnl')).toBe(false);
+    expect(shouldResetPnlSubtab(false, false, 'asm')).toBe(false);
   });
 });

@@ -14,4 +14,12 @@ describe('getPnlPermissions', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('denied', { status: 403 })));
     await expect(getPnlPermissions()).rejects.toThrow('API error: 403');
   });
+
+  it.each([{}, { can_view: 'true' }, { can_view: 1 }, { can_view: null }, null])(
+    'rejects malformed permissions payload %#',
+    async (payload) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })));
+      await expect(getPnlPermissions()).rejects.toThrow('Invalid P&L permissions response');
+    },
+  );
 });

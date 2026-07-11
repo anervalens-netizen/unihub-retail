@@ -94,6 +94,7 @@ These items are not automatically considered to close an audit finding unless th
 **Draft PR:** #30
 **Implementation commit:** `487a2ac7c599cf1116c58894d95452016edadba8`
 **P&L owner-policy hardening:** `07718960c2ff55d53ebb2284ba4886c8025cc07b`
+**Capability-cache hardening:** pending current H-08 commit
 **CI:** pending final PR run; local policy/config/router tests, mypy and full
 backend/frontend checks are required before merge.
 
@@ -107,6 +108,8 @@ Completed:
   management-group access policy plus a dedicated P&L owner group;
 - backend P&L capability endpoint and subject-scoped frontend query replacing
   frontend email authorization; both fail closed on errors.
+- P&L query cache revalidates on every mount and hides cached capability while
+  fetching or after a refetch error.
 - production validation requiring both group lists and rejecting deprecated
   email variables;
 - structured allow/deny audit events limited to resource, verified subject and

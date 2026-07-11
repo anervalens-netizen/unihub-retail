@@ -91,6 +91,15 @@ neither condition alone grants access. `GET /api/store-pnl/permissions` is the
 single capability source for the frontend; its `can_view` response is queried
 per verified OIDC subject and defaults fail-closed on loading or API failure.
 
+The P&L query overrides global cache defaults with `staleTime: 0`, `gcTime: 0`,
+`refetchOnMount: "always"` and `retry: false`. Access additionally requires a
+successful post-mount, non-fetching query with no initial/refetch error and
+`can_view === true`; cached data never grants visible access during validation.
+Missing OIDC subject disables the query without an infinite pending state.
+The API client accepts only the exact boolean `can_view` payload. QueryClient
+tests cover initial/refetch failures, cached data, same-subject remount and
+subject isolation; the static gate also covers all P&L UI consumers.
+
 ## Startup validation
 
 For `UNIHUB_ENV=production`, `validate_required_env_vars()` must report clear,

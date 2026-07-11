@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -154,8 +155,24 @@ def test_development_missing_groups_starts_but_denies(monkeypatch: pytest.Monkey
 
 def test_static_gate_removes_email_authorization_from_routers_and_example() -> None:
     root = Path(__file__).resolve().parents[2]
-    files = [root / "backend/routers/target_calculator.py", root / "backend/routers/grile.py", root / "backend/routers/store_pnl.py", root / "src/auth/permissions.ts", root / "src/auth/permissions.test.ts", root / ".env.example"]
+    files = [
+        root / "backend/routers/target_calculator.py",
+        root / "backend/routers/grile.py",
+        root / "backend/routers/store_pnl.py",
+        root / "src/App.tsx",
+        root / "src/api/storePnl.ts",
+        root / "src/auth/permissions.ts",
+        root / "src/auth/permissions.test.ts",
+        root / "src/auth/pnlAccess.ts",
+        root / "src/auth/usePnlCapability.ts",
+        root / "src/components/Management.tsx",
+        root / "src/components/DesktopSidebar.tsx",
+        root / "src/components/MainLayout.tsx",
+        root / ".env.example",
+    ]
     forbidden = ("DEFAULT_FINALIZER_EMAILS", "DEFAULT_GRILE_ADMINS", "TARGET_CALCULATOR_FINALIZER_EMAILS", "GRILE_FINALIZER_EMAILS", "PNL_OWNER_EMAILS", "VITE_PNL_OWNER_EMAILS", "@gmail.com")
     for path in files:
         content = path.read_text()
         assert not any(value in content for value in forbidden), path
+        if path.name != "App.tsx":
+            assert not re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", content), path
