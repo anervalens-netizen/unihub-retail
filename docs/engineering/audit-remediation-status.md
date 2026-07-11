@@ -98,13 +98,13 @@ Completed on the integration branch:
 - ADR defining `sale_date + site_code + normalized_agent + bon_nr` as the canonical identity;
 - centralized, alias-validated SQL expression helper;
 - unit tests for the helper and unsafe alias rejection;
+- helper wired into Dashboard historical, store, agent and regional return aggregations;
+- isolated PostgreSQL collision fixture proving the legacy undercount and canonical counts;
 - read-only month-level production reconciliation query;
 - documented deploy and rollback procedure.
 
 Remaining before H-03 can be closed:
 
-- wire the helper into every store, agent, regional and historical return aggregation;
-- add a PostgreSQL collision fixture covering duplicate `bon_nr` across dates, stores and agents;
 - run the read-only reconciliation and record aggregate deltas only;
 - obtain business approval for the KPI definition;
 - pass CI and complete a production verification after the wave is merged.

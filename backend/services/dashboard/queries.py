@@ -38,6 +38,7 @@ from services.promo_copurchase import (
     merge_promo_results,
     promo_actuals_cutoff_date,
 )
+from services.receipt_identity import canonical_receipt_identity_sql
 
 
 @dataclass
@@ -346,6 +347,7 @@ async def _fetch_store_stats_rows(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[Any]:
+    return_receipt_identity = canonical_receipt_identity_sql("st")
     params, positions = build_scoped_params(
         [month],
         firma=firma,
@@ -415,7 +417,11 @@ async def _fetch_store_stats_rows(
             SELECT
                 st.import_month,
                 st.site_code,
-                COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+                COUNT(DISTINCT {return_receipt_identity})
+                    FILTER (
+                        WHERE st.quantity < 0
+                          AND st.bon_nr IS NOT NULL
+                    ) AS return_receipt_count
             FROM sales_transactions st
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
@@ -576,6 +582,7 @@ async def _fetch_agent_stats_rows(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
+    return_receipt_identity = canonical_receipt_identity_sql("st")
     params, positions = build_scoped_params(
         [month],
         firma=firma,
@@ -618,7 +625,11 @@ async def _fetch_agent_stats_rows(
                 st.import_month,
                 st.site_code,
                 st.agent,
-                COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+                COUNT(DISTINCT {return_receipt_identity})
+                    FILTER (
+                        WHERE st.quantity < 0
+                          AND st.bon_nr IS NOT NULL
+                    ) AS return_receipt_count
             FROM sales_transactions st
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
@@ -804,6 +815,7 @@ async def _fetch_regional_stats(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
+    return_receipt_identity = canonical_receipt_identity_sql("st")
     params, positions = build_scoped_params(
         [month],
         firma=firma,
@@ -887,7 +899,11 @@ async def _fetch_regional_stats(
         return_summary AS (
             SELECT
                 s.regional,
-                COUNT(DISTINCT st.bon_nr) FILTER (WHERE st.quantity < 0) AS return_receipt_count
+                COUNT(DISTINCT {return_receipt_identity})
+                    FILTER (
+                        WHERE st.quantity < 0
+                          AND st.bon_nr IS NOT NULL
+                    ) AS return_receipt_count
             FROM sales_transactions st
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
