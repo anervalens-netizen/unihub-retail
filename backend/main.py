@@ -59,7 +59,7 @@ from permissions import (
     require_salary_access,
 )
 from rate_limits import AUTH_PROXY_LIMIT, anonymous_rate_limit
-from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, stores, target_calculator, tasks, visits_report
+from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
 from services.visits_sync import sync_visits_snapshot
@@ -222,6 +222,7 @@ app.include_router(hr.router, dependencies=[Depends(require_management_access)])
 app.include_router(crm.router, dependencies=_auth)
 app.include_router(target_calculator.router, dependencies=[Depends(require_management_access)])
 app.include_router(grile.router, dependencies=_auth)
+app.include_router(store_pnl.router)
 
 
 @app.get("/health")

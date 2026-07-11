@@ -14,7 +14,7 @@ import {
 } from './screenLoaders';
 import { useAuth } from './auth/AuthContext';
 import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
-import { canAccessManagement } from './auth/permissions';
+import { canAccessManagement, canAccessPnl } from './auth/permissions';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { usePersistentState } from './lib/usePersistentState';
 
@@ -69,6 +69,7 @@ function loadSavedFilters(key: string): AppFilters {
 export default function App() {
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
   const hasManagementAccess = canAccessManagement(user?.profile, user?.access_token);
+  const hasPnlAccess = canAccessPnl(user?.profile);
 
   useEffect(() => {
     setAccessTokenProvider(getAccessToken);
@@ -110,6 +111,12 @@ export default function App() {
       setActiveTab('hub');
     }
   }, [activeTab, hasManagementAccess, setActiveTab]);
+
+  useEffect(() => {
+    if (!hasPnlAccess && mgmtSubTab === 'pnl') {
+      setMgmtSubTab('asm');
+    }
+  }, [hasPnlAccess, mgmtSubTab, setMgmtSubTab]);
 
   useEffect(() => {
     // Luna in curs se rescrie la bootstrap cu cea mai recenta luna disponibila.
@@ -257,6 +264,7 @@ export default function App() {
       userEmail={user?.profile.email ?? undefined}
       onLogout={logout}
       canAccessManagement={hasManagementAccess}
+      canAccessPnl={hasPnlAccess}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
@@ -285,6 +293,7 @@ export default function App() {
           <Management
             activeSubTab={mgmtSubTab}
             setActiveSubTab={setMgmtSubTab}
+            canAccessPnl={hasPnlAccess}
           />
         )}
         {activeTab === 'settings' && (

@@ -2,20 +2,23 @@ import { useState } from 'react';
 import { ASMSubtab } from './ASMSubtab';
 import { TargetCalculatorSubtab } from './TargetCalculatorSubtab';
 import { GrileSubtab } from './GrileSubtab';
+import { PnlSubtab } from './PnlSubtab';
 import type { ManagementTab } from '../lib/tabs';
 
 const TABS: { id: ManagementTab; label: string }[] = [
   { id: 'asm', label: 'Manageri' },
   { id: 'target-calculator', label: 'Calculator Target' },
   { id: 'grile', label: 'Grile' },
+  { id: 'pnl', label: 'P&L' },
 ];
 
 interface Props {
   activeSubTab?: ManagementTab;
   setActiveSubTab?: (tab: ManagementTab) => void;
+  canAccessPnl?: boolean;
 }
 
-export function Management({ activeSubTab, setActiveSubTab }: Props) {
+export function Management({ activeSubTab, setActiveSubTab, canAccessPnl = false }: Props) {
   const [localTab, setLocalTab] = useState<ManagementTab>('asm');
 
   const activeTab = activeSubTab ?? localTab;
@@ -28,7 +31,7 @@ export function Management({ activeSubTab, setActiveSubTab }: Props) {
     <div className="flex flex-col h-full">
       {/* Sub-navigare — vizibilă doar pe mobile (pe desktop controlată din sidebar) */}
       <div className="lg:hidden flex gap-1 overflow-x-auto px-4 pt-4 pb-2 border-b border-slate-200 dark:border-slate-700">
-        {TABS.map((tab) => (
+        {TABS.filter((tab) => tab.id !== 'pnl' || canAccessPnl).map((tab) => (
           <button
             key={tab.id}
             onClick={() => setTab(tab.id)}
@@ -48,6 +51,7 @@ export function Management({ activeSubTab, setActiveSubTab }: Props) {
         {activeTab === 'asm' && <ASMSubtab />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
         {activeTab === 'grile' && <GrileSubtab />}
+        {activeTab === 'pnl' && canAccessPnl && <PnlSubtab />}
       </div>
     </div>
   );

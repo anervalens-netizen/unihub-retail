@@ -14,15 +14,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Python lint & typecheck
+      - name: Prepare Python environment
         run: |
           python3 -m venv venv
-          venv/bin/pip install -r requirements.txt -r requirements-dev.txt 2>/dev/null
-          venv/bin/mypy . --ignore-missing-imports --explicit-package-bases
-          echo "Mypy: OK"
+          venv/bin/pip install --disable-pip-version-check --quiet -r requirements.txt -r requirements-dev.txt
+
+      - name: Python typecheck
+        run: |
+          set +e
+          venv/bin/mypy . --ignore-missing-imports --explicit-package-bases > mypy-report.txt 2>&1
+          status=$?
+          cat mypy-report.txt
+          exit $status
+
+      - name: Upload mypy diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-report
+          path: backend/mypy-report.txt
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: Backend tests
         run: |
+          set +e
           scripts/run_tests_isolated.sh \
             -v \
             --tb=short \
@@ -35,8 +51,27 @@ jobs:
             --cov=services.salarii \
             --cov=services.target_calculator \
             --cov-report=term \
-            --cov-report=json:critical-coverage.json
-          venv/bin/python scripts/check_critical_coverage.py critical-coverage.json
+            --cov-report=json:critical-coverage.json \
+            > backend-test-report.txt 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            venv/bin/python scripts/check_critical_coverage.py critical-coverage.json \
+              >> backend-test-report.txt 2>&1
+            status=$?
+          fi
+          cat backend-test-report.txt
+          exit $status
+
+      - name: Upload backend test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: |
+            backend/backend-test-report.txt
+            backend/critical-coverage.json
+          if-no-files-found: warn
+          retention-days: 3
 
   frontend-check:
     runs-on: [self-hosted, unihub-server]

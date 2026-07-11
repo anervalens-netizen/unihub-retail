@@ -4,6 +4,7 @@ import {
   canAccessSalaries,
   canAdministerImports,
   canAccessManagement,
+  canAccessPnl,
   canExportReports,
   canWriteBusinessData,
   oidcGroups,
@@ -43,6 +44,13 @@ describe('salary permissions', () => {
     const token = `header.${payload}.signature`;
 
     expect(canAccessSalaries({}, token)).toBe(true);
+  });
+});
+
+describe('P&L owner permission', () => {
+  it('allows only the configured owner email', () => {
+    expect(canAccessPnl({ email: 'aner.valens@gmail.com' })).toBe(true);
+    expect(canAccessPnl({ email: 'other@example.com' })).toBe(false);
   });
 });
 

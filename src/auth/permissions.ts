@@ -74,6 +74,15 @@ export function canAccessManagement(
   );
 }
 
+export function canAccessPnl(profile: unknown): boolean {
+  if (!profile || typeof profile !== 'object') return false;
+  const email = (profile as Record<string, unknown>).email;
+  const allowed = (import.meta.env.VITE_PNL_OWNER_EMAILS || 'aner.valens@gmail.com')
+    .split(',')
+    .map((item: string) => item.trim().toLocaleLowerCase('en-US'));
+  return typeof email === 'string' && allowed.includes(email.trim().toLocaleLowerCase('en-US'));
+}
+
 export function canWriteBusinessData(
   profile: unknown,
   accessToken?: string,

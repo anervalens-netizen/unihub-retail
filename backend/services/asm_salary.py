@@ -21,7 +21,7 @@ cu forecast_factor — se folosește raportul lunii (aproape constant).
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 ASM_FIXED_SALARY = 4000
 
@@ -81,7 +81,7 @@ def _pct(numerator: float, denominator: float) -> float | None:
 
 
 def compute_asm_salary(
-    stores: list[Mapping[str, Any]],
+    stores: Sequence[Mapping[str, Any]],
     forecast_factor: float,
 ) -> dict[str, Any]:
     """Calculează defalcarea salarială ASM din datele pe magazin.

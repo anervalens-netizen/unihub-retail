@@ -56,7 +56,7 @@ flowchart LR
 | Hub | KPI-uri, comparatii perioade, carduri speciale, monitorizare AI Forecast |
 | Focus | Incentive, Promo, Concurs, Folii premium, produse focus |
 | Agenti | overview agenti, stabilitate, miscari, salarii, analiza si evaluare |
-| Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target` |
+| Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target`, `Grile`, `P&L` |
 | Setari | importuri vanzari, exporturi configurabile, setari aplicatie si erori |
 
 ## Functionalitati majore
@@ -93,6 +93,12 @@ flowchart LR
   configurabile prin variabilele `RATE_LIMIT_*`; uploadul de vanzari ramane
   limitat separat prin `MAX_SALES_UPLOAD_BYTES`.
 - Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
+- Management -> `P&L` prezinta sumar financiar, evolutie lunara, structura pe
+  categorii si performanta pe magazine, cu lunile estimate marcate explicit.
+  Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
+  adreselor din `PNL_OWNER_EMAILS` (implicit proprietarul Calculator Target);
+  ascunderea din frontend este dublata de verificarea autoritativa a tokenului
+  OIDC in backend.
 - Raportare vizite citita din SQLite shared.
 - Management -> Grile include verificare read-only si inchidere de luna.
   Operatiile lunare ruleaza exclusiv in worker, sunt rezervate in DB inainte de
@@ -215,7 +221,7 @@ Familii de tabele:
 | Campanii | `incentive_campaigns`, `incentive_products` |
 | Reporting | `reporting_agent_*`, `reporting_item_*`, `reporting_focus_item_month`, `reporting_category_month` |
 | AI Forecast | `ai_forecast_runs`, `ai_forecast_store_month`, `ai_forecast_store_day` |
-| Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_salary_links`, `agent_targets` |
+| Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_salary_links`, `agent_targets`, `store_pnl_monthly` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
 | Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
 
@@ -227,6 +233,25 @@ actualizeaza structura curenta si marcheaza inactive magazinele care nu mai
 apar. Importurile istorice actualizeaza doar intervalul
 `first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent
 sau sa reactiveze magazine inchise.
+
+P&L-ul financiar lunar pe magazin este pastrat in `store_pnl_monthly` la
+granularitatea companie, luna, cod istoric de locatie si categorie contabila.
+Importul din `backend/scripts/import_store_pnl.py` deduplica fisierele identice,
+alege snapshotul anual cu cea mai buna acoperire si importa numai valori reale.
+Codurile istorice din fisiere nu sunt fortate peste `stores.site_code`, iar
+orice luna estimata ulterior trebuie marcata explicit cu `data_kind=estimated`.
+Legaturile auditabile catre master-data Retail sunt in `store_pnl_site_links`;
+scriptul `backend/scripts/map_store_pnl_sites.py` salveaza metoda, scorul si
+starea de review, fara sa forteze codurile istorice care nu mai exista in
+`stores`.
+
+Lunile P&L lipsa pot fi generate cu
+`backend/scripts/estimate_store_pnl.py`. Modelul scaleaza veniturile si
+costurile variabile cu vanzarile reale ale magazinului, costul salarial cu
+raportul istoric dintre P&L si salariul net importat, iar costurile fixe cu
+mediana recenta si aceeasi luna din anul anterior. Scriptul afiseaza backtestul
+inainte de import, scrie numai `data_kind=estimated` si nu suprascrie valori
+`actual`.
 
 ### AI Forecast
 

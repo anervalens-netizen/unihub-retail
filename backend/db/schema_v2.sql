@@ -461,6 +461,41 @@ CREATE INDEX IF NOT EXISTS idx_salary_records_company ON salary_records (company
 CREATE INDEX IF NOT EXISTS idx_salary_records_site_code ON salary_records (site_code);
 CREATE INDEX IF NOT EXISTS idx_salary_records_cnp ON salary_records (cnp) WHERE cnp IS NOT NULL;
 
+-- P&L lunar pe magazin; schema canonica in migrations/021_store_pnl_actuals.sql.
+CREATE TABLE IF NOT EXISTS store_pnl_monthly (
+    id BIGSERIAL PRIMARY KEY,
+    company_name TEXT NOT NULL CHECK (company_name IN ('Mobicell', 'Mobiup')),
+    period DATE NOT NULL CHECK (period = date_trunc('month', period)::date),
+    source_site_code TEXT NOT NULL,
+    source_location_name TEXT NOT NULL,
+    category_code TEXT NOT NULL CHECK (category_code IN ('v1', 'v11', 'v2', 'v3', 'c1', 'c11', 'c2', 'c3', 'c4', 'c5', 'c6', 'a1')),
+    category_name TEXT NOT NULL,
+    amount NUMERIC(16, 2) NOT NULL,
+    data_kind TEXT NOT NULL DEFAULT 'actual' CHECK (data_kind IN ('actual', 'estimated')),
+    source_file TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = 64),
+    imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_name, period, source_site_code, category_code, data_kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_pnl_monthly_period ON store_pnl_monthly (period);
+CREATE INDEX IF NOT EXISTS idx_store_pnl_monthly_company_period ON store_pnl_monthly (company_name, period);
+CREATE INDEX IF NOT EXISTS idx_store_pnl_monthly_source_site ON store_pnl_monthly (source_site_code, period);
+
+CREATE TABLE IF NOT EXISTS store_pnl_site_links (
+    company_name TEXT NOT NULL CHECK (company_name IN ('Mobicell', 'Mobiup')),
+    source_site_code TEXT NOT NULL,
+    source_location_name TEXT NOT NULL,
+    site_code TEXT NOT NULL REFERENCES stores(site_code) ON DELETE RESTRICT,
+    match_method TEXT NOT NULL CHECK (match_method IN ('exact_code', 'exact_name', 'manual_alias', 'fuzzy_name')),
+    confidence NUMERIC(5, 4) NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+    reviewed BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (company_name, source_site_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_pnl_site_links_site_code ON store_pnl_site_links (site_code);
+
 CREATE INDEX IF NOT EXISTS idx_sales_month_site
     ON sales_transactions (import_month, site_code)
     WHERE is_cartela = false;

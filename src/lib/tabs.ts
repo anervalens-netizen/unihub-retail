@@ -1,7 +1,7 @@
-import { Briefcase, Calculator, ClipboardCheck, LayoutDashboard, Settings, Sparkles, Users } from 'lucide-react';
+import { BadgeDollarSign, Briefcase, Calculator, ClipboardCheck, LayoutDashboard, Settings, Sparkles, Users } from 'lucide-react';
 
 export type TabId = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
-export type ManagementTab = 'asm' | 'target-calculator' | 'grile';
+export type ManagementTab = 'asm' | 'target-calculator' | 'grile' | 'pnl';
 
 export const ALL_TABS = [
   { id: 'hub', icon: LayoutDashboard, label: 'Hub' },
@@ -15,6 +15,7 @@ export const MGMT_SUBTABS = [
   { id: 'asm' as ManagementTab, label: 'Manageri', icon: Users },
   { id: 'target-calculator' as ManagementTab, label: 'Calculator Target', icon: Calculator },
   { id: 'grile' as ManagementTab, label: 'Grile', icon: ClipboardCheck },
+  { id: 'pnl' as ManagementTab, label: 'P&L', icon: BadgeDollarSign, ownerOnly: true },
 ];
 
 export const TAB_LABELS: Record<TabId, string> = {
@@ -29,4 +30,5 @@ export const MGMT_SUBTAB_LABELS: Record<ManagementTab, string> = {
   asm: 'Manageri',
   'target-calculator': 'Calculator Target',
   grile: 'Grile',
+  pnl: 'P&L',
 };

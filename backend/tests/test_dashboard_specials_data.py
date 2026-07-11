@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -78,7 +79,10 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
         patch(
             "services.dashboard.specials_data._fetch_promo_incentive_summary",
             new_callable=AsyncMock,
-            return_value=PromoIncentiveSummary(incentive_qty=4, incentive_value=40),
+            return_value=PromoIncentiveSummary(
+                incentive_qty=4,
+                incentive_value=Decimal("40"),
+            ),
         ),
     ):
         cards = await _get_special_cards_data(
