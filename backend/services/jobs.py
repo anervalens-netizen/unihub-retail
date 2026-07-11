@@ -177,6 +177,7 @@ async def enqueue_grile_monthly(
 ) -> GrileMonthlyEnqueueResult:
     from db.connection import get_pool
     from services.grile_monthly import (
+        attach_monthly_operation_job,
         fail_monthly_operation,
         reserve_monthly_operation,
     )
@@ -198,34 +199,47 @@ async def enqueue_grile_monthly(
             operation=reservation.operation,
         )
 
-    pool = await get_arq_pool()
+    # The job identifier is deterministic, so persist it before publishing the
+    # job. Otherwise a fast worker can transition queued -> running before the
+    # post-enqueue attachment and leave the operation without a recoverable
+    # job_id for duplicate API requests and status polling.
     job_id = f"grile-monthly:{reservation.operation_id}"
-    job = await pool.enqueue_job(
-        "grile_monthly_background",
-        op,
-        month,
-        only,
-        dry_run,
-        triggered_by_email,
-        reservation.operation_id,
-        get_request_id(),
-        _job_id=job_id,
+    attached = await attach_monthly_operation_job(
+        db_pool,
+        operation_id=reservation.operation_id,
+        job_id=job_id,
     )
-    if job is None:
+    if not attached:
+        raise RuntimeError(
+            "Grile monthly operation is no longer queued before job publication"
+        )
+
+    try:
+        pool = await get_arq_pool()
+        job = await pool.enqueue_job(
+            "grile_monthly_background",
+            op,
+            month,
+            only,
+            dry_run,
+            triggered_by_email,
+            reservation.operation_id,
+            get_request_id(),
+            _job_id=job_id,
+        )
+        if job is None:
+            raise RuntimeError("Failed to enqueue grile monthly job")
+    except Exception:
+        # If Valkey accepted the publish but the client lost the response, this
+        # compare-and-set moves the row to failed only while it is still queued.
+        # A worker that already acquired it remains running and is not clobbered.
         await fail_monthly_operation(
             db_pool,
             reservation.operation_id,
             error_message="Jobul lunar Grile nu a putut fi adaugat in coada",
         )
-        raise RuntimeError("Failed to enqueue grile monthly job")
+        raise
 
-    from services.grile_monthly import attach_monthly_operation_job
-
-    await attach_monthly_operation_job(
-        db_pool,
-        operation_id=reservation.operation_id,
-        job_id=job.job_id,
-    )
     return GrileMonthlyEnqueueResult(
         status="enqueued",
         operation_id=reservation.operation_id,
