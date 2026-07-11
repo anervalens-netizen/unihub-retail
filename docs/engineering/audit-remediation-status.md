@@ -43,8 +43,8 @@ These items are not automatically considered to close an audit finding unless th
 
 ### Wave 1 — Immediate correctness and security
 
-- [x] H-03 Canonical return receipt identity and regression fixtures — implemented, reconciled and CI-green; production deploy pending Wave 1 release.
-- [x] H-11 Grile monthly idempotency/state transitions — implemented and isolated-test verified; production deploy pending Wave 1 release.
+- [x] H-03 Canonical return receipt identity and regression fixtures — implemented, reconciled, business-approved and CI-green; production deploy pending Wave 1 release.
+- [x] H-11 Grile monthly idempotency/state transitions — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
 - [ ] H-16 DB error logging reliability and bounded failure path.
 - [ ] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs.
 - [ ] H-08 Remove privileged real-email fallbacks and fail closed.
@@ -90,10 +90,11 @@ These items are not automatically considered to close an audit finding unless th
 
 ### H-03 — Canonical return receipt identity
 
-**Status:** implemented on integration branch; business approval and production deploy pending  
+**Status:** implemented and business-approved on the integration branch; production deploy pending  
 **Draft PR:** #30  
 **Implementation commit:** `3ed251b6fa193a635a3a3f400a2ac422b84af039`  
 **Review hardening commit:** `3aa0a5e56fc765ad3482bc12353b2494f857aa4d`  
+**Business approval record:** `docs/engineering/h03-business-approval.md`  
 **CI:** run #255 passed backend mypy/tests and frontend typecheck/tests/build.
 
 Completed:
@@ -105,7 +106,8 @@ Completed:
 - isolated PostgreSQL collision fixture proving legacy `2` versus canonical `5` and exercising the real queries;
 - the fixture preserves the production `bon_nr NOT NULL` schema constraint while testing NULL semantics in an isolated CTE;
 - read-only month-level production reconciliation query;
-- documented deploy and rollback procedure.
+- documented deploy and rollback procedure;
+- explicit approval from the business/application owner on 2026-07-11.
 
 Production reconciliation executed in an explicit read-only transaction and rolled back:
 
@@ -119,27 +121,36 @@ Production reconciliation executed in an explicit read-only transaction and roll
 
 Remaining before H-03 is operationally closed:
 
-- explicit business-owner approval of the canonical identity;
 - merge as part of the approved Wave 1 release;
 - backend deployment and post-deploy Dashboard/health verification.
 
 ### H-11 — Grile monthly idempotency and state transitions
 
-**Status:** implemented on integration branch; production deploy pending
-**Draft PR:** #30
+**Status:** implemented and review-hardened on the integration branch; production deploy pending  
+**Draft PR:** #30  
+**Implementation commit:** `ca8425e62f68336574fcb415626570272364e6a0`  
+**Queue-publication hardening commits:** `0ae51bd289e819fca798883692179d7425fc65e4`, `fd7b08af255e67625d0d9477620f8b04ada10dae`  
+**CI:** run #267 passed backend mypy/tests and frontend typecheck/tests/build.
 
 Completed:
 
 - typed `MonthlyOperationStartResult` for atomic worker acquisition;
-- guarded `queued -> running`, `running -> completed|failed` and
-  `queued -> failed` transitions without terminal-row overwrite;
+- guarded `queued -> running`, `running -> completed|failed` and `queued|running -> failed` transitions without terminal-row overwrite;
 - no-op/replay worker responses for duplicate and missing operation IDs;
-- job attachment guarded to queued operations;
-- isolated PostgreSQL concurrency and duplicate-delivery tests for finalize,
-  archive and reset, with Google-facing calls mocked.
+- finalize/archive/reset, heartbeat, finish, checkpoint, file and Google side effects are skipped on duplicate delivery;
+- deterministic job ID is persisted while the operation is still queued, before ARQ publication;
+- queue exceptions and null enqueue results fail only a still-queued reservation;
+- a fast worker or ambiguous publish outcome cannot clobber an already-running operation;
+- isolated PostgreSQL concurrency and duplicate-delivery tests for finalize, archive and reset, with Google-facing calls mocked;
+- queue-ordering tests cover attach-before-publish, rejected attachment, Valkey failure and existing active reservations.
 
-No schema migration, Google operation, deployment, restart or production
-PostgreSQL write was performed while implementing H-11.
+No schema migration, Google operation, deployment, restart or production PostgreSQL write was performed while implementing H-11.
+
+Remaining before H-11 is operationally closed:
+
+- merge as part of the approved Wave 1 release;
+- backend/worker deployment;
+- controlled dry-run verification and duplicate-delivery no-op verification without live Google writes.
 
 ## Acceptance model
 
@@ -154,4 +165,4 @@ A finding is closed only when:
 
 ## Current status
 
-`Wave 0 — rebaseline in progress; Wave 1/H-03 and H-11 implementations validated`
+`Wave 0 — rebaseline in progress; Wave 1/H-03 approved and H-11 review-hardened; H-16 revalidation next`
