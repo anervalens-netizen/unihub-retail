@@ -93,7 +93,7 @@ These items are not automatically considered to close an audit finding unless th
 **Status:** technically complete on the integration branch; production deploy pending
 **Draft PR:** #30
 **Implementation commit:** `3e67adb7aa86c1f315154c3abeabd618684a1701`
-**Final hardening commit:** `9d36e5e09ad51098337ab18ef110664c2deee0a6`
+**Final hardening commit:** `9d36e5e07a71e704cadf15f0dd6d8d2ce5a552da`
 **CI:** pending the final PR run; local isolated writers, full backend suite,
 mypy and frontend checks are required before merge.
 
