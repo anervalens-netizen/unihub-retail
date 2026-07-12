@@ -295,14 +295,16 @@ Criteriu:
 
 ## Milestone 4 - Performanta si optimizare masurata
 
-Status: planificat.
+Status: in executie.
 
 Livrabile:
 
-- baseline de latenta pentru `/api/dashboard/all`, `/api/campaigns/*`,
+- [x] baseline de latenta pentru `/api/dashboard/all`, `/api/campaigns/*`,
   `/api/agents/evaluation-v2`, `/api/salarii/*`;
-- `EXPLAIN (ANALYZE, BUFFERS)` pentru query-urile lente confirmate;
-- indexuri doar unde exista dovada si impact clar;
+- [x] primul `EXPLAIN (ANALYZE, BUFFERS)` pentru Agent Evaluation v2 confirma
+  scanarea completa a `sales_transactions` pe calea premium glass;
+- [x] primul index este justificat prin planul real; impactul post-migrare este
+  gate inainte de inchiderea optimizarii;
 - reducere presiune pool DB in dashboard gather;
 - audit bundle frontend dupa spliturile mari;
 - pastrarea lazy-loading-ului pe ecranele principale.
@@ -405,6 +407,10 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: baseline read-only pe rolul DB runtime: Dashboard median 489,7
+  ms, Agent Evaluation v2 565,6 ms, Campaigns 6,5 ms si Salarii 22,5 ms.
+  `EXPLAIN ANALYZE` a justificat exclusiv indexul partial covering din migratia
+  025; rezultatele dupa migrare raman gate obligatoriu.
 - 2026-07-13: evaluarea agentilor separata in query-uri repository, scoring
   Python pur si assembler testat; `Agents.tsx` foloseste persistenta comuna;
   `ApiError` pastreaza status/detail/body; drawerul de performanta a fost extras
