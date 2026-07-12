@@ -280,3 +280,11 @@ the refresh/cache metrics have finite labels only.
 venv from that file alone before importing `auth`, `main` and `worker`. No
 Authentik, environment, production service, database, browser token storage,
 OIDC proxy or rate limiter was modified.
+
+Final engineering review preserves issuer and JWKS URL values exactly as
+configured; origin comparison is separately normalized as lower-cased scheme,
+host and effective port. Numeric settings reject non-finite values while clock
+skew zero remains valid. JWKS reads stream into a strict 256 KiB decoded-body
+bound, and concurrent unknown-key requests use the cache generation observed
+before acquiring the refresh lock. Stale eligibility is evaluated after a
+refresh failure with a fresh monotonic clock read.

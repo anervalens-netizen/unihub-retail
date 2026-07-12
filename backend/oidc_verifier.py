@@ -45,15 +45,20 @@ class OIDCVerifier:
         self.settings, self.client, self.clock = settings, client, clock
         self.cache: JWKSCache | None = None
         self.lock = asyncio.Lock()
-        self._unknown_refresh_generation: int | None = None
 
     async def _fetch(self) -> JWKSCache:
         try:
-            response = await self.client.get(self.settings.jwks_url, timeout=self.settings.fetch_timeout_seconds, follow_redirects=False)
-            response.raise_for_status()
-            if len(response.content) > _MAX_BODY:
-                raise ValueError("body")
-            payload = json.loads(response.content)
+            async with self.client.stream("GET", self.settings.jwks_url, timeout=self.settings.fetch_timeout_seconds, follow_redirects=False) as response:
+                response.raise_for_status()
+                length = response.headers.get("content-length")
+                if length is not None and int(length) > _MAX_BODY:
+                    raise ValueError("body")
+                chunks = bytearray()
+                async for chunk in response.aiter_bytes():
+                    chunks.extend(chunk)
+                    if len(chunks) > _MAX_BODY:
+                        raise ValueError("body")
+            payload = json.loads(bytes(chunks))
             values = payload.get("keys") if isinstance(payload, dict) else None
             if not isinstance(values, list) or not values:
                 raise ValueError("keys")
@@ -94,24 +99,26 @@ class OIDCVerifier:
         async with self.lock:
             cache = self.cache
             now = self.clock()
+            if cache and cache.generation != observed_generation:
+                if kid in cache.keys:
+                    _cache_use.labels("fresh").inc()
+                    return cache.keys[kid]
+                raise _invalid()
             if cache and now - cache.fetched_at < self.settings.cache_ttl_seconds and kid in cache.keys:
                 _cache_use.labels("fresh").inc()
                 return cache.keys[kid]
-            if unknown and cache and self._unknown_refresh_generation == cache.generation:
-                raise _invalid()
             try:
                 cache = await self._fetch()
             except HTTPException:
+                now = self.clock()
+                if self.cache:
+                    _age.set(max(now - self.cache.fetched_at, 0))
                 if self.cache and kid in self.cache.keys and now - self.cache.fetched_at <= self.settings.max_stale_seconds:
                     _cache_use.labels("stale").inc()
                     return self.cache.keys[kid]
                 raise
             if kid not in cache.keys:
-                if unknown:
-                    self._unknown_refresh_generation = cache.generation
                 raise _invalid()
-            if unknown:
-                self._unknown_refresh_generation = cache.generation
             return cache.keys[kid]
 
 

@@ -24,6 +24,8 @@ async def test_lifespan_startup_failure_still_runs_cleanup_in_order(monkeypatch:
 
     events: list[str] = []
     monkeypatch.setattr(main, "validate_required_env_vars", lambda: events.append("validate"))
+    monkeypatch.setattr(main, "init_oidc_runtime", AsyncMock(side_effect=lambda: events.append("oidc-init")))
+    monkeypatch.setattr(main, "close_oidc_runtime", AsyncMock(side_effect=lambda: events.append("oidc-close")))
     monkeypatch.setattr(main, "init_db_pool", AsyncMock(side_effect=lambda: events.append("init")))
     monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=_Pool()))
     monkeypatch.setattr(main, "attach_db_error_handler", lambda _pool: events.append("attach"))
@@ -35,7 +37,7 @@ async def test_lifespan_startup_failure_still_runs_cleanup_in_order(monkeypatch:
     with pytest.raises(RuntimeError, match="schema failed"):
         async with main.lifespan(main.app):
             pass
-    assert events[-3:] == ["arq", "detach", "db"]
+    assert events[-4:] == ["arq", "detach", "db", "oidc-close"]
 
 
 @pytest.mark.asyncio
@@ -47,6 +49,7 @@ async def test_lifespan_cleanup_continues_after_cleanup_failure(
 
     events: list[str] = []
     monkeypatch.setattr(main, "validate_required_env_vars", lambda: None)
+    monkeypatch.setattr(main, "init_oidc_runtime", AsyncMock())
     monkeypatch.setattr(main, "init_db_pool", AsyncMock())
     monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=_Pool()))
     monkeypatch.setattr(main, "attach_db_error_handler", lambda _pool: None)
@@ -74,8 +77,11 @@ async def test_lifespan_cleanup_continues_after_cleanup_failure(
     monkeypatch.setattr(main, "close_arq_pool", close_arq)
     monkeypatch.setattr(main, "detach_db_error_handler", detach)
     monkeypatch.setattr(main, "close_db_pool", close_db)
+    async def close_oidc() -> None:
+        events.append("oidc")
+    monkeypatch.setattr(main, "close_oidc_runtime", close_oidc)
 
     with pytest.raises(RuntimeError):
         async with main.lifespan(main.app):
             pass
-    assert events == ["arq", "detach", "db"]
+    assert events == ["arq", "detach", "db", "oidc"]

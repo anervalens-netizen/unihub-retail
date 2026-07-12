@@ -38,8 +38,8 @@ def _unauthorized() -> HTTPException:
     return HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid authentication token", headers={"WWW-Authenticate": "Bearer"})
 
 
-def _valid_text(value: object, maximum: int = 256, allow_space: bool = True) -> bool:
-    return isinstance(value, str) and bool(value) and len(value) <= maximum and all(char.isprintable() and (allow_space or not char.isspace()) for char in value)
+def _valid_text(value: object, maximum: int = 256, allow_internal_space: bool = True) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and value == value.strip() and len(value) <= maximum and all(char.isprintable() and (allow_internal_space or not char.isspace()) for char in value)
 
 
 async def require_auth(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> AuthClaims:
@@ -63,6 +63,7 @@ async def require_auth(request: Request, credentials: HTTPAuthorizationCredentia
     groups = payload.get("groups", [])
     email = payload.get("email", "")
     username = payload.get("preferred_username", "")
-    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or (email and not isinstance(email, str)) or (username and not isinstance(username, str)):
+    iat, exp = payload.get("iat"), payload.get("exp")
+    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and not isinstance(email, str)) or ("preferred_username" in payload and not isinstance(username, str)) or isinstance(iat, bool) or isinstance(exp, bool) or not isinstance(iat, (int, float)) or not isinstance(exp, (int, float)):
         raise _unauthorized()
-    return AuthClaims(sub, email, username, groups, verifier.settings.issuer, verifier.settings.audience, int(payload["iat"]), int(payload["exp"]), {})
+    return AuthClaims(sub, email, username, groups, verifier.settings.issuer, verifier.settings.audience, int(iat), int(exp), {})

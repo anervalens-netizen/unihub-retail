@@ -44,7 +44,8 @@ def test_valid_settings_are_normalized_and_bounded(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("UNIHUB_ENV", "production")
     settings = load_oidc_verifier_settings()
     assert settings is not None
-    assert settings.issuer.endswith("/oidc")
+    assert settings.issuer == "https://issuer.example.invalid/oidc/"
+    assert settings.jwks_url == "https://issuer.example.invalid/oidc/jwks/"
     assert settings.cache_ttl_seconds == 3600
     monkeypatch.setenv("JWKS_MAX_STALE_SECONDS", "59")
     assert any("JWKS_MAX_STALE_SECONDS" in error for error in oidc_config_errors(True))

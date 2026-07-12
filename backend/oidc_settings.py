@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import SplitResult, urlsplit
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +22,8 @@ _REQUIRED = ("OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE")
 
 
 def _url(raw: str, name: str, production: bool) -> tuple[str | None, str | None]:
+    if not raw or raw != raw.strip() or any(not char.isprintable() for char in raw):
+        return None, f"{name} is invalid"
     try:
         parsed = urlsplit(raw)
     except ValueError:
@@ -33,18 +36,26 @@ def _url(raw: str, name: str, production: bool) -> tuple[str | None, str | None]
         pass
     else:
         return None, f"{name} must use an allowed scheme"
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/") or "/", "", "")), None
+    return raw, None
+
+
+def normalized_origin(parsed: SplitResult) -> tuple[str, str, int]:
+    scheme = parsed.scheme.casefold()
+    port = parsed.port if parsed.port is not None else (443 if scheme == "https" else 80)
+    return scheme, (parsed.hostname or "").casefold(), port
 
 
 def _number(name: str, default: float, low: float, high: float, integer: bool = False) -> tuple[float | None, str | None]:
     raw = os.getenv(name)
     if raw is None or raw == "":
         return default, None
+    if raw != raw.strip() or any(not char.isprintable() for char in raw):
+        return None, f"{name} is invalid"
     try:
         value = int(raw) if integer else float(raw)
     except ValueError:
         return None, f"{name} is invalid"
-    if value < low or value > high:
+    if not math.isfinite(value) or value < low or value > high:
         return None, f"{name} is out of range"
     return float(value), None
 
@@ -52,9 +63,15 @@ def _number(name: str, default: float, low: float, high: float, integer: bool = 
 def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
     raw = {name: os.getenv(name) for name in _REQUIRED}
     populated = {name: value for name, value in raw.items() if value not in (None, "")}
-    if not populated and not production:
-        return None, []
     errors: list[str] = []
+    ttl, ttl_error = _number("JWKS_CACHE_TTL", 3600, 60, 86400)
+    stale, stale_error = _number("JWKS_MAX_STALE_SECONDS", 86400, 60, 604800)
+    timeout, timeout_error = _number("JWKS_FETCH_TIMEOUT_SECONDS", 5.0, 0.5, 30.0)
+    skew, skew_error = _number("OIDC_CLOCK_SKEW_SECONDS", 30, 0, 120, integer=True)
+    for error in (ttl_error, stale_error, timeout_error, skew_error):
+        if error: errors.append(error)
+    if not populated and not production:
+        return None, errors
     for name in _REQUIRED:
         if raw[name] is None or raw[name] == "":
             errors.append(f"{name} is required")
@@ -68,19 +85,11 @@ def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
     audience = raw["OIDC_AUDIENCE"] or ""
     if audience and (len(audience) > 256 or any(char.isspace() or not char.isprintable() for char in audience)):
         errors.append("OIDC_AUDIENCE is invalid")
-    ttl, error = _number("JWKS_CACHE_TTL", 3600, 60, 86400)
-    if error: errors.append(error)
-    stale, error = _number("JWKS_MAX_STALE_SECONDS", 86400, 60, 604800)
-    if error: errors.append(error)
-    timeout, error = _number("JWKS_FETCH_TIMEOUT_SECONDS", 5.0, 0.5, 30.0)
-    if error: errors.append(error)
-    skew, error = _number("OIDC_CLOCK_SKEW_SECONDS", 30, 0, 120, integer=True)
-    if error: errors.append(error)
     if ttl is not None and stale is not None and stale < ttl:
         errors.append("JWKS_MAX_STALE_SECONDS must be at least JWKS_CACHE_TTL")
-    if issuer and jwks and urlsplit(issuer).netloc != urlsplit(jwks).netloc:
+    if issuer and jwks and normalized_origin(urlsplit(issuer)) != normalized_origin(urlsplit(jwks)):
         errors.append("OIDC_ISSUER and OIDC_JWKS_URL must have the same origin")
-    if errors or not all((issuer, jwks, audience, ttl, stale, timeout, skew)):
+    if errors or issuer is None or jwks is None or audience == "" or ttl is None or stale is None or timeout is None or skew is None:
         return None, errors
     assert issuer is not None and jwks is not None
     assert ttl is not None and stale is not None and timeout is not None and skew is not None
@@ -88,8 +97,20 @@ def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
 
 
 def load_oidc_verifier_settings() -> OIDCVerifierSettings | None:
-    return _parse(os.getenv("UNIHUB_ENV", "development").strip().lower() == "production")[0]
+    settings, errors = _parse(os.getenv("UNIHUB_ENV", "development").strip().lower() == "production")
+    if errors:
+        raise ValueError("OIDC verifier configuration is invalid")
+    return settings
 
 
 def oidc_config_errors(production: bool) -> list[str]:
     return _parse(production)[1]
+
+
+def hub_internal_secret_errors() -> list[str]:
+    value = os.getenv("HUB_INTERNAL_SECRET")
+    if value is None or value == "":
+        return []
+    if len(value) < 32 or len(value) > 256 or any(char.isspace() or not char.isprintable() for char in value):
+        return ["HUB_INTERNAL_SECRET is invalid"]
+    return []

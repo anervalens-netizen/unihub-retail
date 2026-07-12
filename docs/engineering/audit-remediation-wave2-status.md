@@ -66,6 +66,8 @@ person ID.
   imports backend runtime modules from a requirements-only virtualenv.
 - [x] JWKS cache lifecycle, bounded fetch, cache age limits and strict token
   header/claim validation are implemented without production changes.
+- [x] Final review preserves exact configured OIDC URLs, rejects non-finite
+  numeric settings, streams JWKS bodies under a hard bound and tests cleanup.
 
 ## H-01B — retained-CNP database protection (later)
 

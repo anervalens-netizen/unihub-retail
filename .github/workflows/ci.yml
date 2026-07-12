@@ -21,9 +21,12 @@ jobs:
 
       - name: Runtime dependency smoke
         run: |
-          runtime_venv="$(mktemp -d)/venv"
+          runtime_root="$(mktemp -d)"
+          trap 'rm -rf "$runtime_root"' EXIT
+          runtime_venv="$runtime_root/venv"
           python3 -m venv "$runtime_venv"
           "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet -r requirements.txt
+          "$runtime_venv/bin/pip" check
           "$runtime_venv/bin/python" -c "import auth; import main; import worker"
 
       - name: Python typecheck
