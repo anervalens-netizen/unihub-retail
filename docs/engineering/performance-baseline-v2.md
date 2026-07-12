@@ -72,3 +72,25 @@ timings therefore include connection acquisition and dependency waits. A
 separate warm baseline remains around 490 ms; the next step is query-level
 measurement plus bounded scheduling based on actual pool capacity, not a
 speculative cache or index.
+
+## Dashboard shared-promo result
+
+The component trace showed that `promo_incentive` and `special_cards` invoked
+the same `_fetch_promo_incentive_summary` computation independently. The
+Dashboard orchestrator now creates one observed task and passes that exact
+awaitable to the special-card assembler. Standalone special-card calls retain
+their existing fallback computation.
+
+Using the same `2026-07` scope, production DB role and live ignored data files:
+
+| Dashboard all | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Median (n=5) | 486.7 ms | 361.0 ms | -25.8% |
+| Minimum | 400.4 ms | 335.5 ms | -16.2% |
+| Maximum/cold | 1,054.6 ms | 953.4 ms | -9.6% |
+
+The canonical response SHA-256 was identical before and after:
+`382ab550ef2c4afb8589b27853eaf1456fbbf91988184cf77bbd265b6249c5aa`.
+The initial comparison worktree lacked ignored live `data/` inputs and was
+discarded; the accepted comparison pins both `UNIHUB_DATA_DIR` and
+`UNIHUB_HUB_SPECIALS_CONFIG` to the same production files.

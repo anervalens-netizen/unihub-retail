@@ -305,6 +305,8 @@ Livrabile:
   scanarea completa a `sales_transactions` pe calea premium glass;
 - [x] indexul Agent Evaluation v2 este justificat, activ si acceptat: rezultat
   identic, plannerul foloseste indexul partial si mediana este redusa cu 76,7%;
+- [x] sumarul promo/incentive este calculat o singura data in Dashboard all;
+  raspuns identic si mediana redusa cu 25,8%;
 - reducere presiune pool DB in dashboard gather;
 - audit bundle frontend dupa spliturile mari;
 - pastrarea lazy-loading-ului pe ecranele principale.
@@ -407,6 +409,9 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: Dashboard reutilizeaza acelasi task promo/incentive pentru carduri
+  si payload; hash identic, mediana 486,7 -> 361,0 ms (-25,8%). Comparatia
+  acceptata foloseste explicit aceleasi fisiere live ignorate din `data/`.
 - 2026-07-13: migratia 025 activa in productie; Agent Evaluation v2 pastreaza
   exact 151 rezultate si acelasi hash, foloseste indexul partial de 19 MB,
   reduce `EXPLAIN` 647,7 -> 179,1 ms si mediana service 565,6 -> 131,8 ms.
