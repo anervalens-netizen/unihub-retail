@@ -8,13 +8,15 @@
 
 Wave 2 addresses the privacy and identity findings that remain after Wave 1:
 
-- H-01 — remove CNP from browser, public API, URLs and ordinary logs;
+- H-01 — remove CNP from browser, public API, URLs and ordinary logs while retaining it in the canonical PostgreSQL database;
 - H-04 — typed, fail-closed OIDC/runtime settings;
 - H-05 — JWKS rotation and bounded stale-key handling;
 - H-07 — trusted-proxy and distributed rate limiting;
 - H-06 — BFF/session migration design and staged implementation.
 
-The first delivery is **H-01A**, an expand step that introduces an opaque salary person identifier while retaining the existing database columns internally. Raw CNP removal from PostgreSQL is a later contract step, after the migration lifecycle is hardened.
+The first delivery is **H-01A**, an API-boundary change that introduces an opaque salary person identifier while retaining the existing database columns and values internally.
+
+The approved database-retention constraint is recorded in `docs/engineering/h01-cnp-database-retention-decision.md`. No Wave 2 task may delete, null, overwrite or destructively migrate CNP values without a new explicit business approval.
 
 ## H-01A — salary identity boundary
 
@@ -28,35 +30,36 @@ The first delivery is **H-01A**, an expand step that introduces an opaque salary
 - [x] Generic salary-record responses never return `cnp`.
 - [x] Frontend types, state, keys, drawers and URLs contain no CNP.
 - [x] Contract/static tests fail on `cnp` or `salary_cnp` in the public salary surface.
-- [x] Python and PostgreSQL implementations of the person ID were verified
-  equivalent in a read-only transaction using synthetic identities and a
-  temporary test key; the optional isolated-DB pytest remains skipped unless
-  `H01_TEST_DATABASE_URL` is configured.
-- [x] Production reconciliation proves stable one-to-one identity mapping before merge.
+- [ ] Python and PostgreSQL helper implementations are proven equivalent through the actual SQL helper expression.
+- [x] Production reconciliation was executed read-only.
+- [ ] Engineering review hardening is complete.
+- [ ] GitHub CI is green.
 
 H-01A reconciliation (read-only, 2026-07-12): 370 canonical identities,
-370 generated IDs, 0 collisions, 2 name-fallback identities, 339 duplicate
+370 generated IDs, 0 reported collisions, 2 name-fallback identities, 339 duplicate
 non-empty private-ID groups, 2 duplicate normalized-name fallback groups, 100
 sampled history identities and 0 history mismatches. The temporary HMAC key was
-generated in memory and was not persisted or printed.
+generated in memory and was not persisted or printed. The collision query and canonical SQL expression remain subject to the final engineering review before these figures are accepted as release evidence.
 
 ### Non-goals for H-01A
 
-- no deletion or encryption of the existing CNP columns;
+- no deletion, blanking, hashing-overwrite or removal of existing CNP columns/values;
 - no database schema migration;
 - no modification of salary import business rules;
 - no change to salary totals, averages, eligibility thresholds or matching decisions;
 - no CNP values in Git, tests, logs or documentation.
 
-## H-01B — database minimization (later)
+## H-01B — retained-CNP database protection (later)
 
-Pending the migration-runner remediation:
+Raw CNP remains in PostgreSQL by explicit business decision. H-01B is therefore a protection and access-control phase, not a deletion phase:
 
-- introduce a durable `salary_people.person_id` model;
-- backfill and dual-read;
-- restrict the application DB role from raw CNP;
-- remove raw CNP indexes and columns according to the approved retention policy;
-- reconcile matching accuracy and provide a forward-fix/rollback plan.
+- introduce a durable internal `salary_people.person_id` model alongside the retained CNP where useful;
+- isolate salary storage behind a dedicated schema/role;
+- restrict raw-CNP reads to approved internal import and matching operations;
+- add audited access paths and least-privilege grants;
+- strengthen encrypted backups, recovery and incident procedures;
+- preserve the original CNP columns and values;
+- require a separate explicit approval for any future destructive CNP migration.
 
 ## Release gates
 
