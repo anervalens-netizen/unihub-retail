@@ -88,10 +88,27 @@ async def test_h01_repository_queries_return_opaque_ids_without_private_columns(
             "person_id", "full_name", "company_name", "locatie", "month_count",
             "avg_month_count", "total_salary", "avg_salary",
         } for row in summary["items"])
+        assert all(not ({"cnp", "salary_cnp", "agent_key"} & set(row)) for row in summary["items"])
+        assert sorted(row["month_count"] for row in summary["items"]) == [1, 2]
+        assert sorted(float(row["total_salary"]) for row in summary["items"]) == [2800.0, 6200.0]
 
-        history = await repo.fetch_agent_history_by_person_id(PRIVATE_PERSON_ID, PERSON_ID_KEY)
+        paged = await repo.fetch_agents_summary(
+            q=None, company_name=None, site_code=TEST_SITE, regional=None, asm=None,
+            year=None, month=None, limit=1, offset=1, person_id_key=PERSON_ID_KEY,
+        )
+        assert paged["total"] == 2
+        assert len(paged["items"]) == 1
+
+        summary_private_id = next(
+            row["person_id"] for row in summary["items"] if row["person_id"] == PRIVATE_PERSON_ID
+        )
+        history = await repo.fetch_agent_history_by_person_id(summary_private_id, PERSON_ID_KEY)
         assert {(row["year"], row["month"]) for row in history} == {(2097, 1), (2097, 2)}
         assert all(set(row.keys()) == {"year", "month", "company_name", "total_salary", "site_code", "locatie"} for row in history)
+        assert {float(row["total_salary"]) for row in history} == {3000.0, 3200.0}
+        assert await repo.fetch_agent_history_by_person_id(
+            make_salary_person_id("unknown-private-id", "Unknown", PERSON_ID_KEY), PERSON_ID_KEY,
+        ) == []
 
         records = await repo.fetch_records(
             company_name=None, year=2097, month=None, site_code=TEST_SITE,
@@ -128,6 +145,11 @@ async def test_h01_repository_links_round_trip_by_person_id_and_unknown_stays_pr
         unknown = await service.get_agent_history_by_retail_code(
             agent_code="H01UNKNOWN", site_code=TEST_SITE,
         )
+        unknown_repository_link = await repo.fetch_agent_salary_link(
+            agent_code="H01UNKNOWN", site_code=TEST_SITE, person_id_key=PERSON_ID_KEY,
+        )
+        assert unknown_repository_link is not None
+        assert unknown_repository_link["person_id"] is None
         assert unknown["link"]["person_id"] is None
         assert unknown["records"] == []
     finally:

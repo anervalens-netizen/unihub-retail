@@ -38,6 +38,8 @@ The approved database-retention constraint is recorded in `docs/engineering/h01-
   production remains fail-closed; non-empty invalid keys fail in every mode.
 - [x] Real ASGI and isolated PostgreSQL query tests cover the public contract,
   key-unavailable path, opaque-ID round trip and private-field exclusion.
+- [x] Final local CI-equivalent gate: 766 passed, 7 skipped and
+  `services/salarii.py` coverage at 100%; remote CI runs on the pushed commit.
 - [x] Local CI-equivalent coverage gate is green; remote CI must run on the pushed commit.
 
 H-01A reconciliation (read-only, 2026-07-12): 370 canonical identities,

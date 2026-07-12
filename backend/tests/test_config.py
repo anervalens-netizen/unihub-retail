@@ -85,6 +85,20 @@ def test_development_rejects_nonempty_invalid_salary_person_id_key(monkeypatch: 
         validate_required_env_vars()
 
 
+def test_development_allows_valid_salary_person_id_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "x" * 48)
+    validate_required_env_vars()
+
+
+def test_env_example_empty_salary_key_loads_in_development(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "")
+    validate_required_env_vars()
+
+
 def test_config_rejects_missing_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(ConfigError, match="DATABASE_URL"):

@@ -265,6 +265,10 @@ remains retained and untouched in PostgreSQL.
   expression; this is a query-only correction, with no schema, migration, import
   or matching-data change. Because canonical identity rules did not change, the
   prior production reconciliation remains applicable and was not re-run.
+- Final local CI-equivalent gate: 766 passed, 7 skipped, one pre-existing
+  duplicate OpenAPI operation-ID warning; `services/salarii.py` coverage is
+  100 percent (minimum 98 percent). Mypy checked 203 source files with no
+  errors; frontend tests, typecheck and staged production build passed.
 - CI run #295 failed because the backend coverage gate measured
   `services/salarii.py` below its 98 percent threshold, despite no test failure.
   The new branch coverage tests raise it to 100 percent in the local CI-equivalent
