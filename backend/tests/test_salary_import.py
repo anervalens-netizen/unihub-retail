@@ -96,7 +96,13 @@ async def test_insert_salary_records_rejects_empty_batch() -> None:
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="Requires the explicitly isolated PostgreSQL test database",
 )
-async def test_salary_import_replaces_only_selected_month_and_companies() -> None:
+async def test_salary_import_replaces_only_selected_month_and_companies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "SALARY_PERSON_ID_HMAC_KEY",
+        "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz",
+    )
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
