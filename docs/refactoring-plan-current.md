@@ -1,8 +1,9 @@
 # Retail refactoring master plan - current
 
-Ultima actualizare: 2026-06-27
+Ultima actualizare: 2026-07-12
 Owner operational: Codex
-Status general: in executie, incremental, cu commit/push dupa fiecare transa stabila.
+Status general: in executie; refactoringul functional continua dupa inchiderea
+Wave 2 de securitate si privacy.
 
 Acest fisier este sursa activa pentru refactoring-ul complet Retail. Documentele
 anterioare de audit, handover si roadmap sunt pastrate doar pentru trasabilitate
@@ -41,6 +42,23 @@ mai "frumos", ci reducerea riscului operational:
 - Backend live: restart `unihub-backend.service` si health local/public.
 
 ## Stare curenta validata
+
+Snapshot 2026-07-12:
+
+- `main` include Wave 1, P&L si hotfixul OIDC/P&L;
+- branchul `stabilization/audit-remediation-wave2-privacy` contine H-01A,
+  H-04/H-05 si H-07, toate cu gate local si CI merge-ref verde;
+- H-07 este implementat in aplicatie, dar activarea coordonata
+  Caddy/firewall/environment nu este inca executata;
+- H-06 (BFF/session), H-01B (protectia CNP retinut in DB), H-02 (migrations)
+  si wave-urile de performanta/operatiuni raman de implementat;
+- navigatia tinta este Agenti: Prezentare Generala, Grile, Analiza agenti;
+  Management: Manageri, Calculator Target, Salarii, P&L.
+
+Planul de audit detaliat este in
+`docs/engineering/audit-remediation-status.md`, iar starea Wave 2 in
+`docs/engineering/audit-remediation-wave2-status.md`. Milestone-urile de mai
+jos raman backlogul de refactoring si nu dubleaza finding-urile de audit.
 
 Ultima transa de cod validata:
 
@@ -295,16 +313,19 @@ Criteriu:
 
 ## Milestone 5 - Hardening API, auth si erori
 
-Status: planificat.
+Status: partial implementat prin audit Wave 1 si Wave 2.
 
 Livrabile:
 
 - `ApiError` frontend cu `status`, `detail`, `body`;
 - handling uniform pentru 401/403/409/422;
-- OIDC/JWKS cache protejat cu lock si max-stale explicit;
-- issuer/config auth fara default-uri periculoase;
+- [x] OIDC/JWKS cache protejat cu lock, single-flight, cooldown si max-stale explicit;
+- [x] issuer/config auth tipizat si fail-closed, fara default-uri periculoase;
 - exceptii tipizate pentru Target Calculator finalize conflicts;
-- rate limiter shared doar daca runtime-ul trece la multi-worker.
+- [x] rate limiter distribuit Valkey, cu trusted-proxy parsing, HMAC si failure-closed;
+
+Ramase: `ApiError` frontend uniform, tratarea comuna 401/403/409/422 si
+exceptiile tipizate pentru conflictele Target Calculator.
 
 Criteriu:
 
@@ -381,6 +402,11 @@ Ruleaza validarile secvential, nu in paralel, pentru ca `typecheck` si Vite
 build pot concura pe `dist/`.
 
 ## Update log
+
+- 2026-07-12: reconciliat planul cu Wave 1/Wave 2; H-01A, H-04/H-05 si H-07
+  sunt implementate si CI-green pe branchul Wave 2, cu activarea de productie
+  H-07 si finding-urile H-06/H-01B/H-02 ramase explicit deschise; actualizata
+  navigatia Salarii/Grile.
 
 - 2026-06-27: creat planul activ unic; arhivate documentele vechi de audit,
   roadmap si handover; snapshotul validat anterior a fost commit-uit si impins

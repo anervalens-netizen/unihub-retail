@@ -55,9 +55,13 @@ flowchart LR
 | --- | --- |
 | Hub | KPI-uri, comparatii perioade, carduri speciale, monitorizare AI Forecast |
 | Focus | Incentive, Promo, Concurs, Folii premium, produse focus |
-| Agenti | overview agenti, stabilitate, miscari, salarii, analiza si evaluare |
-| Management | `Echipa`, `Magazine`, `Tasks`, `HR`, `Calculator Target`, `Grile`, `P&L` |
+| Agenti | overview agenti, stabilitate, miscari, Grile, analiza si evaluare |
+| Management | `Manageri`, `Calculator Target`, `Salarii`, `P&L` |
 | Setari | importuri vanzari, exporturi configurabile, setari aplicatie si erori |
+
+Navigatia principala ramane plata: sidebar-ul contine doar meniurile principale.
+Subtaburile Management sunt randate in interiorul ecranului Management, cu
+acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
 
 ## Functionalitati majore
 
@@ -96,11 +100,11 @@ flowchart LR
 - Management -> `P&L` prezinta sumar financiar, evolutie lunara, structura pe
   categorii si performanta pe magazine, cu lunile estimate marcate explicit.
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
-  adreselor din `PNL_OWNER_EMAILS` (implicit proprietarul Calculator Target);
-  ascunderea din frontend este dublata de verificarea autoritativa a tokenului
-  OIDC in backend.
+  grupului OIDC dedicat P&L, peste accesul general Management; ascunderea din
+  frontend este dublata de verificarea autoritativa a tokenului OIDC in backend.
 - Raportare vizite citita din SQLite shared.
-- Management -> Grile include verificare read-only si inchidere de luna.
+- Agenti -> Grile include verificare read-only si inchidere de luna; actiunile
+  privilegiate raman protejate individual in backend.
   Operatiile lunare ruleaza exclusiv in worker, sunt rezervate in DB inainte de
   enqueue si permit o singura operatie activa pe luna inchisa. Resetul live are
   checkpoint persistent per magazin; magazinele deja confirmate sunt sarite la
@@ -155,10 +159,11 @@ cu React Hooks si TypeScript rules, iar `npm run typecheck:strict` aplica
 strict TypeScript pe subseturi curate. `npm run typecheck` ramane pragul
 general pentru toata aplicatia.
 
-Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Salarii` si
+Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Grile` si
 `Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab` si include
 evaluarea actuala plus evaluarea noua 0-100. Aceasta analiza nu mai apare in
-Management; subtaburile Management sunt Manageri, Calculator Target si Grile.
+Management; subtaburile Management sunt Manageri, Calculator Target, Salarii
+si P&L (ultimul fiind conditionat de capabilitatea backend).
 
 ## Arhitectura backend
 
@@ -369,7 +374,7 @@ dedicate sau raportul POS corectiv.
 
 ### Salarii
 
-Tabela `salary_records` este sursa citita de tabul **Agenti -> Salarii**.
+Tabela `salary_records` este sursa citita de tabul **Management -> Salarii**.
 Datele vin din fisierele HR din `/opt/Mobiup/docs/comisioane/`, cate un
 fisier lunar per firma. Istoricul initial este pastrat in
 `/opt/Mobiup/docs/comisioane/salarii-istoric.zip`.
@@ -397,8 +402,10 @@ Media salariala folosita in toate cardurile este:
 media valorilor agent-luna care sunt >= 2.000 RON
 ```
 
-Agentul este identificat prin CNP, cu numele normalizat ca fallback pentru
-randurile istorice fara CNP. Inainte de agregare, read model-ul elimina
+Identitatea canonica interna foloseste CNP, cu numele normalizat ca fallback
+pentru randurile istorice fara CNP. La limita API aceasta identitate este
+transformata intr-un `person_id` opac HMAC; CNP-ul nu paraseste backend-ul.
+Inainte de agregare, read model-ul elimina
 duplicatele complet identice. Astfel, un agent cu doua randuri de plata in
 aceeasi luna contribuie cu suma ambelor randuri, dar este numarat o singura
 data in numitor. Valorile agent-luna sub 2.000 RON sunt considerate fractii si
@@ -429,7 +436,7 @@ astfel ca nu se scaleaza cu forecast_factor. Pragurile din grila
 (79/84/89/94/99/109, Acc Focus 5/5,5/6/6,5/7) includ deja regula
 „1% sub prag", deci se folosesc exact ca atare, fara o alta toleranta
 suplimentara. Grila este un calcul de comisionare independent de
-`salary_records` (care ramane sursa de payroll a tabului Agenti ->
+`salary_records` (care ramane sursa de payroll a tabului Management ->
 Salarii); datele pe insule provin din `reporting_agent_month` agregat
 per `site_code` si din `store_targets`, cu apartenenta ASM curenta
 (`stores.asm`), consistent cu istoricul ASM.
@@ -453,9 +460,9 @@ Nu exista validare ca suma targetelor celor doi agenti trebuie sa fie egala cu
 targetul magazinului. Diferentele sunt acceptate deoarece pot exista agenti,
 TL sau inlocuitori suplimentari pe tura.
 
-### Grile salariale in Management
+### Grile salariale in Agenti
 
-Sub-tab-ul `Management -> Grile` administreaza Google Sheets permanente pentru
+Sub-tab-ul `Agenti -> Grile` administreaza Google Sheets permanente pentru
 grilele salariale. Retail pastreaza Sheet ID-urile in `grile_sheets`, ruleaza
 verificari async in `grile_runs` si salveaza rezultatul per magazin in
 `grile_store_status`.
@@ -503,8 +510,8 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    cohortei.
 6. La finalizare inlocuieste targetele oficiale ale lunii din `store_targets`
    cu exact cohorta aprobata; Hub si CRM consuma apoi noile valori. Endpointul
-   precum si actiunea de calcul/recalculare sunt rezervate emailurilor din
-   `TARGET_CALCULATOR_FINALIZER_EMAILS`.
+   precum si actiunea de calcul/recalculare sunt rezervate grupurilor OIDC
+   dedicate configurate pentru aceasta capabilitate.
 
 Separarea dintre draftul de calcul si `store_targets` previne modificarea targetelor
 oficiale in timpul simularilor si pastreaza contextul necesar pentru audit sau
