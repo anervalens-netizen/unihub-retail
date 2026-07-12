@@ -112,7 +112,10 @@ class OIDCVerifier:
             if cache_age < self.settings.cache_ttl_seconds and kid in cache.keys:
                 _cache_use.labels("fresh").inc()
                 return cache.keys[kid]
-        unknown = not cache or kid not in cache.keys
+        # A bootstrap fetch has no prior key set to refresh.  It must not start
+        # the unknown-kid cooldown, otherwise a legitimate first key rotation
+        # immediately after startup is rejected without a JWKS refresh.
+        unknown = cache is not None and kid not in cache.keys
         if unknown: _unknown.inc()
         async with self.lock:
             cache = self.cache

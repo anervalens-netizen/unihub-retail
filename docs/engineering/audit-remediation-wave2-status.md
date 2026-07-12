@@ -70,9 +70,12 @@ person ID.
   numeric settings, streams JWKS bodies under a hard bound and tests cleanup.
 - [x] Final closure coalesces failed refreshes, bounds unknown-key retries and
   prevents malformed URL ports or claims from escaping as server errors.
-- [x] Demonstrable closure covers NumericDate overflow safety, completion-based
+- [x] Local closure covers NumericDate overflow safety, completion-based
   cooldowns, refresh-failure backoff, atomic lifecycle and explicit OIDC
-  critical-coverage gates.
+  critical-coverage gates (911 passed, 7 skipped; auth 100%, settings 100%,
+  verifier 95.62%).
+- [ ] Formal H-04/H-05 acceptance remains pending a green GitHub Actions run
+  on the PR merge ref; no production change is authorized by this branch.
 
 ## H-01B — retained-CNP database protection (later)
 

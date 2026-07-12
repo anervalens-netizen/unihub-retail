@@ -58,6 +58,8 @@ Bounded runtime variables:
 - `JWKS_MAX_STALE_SECONDS` — default 86400, accepted range `JWKS_CACHE_TTL`..604800;
 - `JWKS_FETCH_TIMEOUT_SECONDS` — default 5.0, accepted range 0.5..30.0;
 - `OIDC_CLOCK_SKEW_SECONDS` — default 30, accepted range 0..120.
+- `JWKS_UNKNOWN_KID_REFRESH_COOLDOWN_SECONDS` — default 5.0, accepted range 1..60;
+- `JWKS_REFRESH_FAILURE_RETRY_SECONDS` — default 5.0, accepted range 1..60.
 
 Validation requirements:
 
@@ -251,6 +253,13 @@ Rollback code only; keep explicit OIDC environment settings. Never restore embed
 
 ## Acceptance
 
+Local implementation gates passed on 2026-07-12: backend mypy, isolated
+backend suite (911 passed, 7 skipped), critical coverage (`auth.py` 100%,
+`oidc_settings.py` 100%, `oidc_verifier.py` 95.62%), frontend tests (177
+passed), typecheck and build. This is not formal completion: the GitHub Actions
+run for PR #32 must be green on its merge ref before H-04/H-05 is marked
+complete or any release action is considered.
+
 H-04/H-05 is technically complete only when:
 
 - no real verifier endpoint/audience fallback remains in backend source;
@@ -259,7 +268,7 @@ H-04/H-05 is technically complete only when:
 - stale acceptance is key-specific and time-bounded;
 - all claim shapes are strict;
 - metrics/logs are bounded and redacted;
-- focused/full tests and CI pass;
+- focused/full local tests pass and the PR merge-ref CI is green;
 - no Authentik/environment/production modification has occurred;
 - PR #32 remains draft until later Wave 2 findings and a deployment runbook are complete.
 
