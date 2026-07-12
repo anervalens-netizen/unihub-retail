@@ -31,13 +31,17 @@ saved client state remain stable across the migration.
 3. Reconcile metadata-only counts: missing record IDs, missing confirmed-link
    IDs and collisions must all be zero.
 4. Deploy the runtime repository switch only after that reconciliation.
-5. Add non-null/foreign-key constraints and activate a least-privilege runtime
-   database role in the contract phase.
+5. Apply migration `024_salary_identity_contract.sql` for non-null, format,
+   foreign-key and confirmed/unknown state constraints.
+6. Provision `unihub_runtime` with the audited helper, move the owner URL to
+   root-protected `.env.migrations`, then point web/worker `DATABASE_URL` at the
+   runtime role.
 
-The migration runner and backfill use the owner connection. The final web and
-worker role must have no `USAGE` on `salary_private`, no access to CNP columns,
-and no DDL ownership. Owner credentials remain limited to the one-shot migration
-unit and approved offline import procedures.
+The migration runner and backfill use the owner connection. The web and worker
+role has no `USAGE` on `salary_private`, no access to `cnp`/`salary_cnp`, no
+schema create privilege and no owner/superuser/create-role/create-database
+capabilities. Owner credentials remain limited to the one-shot migration unit
+and approved offline import procedures.
 
 ## Verification
 
