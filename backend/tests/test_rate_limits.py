@@ -166,6 +166,38 @@ async def test_authenticated_asgi_dependency_uses_verified_subject(monkeypatch: 
     assert store.calls and "verified-subject" not in store.calls[0][0]
 
 
+@pytest.mark.anyio
+async def test_explicit_response_keeps_success_rate_limit_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rate_limits
+    from main import SecurityHeadersMiddleware
+
+    store = Store()
+    cfg = settings()
+    cfg.policies["explicit-response"] = PolicySettings(5, 30)
+    monkeypatch.setattr(rate_limits, "_store", store)
+    monkeypatch.setattr(rate_limits, "_settings", cfg)
+    app = FastAPI()
+    app.add_middleware(SecurityHeadersMiddleware)
+    dependency = anonymous_rate_limit(RateLimitPolicy("explicit-response", 5, 30))
+
+    @app.get("/explicit", dependencies=[Depends(dependency)])
+    async def explicit() -> Response:
+        return Response(content="ok", media_type="text/plain")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/explicit")
+
+    assert response.status_code == 200
+    assert response.headers["ratelimit-limit"] == "5"
+    assert response.headers["ratelimit-remaining"] == "4"
+    assert response.headers["ratelimit-reset"] == "30"
+
+
 def _api_route_contexts(app: Any) -> list[RouteContext]:
     return [route for route in iter_route_contexts(app.routes) if isinstance(route.original_route, APIRoute)]
 

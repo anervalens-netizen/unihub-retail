@@ -2,11 +2,10 @@
 
 **Base:** `main` at `0c2834f69d47094e469a31fec9111bae06edd519`
 **Branch:** `stabilization/audit-remediation-wave2-privacy`
-**Status:** implementation branch; no production deployment from this branch
+**Status:** merged into `main` and activated in production on 2026-07-12
 
-**Progress summary (2026-07-12):** H-01A, H-04/H-05 and the application side
-of H-07 are implemented and CI-green. The remaining Wave 2 scope is H-06,
-H-01B and the controlled production activation of H-07.
+**Progress summary (2026-07-12):** H-01A, H-04/H-05 and H-07 are implemented,
+CI-green and activated. The remaining Wave 2 scope is H-06 and H-01B.
 
 ## Scope
 
@@ -97,9 +96,9 @@ person ID.
   typecheck and build are green.
 - [x] Formal application acceptance: GitHub Actions run `29193554547` is green
   on the PR merge ref.
-- [ ] Production activation remains pending the separately approved
-  Caddy/firewall/environment rollout. No production change has occurred from
-  this branch.
+- [x] Production activation completed through the controlled
+  Caddy/firewall/environment rollout, with local/public health and enforcement
+  evidence recorded in `h07-production-rollout.md`.
 
 ## H-01B — retained-CNP database protection (later)
 
