@@ -82,3 +82,28 @@ Rollback restores the previous backend and frontend build together and leaves
 the new key configured. Existing BFF sessions become unused and expire in
 Valkey. Do not restore only the frontend because the old SPA expects the
 removed proxy contract.
+
+## Production acceptance
+
+Activated on 2026-07-13 from merge commit
+`d323ae16fa398dc6b98d883ad59a5e1e1aa3f8fb` after GitHub Actions run
+`29211586704` passed both backend and frontend checks. The production
+environment contains a dedicated Fernet key, the explicit Retail public
+origin, the private Valkey endpoint, the 30-day bounded session TTL and the
+existing confidential OIDC client identifier; the environment file remains
+mode `0600`.
+
+Post-deploy checks confirmed:
+
+- local and public `/health` return 200 after session-runtime readiness;
+- unauthenticated `/auth/session` returns 401 without setting a cookie;
+- `/auth/session/login` returns 302 to the validated Authentik authorization
+  endpoint with state, nonce, PKCE S256, client ID and the exact
+  `https://retail.unihub.ro/auth/callback` redirect URI;
+- the authorization redirect contains no client secret;
+- the removed generic token proxy no longer accepts POST requests;
+- startup and request logs contain no H-06 errors, exceptions or credentials.
+
+The signed callback, cookie, authenticated profile, CSRF and logout paths are
+covered by the real ASGI/JWT test suite. A user-interactive browser login is
+the remaining observational smoke check; it does not require another deploy.

@@ -4,9 +4,9 @@
 **Branch:** `stabilization/audit-remediation-wave2-privacy`
 **Status:** merged into `main` and activated in production on 2026-07-12
 
-**Progress summary (2026-07-12):** H-01A, H-04/H-05 and H-07 are implemented,
-CI-green and activated. H-01B is operationally complete; H-06 is implemented
-locally and pending CI/production activation.
+**Progress summary (2026-07-13):** H-01A, H-04/H-05, H-07, H-01B and H-06 are
+CI-green and activated in production. H-06 uses server-side encrypted Valkey
+sessions; browser OIDC tokens and the generic token proxy have been removed.
 
 ## Scope
 
@@ -113,6 +113,18 @@ Raw CNP remains in PostgreSQL by explicit business decision. H-01B is therefore 
 - strengthen encrypted backups, recovery and incident procedures;
 - preserve the original CNP columns and values;
 - require a separate explicit approval for any future destructive CNP migration.
+
+## H-06 — BFF and server-side sessions
+
+- [x] The SPA no longer receives, persists, parses or sends OIDC tokens.
+- [x] Authorization Code plus PKCE, state and nonce terminate at the backend.
+- [x] Encrypted Valkey sessions, HttpOnly host cookies, CSRF enforcement and
+  distributed refresh single-flight are covered by focused tests.
+- [x] GitHub Actions run `29211586704` passed on the PR merge ref.
+- [x] Merge commit `d323ae16fa398dc6b98d883ad59a5e1e1aa3f8fb` is active in
+  production with local/public health and unauthenticated redirect checks.
+- [ ] Record the next user-interactive login/logout observation; no code or
+  deployment change is expected for this observational check.
 
 ## Release gates
 
