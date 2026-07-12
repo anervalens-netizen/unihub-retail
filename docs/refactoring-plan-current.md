@@ -168,7 +168,8 @@ Livrabile:
 - [x] teste pentru read/write, string plain, JSON invalid si remove condition;
 - [x] adoptare initiala in `App.tsx` pentru tab activ, sectiune Focus, tema,
   sectiune Hub si subtab Management;
-- [ ] adoptare graduala in `Agents.tsx`.
+- [x] adoptare in `Agents.tsx`, cu validarea valorilor persistate si fara
+  acces direct la `localStorage`.
 
 Criteriu:
 
@@ -219,6 +220,8 @@ Livrabile:
 - [x] data-fetching-ul Dashboard este extras in `useDashboardData`;
 - [ ] `Dashboard.tsx` se imparte in subcomponente:
   `CurrentDashboard`, `HistoryDashboard`, `BreakdownTable`;
+- [x] drawerul de performanta, graficele si sumarul salarial sunt extrase in
+  `dashboard/PerformanceDetailDrawer.tsx`;
 - [x] sortarile repetitive din tabelele Dashboard folosesc `useSortable`;
 - [x] `useSortable` accepta chei virtuale prin `getValue` custom.
 
@@ -275,9 +278,10 @@ Inchise:
 
 Ramase:
 
-- `get_agent_evaluation_v2` separat in repository SQL, scoring Python pur si
-  response assembler;
-- teste pentru pragurile si ponderile evaluarii agentilor inainte de refactor;
+- [x] `get_agent_evaluation_v2` separat in repository SQL, scoring Python pur
+  si response assembler;
+- [x] teste pentru pragurile, ponderile, eligibilitatea si trendurile evaluarii
+  agentilor;
 - `grile_monthly.py` separat in orchestration + repository + state machine;
 - [x] `dashboard_service.get_dashboard_all` mutat de la gather pozitional la
   rezultate concurente adresate nominal, fara indexuri numerice fragile;
@@ -315,14 +319,14 @@ Status: partial implementat prin audit Wave 1 si Wave 2.
 
 Livrabile:
 
-- `ApiError` frontend cu `status`, `detail`, `body`;
+- [x] `ApiError` frontend cu `status`, `detail`, `body`;
 - handling uniform pentru 401/403/409/422;
 - [x] OIDC/JWKS cache protejat cu lock, single-flight, cooldown si max-stale explicit;
 - [x] issuer/config auth tipizat si fail-closed, fara default-uri periculoase;
 - exceptii tipizate pentru Target Calculator finalize conflicts;
 - [x] rate limiter distribuit Valkey, cu trusted-proxy parsing, HMAC si failure-closed;
 
-Ramase: `ApiError` frontend uniform, tratarea comuna 401/403/409/422 si
+Ramase: adoptarea uniforma a `ApiError` in call-site-urile 401/403/409/422 si
 exceptiile tipizate pentru conflictele Target Calculator.
 
 Criteriu:
@@ -401,6 +405,13 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: evaluarea agentilor separata in query-uri repository, scoring
+  Python pur si assembler testat; `Agents.tsx` foloseste persistenta comuna;
+  `ApiError` pastreaza status/detail/body; drawerul de performanta a fost extras
+  din `Dashboard.tsx`. Validari locale: 1070 backend tests, 184 frontend tests,
+  mypy, typecheck strict, lint, build si 13 scenarii Playwright verzi; preview-ul
+  E2E este detinut exclusiv de fiecare rulare si nu mai reutilizeaza procese
+  efemere ramase de la rulari intrerupte.
 - 2026-07-13: H-02, H-01B si H-06 reconciliate ca active in productie;
   `get_dashboard_all` foloseste rezultate concurente adresate nominal.
   Validare locala: mypy verde si 1053 teste backend trecute, 7 sarite.

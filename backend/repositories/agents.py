@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
+from repositories.agent_evaluation import (
+    AGENT_EVALUATION_OPTIONS_QUERY,
+    AGENT_EVALUATION_V2_QUERY,
+)
+
 
 class AgentsRepository:
     def __init__(self, pool: asyncpg.Pool):
@@ -52,3 +57,27 @@ class AgentsRepository:
     async def get_agent_evaluation(self, query: str, params: list[Any]) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(query, *params)
+
+    async def get_agent_evaluation_v2(
+        self,
+        month_filter: str | None,
+        firma: str | None,
+        asm: str | None,
+        site_code: str | None,
+    ) -> list[asyncpg.Record]:
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                AGENT_EVALUATION_V2_QUERY,
+                month_filter,
+                firma,
+                asm,
+                site_code,
+            )
+
+    async def get_agent_evaluation_options(
+        self,
+        firma: str | None,
+        asm: str | None,
+    ) -> list[asyncpg.Record]:
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(AGENT_EVALUATION_OPTIONS_QUERY, firma, asm)

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { client, setCsrfTokenProvider, setUnauthorizedHandler } from './client';
+import { ApiError, client, setCsrfTokenProvider, setUnauthorizedHandler } from './client';
 
 const mockFetch = vi.fn();
 type FetchCall = [string, { method: string; headers: Record<string, string>; body?: BodyInit | string }];
@@ -79,6 +79,52 @@ describe('client.get', () => {
   it('throws on non-ok response', async () => {
     mockFetch.mockResolvedValueOnce(new Response('{}', { status: 500 }));
     await expect(client.get('/api/fail')).rejects.toThrow('API error: 500');
+  });
+
+  it.each([401, 403, 409, 422])(
+    'preserves status, detail and parsed body for HTTP %s',
+    async (status) => {
+      const body = { detail: 'Mesaj controlat', code: 'domain_conflict' };
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+      const error = await client.get('/api/fail').catch((reason: unknown) => reason);
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error).toMatchObject({ status, detail: 'Mesaj controlat', body });
+      expect((error as Error).message).toBe(`API error: ${status} - Mesaj controlat`);
+    },
+  );
+
+  it('normalizes validation detail arrays while retaining the original body', async () => {
+    const body = {
+      detail: [{ loc: ['body', 'month'], msg: 'Invalid month', type: 'value_error' }, 'Missing value'],
+    };
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 422 }));
+
+    const error = await client.get('/api/fail').catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({
+      status: 422,
+      detail: 'Invalid month; Missing value',
+      body,
+    });
+  });
+
+  it('retains a non-JSON error body', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('Gateway unavailable', { status: 503 }));
+
+    const error = await client.get('/api/fail').catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({
+      status: 503,
+      detail: 'Gateway unavailable',
+      body: 'Gateway unavailable',
+    });
   });
 
   it('returns undefined for empty 204 responses', async () => {

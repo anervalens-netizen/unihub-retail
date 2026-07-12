@@ -8,6 +8,20 @@ type RequestOptions = {
   responseType?: ResponseType;
 };
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: string;
+  readonly body: unknown;
+
+  constructor(status: number, detail: string, body: unknown) {
+    super(detail ? `API error: ${status} - ${detail}` : `API error: ${status}`);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+    this.body = body;
+  }
+}
+
 function resolveApiBaseUrl(): string {
   const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL;
   if (configuredBaseUrl) {
@@ -72,13 +86,18 @@ async function handleResponse(response: Response): Promise<void> {
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     let detail = text;
+    let body: unknown = text || null;
     if (text) {
       try {
-        const parsed = JSON.parse(text) as { detail?: unknown };
-        if (typeof parsed.detail === 'string') {
-          detail = parsed.detail;
-        } else if (Array.isArray(parsed.detail) && parsed.detail.length > 0) {
-          detail = parsed.detail
+        body = JSON.parse(text) as unknown;
+        const parsedDetail =
+          body && typeof body === 'object' && 'detail' in body
+            ? (body as { detail?: unknown }).detail
+            : undefined;
+        if (typeof parsedDetail === 'string') {
+          detail = parsedDetail;
+        } else if (Array.isArray(parsedDetail) && parsedDetail.length > 0) {
+          detail = parsedDetail
             .map((item) => {
               if (typeof item === 'string') return item;
               if (item && typeof item === 'object' && 'msg' in item) return String(item.msg);
@@ -91,7 +110,7 @@ async function handleResponse(response: Response): Promise<void> {
         detail = text;
       }
     }
-    throw new Error(detail ? `API error: ${response.status} - ${detail}` : `API error: ${response.status}`);
+    throw new ApiError(response.status, detail, body);
   }
 }
 

@@ -20,6 +20,7 @@ import { AgentEvaluationSubtab } from './AgentEvaluationSubtab';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ExportTableButton } from './ExportTableButton';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
+import { usePersistentState } from '../lib/usePersistentState';
 import { 
   fetchAgentsOverview, 
   fetchAgentsMovement, 
@@ -35,6 +36,34 @@ import {
 // formatters
 const nf = new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'RON', maximumFractionDigits: 0 });
 const nfNum = new Intl.NumberFormat('ro-RO');
+
+type AgentListTab = 'active' | 'movement' | 'inactive' | 'churned' | 'all';
+type AgentsMainTab = 'overview' | 'grile' | 'analysis';
+
+const AGENT_LIST_TABS = new Set<AgentListTab>([
+  'active',
+  'movement',
+  'inactive',
+  'churned',
+  'all',
+]);
+const AGENTS_MAIN_TABS = new Set<AgentsMainTab>(['overview', 'grile', 'analysis']);
+
+function deserializeAgentListTab(raw: string, fallback: AgentListTab): AgentListTab {
+  return AGENT_LIST_TABS.has(raw as AgentListTab) ? (raw as AgentListTab) : fallback;
+}
+
+function deserializeAgentsMainTab(raw: string, fallback: AgentsMainTab): AgentsMainTab {
+  return AGENTS_MAIN_TABS.has(raw as AgentsMainTab) ? (raw as AgentsMainTab) : fallback;
+}
+
+function deserializeSelectedAgent(raw: string): string | null {
+  return raw || null;
+}
+
+function hasNoSelectedAgent(value: string | null): boolean {
+  return value === null;
+}
 
 interface AgentDetailsProps {
   agent: string;
@@ -296,22 +325,25 @@ function CustomTooltip({ active, payload, label }: any) {
 export function Agents({ currentMonth, months: _months, filters }: AgentsProps) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') return localStorage.getItem('agents_selectedAgent') || null;
-    return null;
-  });
-  const [activeTab, setActiveTab] = useState<'active' | 'movement' | 'inactive' | 'churned' | 'all'>(() => {
-    if (typeof window !== 'undefined') return (localStorage.getItem('agents_activeTab') as any) || 'active';
-    return 'active';
-  });
-  const [mainTab, setMainTab] = useState<'overview' | 'grile' | 'analysis'>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('agents_mainTab');
-      if (saved === 'overview' || saved === 'grile' || saved === 'analysis') return saved;
-    }
-    return 'overview';
-  });
-  
+  const [selectedAgent, setSelectedAgent] = usePersistentState<string | null>(
+    'agents_selectedAgent',
+    null,
+    {
+      deserialize: deserializeSelectedAgent,
+      removeWhen: hasNoSelectedAgent,
+    },
+  );
+  const [activeTab, setActiveTab] = usePersistentState<AgentListTab>(
+    'agents_activeTab',
+    'active',
+    { deserialize: deserializeAgentListTab },
+  );
+  const [mainTab, setMainTab] = usePersistentState<AgentsMainTab>(
+    'agents_mainTab',
+    'overview',
+    { deserialize: deserializeAgentsMainTab },
+  );
+
   const [cardFirma, setCardFirma] = useState(ALL_FIRMS);
   const [cardMagazin, setCardMagazin] = useState(ALL_STORES);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
@@ -354,23 +386,6 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
   useEffect(() => {
     getFilterOptions(currentMonth).then(setFilterOptions).catch(() => setFilterOptions(null));
   }, [currentMonth]);
-
-  // Persist state to localStorage
-  useEffect(() => {
-    localStorage.setItem('agents_mainTab', mainTab);
-  }, [mainTab]);
-
-  useEffect(() => {
-    localStorage.setItem('agents_activeTab', activeTab);
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (selectedAgent) {
-      localStorage.setItem('agents_selectedAgent', selectedAgent);
-    } else {
-      localStorage.removeItem('agents_selectedAgent');
-    }
-  }, [selectedAgent]);
 
   const filteredList = useMemo(() => {
     let result = list;
