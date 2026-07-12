@@ -3,9 +3,6 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
-from salary_identity import canonical_salary_identity_sql, salary_person_id_sql
-
-
 MIN_SALARY_FOR_AVERAGE = 2000
 
 
@@ -92,7 +89,7 @@ class SalariiRepository:
                     sr.year,
                     sr.month,
                     sr.full_name,
-                    sr.cnp,
+                    sr.person_id,
                     sr.total_salary,
                     sr.company_name,
                     sr.site_code,
@@ -104,10 +101,7 @@ class SalariiRepository:
             salary_identified AS (
                 SELECT
                     *,
-                    COALESCE(
-                        NULLIF(BTRIM(cnp), ''),
-                        'name:' || LOWER(BTRIM(full_name))
-                    ) AS agent_key
+                    person_id AS agent_key
                 FROM salary_base
             ),
             agent_months AS (
@@ -190,7 +184,7 @@ class SalariiRepository:
                         sr.year,
                         sr.month,
                         sr.full_name,
-                        sr.cnp,
+                        sr.person_id,
                         sr.total_salary,
                         sr.company_name,
                         sr.site_code,
@@ -235,7 +229,7 @@ class SalariiRepository:
                         sr.year,
                         sr.month,
                         sr.full_name,
-                        sr.cnp,
+                        sr.person_id,
                         sr.total_salary,
                         sr.company_name,
                         sr.site_code,
@@ -267,7 +261,6 @@ class SalariiRepository:
         month: int | None,
         limit: int,
         offset: int,
-        person_id_key: str,
     ) -> dict:
         join_block, where_block, params = _salary_scope(
             salary_alias="sr",
@@ -279,14 +272,13 @@ class SalariiRepository:
             year=year,
             month=month,
         )
-        person_id_expr = salary_person_id_sql("sd", f"${len(params) + 1}")
         agent_months_cte = f"""
                 WITH salary_dedup AS (
                     SELECT DISTINCT
                         sr.year,
                         sr.month,
                         sr.full_name,
-                        sr.cnp,
+                        sr.person_id,
                         sr.company_name,
                         sr.site_code,
                         sr.locatie,
@@ -298,8 +290,7 @@ class SalariiRepository:
                 salary_identified AS (
                     SELECT
                         sd.*,
-                        {person_id_expr} AS person_id,
-                        {canonical_salary_identity_sql("sd")} AS agent_key
+                        sd.person_id AS agent_key
                     FROM salary_dedup sd
                 ),
                 agent_months AS (
@@ -335,9 +326,8 @@ class SalariiRepository:
                 latest_details AS (
                     SELECT
                         si.agent_key,
-                        MAX(si.person_id) AS person_id,
+                        si.agent_key AS person_id,
                         (ARRAY_AGG(si.full_name ORDER BY si.total_salary DESC, si.full_name))[1] AS full_name,
-                        MAX(NULLIF(BTRIM(si.cnp), '')) AS cnp,
                         STRING_AGG(DISTINCT si.company_name, ' + ' ORDER BY si.company_name) AS company_name,
                         STRING_AGG(
                             DISTINCT COALESCE(NULLIF(BTRIM(si.locatie), ''), si.site_code),
@@ -359,9 +349,9 @@ class SalariiRepository:
                 {agent_months_cte}
                 SELECT COUNT(*) FROM agent_totals
                 """,
-                *(params + [person_id_key]),
+                *params,
             )
-            params2 = params + [person_id_key, limit, offset]
+            params2 = params + [limit, offset]
             rows = await conn.fetch(
                 f"""
                 {agent_months_cte}
@@ -378,7 +368,7 @@ class SalariiRepository:
                 JOIN latest_details ld USING (agent_key)
                 ORDER BY at.total_salary DESC NULLS LAST,
                          ld.full_name ASC NULLS LAST,
-                         ld.cnp ASC NULLS LAST
+                         ld.person_id ASC
                 LIMIT ${len(params2) - 1} OFFSET ${len(params2)}
                 """,
                 *params2,
@@ -388,9 +378,7 @@ class SalariiRepository:
     async def fetch_agent_history_by_person_id(
         self,
         person_id: str,
-        person_id_key: str,
     ) -> list[asyncpg.Record]:
-        person_id_expr = salary_person_id_sql("sr", "$2")
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -398,7 +386,7 @@ class SalariiRepository:
                     SELECT DISTINCT
                         year, month, company_name, site_code, locatie, total_salary
                     FROM salary_records sr
-                    WHERE {person_id_expr} = $1
+                    WHERE person_id = $1
                 )
                 SELECT
                     year,
@@ -412,7 +400,6 @@ class SalariiRepository:
                 ORDER BY year DESC, month DESC, company_name, locatie
                 """,
                 person_id,
-                person_id_key,
             )
 
     async def fetch_agent_salary_link(
@@ -420,47 +407,34 @@ class SalariiRepository:
         *,
         agent_code: str,
         site_code: str,
-        person_id_key: str,
     ) -> asyncpg.Record | None:
-        person_id_expr = salary_person_id_sql("identity", "$3")
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
-                f"""
-                WITH identity_rows AS (
-                    SELECT *, salary_cnp AS cnp, salary_full_name AS full_name
-                    FROM agent_salary_links
-                    WHERE agent_code = $1 AND site_code = $2
-                )
-                SELECT agent_code, site_code, salary_full_name, salary_cnp,
-                       CASE WHEN match_status = 'confirmed'
-                              AND (NULLIF(BTRIM(cnp), '') IS NOT NULL OR NULLIF(BTRIM(full_name), '') IS NOT NULL)
-                            THEN {person_id_expr}
-                            ELSE NULL END AS person_id,
+                """
+                SELECT agent_code, site_code, salary_full_name,
+                       CASE WHEN match_status = 'confirmed' THEN person_id ELSE NULL END AS person_id,
                        match_status, match_source, confidence, effective_from_month, note
-                FROM identity_rows identity
+                FROM agent_salary_links
+                WHERE agent_code = $1 AND site_code = $2
                 """,
                 agent_code,
                 site_code,
-                person_id_key,
             )
 
     async def fetch_agent_history_by_salary_link(
         self,
         *,
         person_id: str,
-        person_id_key: str,
     ) -> list[asyncpg.Record]:
-        person_id_expr = salary_person_id_sql("sr", "$2")
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
                 SELECT year, month, company_name, total_salary, site_code, locatie
                 FROM salary_records sr
-                WHERE {person_id_expr} = $1
+                WHERE person_id = $1
                 ORDER BY year DESC, month DESC, company_name
                 """,
                 person_id,
-                person_id_key,
             )
 
     async def fetch_latest_month(
@@ -514,7 +488,7 @@ class SalariiRepository:
                         s.locatie,
                         s.company_name,
                         s.full_name,
-                        s.cnp,
+                        s.person_id,
                         s.total_salary
                     FROM salary_records s
                     {join_block}
@@ -525,19 +499,13 @@ class SalariiRepository:
                         MIN(site_code) AS site_code,
                         locatie,
                         company_name,
-                        COALESCE(
-                            NULLIF(BTRIM(cnp), ''),
-                            'name:' || LOWER(BTRIM(full_name))
-                        ) AS agent_key,
+                        person_id AS agent_key,
                         SUM(total_salary) AS month_salary
                     FROM salary_rows
                     GROUP BY
                         locatie,
                         company_name,
-                        COALESCE(
-                            NULLIF(BTRIM(cnp), ''),
-                            'name:' || LOWER(BTRIM(full_name))
-                        )
+                        person_id
                 ),
                 salary_display AS (
                     SELECT
@@ -621,7 +589,7 @@ class SalariiRepository:
                         sr.year,
                         sr.month,
                         sr.full_name,
-                        sr.cnp,
+                        sr.person_id,
                         sr.total_salary,
                         sr.company_name,
                         sr.site_code,
@@ -634,19 +602,13 @@ class SalariiRepository:
                     SELECT
                         year,
                         month,
-                        COALESCE(
-                            NULLIF(BTRIM(cnp), ''),
-                            'name:' || LOWER(BTRIM(full_name))
-                        ) AS agent_key,
+                        person_id AS agent_key,
                         SUM(total_salary) AS month_salary
                     FROM salary_rows
                     GROUP BY
                         year,
                         month,
-                        COALESCE(
-                            NULLIF(BTRIM(cnp), ''),
-                            'name:' || LOWER(BTRIM(full_name))
-                        )
+                        person_id
                 ),
                 salary_months AS (
                     SELECT
@@ -727,7 +689,6 @@ class SalariiRepository:
         site_code: str | None,
         limit: int,
         offset: int,
-        person_id_key: str,
     ) -> list[asyncpg.Record]:
         _join_block, where_block, params = _salary_scope(
             salary_alias="sr",
@@ -739,16 +700,15 @@ class SalariiRepository:
         )
         async with self.pool.acquire() as conn:
             params2 = params + [limit, offset]
-            person_id_expr = salary_person_id_sql("sr", f"${len(params2) + 1}")
             return await conn.fetch(
                 f"""
                 SELECT id, year, month, full_name,
-                       {person_id_expr} AS person_id,
+                       person_id,
                        total_salary, company_name, site_code, locatie
                 FROM salary_records sr
                 {where_block}
                 ORDER BY year DESC, month DESC, full_name
                 LIMIT ${len(params2) - 1} OFFSET ${len(params2)}
                 """,
-                *(params2 + [person_id_key]),
+                *params2,
             )

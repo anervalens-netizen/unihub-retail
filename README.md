@@ -505,11 +505,12 @@ Filtrele de analiza salvate pentru zona Agenti sunt reutilizate de
 **Management -> Salarii** pe toate cardurile. Filtrul de magazin este transmis
 ca `site_code` catre overview, evolutie, summary, trend si lista de agenti.
 
-API-ul public foloseste identificatorul opac `person_id`; CNP-ul retinut in
-PostgreSQL nu este returnat browserului, folosit in URL-uri sau expus in
-contractele publice. Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
+API-ul public si repository-urile runtime folosesc identificatorul opac
+`person_id`. CNP-ul retinut este izolat pentru import si matching intern: nu
+este returnat browserului, folosit in URL-uri sau expus in contractele publice.
+Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
 unitar pe valorile agent-luna de cel putin `2.000 RON`. Identitatea principala
-este CNP-ul. Daca acelasi agent are mai multe randuri de plata in aceeasi luna,
+este `person_id`. Daca acelasi agent are mai multe randuri de plata in aceeasi luna,
 valorile se insumeaza inainte de aplicarea pragului. Valorile sub prag sunt
 excluse numai din medii; totalurile, numarul de agenti si istoricul raman
 complete.

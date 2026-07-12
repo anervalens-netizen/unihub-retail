@@ -1,0 +1,108 @@
+"""Integration coverage for the retained salary identity boundary."""
+from __future__ import annotations
+
+import os
+from decimal import Decimal
+
+import pytest
+
+from db.connection import get_pool
+from salary_identity import make_salary_person_id
+from scripts.backfill_salary_private_identities import backfill
+
+
+TEST_SITE = "H01BACK"
+TEST_KEY = "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz"
+TEST_PRIVATE_ID = "synthetic-private-backfill-id"
+TEST_PERSON_ID = make_salary_person_id(TEST_PRIVATE_ID, "Backfill Agent", TEST_KEY)
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated test database",
+)
+
+
+async def _cleanup() -> None:
+    pool = await get_pool()
+    async with pool.acquire() as connection:
+        await connection.execute("DELETE FROM agent_salary_links WHERE site_code = $1", TEST_SITE)
+        await connection.execute("DELETE FROM salary_records WHERE site_code = $1", TEST_SITE)
+        await connection.execute("DELETE FROM stores WHERE site_code = $1", TEST_SITE)
+        await connection.execute(
+            "DELETE FROM salary_private.people WHERE person_id = $1", TEST_PERSON_ID
+        )
+
+
+@pytest.mark.anyio
+async def test_backfill_is_idempotent_and_persists_private_mapping() -> None:
+    await _cleanup()
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as connection:
+            await connection.execute(
+                """
+                INSERT INTO stores (
+                    site_code, locatie, firma, regional, asm,
+                    first_seen_month, last_seen_month
+                ) VALUES (
+                    $1, 'H01 Backfill Store', 'Mobiup', 'H01 Region', 'H01 ASM',
+                    '2096-01', '2096-02'
+                )
+                """,
+                TEST_SITE,
+            )
+            await connection.executemany(
+                """
+                INSERT INTO salary_records (
+                    year, month, full_name, cnp, total_salary,
+                    company_name, site_code, locatie
+                ) VALUES ($1, $2, $3, $4, $5, 'Mobiup', $6, 'H01 Backfill Store')
+                """,
+                [
+                    (2096, 1, "Backfill Agent", TEST_PRIVATE_ID, Decimal("3000"), TEST_SITE),
+                    (2096, 2, "Backfill Agent Renamed", TEST_PRIVATE_ID, Decimal("3200"), TEST_SITE),
+                ],
+            )
+            await connection.execute(
+                """
+                INSERT INTO agent_salary_links (
+                    agent_code, site_code, salary_full_name, salary_cnp,
+                    match_status, match_source, confidence
+                ) VALUES ('H01BACK', $1, 'Backfill Agent', $2, 'confirmed', 'manual', 'high')
+                """,
+                TEST_SITE,
+                TEST_PRIVATE_ID,
+            )
+            async with connection.transaction():
+                first = await backfill(connection, TEST_KEY)
+            async with connection.transaction():
+                second = await backfill(connection, TEST_KEY)
+
+            records = await connection.fetch(
+                "SELECT DISTINCT person_id FROM salary_records WHERE site_code = $1",
+                TEST_SITE,
+            )
+            link_id = await connection.fetchval(
+                "SELECT person_id FROM agent_salary_links WHERE site_code = $1",
+                TEST_SITE,
+            )
+            private_row = await connection.fetchrow(
+                """
+                SELECT person_id, cnp, identity_source
+                FROM salary_private.people
+                WHERE person_id = $1
+                """,
+                TEST_PERSON_ID,
+            )
+
+        assert first["records_missing"] == 0
+        assert second["records_missing"] == 0
+        assert [row["person_id"] for row in records] == [TEST_PERSON_ID]
+        assert link_id == TEST_PERSON_ID
+        assert dict(private_row) == {
+            "person_id": TEST_PERSON_ID,
+            "cnp": TEST_PRIVATE_ID,
+            "identity_source": "cnp",
+        }
+    finally:
+        await _cleanup()

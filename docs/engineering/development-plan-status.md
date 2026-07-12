@@ -15,8 +15,8 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-04/H-05 OIDC and JWKS | Merged and active in production | Ongoing operational monitoring |
 | H-07 distributed rate limiting | Merged and active in production | Ongoing metrics and alert monitoring |
 | H-06 BFF/server-side session | Not implemented | Design decision, phased implementation and migration |
-| H-01B retained-CNP protection | Not implemented | Dedicated storage boundary, least privilege, audit and recovery controls |
-| H-02 migration lifecycle | Implemented locally; production adoption pending | CI, merge, checksum backfill runner, read-only web startup verification |
+| H-01B retained-CNP protection | Expand/backfill/runtime switch implemented; production adoption pending | Reconcile production, contract constraints and activate least-privilege DB role |
+| H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
 | Performance/modularization | Partially implemented | Measured baselines, remaining backend boundaries and frontend splits |
 | CI/CD and operations | Partially implemented | Required E2E/a11y/security gates, readiness, SLOs, alerts and service hardening |
 
@@ -40,9 +40,9 @@ Wave 2 application hardening was released on 2026-07-12, but it is not the end
 of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
-2. implement H-06, H-01B and H-02 as separate reviewed changes;
+2. complete H-01B production adoption and implement H-06 as separate reviewed changes;
 3. continue the measured performance, modularization and operational milestones;
 4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not be described as the final new version while H-06,
-H-01B and H-02 remain open.
+H-01B and H-06 remain open; H-02 is operationally complete.

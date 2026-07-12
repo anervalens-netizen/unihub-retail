@@ -8,11 +8,13 @@ import pytest
 
 from db.connection import get_pool
 from repositories.salarii import SalariiRepository
+from salary_identity import make_salary_person_id
 
 
 TEST_SITE = "TSTSAL"
 TEST_REGION = "Salary Test Region"
 TEST_ASM = "Salary Test ASM"
+PERSON_ID_KEY = "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz"
 pytestmark = pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated test database",
@@ -48,14 +50,15 @@ async def _seed_salary_fixture() -> None:
         await conn.executemany(
             """
             INSERT INTO salary_records (
-                year, month, full_name, cnp, total_salary, company_name, site_code, locatie
+                year, month, full_name, cnp, total_salary, company_name, site_code, locatie,
+                person_id
             )
-            VALUES ($1, $2, $3, $4, $5, 'Mobicell', $6, 'Salary Test Store')
+            VALUES ($1, $2, $3, $4, $5, 'Mobicell', $6, 'Salary Test Store', $7)
             """,
             [
-                (2098, 1, "Low Salary Agent", "synthetic-private-id-a", Decimal("1500"), TEST_SITE),
-                (2098, 1, "High Salary Agent", "synthetic-private-id-b", Decimal("3000"), TEST_SITE),
-                (2098, 2, "High Salary Agent", "synthetic-private-id-b", Decimal("4000"), TEST_SITE),
+                (2098, 1, "Low Salary Agent", "synthetic-private-id-a", Decimal("1500"), TEST_SITE, make_salary_person_id("synthetic-private-id-a", "Low Salary Agent", PERSON_ID_KEY)),
+                (2098, 1, "High Salary Agent", "synthetic-private-id-b", Decimal("3000"), TEST_SITE, make_salary_person_id("synthetic-private-id-b", "High Salary Agent", PERSON_ID_KEY)),
+                (2098, 2, "High Salary Agent", "synthetic-private-id-b", Decimal("4000"), TEST_SITE, make_salary_person_id("synthetic-private-id-b", "High Salary Agent", PERSON_ID_KEY)),
             ],
         )
 

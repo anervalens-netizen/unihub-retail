@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from repositories.salarii import MIN_SALARY_FOR_AVERAGE, SalariiRepository
-from salary_identity import get_salary_person_id_key, validate_salary_person_id
+from salary_identity import validate_salary_person_id
 from schemas.salarii import (
     AgentSalaryLinkPublic,
     SalaryAgentSummaryPublic,
@@ -24,9 +24,6 @@ class SalariiService:
     def __init__(self, repo: SalariiRepository, person_id_key: str | None = None):
         self.repo = repo
         self.person_id_key = person_id_key
-
-    def _person_id_key(self) -> str:
-        return self.person_id_key or get_salary_person_id_key()
 
     async def get_overview(
         self,
@@ -113,7 +110,6 @@ class SalariiService:
             month=month,
             limit=limit,
             offset=offset,
-            person_id_key=self._person_id_key(),
         )
         return SalaryAgentsSummaryResponse(
             items=[
@@ -133,10 +129,7 @@ class SalariiService:
             validated = validate_salary_person_id(person_id)
         except ValueError as exc:
             raise InvalidSalaryPersonId from exc
-        rows = await self.repo.fetch_agent_history_by_person_id(
-            validated,
-            self._person_id_key(),
-        )
+        rows = await self.repo.fetch_agent_history_by_person_id(validated)
         if not rows:
             raise UnknownSalaryPerson
         return self._format_agent_history(rows)
@@ -150,7 +143,6 @@ class SalariiService:
         link = await self.repo.fetch_agent_salary_link(
             agent_code=agent_code,
             site_code=site_code,
-            person_id_key=self._person_id_key(),
         )
         if not link:
             return {
@@ -189,7 +181,6 @@ class SalariiService:
 
         rows = await self.repo.fetch_agent_history_by_salary_link(
             person_id=link_payload["person_id"],
-            person_id_key=self._person_id_key(),
         )
         result = self._format_agent_history(rows)
         result["link"] = link_payload
@@ -315,6 +306,5 @@ class SalariiService:
             site_code=site_code,
             limit=limit,
             offset=offset,
-            person_id_key=self._person_id_key(),
         )
         return [SalaryRecordPublic(id=int(r["id"]), year=int(r["year"]), month=int(r["month"]), full_name=r["full_name"], person_id=r["person_id"], total_salary=float(r["total_salary"]), company_name=r["company_name"], site_code=r["site_code"], locatie=r["locatie"]).model_dump() for r in rows]

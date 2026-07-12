@@ -167,7 +167,6 @@ class TestSalariiAgentsSummary:
             "month": 5,
             "limit": 10,
             "offset": 0,
-            "person_id_key": PERSON_ID_KEY,
         }
 
 
@@ -219,7 +218,7 @@ class TestSalariiAgentHistory:
             "month_count": 0,
             "avg_month_count": 0,
         }
-        mock_repo.fetch_agent_salary_link.assert_awaited_once_with(agent_code="AG1", site_code="S1", person_id_key=PERSON_ID_KEY)
+        mock_repo.fetch_agent_salary_link.assert_awaited_once_with(agent_code="AG1", site_code="S1")
         mock_repo.fetch_agent_history_by_salary_link.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -289,7 +288,6 @@ class TestSalariiAgentHistory:
         assert result["avg_month_count"] == 2
         mock_repo.fetch_agent_history_by_salary_link.assert_awaited_once_with(
             person_id=PERSON_ID,
-            person_id_key=PERSON_ID_KEY,
         )
 
     @pytest.mark.asyncio
@@ -318,7 +316,6 @@ class TestSalariiAgentHistory:
         assert result["link"]["person_id"] == PERSON_ID
         mock_repo.fetch_agent_history_by_salary_link.assert_awaited_once_with(
             person_id=PERSON_ID,
-            person_id_key=PERSON_ID_KEY,
         )
 
 
@@ -477,5 +474,4 @@ class TestSalariiRecords:
             "site_code": "SITE01",
             "limit": 10,
             "offset": 0,
-            "person_id_key": PERSON_ID_KEY,
         }

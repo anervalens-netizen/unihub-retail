@@ -48,25 +48,26 @@ async def _seed_fixture() -> None:
         await conn.executemany(
             """
             INSERT INTO salary_records (
-                year, month, full_name, cnp, total_salary, company_name, site_code, locatie
-            ) VALUES ($1, $2, $3, $4, $5, 'Mobicell', $6, 'H01 Privacy Test Store')
+                year, month, full_name, cnp, total_salary, company_name, site_code, locatie,
+                person_id
+            ) VALUES ($1, $2, $3, $4, $5, 'Mobicell', $6, 'H01 Privacy Test Store', $7)
             """,
             [
-                (2097, 1, "Private Salary Agent", PRIVATE_ID, Decimal("3000"), TEST_SITE),
-                (2097, 2, "Private Salary Agent", PRIVATE_ID, Decimal("3200"), TEST_SITE),
-                (2097, 1, FALLBACK_NAME, None, Decimal("2800"), TEST_SITE),
+                (2097, 1, "Private Salary Agent", PRIVATE_ID, Decimal("3000"), TEST_SITE, PRIVATE_PERSON_ID),
+                (2097, 2, "Private Salary Agent", PRIVATE_ID, Decimal("3200"), TEST_SITE, PRIVATE_PERSON_ID),
+                (2097, 1, FALLBACK_NAME, None, Decimal("2800"), TEST_SITE, FALLBACK_PERSON_ID),
             ],
         )
         await conn.executemany(
             """
             INSERT INTO agent_salary_links (
                 agent_code, site_code, salary_full_name, salary_cnp, match_status,
-                match_source, confidence, effective_from_month, note
-            ) VALUES ($1, $2, $3, $4, $5, 'manual', $6, '2097-01', NULL)
+                match_source, confidence, effective_from_month, note, person_id
+            ) VALUES ($1, $2, $3, $4, $5, 'manual', $6, '2097-01', NULL, $7)
             """,
             [
-                ("H01CONF", TEST_SITE, "", PRIVATE_ID, "confirmed", "high"),
-                ("H01UNKNOWN", TEST_SITE, None, None, "unknown", "unknown"),
+                ("H01CONF", TEST_SITE, "", PRIVATE_ID, "confirmed", "high", PRIVATE_PERSON_ID),
+                ("H01UNKNOWN", TEST_SITE, None, None, "unknown", "unknown", None),
             ],
         )
 
@@ -80,7 +81,7 @@ async def test_h01_repository_queries_return_opaque_ids_without_private_columns(
 
         summary = await repo.fetch_agents_summary(
             q=None, company_name=None, site_code=TEST_SITE, regional=None, asm=None,
-            year=None, month=None, limit=10, offset=0, person_id_key=PERSON_ID_KEY,
+            year=None, month=None, limit=10, offset=0,
         )
         assert summary["total"] == 2
         assert {row["person_id"] for row in summary["items"]} == {PRIVATE_PERSON_ID, FALLBACK_PERSON_ID}
@@ -94,7 +95,7 @@ async def test_h01_repository_queries_return_opaque_ids_without_private_columns(
 
         paged = await repo.fetch_agents_summary(
             q=None, company_name=None, site_code=TEST_SITE, regional=None, asm=None,
-            year=None, month=None, limit=1, offset=1, person_id_key=PERSON_ID_KEY,
+            year=None, month=None, limit=1, offset=1,
         )
         assert paged["total"] == 2
         assert len(paged["items"]) == 1
@@ -102,17 +103,17 @@ async def test_h01_repository_queries_return_opaque_ids_without_private_columns(
         summary_private_id = next(
             row["person_id"] for row in summary["items"] if row["person_id"] == PRIVATE_PERSON_ID
         )
-        history = await repo.fetch_agent_history_by_person_id(summary_private_id, PERSON_ID_KEY)
+        history = await repo.fetch_agent_history_by_person_id(summary_private_id)
         assert {(row["year"], row["month"]) for row in history} == {(2097, 1), (2097, 2)}
         assert all(set(row.keys()) == {"year", "month", "company_name", "total_salary", "site_code", "locatie"} for row in history)
         assert {float(row["total_salary"]) for row in history} == {3000.0, 3200.0}
         assert await repo.fetch_agent_history_by_person_id(
-            make_salary_person_id("unknown-private-id", "Unknown", PERSON_ID_KEY), PERSON_ID_KEY,
+            make_salary_person_id("unknown-private-id", "Unknown", PERSON_ID_KEY),
         ) == []
 
         records = await repo.fetch_records(
             company_name=None, year=2097, month=None, site_code=TEST_SITE,
-            limit=10, offset=0, person_id_key=PERSON_ID_KEY,
+            limit=10, offset=0,
         )
         assert {row["person_id"] for row in records} == {PRIVATE_PERSON_ID, FALLBACK_PERSON_ID}
         assert all("cnp" not in row.keys() for row in records)
@@ -129,11 +130,11 @@ async def test_h01_repository_links_round_trip_by_person_id_and_unknown_stays_pr
         service = SalariiService(repo, PERSON_ID_KEY)
 
         confirmed = await repo.fetch_agent_salary_link(
-            agent_code="H01CONF", site_code=TEST_SITE, person_id_key=PERSON_ID_KEY,
+            agent_code="H01CONF", site_code=TEST_SITE,
         )
         assert confirmed is not None
         assert confirmed["person_id"] == PRIVATE_PERSON_ID
-        assert "salary_cnp" in confirmed
+        assert "salary_cnp" not in confirmed
 
         round_trip = await service.get_agent_history_by_retail_code(
             agent_code="H01CONF", site_code=TEST_SITE,
@@ -146,7 +147,7 @@ async def test_h01_repository_links_round_trip_by_person_id_and_unknown_stays_pr
             agent_code="H01UNKNOWN", site_code=TEST_SITE,
         )
         unknown_repository_link = await repo.fetch_agent_salary_link(
-            agent_code="H01UNKNOWN", site_code=TEST_SITE, person_id_key=PERSON_ID_KEY,
+            agent_code="H01UNKNOWN", site_code=TEST_SITE,
         )
         assert unknown_repository_link is not None
         assert unknown_repository_link["person_id"] is None

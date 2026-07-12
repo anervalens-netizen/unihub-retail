@@ -100,13 +100,14 @@ person ID.
   Caddy/firewall/environment rollout, with local/public health and enforcement
   evidence recorded in `h07-production-rollout.md`.
 
-## H-01B — retained-CNP database protection (later)
+## H-01B — retained-CNP database protection
 
-Raw CNP remains in PostgreSQL by explicit business decision. H-01B is therefore a protection and access-control phase, not a deletion phase:
+Raw CNP remains in PostgreSQL by explicit business decision. H-01B is therefore a protection and access-control phase, not a deletion phase. The expand/backfill/runtime-query implementation is complete locally; production reconciliation and the least-privilege role contract remain:
 
-- introduce a durable internal `salary_people.person_id` model alongside the retained CNP where useful;
-- isolate salary storage behind a dedicated schema/role;
-- restrict raw-CNP reads to approved internal import and matching operations;
+- [x] introduce durable `salary_private.people` plus persisted public-safe IDs;
+- [x] make ordinary runtime repositories independent of raw-CNP columns;
+- [x] restrict private writes to the approved offline importer/backfill path;
+- [ ] activate the dedicated least-privilege runtime role in production;
 - add audited access paths and least-privilege grants;
 - strengthen encrypted backups, recovery and incident procedures;
 - preserve the original CNP columns and values;

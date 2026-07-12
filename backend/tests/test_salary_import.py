@@ -79,8 +79,10 @@ def test_validate_salary_records_rejects_duplicate_business_key() -> None:
         locatie="Test",
     )
 
-    with pytest.raises(ValueError, match="Duplicate pe cheia salary_records"):
+    with pytest.raises(ValueError, match="duplicate_count=1") as exc_info:
         validate_records([record, record])
+    assert record.cnp not in str(exc_info.value)
+    assert record.full_name not in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -128,17 +130,19 @@ async def test_salary_import_replaces_only_selected_month_and_companies() -> Non
                 await insert_records(conn, [replacement])
             rows = await conn.fetch(
                 """
-                SELECT full_name, company_name, total_salary
+                SELECT full_name, company_name, total_salary, person_id
                 FROM salary_records
                 WHERE year = 2099 AND month = 7
                 ORDER BY company_name, full_name
                 """
             )
 
-        assert [tuple(row) for row in rows] == [
+        assert [(row["full_name"], row["company_name"], row["total_salary"]) for row in rows] == [
             ("Mobicell pastrat", "Mobicell", Decimal("2000.00")),
             ("Mobiup nou", "Mobiup", Decimal("3500.00")),
         ]
+        assert rows[1]["person_id"].startswith("sp1_")
+        assert len(rows[1]["person_id"]) == 68
     finally:
         async with pool.acquire() as conn:
             await conn.execute(
