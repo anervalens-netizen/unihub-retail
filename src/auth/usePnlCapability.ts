@@ -11,7 +11,7 @@ export type PnlCapabilityState = {
 export function pnlCapabilityQueryOptions(
   verifiedSubject: string | undefined,
   permissionEnabled: boolean,
-  queryFn = getPnlPermissions,
+  queryFn: () => Promise<PnlPermissions> = () => getPnlPermissions(),
 ): UseQueryOptions<PnlPermissions, Error> {
   return {
     queryKey: ['store-pnl-permissions', verifiedSubject],
@@ -48,11 +48,18 @@ export function usePnlCapability(
   isAuthenticated: boolean,
   verifiedSubject: string | undefined,
   hasManagementAccess: boolean,
+  accessToken: string | undefined,
 ): PnlCapabilityState {
   const validSubject = typeof verifiedSubject === 'string' && verifiedSubject.trim()
     ? verifiedSubject
     : undefined;
   const permissionEnabled = isAuthenticated && Boolean(validSubject);
-  const query = useQuery(pnlCapabilityQueryOptions(validSubject, permissionEnabled));
+  const query = useQuery(
+    pnlCapabilityQueryOptions(
+      validSubject,
+      permissionEnabled,
+      () => getPnlPermissions(accessToken),
+    ),
+  );
   return pnlCapabilityState(hasManagementAccess, permissionEnabled, query);
 }

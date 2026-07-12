@@ -76,6 +76,7 @@ export default function App() {
     isAuthenticated,
     verifiedSubject,
     hasManagementAccess,
+    user?.access_token,
   );
   const isPnlPermissionPending = pnlPermissionIsPending(
     isAuthLoading,

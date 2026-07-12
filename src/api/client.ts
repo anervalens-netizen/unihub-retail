@@ -49,7 +49,16 @@ function buildUrl(url: string, params?: QueryParams): string {
   return fullUrl;
 }
 
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  const normalizedName = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === normalizedName);
+}
+
 function getAuthHeaders(existingHeaders: Record<string, string> = {}): Record<string, string> {
+  if (hasHeader(existingHeaders, 'authorization')) {
+    return existingHeaders;
+  }
+
   const token = getAccessTokenFn?.();
   if (token) {
     return { ...existingHeaders, Authorization: `Bearer ${token}` };
@@ -123,11 +132,11 @@ function makeJsonHeaders(data: unknown, headers?: Record<string, string>): Recor
 export const client = {
   get: async <T = unknown>(
     url: string,
-    options?: Omit<RequestOptions, 'headers'>,
+    options?: RequestOptions,
   ): Promise<{ data: T }> => {
     const response = await fetch(buildUrl(url, options?.params), {
       method: 'GET',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', ...options?.headers }),
     });
 
     await handleResponse(response);

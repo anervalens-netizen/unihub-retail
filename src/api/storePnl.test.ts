@@ -10,6 +10,22 @@ describe('getPnlPermissions', () => {
     await expect(getPnlPermissions()).resolves.toEqual({ can_view });
   });
 
+  it('uses the explicitly supplied token during the auth bootstrap race', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ can_view: true }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getPnlPermissions('bootstrap-access-token')).resolves.toEqual({ can_view: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/store-pnl/permissions',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer bootstrap-access-token' }),
+      }),
+    );
+  });
+
   it('propagates API errors so the caller fails closed', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('denied', { status: 403 })));
     await expect(getPnlPermissions()).rejects.toThrow('API error: 403');
