@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { ASMSubtab } from './ASMSubtab';
 import { TargetCalculatorSubtab } from './TargetCalculatorSubtab';
-import { GrileSubtab } from './GrileSubtab';
+import { SalariiSubtab } from './SalariiSubtab';
 import { PnlSubtab } from './PnlSubtab';
 import type { ManagementTab } from '../lib/tabs';
+import type { AppFilters } from './MainLayout';
 
 const TABS: { id: ManagementTab; label: string }[] = [
   { id: 'asm', label: 'Manageri' },
   { id: 'target-calculator', label: 'Calculator Target' },
-  { id: 'grile', label: 'Grile' },
+  { id: 'salarii', label: 'Salarii' },
   { id: 'pnl', label: 'P&L' },
 ];
 
@@ -16,9 +17,10 @@ interface Props {
   activeSubTab?: ManagementTab;
   setActiveSubTab?: (tab: ManagementTab) => void;
   hasPnlAccess?: boolean;
+  salaryFilters: AppFilters;
 }
 
-export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false }: Props) {
+export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false, salaryFilters }: Props) {
   const [localTab, setLocalTab] = useState<ManagementTab>('asm');
 
   const activeTab = activeSubTab ?? localTab;
@@ -29,16 +31,24 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
 
   return (
     <div className="flex flex-col h-full">
-      {/* Sub-navigare — vizibilă doar pe mobile (pe desktop controlată din sidebar) */}
-      <div className="lg:hidden flex gap-1 overflow-x-auto px-4 pt-4 pb-2 border-b border-slate-200 dark:border-slate-700">
+      <div className="space-y-3 p-3 pb-0 pt-2">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Management</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Echipa, targete, salarii si analiza financiara
+          </p>
+        </div>
+      </div>
+
+      <div className="mx-3 mt-3 flex gap-1 overflow-x-auto rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
         {TABS.filter((tab) => tab.id !== 'pnl' || hasPnlAccess).map((tab) => (
           <button
             key={tab.id}
             onClick={() => setTab(tab.id)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+            className={`min-w-fit flex-1 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
               activeTab === tab.id
-                ? 'bg-indigo-600 text-white'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
             {tab.label}
@@ -46,11 +56,10 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
         ))}
       </div>
 
-      {/* Conținut */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="mt-3 flex-1 overflow-y-auto">
         {activeTab === 'asm' && <ASMSubtab />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
-        {activeTab === 'grile' && <GrileSubtab />}
+        {activeTab === 'salarii' && <SalariiSubtab globalFilters={salaryFilters} />}
         {activeTab === 'pnl' && hasPnlAccess && <PnlSubtab />}
       </div>
     </div>

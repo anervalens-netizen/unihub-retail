@@ -224,13 +224,13 @@ export default function App() {
   const activeFilters =
     activeTab === 'focus'
       ? focusFilters
-      : activeTab === 'agents'
+      : activeTab === 'agents' || (activeTab === 'management' && mgmtSubTab === 'salarii')
         ? agentsFilters
         : hubFilters;
   const setActiveFilters =
     activeTab === 'focus'
       ? setFocusFilters
-      : activeTab === 'agents'
+      : activeTab === 'agents' || (activeTab === 'management' && mgmtSubTab === 'salarii')
         ? setAgentsFilters
         : setHubFilters;
   const activeFilterMonth = activeTab === 'focus'
@@ -272,11 +272,9 @@ export default function App() {
       setTheme={setTheme}
       showFilterButton={!(activeTab === 'hub' && hubSection === 'visits')}
       mgmtSubTab={mgmtSubTab}
-      setMgmtSubTab={setMgmtSubTab}
       userEmail={user?.profile.email ?? undefined}
       onLogout={logout}
       canAccessManagement={hasManagementAccess}
-      hasPnlAccess={hasPnlAccess}
     >
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
@@ -306,6 +304,7 @@ export default function App() {
             activeSubTab={mgmtSubTab}
             setActiveSubTab={setMgmtSubTab}
             hasPnlAccess={hasPnlAccess}
+            salaryFilters={agentsFilters}
           />
         )}
         {activeTab === 'settings' && (

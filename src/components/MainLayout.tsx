@@ -35,12 +35,10 @@ interface MainLayoutProps {
   setTheme: (theme: string) => void;
   showFilterButton?: boolean;
   mgmtSubTab: ManagementTab;
-  setMgmtSubTab: (tab: ManagementTab) => void;
   errorCount?: number;
   userEmail?: string;
   onLogout?: () => void;
   canAccessManagement?: boolean;
-  hasPnlAccess?: boolean;
 }
 
 const emptyOptions: FilterOptions = {
@@ -73,12 +71,10 @@ export function MainLayout({
   setTheme,
   showFilterButton = true,
   mgmtSubTab,
-  setMgmtSubTab,
   errorCount = 0,
   userEmail,
   onLogout,
   canAccessManagement = true,
-  hasPnlAccess = false,
 }: MainLayoutProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(emptyOptions);
 
@@ -151,13 +147,10 @@ export function MainLayout({
       <DesktopSidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        mgmtSubTab={mgmtSubTab}
-        setMgmtSubTab={setMgmtSubTab}
         theme={theme}
         setTheme={setTheme}
         errorCount={errorCount}
         canAccessManagement={canAccessManagement}
-        hasPnlAccess={hasPnlAccess}
       />
 
       <div className="flex flex-col flex-1 min-w-0 min-h-0">
@@ -352,7 +345,10 @@ export function MainLayout({
         </div>
       </div>
 
-      {showFilterButton && (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents') && (
+      {showFilterButton && (
+        (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents')
+        || (activeTab === 'management' && mgmtSubTab === 'salarii')
+      ) && (
         <button
           onClick={() => setIsFilterOpen(true)}
           aria-label="Filtre"
