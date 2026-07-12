@@ -295,3 +295,8 @@ stream chunk, and serializes both successful and failed refresh attempts. A
 bounded unknown-key refresh cooldown prevents randomized-key amplification
 while a later rotation remains eligible after the cooldown. Claims conversion
 maps malformed numeric and display values to generic authentication failures.
+
+The demonstrable closure bounds NumericDate before conversion, measures
+unknown-key cooldown from refresh completion, and applies a typed 1–60 second
+failure-retry window. OIDC runtime publication is atomic: construction failure
+closes its local client and leaves no global runtime handle.

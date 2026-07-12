@@ -52,6 +52,9 @@ jobs:
           scripts/run_tests_isolated.sh \
             -v \
             --tb=short \
+            --cov=auth \
+            --cov=oidc_settings \
+            --cov=oidc_verifier \
             --cov=permissions \
             --cov=services.exports \
             --cov=services.grile_monthly \

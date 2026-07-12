@@ -17,6 +17,7 @@ class OIDCVerifierSettings:
     fetch_timeout_seconds: float
     clock_skew_seconds: int
     unknown_kid_refresh_cooldown_seconds: float = 5.0
+    refresh_failure_retry_seconds: float = 5.0
 
 
 _REQUIRED = ("OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE")
@@ -81,7 +82,9 @@ def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
     stale, stale_error = _number("JWKS_MAX_STALE_SECONDS", 86400, 60, 604800)
     timeout, timeout_error = _number("JWKS_FETCH_TIMEOUT_SECONDS", 5.0, 0.5, 30.0)
     skew, skew_error = _number("OIDC_CLOCK_SKEW_SECONDS", 30, 0, 120, integer=True)
-    for error in (ttl_error, stale_error, timeout_error, skew_error):
+    cooldown, cooldown_error = _number("JWKS_UNKNOWN_KID_REFRESH_COOLDOWN_SECONDS", 5.0, 1.0, 60.0)
+    retry, retry_error = _number("JWKS_REFRESH_FAILURE_RETRY_SECONDS", 5.0, 1.0, 60.0)
+    for error in (ttl_error, stale_error, timeout_error, skew_error, cooldown_error, retry_error):
         if error: errors.append(error)
     if not populated and not production:
         return None, errors
@@ -108,11 +111,11 @@ def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
         else:
             if not origins_match:
                 errors.append("OIDC_ISSUER and OIDC_JWKS_URL must have the same origin")
-    if errors or issuer is None or jwks is None or audience == "" or ttl is None or stale is None or timeout is None or skew is None:
+    if errors or issuer is None or jwks is None or audience == "" or ttl is None or stale is None or timeout is None or skew is None or cooldown is None or retry is None:
         return None, errors
     assert issuer is not None and jwks is not None
-    assert ttl is not None and stale is not None and timeout is not None and skew is not None
-    return OIDCVerifierSettings(issuer, jwks, audience, ttl, stale, timeout, int(skew)), []
+    assert ttl is not None and stale is not None and timeout is not None and skew is not None and cooldown is not None and retry is not None
+    return OIDCVerifierSettings(issuer, jwks, audience, ttl, stale, timeout, int(skew), cooldown, retry), []
 
 
 def load_oidc_verifier_settings() -> OIDCVerifierSettings | None:

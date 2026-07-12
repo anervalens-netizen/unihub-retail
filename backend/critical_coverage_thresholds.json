@@ -1,4 +1,7 @@
 {
+  "auth.py": 70,
+  "oidc_settings.py": 84,
+  "oidc_verifier.py": 85,
   "permissions.py": 100,
   "services/exports.py": 95,
   "services/grile_monthly.py": 98,

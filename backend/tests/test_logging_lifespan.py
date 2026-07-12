@@ -5,6 +5,27 @@ from unittest.mock import AsyncMock
 import pytest
 
 
+@pytest.mark.asyncio
+async def test_oidc_init_is_atomic_and_close_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    import oidc_verifier
+
+    class Client:
+        def __init__(self, **_kwargs): self.closed = 0
+        async def aclose(self): self.closed += 1
+
+    client = Client()
+    monkeypatch.setattr(oidc_verifier, "_client", None)
+    monkeypatch.setattr(oidc_verifier, "_verifier", None)
+    monkeypatch.setattr(oidc_verifier, "load_oidc_verifier_settings", lambda: object())
+    monkeypatch.setattr(oidc_verifier.httpx, "AsyncClient", lambda **kwargs: client)
+    monkeypatch.setattr(oidc_verifier, "OIDCVerifier", lambda *_args: (_ for _ in ()).throw(RuntimeError("construction")))
+    with pytest.raises(RuntimeError):
+        await oidc_verifier.init_oidc_runtime()
+    assert client.closed == 1 and oidc_verifier._client is None and oidc_verifier._verifier is None
+    await oidc_verifier.close_oidc_runtime()
+    await oidc_verifier.close_oidc_runtime()
+
+
 class _Acquire:
     async def __aenter__(self):
         return object()

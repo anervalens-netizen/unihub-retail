@@ -84,8 +84,8 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_required_env_vars()
-    await init_oidc_runtime()
     try:
+        await init_oidc_runtime()
         await init_db_pool()
         current_pool = await get_pool()
         attach_db_error_handler(current_pool)

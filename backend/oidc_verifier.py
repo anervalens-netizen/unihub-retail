@@ -48,7 +48,14 @@ class OIDCVerifier:
         self.refresh_attempt_serial = 0
         self.last_refresh_outcome: str | None = None
         self.last_refresh_completed_at: float | None = None
-        self.last_unknown_refresh_at: float | None = None
+        self.last_unknown_refresh_completed_at: float | None = None
+
+    def _failure_retry_active(self, now: float) -> bool:
+        return (
+            self.last_refresh_outcome == "failure"
+            and self.last_refresh_completed_at is not None
+            and now - self.last_refresh_completed_at < self.settings.refresh_failure_retry_seconds
+        )
 
     async def _fetch(self) -> JWKSCache:
         try:
@@ -130,11 +137,15 @@ class OIDCVerifier:
             if cache and now - cache.fetched_at < self.settings.cache_ttl_seconds and kid in cache.keys:
                 _cache_use.labels("fresh").inc()
                 return cache.keys[kid]
-            if unknown and self.last_unknown_refresh_at is not None and now - self.last_unknown_refresh_at < self.settings.unknown_kid_refresh_cooldown_seconds:
+            stale_key = cache.keys.get(kid) if cache else None
+            if self._failure_retry_active(now):
+                if stale_key is not None and cache is not None and now - cache.fetched_at <= self.settings.max_stale_seconds:
+                    _cache_use.labels("stale").inc()
+                    return stale_key
+                raise _unavailable()
+            if unknown and self.last_unknown_refresh_completed_at is not None and now - self.last_unknown_refresh_completed_at < self.settings.unknown_kid_refresh_cooldown_seconds:
                 raise _invalid() if self.last_refresh_outcome == "success" else _unavailable()
             try:
-                if unknown:
-                    self.last_unknown_refresh_at = now
                 cache = await self._fetch()
             except HTTPException:
                 now = self.clock()
@@ -144,6 +155,9 @@ class OIDCVerifier:
                     _cache_use.labels("stale").inc()
                     return self.cache.keys[kid]
                 raise
+            finally:
+                if unknown:
+                    self.last_unknown_refresh_completed_at = self.clock()
             if kid not in cache.keys:
                 raise _invalid()
             return cache.keys[kid]
@@ -157,8 +171,13 @@ async def init_oidc_runtime() -> None:
     if _client is not None: return
     settings = load_oidc_verifier_settings()
     if settings is None: return
-    _client = httpx.AsyncClient(follow_redirects=False)
-    _verifier = OIDCVerifier(settings, _client)
+    client = httpx.AsyncClient(follow_redirects=False)
+    try:
+        verifier = OIDCVerifier(settings, client)
+    except Exception:
+        await client.aclose()
+        raise
+    _client, _verifier = client, verifier
 
 async def close_oidc_runtime() -> None:
     global _verifier, _client

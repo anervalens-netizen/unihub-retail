@@ -43,6 +43,18 @@ def _valid_text(value: object, maximum: int = 256, allow_internal_space: bool = 
     return isinstance(value, str) and bool(value.strip()) and value == value.strip() and len(value) <= maximum and all(char.isprintable() and (allow_internal_space or not char.isspace()) for char in value)
 
 
+def _validated_numeric_date(value: object) -> int | None:
+    """Return a bounded JWT NumericDate without leaking conversion failures."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        if not math.isfinite(value) or value < 0 or value > 2**63 - 1:
+            return None
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 async def require_auth(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> AuthClaims:
     secret = os.getenv("HUB_INTERNAL_SECRET", "")
     supplied = request.headers.get("X-Hub-Internal", "")
@@ -65,6 +77,7 @@ async def require_auth(request: Request, credentials: HTTPAuthorizationCredentia
     email = payload.get("email", "")
     username = payload.get("preferred_username", "")
     iat, exp = payload.get("iat"), payload.get("exp")
-    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and (not isinstance(email, str) or len(email) > 320 or any(char.isspace() or not char.isprintable() for char in email))) or ("preferred_username" in payload and (not isinstance(username, str) or len(username) > 256 or not _valid_text(username))) or isinstance(iat, bool) or isinstance(exp, bool) or not isinstance(iat, (int, float)) or not isinstance(exp, (int, float)) or not math.isfinite(float(iat)) or not math.isfinite(float(exp)):
+    iat_value, exp_value = _validated_numeric_date(iat), _validated_numeric_date(exp)
+    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and (not isinstance(email, str) or len(email) > 320 or any(char.isspace() or not char.isprintable() for char in email))) or ("preferred_username" in payload and (not isinstance(username, str) or len(username) > 256 or not _valid_text(username))) or iat_value is None or exp_value is None:
         raise _unauthorized()
-    return AuthClaims(sub, email, username, groups, verifier.settings.issuer, verifier.settings.audience, int(iat), int(exp), {})
+    return AuthClaims(sub, email, username, groups, verifier.settings.issuer, verifier.settings.audience, iat_value, exp_value, {})

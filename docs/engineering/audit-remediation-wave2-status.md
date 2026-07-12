@@ -70,6 +70,9 @@ person ID.
   numeric settings, streams JWKS bodies under a hard bound and tests cleanup.
 - [x] Final closure coalesces failed refreshes, bounds unknown-key retries and
   prevents malformed URL ports or claims from escaping as server errors.
+- [x] Demonstrable closure covers NumericDate overflow safety, completion-based
+  cooldowns, refresh-failure backoff, atomic lifecycle and explicit OIDC
+  critical-coverage gates.
 
 ## H-01B — retained-CNP database protection (later)
 
