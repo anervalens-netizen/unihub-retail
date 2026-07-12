@@ -13,6 +13,10 @@ from scripts.import_salary_records import (
     parse_file,
     validate_records,
 )
+from salary_identity import make_salary_person_id
+
+
+TEST_PERSON_ID_KEY = "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz"
 
 
 def test_parse_salary_file_skips_invalid_rows_and_includes_meal_vouchers(
@@ -101,8 +105,10 @@ async def test_salary_import_replaces_only_selected_month_and_companies(
 ) -> None:
     monkeypatch.setenv(
         "SALARY_PERSON_ID_HMAC_KEY",
-        "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz",
+        TEST_PERSON_ID_KEY,
     )
+    old_mobiup_id = make_salary_person_id("101", "Mobiup vechi", TEST_PERSON_ID_KEY)
+    kept_mobicell_id = make_salary_person_id("102", "Mobicell pastrat", TEST_PERSON_ID_KEY)
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
@@ -111,15 +117,27 @@ async def test_salary_import_replaces_only_selected_month_and_companies(
             )
             await conn.executemany(
                 """
-                INSERT INTO salary_records (
-                    year, month, full_name, cnp, total_salary,
-                    company_name, site_code, locatie
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, NULL, $7)
+                INSERT INTO salary_private.people (
+                    person_id, cnp, normalized_name, identity_source
+                ) VALUES ($1, $2, $3, 'cnp')
+                ON CONFLICT (person_id) DO NOTHING
                 """,
                 [
-                    (2099, 7, "Mobiup vechi", "101", 1000, "Mobiup", "Test"),
-                    (2099, 7, "Mobicell pastrat", "102", 2000, "Mobicell", "Test"),
+                    (old_mobiup_id, "101", "mobiup vechi"),
+                    (kept_mobicell_id, "102", "mobicell pastrat"),
+                ],
+            )
+            await conn.executemany(
+                """
+                INSERT INTO salary_records (
+                    year, month, full_name, cnp, total_salary,
+                    company_name, site_code, locatie, person_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8)
+                """,
+                [
+                    (2099, 7, "Mobiup vechi", "101", 1000, "Mobiup", "Test", old_mobiup_id),
+                    (2099, 7, "Mobicell pastrat", "102", 2000, "Mobicell", "Test", kept_mobicell_id),
                 ],
             )
             replacement = SalaryRecord(
@@ -153,5 +171,9 @@ async def test_salary_import_replaces_only_selected_month_and_companies(
         async with pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM salary_records WHERE year = 2099 AND month = 7"
+            )
+            await conn.execute(
+                "DELETE FROM salary_private.people WHERE person_id = ANY($1::text[])",
+                [old_mobiup_id, kept_mobicell_id],
             )
         await close_db_pool()

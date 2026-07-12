@@ -25,6 +25,9 @@ Workflow tipic pentru schimbare de schemă:
 1. Adaugi migration `NNN_add_column_foo.sql` cu `ALTER TABLE ... ADD COLUMN ...`
 2. Actualizezi `manifest.json` cu checksum-ul fisierului nou.
 3. Rulezi unitatea `unihub-retail-migrate.service` inainte de restartul web.
+   Unitatea citeste exclusiv `.env.migrations`, fisier root-protected care
+   contine `MIGRATION_DATABASE_URL`/`DATABASE_URL` pentru owner. Web si worker
+   folosesc rolul non-owner din `.env`.
 4. Instalarile noi aplica baseline-ul inghetat, marcheaza migrations deja
    incorporate, apoi ruleaza toate delta-urile ulterioare.
 

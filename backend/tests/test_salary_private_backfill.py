@@ -53,14 +53,22 @@ async def test_backfill_is_idempotent_and_persists_private_mapping() -> None:
             )
             await connection.executemany(
                 """
+                INSERT INTO salary_private.people (
+                    person_id, cnp, normalized_name, identity_source
+                ) VALUES ($1, $2, $3, 'cnp')
+                """,
+                [(TEST_PERSON_ID, TEST_PRIVATE_ID, "backfill agent")],
+            )
+            await connection.executemany(
+                """
                 INSERT INTO salary_records (
                     year, month, full_name, cnp, total_salary,
-                    company_name, site_code, locatie
-                ) VALUES ($1, $2, $3, $4, $5, 'Mobiup', $6, 'H01 Backfill Store')
+                    company_name, site_code, locatie, person_id
+                ) VALUES ($1, $2, $3, $4, $5, 'Mobiup', $6, 'H01 Backfill Store', $7)
                 """,
                 [
-                    (2096, 1, "Backfill Agent", TEST_PRIVATE_ID, Decimal("3000"), TEST_SITE),
-                    (2096, 2, "Backfill Agent Renamed", TEST_PRIVATE_ID, Decimal("3200"), TEST_SITE),
+                    (2096, 1, "Backfill Agent", TEST_PRIVATE_ID, Decimal("3000"), TEST_SITE, TEST_PERSON_ID),
+                    (2096, 2, "Backfill Agent Renamed", TEST_PRIVATE_ID, Decimal("3200"), TEST_SITE, TEST_PERSON_ID),
                 ],
             )
             await connection.execute(
@@ -68,10 +76,12 @@ async def test_backfill_is_idempotent_and_persists_private_mapping() -> None:
                 INSERT INTO agent_salary_links (
                     agent_code, site_code, salary_full_name, salary_cnp,
                     match_status, match_source, confidence
-                ) VALUES ('H01BACK', $1, 'Backfill Agent', $2, 'confirmed', 'manual', 'high')
+                    , person_id
+                ) VALUES ('H01BACK', $1, 'Backfill Agent', $2, 'confirmed', 'manual', 'high', $3)
                 """,
                 TEST_SITE,
                 TEST_PRIVATE_ID,
+                TEST_PERSON_ID,
             )
             async with connection.transaction():
                 first = await backfill(connection, TEST_KEY)

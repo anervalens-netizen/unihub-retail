@@ -32,6 +32,10 @@ async def _reset_fixture() -> None:
         await conn.execute("DELETE FROM agent_salary_links WHERE site_code = $1", TEST_SITE)
         await conn.execute("DELETE FROM salary_records WHERE site_code = $1", TEST_SITE)
         await conn.execute("DELETE FROM stores WHERE site_code = $1", TEST_SITE)
+        await conn.execute(
+            "DELETE FROM salary_private.people WHERE person_id = ANY($1::text[])",
+            [PRIVATE_PERSON_ID, FALLBACK_PERSON_ID],
+        )
 
 
 async def _seed_fixture() -> None:
@@ -44,6 +48,17 @@ async def _seed_fixture() -> None:
             """,
             TEST_SITE,
             TEST_REGION,
+        )
+        await conn.executemany(
+            """
+            INSERT INTO salary_private.people (
+                person_id, cnp, normalized_name, identity_source
+            ) VALUES ($1, $2, $3, $4)
+            """,
+            [
+                (PRIVATE_PERSON_ID, PRIVATE_ID, "private salary agent", "cnp"),
+                (FALLBACK_PERSON_ID, None, FALLBACK_NAME.lower(), "name"),
+            ],
         )
         await conn.executemany(
             """

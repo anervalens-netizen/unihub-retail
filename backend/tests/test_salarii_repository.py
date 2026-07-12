@@ -15,6 +15,8 @@ TEST_SITE = "TSTSAL"
 TEST_REGION = "Salary Test Region"
 TEST_ASM = "Salary Test ASM"
 PERSON_ID_KEY = "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz"
+LOW_PERSON_ID = make_salary_person_id("synthetic-private-id-a", "Low Salary Agent", PERSON_ID_KEY)
+HIGH_PERSON_ID = make_salary_person_id("synthetic-private-id-b", "High Salary Agent", PERSON_ID_KEY)
 pytestmark = pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated test database",
@@ -27,6 +29,10 @@ async def _reset_salary_fixture() -> None:
         await conn.execute("DELETE FROM reporting_agent_month WHERE site_code = $1", TEST_SITE)
         await conn.execute("DELETE FROM salary_records WHERE site_code = $1", TEST_SITE)
         await conn.execute("DELETE FROM stores WHERE site_code = $1", TEST_SITE)
+        await conn.execute(
+            "DELETE FROM salary_private.people WHERE person_id = ANY($1::text[])",
+            [LOW_PERSON_ID, HIGH_PERSON_ID],
+        )
 
 
 async def _seed_salary_fixture() -> None:
@@ -49,6 +55,17 @@ async def _seed_salary_fixture() -> None:
         )
         await conn.executemany(
             """
+            INSERT INTO salary_private.people (
+                person_id, cnp, normalized_name, identity_source
+            ) VALUES ($1, $2, $3, 'cnp')
+            """,
+            [
+                (LOW_PERSON_ID, "synthetic-private-id-a", "low salary agent"),
+                (HIGH_PERSON_ID, "synthetic-private-id-b", "high salary agent"),
+            ],
+        )
+        await conn.executemany(
+            """
             INSERT INTO salary_records (
                 year, month, full_name, cnp, total_salary, company_name, site_code, locatie,
                 person_id
@@ -56,9 +73,9 @@ async def _seed_salary_fixture() -> None:
             VALUES ($1, $2, $3, $4, $5, 'Mobicell', $6, 'Salary Test Store', $7)
             """,
             [
-                (2098, 1, "Low Salary Agent", "synthetic-private-id-a", Decimal("1500"), TEST_SITE, make_salary_person_id("synthetic-private-id-a", "Low Salary Agent", PERSON_ID_KEY)),
-                (2098, 1, "High Salary Agent", "synthetic-private-id-b", Decimal("3000"), TEST_SITE, make_salary_person_id("synthetic-private-id-b", "High Salary Agent", PERSON_ID_KEY)),
-                (2098, 2, "High Salary Agent", "synthetic-private-id-b", Decimal("4000"), TEST_SITE, make_salary_person_id("synthetic-private-id-b", "High Salary Agent", PERSON_ID_KEY)),
+                (2098, 1, "Low Salary Agent", "synthetic-private-id-a", Decimal("1500"), TEST_SITE, LOW_PERSON_ID),
+                (2098, 1, "High Salary Agent", "synthetic-private-id-b", Decimal("3000"), TEST_SITE, HIGH_PERSON_ID),
+                (2098, 2, "High Salary Agent", "synthetic-private-id-b", Decimal("4000"), TEST_SITE, HIGH_PERSON_ID),
             ],
         )
 
