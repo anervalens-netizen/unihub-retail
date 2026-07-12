@@ -16,19 +16,26 @@ class OIDCVerifierSettings:
     max_stale_seconds: float
     fetch_timeout_seconds: float
     clock_skew_seconds: int
+    unknown_kid_refresh_cooldown_seconds: float = 5.0
 
 
 _REQUIRED = ("OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE")
 
 
 def _url(raw: str, name: str, production: bool) -> tuple[str | None, str | None]:
-    if not raw or raw != raw.strip() or any(not char.isprintable() for char in raw):
+    if not raw or raw != raw.strip() or any(char.isspace() or not char.isprintable() for char in raw):
         return None, f"{name} is invalid"
     try:
         parsed = urlsplit(raw)
     except ValueError:
         return None, f"{name} is invalid"
     if not parsed.scheme or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return None, f"{name} is invalid"
+    try:
+        port = parsed.port
+    except ValueError:
+        return None, f"{name} is invalid"
+    if port is not None and (port <= 0 or port > 65535):
         return None, f"{name} is invalid"
     if parsed.scheme == "https":
         pass
@@ -41,7 +48,13 @@ def _url(raw: str, name: str, production: bool) -> tuple[str | None, str | None]
 
 def normalized_origin(parsed: SplitResult) -> tuple[str, str, int]:
     scheme = parsed.scheme.casefold()
-    port = parsed.port if parsed.port is not None else (443 if scheme == "https" else 80)
+    try:
+        explicit_port = parsed.port
+    except ValueError as exc:
+        raise ValueError("invalid port") from exc
+    port = explicit_port if explicit_port is not None else (443 if scheme == "https" else 80)
+    if port <= 0 or port > 65535:
+        raise ValueError("invalid port")
     return scheme, (parsed.hostname or "").casefold(), port
 
 
@@ -87,8 +100,14 @@ def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
         errors.append("OIDC_AUDIENCE is invalid")
     if ttl is not None and stale is not None and stale < ttl:
         errors.append("JWKS_MAX_STALE_SECONDS must be at least JWKS_CACHE_TTL")
-    if issuer and jwks and normalized_origin(urlsplit(issuer)) != normalized_origin(urlsplit(jwks)):
-        errors.append("OIDC_ISSUER and OIDC_JWKS_URL must have the same origin")
+    if issuer and jwks:
+        try:
+            origins_match = normalized_origin(urlsplit(issuer)) == normalized_origin(urlsplit(jwks))
+        except ValueError:
+            errors.append("OIDC_ISSUER or OIDC_JWKS_URL is invalid")
+        else:
+            if not origins_match:
+                errors.append("OIDC_ISSUER and OIDC_JWKS_URL must have the same origin")
     if errors or issuer is None or jwks is None or audience == "" or ttl is None or stale is None or timeout is None or skew is None:
         return None, errors
     assert issuer is not None and jwks is not None

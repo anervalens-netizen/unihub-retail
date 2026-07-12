@@ -68,6 +68,8 @@ person ID.
   header/claim validation are implemented without production changes.
 - [x] Final review preserves exact configured OIDC URLs, rejects non-finite
   numeric settings, streams JWKS bodies under a hard bound and tests cleanup.
+- [x] Final closure coalesces failed refreshes, bounds unknown-key retries and
+  prevents malformed URL ports or claims from escaping as server errors.
 
 ## H-01B — retained-CNP database protection (later)
 

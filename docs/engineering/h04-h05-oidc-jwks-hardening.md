@@ -288,3 +288,10 @@ skew zero remains valid. JWKS reads stream into a strict 256 KiB decoded-body
 bound, and concurrent unknown-key requests use the cache generation observed
 before acquiring the refresh lock. Stale eligibility is evaluated after a
 refresh failure with a fresh monotonic clock read.
+
+The final closure additionally protects URL port parsing, rejects whitespace
+inside verifier URLs, checks the decoded JWKS buffer before appending each
+stream chunk, and serializes both successful and failed refresh attempts. A
+bounded unknown-key refresh cooldown prevents randomized-key amplification
+while a later rotation remains eligible after the cooldown. Claims conversion
+maps malformed numeric and display values to generic authentication failures.

@@ -45,6 +45,10 @@ class OIDCVerifier:
         self.settings, self.client, self.clock = settings, client, clock
         self.cache: JWKSCache | None = None
         self.lock = asyncio.Lock()
+        self.refresh_attempt_serial = 0
+        self.last_refresh_outcome: str | None = None
+        self.last_refresh_completed_at: float | None = None
+        self.last_unknown_refresh_at: float | None = None
 
     async def _fetch(self) -> JWKSCache:
         try:
@@ -54,10 +58,10 @@ class OIDCVerifier:
                 if length is not None and int(length) > _MAX_BODY:
                     raise ValueError("body")
                 chunks = bytearray()
-                async for chunk in response.aiter_bytes():
-                    chunks.extend(chunk)
-                    if len(chunks) > _MAX_BODY:
+                async for chunk in response.aiter_bytes(chunk_size=64 * 1024):
+                    if len(chunks) + len(chunk) > _MAX_BODY:
                         raise ValueError("body")
+                    chunks.extend(chunk)
             payload = json.loads(bytes(chunks))
             values = payload.get("keys") if isinstance(payload, dict) else None
             if not isinstance(values, list) or not values:
@@ -73,10 +77,16 @@ class OIDCVerifier:
                     raise ValueError("duplicate")
                 keys[kid] = jwt.PyJWK(value)
         except Exception:
+            self.refresh_attempt_serial += 1
+            self.last_refresh_outcome = "failure"
+            self.last_refresh_completed_at = self.clock()
             _refresh.labels("failure").inc()
             raise _unavailable()
         cache = JWKSCache(keys, self.clock(), (self.cache.generation + 1) if self.cache else 1)
         self.cache = cache
+        self.refresh_attempt_serial += 1
+        self.last_refresh_outcome = "success"
+        self.last_refresh_completed_at = cache.fetched_at
         _refresh.labels("success").inc()
         _age.set(0)
         return cache
@@ -88,6 +98,7 @@ class OIDCVerifier:
         now = self.clock()
         cache = self.cache
         observed_generation = cache.generation if cache else 0
+        observed_attempt = self.refresh_attempt_serial
         if cache:
             cache_age = now - cache.fetched_at
             _age.set(max(cache_age, 0))
@@ -99,6 +110,18 @@ class OIDCVerifier:
         async with self.lock:
             cache = self.cache
             now = self.clock()
+            if self.refresh_attempt_serial != observed_attempt:
+                if cache and kid in cache.keys and now - cache.fetched_at < self.settings.cache_ttl_seconds:
+                    _cache_use.labels("fresh").inc()
+                    return cache.keys[kid]
+                if self.last_refresh_outcome == "success":
+                    raise _invalid()
+                if cache:
+                    _age.set(max(now - cache.fetched_at, 0))
+                    if kid in cache.keys and now - cache.fetched_at <= self.settings.max_stale_seconds:
+                        _cache_use.labels("stale").inc()
+                        return cache.keys[kid]
+                raise _unavailable()
             if cache and cache.generation != observed_generation:
                 if kid in cache.keys:
                     _cache_use.labels("fresh").inc()
@@ -107,7 +130,11 @@ class OIDCVerifier:
             if cache and now - cache.fetched_at < self.settings.cache_ttl_seconds and kid in cache.keys:
                 _cache_use.labels("fresh").inc()
                 return cache.keys[kid]
+            if unknown and self.last_unknown_refresh_at is not None and now - self.last_unknown_refresh_at < self.settings.unknown_kid_refresh_cooldown_seconds:
+                raise _invalid() if self.last_refresh_outcome == "success" else _unavailable()
             try:
+                if unknown:
+                    self.last_unknown_refresh_at = now
                 cache = await self._fetch()
             except HTTPException:
                 now = self.clock()

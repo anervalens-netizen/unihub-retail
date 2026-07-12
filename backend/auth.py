@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hmac
+import math
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -57,13 +58,13 @@ async def require_auth(request: Request, credentials: HTTPAuthorizationCredentia
         payload = jwt.decode(credentials.credentials, key.key, algorithms=["RS256"], issuer=verifier.settings.issuer, audience=verifier.settings.audience, leeway=verifier.settings.clock_skew_seconds, options=options)
     except HTTPException:
         raise
-    except jwt.PyJWTError:
+    except (jwt.PyJWTError, TypeError, ValueError, OverflowError):
         raise _unauthorized()
     sub = payload.get("sub")
     groups = payload.get("groups", [])
     email = payload.get("email", "")
     username = payload.get("preferred_username", "")
     iat, exp = payload.get("iat"), payload.get("exp")
-    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and not isinstance(email, str)) or ("preferred_username" in payload and not isinstance(username, str)) or isinstance(iat, bool) or isinstance(exp, bool) or not isinstance(iat, (int, float)) or not isinstance(exp, (int, float)):
+    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and (not isinstance(email, str) or len(email) > 320 or any(char.isspace() or not char.isprintable() for char in email))) or ("preferred_username" in payload and (not isinstance(username, str) or len(username) > 256 or not _valid_text(username))) or isinstance(iat, bool) or isinstance(exp, bool) or not isinstance(iat, (int, float)) or not isinstance(exp, (int, float)) or not math.isfinite(float(iat)) or not math.isfinite(float(exp)):
         raise _unauthorized()
     return AuthClaims(sub, email, username, groups, verifier.settings.issuer, verifier.settings.audience, int(iat), int(exp), {})
