@@ -425,15 +425,22 @@ class SalariiRepository:
         site_code: str,
         person_id_key: str,
     ) -> asyncpg.Record | None:
+        person_id_expr = salary_person_id_sql("identity", "$3")
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
-                """
+                f"""
+                WITH identity AS (
+                    SELECT *, salary_cnp AS cnp, salary_full_name AS full_name
+                    FROM agent_salary_links
+                    WHERE agent_code = $1 AND site_code = $2
+                )
                 SELECT agent_code, site_code, salary_full_name, salary_cnp,
-                       'sp1_' || encode(hmac((COALESCE(NULLIF(BTRIM(salary_cnp), ''), 'name:' || LOWER(BTRIM(COALESCE(salary_full_name, ''))))::text), $3::text, 'sha256'), 'hex') AS person_id,
+                       CASE WHEN match_status = 'confirmed'
+                              AND (NULLIF(BTRIM(cnp), '') IS NOT NULL OR NULLIF(BTRIM(full_name), '') IS NOT NULL)
+                            THEN {person_id_expr}
+                            ELSE NULL END AS person_id,
                        match_status, match_source, confidence, effective_from_month, note
-                FROM agent_salary_links
-                WHERE agent_code = $1
-                  AND site_code = $2
+                FROM identity
                 """,
                 agent_code,
                 site_code,
@@ -726,7 +733,7 @@ class SalariiRepository:
         person_id_key: str,
     ) -> list[asyncpg.Record]:
         _join_block, where_block, params = _salary_scope(
-            salary_alias="",
+            salary_alias="sr",
             company_name=company_name,
             site_code=site_code,
             year=year,
@@ -735,12 +742,13 @@ class SalariiRepository:
         )
         async with self.pool.acquire() as conn:
             params2 = params + [limit, offset]
+            person_id_expr = salary_person_id_sql("sr", f"${len(params2) + 1}")
             return await conn.fetch(
                 f"""
                 SELECT id, year, month, full_name,
-                       'sp1_' || encode(hmac((COALESCE(NULLIF(BTRIM(cnp), ''), 'name:' || LOWER(BTRIM(COALESCE(full_name, ''))))::text), ${len(params2) + 1}::text, 'sha256'), 'hex') AS person_id,
+                       {person_id_expr} AS person_id,
                        total_salary, company_name, site_code, locatie
-                FROM salary_records
+                FROM salary_records sr
                 {where_block}
                 ORDER BY year DESC, month DESC, full_name
                 LIMIT ${len(params2) - 1} OFFSET ${len(params2)}

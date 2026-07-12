@@ -223,7 +223,21 @@ H-01B must not drop, blank, hash-overwrite or destructively migrate CNP values w
 
 - `backend/salary_identity.py` centralizes HMAC-SHA256 identity creation and strict key/person-ID validation. SQL receives the HMAC key only as a bind parameter.
 - A read-only production reconciliation was executed with synthetic/temporary key material and aggregate-only output.
-- Initial implementation tests reported 739 backend tests with 8 skips and 177 frontend tests, plus typecheck/build/mypy success.
-- GitHub CI run #295 failed in the backend test job and must be resolved before merge.
-- Engineering review identified canonical SQL/Python consistency, collision-query direction, unmatched-link identity and key-validation hardening that remain required.
+- Engineering review hardening aligns Python and SQL on the exact expression:
+  `cnp:` plus trimmed non-empty CNP, otherwise `name:` plus lower-cased trimmed
+  name. Every H-01A SQL HMAC expression is derived from the central helper.
+- Confirmed retail-code links expose a non-null opaque ID; unknown or incomplete
+  links expose `person_id: null` and never trigger a history lookup.
+- In development without a configured key, overview/evolution/summary/trend/
+  stores remain available while identity endpoints return generic 503. Production
+  startup remains fail-closed.
+- The actual SQL helper equivalence test runs against the isolated PostgreSQL
+  fixture and covers synthetic private IDs, fallback names, whitespace, Unicode
+  and case normalization.
+- CI run #295 failed because the backend coverage gate measured
+  `services/salarii.py` below its 98 percent threshold, despite no test failure.
+  The new branch coverage tests raise it to 100 percent in the local CI-equivalent
+  run: 750 passed, 7 skipped; the critical coverage gate passes.
+- Frontend tests: 177 passed; typecheck and a staged, non-deployed production
+  build passed. Mypy passed for 199 source files.
 - `.env` and `.env.worker` were not modified; no schema migration, production write, deploy or service restart was performed.

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 
-import asyncpg
 import pytest
 
+from db.connection import get_pool
 from salary_identity import (
     PERSON_ID_PREFIX,
     canonical_salary_identity,
@@ -24,6 +24,12 @@ def test_key_validation_and_person_id_format() -> None:
     assert person_id.startswith(PERSON_ID_PREFIX)
     assert len(person_id) == len(PERSON_ID_PREFIX) + 64
     assert validate_salary_person_id(person_id) == person_id
+
+
+@pytest.mark.parametrize("invalid", ["a" * 20, "a" * 20 + " " + "b" * 30, "a" * 20 + "\t" + "b" * 30, "a" * 20 + "\r" + "b" * 30, "a" * 20 + "\n" + "b" * 30, "a" * 20 + "\u00a0" + "b" * 30, "a" * 20 + "\u200b" + "b" * 30])
+def test_key_rejects_all_whitespace_and_nonprintable_characters(invalid: str) -> None:
+    with pytest.raises(ValueError, match="SALARY_PERSON_ID_HMAC_KEY"):
+        validate_salary_person_id_key(invalid)
 
 
 def test_identity_is_deterministic_and_normalized() -> None:
@@ -49,23 +55,26 @@ def test_sql_helpers_validate_fragments() -> None:
 
 
 @pytest.mark.asyncio
-async def test_python_postgresql_equivalence_when_explicit_test_db_is_configured() -> None:
-    database_url = os.getenv("H01_TEST_DATABASE_URL")
-    if not database_url:
-        pytest.skip("H01_TEST_DATABASE_URL is not configured")
-    conn = await asyncpg.connect(database_url)
-    try:
-        for cnp, full_name in (
-            ("synthetic-private-id-a", "Ana Popescu"),
-            (None, " Ștefan Ionescu "),
-            (" synthetic-private-id-b ", "IGNORED"),
-        ):
-            expected = make_salary_person_id(cnp, full_name, TEST_KEY)
-            actual = await conn.fetchval(
-                "SELECT 'sp1_' || encode(hmac(($1)::text, $2::text, 'sha256'), 'hex')",
-                canonical_salary_identity(cnp, full_name),
-                TEST_KEY,
-            )
-            assert actual == expected
-    finally:
-        await conn.close()
+@pytest.mark.skipif(os.getenv("UNIHUB_TEST_DATABASE") != "1", reason="requires isolated PostgreSQL")
+async def test_python_postgresql_equivalence_uses_actual_sql_helpers() -> None:
+    canonical_expr = canonical_salary_identity_sql("sr")
+    person_expr = salary_person_id_sql("sr", "$1")
+    cases = [
+        ("synthetic-private-id-a", "Ana Popescu"),
+        (None, " Ștefan Ionescu "),
+        (" synthetic-private-id-b ", "IGNORED"),
+    ]
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            WITH sample(cnp, full_name) AS (VALUES ($2::text, $3::text), ($4::text, $5::text), ($6::text, $7::text))
+            SELECT {canonical_expr} AS canonical, {person_expr} AS person_id
+            FROM sample sr
+            ORDER BY canonical
+            """,
+            TEST_KEY,
+            *[value for case in cases for value in case],
+        )
+    expected = sorted((canonical_salary_identity(cnp, name), make_salary_person_id(cnp, name, TEST_KEY)) for cnp, name in cases)
+    assert [(row["canonical"], row["person_id"]) for row in rows] == expected

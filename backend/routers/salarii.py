@@ -27,7 +27,16 @@ class SalaryExportAudit(BaseModel):
 async def get_salarii_service() -> SalariiService:
     pool = await get_pool()
     repo = SalariiRepository(pool)
-    return SalariiService(repo, get_salary_person_id_key())
+    return SalariiService(repo)
+
+
+async def get_identity_salarii_service() -> SalariiService:
+    pool = await get_pool()
+    try:
+        key = get_salary_person_id_key()
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="salary identity is unavailable") from exc
+    return SalariiService(SalariiRepository(pool), key)
 
 
 @router.get("/overview")
@@ -63,7 +72,7 @@ async def agents_summary(
     month: int | None = Query(None),
     limit: int = Query(50, le=500),
     offset: int = Query(0),
-    svc: SalariiService = Depends(get_salarii_service),
+    svc: SalariiService = Depends(get_identity_salarii_service),
 ):
     return await svc.get_agents_summary(q, company_name, site_code, regional, asm, year, month, limit, offset)
 
@@ -71,7 +80,7 @@ async def agents_summary(
 @router.get("/agents/{person_id}/history")
 async def agent_history(
     person_id: str = Path(..., pattern=r"^sp1_[0-9a-f]{64}$"),
-    svc: SalariiService = Depends(get_salarii_service),
+    svc: SalariiService = Depends(get_identity_salarii_service),
 ):
     try:
         return await svc.get_agent_history(person_id)
@@ -85,7 +94,7 @@ async def agent_history(
 async def agent_history_by_retail_code(
     agent_code: str = Query(...),
     site_code: str = Query(...),
-    svc: SalariiService = Depends(get_salarii_service),
+    svc: SalariiService = Depends(get_identity_salarii_service),
 ):
     return await svc.get_agent_history_by_retail_code(
         agent_code=agent_code,
@@ -133,7 +142,7 @@ async def list_records(
     site_code: str | None = Query(None),
     limit: int = Query(100, le=2000),
     offset: int = Query(0),
-    svc: SalariiService = Depends(get_salarii_service),
+    svc: SalariiService = Depends(get_identity_salarii_service),
 ):
     return await svc.get_records(company_name, year, month, site_code, limit, offset)
 

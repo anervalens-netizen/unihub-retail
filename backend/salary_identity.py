@@ -21,7 +21,7 @@ def validate_salary_person_id_key(raw: str | None) -> str:
         raise ValueError(f"{SALARY_PERSON_ID_HMAC_KEY_ENV} is missing")
     if not isinstance(raw, str) or not (_MIN_KEY_LENGTH <= len(raw) <= _MAX_KEY_LENGTH):
         raise ValueError(f"{SALARY_PERSON_ID_HMAC_KEY_ENV} has invalid length")
-    if raw != raw.strip() or any(ord(char) < 32 or ord(char) == 127 for char in raw):
+    if any(char.isspace() or not char.isprintable() for char in raw):
         raise ValueError(f"{SALARY_PERSON_ID_HMAC_KEY_ENV} contains invalid characters")
     return raw
 
@@ -59,8 +59,9 @@ def canonical_salary_identity_sql(alias: str) -> str:
     if not _ALIAS_RE.fullmatch(alias):
         raise ValueError("invalid SQL alias")
     return (
-        f"COALESCE(NULLIF(BTRIM({alias}.cnp), ''), "
-        f"'name:' || LOWER(BTRIM(COALESCE({alias}.full_name, ''))))"
+        f"CASE WHEN NULLIF(BTRIM({alias}.cnp), '') IS NOT NULL "
+        f"THEN 'cnp:' || BTRIM({alias}.cnp) "
+        f"ELSE 'name:' || LOWER(BTRIM(COALESCE({alias}.full_name, ''))) END"
     )
 
 

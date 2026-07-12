@@ -4,30 +4,40 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+import sys
 from pathlib import Path
 
 import asyncpg
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+from salary_identity import canonical_salary_identity_sql, salary_person_id_sql
+
+load_dotenv(BACKEND_ROOT.parent / ".env")
 
 async def reconcile() -> dict[str, int]:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is not configured")
     temporary_key = secrets.token_urlsafe(48)
+    canonical_expr = canonical_salary_identity_sql("sr")
+    person_id_expr = salary_person_id_sql("sr", "$1")
+    history_canonical_expr = canonical_salary_identity_sql("history_sr")
+    history_person_id_expr = salary_person_id_sql("history_person", "$1")
     conn = await asyncpg.connect(database_url)
     try:
         async with conn.transaction():
             await conn.execute("SET TRANSACTION READ ONLY")
             row = await conn.fetchrow(
-                """
+                f"""
                 WITH identities AS (
                     SELECT
-                        COALESCE(NULLIF(BTRIM(cnp), ''), 'name:' || LOWER(BTRIM(COALESCE(full_name, '')))) AS canonical,
-                        'sp1_' || encode(hmac((COALESCE(NULLIF(BTRIM(cnp), ''), 'name:' || LOWER(BTRIM(COALESCE(full_name, ''))))::text), $1::text, 'sha256'), 'hex') AS person_id,
-                        NULLIF(BTRIM(cnp), '') IS NULL AS name_fallback
-                    FROM salary_records
+                        {canonical_expr} AS canonical,
+                        {person_id_expr} AS person_id,
+                        NULLIF(BTRIM(sr.cnp), '') IS NULL AS name_fallback
+                    FROM salary_records sr
                 ),
                 distinct_identities AS (
                     SELECT DISTINCT canonical, person_id, name_fallback
@@ -42,11 +52,11 @@ async def reconcile() -> dict[str, int]:
                 history_check AS (
                     SELECT
                         sampled.canonical,
-                        (SELECT COUNT(*) FROM salary_records sr
-                         WHERE COALESCE(NULLIF(BTRIM(sr.cnp), ''), 'name:' || LOWER(BTRIM(COALESCE(sr.full_name, '')))) = sampled.canonical
+                        (SELECT COUNT(*) FROM salary_records history_sr
+                         WHERE {history_canonical_expr} = sampled.canonical
                         ) AS legacy_count,
-                        (SELECT COUNT(*) FROM salary_records sr2
-                         WHERE 'sp1_' || encode(hmac((COALESCE(NULLIF(BTRIM(sr2.cnp), ''), 'name:' || LOWER(BTRIM(COALESCE(sr2.full_name, ''))))::text), $1::text, 'sha256'), 'hex') = sampled.person_id
+                        (SELECT COUNT(*) FROM salary_records history_person
+                         WHERE {history_person_id_expr} = sampled.person_id
                         ) AS opaque_count
                     FROM sampled
                 )
@@ -54,10 +64,10 @@ async def reconcile() -> dict[str, int]:
                     (SELECT COUNT(*) FROM distinct_identities) AS canonical_identity_count,
                     (SELECT COUNT(DISTINCT person_id) FROM distinct_identities) AS generated_person_id_count,
                     (SELECT COUNT(*) FROM (
-                        SELECT canonical
+                        SELECT person_id
                         FROM distinct_identities
-                        GROUP BY canonical
-                        HAVING COUNT(DISTINCT person_id) > 1
+                        GROUP BY person_id
+                        HAVING COUNT(DISTINCT canonical) > 1
                     ) collisions) AS collision_count,
                     (SELECT COUNT(*) FROM distinct_identities WHERE name_fallback) AS name_fallback_identity_count,
                     (SELECT COUNT(*) FROM (

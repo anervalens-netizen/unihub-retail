@@ -142,18 +142,23 @@ class SalariiService:
                 "avg_month_count": 0,
             }
 
+        is_confirmed_identity = (
+            link["match_status"] == "confirmed"
+            and bool(link["salary_full_name"])
+            and bool(link["person_id"])
+        )
         link_payload = {
             "agent_code": link["agent_code"],
             "site_code": link["site_code"],
             "salary_full_name": link["salary_full_name"],
-            "person_id": link["person_id"],
+            "person_id": link["person_id"] if is_confirmed_identity else None,
             "match_status": link["match_status"],
             "match_source": link["match_source"],
             "confidence": link["confidence"],
             "effective_from_month": link["effective_from_month"],
             "note": link["note"],
         }
-        if link["match_status"] == "unknown" or not link["salary_full_name"]:
+        if not is_confirmed_identity:
             return {
                 "link": link_payload,
                 "records": [],
@@ -164,7 +169,7 @@ class SalariiService:
             }
 
         rows = await self.repo.fetch_agent_history_by_salary_link(
-            person_id=link["person_id"],
+            person_id=link_payload["person_id"],
             person_id_key=self._person_id_key(),
         )
         result = self._format_agent_history(rows)

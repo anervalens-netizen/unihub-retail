@@ -173,6 +173,11 @@ class TestSalariiAgentsSummary:
 
 class TestSalariiAgentHistory:
     @pytest.mark.asyncio
+    async def test_agent_history_rejects_malformed_person_id(self, service):
+        with pytest.raises(ValueError):
+            await service.get_agent_history("not-an-opaque-id")
+
+    @pytest.mark.asyncio
     async def test_agent_history_empty(self, service, mock_repo):
         mock_repo.fetch_agent_history_by_person_id.return_value = []
         with pytest.raises(LookupError):
@@ -238,7 +243,7 @@ class TestSalariiAgentHistory:
             "agent_code": "AG1",
             "site_code": "S1",
             "salary_full_name": None,
-            "person_id": make_salary_person_id(None, None, PERSON_ID_KEY),
+            "person_id": None,
             "match_status": "unknown",
             "match_source": "manual",
             "confidence": "unknown",
@@ -286,6 +291,18 @@ class TestSalariiAgentHistory:
             person_id=PERSON_ID,
             person_id_key=PERSON_ID_KEY,
         )
+
+    @pytest.mark.asyncio
+    async def test_confirmed_link_with_empty_history_keeps_link_payload(self, service, mock_repo):
+        mock_repo.fetch_agent_salary_link.return_value = FakeRow(
+            agent_code="AG1", site_code="S1", salary_full_name="Ana Popescu",
+            person_id=PERSON_ID, match_status="confirmed", match_source="manual",
+            confidence="high", effective_from_month=None, note=None,
+        )
+        mock_repo.fetch_agent_history_by_salary_link.return_value = []
+        result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
+        assert result["link"]["person_id"] == PERSON_ID
+        assert result["records"] == []
 
 
 class TestSalariiSummary:

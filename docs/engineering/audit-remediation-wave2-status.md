@@ -30,16 +30,18 @@ The approved database-retention constraint is recorded in `docs/engineering/h01-
 - [x] Generic salary-record responses never return `cnp`.
 - [x] Frontend types, state, keys, drawers and URLs contain no CNP.
 - [x] Contract/static tests fail on `cnp` or `salary_cnp` in the public salary surface.
-- [ ] Python and PostgreSQL helper implementations are proven equivalent through the actual SQL helper expression.
+- [x] Python and PostgreSQL helper implementations are proven equivalent through the actual SQL helper expression.
 - [x] Production reconciliation was executed read-only.
-- [ ] Engineering review hardening is complete.
-- [ ] GitHub CI is green.
+- [x] Engineering review hardening is complete.
+- [x] Local CI-equivalent coverage gate is green; remote CI must run on the pushed commit.
 
 H-01A reconciliation (read-only, 2026-07-12): 370 canonical identities,
 370 generated IDs, 0 reported collisions, 2 name-fallback identities, 339 duplicate
 non-empty private-ID groups, 2 duplicate normalized-name fallback groups, 100
 sampled history identities and 0 history mismatches. The temporary HMAC key was
-generated in memory and was not persisted or printed. The collision query and canonical SQL expression remain subject to the final engineering review before these figures are accepted as release evidence.
+generated in memory and was not persisted or printed. The engineering review
+confirmed the canonical `cnp:` prefix and correct collision grouping by generated
+person ID.
 
 ### Non-goals for H-01A
 
