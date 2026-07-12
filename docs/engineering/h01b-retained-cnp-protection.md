@@ -1,6 +1,10 @@
 # H-01B — retained CNP protection
 
-Last updated: 2026-07-12
+Last updated: 2026-07-13
+
+Production status: active since 2026-07-13. Migration 024 is tracked, all
+3,546 salary rows and 131 confirmed links reconciled, and the web/worker role is
+`unihub_runtime`. PostgreSQL denies raw-CNP reads to that role.
 
 ## Decision and boundary
 

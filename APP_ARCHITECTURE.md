@@ -10,7 +10,7 @@ UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard 
 | --- | --- |
 | Frontend | React 19, TypeScript, Vite 8, Tailwind CSS 4.3, TanStack Query |
 | Backend | FastAPI, asyncpg, Python |
-| Auth | authentik OIDC, JWT RS256/JWKS |
+| Auth | Authentik OIDC BFF, encrypted Valkey session, HttpOnly cookie, JWT RS256/JWKS |
 | DB | PostgreSQL `unihub` pe `unihub_postgres:5432` |
 | Queue/cache | Valkey + worker `unihub-worker.service` pentru importuri async |
 | Observabilitate | Prometheus `/metrics`, GlitchTip, structured logs |
@@ -18,7 +18,7 @@ UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard 
 | Service | `unihub-backend.service` |
 
 API-ul normalizeaza sau genereaza `X-Request-ID`, il returneaza clientului,
-il include in loguri si GlitchTip si il propaga spre proxy-ul Authentik si
+il include in loguri si GlitchTip si il propaga spre fluxurile interne si
 joburile ARQ. Workerul pastreaza acelasi ID pentru jobul derivat de verificare
 Grile, astfel incat fluxul API -> queue -> worker poate fi urmarit integral.
 
@@ -106,7 +106,7 @@ acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
   categorii si performanta pe magazine, cu lunile estimate marcate explicit.
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
   grupului OIDC dedicat P&L, peste accesul general Management; ascunderea din
-  frontend este dublata de verificarea autoritativa a tokenului OIDC in backend.
+  frontend este dublata de sesiunea BFF si verificarea autoritativa OIDC in backend.
 - Raportare vizite citita din SQLite shared.
 - Agenti -> Grile include verificare read-only si inchidere de luna; actiunile
   privilegiate raman protejate individual in backend.

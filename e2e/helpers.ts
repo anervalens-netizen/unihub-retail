@@ -8,20 +8,16 @@ export const MOCK_USER = {
 };
 
 export async function mockAuthenticatedSession(context: BrowserContext) {
-  const fakeToken = 'e2e-fake-access-token';
-
-  await context.addInitScript((token: string) => {
+  await context.addInitScript(() => {
     (window as unknown as Record<string, unknown>).__E2E_USER__ = {
-      access_token: token,
-      token_type: 'Bearer',
-      scope: 'openid profile email',
-      profile: { sub: 'test-user-123', email: 'test@mobiup.ro', name: 'Test User' },
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      expired: false,
+      profile: {
+        sub: 'test-user-123',
+        email: 'test@mobiup.ro',
+        preferred_username: 'test-user',
+        groups: ['unihub-admin'],
+      },
     };
-  }, fakeToken);
-
-  await context.route('**/auth/proxy/**', (route) => route.abort());
+  });
 }
 
 export async function mockApiRoute(context: BrowserContext, method: string, urlPattern: string | RegExp, response: unknown) {
@@ -119,6 +115,12 @@ export const MOCK_DASHBOARD_YEAR_HISTORY = {
 };
 
 export async function setupBaseMocks(context: BrowserContext) {
+  context.on('page', (page) => {
+    page.on('pageerror', (error) => console.error('E2E page error:', error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') console.error('E2E console error:', message.text());
+    });
+  });
   await mockAuthenticatedSession(context);
 
   await context.route((url) => url.pathname.startsWith('/api/'), (route) => {
@@ -135,6 +137,8 @@ export async function setupBaseMocks(context: BrowserContext) {
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/history\b/, MOCK_DASHBOARD_HISTORY);
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/history-year/, MOCK_DASHBOARD_YEAR_HISTORY);
   await mockApiRoute(context, 'GET', /\/api\/stores$/, []);
+  await mockApiRoute(context, 'GET', /\/api\/hr\/asm-performance/, []);
+  await mockApiRoute(context, 'GET', /\/api\/crm\/scores/, []);
   await mockApiRoute(context, 'GET', /\/api\/campaigns\/overview/, {
     snapshot: null, focus_products: [], promo_products: [],
     has_active_promotion: false, has_active_incentive: false,

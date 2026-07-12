@@ -35,15 +35,6 @@ describe('salary permissions', () => {
     ]);
   });
 
-  it('falls back to the access-token groups claim', () => {
-    const payload = btoa(JSON.stringify({ groups: ['unihub-manager'] }))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
-    const token = `header.${payload}.signature`;
-
-    expect(canAccessSalaries({}, token)).toBe(true);
-  });
 });
 
 describe('import permissions', () => {

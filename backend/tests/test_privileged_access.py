@@ -105,6 +105,11 @@ def _set_production_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("RATE_LIMIT_KEY_HMAC_SECRET", "r" * 43)
     monkeypatch.setenv("RATE_LIMIT_FAILURE_MODE", "closed")
     monkeypatch.setenv("RATE_LIMIT_VALKEY_URL", "redis://localhost:6379/15")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "test-audience")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "synthetic-client-secret")
+    monkeypatch.setenv("SESSION_ENCRYPTION_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+    monkeypatch.setenv("SESSION_PUBLIC_ORIGIN", "https://retail.example.invalid")
+    monkeypatch.setenv("SESSION_VALKEY_URL", "redis://localhost:6379/14")
     monkeypatch.delenv(DEPRECATED_TARGET_EMAILS_ENV, raising=False)
     monkeypatch.delenv(DEPRECATED_GRILE_EMAILS_ENV, raising=False)
     monkeypatch.delenv(DEPRECATED_PNL_OWNER_EMAILS_ENV, raising=False)
@@ -156,6 +161,11 @@ def test_development_missing_groups_starts_but_denies(monkeypatch: pytest.Monkey
     monkeypatch.delenv("OIDC_ISSUER", raising=False)
     monkeypatch.delenv("OIDC_JWKS_URL", raising=False)
     monkeypatch.delenv("OIDC_AUDIENCE", raising=False)
+    for name in (
+        "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "SESSION_ENCRYPTION_KEY",
+        "SESSION_PUBLIC_ORIGIN", "SESSION_VALKEY_URL", "SESSION_TTL_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv(TARGET_FINALIZER_GROUPS_ENV, raising=False)
     monkeypatch.delenv(GRILE_FINALIZER_GROUPS_ENV, raising=False)
     monkeypatch.delenv(STORE_PNL_ACCESS_GROUPS_ENV, raising=False)

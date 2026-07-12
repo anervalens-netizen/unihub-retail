@@ -68,8 +68,8 @@ export function Settings({
   onImportCompleted,
 }: SettingsProps) {
   const { user } = useAuth();
-  const canImportSales = canAdministerImports(user?.profile, user?.access_token);
-  const canUseExports = canExportReports(user?.profile, user?.access_token);
+  const canImportSales = canAdministerImports(user?.profile);
+  const canUseExports = canExportReports(user?.profile);
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [promoActualsFile, setPromoActualsFile] = useState<File | null>(null);

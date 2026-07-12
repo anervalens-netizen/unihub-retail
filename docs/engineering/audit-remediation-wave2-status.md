@@ -5,7 +5,8 @@
 **Status:** merged into `main` and activated in production on 2026-07-12
 
 **Progress summary (2026-07-12):** H-01A, H-04/H-05 and H-07 are implemented,
-CI-green and activated. The remaining Wave 2 scope is H-06 and H-01B.
+CI-green and activated. H-01B is operationally complete; H-06 is implemented
+locally and pending CI/production activation.
 
 ## Scope
 
@@ -102,12 +103,12 @@ person ID.
 
 ## H-01B — retained-CNP database protection
 
-Raw CNP remains in PostgreSQL by explicit business decision. H-01B is therefore a protection and access-control phase, not a deletion phase. The expand/backfill/runtime-query implementation is complete locally; production reconciliation and the least-privilege role contract remain:
+Raw CNP remains in PostgreSQL by explicit business decision. H-01B is therefore a protection and access-control phase, not a deletion phase. The complete boundary is active in production:
 
 - [x] introduce durable `salary_private.people` plus persisted public-safe IDs;
 - [x] make ordinary runtime repositories independent of raw-CNP columns;
 - [x] restrict private writes to the approved offline importer/backfill path;
-- [ ] activate the dedicated least-privilege runtime role in production;
+- [x] activate the dedicated least-privilege runtime role in production;
 - add audited access paths and least-privilege grants;
 - strengthen encrypted backups, recovery and incident procedures;
 - preserve the original CNP columns and values;

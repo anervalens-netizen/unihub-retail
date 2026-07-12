@@ -55,19 +55,13 @@ def _validated_numeric_date(value: object) -> int | None:
         return None
 
 
-async def require_auth(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> AuthClaims:
-    secret = os.getenv("HUB_INTERNAL_SECRET", "")
-    supplied = request.headers.get("X-Hub-Internal", "")
-    if secret and _hub_secret_matches(supplied, secret) and request.client and request.client.host in ("127.0.0.1", "::1"):
-        return AuthClaims("hub-service", "hub@unihub.ro", "hub-service", ["unihub-admin"], "hub-internal", "internal", 0, 0, {})
-    if credentials is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing Authorization header", headers={"WWW-Authenticate": "Bearer"})
+async def verify_oidc_token(token: str, *, nonce: str | None = None) -> AuthClaims:
     try:
         verifier = get_oidc_verifier()
-        header = jwt.get_unverified_header(credentials.credentials)
+        header = jwt.get_unverified_header(token)
         key = await verifier.signing_key(header)
         options: Options = {"verify_exp": True, "verify_iss": True, "verify_aud": True, "require": ["exp", "iat", "iss", "aud", "sub"]}
-        payload = jwt.decode(credentials.credentials, key.key, algorithms=["RS256"], issuer=verifier.settings.issuer, audience=verifier.settings.audience, leeway=verifier.settings.clock_skew_seconds, options=options)
+        payload = jwt.decode(token, key.key, algorithms=["RS256"], issuer=verifier.settings.issuer, audience=verifier.settings.audience, leeway=verifier.settings.clock_skew_seconds, options=options)
     except HTTPException:
         raise
     except (jwt.PyJWTError, TypeError, ValueError, OverflowError):
@@ -78,6 +72,20 @@ async def require_auth(request: Request, credentials: HTTPAuthorizationCredentia
     username = payload.get("preferred_username", "")
     iat, exp = payload.get("iat"), payload.get("exp")
     iat_value, exp_value = _validated_numeric_date(iat), _validated_numeric_date(exp)
-    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and (not isinstance(email, str) or len(email) > 320 or any(char.isspace() or not char.isprintable() for char in email))) or ("preferred_username" in payload and (not isinstance(username, str) or len(username) > 256 or not _valid_text(username))) or iat_value is None or exp_value is None:
+    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and (not isinstance(email, str) or len(email) > 320 or any(char.isspace() or not char.isprintable() for char in email))) or ("preferred_username" in payload and (not isinstance(username, str) or len(username) > 256 or not _valid_text(username))) or iat_value is None or exp_value is None or (nonce is not None and payload.get("nonce") != nonce):
         raise _unauthorized()
     return AuthClaims(sub, email, username, groups, verifier.settings.issuer, verifier.settings.audience, iat_value, exp_value, {})
+
+
+async def require_auth(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> AuthClaims:
+    secret = os.getenv("HUB_INTERNAL_SECRET", "")
+    supplied = request.headers.get("X-Hub-Internal", "")
+    if secret and _hub_secret_matches(supplied, secret) and request.client and request.client.host in ("127.0.0.1", "::1"):
+        return AuthClaims("hub-service", "hub@unihub.ro", "hub-service", ["unihub-admin"], "hub-internal", "internal", 0, 0, {})
+    if credentials is not None:
+        return await verify_oidc_token(credentials.credentials)
+    if "__Host-unihub_session" not in request.cookies and "unihub_session_dev" not in request.cookies:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+    from session_auth import authenticate_session
+
+    return await authenticate_session(request)

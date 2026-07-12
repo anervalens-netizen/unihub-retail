@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Literal
+from typing import Literal
 
 import httpx
 import pytest
@@ -107,134 +107,6 @@ def test_request_context_filter_uses_dash_outside_request() -> None:
 
     assert RequestContextFilter().filter(record) is True
     assert getattr(record, "request_id") == "-"
-
-
-def _install_allowing_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ipaddress
-    import rate_limits
-    from rate_limit_settings import PolicySettings, RateLimitSettings
-    from rate_limit_store import RateLimitDecision
-
-    class AllowStore:
-        async def check(self, _key: str, limit: int, _window: int) -> RateLimitDecision:
-            return RateLimitDecision(True, limit - 1, 0, 60)
-
-        async def close(self) -> None:
-            return None
-
-    configured = RateLimitSettings(
-        (ipaddress.ip_network("127.0.0.1/32"),),
-        "none",
-        "redis://localhost",
-        "r" * 43,
-        "closed",
-        {"auth_proxy": PolicySettings(120, 60)},
-    )
-    monkeypatch.setattr(rate_limits, "_store", AllowStore())
-    monkeypatch.setattr(rate_limits, "_settings", configured)
-
-
-@pytest.mark.anyio
-async def test_auth_proxy_forwards_request_id_to_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
-    from main import app
-
-    _install_allowing_rate_limiter(monkeypatch)
-
-    monkeypatch.setenv("OIDC_CLIENT_SECRET", "super-secret")
-    real_async_client = httpx.AsyncClient
-
-    captured: dict[str, Any] = {}
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok":true}'
-        headers = {"content-type": "application/json"}
-        is_redirect = False
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs) -> None:
-            captured["client_kwargs"] = kwargs
-
-        async def __aenter__(self) -> "FakeAsyncClient":
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        async def request(self, method, url, params=None, headers=None, content=None):
-            captured["method"] = method
-            captured["url"] = url
-            captured["params"] = params
-            captured["headers"] = dict(headers or {})
-            captured["content"] = content
-            return FakeResponse()
-
-    monkeypatch.setattr("main.httpx.AsyncClient", FakeAsyncClient)
-
-    transport = httpx.ASGITransport(app=app)
-    async with real_async_client(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/auth/proxy/application/o/token/",
-            headers={"X-Request-ID": "retail-req-777"},
-            content="grant_type=client_credentials",
-        )
-
-    assert response.status_code == 200
-    assert response.headers["x-request-id"] == "retail-req-777"
-    assert captured["headers"]["X-Request-ID"] == "retail-req-777"
-    assert b"client_secret=super-secret" in captured["content"]
-
-
-@pytest.mark.anyio
-async def test_auth_proxy_rewrites_discovery_json_without_touching_authorization(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from main import app
-
-    _install_allowing_rate_limiter(monkeypatch)
-
-    real_async_client = httpx.AsyncClient
-
-    class FakeResponse:
-        status_code = 200
-        content = (
-            b'{'
-            b'"issuer":"https://auth.unihub.ro/application/o/unihub-retail/",'
-            b'"authorization_endpoint":"https://auth.unihub.ro/application/o/authorize/",'
-            b'"token_endpoint":"https://auth.unihub.ro/application/o/token/",'
-            b'"userinfo_endpoint":"https://auth.unihub.ro/application/o/userinfo/"'
-            b'}'
-        )
-        headers = {"content-type": "application/json"}
-        is_redirect = False
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs) -> None:
-            pass
-
-        async def __aenter__(self) -> "FakeAsyncClient":
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        async def request(self, method, url, params=None, headers=None, content=None):
-            return FakeResponse()
-
-    monkeypatch.setattr("main.httpx.AsyncClient", FakeAsyncClient)
-
-    transport = httpx.ASGITransport(app=app)
-    async with real_async_client(transport=transport, base_url="https://retail.unihub.ro") as client:
-        response = await client.get(
-            "/auth/proxy/application/o/unihub-retail/.well-known/openid-configuration",
-            headers={"Origin": "https://retail.unihub.ro"},
-        )
-
-    payload = response.json()
-    assert response.status_code == 200
-    assert payload["token_endpoint"] == "https://retail.unihub.ro/auth/proxy/application/o/token/"
-    assert payload["userinfo_endpoint"] == "https://retail.unihub.ro/auth/proxy/application/o/userinfo/"
-    assert payload["authorization_endpoint"] == "https://auth.unihub.ro/application/o/authorize/"
 
 
 @pytest.mark.anyio

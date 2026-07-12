@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { client, setAccessTokenProvider, setUnauthorizedHandler } from './client';
+import { client, setCsrfTokenProvider, setUnauthorizedHandler } from './client';
 
 const mockFetch = vi.fn();
 type FetchCall = [string, { method: string; headers: Record<string, string>; body?: BodyInit | string }];
@@ -7,7 +7,7 @@ type FetchCall = [string, { method: string; headers: Record<string, string>; bod
 beforeEach(() => {
   mockFetch.mockReset();
   vi.stubGlobal('fetch', mockFetch);
-  setAccessTokenProvider(null);
+  setCsrfTokenProvider(null);
   setUnauthorizedHandler(null);
 });
 
@@ -57,16 +57,15 @@ describe('client.get', () => {
     expect(url).not.toContain('rm');
   });
 
-  it('injects Authorization header when token provider is set', async () => {
-    setAccessTokenProvider(() => 'test-token-123');
+  it('uses same-origin credentials without an Authorization header', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({}));
     await client.get('/api/data');
     const [, opts] = fetchCall();
-    expect(opts.headers.Authorization).toBe('Bearer test-token-123');
+    expect(opts.headers.Authorization).toBeUndefined();
+    expect((opts as RequestInit).credentials).toBe('same-origin');
   });
 
-  it('preserves an explicit Authorization header over a stale provider token', async () => {
-    setAccessTokenProvider(() => 'stale-provider-token');
+  it('preserves an explicit integration Authorization header', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({}));
 
     await client.get('/api/data', {
@@ -75,13 +74,6 @@ describe('client.get', () => {
 
     const [, opts] = fetchCall();
     expect(opts.headers.Authorization).toBe('Bearer current-session-token');
-  });
-
-  it('does not include Authorization when no token provider', async () => {
-    mockFetch.mockResolvedValueOnce(okResponse({}));
-    await client.get('/api/data');
-    const [, opts] = fetchCall();
-    expect(opts.headers.Authorization).toBeUndefined();
   });
 
   it('throws on non-ok response', async () => {
@@ -98,16 +90,19 @@ describe('client.get', () => {
 
 describe('client.post', () => {
   it('sends JSON body', async () => {
+    setCsrfTokenProvider(() => 'synthetic-csrf-token');
     mockFetch.mockResolvedValueOnce(okResponse({ id: 1 }));
     const { data } = await client.post('/api/items', { name: 'test' });
     const [url, opts] = latestFetchCall();
     expect(url).toBe('/api/items');
     expect(opts.method).toBe('POST');
     expect(opts.body).toBe(JSON.stringify({ name: 'test' }));
+    expect(opts.headers['X-CSRF-Token']).toBe('synthetic-csrf-token');
     expect(data).toEqual({ id: 1 });
   });
 
   it('handles FormData by not forcing Content-Type', async () => {
+    setCsrfTokenProvider(() => 'synthetic-csrf-token');
     const fd = new FormData();
     fd.append('file', 'content');
     mockFetch.mockResolvedValueOnce(okResponse({ ok: true }));
@@ -115,6 +110,7 @@ describe('client.post', () => {
     const [, opts] = latestFetchCall();
     expect(opts.body).toBe(fd);
     expect(opts.headers['Content-Type']).toBeUndefined();
+    expect(opts.headers['X-CSRF-Token']).toBe('synthetic-csrf-token');
   });
 });
 

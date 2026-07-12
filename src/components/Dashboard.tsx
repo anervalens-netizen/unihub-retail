@@ -546,7 +546,7 @@ export function aggregateDashboardDetails(
 
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
   const { user } = useAuth();
-  const canViewSalaries = canAccessSalaries(user?.profile, user?.access_token);
+  const canViewSalaries = canAccessSalaries(user?.profile);
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
   const [currentMode, setCurrentMode] = useState<'overview' | 'forecast'>('overview');
   const [historyMonth, setHistoryMonth] = useState(currentMonth);

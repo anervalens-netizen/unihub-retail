@@ -48,7 +48,6 @@ export function usePnlCapability(
   isAuthenticated: boolean,
   verifiedSubject: string | undefined,
   hasManagementAccess: boolean,
-  accessToken: string | undefined,
 ): PnlCapabilityState {
   const validSubject = typeof verifiedSubject === 'string' && verifiedSubject.trim()
     ? verifiedSubject
@@ -58,7 +57,7 @@ export function usePnlCapability(
     pnlCapabilityQueryOptions(
       validSubject,
       permissionEnabled,
-      () => getPnlPermissions(accessToken),
+      () => getPnlPermissions(),
     ),
   );
   return pnlCapabilityState(hasManagementAccess, permissionEnabled, query);

@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import pathlib
 import time
-import json
 from contextlib import asynccontextmanager
 import logging
 
@@ -15,17 +14,15 @@ from logging_config import attach_db_error_handler, detach_db_error_handler, set
 setup_logging()
 
 
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-import httpx
 
 import sentry_sdk
 from request_context import (
     REQUEST_ID_HEADER,
     RequestContextMiddleware,
     bind_request_id,
-    get_request_id,
     normalize_request_id,
     reset_request_id,
 )
@@ -58,11 +55,13 @@ from permissions import (
     require_report_export_access,
     require_salary_access,
 )
-from rate_limits import (
-    AUTH_PROXY_LIMIT,
-    anonymous_rate_limit,
-    close_rate_limit_runtime,
-    init_rate_limit_runtime,
+from rate_limits import close_rate_limit_runtime, init_rate_limit_runtime
+from session_auth import (
+    callback_router as session_callback_router,
+    close_session_runtime,
+    init_session_runtime,
+    router as session_router,
+    verify_session_runtime_ready,
 )
 from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
@@ -71,7 +70,6 @@ from services.visits_sync import sync_visits_snapshot
 from services.jobs import close_arq_pool, get_arq_pool
 
 logger = logging.getLogger(__name__)
-AUTH_PROXY_BASE_URL = os.getenv("AUTH_PROXY_BASE_URL", "https://auth.unihub.ro").rstrip("/")
 
 HTTP_REQUESTS_TOTAL = Counter(
     "http_requests_total",
@@ -90,6 +88,7 @@ async def lifespan(_: FastAPI):
     validate_required_env_vars()
     try:
         await init_oidc_runtime()
+        await init_session_runtime()
         await init_rate_limit_runtime()
         await init_db_pool()
         current_pool = await get_pool()
@@ -120,7 +119,10 @@ async def lifespan(_: FastAPI):
                     try:
                         await close_rate_limit_runtime()
                     finally:
-                        await close_oidc_runtime()
+                        try:
+                            await close_session_runtime()
+                        finally:
+                            await close_oidc_runtime()
 
 
 app = FastAPI(title="UniHub API", lifespan=lifespan)
@@ -193,7 +195,7 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "sentry-trace", "baggage", REQUEST_ID_HEADER],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "Accept", "sentry-trace", "baggage", REQUEST_ID_HEADER],
     expose_headers=[REQUEST_ID_HEADER],
 )
 app.add_middleware(RequestContextMiddleware)
@@ -219,6 +221,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 _auth = [Depends(require_auth)]
+
+app.include_router(session_router)
+app.include_router(session_callback_router)
 
 app.include_router(agents.router, dependencies=_auth)
 app.include_router(ai_forecast.router, dependencies=_auth)
@@ -253,6 +258,7 @@ async def health() -> JSONResponse:
         current_pool = await get_pool()
         async with current_pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
+        await verify_session_runtime_ready()
     except Exception:  # noqa: BLE001 — orice exceptie = unhealthy
         # Log complet pentru diagnoza, dar raspunsul HTTP nu expune detalii
         # (connection string-uri / path-uri pot ajunge la load balancer).
@@ -270,83 +276,6 @@ async def metrics() -> Response:
     return Response(
         content=generate_latest(REGISTRY),
         media_type="text/plain; version=0.0.4",
-    )
-
-
-@app.api_route(
-    "/auth/proxy/{path:path}",
-    methods=["GET", "POST"],
-    dependencies=[Depends(anonymous_rate_limit(AUTH_PROXY_LIMIT))],
-)
-async def auth_proxy(path: str, request: Request) -> Response:
-    """Proxy requests to authentik.
-
-    For token endpoint requests, injects the client_secret (confidential
-    client) since SPAs cannot safely store secrets.
-    """
-    target = f"{AUTH_PROXY_BASE_URL}/{path}"
-    params = dict(request.query_params)
-    headers = {k: v for k, v in request.headers.items()
-               if k.lower() not in ("host", "origin", "referer")}
-    headers[REQUEST_ID_HEADER] = get_request_id() or normalize_request_id(request.headers.get(REQUEST_ID_HEADER))
-    body = await request.body()
-
-    # Inject client_secret for token endpoint (confidential client)
-    if path == "application/o/token/" and request.method == "POST":
-        from urllib.parse import parse_qs, urlencode
-        body_str = body.decode("utf-8")
-        body_params = parse_qs(body_str)
-        client_secret = os.getenv("OIDC_CLIENT_SECRET") or os.getenv("AUTHENTIK_CLIENT_SECRET")
-        if not client_secret:
-            logger.error("OIDC client secret is not configured")
-            raise HTTPException(status_code=500, detail="OIDC proxy is not configured")
-        body_params["client_secret"] = [client_secret]
-        body = urlencode(body_params, doseq=True).encode("utf-8")
-        headers["content-type"] = "application/x-www-form-urlencoded"
-        headers["content-length"] = str(len(body))
-
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
-        resp = await client.request(
-            method=request.method,
-            url=target,
-            params=params if params else None,
-            headers=headers,
-            content=body if body else None,
-        )
-    content = resp.content
-    # Rewrite discovery response to route API calls through the proxy
-    # (token/userinfo/etc — avoids CORS + injects client_secret)
-    if path.endswith("/.well-known/openid-configuration"):
-        origin = request.headers.get("origin")
-        if not origin:
-            host = request.headers.get("host", request.url.netloc)
-            # CloudFlare forwards internally over HTTP — always use HTTPS for public URLs
-            scheme = "http" if host.startswith("localhost") or host.startswith("127.") else "https"
-            origin = f"{scheme}://{host}"
-        try:
-            discovery = json.loads(content.decode("utf-8"))
-        except json.JSONDecodeError:
-            logger.warning("OIDC discovery response is not valid JSON")
-        else:
-            for endpoint_key in ("token_endpoint", "userinfo_endpoint"):
-                endpoint = discovery.get(endpoint_key)
-                if isinstance(endpoint, str) and endpoint.startswith(AUTH_PROXY_BASE_URL):
-                    proxied_path = endpoint.removeprefix(AUTH_PROXY_BASE_URL).lstrip("/")
-                    discovery[endpoint_key] = f"{origin}/auth/proxy/{proxied_path}"
-            # Do NOT rewrite authorization_endpoint — browser must redirect there directly.
-            content = json.dumps(discovery).encode("utf-8")
-    response_headers = {
-        k: v for k, v in resp.headers.items()
-        if k.lower() not in ("transfer-encoding", "content-encoding", "content-length")
-    }
-    if resp.is_redirect and "location" in resp.headers:
-        response_headers["location"] = resp.headers["location"]
-    else:
-        response_headers["content-type"] = resp.headers.get("content-type", "application/json")
-    return Response(
-        content=content,
-        status_code=resp.status_code,
-        headers=response_headers,
     )
 
 

@@ -10,20 +10,21 @@ describe('getPnlPermissions', () => {
     await expect(getPnlPermissions()).resolves.toEqual({ can_view });
   });
 
-  it('uses the explicitly supplied token during the auth bootstrap race', async () => {
+  it('uses the server session without exposing an Authorization token', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ can_view: true }), { status: 200 }),
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(getPnlPermissions('bootstrap-access-token')).resolves.toEqual({ can_view: true });
+    await expect(getPnlPermissions()).resolves.toEqual({ can_view: true });
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/store-pnl/permissions',
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer bootstrap-access-token' }),
+        credentials: 'same-origin',
       }),
     );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers.Authorization).toBeUndefined();
   });
 
   it('propagates API errors so the caller fails closed', async () => {

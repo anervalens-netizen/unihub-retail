@@ -10,7 +10,11 @@ from config import ConfigError, get_visits_db_path, get_visits_images_dir, valid
 
 @pytest.fixture(autouse=True)
 def _clear_oidc_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE"):
+    for name in (
+        "OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE", "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET", "SESSION_ENCRYPTION_KEY", "SESSION_PUBLIC_ORIGIN",
+        "SESSION_VALKEY_URL", "SESSION_TTL_SECONDS",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -33,6 +37,11 @@ def _set_oidc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RATE_LIMIT_KEY_HMAC_SECRET", "r" * 43)
     monkeypatch.setenv("RATE_LIMIT_FAILURE_MODE", "closed")
     monkeypatch.setenv("RATE_LIMIT_VALKEY_URL", "redis://localhost:6379/15")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "test-audience")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "synthetic-client-secret")
+    monkeypatch.setenv("SESSION_ENCRYPTION_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+    monkeypatch.setenv("SESSION_PUBLIC_ORIGIN", "https://retail.example.invalid")
+    monkeypatch.setenv("SESSION_VALKEY_URL", "redis://localhost:6379/14")
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:

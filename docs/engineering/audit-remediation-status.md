@@ -60,12 +60,11 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 - [x] H-01A Remove CNP from API responses, URLs, frontend state, query keys and ordinary logs.
 - [x] H-04 Typed fail-closed environment/OIDC settings.
 - [x] H-05 JWKS rotation, lock, bounded stale cache and failure metrics.
-- [ ] H-06 BFF/server-side session design and phased implementation.
+- [ ] H-06 BFF/server-side session — implemented locally; CI and production activation pending.
 - [x] H-07 Trusted-proxy-aware distributed rate limiting in application code;
   production proxy/firewall/environment activation remains pending.
-- [ ] H-01B Isolate and protect retained CNP inside PostgreSQL — expand,
-  backfill and runtime-query boundary implemented; production adoption and
-  least-privilege role contract remain.
+- [x] H-01B Isolate and protect retained CNP inside PostgreSQL — durable IDs,
+  private mapping, constraints and least-privilege runtime role are active.
 
 ### Wave 3 — Database lifecycle and jobs
 

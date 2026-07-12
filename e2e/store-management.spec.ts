@@ -12,10 +12,9 @@ test.describe('E2E: Management & Settings', () => {
 
     await page.getByRole('button', { name: 'Management' }).first().click();
 
-    await expect(page.getByRole('button', { name: /Echipă/i })).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: /Magazine/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Tasks/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /HR/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Manageri' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: 'Calculator Target' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Salarii' })).toBeVisible();
   });
 
   test('navigates to Setari tab and shows import section', async ({ page }) => {

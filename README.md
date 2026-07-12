@@ -343,7 +343,10 @@ Cardul superior cu parametrii de calcul este ascuns integral pentru ceilalti
 manageri; acestia vad documentul calculat, completeaza `Final manager` si au
 ca actiune operationala numai `Salveaza acum`.
 
-Modelul curent de securitate este Authentik OIDC cu RBAC backend centralizat.
+Modelul curent de securitate este Authentik OIDC cu BFF, sesiune criptata in
+Valkey, cookie HttpOnly si RBAC backend centralizat. Browserul nu stocheaza si
+nu transmite tokenuri OIDC; requesturile de scriere necesita si tokenul CSRF
+al sesiunii.
 Management, salariile, importurile si actiunile privilegiate au politici
 server-side dedicate; autorizarea privilegiata nu foloseste adrese email.
 Contractele publice Salarii expun numai `person_id`, niciodata CNP.
@@ -635,7 +638,8 @@ Reguli de filtrare pentru dashboard:
 
 ## Autentificare
 
-Authentik OIDC este singura sursa de identity. Backend-ul valideaza tokenurile
+Authentik OIDC este singura sursa de identitate. Backend-ul termina fluxul
+Authorization Code + PKCE, valideaza tokenurile
 RS256 prin JWKS; nu exista utilizatori locali, parole implicite sau secret JWT
 HMAC al aplicatiei.
 

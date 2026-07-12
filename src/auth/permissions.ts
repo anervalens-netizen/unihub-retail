@@ -1,5 +1,3 @@
-import { parseClaims } from '@unihub/auth-client';
-
 const SALARY_ACCESS_GROUPS = new Set([
   'authentik admins',
   'unihub-admin',
@@ -29,19 +27,10 @@ function stringGroups(value: unknown): string[] {
 
 export function oidcGroups(
   profile: unknown,
-  accessToken?: string,
 ): string[] {
   if (profile && typeof profile === 'object') {
     const groups = stringGroups((profile as Record<string, unknown>).groups);
     if (groups.length > 0) return groups;
-  }
-
-  if (accessToken) {
-    try {
-      return stringGroups(parseClaims(accessToken).groups);
-    } catch {
-      return [];
-    }
   }
 
   return [];
@@ -49,36 +38,32 @@ export function oidcGroups(
 
 export function canAccessSalaries(
   profile: unknown,
-  accessToken?: string,
 ): boolean {
-  return oidcGroups(profile, accessToken).some((group) =>
+  return oidcGroups(profile).some((group) =>
     SALARY_ACCESS_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
   );
 }
 
 export function canAdministerImports(
   profile: unknown,
-  accessToken?: string,
 ): boolean {
-  return oidcGroups(profile, accessToken).some((group) =>
+  return oidcGroups(profile).some((group) =>
     ADMIN_ACCESS_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
   );
 }
 
 export function canAccessManagement(
   profile: unknown,
-  accessToken?: string,
 ): boolean {
-  return oidcGroups(profile, accessToken).some((group) =>
+  return oidcGroups(profile).some((group) =>
     MANAGEMENT_ACCESS_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
   );
 }
 
 export function canWriteBusinessData(
   profile: unknown,
-  accessToken?: string,
 ): boolean {
-  return oidcGroups(profile, accessToken).some((group) =>
+  return oidcGroups(profile).some((group) =>
     BUSINESS_WRITE_GROUPS.has(group.trim().toLocaleLowerCase('en-US')),
   );
 }
