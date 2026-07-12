@@ -1,0 +1,20 @@
+[Unit]
+Description=UniHub Retail database migration runner
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=andrei
+WorkingDirectory=/opt/Mobiup/unihub-retail/backend
+EnvironmentFile=/opt/Mobiup/unihub-retail/.env
+ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python scripts/run_migrations.py
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=unihub-retail-migrate
+ProtectSystem=strict
+ReadWritePaths=/opt/Mobiup
+ProtectHome=read-only
+NoNewPrivileges=true
+PrivateTmp=true

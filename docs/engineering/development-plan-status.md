@@ -16,7 +16,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-07 distributed rate limiting | Merged and active in production | Ongoing metrics and alert monitoring |
 | H-06 BFF/server-side session | Not implemented | Design decision, phased implementation and migration |
 | H-01B retained-CNP protection | Not implemented | Dedicated storage boundary, least privilege, audit and recovery controls |
-| H-02 migration lifecycle | Not implemented | Immutable checksums, advisory lock, migration runner, remove web-startup DDL |
+| H-02 migration lifecycle | Implemented locally; production adoption pending | CI, merge, checksum backfill runner, read-only web startup verification |
 | Performance/modularization | Partially implemented | Measured baselines, remaining backend boundaries and frontend splits |
 | CI/CD and operations | Partially implemented | Required E2E/a11y/security gates, readiness, SLOs, alerts and service hardening |
 

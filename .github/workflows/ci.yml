@@ -37,6 +37,10 @@ jobs:
           cat mypy-report.txt
           exit $status
 
+      - name: Immutable migration manifest
+        run: |
+          venv/bin/python -c "from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())"
+
       - name: Upload mypy diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -59,6 +63,7 @@ jobs:
             --cov=rate_limit_settings \
             --cov=rate_limit_store \
             --cov=rate_limits \
+            --cov=db.migration_runner \
             --cov=permissions \
             --cov=services.exports \
             --cov=services.grile_monthly \

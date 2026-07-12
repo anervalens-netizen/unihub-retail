@@ -44,13 +44,12 @@ from prometheus_client import REGISTRY, Counter, Histogram, generate_latest
 
 from config import validate_required_env_vars
 from db.connection import (
-    apply_pending_migrations,
     close_db_pool,
-    ensure_schema_current,
     get_pool,
     init_db_pool,
     prewarm_pool,
 )
+from db.migration_runner import verify_migrations_current
 from auth import require_auth
 from oidc_verifier import close_oidc_runtime, init_oidc_runtime
 from permissions import (
@@ -95,13 +94,8 @@ async def lifespan(_: FastAPI):
         await init_db_pool()
         current_pool = await get_pool()
         attach_db_error_handler(current_pool)
-        schema_applied = await ensure_schema_current()
-        logger.info("Database schema %s", "applied" if schema_applied else "already current")
-        migrations = await apply_pending_migrations()
-        if migrations:
-            logger.info("Applied %d migrations: %s", len(migrations), ", ".join(migrations))
-        else:
-            logger.info("No pending migrations")
+        await verify_migrations_current(current_pool)
+        logger.info("Database migrations verified current (read-only)")
         await prewarm_pool()
         current_pool = await get_pool()
         async with current_pool.acquire() as conn:

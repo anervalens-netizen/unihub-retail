@@ -6,6 +6,7 @@
   "rate_limit_settings.py": 95,
   "rate_limit_store.py": 95,
   "rate_limits.py": 95,
+  "db/migration_runner.py": 100,
   "permissions.py": 100,
   "services/exports.py": 95,
   "services/grile_monthly.py": 98,

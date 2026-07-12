@@ -67,9 +67,9 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 
 ### Wave 3 — Database lifecycle and jobs
 
-- [ ] H-02 Freeze bootstrap baseline and introduce immutable migration checksums.
-- [ ] H-02 Add advisory lock and separate migration runner.
-- [ ] Remove schema mutation from web startup.
+- [x] H-02 Freeze bootstrap baseline and introduce immutable migration checksums — implemented locally, production adoption pending CI/merge.
+- [x] H-02 Add advisory lock and separate migration runner — implemented locally, production adoption pending CI/merge.
+- [x] Remove schema mutation from web startup — implemented locally, production adoption pending CI/merge.
 - [ ] Split worker queues and service units by workload class.
 - [ ] Stage upload files outside Valkey and enqueue references plus hashes.
 - [ ] Add persistent job state, heartbeat, retry and reconciliation.

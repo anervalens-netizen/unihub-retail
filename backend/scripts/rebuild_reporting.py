@@ -9,7 +9,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from db.connection import close_db_pool, ensure_schema_current, get_pool, init_db_pool
+from db.connection import close_db_pool, get_pool, init_db_pool
+from db.migration_runner import verify_migrations_current
 from services.reporting_refresh import rebuild_reporting_all
 
 
@@ -26,7 +27,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     await init_db_pool()
-    await ensure_schema_current()
+    await verify_migrations_current(await get_pool())
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():

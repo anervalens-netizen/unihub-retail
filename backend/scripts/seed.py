@@ -10,7 +10,8 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from bootstrap import ensure_tl_users_and_assignments
-from db.connection import close_db_pool, ensure_schema_current, get_pool, init_db_pool
+from db.connection import close_db_pool, get_pool, init_db_pool
+from db.migration_runner import verify_migrations_current
 from services.importer import (
     detect_month,
     import_sales_dataframe,
@@ -65,7 +66,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     await init_db_pool()
-    await ensure_schema_current()
+    await verify_migrations_current(await get_pool())
     pool = await get_pool()
 
     sales_files, target_files, focus_files = resolve_input_files(args.input_path)
