@@ -123,11 +123,11 @@ function makeJsonHeaders(data: unknown, headers?: Record<string, string>): Recor
 export const client = {
   get: async <T = unknown>(
     url: string,
-    options?: Omit<RequestOptions, 'headers'>,
+    options?: RequestOptions,
   ): Promise<{ data: T }> => {
     const response = await fetch(buildUrl(url, options?.params), {
       method: 'GET',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', ...options?.headers }),
     });
 
     await handleResponse(response);

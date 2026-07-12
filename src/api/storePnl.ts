@@ -43,8 +43,11 @@ export interface PnlPermissions {
   can_view: boolean;
 }
 
-export async function getPnlPermissions(): Promise<PnlPermissions> {
-  const { data } = await client.get<PnlPermissions>("/api/store-pnl/permissions");
+export async function getPnlPermissions(accessToken?: string): Promise<PnlPermissions> {
+  const { data } = await client.get<PnlPermissions>(
+    "/api/store-pnl/permissions",
+    accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : undefined,
+  );
   if (
     !data
     || typeof data !== "object"
