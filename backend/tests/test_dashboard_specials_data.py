@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -60,6 +61,11 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
     pool = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+    shared_summary = PromoIncentiveSummary(
+        incentive_qty=4,
+        incentive_value=Decimal("40"),
+    )
+    summary_task = asyncio.create_task(asyncio.sleep(0, result=shared_summary))
 
     with (
         patch(
@@ -79,11 +85,7 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
         patch(
             "services.dashboard.specials_data._fetch_promo_incentive_summary",
             new_callable=AsyncMock,
-            return_value=PromoIncentiveSummary(
-                incentive_qty=4,
-                incentive_value=Decimal("40"),
-            ),
-        ),
+        ) as mock_fetch_summary,
     ):
         cards = await _get_special_cards_data(
             "2026-05",
@@ -93,11 +95,13 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
             None,
             None,
             campaign_context=context,
+            promo_incentive_summary=summary_task,
         )
 
     assert [card.key for card in cards] == ["incentive"]
     assert cards[0].highlight_value == "40 RON"
     mock_load_context.assert_not_awaited()
+    mock_fetch_summary.assert_not_awaited()
     conn.fetch.assert_awaited_once()
     sql = conn.fetch.await_args.args[0]
     assert "WITH filtered AS MATERIALIZED" in sql

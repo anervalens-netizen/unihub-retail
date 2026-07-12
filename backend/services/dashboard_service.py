@@ -990,6 +990,13 @@ class DashboardService:
                     campaign_context=campaign_context,
                 )
 
+        promo_incentive_task = asyncio.create_task(
+            observe_dashboard_component(
+                "promo_incentive",
+                get_promo_incentive_data(),
+            )
+        )
+
         async def get_special_cards_data() -> list[DashboardSpecialCard]:
             campaign_context = await campaign_context_task
             return await _get_special_cards_data(
@@ -1000,6 +1007,7 @@ class DashboardService:
                 site_code,
                 agent,
                 campaign_context=campaign_context,
+                promo_incentive_summary=promo_incentive_task,
             )
 
         async def get_premium_glass_data() -> PremiumGlassAnalysis:
@@ -1072,9 +1080,7 @@ class DashboardService:
                 "focus_subcategory_mix", get_focus_subcategory_mix_data()
             ),
             brand_mix=observe_dashboard_component("brand_mix", get_brand_mix_data()),
-            promo_incentive=observe_dashboard_component(
-                "promo_incentive", get_promo_incentive_data()
-            ),
+            promo_incentive=promo_incentive_task,
             regionals=observe_dashboard_component("regionals", get_regional_data()),
             asms=observe_dashboard_component("asms", get_asm_data()),
             special_cards=observe_dashboard_component("special_cards", get_special_cards_data()),
