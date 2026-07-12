@@ -49,7 +49,16 @@ function buildUrl(url: string, params?: QueryParams): string {
   return fullUrl;
 }
 
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  const normalizedName = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === normalizedName);
+}
+
 function getAuthHeaders(existingHeaders: Record<string, string> = {}): Record<string, string> {
+  if (hasHeader(existingHeaders, 'authorization')) {
+    return existingHeaders;
+  }
+
   const token = getAccessTokenFn?.();
   if (token) {
     return { ...existingHeaders, Authorization: `Bearer ${token}` };
