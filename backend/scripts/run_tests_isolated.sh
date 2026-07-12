@@ -7,10 +7,12 @@ PYTHON="${BACKEND_DIR}/venv/bin/python"
 PYTEST="${BACKEND_DIR}/venv/bin/pytest"
 STAMP="${GITHUB_RUN_ID:-local}-$(date +%s)-$$"
 CONTAINER="unihub-retail-test-${STAMP}"
+VALKEY_CONTAINER="unihub-retail-valkey-test-${STAMP}"
 VISITS_TEST_DIR=""
 
 cleanup() {
   timeout 30 docker rm -f -v "${CONTAINER}" >/dev/null 2>&1 || true
+  timeout 30 docker rm -f -v "${VALKEY_CONTAINER}" >/dev/null 2>&1 || true
   if [[ -n "${VISITS_TEST_DIR}" ]]; then
     rm -rf "${VISITS_TEST_DIR}"
   fi
@@ -32,10 +34,21 @@ docker run -d \
   -p 127.0.0.1::5432 \
   postgres:18-alpine >/dev/null
 
+docker run -d \
+  --name "${VALKEY_CONTAINER}" \
+  --label unihub.test=retail \
+  -p 127.0.0.1::6379 \
+  valkey/valkey:8.1.7-alpine >/dev/null
+
 port="$(
   docker inspect \
     --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' \
     "${CONTAINER}"
+)"
+valkey_port="$(
+  docker inspect \
+    --format '{{(index (index .NetworkSettings.Ports "6379/tcp") 0).HostPort}}' \
+    "${VALKEY_CONTAINER}"
 )"
 
 for _ in $(seq 1 60); do
@@ -46,8 +59,16 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 docker exec "${CONTAINER}" pg_isready -U unihub_test -d unihub_test >/dev/null
+for _ in $(seq 1 60); do
+  if docker exec "${VALKEY_CONTAINER}" valkey-cli ping >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+docker exec "${VALKEY_CONTAINER}" valkey-cli ping >/dev/null
 
 export DATABASE_URL="postgresql://unihub_test:${password}@127.0.0.1:${port}/unihub_test"
+export RATE_LIMIT_TEST_VALKEY_URL="redis://127.0.0.1:${valkey_port}/15"
 export UNIHUB_RUNNING_TESTS=1
 export UNIHUB_TEST_DATABASE=1
 export SENTRY_DSN=

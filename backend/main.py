@@ -52,13 +52,19 @@ from db.connection import (
     prewarm_pool,
 )
 from auth import require_auth
+from oidc_verifier import close_oidc_runtime, init_oidc_runtime
 from permissions import (
     require_import_admin,
     require_management_access,
     require_report_export_access,
     require_salary_access,
 )
-from rate_limits import AUTH_PROXY_LIMIT, anonymous_rate_limit
+from rate_limits import (
+    AUTH_PROXY_LIMIT,
+    anonymous_rate_limit,
+    close_rate_limit_runtime,
+    init_rate_limit_runtime,
+)
 from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
@@ -83,8 +89,10 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_required_env_vars()
-    await init_db_pool()
     try:
+        await init_oidc_runtime()
+        await init_rate_limit_runtime()
+        await init_db_pool()
         current_pool = await get_pool()
         attach_db_error_handler(current_pool)
         schema_applied = await ensure_schema_current()
@@ -112,7 +120,13 @@ async def lifespan(_: FastAPI):
             try:
                 await detach_db_error_handler()
             finally:
-                await close_db_pool()
+                try:
+                    await close_db_pool()
+                finally:
+                    try:
+                        await close_rate_limit_runtime()
+                    finally:
+                        await close_oidc_runtime()
 
 
 app = FastAPI(title="UniHub API", lifespan=lifespan)

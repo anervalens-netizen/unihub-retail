@@ -19,6 +19,16 @@ jobs:
           python3 -m venv venv
           venv/bin/pip install --disable-pip-version-check --quiet -r requirements.txt -r requirements-dev.txt
 
+      - name: Runtime dependency smoke
+        run: |
+          runtime_root="$(mktemp -d)"
+          trap 'rm -rf "$runtime_root"' EXIT
+          runtime_venv="$runtime_root/venv"
+          python3 -m venv "$runtime_venv"
+          "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet -r requirements.txt
+          "$runtime_venv/bin/pip" check
+          "$runtime_venv/bin/python" -c "import auth; import main; import worker"
+
       - name: Python typecheck
         run: |
           set +e
@@ -42,6 +52,13 @@ jobs:
           scripts/run_tests_isolated.sh \
             -v \
             --tb=short \
+            --cov=auth \
+            --cov=oidc_settings \
+            --cov=oidc_verifier \
+            --cov=client_ip \
+            --cov=rate_limit_settings \
+            --cov=rate_limit_store \
+            --cov=rate_limits \
             --cov=permissions \
             --cov=services.exports \
             --cov=services.grile_monthly \

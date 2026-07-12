@@ -109,9 +109,36 @@ def test_request_context_filter_uses_dash_outside_request() -> None:
     assert getattr(record, "request_id") == "-"
 
 
+def _install_allowing_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    import ipaddress
+    import rate_limits
+    from rate_limit_settings import PolicySettings, RateLimitSettings
+    from rate_limit_store import RateLimitDecision
+
+    class AllowStore:
+        async def check(self, _key: str, limit: int, _window: int) -> RateLimitDecision:
+            return RateLimitDecision(True, limit - 1, 0, 60)
+
+        async def close(self) -> None:
+            return None
+
+    configured = RateLimitSettings(
+        (ipaddress.ip_network("127.0.0.1/32"),),
+        "none",
+        "redis://localhost",
+        "r" * 43,
+        "closed",
+        {"auth_proxy": PolicySettings(120, 60)},
+    )
+    monkeypatch.setattr(rate_limits, "_store", AllowStore())
+    monkeypatch.setattr(rate_limits, "_settings", configured)
+
+
 @pytest.mark.anyio
 async def test_auth_proxy_forwards_request_id_to_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
     from main import app
+
+    _install_allowing_rate_limiter(monkeypatch)
 
     monkeypatch.setenv("OIDC_CLIENT_SECRET", "super-secret")
     real_async_client = httpx.AsyncClient
@@ -163,6 +190,8 @@ async def test_auth_proxy_rewrites_discovery_json_without_touching_authorization
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from main import app
+
+    _install_allowing_rate_limiter(monkeypatch)
 
     real_async_client = httpx.AsyncClient
 

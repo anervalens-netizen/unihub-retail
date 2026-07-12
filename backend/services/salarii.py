@@ -1,11 +1,32 @@
 from __future__ import annotations
 
 from repositories.salarii import MIN_SALARY_FOR_AVERAGE, SalariiRepository
+from salary_identity import get_salary_person_id_key, validate_salary_person_id
+from schemas.salarii import (
+    AgentSalaryLinkPublic,
+    SalaryAgentSummaryPublic,
+    SalaryAgentsSummaryResponse,
+    SalaryHistoryRecordPublic,
+    SalaryHistoryResponse,
+    SalaryRecordPublic,
+)
+
+
+class InvalidSalaryPersonId(ValueError):
+    pass
+
+
+class UnknownSalaryPerson(LookupError):
+    pass
 
 
 class SalariiService:
-    def __init__(self, repo: SalariiRepository):
+    def __init__(self, repo: SalariiRepository, person_id_key: str | None = None):
         self.repo = repo
+        self.person_id_key = person_id_key
+
+    def _person_id_key(self) -> str:
+        return self.person_id_key or get_salary_person_id_key()
 
     async def get_overview(
         self,
@@ -82,7 +103,7 @@ class SalariiService:
         limit: int,
         offset: int,
     ) -> dict:
-        return await self.repo.fetch_agents_summary(
+        data = await self.repo.fetch_agents_summary(
             q=q,
             company_name=company_name,
             site_code=site_code,
@@ -92,10 +113,32 @@ class SalariiService:
             month=month,
             limit=limit,
             offset=offset,
+            person_id_key=self._person_id_key(),
         )
+        return SalaryAgentsSummaryResponse(
+            items=[
+                SalaryAgentSummaryPublic(
+                    person_id=row["person_id"], full_name=row["full_name"],
+                    company_name=row["company_name"], locatie=row["locatie"],
+                    month_count=row["month_count"], avg_month_count=row["avg_month_count"],
+                    total_salary=float(row["total_salary"]), avg_salary=float(row["avg_salary"]),
+                )
+                for row in data["items"]
+            ],
+            total=int(data["total"]),
+        ).model_dump()
 
-    async def get_agent_history(self, cnp: str) -> dict:
-        rows = await self.repo.fetch_agent_history(cnp)
+    async def get_agent_history(self, person_id: str) -> dict:
+        try:
+            validated = validate_salary_person_id(person_id)
+        except ValueError as exc:
+            raise InvalidSalaryPersonId from exc
+        rows = await self.repo.fetch_agent_history_by_person_id(
+            validated,
+            self._person_id_key(),
+        )
+        if not rows:
+            raise UnknownSalaryPerson
         return self._format_agent_history(rows)
 
     async def get_agent_history_by_retail_code(
@@ -107,6 +150,7 @@ class SalariiService:
         link = await self.repo.fetch_agent_salary_link(
             agent_code=agent_code,
             site_code=site_code,
+            person_id_key=self._person_id_key(),
         )
         if not link:
             return {
@@ -118,18 +162,22 @@ class SalariiService:
                 "avg_month_count": 0,
             }
 
-        link_payload = {
-            "agent_code": link["agent_code"],
-            "site_code": link["site_code"],
-            "salary_full_name": link["salary_full_name"],
-            "salary_cnp": link["salary_cnp"],
-            "match_status": link["match_status"],
-            "match_source": link["match_source"],
-            "confidence": link["confidence"],
-            "effective_from_month": link["effective_from_month"],
-            "note": link["note"],
-        }
-        if link["match_status"] == "unknown" or not link["salary_full_name"]:
+        is_confirmed_identity = (
+            link["match_status"] == "confirmed"
+            and bool(link["person_id"])
+        )
+        link_payload = AgentSalaryLinkPublic(
+            agent_code=link["agent_code"],
+            site_code=link["site_code"],
+            salary_full_name=link["salary_full_name"],
+            person_id=link["person_id"] if is_confirmed_identity else None,
+            match_status=link["match_status"],
+            match_source=link["match_source"],
+            confidence=link["confidence"],
+            effective_from_month=link["effective_from_month"],
+            note=link["note"],
+        ).model_dump()
+        if not is_confirmed_identity:
             return {
                 "link": link_payload,
                 "records": [],
@@ -140,8 +188,8 @@ class SalariiService:
             }
 
         rows = await self.repo.fetch_agent_history_by_salary_link(
-            salary_full_name=link["salary_full_name"],
-            salary_cnp=link["salary_cnp"],
+            person_id=link_payload["person_id"],
+            person_id_key=self._person_id_key(),
         )
         result = self._format_agent_history(rows)
         result["link"] = link_payload
@@ -149,13 +197,7 @@ class SalariiService:
 
     def _format_agent_history(self, rows) -> dict:
         if not rows:
-            return {
-                "records": [],
-                "total": 0.0,
-                "avg": 0.0,
-                "month_count": 0,
-                "avg_month_count": 0,
-            }
+            return SalaryHistoryResponse(records=[], total=0.0, avg=0.0, month_count=0, avg_month_count=0).model_dump()
         total = sum(float(r["total_salary"]) for r in rows)
         month_count = len({(r["year"], r["month"]) for r in rows})
         monthly_totals: dict[tuple[int, int], float] = {}
@@ -168,13 +210,10 @@ class SalariiService:
             if salary >= MIN_SALARY_FOR_AVERAGE
         ]
         avg = sum(eligible_months) / len(eligible_months) if eligible_months else 0.0
-        return {
-            "records": [dict(r) for r in rows],
-            "total": total,
-            "avg": avg,
-            "month_count": month_count,
-            "avg_month_count": len(eligible_months),
-        }
+        return SalaryHistoryResponse(
+            records=[SalaryHistoryRecordPublic(year=int(r["year"]), month=int(r["month"]), company_name=r["company_name"], total_salary=float(r["total_salary"]), site_code=r["site_code"], locatie=r["locatie"]) for r in rows],
+            total=total, avg=avg, month_count=month_count, avg_month_count=len(eligible_months),
+        ).model_dump()
 
     async def get_summary(
         self,
@@ -276,5 +315,6 @@ class SalariiService:
             site_code=site_code,
             limit=limit,
             offset=offset,
+            person_id_key=self._person_id_key(),
         )
-        return [dict(r) for r in rows]
+        return [SalaryRecordPublic(id=int(r["id"]), year=int(r["year"]), month=int(r["month"]), full_name=r["full_name"], person_id=r["person_id"], total_salary=float(r["total_salary"]), company_name=r["company_name"], site_code=r["site_code"], locatie=r["locatie"]).model_dump() for r in rows]

@@ -8,6 +8,12 @@ import pytest
 from config import ConfigError, get_visits_db_path, get_visits_images_dir, validate_required_env_vars, _is_production
 
 
+@pytest.fixture(autouse=True)
+def _clear_oidc_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_GROUPS", "target-role")
     monkeypatch.setenv("GRILE_FINALIZER_GROUPS", "grile-role")
@@ -16,6 +22,17 @@ def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GRILE_FINALIZER_EMAILS", raising=False)
     monkeypatch.delenv("PNL_OWNER_EMAILS", raising=False)
     monkeypatch.delenv("VITE_PNL_OWNER_EMAILS", raising=False)
+
+
+def _set_oidc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OIDC_ISSUER", "https://issuer.example.invalid/oidc")
+    monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example.invalid/oidc/jwks")
+    monkeypatch.setenv("OIDC_AUDIENCE", "test-audience")
+    monkeypatch.setenv("TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+    monkeypatch.setenv("RATE_LIMIT_CLIENT_IP_HEADER", "none")
+    monkeypatch.setenv("RATE_LIMIT_KEY_HMAC_SECRET", "r" * 43)
+    monkeypatch.setenv("RATE_LIMIT_FAILURE_MODE", "closed")
+    monkeypatch.setenv("RATE_LIMIT_VALKEY_URL", "redis://localhost:6379/15")
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,6 +53,69 @@ def test_config_passes_with_valid_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
     monkeypatch.setenv("UNIHUB_ENV", "development")
     validate_required_env_vars()  # nu ridică
+
+
+def test_salary_person_id_key_required_in_production(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("VISITS_DB_PATH", str(tmp_path / "visits.db"))
+    (tmp_path / "visits.db").touch()
+    _set_privileged_groups(monkeypatch)
+    _set_oidc_settings(monkeypatch)
+    monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
+    with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+        validate_required_env_vars()
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "")
+    with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+        validate_required_env_vars()
+
+
+def test_salary_person_id_key_validation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("VISITS_DB_PATH", str(tmp_path / "visits.db"))
+    (tmp_path / "visits.db").touch()
+    _set_privileged_groups(monkeypatch)
+    _set_oidc_settings(monkeypatch)
+    for value in ("short", " " + "x" * 48, "x" * 48 + "\n"):
+        monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", value)
+        with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+            validate_required_env_vars()
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "x" * 48)
+    validate_required_env_vars()
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_development_allows_absent_or_empty_salary_person_id_key(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    if value is None:
+        monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
+    else:
+        monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", value)
+    validate_required_env_vars()
+
+
+def test_development_rejects_nonempty_invalid_salary_person_id_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "   ")
+    with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+        validate_required_env_vars()
+
+
+def test_development_allows_valid_salary_person_id_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "x" * 48)
+    validate_required_env_vars()
+
+
+def test_env_example_empty_salary_key_loads_in_development(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "")
+    validate_required_env_vars()
 
 
 def test_config_rejects_missing_database_url(monkeypatch: pytest.MonkeyPatch) -> None:

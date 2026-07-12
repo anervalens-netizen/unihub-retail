@@ -1,102 +1,22 @@
-"""authentik OIDC JWT verification for unihub-retail.
-
-Light integration: verifies RS256-signed tokens issued by authentik.
-No local user store — claims are extracted on-the-fly from the JWT.
-
-Usage:
-    from backend.auth import require_auth, AuthClaims
-
-    @router.get("/protected")
-    async def protected(claims: AuthClaims = Depends(require_auth)):
-        return {"user": claims.email}
-
-JWKS is fetched once at first request and cached for JWKS_CACHE_TTL seconds.
-"""
+"""Authentik OIDC authentication with a lifecycle-managed JWKS verifier."""
 from __future__ import annotations
 
 import hmac
-import logging
+import math
 import os
-import time
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.types import Options
 
-logger = logging.getLogger(__name__)
-
-# ── Config ───────────────────────────────────────────────────────────
-OIDC_ISSUER = os.getenv(
-    "OIDC_ISSUER", "https://auth.unihub.ro/application/o/unihub-retail/"
-)
-OIDC_JWKS_URL = os.getenv(
-    "OIDC_JWKS_URL",
-    "https://auth.unihub.ro/application/o/unihub-retail/jwks/",
-)
-OIDC_AUDIENCE = os.getenv("OIDC_AUDIENCE", "4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t")  # = client_id
-JWKS_CACHE_TTL = int(os.getenv("JWKS_CACHE_TTL", "3600"))  # 1 hour
-
-# ── JWKS cache ───────────────────────────────────────────────────────
-_jwks_cache: dict[str, Any] = {}
-_jwks_fetched_at: float = 0.0
+from oidc_verifier import get_oidc_verifier
 
 
-async def _fetch_jwks() -> dict[str, Any]:
-    """Fetch JWKS from authentik. Uses cache with TTL."""
-    global _jwks_cache, _jwks_fetched_at
-
-    now = time.monotonic()
-    if _jwks_cache and (now - _jwks_fetched_at) < JWKS_CACHE_TTL:
-        return _jwks_cache
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(OIDC_JWKS_URL)
-            resp.raise_for_status()
-            _jwks_cache = resp.json()
-            _jwks_fetched_at = now
-            logger.info("JWKS refreshed from %s (%d keys)", OIDC_JWKS_URL, len(_jwks_cache.get("keys", [])))
-            return _jwks_cache
-    except Exception:
-        logger.exception("Failed to fetch JWKS from %s", OIDC_JWKS_URL)
-        if _jwks_cache:
-            logger.warning("Using stale JWKS cache")
-            return _jwks_cache
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Auth service unavailable",
-        )
-
-
-def _get_signing_key(jwks: dict[str, Any], token: str) -> jwt.PyJWK:
-    """Find the correct key in JWKS for the token's kid header."""
-    try:
-        header = jwt.get_unverified_header(token)
-    except jwt.DecodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Malformed token header",
-        ) from exc
-
-    kid = header.get("kid")
-    for key_data in jwks.get("keys", []):
-        if key_data.get("kid") == kid:
-            return jwt.PyJWK(key_data)
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=f"No matching key found for kid={kid}",
-    )
-
-
-# ── Claims dataclass ────────────────────────────────────────────────
 @dataclass(frozen=True, slots=True)
 class AuthClaims:
-    """Verified OIDC claims extracted from the JWT."""
     sub: str
     email: str
     preferred_username: str
@@ -105,98 +25,59 @@ class AuthClaims:
     aud: str
     iat: int
     exp: int
-    raw: dict[str, Any]  # full payload for anything else
+    raw: dict[str, Any]
 
 
-# ── FastAPI dependencies ─────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
 
 
-_HUB_INTERNAL_SECRET = os.getenv("HUB_INTERNAL_SECRET", "")
-
-
 def _hub_secret_matches(header_value: str, secret: str) -> bool:
-    return hmac.compare_digest(
-        header_value.encode("utf-8", "surrogateescape"),
-        secret.encode("utf-8", "surrogateescape"),
-    )
+    return hmac.compare_digest(header_value.encode("utf-8", "surrogateescape"), secret.encode("utf-8", "surrogateescape"))
 
 
-async def require_auth(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> AuthClaims:
-    """FastAPI dependency — returns verified AuthClaims or raises 401."""
-    _hub_header = request.headers.get("X-Hub-Internal", "")
-    if _HUB_INTERNAL_SECRET and _hub_secret_matches(_hub_header, _HUB_INTERNAL_SECRET):
-        if request.client and request.client.host in ("127.0.0.1", "::1"):
-            return AuthClaims(
-                sub="hub-service", email="hub@unihub.ro",
-                preferred_username="hub-service", groups=["unihub-admin"],
-                iss="hub-internal", aud="internal", iat=0, exp=0, raw={},
-            )
+def _unauthorized() -> HTTPException:
+    return HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid authentication token", headers={"WWW-Authenticate": "Bearer"})
 
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
-    token = credentials.credentials
-    jwks = await _fetch_jwks()
-    signing_key = _get_signing_key(jwks, token)
+def _valid_text(value: object, maximum: int = 256, allow_internal_space: bool = True) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and value == value.strip() and len(value) <= maximum and all(char.isprintable() and (allow_internal_space or not char.isspace()) for char in value)
 
-    decode_options: Options = {
-        "verify_exp": True,
-        "verify_iss": True,
-        "verify_aud": bool(OIDC_AUDIENCE),
-    }
 
+def _validated_numeric_date(value: object) -> int | None:
+    """Return a bounded JWT NumericDate without leaking conversion failures."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
     try:
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            issuer=OIDC_ISSUER,
-            audience=OIDC_AUDIENCE if OIDC_AUDIENCE else None,
-            options=decode_options,
-        )
-    except jwt.ExpiredSignatureError as exc:
-        logger.warning("JWT validation failed (expired): %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expired",
-        ) from exc
-    except jwt.InvalidIssuerError as exc:
-        logger.warning("JWT validation failed (invalid issuer): %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token issuer",
-        ) from exc
-    except jwt.InvalidAudienceError as exc:
-        logger.warning("JWT validation failed (invalid audience): %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token audience",
-        ) from exc
-    except jwt.PyJWTError as exc:
-        logger.warning("JWT validation failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        ) from exc
+        if not math.isfinite(value) or value < 0 or value > 2**63 - 1:
+            return None
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
+
+async def require_auth(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> AuthClaims:
+    secret = os.getenv("HUB_INTERNAL_SECRET", "")
+    supplied = request.headers.get("X-Hub-Internal", "")
+    if secret and _hub_secret_matches(supplied, secret) and request.client and request.client.host in ("127.0.0.1", "::1"):
+        return AuthClaims("hub-service", "hub@unihub.ro", "hub-service", ["unihub-admin"], "hub-internal", "internal", 0, 0, {})
+    if credentials is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing Authorization header", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        verifier = get_oidc_verifier()
+        header = jwt.get_unverified_header(credentials.credentials)
+        key = await verifier.signing_key(header)
+        options: Options = {"verify_exp": True, "verify_iss": True, "verify_aud": True, "require": ["exp", "iat", "iss", "aud", "sub"]}
+        payload = jwt.decode(credentials.credentials, key.key, algorithms=["RS256"], issuer=verifier.settings.issuer, audience=verifier.settings.audience, leeway=verifier.settings.clock_skew_seconds, options=options)
+    except HTTPException:
+        raise
+    except (jwt.PyJWTError, TypeError, ValueError, OverflowError):
+        raise _unauthorized()
+    sub = payload.get("sub")
     groups = payload.get("groups", [])
-
-    return AuthClaims(
-        sub=payload.get("sub", ""),
-        email=payload.get("email", ""),
-        preferred_username=payload.get("preferred_username", ""),
-        groups=groups,
-        iss=payload.get("iss", ""),
-        aud=payload.get("aud", ""),
-        iat=payload.get("iat", 0),
-        exp=payload.get("exp", 0),
-        raw=payload,
-    )
+    email = payload.get("email", "")
+    username = payload.get("preferred_username", "")
+    iat, exp = payload.get("iat"), payload.get("exp")
+    iat_value, exp_value = _validated_numeric_date(iat), _validated_numeric_date(exp)
+    if not isinstance(sub, str) or not _valid_text(sub) or not isinstance(groups, list) or len(groups) > 256 or any(not _valid_text(group, 128) for group in groups) or ("email" in payload and (not isinstance(email, str) or len(email) > 320 or any(char.isspace() or not char.isprintable() for char in email))) or ("preferred_username" in payload and (not isinstance(username, str) or len(username) > 256 or not _valid_text(username))) or iat_value is None or exp_value is None:
+        raise _unauthorized()
+    return AuthClaims(sub, email, username, groups, verifier.settings.issuer, verifier.settings.audience, iat_value, exp_value, {})

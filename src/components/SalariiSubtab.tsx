@@ -108,7 +108,7 @@ function getRatioToneStyle(ratio: number, average: number): CSSProperties {
 }
 
 interface DrawerState {
-  cnp: string;
+  personId: string;
   fullName: string;
 }
 
@@ -616,10 +616,10 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               )}
               {agents?.map((agent) => (
                 <tr
-                  key={agent.cnp ?? `name-${agent.full_name}`}
-                  onClick={() => agent.cnp && setDrawer({ cnp: agent.cnp, fullName: agent.full_name })}
-                  className={`transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 ${agent.cnp ? 'cursor-pointer' : ''}`}
-                  title={agent.cnp ? 'Deschide istoricul agentului' : 'Istoricul detaliat nu este disponibil fără CNP'}
+                  key={agent.person_id}
+                  onClick={() => setDrawer({ personId: agent.person_id, fullName: agent.full_name })}
+                  className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  title="Deschide istoricul agentului"
                 >
                   <td className="px-4 py-3 font-semibold text-slate-800 dark:text-white">{agent.full_name}</td>
                   <td className={`px-2 py-3 text-xs font-bold ${COMPANY_COLORS[agent.company_name] ?? 'text-slate-500'}`}>
@@ -677,7 +677,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
       {/* Drawer */}
       <SalaryDrawer
-        cnp={drawer?.cnp ?? ''}
+        personId={drawer?.personId ?? ''}
         fullName={drawer?.fullName ?? ''}
         isOpen={!!drawer}
         onClose={() => setDrawer(null)}

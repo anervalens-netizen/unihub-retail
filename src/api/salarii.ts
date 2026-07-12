@@ -12,8 +12,8 @@ export interface SalariiOverview {
 }
 
 export interface SalaryAgentSummary {
+  person_id: string;
   full_name: string;
-  cnp: string | null;
   company_name: string;
   locatie: string | null;
   month_count: number;
@@ -51,7 +51,7 @@ export interface AgentSalaryLink {
   agent_code: string;
   site_code: string;
   salary_full_name: string | null;
-  salary_cnp: string | null;
+  person_id: string | null;
   match_status: 'confirmed' | 'unknown';
   match_source: 'auto' | 'manual';
   confidence: 'high' | 'medium' | 'low' | 'unknown';
@@ -132,8 +132,8 @@ export async function fetchSalaryAgents(params: {
   return res.data;
 }
 
-export async function fetchSalaryAgentHistory(cnp: string): Promise<SalaryAgentHistory> {
-  const res = await client.get<SalaryAgentHistory>(`/salarii/agents/history/${encodeURIComponent(cnp)}`);
+export async function fetchSalaryAgentHistory(personId: string): Promise<SalaryAgentHistory> {
+  const res = await client.get<SalaryAgentHistory>(`/salarii/agents/${encodeURIComponent(personId)}/history`);
   return res.data;
 }
 

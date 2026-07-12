@@ -7,6 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from services.salarii import SalariiService
+from salary_identity import make_salary_person_id
+
+PERSON_ID_KEY = "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz"
+PERSON_ID = make_salary_person_id("synthetic-private-id-a", "Ana Popescu", PERSON_ID_KEY)
 
 
 class FakeRow(dict):
@@ -22,6 +26,7 @@ def mock_repo():
     repo.fetch_evolution_single_company = AsyncMock(return_value=[])
     repo.fetch_agents_summary = AsyncMock(return_value={"items": [], "total": 0})
     repo.fetch_agent_history = AsyncMock(return_value=[])
+    repo.fetch_agent_history_by_person_id = AsyncMock(return_value=[])
     repo.fetch_agent_salary_link = AsyncMock(return_value=None)
     repo.fetch_agent_history_by_salary_link = AsyncMock(return_value=[])
     repo.fetch_latest_month = AsyncMock(return_value=None)
@@ -34,7 +39,7 @@ def mock_repo():
 
 @pytest.fixture
 def service(mock_repo):
-    return SalariiService(mock_repo)
+    return SalariiService(mock_repo, PERSON_ID_KEY)
 
 
 class TestSalariiOverview:
@@ -148,7 +153,7 @@ class TestSalariiAgentsSummary:
 
     @pytest.mark.asyncio
     async def test_agents_summary_all_filters(self, service, mock_repo):
-        mock_repo.fetch_agents_summary.return_value = {"items": [{"name": "Test"}], "total": 1}
+        mock_repo.fetch_agents_summary.return_value = {"items": [{"person_id": PERSON_ID, "full_name": "Test", "company_name": "FirmaA", "locatie": None, "month_count": 1, "avg_month_count": 1, "total_salary": Decimal("3000"), "avg_salary": Decimal("3000")}], "total": 1}
         result = await service.get_agents_summary("search", "FirmaA", "SITE01", "Reg1", "Asm1", 2026, 5, 10, 0)
         assert result["total"] == 1
         call = mock_repo.fetch_agents_summary.call_args
@@ -162,26 +167,29 @@ class TestSalariiAgentsSummary:
             "month": 5,
             "limit": 10,
             "offset": 0,
+            "person_id_key": PERSON_ID_KEY,
         }
 
 
 class TestSalariiAgentHistory:
     @pytest.mark.asyncio
+    async def test_agent_history_rejects_malformed_person_id(self, service):
+        with pytest.raises(ValueError):
+            await service.get_agent_history("not-an-opaque-id")
+
+    @pytest.mark.asyncio
     async def test_agent_history_empty(self, service, mock_repo):
-        mock_repo.fetch_agent_history.return_value = []
-        result = await service.get_agent_history("123456")
-        assert result["records"] == []
-        assert result["total"] == 0.0
-        assert result["month_count"] == 0
-        assert result["avg_month_count"] == 0
+        mock_repo.fetch_agent_history_by_person_id.return_value = []
+        with pytest.raises(LookupError):
+            await service.get_agent_history(PERSON_ID)
 
     @pytest.mark.asyncio
     async def test_agent_history_with_data(self, service, mock_repo):
-        mock_repo.fetch_agent_history.return_value = [
-            FakeRow(total_salary=Decimal("3000"), month="2026-04", year=2026, company_name="F1"),
-            FakeRow(total_salary=Decimal("3500"), month="2026-05", year=2026, company_name="F1"),
+        mock_repo.fetch_agent_history_by_person_id.return_value = [
+            FakeRow(total_salary=Decimal("3000"), month=4, year=2026, company_name="F1", site_code=None, locatie=None),
+            FakeRow(total_salary=Decimal("3500"), month=5, year=2026, company_name="F1", site_code=None, locatie=None),
         ]
-        result = await service.get_agent_history("123456")
+        result = await service.get_agent_history(PERSON_ID)
         assert result["month_count"] == 2
         assert result["total"] == 6500.0
         assert result["avg"] == 3250.0
@@ -189,11 +197,11 @@ class TestSalariiAgentHistory:
 
     @pytest.mark.asyncio
     async def test_agent_history_average_excludes_months_under_2000(self, service, mock_repo):
-        mock_repo.fetch_agent_history.return_value = [
-            FakeRow(total_salary=Decimal("1500"), month=4, year=2026, company_name="F1"),
-            FakeRow(total_salary=Decimal("3000"), month=5, year=2026, company_name="F1"),
+        mock_repo.fetch_agent_history_by_person_id.return_value = [
+            FakeRow(total_salary=Decimal("1500"), month=4, year=2026, company_name="F1", site_code=None, locatie=None),
+            FakeRow(total_salary=Decimal("3000"), month=5, year=2026, company_name="F1", site_code=None, locatie=None),
         ]
-        result = await service.get_agent_history("123456")
+        result = await service.get_agent_history(PERSON_ID)
         assert result["total"] == 4500.0
         assert result["month_count"] == 2
         assert result["avg_month_count"] == 1
@@ -211,7 +219,7 @@ class TestSalariiAgentHistory:
             "month_count": 0,
             "avg_month_count": 0,
         }
-        mock_repo.fetch_agent_salary_link.assert_awaited_once_with(agent_code="AG1", site_code="S1")
+        mock_repo.fetch_agent_salary_link.assert_awaited_once_with(agent_code="AG1", site_code="S1", person_id_key=PERSON_ID_KEY)
         mock_repo.fetch_agent_history_by_salary_link.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -221,6 +229,7 @@ class TestSalariiAgentHistory:
             site_code="S1",
             salary_full_name=None,
             salary_cnp=None,
+            person_id=PERSON_ID,
             match_status="unknown",
             match_source="manual",
             confidence="unknown",
@@ -234,7 +243,7 @@ class TestSalariiAgentHistory:
             "agent_code": "AG1",
             "site_code": "S1",
             "salary_full_name": None,
-            "salary_cnp": None,
+            "person_id": None,
             "match_status": "unknown",
             "match_source": "manual",
             "confidence": "unknown",
@@ -254,7 +263,8 @@ class TestSalariiAgentHistory:
             agent_code="AG1",
             site_code="S1",
             salary_full_name="Ana Popescu",
-            salary_cnp="1234567890123",
+            salary_cnp="synthetic-private-id-a",
+            person_id=PERSON_ID,
             match_status="confirmed",
             match_source="manual",
             confidence="high",
@@ -262,24 +272,53 @@ class TestSalariiAgentHistory:
             note="Confirmat manual",
         )
         mock_repo.fetch_agent_history_by_salary_link.return_value = [
-            FakeRow(total_salary=Decimal("3000"), month=4, year=2026, company_name="F1"),
-            FakeRow(total_salary=Decimal("3500"), month=5, year=2026, company_name="F1"),
+            FakeRow(total_salary=Decimal("3000"), month=4, year=2026, company_name="F1", site_code=None, locatie=None),
+            FakeRow(total_salary=Decimal("3500"), month=5, year=2026, company_name="F1", site_code=None, locatie=None),
         ]
 
         result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
 
         assert result["link"]["salary_full_name"] == "Ana Popescu"
         assert result["records"] == [
-            {"total_salary": 3000.0, "month": 4, "year": 2026, "company_name": "F1"},
-            {"total_salary": 3500.0, "month": 5, "year": 2026, "company_name": "F1"},
+            {"total_salary": 3000.0, "month": 4, "year": 2026, "company_name": "F1", "site_code": None, "locatie": None},
+            {"total_salary": 3500.0, "month": 5, "year": 2026, "company_name": "F1", "site_code": None, "locatie": None},
         ]
         assert result["total"] == 6500.0
         assert result["avg"] == 3250.0
         assert result["month_count"] == 2
         assert result["avg_month_count"] == 2
         mock_repo.fetch_agent_history_by_salary_link.assert_awaited_once_with(
-            salary_full_name="Ana Popescu",
-            salary_cnp="1234567890123",
+            person_id=PERSON_ID,
+            person_id_key=PERSON_ID_KEY,
+        )
+
+    @pytest.mark.asyncio
+    async def test_confirmed_link_with_empty_history_keeps_link_payload(self, service, mock_repo):
+        mock_repo.fetch_agent_salary_link.return_value = FakeRow(
+            agent_code="AG1", site_code="S1", salary_full_name="Ana Popescu",
+            person_id=PERSON_ID, match_status="confirmed", match_source="manual",
+            confidence="high", effective_from_month=None, note=None,
+        )
+        mock_repo.fetch_agent_history_by_salary_link.return_value = []
+        result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
+        assert result["link"]["person_id"] == PERSON_ID
+        assert result["records"] == []
+
+    @pytest.mark.asyncio
+    async def test_confirmed_link_with_blank_display_name_keeps_valid_person_id(self, service, mock_repo):
+        mock_repo.fetch_agent_salary_link.return_value = FakeRow(
+            agent_code="AG1", site_code="S1", salary_full_name="",
+            person_id=PERSON_ID, match_status="confirmed", match_source="manual",
+            confidence="high", effective_from_month=None, note=None,
+        )
+        mock_repo.fetch_agent_history_by_salary_link.return_value = []
+
+        result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
+
+        assert result["link"]["person_id"] == PERSON_ID
+        mock_repo.fetch_agent_history_by_salary_link.assert_awaited_once_with(
+            person_id=PERSON_ID,
+            person_id_key=PERSON_ID_KEY,
         )
 
 
@@ -420,7 +459,7 @@ class TestSalariiRecords:
     @pytest.mark.asyncio
     async def test_records_no_filter(self, service, mock_repo):
         mock_repo.fetch_records.return_value = [
-            FakeRow(id=1, full_name="Test Agent", total_salary=Decimal("3000")),
+            FakeRow(id=1, year=2026, month=5, full_name="Test Agent", person_id=PERSON_ID, total_salary=Decimal("3000"), company_name="FirmaA", site_code=None, locatie=None),
         ]
         result = await service.get_records(None, None, None, None, 10, 0)
         assert len(result) == 1
@@ -438,4 +477,5 @@ class TestSalariiRecords:
             "site_code": "SITE01",
             "limit": 10,
             "offset": 0,
+            "person_id_key": PERSON_ID_KEY,
         }

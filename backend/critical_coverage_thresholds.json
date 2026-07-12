@@ -1,4 +1,11 @@
 {
+  "auth.py": 95,
+  "oidc_settings.py": 95,
+  "oidc_verifier.py": 95,
+  "client_ip.py": 100,
+  "rate_limit_settings.py": 95,
+  "rate_limit_store.py": 95,
+  "rate_limits.py": 95,
   "permissions.py": 100,
   "services/exports.py": 95,
   "services/grile_monthly.py": 98,
