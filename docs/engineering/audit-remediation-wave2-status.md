@@ -34,6 +34,10 @@ The approved database-retention constraint is recorded in `docs/engineering/h01-
 - [x] Production reconciliation was executed read-only.
 - [x] Engineering review hardening is complete.
 - [x] Strict public response models and explicit service mappings are enforced.
+- [x] Development/test accepts an absent or exactly empty identity key while
+  production remains fail-closed; non-empty invalid keys fail in every mode.
+- [x] Real ASGI and isolated PostgreSQL query tests cover the public contract,
+  key-unavailable path, opaque-ID round trip and private-field exclusion.
 - [x] Local CI-equivalent coverage gate is green; remote CI must run on the pushed commit.
 
 H-01A reconciliation (read-only, 2026-07-12): 370 canonical identities,

@@ -300,7 +300,7 @@ class SalariiRepository:
                         sd.*,
                         {person_id_expr} AS person_id,
                         {canonical_salary_identity_sql("sd")} AS agent_key
-                    FROM salary_dedup
+                    FROM salary_dedup sd
                 ),
                 agent_months AS (
                     SELECT
@@ -397,7 +397,7 @@ class SalariiRepository:
                 WITH salary_dedup AS (
                     SELECT DISTINCT
                         year, month, company_name, site_code, locatie, total_salary
-                    FROM salary_records
+                    FROM salary_records sr
                     WHERE {person_id_expr} = $1
                 )
                 SELECT
@@ -426,7 +426,7 @@ class SalariiRepository:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 f"""
-                WITH identity AS (
+                WITH identity_rows AS (
                     SELECT *, salary_cnp AS cnp, salary_full_name AS full_name
                     FROM agent_salary_links
                     WHERE agent_code = $1 AND site_code = $2
@@ -437,7 +437,7 @@ class SalariiRepository:
                             THEN {person_id_expr}
                             ELSE NULL END AS person_id,
                        match_status, match_source, confidence, effective_from_month, note
-                FROM identity
+                FROM identity_rows identity
                 """,
                 agent_code,
                 site_code,
@@ -455,7 +455,7 @@ class SalariiRepository:
             return await conn.fetch(
                 f"""
                 SELECT year, month, company_name, total_salary, site_code, locatie
-                FROM salary_records
+                FROM salary_records sr
                 WHERE {person_id_expr} = $1
                 ORDER BY year DESC, month DESC, company_name
                 """,

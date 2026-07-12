@@ -69,9 +69,15 @@ def validate_required_env_vars() -> None:
     errors.extend(privileged_access_config_errors(_is_production()))
 
     person_id_key = os.getenv(SALARY_PERSON_ID_HMAC_KEY_ENV)
-    if _is_production() and not person_id_key:
-        errors.append(f"{SALARY_PERSON_ID_HMAC_KEY_ENV} is required in production")
-    elif person_id_key is not None:
+    if _is_production():
+        if person_id_key is None or person_id_key == "":
+            errors.append(f"{SALARY_PERSON_ID_HMAC_KEY_ENV} is required in production")
+        else:
+            try:
+                validate_salary_person_id_key(person_id_key)
+            except ValueError as exc:
+                errors.append(str(exc))
+    elif person_id_key not in (None, ""):
         try:
             validate_salary_person_id_key(person_id_key)
         except ValueError as exc:

@@ -248,10 +248,23 @@ remains retained and untouched in PostgreSQL.
   links expose `person_id: null` and never trigger a history lookup.
 - In development without a configured key, overview/evolution/summary/trend/
   stores remain available while identity endpoints return generic 503. Production
-  startup remains fail-closed.
+  startup remains fail-closed. An absent or exactly empty development/test value
+  is allowed; any non-empty invalid value, including whitespace, remains a
+  configuration error and is never normalized into an absent key.
 - The actual SQL helper equivalence test runs against the isolated PostgreSQL
   fixture and covers synthetic private IDs, fallback names, whitespace, Unicode
   and case normalization.
+- Real ASGI contract tests exercise the mounted FastAPI routes with dependency
+  overrides only in memory. They verify that serialized identity responses omit
+  private matching fields, return the generic 503 when the key is absent, and
+  reject an unexpected response field. Dedicated isolated PostgreSQL tests cover
+  the summary, opaque-history, generic-record and retail-link queries, including
+  a confirmed link whose display name is empty but whose valid opaque ID remains
+  usable.
+- The final test hardening corrected the query aliases used by the SQL HMAC
+  expression; this is a query-only correction, with no schema, migration, import
+  or matching-data change. Because canonical identity rules did not change, the
+  prior production reconciliation remains applicable and was not re-run.
 - CI run #295 failed because the backend coverage gate measured
   `services/salarii.py` below its 98 percent threshold, despite no test failure.
   The new branch coverage tests raise it to 100 percent in the local CI-equivalent

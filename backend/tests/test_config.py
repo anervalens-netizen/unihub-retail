@@ -47,6 +47,9 @@ def test_salary_person_id_key_required_in_production(monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
     with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
         validate_required_env_vars()
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "")
+    with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+        validate_required_env_vars()
 
 
 def test_salary_person_id_key_validation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -61,6 +64,25 @@ def test_salary_person_id_key_validation(monkeypatch: pytest.MonkeyPatch, tmp_pa
             validate_required_env_vars()
     monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "x" * 48)
     validate_required_env_vars()
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_development_allows_absent_or_empty_salary_person_id_key(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    if value is None:
+        monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
+    else:
+        monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", value)
+    validate_required_env_vars()
+
+
+def test_development_rejects_nonempty_invalid_salary_person_id_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "   ")
+    with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+        validate_required_env_vars()
 
 
 def test_config_rejects_missing_database_url(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -304,6 +304,23 @@ class TestSalariiAgentHistory:
         assert result["link"]["person_id"] == PERSON_ID
         assert result["records"] == []
 
+    @pytest.mark.asyncio
+    async def test_confirmed_link_with_blank_display_name_keeps_valid_person_id(self, service, mock_repo):
+        mock_repo.fetch_agent_salary_link.return_value = FakeRow(
+            agent_code="AG1", site_code="S1", salary_full_name="",
+            person_id=PERSON_ID, match_status="confirmed", match_source="manual",
+            confidence="high", effective_from_month=None, note=None,
+        )
+        mock_repo.fetch_agent_history_by_salary_link.return_value = []
+
+        result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
+
+        assert result["link"]["person_id"] == PERSON_ID
+        mock_repo.fetch_agent_history_by_salary_link.assert_awaited_once_with(
+            person_id=PERSON_ID,
+            person_id_key=PERSON_ID_KEY,
+        )
+
 
 class TestSalariiSummary:
     @pytest.mark.asyncio

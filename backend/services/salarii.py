@@ -164,7 +164,6 @@ class SalariiService:
 
         is_confirmed_identity = (
             link["match_status"] == "confirmed"
-            and bool(link["salary_full_name"])
             and bool(link["person_id"])
         )
         link_payload = AgentSalaryLinkPublic(
