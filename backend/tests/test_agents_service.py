@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -31,6 +32,12 @@ def test_month_index_expr():
     assert "12" in expr
 
 
+def test_agent_evaluation_v2_service_contains_no_sql() -> None:
+    source = inspect.getsource(AgentsService.get_agent_evaluation_v2)
+    assert "SELECT " not in source
+    assert "WITH " not in source
+
+
 @pytest.fixture
 def mock_repo():
     repo = MagicMock()
@@ -41,7 +48,38 @@ def mock_repo():
     repo.get_agent_profile = AsyncMock()
     repo.get_agent_history = AsyncMock(return_value=[])
     repo.get_stores_coverage = AsyncMock(return_value=[])
+    repo.get_agent_evaluation_v2 = AsyncMock(return_value=[])
+    repo.get_agent_evaluation_options = AsyncMock(return_value=[])
     return repo
+
+
+@pytest.mark.asyncio
+async def test_agent_evaluation_v2_uses_repository_contract(service, mock_repo):
+    mock_repo.get_agent_evaluation_options.return_value = [
+        FakeRow(type="month", value="2026-05", label="2026-05"),
+        FakeRow(type="month", value="2026-05", label="duplicat"),
+        FakeRow(type="firma", value="Firma", label="Firma"),
+        FakeRow(type="asm", value="Manager", label="Manager"),
+        FakeRow(type="store", value="S1", label="Magazin (S1)"),
+    ]
+
+    result = await service.get_agent_evaluation_v2(
+        month="2026-05",
+        months="2026-04,2026-05",
+        firma="Firma",
+        asm="Manager",
+        site_code="S1",
+    )
+
+    mock_repo.get_agent_evaluation_v2.assert_awaited_once_with(
+        "2026-04,2026-05", "Firma", "Manager", "S1"
+    )
+    mock_repo.get_agent_evaluation_options.assert_awaited_once_with("Firma", "Manager")
+    assert [option.value for option in result.months] == ["2026-05"]
+    assert [option.value for option in result.firmas] == ["Firma"]
+    assert [option.value for option in result.asms] == ["Manager"]
+    assert [option.value for option in result.stores] == ["S1"]
+    assert result.rows == []
 
 
 @pytest.fixture
