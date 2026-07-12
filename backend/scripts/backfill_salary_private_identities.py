@@ -47,6 +47,38 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
     )
     await connection.execute(
         f"""
+        WITH link_identities AS (
+            SELECT
+                agent_code,
+                site_code,
+                salary_cnp AS cnp,
+                salary_full_name AS full_name
+            FROM agent_salary_links
+            WHERE match_status = 'confirmed'
+        )
+        INSERT INTO salary_private.people (
+            person_id, cnp, normalized_name, identity_source
+        )
+        SELECT DISTINCT ON (person_id)
+            person_id,
+            cnp,
+            normalized_name,
+            identity_source
+        FROM (
+            SELECT
+                {link_person_id} AS person_id,
+                NULLIF(BTRIM(identity.cnp), '') AS cnp,
+                LOWER(BTRIM(identity.full_name)) AS normalized_name,
+                CASE WHEN NULLIF(BTRIM(identity.cnp), '') IS NOT NULL THEN 'cnp' ELSE 'name' END AS identity_source
+            FROM link_identities identity
+        ) identities
+        ORDER BY person_id, normalized_name
+        ON CONFLICT (person_id) DO NOTHING
+        """,
+        key,
+    )
+    await connection.execute(
+        f"""
         UPDATE salary_records sr
         SET person_id = {salary_person_id}
         WHERE sr.person_id IS DISTINCT FROM {salary_person_id}
