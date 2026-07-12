@@ -26,7 +26,8 @@ load_dotenv(REPO_DIR / ".env")
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from db.connection import close_db_pool, ensure_schema_current, get_pool, init_db_pool
+from db.connection import close_db_pool, get_pool, init_db_pool
+from db.migration_runner import verify_migrations_current
 
 GRILE_ROOT = Path("/opt/Mobiup/grile-salarii")
 REGISTRY_FILE = GRILE_ROOT / "sheets_registry.json"
@@ -67,7 +68,7 @@ async def main() -> None:
     print(f"mapari valide din registry: {len(rows)}  | source_hash={source_hash[:12]}")
 
     await init_db_pool()
-    await ensure_schema_current()
+    await verify_migrations_current(await get_pool())
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:

@@ -51,21 +51,41 @@ valkey_port="$(
     "${VALKEY_CONTAINER}"
 )"
 
+postgres_ready=0
 for _ in $(seq 1 60); do
   if docker exec "${CONTAINER}" pg_isready -U unihub_test -d unihub_test \
     >/dev/null 2>&1; then
-    break
+    postgres_ready=$((postgres_ready + 1))
+    if [[ "${postgres_ready}" -ge 2 ]]; then
+      break
+    fi
+  else
+    postgres_ready=0
   fi
   sleep 1
 done
-docker exec "${CONTAINER}" pg_isready -U unihub_test -d unihub_test >/dev/null
+if [[ "${postgres_ready}" -lt 2 ]]; then
+  printf 'Isolated PostgreSQL did not become stably ready.\n' >&2
+  docker logs "${CONTAINER}" >&2 || true
+  exit 1
+fi
+valkey_ready=0
 for _ in $(seq 1 60); do
   if docker exec "${VALKEY_CONTAINER}" valkey-cli ping >/dev/null 2>&1; then
-    break
+    valkey_ready=$((valkey_ready + 1))
+    if [[ "${valkey_ready}" -ge 2 ]]; then
+      break
+    fi
+  else
+    valkey_ready=0
   fi
   sleep 1
 done
-docker exec "${VALKEY_CONTAINER}" valkey-cli ping >/dev/null
+if [[ "${valkey_ready}" -lt 2 ]]; then
+  printf 'Isolated Valkey did not become stably ready.\n' >&2
+  docker logs "${VALKEY_CONTAINER}" >&2 || true
+  exit 1
+fi
 
 export DATABASE_URL="postgresql://unihub_test:${password}@127.0.0.1:${port}/unihub_test"
 export RATE_LIMIT_TEST_VALKEY_URL="redis://127.0.0.1:${valkey_port}/15"

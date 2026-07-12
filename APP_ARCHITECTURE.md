@@ -34,6 +34,11 @@ Pool-ul PostgreSQL seteaza server-side `statement_timeout=120s`,
 Valorile sunt configurabile prin `.env`; `command_timeout` asyncpg este aliniat
 cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
 
+Schema PostgreSQL este administrata exclusiv prin runnerul one-shot
+`unihub-retail-migrate.service`. Baseline-ul `schema_v2.sql` este inghetat,
+iar fiecare delta are checksum imutabil in manifest si in DB. Web-ul verifica
+read-only starea migrations la startup si nu executa DDL sau backfill.
+
 ## Diagrama
 
 ```mermaid

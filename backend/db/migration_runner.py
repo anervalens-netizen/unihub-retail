@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import asyncpg
+
+from db.connection import get_database_url, get_migrations_dir, get_schema_path
+
+
+MIGRATION_ADVISORY_LOCK_ID = 7_221_904_202_607_12
+TRACKING_SQL = """
+CREATE TABLE IF NOT EXISTS schema_meta (
+    schema_name TEXT PRIMARY KEY,
+    schema_hash TEXT NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    filename TEXT PRIMARY KEY,
+    checksum TEXT,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
+""".strip()
+
+
+class MigrationError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class MigrationManifest:
+    baseline_hash: str
+    incorporated_through: str
+    checksums: dict[str, str]
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def get_manifest_path() -> Path:
+    return get_migrations_dir() / "manifest.json"
+
+
+def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
+    manifest_path = path or get_manifest_path()
+    try:
+        payload: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
+        baseline = payload["baseline"]
+        migrations = payload["migrations"]
+        version = payload["version"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise MigrationError("Migration manifest is invalid") from exc
+    if version != 1 or not isinstance(baseline, dict) or not isinstance(migrations, dict):
+        raise MigrationError("Migration manifest is invalid")
+    baseline_hash = baseline.get("sha256")
+    incorporated = baseline.get("incorporated_through")
+    if (
+        baseline.get("file") != "schema_v2.sql"
+        or not isinstance(baseline_hash, str)
+        or len(baseline_hash) != 64
+        or not isinstance(incorporated, str)
+        or incorporated not in migrations
+        or not migrations
+        or any(
+            not isinstance(name, str)
+            or not isinstance(checksum, str)
+            or len(checksum) != 64
+            for name, checksum in migrations.items()
+        )
+    ):
+        raise MigrationError("Migration manifest is invalid")
+    return MigrationManifest(baseline_hash, incorporated, dict(migrations))
+
+
+def verify_migration_files(manifest: MigrationManifest) -> None:
+    migrations_dir = get_migrations_dir()
+    actual = {
+        path.name: _sha256(path)
+        for path in migrations_dir.iterdir()
+        if path.is_file() and path.suffix == ".sql"
+    }
+    if actual != manifest.checksums:
+        raise MigrationError("Migration files do not match the immutable manifest")
+    if _sha256(get_schema_path()) != manifest.baseline_hash:
+        raise MigrationError("Frozen schema baseline does not match the manifest")
+
+
+async def _tracking_rows(connection: asyncpg.Connection) -> dict[str, str | None]:
+    rows = await connection.fetch(
+        "SELECT filename, checksum FROM schema_migrations ORDER BY filename"
+    )
+    return {row["filename"]: row["checksum"] for row in rows}
+
+
+def _validate_applied(
+    applied: dict[str, str | None], manifest: MigrationManifest, *, allow_missing_checksums: bool
+) -> None:
+    unknown = sorted(set(applied) - set(manifest.checksums))
+    if unknown:
+        raise MigrationError("Database contains migrations absent from the manifest")
+    for filename, stored_checksum in applied.items():
+        expected = manifest.checksums[filename]
+        if stored_checksum is None and allow_missing_checksums:
+            continue
+        if stored_checksum != expected:
+            raise MigrationError("Applied migration checksum mismatch")
+
+
+async def run_migrations(database_url: str | None = None) -> list[str]:
+    manifest = load_migration_manifest()
+    verify_migration_files(manifest)
+    connection = await asyncpg.connect(
+        database_url or get_database_url(),
+        command_timeout=120,
+        server_settings={
+            "application_name": "unihub-retail-migrations",
+            "statement_timeout": "120000",
+            "lock_timeout": "10000",
+            "idle_in_transaction_session_timeout": "60000",
+        },
+    )
+    applied_now: list[str] = []
+    try:
+        await connection.execute("SELECT pg_advisory_lock($1)", MIGRATION_ADVISORY_LOCK_ID)
+        has_application_schema = bool(
+            await connection.fetchval(
+                "SELECT to_regclass('public.sales_transactions') IS NOT NULL"
+            )
+        )
+        async with connection.transaction():
+            if not has_application_schema:
+                await connection.execute(get_schema_path().read_text(encoding="utf-8"))
+            await connection.execute(TRACKING_SQL)
+            applied = await _tracking_rows(connection)
+            _validate_applied(applied, manifest, allow_missing_checksums=True)
+            for filename, checksum in applied.items():
+                if checksum is None:
+                    await connection.execute(
+                        "UPDATE schema_migrations SET checksum = $2 WHERE filename = $1",
+                        filename,
+                        manifest.checksums[filename],
+                    )
+            if not has_application_schema:
+                incorporated_names = [
+                    name for name in manifest.checksums if name <= manifest.incorporated_through
+                ]
+                for filename in incorporated_names:
+                    await connection.execute(
+                        """
+                        INSERT INTO schema_migrations (filename, checksum)
+                        VALUES ($1, $2)
+                        ON CONFLICT (filename) DO NOTHING
+                        """,
+                        filename,
+                        manifest.checksums[filename],
+                    )
+                await connection.execute(
+                    """
+                    INSERT INTO schema_meta (schema_name, schema_hash, applied_at)
+                    VALUES ('schema_v2', $1, now())
+                    ON CONFLICT (schema_name) DO NOTHING
+                    """,
+                    manifest.baseline_hash,
+                )
+
+        applied = await _tracking_rows(connection)
+        _validate_applied(applied, manifest, allow_missing_checksums=False)
+        for filename, checksum in manifest.checksums.items():
+            if filename in applied:
+                continue
+            sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
+            async with connection.transaction():
+                await connection.execute(sql)
+                await connection.execute(
+                    "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
+                    filename,
+                    checksum,
+                )
+            applied_now.append(filename)
+        return applied_now
+    finally:
+        try:
+            await connection.execute(
+                "SELECT pg_advisory_unlock($1)", MIGRATION_ADVISORY_LOCK_ID
+            )
+        finally:
+            await connection.close()
+
+
+async def verify_migrations_current(pool: asyncpg.Pool) -> None:
+    manifest = load_migration_manifest()
+    verify_migration_files(manifest)
+    async with pool.acquire() as connection:
+        tracking_exists = bool(
+            await connection.fetchval(
+                "SELECT to_regclass('public.schema_migrations') IS NOT NULL"
+            )
+        )
+        if not tracking_exists:
+            raise MigrationError("Migration tracking is not initialized")
+        checksum_exists = bool(
+            await connection.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'schema_migrations'
+                      AND column_name = 'checksum'
+                )
+                """
+            )
+        )
+        if not checksum_exists:
+            raise MigrationError("Migration checksum tracking is not initialized")
+        applied = await _tracking_rows(connection)
+    _validate_applied(applied, manifest, allow_missing_checksums=False)
+    if set(applied) != set(manifest.checksums):
+        raise MigrationError("Database has pending migrations")

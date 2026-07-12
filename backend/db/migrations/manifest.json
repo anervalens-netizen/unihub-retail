@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "baseline": {
+    "file": "schema_v2.sql",
+    "sha256": "3edeadbb13eea4d7b0d63997494e48a893e0ecc267b8e31a7217ce2f539ba0ac",
+    "incorporated_through": "022_store_pnl_site_links.sql"
+  },
+  "migrations": {
+    "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
+    "002_target_calculator_nullable_final.sql": "5c801b9edcbdca126e286297593cefd72988ad5f16d8a7ac9b5fc5eb230e34d6",
+    "003_repair_current_store_activity.sql": "3bd71e9531899b4c96caa75930c5edd472a67c81fc3463a0c1dcc0f175ef6d1a",
+    "004_store_org_assignments.sql": "38e7a4fddc4fc4b2b8c540206eeee212e72f8580c8deaae505a8921d22992b80",
+    "006_drop_ai_analysis_views.sql": "256242b100dcf0a012c9c6267624e9ac6d177e14913923b1aefb8a83ac34d812",
+    "007_premium_glass_indicator.sql": "718018a1e56286bf17276b3680b57ce6ec391019624132eadae9f5af260b67c2",
+    "008_premium_glass_materialized_indicator.sql": "f67b06557c7c35f9913d92136c157f5793b8451ddaf9932ad65bf68a13259778",
+    "009_target_scenario_revision.sql": "2f2224f1a1515d062de881b558d9379bb6b0bfa0d0e1cf40fb0edb3f9192c431",
+    "010_grile_run_reservations.sql": "79e08a5ca5e18d73a48fdc396fbe7b705049e36f9ac7f7c720f0ac07729f130d",
+    "011_import_snapshot_reservations.sql": "734e85602882c77f6b638765c7e28e430c0a8d4ca9f381a06f083a000bcd0347",
+    "012_grile_monthly_operations.sql": "0513e61146ac8b80e562f2bcb46632dfe3f7768e4d523bcc8f97c64f02aeb575",
+    "013_target_calculator_seasonality_details.sql": "f86cbcef3b3efb360d7dc551f6408b11c1976d33280e05bfe9ecab3e2c1eea2b",
+    "014_target_calculator_store_exclusions.sql": "121fd9c4bb47765d976f00d038770932d57f08111da8fa46e4f90b98b8df9c76",
+    "015_target_calculator_exclusions_drop_fk.sql": "29692d565e42ca4531b8e6373b01454767b404616011d409894a37ad39bdf02c",
+    "016_historical_monthly_sales.sql": "ee23d6899e43ae83ec6395b6c1d7d36306bd190c19fe918c0fb4c50d9a5ca22b",
+    "017_ai_forecast.sql": "6541a00848fb3a957bc19b7a5dff7bd25efd8df484ef56826cecc23a39b53ccf",
+    "018_ai_forecast_metric_horizon.sql": "a2e39dab9252d0e48f90ed5ee53a42afa3996db7c0e88d5cba4b5c709a57ce80",
+    "019_agent_salary_links.sql": "111bc88bb566fe5d0d95fff0a90bc16b0e5c3eb82b072fe464c5ab019562d5b2",
+    "020_incentive_product_periods.sql": "68f29fd39dc284a3883f299082f6bf32fcdf60344668a9202adc69d2b38a7dc3",
+    "021_store_pnl_actuals.sql": "b4f8e1f92a5308dfbddc3d315d3a498f53884db61aa4744b7121ea509da9fa1c",
+    "022_store_pnl_site_links.sql": "f1d5d2f4f378c08b039c5bbe9602cee6649037d77b9e2d56d4f36f860b0b19bb"
+  }
+}

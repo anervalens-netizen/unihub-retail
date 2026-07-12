@@ -596,16 +596,24 @@ pg_restore -d unihub /storage/backups/db/postgres/<fisier.dump>
 Schema principala este in:
 - `backend/db/schema_v2.sql`
 
-La startup:
-- backend-ul deschide pool-ul
-- calculeaza hash-ul fisierului de schema
-- compara hash-ul cu valoarea salvata in `schema_meta`
-- reaplica schema doar daca s-a schimbat
+`schema_v2.sql` este baseline-ul inghetat pentru instalari noi. Orice schimbare
+ulterioara foloseste un fisier SQL nou si imutabil plus checksum in
+`backend/db/migrations/manifest.json`.
 
-Asta inseamna:
-- nu mai exista reexecutie completa a schemei la fiecare boot
-- schema ramane sincronizata cu codul
-- startup-ul este mult mai rapid si mai sigur
+Inaintea unui restart cu schimbari DB:
+
+```bash
+sudo systemctl start unihub-retail-migrate.service
+sudo systemctl status unihub-retail-migrate.service --no-pager
+```
+
+Runnerul foloseste advisory lock PostgreSQL, tranzactii per migration si
+checksum-uri persistente. Backend-ul web nu executa DDL/DML de schema; la
+startup face numai verificarea read-only si refuza sa porneasca daca exista
+drift sau migrations neaplicate.
+
+Asta inseamna ca doua instante web nu pot concura pentru schema, fisierele
+istorice modificate sunt detectate, iar release-ul DB este separat de runtime.
 
 ## Reporting si performanta
 

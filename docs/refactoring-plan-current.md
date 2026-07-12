@@ -45,13 +45,12 @@ mai "frumos", ci reducerea riscului operational:
 
 Snapshot 2026-07-12:
 
-- `main` include Wave 1, P&L si hotfixul OIDC/P&L;
-- branchul `stabilization/audit-remediation-wave2-privacy` contine H-01A,
-  H-04/H-05 si H-07, toate cu gate local si CI merge-ref verde;
-- H-07 este implementat in aplicatie, dar activarea coordonata
-  Caddy/firewall/environment nu este inca executata;
-- H-06 (BFF/session), H-01B (protectia CNP retinut in DB), H-02 (migrations)
-  si wave-urile de performanta/operatiuni raman de implementat;
+- `main` include Wave 1, Wave 2, P&L si hotfixurile OIDC/H-07;
+- H-01A, H-04/H-05 si H-07 sunt active in productie;
+- H-02 migration lifecycle este implementat local si asteapta
+  CI/merge/adoptia checksum-urilor in productie;
+- H-06 (BFF/session), H-01B (protectia CNP retinut in DB) si wave-urile de
+  performanta/operatiuni raman de implementat;
 - navigatia tinta este Agenti: Prezentare Generala, Grile, Analiza agenti;
   Management: Manageri, Calculator Target, Salarii, P&L.
 

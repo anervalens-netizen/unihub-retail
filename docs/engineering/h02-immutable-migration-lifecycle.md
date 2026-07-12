@@ -1,0 +1,51 @@
+# H-02 — immutable PostgreSQL migration lifecycle
+
+## Decision
+
+The FastAPI and worker processes must never apply schema changes. Database
+changes are executed by a dedicated one-shot runner before application restart.
+Application startup performs a read-only consistency check and fails closed on
+pending, unknown or checksum-mismatched migrations.
+
+## Contract
+
+- `schema_v2.sql` is frozen at the H-02 baseline and used only for a fresh DB;
+- every later schema/data delta is a new `NNN_name.sql` file;
+- `manifest.json` stores the immutable SHA-256 of the baseline and every file;
+- production stores the applied checksum in `schema_migrations`;
+- historical files are never edited; corrections are forward migrations;
+- a session advisory lock serializes all runners;
+- each migration commits independently;
+- the web startup path executes only `SELECT` statements for migration state;
+- unknown DB rows, missing checksums, file drift and pending files fail closed.
+
+## Existing database adoption
+
+The first H-02 run adds the nullable checksum column under the migration lock,
+validates every historical filename against the checked-in manifest and
+backfills its reviewed checksum. It applies no historical SQL again. The
+production reconciliation must confirm that all expected filenames are present
+before this adoption.
+
+## Fresh database
+
+The runner applies the frozen baseline once, records migrations incorporated
+through `022_store_pnl_site_links.sql`, then applies every later delta in order.
+The baseline is not evolved after H-02.
+
+## Deployment
+
+1. verify a current restorable backup;
+2. install/update `unihub-retail-migrate.service`;
+3. run the one-shot migration service while the old web version remains live;
+4. require a successful exit and current checksums;
+5. deploy/restart the web process;
+6. verify health and confirm the web log contains only read-only migration
+   verification.
+
+## Rollback
+
+Application rollback does not delete migration rows or reverse committed DDL.
+Use a reviewed forward correction whenever possible. A destructive database
+rollback requires restoring the verified pre-release backup and coordinating
+all consumers of the Retail database.

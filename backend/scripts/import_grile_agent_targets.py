@@ -20,7 +20,8 @@ load_dotenv(REPO_DIR / ".env")
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from db.connection import close_db_pool, ensure_schema_current, get_pool, init_db_pool
+from db.connection import close_db_pool, get_pool, init_db_pool
+from db.migration_runner import verify_migrations_current
 from services.grile_agent_targets import (
     configured_disabled_managers,
     configured_enabled_managers,
@@ -60,7 +61,7 @@ async def main() -> None:
     disabled = _parse_managers(args.disabled_managers) or configured_disabled_managers()
 
     await init_db_pool()
-    await ensure_schema_current()
+    await verify_migrations_current(await get_pool())
     pool = await get_pool()
     result = await sync_agent_targets_from_grile(
         pool,

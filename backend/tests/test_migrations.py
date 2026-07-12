@@ -2,10 +2,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 
 from db.connection import list_migration_files
+from db.migration_runner import (
+    MigrationError,
+    MigrationManifest,
+    _validate_applied,
+    load_migration_manifest,
+    verify_migration_files,
+)
 
 
 def test_list_migration_files_empty(tmp_path: Path) -> None:
@@ -63,3 +71,82 @@ def test_migrations_dir_default_exists() -> None:
     from db.connection import get_migrations_dir
 
     assert get_migrations_dir().is_dir()
+
+
+def test_checked_in_manifest_matches_frozen_baseline_and_all_migrations() -> None:
+    manifest = load_migration_manifest()
+    verify_migration_files(manifest)
+    assert manifest.incorporated_through == "022_store_pnl_site_links.sql"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"version": 2, "baseline": {}, "migrations": {}},
+        {
+            "version": 1,
+            "baseline": {
+                "file": "wrong.sql",
+                "sha256": "a" * 64,
+                "incorporated_through": "001_one.sql",
+            },
+            "migrations": {"001_one.sql": "b" * 64},
+        },
+    ],
+)
+def test_invalid_manifest_is_rejected(tmp_path: Path, payload: dict[str, object]) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
+def test_manifest_parse_errors_are_generic(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text("{", encoding="utf-8")
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
+def test_applied_checksum_validation_is_fail_closed() -> None:
+    manifest = MigrationManifest("a" * 64, "001_one.sql", {"001_one.sql": "b" * 64})
+    _validate_applied({"001_one.sql": None}, manifest, allow_missing_checksums=True)
+    with pytest.raises(MigrationError, match="checksum mismatch"):
+        _validate_applied({"001_one.sql": None}, manifest, allow_missing_checksums=False)
+    with pytest.raises(MigrationError, match="checksum mismatch"):
+        _validate_applied({"001_one.sql": "c" * 64}, manifest, allow_missing_checksums=False)
+    with pytest.raises(MigrationError, match="absent from the manifest"):
+        _validate_applied({"999_unknown.sql": "d" * 64}, manifest, allow_missing_checksums=False)
+
+
+def test_file_or_baseline_tampering_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import db.migration_runner as runner
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    migration = migrations / "001_one.sql"
+    migration.write_text("SELECT 1;", encoding="utf-8")
+    baseline = tmp_path / "schema_v2.sql"
+    baseline.write_text("SELECT 2;", encoding="utf-8")
+    manifest = MigrationManifest(
+        "0" * 64,
+        migration.name,
+        {migration.name: "1" * 64},
+    )
+    monkeypatch.setattr(runner, "get_migrations_dir", lambda: migrations)
+    monkeypatch.setattr(runner, "get_schema_path", lambda: baseline)
+    with pytest.raises(MigrationError, match="immutable manifest"):
+        verify_migration_files(manifest)
+
+    manifest = MigrationManifest(
+        runner._sha256(baseline),
+        migration.name,
+        {migration.name: runner._sha256(migration)},
+    )
+    verify_migration_files(manifest)
+    baseline.write_text("SELECT 3;", encoding="utf-8")
+    with pytest.raises(MigrationError, match="Frozen schema baseline"):
+        verify_migration_files(manifest)

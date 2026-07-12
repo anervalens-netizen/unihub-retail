@@ -4,7 +4,7 @@ Sursa de adevăr rămâne SQLite. PG-ul e o proiecție cacheată pentru queries
 async native în hr.py, fără run_in_executor per request.
 
 Apelat:
-  - La boot în lifespan (main.py), după apply_pending_migrations
+  - La boot în lifespan (main.py), după verificarea read-only a migrations
   - La POST /api/admin/sync-visits-snapshot pentru refresh manual
 """
 from __future__ import annotations
