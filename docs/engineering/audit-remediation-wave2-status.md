@@ -91,9 +91,11 @@ person ID.
 - [x] Local gates: 1,027 backend tests passed, 7 skipped; all four H-07 modules
   have 100% critical coverage; mypy, `pip check`, 177 frontend tests,
   typecheck and build are green.
-- [ ] Formal H-07 acceptance remains pending PR merge-ref CI and the separately
-  approved Caddy/firewall/environment rollout. No production activation has
-  occurred from this branch.
+- [x] Formal application acceptance: GitHub Actions run `29193554547` is green
+  on the PR merge ref.
+- [ ] Production activation remains pending the separately approved
+  Caddy/firewall/environment rollout. No production change has occurred from
+  this branch.
 
 ## H-01B — retained-CNP database protection (later)
 

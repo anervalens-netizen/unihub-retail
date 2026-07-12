@@ -379,6 +379,7 @@ constant per-key storage. No production Valkey key is used.
 Local gates on 2026-07-12 are green: mypy, `pip check`, 1,027 backend tests
 with 7 skips, frontend 177 tests, typecheck and production build. Critical
 coverage is 100% for `client_ip.py`, `rate_limit_settings.py`,
-`rate_limit_store.py` and `rate_limits.py`. Formal H-07 acceptance remains
-pending the pushed commit's PR merge-ref CI and the separately approved proxy,
-firewall and environment rollout.
+`rate_limit_store.py` and `rate_limits.py`. GitHub Actions run `29193554547`
+is green on the PR merge ref, so the application implementation is accepted
+technically. Production activation remains pending the separately approved
+proxy, firewall and environment rollout.
