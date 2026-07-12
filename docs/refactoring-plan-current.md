@@ -303,8 +303,8 @@ Livrabile:
   `/api/agents/evaluation-v2`, `/api/salarii/*`;
 - [x] primul `EXPLAIN (ANALYZE, BUFFERS)` pentru Agent Evaluation v2 confirma
   scanarea completa a `sales_transactions` pe calea premium glass;
-- [x] primul index este justificat prin planul real; impactul post-migrare este
-  gate inainte de inchiderea optimizarii;
+- [x] indexul Agent Evaluation v2 este justificat, activ si acceptat: rezultat
+  identic, plannerul foloseste indexul partial si mediana este redusa cu 76,7%;
 - reducere presiune pool DB in dashboard gather;
 - audit bundle frontend dupa spliturile mari;
 - pastrarea lazy-loading-ului pe ecranele principale.
@@ -407,6 +407,9 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: migratia 025 activa in productie; Agent Evaluation v2 pastreaza
+  exact 151 rezultate si acelasi hash, foloseste indexul partial de 19 MB,
+  reduce `EXPLAIN` 647,7 -> 179,1 ms si mediana service 565,6 -> 131,8 ms.
 - 2026-07-13: baseline read-only pe rolul DB runtime: Dashboard median 489,7
   ms, Agent Evaluation v2 565,6 ms, Campaigns 6,5 ms si Salarii 22,5 ms.
   `EXPLAIN ANALYZE` a justificat exclusiv indexul partial covering din migratia

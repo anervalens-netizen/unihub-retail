@@ -45,6 +45,25 @@ Post-migration acceptance must record:
 - exact result equivalence before/after;
 - index size and production health.
 
+## Agent Evaluation v2 result
+
+Migration 025 was applied by `unihub-retail-migrate.service` on 2026-07-13
+and is tracked in `schema_migrations` with its manifest checksum. Production
+acceptance produced:
+
+| Measure | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| `EXPLAIN ANALYZE` execution | 647.7 ms | 179.1 ms | -72.3% |
+| Service median | 565.6 ms (n=3) | 131.8 ms (n=5) | -76.7% |
+| Service range | 557.8-618.4 ms | 129.8-138.0 ms | narrower |
+
+The selected plan uses `idx_sales_agent_evaluation_premium`; the index is
+19 MB. The response remained 151 rows and its canonical JSON SHA-256 remained
+`a229649d94cba0d092deada57435eab0bd49487c3286b705690d0ff8a55fbd63`
+before and after migration. This proves exact result equivalence without
+recording names or business values. Backend service and public health remained
+green.
+
 ## Dashboard observation
 
 The cold Dashboard request expands a pool configured with three prewarmed
