@@ -17,6 +17,8 @@ Visual masking does not reduce the technical exposure because the complete value
 
 H-01A removes CNP from the browser and public API without changing the current salary import or database schema.
 
+Raw CNP remains stored in PostgreSQL by explicit business decision. The binding decision and prohibited destructive changes are recorded in `docs/engineering/h01-cnp-database-retention-decision.md`.
+
 The backend derives a deterministic opaque identifier using HMAC-SHA256 and a server-only secret:
 
 ```text
@@ -32,7 +34,7 @@ cnp:<trimmed CNP>
 when CNP is present, otherwise:
 
 ```text
-name:<case-folded trimmed full name>
+name:<lower-cased trimmed full name>
 ```
 
 The secret is never returned, logged, stored in PostgreSQL, placed in Git or sent to the browser. The `sp1_` prefix versions the contract and permits a future controlled rotation/migration.
@@ -55,7 +57,7 @@ Requirements:
 - never included in error text;
 - backup and rotation handled as a secret-management operation.
 
-Missing or invalid configuration in development/test must fail closed for person-ID operations, while test fixtures can set a synthetic value explicitly.
+Missing or invalid configuration in development/test must fail closed for person-ID operations, while test fixtures can set a synthetic value explicitly. Salary endpoints that do not use `person_id` should not fail solely because the development key is absent.
 
 ## Backend design
 
@@ -70,12 +72,14 @@ Create `backend/salary_identity.py` (or an equivalently focused module) with:
 - safe SQL helpers for the canonical identity expression and HMAC expression;
 - alias/placeholder validation to prevent SQL-fragment injection.
 
-PostgreSQL already has `pgcrypto`; use `hmac(..., ..., 'sha256')` and `encode(..., 'hex')`. Add an integration test proving Python and PostgreSQL produce the same identifier for:
+PostgreSQL already has `pgcrypto`; use `hmac(..., ..., 'sha256')` and `encode(..., 'hex')`. Add an integration test proving the actual Python and SQL helper implementations produce the same identifier for:
 
-- a CNP-backed identity;
+- a CNP-backed synthetic identity;
 - a name-fallback identity;
 - whitespace and case normalization;
 - Unicode Romanian names.
+
+No test may include a real CNP or a 13-digit value.
 
 ## API contract
 
@@ -122,13 +126,11 @@ The implemented route is:
 GET /salarii/agents/{person_id}/history
 ```
 
-`person_id` is validated as `sp1_` followed by 64 lowercase hexadecimal
-characters. Malformed values return 422 and valid but unknown values return a
-generic 404. The old CNP route is not registered.
+`person_id` is validated as `sp1_` followed by 64 lowercase hexadecimal characters. Malformed values return 422 and valid but unknown values return a generic 404. The old CNP route is not registered.
 
 ### Retail-code history
 
-`GET /salarii/agents/history-by-retail-code` may use CNP internally for existing matching, but its `link` payload must expose `person_id` and must not expose `salary_cnp`.
+`GET /salarii/agents/history-by-retail-code` may use CNP internally for existing matching, but its `link` payload must expose a non-null `person_id` only for a confirmed salary identity and must not expose `salary_cnp`. Unknown/unmatched links expose `person_id: null`.
 
 ### Generic records
 
@@ -150,19 +152,20 @@ Update all salary UI code so that:
 
 ### Unit and integration
 
-1. secret validation: missing, too short, whitespace/control and valid;
+1. secret validation: missing, too short, any whitespace/control/non-printable character and valid;
 2. deterministic person ID;
 3. different identities produce different IDs;
-4. Python/PostgreSQL equivalence;
+4. actual Python/PostgreSQL helper equivalence;
 5. summary response contains `person_id` and no forbidden keys;
 6. history lookup succeeds by `person_id`;
 7. malformed ID -> 422;
 8. unknown valid ID -> 404;
-9. retail-code link contains no `salary_cnp`;
+9. retail-code link contains no `salary_cnp` and unmatched links use `person_id: null`;
 10. records endpoint contains no `cnp`;
 11. OpenAPI contains the new route and not the legacy route;
 12. static frontend gate forbids `cnp`, `salary_cnp`, `maskCnp` and the legacy route in salary API/components;
-13. existing salary totals, averages and pagination remain unchanged.
+13. existing salary totals, averages and pagination remain unchanged;
+14. missing development HMAC key does not break salary endpoints that do not generate or resolve `person_id`.
 
 ### Read-only production reconciliation
 
@@ -170,7 +173,7 @@ Before merge, execute a transaction marked `READ ONLY` and report only aggregate
 
 - total distinct canonical salary identities;
 - total distinct generated person IDs;
-- collision count;
+- collision count, defined as one generated ID mapping to more than one canonical identity;
 - identities with empty CNP using name fallback;
 - duplicate CNP groups, count only;
 - duplicate normalized-name fallback groups, count only;
@@ -200,24 +203,27 @@ Acceptance:
 
 Rollback code and frontend together. Keep the HMAC key in the environment during rollback; it is harmless to the old release and avoids another secret mutation during an incident. Do not re-enable a CNP URL after H-01A has been operationally verified; prefer forward-fixing the opaque-ID route.
 
-## Residual risk after H-01A
+Rollback must not remove, rewrite or otherwise alter CNP values in PostgreSQL.
 
-Raw CNP still exists inside PostgreSQL and selected internal matching paths. H-01A closes the browser/API/URL exposure but does not complete database minimization. H-01B remains required after the migration lifecycle and DB role separation are ready.
+## Residual risk and H-01B
+
+Raw CNP intentionally remains inside PostgreSQL and approved internal matching/import paths. This is a business requirement, not a temporary deletion backlog.
+
+H-01B is therefore limited to retained-data protection:
+
+- dedicated schema/role and least-privilege grants;
+- audited internal access paths;
+- optional durable `salary_people.person_id` alongside the retained CNP;
+- encrypted storage/backups and recovery controls;
+- documented retention and incident procedures.
+
+H-01B must not drop, blank, hash-overwrite or destructively migrate CNP values without a new explicit business approval.
 
 ## H-01A implementation evidence
 
-- `backend/salary_identity.py` centralizes HMAC-SHA256 identity creation and
-  strict key/person-ID validation. SQL receives the HMAC key only as a bind
-  parameter.
-- Python/PostgreSQL equivalence was verified in a read-only transaction using
-  synthetic identities and a temporary in-memory key; no production identity
-  values were selected or printed.
-- Production reconciliation ran in an explicit read-only transaction with a
-  temporary in-memory key: 370 canonical identities, 370 generated IDs, 0
-  collisions, 100 deterministic history samples and 0 mismatches. No identity
-  values were printed or persisted.
-- Focused H-01A and affected salary tests: 49 passed, 12 skipped. The full
-  isolated backend suite passed with 739 tests and 8 skips. Frontend tests:
-  177 passed; typecheck, build and mypy passed.
-- `.env` and `.env.worker` were not modified; no schema migration, production
-  write, deploy or service restart was performed. H-01B remains pending.
+- `backend/salary_identity.py` centralizes HMAC-SHA256 identity creation and strict key/person-ID validation. SQL receives the HMAC key only as a bind parameter.
+- A read-only production reconciliation was executed with synthetic/temporary key material and aggregate-only output.
+- Initial implementation tests reported 739 backend tests with 8 skips and 177 frontend tests, plus typecheck/build/mypy success.
+- GitHub CI run #295 failed in the backend test job and must be resolved before merge.
+- Engineering review identified canonical SQL/Python consistency, collision-query direction, unmatched-link identity and key-validation hardening that remain required.
+- `.env` and `.env.worker` were not modified; no schema migration, production write, deploy or service restart was performed.
