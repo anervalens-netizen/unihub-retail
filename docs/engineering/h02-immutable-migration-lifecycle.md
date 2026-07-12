@@ -27,6 +27,13 @@ backfills its reviewed checksum. It applies no historical SQL again. The
 production reconciliation must confirm that all expected filenames are present
 before this adoption.
 
+Production also contained `005_retail_ai_analysis_views.sql`, whose original
+body was absent from every reachable Git object before H-02. Because migration
+006 removed those views and the frozen baseline contains the final state, H-02
+restores 005 as an explicit fail-closed tombstone: fresh databases mark it as
+incorporated, existing databases must already have the row, and no database may
+replay a guessed historical body.
+
 ## Fresh database
 
 The runner applies the frozen baseline once, records migrations incorporated
