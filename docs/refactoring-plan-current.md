@@ -1,6 +1,6 @@
 # Retail refactoring master plan - current
 
-Ultima actualizare: 2026-07-12
+Ultima actualizare: 2026-07-13
 Owner operational: Codex
 Status general: in executie; refactoringul functional continua dupa inchiderea
 Wave 2 de securitate si privacy.
@@ -43,14 +43,13 @@ mai "frumos", ci reducerea riscului operational:
 
 ## Stare curenta validata
 
-Snapshot 2026-07-12:
+Snapshot 2026-07-13:
 
 - `main` include Wave 1, Wave 2, P&L si hotfixurile OIDC/H-07;
 - H-01A, H-04/H-05 si H-07 sunt active in productie;
-- H-02 migration lifecycle este implementat local si asteapta
-  CI/merge/adoptia checksum-urilor in productie;
-- H-06 (BFF/session), H-01B (protectia CNP retinut in DB) si wave-urile de
-  performanta/operatiuni raman de implementat;
+- H-02 migration lifecycle, H-01B retained-CNP boundary si H-06 BFF/session
+  sunt CI-green si active in productie;
+- wave-urile de performanta, modularizare si operatiuni raman active;
 - navigatia tinta este Agenti: Prezentare Generala, Grile, Analiza agenti;
   Management: Manageri, Calculator Target, Salarii, P&L.
 
@@ -280,8 +279,8 @@ Ramase:
   response assembler;
 - teste pentru pragurile si ponderile evaluarii agentilor inainte de refactor;
 - `grile_monthly.py` separat in orchestration + repository + state machine;
-- `dashboard_service.get_dashboard_all` mutat de la gather pozitional la gather
-  dict-keyed;
+- [x] `dashboard_service.get_dashboard_all` mutat de la gather pozitional la
+  rezultate concurente adresate nominal, fara indexuri numerice fragile;
 - eliminare punctuala a celorlalte `replace()` pe SQL numai daca exista test
   care confirma comportamentul.
 
@@ -402,6 +401,9 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: H-02, H-01B si H-06 reconciliate ca active in productie;
+  `get_dashboard_all` foloseste rezultate concurente adresate nominal.
+  Validare locala: mypy verde si 1053 teste backend trecute, 7 sarite.
 - 2026-07-12: reconciliat planul cu Wave 1/Wave 2; H-01A, H-04/H-05 si H-07
   sunt implementate si CI-green pe branchul Wave 2, cu activarea de productie
   H-07 si finding-urile H-06/H-01B/H-02 ramase explicit deschise; actualizata

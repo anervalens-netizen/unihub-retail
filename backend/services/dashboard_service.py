@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
-from typing import Any, Literal
+from collections.abc import Awaitable
+from typing import Any, Literal, cast
 
 import asyncpg
 from fastapi import HTTPException, status
@@ -62,6 +63,13 @@ _RO_MONTHS = {
 AGENT_FORECAST_WORKING_DAYS = Decimal("15")
 PERFORMANCE_COMPONENT_WEIGHT = Decimal("20")
 _MONEY = Decimal("0.01")
+
+
+async def _gather_named(**components: Awaitable[Any]) -> dict[str, Any]:
+    """Run independent dashboard loaders concurrently and preserve their names."""
+    names = tuple(components)
+    values = await asyncio.gather(*(components[name] for name in names))
+    return dict(zip(names, values, strict=True))
 
 
 class DashboardService:
@@ -1036,8 +1044,8 @@ class DashboardService:
                 )
             return [AsmStats(**r) for r in rows]
 
-        results = await asyncio.gather(
-            observe_dashboard_component(
+        component_results = await _gather_named(
+            summary=observe_dashboard_component(
                 "summary",
                 self.get_summary(
                     month,
@@ -1050,46 +1058,61 @@ class DashboardService:
                     include_closed_stores=include_closed_stores,
                 ),
             ),
-            observe_dashboard_component("agents", get_agents_data()),
-            observe_dashboard_component("stores", get_stores_data()),
-            observe_dashboard_component("daily", get_daily_data()),
-            observe_dashboard_component(
+            agents=observe_dashboard_component("agents", get_agents_data()),
+            stores=observe_dashboard_component("stores", get_stores_data()),
+            daily=observe_dashboard_component("daily", get_daily_data()),
+            period_comparison=observe_dashboard_component(
                 "period_comparison", get_period_comparison_data()
             ),
-            observe_dashboard_component("category_mix", get_category_mix_data()),
-            observe_dashboard_component(
+            category_mix=observe_dashboard_component("category_mix", get_category_mix_data()),
+            receipt_bucket_mix=observe_dashboard_component(
                 "receipt_bucket_mix", get_receipt_bucket_mix_data()
             ),
-            observe_dashboard_component(
+            focus_subcategory_mix=observe_dashboard_component(
                 "focus_subcategory_mix", get_focus_subcategory_mix_data()
             ),
-            observe_dashboard_component("brand_mix", get_brand_mix_data()),
-            observe_dashboard_component(
+            brand_mix=observe_dashboard_component("brand_mix", get_brand_mix_data()),
+            promo_incentive=observe_dashboard_component(
                 "promo_incentive", get_promo_incentive_data()
             ),
-            observe_dashboard_component("regionals", get_regional_data()),
-            observe_dashboard_component("asms", get_asm_data()),
-            observe_dashboard_component("special_cards", get_special_cards_data()),
-            observe_dashboard_component("premium_glass", get_premium_glass_data()),
-            observe_dashboard_component(
+            regionals=observe_dashboard_component("regionals", get_regional_data()),
+            asms=observe_dashboard_component("asms", get_asm_data()),
+            special_cards=observe_dashboard_component("special_cards", get_special_cards_data()),
+            premium_glass=observe_dashboard_component("premium_glass", get_premium_glass_data()),
+            daily_last_year=observe_dashboard_component(
                 "daily_last_year", get_daily_last_year_data()
             ),
         )
-        summary: DashboardSummary = results[0]  # type: ignore[assignment]
-        agents_stats: list[AgentStats] = results[1]  # type: ignore[assignment]
-        stores_stats: list[StoreStats] = results[2]  # type: ignore[assignment]
-        daily_sales: list[DailySalesPoint] = results[3]  # type: ignore[assignment]
-        period_comparison: PeriodComparisonPayload | None = results[4]  # type: ignore[assignment]
-        category_mix: list[CategoryMixItem] = results[5]  # type: ignore[assignment]
-        receipt_bucket_mix: list[ReceiptBucketItem] = results[6]  # type: ignore[assignment]
-        focus_subcategory_mix: list[CategoryMixItem] = results[7]  # type: ignore[assignment]
-        brand_mix: list[BrandMixItem] = results[8]  # type: ignore[assignment]
-        promo_incentive: PromoIncentiveSummary = results[9]  # type: ignore[assignment]
-        regional_stats: list[RegionalStats] = results[10]  # type: ignore[assignment]
-        asm_stats: list[AsmStats] = results[11]  # type: ignore[assignment]
-        special_cards: list[DashboardSpecialCard] = results[12]  # type: ignore[assignment]
-        premium_glass: PremiumGlassAnalysis = results[13]  # type: ignore[assignment]
-        daily_last_year: list[DailySalesPoint] = results[14]  # type: ignore[assignment]
+        summary = cast(DashboardSummary, component_results["summary"])
+        agents_stats = cast(list[AgentStats], component_results["agents"])
+        stores_stats = cast(list[StoreStats], component_results["stores"])
+        daily_sales = cast(list[DailySalesPoint], component_results["daily"])
+        period_comparison = cast(
+            PeriodComparisonPayload | None,
+            component_results["period_comparison"],
+        )
+        category_mix = cast(list[CategoryMixItem], component_results["category_mix"])
+        receipt_bucket_mix = cast(
+            list[ReceiptBucketItem], component_results["receipt_bucket_mix"]
+        )
+        focus_subcategory_mix = cast(
+            list[CategoryMixItem], component_results["focus_subcategory_mix"]
+        )
+        brand_mix = cast(list[BrandMixItem], component_results["brand_mix"])
+        promo_incentive = cast(
+            PromoIncentiveSummary, component_results["promo_incentive"]
+        )
+        regional_stats = cast(list[RegionalStats], component_results["regionals"])
+        asm_stats = cast(list[AsmStats], component_results["asms"])
+        special_cards = cast(
+            list[DashboardSpecialCard], component_results["special_cards"]
+        )
+        premium_glass = cast(
+            PremiumGlassAnalysis, component_results["premium_glass"]
+        )
+        daily_last_year = cast(
+            list[DailySalesPoint], component_results["daily_last_year"]
+        )
         special_cards = [*special_cards, build_premium_glass_card(premium_glass)]
 
         return DashboardAllResponse(
