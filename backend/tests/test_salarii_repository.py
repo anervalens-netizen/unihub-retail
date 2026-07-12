@@ -53,9 +53,9 @@ async def _seed_salary_fixture() -> None:
             VALUES ($1, $2, $3, $4, $5, 'Mobicell', $6, 'Salary Test Store')
             """,
             [
-                (2098, 1, "Low Salary Agent", "9000000000001", Decimal("1500"), TEST_SITE),
-                (2098, 1, "High Salary Agent", "9000000000002", Decimal("3000"), TEST_SITE),
-                (2098, 2, "High Salary Agent", "9000000000002", Decimal("4000"), TEST_SITE),
+                (2098, 1, "Low Salary Agent", "synthetic-private-id-a", Decimal("1500"), TEST_SITE),
+                (2098, 1, "High Salary Agent", "synthetic-private-id-b", Decimal("3000"), TEST_SITE),
+                (2098, 2, "High Salary Agent", "synthetic-private-id-b", Decimal("4000"), TEST_SITE),
             ],
         )
 

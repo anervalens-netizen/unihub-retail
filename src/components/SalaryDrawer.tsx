@@ -5,15 +5,10 @@ import type { SalaryAgentHistory } from '../api/salarii';
 import { SalaryAgentBarChart } from './SalaryAgentBarChart';
 
 interface Props {
-  cnp: string;
+  personId: string;
   fullName: string;
   isOpen: boolean;
   onClose: () => void;
-}
-
-function maskCnp(cnp: string | null): string {
-  if (!cnp) return '—';
-  return cnp.slice(0, 2) + '**********';
 }
 
 function formatMonth(year: number, month: number): string {
@@ -25,22 +20,22 @@ function formatCurrency(value: number): string {
   return value.toLocaleString('ro-RO');
 }
 
-export function SalaryDrawer({ cnp, fullName, isOpen, onClose }: Props) {
+export function SalaryDrawer({ personId, fullName, isOpen, onClose }: Props) {
   const [history, setHistory] = useState<SalaryAgentHistory | null>(null);
   const [loading, setLoading] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isOpen || !cnp) return;
+    if (!isOpen || !personId) return;
     let active = true;
     setLoading(true);
     setHistory(null);
-    fetchSalaryAgentHistory(cnp)
+    fetchSalaryAgentHistory(personId)
       .then((h) => { if (active) setHistory(h); })
       .catch(() => { if (active) setHistory(null); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [isOpen, cnp]);
+  }, [isOpen, personId]);
 
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.target === overlayRef.current) onClose();
@@ -64,7 +59,7 @@ export function SalaryDrawer({ cnp, fullName, isOpen, onClose }: Props) {
             <h2 className="text-lg font-bold text-slate-800 dark:text-white">{fullName}</h2>
             {history && (
               <p className="mt-1 text-sm text-slate-500">
-                CNP: {maskCnp(cnp)} &bull;{' '}
+                Istoric salarial &bull;{' '}
                 <span className={companyColor(history.records[0]?.company_name)}>
                   {history.records[0]?.company_name}
                 </span>
@@ -169,7 +164,7 @@ export function SalaryDrawer({ cnp, fullName, isOpen, onClose }: Props) {
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <p className="text-slate-500">Nu s-au putut încărca datele</p>
               <button
-                onClick={() => fetchSalaryAgentHistory(cnp).then(setHistory).catch(() => setHistory(null))}
+                onClick={() => fetchSalaryAgentHistory(personId).then(setHistory).catch(() => setHistory(null))}
                 className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-600"
               >
                 Retry

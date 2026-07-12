@@ -99,7 +99,7 @@ async def test_logger_exception_persists_traceback_and_redacts_isolated_postgres
                 marker,
                 extra={
                     "Authorization": "Bearer secret-value",
-                    "nested": [{"salary_cnp": "1234567890123"}],
+                    "nested": [{"salary_cnp": "synthetic-private-id-a"}],
                 },
             )
         await logging_config.detach_db_error_handler()
@@ -122,7 +122,7 @@ async def test_logger_exception_persists_traceback_and_redacts_isolated_postgres
         assert "ValueError" in row["traceback"] and marker in row["traceback"]
         assert "super-secret" not in row["message"]
         assert "secret-value" not in str(row["extra"])
-        assert "1234567890123" not in str(row["extra"])
+        assert "synthetic-private-id-a" not in str(row["extra"])
     finally:
         await logging_config.detach_db_error_handler()
         await close_db_pool()
@@ -141,7 +141,7 @@ async def test_event_redaction_limits_and_unserializable_values() -> None:
     record = _record(
         (
             "Bearer abc.def.ghi password=hunter2 "
-            "cnp=1234567890123 postgresql://user:secret@db/retail "
+                    "cnp=synthetic-private-id-a postgresql://user:secret@db/retail "
             + "m" * 3000
         ),
         extra={
@@ -160,7 +160,7 @@ async def test_event_redaction_limits_and_unserializable_values() -> None:
 
     assert len(event.message) == 2000
     assert "hunter2" not in event.message
-    assert "1234567890123" not in event.message
+    assert "synthetic-private-id-a" not in event.message
     assert "user:secret" not in event.message
     assert event.extra_json is not None
     assert len(event.extra_json) <= 8000
@@ -175,7 +175,7 @@ async def test_primary_text_and_json_formatters_redact_sensitive_values() -> Non
         (
             "Authorization: Bearer raw-token "
             "refresh_token=refresh-value "
-            "cnp=1234567890123"
+                    "cnp=synthetic-private-id-a"
         ),
         extra={
             "Cookie": "session-value",
@@ -193,7 +193,7 @@ async def test_primary_text_and_json_formatters_redact_sensitive_values() -> Non
     for secret in (
         "raw-token",
         "refresh-value",
-        "1234567890123",
+        "synthetic-private-id-a",
         "session-value",
         "client-value",
         "access-value",

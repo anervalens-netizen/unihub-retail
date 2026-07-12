@@ -20,16 +20,25 @@ The first delivery is **H-01A**, an expand step that introduces an opaque salary
 
 ### Required outcomes
 
-- [ ] `SALARY_PERSON_ID_HMAC_KEY` is required and validated in production.
-- [ ] Salary list responses contain `person_id`, never `cnp`.
-- [ ] Salary history is requested through an opaque `person_id` route.
-- [ ] The legacy CNP path is absent from OpenAPI.
-- [ ] Retail-code salary links never return `salary_cnp`.
-- [ ] Generic salary-record responses never return `cnp`.
-- [ ] Frontend types, state, keys, drawers and URLs contain no CNP.
-- [ ] Contract/static tests fail on `cnp` or `salary_cnp` in the public salary surface.
-- [ ] Python and PostgreSQL implementations of the person ID are proven equivalent.
-- [ ] Production reconciliation proves stable one-to-one identity mapping before merge.
+- [x] `SALARY_PERSON_ID_HMAC_KEY` is required and validated in production.
+- [x] Salary list responses contain `person_id`, never `cnp`.
+- [x] Salary history is requested through an opaque `person_id` route.
+- [x] The legacy CNP path is absent from OpenAPI.
+- [x] Retail-code salary links never return `salary_cnp`.
+- [x] Generic salary-record responses never return `cnp`.
+- [x] Frontend types, state, keys, drawers and URLs contain no CNP.
+- [x] Contract/static tests fail on `cnp` or `salary_cnp` in the public salary surface.
+- [x] Python and PostgreSQL implementations of the person ID were verified
+  equivalent in a read-only transaction using synthetic identities and a
+  temporary test key; the optional isolated-DB pytest remains skipped unless
+  `H01_TEST_DATABASE_URL` is configured.
+- [x] Production reconciliation proves stable one-to-one identity mapping before merge.
+
+H-01A reconciliation (read-only, 2026-07-12): 370 canonical identities,
+370 generated IDs, 0 collisions, 2 name-fallback identities, 339 duplicate
+non-empty private-ID groups, 2 duplicate normalized-name fallback groups, 100
+sampled history identities and 0 history mismatches. The temporary HMAC key was
+generated in memory and was not persisted or printed.
 
 ### Non-goals for H-01A
 

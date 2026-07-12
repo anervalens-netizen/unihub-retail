@@ -3,12 +3,14 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from db.connection import get_pool
 from repositories.salarii import SalariiRepository
 from services.salarii import SalariiService
+from salary_identity import get_salary_person_id_key
+from services.salarii import InvalidSalaryPersonId, UnknownSalaryPerson
 
 router = APIRouter(
     prefix="/salarii",
@@ -25,7 +27,7 @@ class SalaryExportAudit(BaseModel):
 async def get_salarii_service() -> SalariiService:
     pool = await get_pool()
     repo = SalariiRepository(pool)
-    return SalariiService(repo)
+    return SalariiService(repo, get_salary_person_id_key())
 
 
 @router.get("/overview")
@@ -66,12 +68,17 @@ async def agents_summary(
     return await svc.get_agents_summary(q, company_name, site_code, regional, asm, year, month, limit, offset)
 
 
-@router.get("/agents/history/{cnp}")
+@router.get("/agents/{person_id}/history")
 async def agent_history(
-    cnp: str,
+    person_id: str = Path(..., pattern=r"^sp1_[0-9a-f]{64}$"),
     svc: SalariiService = Depends(get_salarii_service),
 ):
-    return await svc.get_agent_history(cnp)
+    try:
+        return await svc.get_agent_history(person_id)
+    except InvalidSalaryPersonId as exc:
+        raise HTTPException(status_code=422, detail="invalid salary person_id") from exc
+    except UnknownSalaryPerson as exc:
+        raise HTTPException(status_code=404, detail="salary agent not found") from exc
 
 
 @router.get("/agents/history-by-retail-code")

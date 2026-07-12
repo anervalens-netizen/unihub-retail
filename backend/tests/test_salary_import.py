@@ -22,7 +22,7 @@ def test_parse_salary_file_skips_invalid_rows_and_includes_meal_vouchers(
         [
             {
                 "Denumire locatie": "PROMENDADA",
-                "CNP": 1234567890123.0,
+                "CNP": 900000001.0,
                 "Nume Prenume": "Agent Valid",
                 "TOTAL SALARIU": 3000.125,
                 "Bonuri masa Mai": 400.126,
@@ -58,7 +58,7 @@ def test_parse_salary_file_skips_invalid_rows_and_includes_meal_vouchers(
             year=2099,
             month=7,
             full_name="Agent Valid",
-            cnp="1234567890123",
+            cnp="900000001",
             total_salary=Decimal("3400.25"),
             company_name="Mobiup",
             site_code="PROM",

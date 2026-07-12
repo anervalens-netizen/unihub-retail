@@ -96,6 +96,7 @@ def _set_production_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/db")
     monkeypatch.setenv("UNIHUB_ENV", "production")
     monkeypatch.setenv("VISITS_DB_PATH", str(visits))
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "synthetic-hmac-key-for-production-tests-abcdefghijklmnopqrstuvwxyz")
     monkeypatch.delenv(DEPRECATED_TARGET_EMAILS_ENV, raising=False)
     monkeypatch.delenv(DEPRECATED_GRILE_EMAILS_ENV, raising=False)
     monkeypatch.delenv(DEPRECATED_PNL_OWNER_EMAILS_ENV, raising=False)

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from privileged_access import privileged_access_config_errors
+from salary_identity import SALARY_PERSON_ID_HMAC_KEY_ENV, validate_salary_person_id_key
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_VISITS_DB_PATH = _REPO_ROOT / "data" / "visits" / "visits.db"
@@ -66,6 +67,15 @@ def validate_required_env_vars() -> None:
             )
 
     errors.extend(privileged_access_config_errors(_is_production()))
+
+    person_id_key = os.getenv(SALARY_PERSON_ID_HMAC_KEY_ENV)
+    if _is_production() and not person_id_key:
+        errors.append(f"{SALARY_PERSON_ID_HMAC_KEY_ENV} is required in production")
+    elif person_id_key is not None:
+        try:
+            validate_salary_person_id_key(person_id_key)
+        except ValueError as exc:
+            errors.append(str(exc))
 
     if errors:
         raise ConfigError(

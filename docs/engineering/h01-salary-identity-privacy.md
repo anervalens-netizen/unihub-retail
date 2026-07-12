@@ -116,6 +116,16 @@ Rules:
 
 The legacy route `/salarii/agents/history/{cnp}` must be absent from the final OpenAPI contract.
 
+The implemented route is:
+
+```text
+GET /salarii/agents/{person_id}/history
+```
+
+`person_id` is validated as `sp1_` followed by 64 lowercase hexadecimal
+characters. Malformed values return 422 and valid but unknown values return a
+generic 404. The old CNP route is not registered.
+
 ### Retail-code history
 
 `GET /salarii/agents/history-by-retail-code` may use CNP internally for existing matching, but its `link` payload must expose `person_id` and must not expose `salary_cnp`.
@@ -193,3 +203,21 @@ Rollback code and frontend together. Keep the HMAC key in the environment during
 ## Residual risk after H-01A
 
 Raw CNP still exists inside PostgreSQL and selected internal matching paths. H-01A closes the browser/API/URL exposure but does not complete database minimization. H-01B remains required after the migration lifecycle and DB role separation are ready.
+
+## H-01A implementation evidence
+
+- `backend/salary_identity.py` centralizes HMAC-SHA256 identity creation and
+  strict key/person-ID validation. SQL receives the HMAC key only as a bind
+  parameter.
+- Python/PostgreSQL equivalence was verified in a read-only transaction using
+  synthetic identities and a temporary in-memory key; no production identity
+  values were selected or printed.
+- Production reconciliation ran in an explicit read-only transaction with a
+  temporary in-memory key: 370 canonical identities, 370 generated IDs, 0
+  collisions, 100 deterministic history samples and 0 mismatches. No identity
+  values were printed or persisted.
+- Focused H-01A and affected salary tests: 49 passed, 12 skipped. The full
+  isolated backend suite passed with 739 tests and 8 skips. Frontend tests:
+  177 passed; typecheck, build and mypy passed.
+- `.env` and `.env.worker` were not modified; no schema migration, production
+  write, deploy or service restart was performed. H-01B remains pending.

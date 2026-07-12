@@ -38,6 +38,31 @@ def test_config_passes_with_valid_env(monkeypatch: pytest.MonkeyPatch) -> None:
     validate_required_env_vars()  # nu ridică
 
 
+def test_salary_person_id_key_required_in_production(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("VISITS_DB_PATH", str(tmp_path / "visits.db"))
+    (tmp_path / "visits.db").touch()
+    _set_privileged_groups(monkeypatch)
+    monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
+    with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+        validate_required_env_vars()
+
+
+def test_salary_person_id_key_validation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("VISITS_DB_PATH", str(tmp_path / "visits.db"))
+    (tmp_path / "visits.db").touch()
+    _set_privileged_groups(monkeypatch)
+    for value in ("short", " " + "x" * 48, "x" * 48 + "\n"):
+        monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", value)
+        with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
+            validate_required_env_vars()
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "x" * 48)
+    validate_required_env_vars()
+
+
 def test_config_rejects_missing_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(ConfigError, match="DATABASE_URL"):
