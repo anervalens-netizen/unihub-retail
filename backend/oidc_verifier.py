@@ -45,6 +45,7 @@ class OIDCVerifier:
         self.settings, self.client, self.clock = settings, client, clock
         self.cache: JWKSCache | None = None
         self.lock = asyncio.Lock()
+        self._unknown_refresh_generation: int | None = None
 
     async def _fetch(self) -> JWKSCache:
         try:
@@ -81,6 +82,7 @@ class OIDCVerifier:
         kid = header["kid"]
         now = self.clock()
         cache = self.cache
+        observed_generation = cache.generation if cache else 0
         if cache:
             cache_age = now - cache.fetched_at
             _age.set(max(cache_age, 0))
@@ -95,6 +97,8 @@ class OIDCVerifier:
             if cache and now - cache.fetched_at < self.settings.cache_ttl_seconds and kid in cache.keys:
                 _cache_use.labels("fresh").inc()
                 return cache.keys[kid]
+            if unknown and cache and self._unknown_refresh_generation == cache.generation:
+                raise _invalid()
             try:
                 cache = await self._fetch()
             except HTTPException:
@@ -103,7 +107,11 @@ class OIDCVerifier:
                     return self.cache.keys[kid]
                 raise
             if kid not in cache.keys:
+                if unknown:
+                    self._unknown_refresh_generation = cache.generation
                 raise _invalid()
+            if unknown:
+                self._unknown_refresh_generation = cache.generation
             return cache.keys[kid]
 
 
