@@ -55,6 +55,10 @@ jobs:
             --cov=auth \
             --cov=oidc_settings \
             --cov=oidc_verifier \
+            --cov=client_ip \
+            --cov=rate_limit_settings \
+            --cov=rate_limit_store \
+            --cov=rate_limits \
             --cov=permissions \
             --cov=services.exports \
             --cov=services.grile_monthly \

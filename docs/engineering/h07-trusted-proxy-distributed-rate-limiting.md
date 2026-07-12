@@ -355,3 +355,30 @@ H-07 is technically complete only when:
 - focused/full tests and CI are green;
 - no production, Authentik, proxy, environment, PostgreSQL or CNP modification has occurred;
 - PR #32 remains draft until H-07 engineering review and the remaining Wave 2 release plan are complete.
+
+## Implementation evidence
+
+The branch implementation now provides four separately tested boundaries:
+
+- `rate_limit_settings.py` parses trusted proxy CIDRs, header mode, the resolved
+  Valkey URL, the HMAC secret, closed failure mode and every existing policy
+  lazily and fail-closed;
+- `client_ip.py` anchors trust in the direct socket peer, canonicalizes IPv4
+  and IPv6, rejects malformed Cloudflare/XFF values and bounds XFF hops;
+- `rate_limit_store.py` executes one atomic Valkey script using Valkey `TIME`,
+  one bounded two-field hash and an automatic key TTL;
+- `rate_limits.py` derives versioned HMAC-SHA256 keys, uses only verified `sub`
+  for authenticated quotas, emits finite metrics and returns consistent
+  RateLimit headers, 429 rejection and generic 503 backend failure.
+
+The isolated test runner creates a dedicated ephemeral Valkey container. Two
+independent clients sharing that store receive exactly 10 allowed decisions
+from 100 concurrent calls at a limit of 10; the test also proves TTL expiry and
+constant per-key storage. No production Valkey key is used.
+
+Local gates on 2026-07-12 are green: mypy, `pip check`, 1,027 backend tests
+with 7 skips, frontend 177 tests, typecheck and production build. Critical
+coverage is 100% for `client_ip.py`, `rate_limit_settings.py`,
+`rate_limit_store.py` and `rate_limits.py`. Formal H-07 acceptance remains
+pending the pushed commit's PR merge-ref CI and the separately approved proxy,
+firewall and environment rollout.

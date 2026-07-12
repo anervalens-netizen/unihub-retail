@@ -28,6 +28,11 @@ def _set_oidc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OIDC_ISSUER", "https://issuer.example.invalid/oidc")
     monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example.invalid/oidc/jwks")
     monkeypatch.setenv("OIDC_AUDIENCE", "test-audience")
+    monkeypatch.setenv("TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+    monkeypatch.setenv("RATE_LIMIT_CLIENT_IP_HEADER", "none")
+    monkeypatch.setenv("RATE_LIMIT_KEY_HMAC_SECRET", "r" * 43)
+    monkeypatch.setenv("RATE_LIMIT_FAILURE_MODE", "closed")
+    monkeypatch.setenv("RATE_LIMIT_VALKEY_URL", "redis://localhost:6379/15")
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:

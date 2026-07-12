@@ -74,8 +74,26 @@ person ID.
   cooldowns, refresh-failure backoff, atomic lifecycle and explicit OIDC
   critical-coverage gates (911 passed, 7 skipped; auth 100%, settings 100%,
   verifier 95.62%).
-- [ ] Formal H-04/H-05 acceptance remains pending a green GitHub Actions run
+- [x] Formal H-04/H-05 acceptance: GitHub Actions run `29192006867` is green
   on the PR merge ref; no production change is authorized by this branch.
+
+## H-07 — trusted proxy and distributed rate limiting
+
+- [x] Read-only infrastructure preflight identifies Cloudflare Tunnel, Caddy,
+  the Docker-network direct peer, port 9898 exposure and Valkey capabilities.
+- [x] Typed settings, trusted client-IP resolution and privacy-preserving HMAC
+  identities are implemented fail-closed.
+- [x] Valkey enforcement is atomic, server-time based and bounded by TTL; two
+  independent clients share one quota and 100 concurrent calls at limit 10
+  allow exactly 10.
+- [x] Existing route policies and permissions remain wired; 429/503 response
+  contracts, finite metrics and lifecycle cleanup are tested.
+- [x] Local gates: 1,027 backend tests passed, 7 skipped; all four H-07 modules
+  have 100% critical coverage; mypy, `pip check`, 177 frontend tests,
+  typecheck and build are green.
+- [ ] Formal H-07 acceptance remains pending PR merge-ref CI and the separately
+  approved Caddy/firewall/environment rollout. No production activation has
+  occurred from this branch.
 
 ## H-01B — retained-CNP database protection (later)
 
