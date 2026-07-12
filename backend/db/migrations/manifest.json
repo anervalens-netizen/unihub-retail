@@ -10,6 +10,7 @@
     "002_target_calculator_nullable_final.sql": "5c801b9edcbdca126e286297593cefd72988ad5f16d8a7ac9b5fc5eb230e34d6",
     "003_repair_current_store_activity.sql": "3bd71e9531899b4c96caa75930c5edd472a67c81fc3463a0c1dcc0f175ef6d1a",
     "004_store_org_assignments.sql": "38e7a4fddc4fc4b2b8c540206eeee212e72f8580c8deaae505a8921d22992b80",
+    "005_retail_ai_analysis_views.sql": "8639dca40663398aa40ad8c4ce9abaf0481b886bec16bb0e00f98a7fd09b6ead",
     "006_drop_ai_analysis_views.sql": "256242b100dcf0a012c9c6267624e9ac6d177e14913923b1aefb8a83ac34d812",
     "007_premium_glass_indicator.sql": "718018a1e56286bf17276b3680b57ce6ec391019624132eadae9f5af260b67c2",
     "008_premium_glass_materialized_indicator.sql": "f67b06557c7c35f9913d92136c157f5793b8451ddaf9932ad65bf68a13259778",
