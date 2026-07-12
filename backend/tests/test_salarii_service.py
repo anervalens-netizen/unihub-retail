@@ -153,7 +153,7 @@ class TestSalariiAgentsSummary:
 
     @pytest.mark.asyncio
     async def test_agents_summary_all_filters(self, service, mock_repo):
-        mock_repo.fetch_agents_summary.return_value = {"items": [{"name": "Test"}], "total": 1}
+        mock_repo.fetch_agents_summary.return_value = {"items": [{"person_id": PERSON_ID, "full_name": "Test", "company_name": "FirmaA", "locatie": None, "month_count": 1, "avg_month_count": 1, "total_salary": Decimal("3000"), "avg_salary": Decimal("3000")}], "total": 1}
         result = await service.get_agents_summary("search", "FirmaA", "SITE01", "Reg1", "Asm1", 2026, 5, 10, 0)
         assert result["total"] == 1
         call = mock_repo.fetch_agents_summary.call_args
@@ -186,8 +186,8 @@ class TestSalariiAgentHistory:
     @pytest.mark.asyncio
     async def test_agent_history_with_data(self, service, mock_repo):
         mock_repo.fetch_agent_history_by_person_id.return_value = [
-            FakeRow(total_salary=Decimal("3000"), month="2026-04", year=2026, company_name="F1"),
-            FakeRow(total_salary=Decimal("3500"), month="2026-05", year=2026, company_name="F1"),
+            FakeRow(total_salary=Decimal("3000"), month=4, year=2026, company_name="F1", site_code=None, locatie=None),
+            FakeRow(total_salary=Decimal("3500"), month=5, year=2026, company_name="F1", site_code=None, locatie=None),
         ]
         result = await service.get_agent_history(PERSON_ID)
         assert result["month_count"] == 2
@@ -198,8 +198,8 @@ class TestSalariiAgentHistory:
     @pytest.mark.asyncio
     async def test_agent_history_average_excludes_months_under_2000(self, service, mock_repo):
         mock_repo.fetch_agent_history_by_person_id.return_value = [
-            FakeRow(total_salary=Decimal("1500"), month=4, year=2026, company_name="F1"),
-            FakeRow(total_salary=Decimal("3000"), month=5, year=2026, company_name="F1"),
+            FakeRow(total_salary=Decimal("1500"), month=4, year=2026, company_name="F1", site_code=None, locatie=None),
+            FakeRow(total_salary=Decimal("3000"), month=5, year=2026, company_name="F1", site_code=None, locatie=None),
         ]
         result = await service.get_agent_history(PERSON_ID)
         assert result["total"] == 4500.0
@@ -229,7 +229,7 @@ class TestSalariiAgentHistory:
             site_code="S1",
             salary_full_name=None,
             salary_cnp=None,
-            person_id=make_salary_person_id(None, None, PERSON_ID_KEY),
+            person_id=PERSON_ID,
             match_status="unknown",
             match_source="manual",
             confidence="unknown",
@@ -272,16 +272,16 @@ class TestSalariiAgentHistory:
             note="Confirmat manual",
         )
         mock_repo.fetch_agent_history_by_salary_link.return_value = [
-            FakeRow(total_salary=Decimal("3000"), month=4, year=2026, company_name="F1"),
-            FakeRow(total_salary=Decimal("3500"), month=5, year=2026, company_name="F1"),
+            FakeRow(total_salary=Decimal("3000"), month=4, year=2026, company_name="F1", site_code=None, locatie=None),
+            FakeRow(total_salary=Decimal("3500"), month=5, year=2026, company_name="F1", site_code=None, locatie=None),
         ]
 
         result = await service.get_agent_history_by_retail_code(agent_code="AG1", site_code="S1")
 
         assert result["link"]["salary_full_name"] == "Ana Popescu"
         assert result["records"] == [
-            {"total_salary": 3000.0, "month": 4, "year": 2026, "company_name": "F1"},
-            {"total_salary": 3500.0, "month": 5, "year": 2026, "company_name": "F1"},
+            {"total_salary": 3000.0, "month": 4, "year": 2026, "company_name": "F1", "site_code": None, "locatie": None},
+            {"total_salary": 3500.0, "month": 5, "year": 2026, "company_name": "F1", "site_code": None, "locatie": None},
         ]
         assert result["total"] == 6500.0
         assert result["avg"] == 3250.0
@@ -442,7 +442,7 @@ class TestSalariiRecords:
     @pytest.mark.asyncio
     async def test_records_no_filter(self, service, mock_repo):
         mock_repo.fetch_records.return_value = [
-            FakeRow(id=1, full_name="Test Agent", total_salary=Decimal("3000")),
+            FakeRow(id=1, year=2026, month=5, full_name="Test Agent", person_id=PERSON_ID, total_salary=Decimal("3000"), company_name="FirmaA", site_code=None, locatie=None),
         ]
         result = await service.get_records(None, None, None, None, 10, 0)
         assert len(result) == 1

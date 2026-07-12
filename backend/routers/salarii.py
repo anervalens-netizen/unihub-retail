@@ -10,6 +10,7 @@ from db.connection import get_pool
 from repositories.salarii import SalariiRepository
 from services.salarii import SalariiService
 from salary_identity import get_salary_person_id_key
+from schemas.salarii import SalaryAgentsSummaryResponse, SalaryHistoryResponse, SalaryRecordPublic
 from services.salarii import InvalidSalaryPersonId, UnknownSalaryPerson
 
 router = APIRouter(
@@ -61,7 +62,7 @@ async def salarii_evolution(
     return await svc.get_evolution(company_name, site_code, regional, asm)
 
 
-@router.get("/agents/summary")
+@router.get("/agents/summary", response_model=SalaryAgentsSummaryResponse)
 async def agents_summary(
     q: str | None = Query(None),
     company_name: str | None = Query(None),
@@ -77,7 +78,7 @@ async def agents_summary(
     return await svc.get_agents_summary(q, company_name, site_code, regional, asm, year, month, limit, offset)
 
 
-@router.get("/agents/{person_id}/history")
+@router.get("/agents/{person_id}/history", response_model=SalaryHistoryResponse)
 async def agent_history(
     person_id: str = Path(..., pattern=r"^sp1_[0-9a-f]{64}$"),
     svc: SalariiService = Depends(get_identity_salarii_service),
@@ -90,7 +91,7 @@ async def agent_history(
         raise HTTPException(status_code=404, detail="salary agent not found") from exc
 
 
-@router.get("/agents/history-by-retail-code")
+@router.get("/agents/history-by-retail-code", response_model=SalaryHistoryResponse)
 async def agent_history_by_retail_code(
     agent_code: str = Query(...),
     site_code: str = Query(...),
@@ -134,7 +135,7 @@ async def salarii_stores(
     return await svc.get_stores(company_name)
 
 
-@router.get("/records")
+@router.get("/records", response_model=list[SalaryRecordPublic])
 async def list_records(
     company_name: str | None = Query(None),
     year: int | None = Query(None),

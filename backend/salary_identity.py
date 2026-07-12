@@ -34,7 +34,10 @@ def canonical_salary_identity(cnp: str | None, full_name: str | None) -> str:
     private_id = (cnp or "").strip()
     if private_id:
         return f"cnp:{private_id}"
-    return f"name:{(full_name or '').strip().lower()}"
+    normalized_name = (full_name or "").strip().lower()
+    if not normalized_name:
+        raise ValueError("salary identity is empty")
+    return f"name:{normalized_name}"
 
 
 def make_salary_person_id(cnp: str | None, full_name: str | None, key: str | None = None) -> str:
@@ -61,7 +64,8 @@ def canonical_salary_identity_sql(alias: str) -> str:
     return (
         f"CASE WHEN NULLIF(BTRIM({alias}.cnp), '') IS NOT NULL "
         f"THEN 'cnp:' || BTRIM({alias}.cnp) "
-        f"ELSE 'name:' || LOWER(BTRIM(COALESCE({alias}.full_name, ''))) END"
+        f"WHEN NULLIF(BTRIM(COALESCE({alias}.full_name, '')), '') IS NOT NULL "
+        f"THEN 'name:' || LOWER(BTRIM({alias}.full_name)) ELSE NULL END"
     )
 
 

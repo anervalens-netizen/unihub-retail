@@ -33,6 +33,7 @@ The approved database-retention constraint is recorded in `docs/engineering/h01-
 - [x] Python and PostgreSQL helper implementations are proven equivalent through the actual SQL helper expression.
 - [x] Production reconciliation was executed read-only.
 - [x] Engineering review hardening is complete.
+- [x] Strict public response models and explicit service mappings are enforced.
 - [x] Local CI-equivalent coverage gate is green; remote CI must run on the pushed commit.
 
 H-01A reconciliation (read-only, 2026-07-12): 370 canonical identities,

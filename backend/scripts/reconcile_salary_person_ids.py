@@ -26,6 +26,7 @@ async def reconcile() -> dict[str, int]:
     person_id_expr = salary_person_id_sql("sr", "$1")
     history_canonical_expr = canonical_salary_identity_sql("history_sr")
     history_person_id_expr = salary_person_id_sql("history_person", "$1")
+    legacy_agent_key_expr = "COALESCE(NULLIF(BTRIM(sr.cnp), ''), 'name:' || LOWER(BTRIM(sr.full_name)))"
     conn = await asyncpg.connect(database_url)
     try:
         async with conn.transaction():
@@ -36,12 +37,14 @@ async def reconcile() -> dict[str, int]:
                     SELECT
                         {canonical_expr} AS canonical,
                         {person_id_expr} AS person_id,
+                        {legacy_agent_key_expr} AS legacy_agent_key,
                         NULLIF(BTRIM(sr.cnp), '') IS NULL AS name_fallback
                     FROM salary_records sr
                 ),
                 distinct_identities AS (
-                    SELECT DISTINCT canonical, person_id, name_fallback
+                    SELECT DISTINCT canonical, person_id, name_fallback, legacy_agent_key
                     FROM identities
+                    WHERE canonical IS NOT NULL
                 ),
                 sampled AS (
                     SELECT canonical, person_id
@@ -70,6 +73,17 @@ async def reconcile() -> dict[str, int]:
                         HAVING COUNT(DISTINCT canonical) > 1
                     ) collisions) AS collision_count,
                     (SELECT COUNT(*) FROM distinct_identities WHERE name_fallback) AS name_fallback_identity_count,
+                    (SELECT COUNT(*) FROM identities WHERE canonical IS NULL) AS empty_canonical_identity_row_count,
+                    (SELECT COUNT(DISTINCT legacy_agent_key) FROM distinct_identities) AS legacy_agent_key_count,
+                    (SELECT COUNT(DISTINCT canonical) FROM distinct_identities) AS canonical_agent_key_count,
+                    (SELECT COUNT(*) FROM (
+                        SELECT legacy_agent_key FROM distinct_identities GROUP BY legacy_agent_key
+                        HAVING COUNT(DISTINCT canonical) > 1
+                    ) ambiguous_legacy) AS ambiguous_legacy_agent_key_count,
+                    (SELECT COUNT(*) FROM (
+                        SELECT canonical FROM distinct_identities GROUP BY canonical
+                        HAVING COUNT(DISTINCT person_id) > 1
+                    ) canonical_multiple) AS canonical_agent_key_multiple_person_id_count,
                     (SELECT COUNT(*) FROM (
                         SELECT BTRIM(cnp)
                         FROM salary_records
@@ -101,6 +115,14 @@ def main() -> int:
     if result["generated_person_id_count"] != result["canonical_identity_count"]:
         return 1
     if result["collision_count"] != 0 or result["sampled_history_mismatch_count"] != 0:
+        return 1
+    if result["empty_canonical_identity_row_count"] != 0:
+        return 1
+    if result["legacy_agent_key_count"] != result["canonical_agent_key_count"]:
+        return 1
+    if result["ambiguous_legacy_agent_key_count"] != 0:
+        return 1
+    if result["canonical_agent_key_multiple_person_id_count"] != 0:
         return 1
     return 0
 

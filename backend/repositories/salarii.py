@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
-from salary_identity import salary_person_id_sql
+from salary_identity import canonical_salary_identity_sql, salary_person_id_sql
 
 
 MIN_SALARY_FOR_AVERAGE = 2000
@@ -299,10 +299,7 @@ class SalariiRepository:
                     SELECT
                         sd.*,
                         {person_id_expr} AS person_id,
-                        COALESCE(
-                            NULLIF(BTRIM(cnp), ''),
-                            'name:' || LOWER(BTRIM(full_name))
-                        ) AS agent_key
+                        {canonical_salary_identity_sql("sd")} AS agent_key
                     FROM salary_dedup
                 ),
                 agent_months AS (

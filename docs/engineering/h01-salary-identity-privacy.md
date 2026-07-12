@@ -221,6 +221,24 @@ H-01B must not drop, blank, hash-overwrite or destructively migrate CNP values w
 
 ## H-01A implementation evidence
 
+## Final response-contract hardening
+
+The salary public boundary is represented by strict Pydantic v2 models with
+`extra="forbid"`: agent summary, history record/history response, retail-code
+link and generic salary record. Services construct every public field
+explicitly; database rows are never serialized wholesale.
+
+The four identity-bearing routes declare response models in OpenAPI:
+agent summary, opaque history, retail-code history and generic records. Their
+schemas exclude internal matching fields. The canonical SQL grouping expression
+is the same helper used for `person_id`; an empty private ID and empty name
+produces no canonical identity and fails the public identity path safely.
+
+Final read-only reconciliation reported 370 canonical/370 generated IDs, zero
+collisions, zero empty canonical rows, matching legacy/canonical grouping
+counts, and zero grouping ambiguities or sampled-history mismatches. CNP data
+remains retained and untouched in PostgreSQL.
+
 - `backend/salary_identity.py` centralizes HMAC-SHA256 identity creation and strict key/person-ID validation. SQL receives the HMAC key only as a bind parameter.
 - A read-only production reconciliation was executed with synthetic/temporary key material and aggregate-only output.
 - Engineering review hardening aligns Python and SQL on the exact expression:
