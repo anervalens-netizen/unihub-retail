@@ -27,6 +27,7 @@
     "019_agent_salary_links.sql": "111bc88bb566fe5d0d95fff0a90bc16b0e5c3eb82b072fe464c5ab019562d5b2",
     "020_incentive_product_periods.sql": "68f29fd39dc284a3883f299082f6bf32fcdf60344668a9202adc69d2b38a7dc3",
     "021_store_pnl_actuals.sql": "b4f8e1f92a5308dfbddc3d315d3a498f53884db61aa4744b7121ea509da9fa1c",
-    "022_store_pnl_site_links.sql": "f1d5d2f4f378c08b039c5bbe9602cee6649037d77b9e2d56d4f36f860b0b19bb"
+    "022_store_pnl_site_links.sql": "f1d5d2f4f378c08b039c5bbe9602cee6649037d77b9e2d56d4f36f860b0b19bb",
+    "023_salary_private_identity_boundary.sql": "e8bbd208da17a6e604aa4310159faad376d6d9a62a9b0207d07a28dd16c99ce8"
   }
 }

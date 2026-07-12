@@ -29,6 +29,13 @@ def test_public_response_keys_are_opaque() -> None:
     assert '"salary_cnp"' not in source
 
 
+def test_runtime_salary_repository_cannot_query_private_identity_columns() -> None:
+    source = (ROOT / "backend/repositories/salarii.py").read_text(encoding="utf-8").lower()
+    assert "cnp" not in source
+    assert "salary_private" not in source
+    assert "salary_cnp" not in source
+
+
 @pytest.mark.asyncio
 async def test_identity_dependency_fails_closed_but_base_service_is_lazy(monkeypatch: pytest.MonkeyPatch) -> None:
     from routers import salarii

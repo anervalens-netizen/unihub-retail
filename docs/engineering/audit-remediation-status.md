@@ -63,13 +63,15 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 - [ ] H-06 BFF/server-side session design and phased implementation.
 - [x] H-07 Trusted-proxy-aware distributed rate limiting in application code;
   production proxy/firewall/environment activation remains pending.
-- [ ] H-01B Isolate and protect retained CNP inside PostgreSQL.
+- [ ] H-01B Isolate and protect retained CNP inside PostgreSQL — expand,
+  backfill and runtime-query boundary implemented; production adoption and
+  least-privilege role contract remain.
 
 ### Wave 3 — Database lifecycle and jobs
 
-- [x] H-02 Freeze bootstrap baseline and introduce immutable migration checksums — implemented locally, production adoption pending CI/merge.
-- [x] H-02 Add advisory lock and separate migration runner — implemented locally, production adoption pending CI/merge.
-- [x] Remove schema mutation from web startup — implemented locally, production adoption pending CI/merge.
+- [x] H-02 Freeze bootstrap baseline and introduce immutable migration checksums — merged and active in production.
+- [x] H-02 Add advisory lock and separate migration runner — merged and active in production.
+- [x] Remove schema mutation from web startup — active; startup performs read-only verification.
 - [ ] Split worker queues and service units by workload class.
 - [ ] Stage upload files outside Valkey and enqueue references plus hashes.
 - [ ] Add persistent job state, heartbeat, retry and reconciliation.

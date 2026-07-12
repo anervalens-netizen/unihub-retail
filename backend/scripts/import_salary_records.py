@@ -27,7 +27,11 @@ import asyncpg
 import pandas as pd
 from dotenv import load_dotenv
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from salary_identity import get_salary_person_id_key, make_salary_person_id
+
 REPO_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(REPO_DIR / ".env.migrations")
 load_dotenv(REPO_DIR / ".env")
 
 
@@ -221,13 +225,31 @@ def validate_records(records: list[SalaryRecord]) -> None:
             duplicates.append(record)
         seen.add(key)
     if duplicates:
-        sample = ", ".join(f"{r.company_name}:{r.full_name}:{r.cnp}" for r in duplicates[:5])
-        raise ValueError(f"Duplicate pe cheia salary_records: {sample}")
+        raise ValueError(
+            "Duplicate pe cheia salary_records: "
+            f"duplicate_count={len(duplicates)}"
+        )
 
 
 async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) -> None:
     if not records:
         raise ValueError("Nu exista randuri valide de importat.")
+    person_id_key = get_salary_person_id_key()
+    identified_records = [
+        (record, make_salary_person_id(record.cnp, record.full_name, person_id_key))
+        for record in records
+    ]
+    await conn.executemany(
+        """
+        INSERT INTO salary_private.people (
+            person_id, cnp, normalized_name, identity_source
+        ) VALUES ($1, $2, LOWER(BTRIM($3)), 'cnp')
+        ON CONFLICT (person_id) DO UPDATE SET
+            cnp = EXCLUDED.cnp,
+            normalized_name = EXCLUDED.normalized_name
+        """,
+        [(person_id, record.cnp, record.full_name) for record, person_id in identified_records],
+    )
     await conn.execute(
         "DELETE FROM salary_records WHERE year = $1 AND month = $2 AND company_name = ANY($3::text[])",
         records[0].year,
@@ -237,9 +259,10 @@ async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) 
     await conn.executemany(
         """
         INSERT INTO salary_records (
-            year, month, full_name, cnp, total_salary, company_name, site_code, locatie
+            year, month, full_name, cnp, total_salary, company_name, site_code, locatie,
+            person_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
         [
             (
@@ -251,8 +274,9 @@ async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) 
                 r.company_name,
                 r.site_code,
                 r.locatie,
+                person_id,
             )
-            for r in records
+            for r, person_id in identified_records
         ],
     )
 
@@ -280,7 +304,7 @@ async def main() -> None:
     parser.add_argument("--apply", action="store_true", help="Scrie in DB. Fara flag ruleaza dry-run.")
     args = parser.parse_args()
 
-    db_url = os.environ.get("DATABASE_URL")
+    db_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not db_url:
         print("EROARE: DATABASE_URL lipseste din .env", file=sys.stderr)
         sys.exit(1)

@@ -407,9 +407,11 @@ Media salariala folosita in toate cardurile este:
 media valorilor agent-luna care sunt >= 2.000 RON
 ```
 
-Identitatea canonica interna foloseste CNP, cu numele normalizat ca fallback
-pentru randurile istorice fara CNP. La limita API aceasta identitate este
-transformata intr-un `person_id` opac HMAC; CNP-ul nu paraseste backend-ul.
+Identitatea salariala persistata foloseste `person_id` opac. CNP-ul retinut si
+maparea sa sunt limitate la `salary_private.people` si la procedurile aprobate
+de import/backfill; repository-urile runtime nu citesc CNP. Pentru randurile
+istorice, backfill-ul a derivat acelasi ID HMAC din CNP sau din numele normalizat
+ca fallback, pastrand compatibilitatea API.
 Inainte de agregare, read model-ul elimina
 duplicatele complet identice. Astfel, un agent cu doua randuri de plata in
 aceeasi luna contribuie cu suma ambelor randuri, dar este numarat o singura
