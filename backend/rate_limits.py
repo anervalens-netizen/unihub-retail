@@ -116,6 +116,7 @@ async def enforce_rate_limit(
             headers=headers,
         )
     _decisions.labels(policy.name, "allowed").inc()
+    request.state.rate_limit_headers = headers
     if response is not None:
         for name, value in headers.items():
             response.headers[name] = value

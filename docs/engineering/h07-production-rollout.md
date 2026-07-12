@@ -4,6 +4,26 @@ This runbook is a review artifact. It does not authorize changes by itself.
 Never print environment values, the HMAC secret, Valkey credentials, raw
 client addresses or forwarded header contents.
 
+## Execution record — 2026-07-12
+
+Wave 2 was merged as `eb8618a22cc5a53708f0a5a866b81cdde1b20c31`
+and activated through this runbook. Production now has:
+
+- Caddy fixed at `172.23.0.2` on `unihub-net`;
+- Retail ingress restricted to the local Cloudflare Tunnel origin;
+- forwarded headers stripped and `CF-Connecting-IP` explicitly propagated;
+- port 9898 allowed only from Caddy and the Prometheus scraper;
+- Uvicorn proxy-header rewriting disabled;
+- OIDC/JWKS, salary identity and rate-limit secrets provisioned without values
+  being stored in Git;
+- backend restarted successfully while the worker PID remained unchanged.
+
+Local/public health, Caddy validation, direct non-tunnel rejection, Valkey
+decisions and finite Prometheus labels were verified. A live verification also
+identified and fixed the loss of successful `RateLimit-*` headers when an
+endpoint returned an explicit response object; the regression is covered by an
+ASGI test.
+
 ## Required infrastructure state
 
 Before activating distributed enforcement:

@@ -136,6 +136,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         started_at = time.perf_counter()
         response = await call_next(request)
+        for name, value in getattr(request.state, "rate_limit_headers", {}).items():
+            response.headers[name] = value
         if request.url.path != "/metrics":
             route = request.scope.get("route")
             handler = getattr(route, "path", request.url.path)
