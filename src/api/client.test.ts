@@ -65,6 +65,18 @@ describe('client.get', () => {
     expect(opts.headers.Authorization).toBe('Bearer test-token-123');
   });
 
+  it('preserves an explicit Authorization header over a stale provider token', async () => {
+    setAccessTokenProvider(() => 'stale-provider-token');
+    mockFetch.mockResolvedValueOnce(okResponse({}));
+
+    await client.get('/api/data', {
+      headers: { Authorization: 'Bearer current-session-token' },
+    });
+
+    const [, opts] = fetchCall();
+    expect(opts.headers.Authorization).toBe('Bearer current-session-token');
+  });
+
   it('does not include Authorization when no token provider', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({}));
     await client.get('/api/data');
