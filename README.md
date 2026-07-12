@@ -2,6 +2,10 @@
 
 UniHub este o aplicatie de operare comerciala pentru retail, construita pentru monitorizarea vanzarilor, a targetelor, a focus products, a promotiilor, a fiselor de vizita din magazine si a operatiunilor de management (echipa, CRM, tasks, HR, calculator target).
 
+Starea curenta a planului de dezvoltare si drumul pana la urmatoarea versiune
+sunt sintetizate in
+[`docs/engineering/development-plan-status.md`](docs/engineering/development-plan-status.md).
+
 Aplicatia este gandita pentru lucru local, fara Docker, cu:
 - frontend React + Vite
 - backend FastAPI
@@ -186,19 +190,29 @@ Permite inregistrarea si urmarirea vizitelor in magazine:
 Geolocatia a fost eliminata complet din arhitectura aplicatiei.
 
 ### Agenti
-Tabul principal Agenti include `Prezentare Generala`, `Salarii` si
+Tabul principal Agenti include `Prezentare Generala`, `Grile` si
 `Analiza agenti`.
+
+- **Grile** — verificarea grilelor salariale permanente, statusul pe magazine
+  si operatiunile lunare controlate. Operatiunile privilegiate raman autorizate
+  separat in backend.
 
 - **Analiza agenti** — evaluare agenti pe agentii activi curent, cu alocarea curenta de firma/magazin/manager. Sectiunea are doua moduri comutabile: evaluarea actuala (`/api/agents/evaluation`) si evaluarea noua, separata (`/api/agents/evaluation-v2`).
 
 ### Management
 Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
+subtaburile sunt afisate in bara interna a ecranului, la fel ca in Agenti si
+Focus; sidebar-ul contine numai intrarea principala Management.
 
 - **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM; cardurile expandate includ scorurile magazinelor alocate. Router: `/api/hr`
 - **Magazine (CRM, istoric intern)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
 - **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
 - **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
 - **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
+- **Salarii** — overview, evolutie, raport salarii versus vanzari si istoric pe
+  agent. Accesul ramane limitat server-side la rolurile salariale aprobate.
+- **P&L** — sumar financiar lunar pe magazin, evolutie si structura de cost,
+  vizibil numai utilizatorilor cu capabilitatea P&L verificata de backend.
 
 Evaluarea din **Agenti -> Analiza agenti** foloseste 6 segmente, fiecare cu 0-3 puncte:
 Target valoare, Medie zilnica, Valoare reper, % Bonuri, Focus si Folii Premium.
@@ -323,18 +337,16 @@ Crearea propunerii salveaza imediat un draft comun, iar modificarile de
 manageri care deschid sau reincarca acelasi draft.
 Coloana `Final manager` este evidentiata ca zona de completat de manageri.
 Calculul/recalcularea propunerii si butonul `Finalizeaza`, care publica
-targetele oficiale, sunt afisate si acceptate de backend numai pentru
-emailurile configurate in
-`TARGET_CALCULATOR_FINALIZER_EMAILS` (implicit `aner.valens@gmail.com`).
+targetele oficiale, sunt afisate si acceptate de backend numai pentru grupurile
+OIDC dedicate configurate pentru capabilitatea Calculator Target.
 Cardul superior cu parametrii de calcul este ascuns integral pentru ceilalti
 manageri; acestia vad documentul calculat, completeaza `Final manager` si au
 ca actiune operationala numai `Salveaza acum`.
 
-Modelul curent de securitate este autentificare OIDC plus control explicit
-doar pentru actiunile de finalizare din Calculator Target. Majoritatea
-modulelor nu au inca RBAC pe grupuri sau scope per manager; conturile din
-Authentik trebuie acordate doar utilizatorilor interni de incredere. Tabul
-Salarii expune CNP si valori salariale utilizatorilor autentificati.
+Modelul curent de securitate este Authentik OIDC cu RBAC backend centralizat.
+Management, salariile, importurile si actiunile privilegiate au politici
+server-side dedicate; autorizarea privilegiata nu foloseste adrese email.
+Contractele publice Salarii expun numai `person_id`, niciodata CNP.
 Tabelul per locatie are filtru multi-select pe locatie. Click pe numele unei
 locatii deschide un drawer lateral cu 16 luni de vanzari versus target, KPI-uri
 Retail (cantitate, bonuri, Bon2Acc, Focus/Acc, cartele, agenti activi) si
@@ -449,7 +461,7 @@ Nota: datele 2023-2024 nu au informatii per-agent individual (campul `agent` est
 
 ### Salarii
 
-Salariile afisate in tabul **Agenti -> Salarii** sunt citite din tabela
+Salariile afisate in tabul **Management -> Salarii** sunt citite din tabela
 `salary_records`.
 
 Sursa operationala pentru salarii este setul de fisiere HR din:
@@ -489,11 +501,13 @@ Observatii de calitate a datelor:
 - randurile fara `site_code` intra in totaluri si in istoricul agentilor, dar nu intra corect in filtrele pe magazin/regional/ASM;
 - cateva randuri istorice Mobicell au CNP gol in sursa initiala; read model-ul foloseste numele normalizat ca fallback si elimina duplicatele complet identice.
 
-Filtrele globale din **Agenti -> Salarii** se aplica pe toate cardurile din
-tab. Filtrul de magazin este transmis ca `site_code` catre overview, evolutie,
-summary, trend si lista de agenti.
+Filtrele de analiza salvate pentru zona Agenti sunt reutilizate de
+**Management -> Salarii** pe toate cardurile. Filtrul de magazin este transmis
+ca `site_code` catre overview, evolutie, summary, trend si lista de agenti.
 
-Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
+API-ul public foloseste identificatorul opac `person_id`; CNP-ul retinut in
+PostgreSQL nu este returnat browserului, folosit in URL-uri sau expus in
+contractele publice. Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
 unitar pe valorile agent-luna de cel putin `2.000 RON`. Identitatea principala
 este CNP-ul. Daca acelasi agent are mai multe randuri de plata in aceeasi luna,
 valorile se insumeaza inainte de aplicarea pragului. Valorile sub prag sunt

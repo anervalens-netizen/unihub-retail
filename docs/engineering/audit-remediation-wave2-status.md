@@ -1,8 +1,12 @@
 # Audit remediation Wave 2 — Privacy and identity
 
-**Base:** `main` at `0c2834f69d47094e469a31fec9111bae06edd519`  
-**Branch:** `stabilization/audit-remediation-wave2-privacy`  
+**Base:** `main` at `0c2834f69d47094e469a31fec9111bae06edd519`
+**Branch:** `stabilization/audit-remediation-wave2-privacy`
 **Status:** implementation branch; no production deployment from this branch
+
+**Progress summary (2026-07-12):** H-01A, H-04/H-05 and the application side
+of H-07 are implemented and CI-green. The remaining Wave 2 scope is H-06,
+H-01B and the controlled production activation of H-07.
 
 ## Scope
 
