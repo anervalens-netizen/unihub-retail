@@ -22,6 +22,40 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+class _BackfillConnection:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    async def execute(self, sql: str, *_args: object) -> str:
+        self.statements.append(sql)
+        return "OK"
+
+    async def fetchrow(self, _sql: str) -> dict[str, int]:
+        return {
+            "people": 1,
+            "records": 0,
+            "records_missing": 0,
+            "confirmed_links": 1,
+            "links_missing": 0,
+            "collisions": 0,
+        }
+
+
+@pytest.mark.anyio
+async def test_backfill_materializes_link_only_private_identities() -> None:
+    connection = _BackfillConnection()
+    await backfill(connection, TEST_KEY)  # type: ignore[arg-type]
+    private_inserts = [
+        statement
+        for statement in connection.statements
+        if "INSERT INTO salary_private.people" in statement
+    ]
+    assert len(private_inserts) == 2
+    assert "FROM salary_records" in private_inserts[0]
+    assert "FROM agent_salary_links" in private_inserts[1]
+    assert "match_status = 'confirmed'" in private_inserts[1]
+
+
 async def _cleanup() -> None:
     pool = await get_pool()
     async with pool.acquire() as connection:
