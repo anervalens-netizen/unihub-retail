@@ -8,153 +8,115 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
 
-// ── OIDC config ──────────────────────────────────────────────────────
-const browserOrigin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
-const browserStorage = typeof window === 'undefined' ? undefined : window.localStorage;
+import { setCsrfTokenProvider } from '../api/client';
 
-const OIDC_AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY ?? `${browserOrigin}/auth/proxy/application/o/unihub-retail/`;
-const OIDC_CLIENT_ID = import.meta.env.VITE_OIDC_CLIENT_ID ?? '4yiNauwNNzIoIE3Mq9IFnylxtdih9jFSqSKGw93t';
-const OIDC_REDIRECT_URI = import.meta.env.VITE_OIDC_REDIRECT_URI ?? `${browserOrigin}/auth/callback`;
-const OIDC_POST_LOGOUT_URI = import.meta.env.VITE_OIDC_POST_LOGOUT_URI ?? browserOrigin;
+export type SessionProfile = {
+  sub: string;
+  email?: string;
+  preferred_username?: string;
+  groups: string[];
+};
 
-const userManager = new UserManager({
-  authority: OIDC_AUTHORITY,
-  client_id: OIDC_CLIENT_ID,
-  redirect_uri: OIDC_REDIRECT_URI,
-  post_logout_redirect_uri: OIDC_POST_LOGOUT_URI,
-  response_type: 'code',
-  scope: 'openid profile email offline_access',
-  automaticSilentRenew: true,
-  monitorSession: false, // authentik session monitoring not needed
-  userStore: browserStorage ? new WebStorageStateStore({ store: browserStorage }) : undefined,
-});
+export type SessionUser = {
+  profile: SessionProfile;
+};
 
-async function getStoredOrRenewedUser(): Promise<User | null> {
-  const existingUser = await userManager.getUser();
-  if (!existingUser) return null;
-  if (!existingUser.expired) return existingUser;
+type SessionResponse = {
+  profile: SessionProfile;
+  csrf_token: string;
+};
 
-  try {
-    return await userManager.signinSilent();
-  } catch (err) {
-    console.warn('OIDC silent renew on startup failed:', err);
-    await userManager.removeUser();
-    return null;
-  }
-}
-
-// ── Context ──────────────────────────────────────────────────────────
 interface AuthContextValue {
-  user: User | null;
+  user: SessionUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
-  getAccessToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// ── Provider ─────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const csrfRef = useRef<string | null>(null);
   const initRef = useRef(false);
+
+  useEffect(() => {
+    setCsrfTokenProvider(() => csrfRef.current);
+    return () => setCsrfTokenProvider(null);
+  }, []);
 
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
 
     const init = async () => {
+      const e2eUser = (window as unknown as Record<string, unknown>).__E2E_USER__ as SessionUser | undefined;
+      if (e2eUser) {
+        setUser(e2eUser);
+        setIsLoading(false);
+        return;
+      }
       try {
-        // E2E testing bypass — set window.__E2E_USER__ before page load
-        const e2eUser = (window as unknown as Record<string, unknown>).__E2E_USER__ as User | undefined;
-        if (e2eUser) {
-          setUser(e2eUser);
-          setIsLoading(false);
+        const response = await fetch('/auth/session', {
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+        });
+        if (response.status === 401) {
+          window.location.assign('/auth/session/login');
           return;
         }
-
-        if (window.location.pathname === '/auth/callback') {
-          const callbackUser = await userManager.signinRedirectCallback();
-          setUser(callbackUser);
-          // Clean up the URL — remove auth params
-          window.history.replaceState({}, '', '/');
-          setIsLoading(false);
-          return;
+        if (!response.ok) throw new Error(`Session bootstrap failed: ${response.status}`);
+        const payload = await response.json() as SessionResponse;
+        if (!payload.profile?.sub || !Array.isArray(payload.profile.groups) || !payload.csrf_token) {
+          throw new Error('Session bootstrap returned an invalid contract');
         }
-
-        // Try to get existing user from storage, refreshing expired access tokens
-        // with the persisted refresh token before redirecting to authentik.
-        const existingUser = await getStoredOrRenewedUser();
-        setUser(existingUser);
+        csrfRef.current = payload.csrf_token;
+        setUser({ profile: payload.profile });
+      } catch (error) {
+        console.error('Session bootstrap failed', error);
+      } finally {
         setIsLoading(false);
-        if (!existingUser) {
-          await userManager.signinRedirect();
-        }
-      } catch (err) {
-        console.error('OIDC init error:', err);
-        setIsLoading(false);
-        await userManager.signinRedirect();
       }
     };
-
-    init();
-
-    // Listen for token refresh events
-    const onUserLoaded = (refreshedUser: User) => setUser(refreshedUser);
-    const onUserUnloaded = () => setUser(null);
-    const onSilentRenewError = (err: Error) => {
-      console.error('Silent renew failed:', err);
-      // Token couldn't be refreshed — force re-login
-      userManager.signinRedirect();
-    };
-
-    userManager.events.addUserLoaded(onUserLoaded);
-    userManager.events.addUserUnloaded(onUserUnloaded);
-    userManager.events.addSilentRenewError(onSilentRenewError);
-
-    return () => {
-      userManager.events.removeUserLoaded(onUserLoaded);
-      userManager.events.removeUserUnloaded(onUserUnloaded);
-      userManager.events.removeSilentRenewError(onSilentRenewError);
-    };
+    void init();
   }, []);
 
   const login = useCallback(async () => {
-    await userManager.signinRedirect();
+    window.location.assign('/auth/session/login');
   }, []);
 
   const logout = useCallback(async () => {
-    await userManager.signoutRedirect();
+    const response = await fetch('/auth/session/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: csrfRef.current ? { 'X-CSRF-Token': csrfRef.current } : {},
+    });
+    csrfRef.current = null;
+    setUser(null);
+    if (response.ok) {
+      const payload = await response.json() as { logout_url?: string };
+      window.location.assign(payload.logout_url || '/auth/session/login');
+      return;
+    }
+    window.location.assign('/auth/session/login');
   }, []);
 
-  const getAccessToken = useCallback(() => {
-    return user?.access_token ?? null;
-  }, [user]);
-
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
-      isAuthenticated: !!user && !user.expired,
-      isLoading,
-      login,
-      logout,
-      getAccessToken,
-    }),
-    [user, isLoading, login, logout, getAccessToken],
-  );
+  const value = useMemo<AuthContextValue>(() => ({
+    user,
+    isAuthenticated: user !== null,
+    isLoading,
+    login,
+    logout,
+  }), [user, isLoading, login, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// ── Hook ─────────────────────────────────────────────────────────────
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within <AuthProvider>');
-  }
+  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>');
   return ctx;
 }

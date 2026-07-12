@@ -205,7 +205,8 @@ def _api_route_contexts(app: Any) -> list[RouteContext]:
 def test_sensitive_routes_keep_named_rate_limit_dependencies() -> None:
     from main import app
     expected = {
-        ("GET", "/auth/proxy/{path:path}"): "rate_limit_auth_proxy", ("POST", "/auth/proxy/{path:path}"): "rate_limit_auth_proxy",
+        ("GET", "/auth/session/login"): "rate_limit_auth_proxy", ("GET", "/auth/callback"): "rate_limit_auth_proxy",
+        ("GET", "/auth/session"): "rate_limit_auth_proxy", ("POST", "/auth/session/logout"): "rate_limit_auth_proxy",
         ("POST", "/api/import/sales"): "rate_limit_sales_import_upload", ("POST", "/api/import/promo-actuals"): "rate_limit_sales_import_upload",
         ("POST", "/api/exports/preview"): "rate_limit_report_export", ("POST", "/api/exports/download"): "rate_limit_report_export",
         ("POST", "/api/grile/run"): "rate_limit_grile_job", ("POST", "/api/grile/monthly/run"): "rate_limit_grile_job",

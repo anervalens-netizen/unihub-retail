@@ -27,7 +27,7 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: 'npx vite --port 3333 --host 0.0.0.0',
+          command: 'npm run build && npx vite preview --port 3333 --host 0.0.0.0',
           url: 'http://localhost:3333',
           reuseExistingServer: !process.env.CI,
           timeout: 30000,

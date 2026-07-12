@@ -144,9 +144,11 @@ async def test_lifespan_startup_failure_still_runs_cleanup_in_order(monkeypatch:
     events: list[str] = []
     monkeypatch.setattr(main, "validate_required_env_vars", lambda: events.append("validate"))
     monkeypatch.setattr(main, "init_oidc_runtime", AsyncMock(side_effect=lambda: events.append("oidc-init")))
+    monkeypatch.setattr(main, "init_session_runtime", AsyncMock(side_effect=lambda: events.append("session-init")))
     monkeypatch.setattr(main, "init_rate_limit_runtime", AsyncMock(side_effect=lambda: events.append("rate-init")))
     monkeypatch.setattr(main, "close_rate_limit_runtime", AsyncMock(side_effect=lambda: events.append("rate-close")))
     monkeypatch.setattr(main, "close_oidc_runtime", AsyncMock(side_effect=lambda: events.append("oidc-close")))
+    monkeypatch.setattr(main, "close_session_runtime", AsyncMock(side_effect=lambda: events.append("session-close")))
     monkeypatch.setattr(main, "init_db_pool", AsyncMock(side_effect=lambda: events.append("init")))
     monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=_Pool()))
     monkeypatch.setattr(main, "attach_db_error_handler", lambda _pool: events.append("attach"))
@@ -158,7 +160,7 @@ async def test_lifespan_startup_failure_still_runs_cleanup_in_order(monkeypatch:
     with pytest.raises(RuntimeError, match="schema failed"):
         async with main.lifespan(main.app):
             pass
-    assert events[-5:] == ["arq", "detach", "db", "rate-close", "oidc-close"]
+    assert events[-6:] == ["arq", "detach", "db", "rate-close", "session-close", "oidc-close"]
 
 
 @pytest.mark.asyncio
@@ -171,6 +173,7 @@ async def test_lifespan_cleanup_continues_after_cleanup_failure(
     events: list[str] = []
     monkeypatch.setattr(main, "validate_required_env_vars", lambda: None)
     monkeypatch.setattr(main, "init_oidc_runtime", AsyncMock())
+    monkeypatch.setattr(main, "init_session_runtime", AsyncMock())
     monkeypatch.setattr(main, "init_rate_limit_runtime", AsyncMock())
     monkeypatch.setattr(main, "init_db_pool", AsyncMock())
     monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=_Pool()))
@@ -208,8 +211,11 @@ async def test_lifespan_cleanup_continues_after_cleanup_failure(
     async def close_oidc() -> None:
         events.append("oidc")
     monkeypatch.setattr(main, "close_oidc_runtime", close_oidc)
+    async def close_session() -> None:
+        events.append("session")
+    monkeypatch.setattr(main, "close_session_runtime", close_session)
 
     with pytest.raises(RuntimeError):
         async with main.lifespan(main.app):
             pass
-    assert events == ["arq", "detach", "db", "rate", "oidc"]
+    assert events == ["arq", "detach", "db", "rate", "session", "oidc"]

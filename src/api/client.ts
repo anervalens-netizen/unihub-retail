@@ -19,12 +19,12 @@ function resolveApiBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
-let getAccessTokenFn: (() => string | null) | null = null;
+let getCsrfTokenFn: (() => string | null) | null = null;
 let onUnauthorizedFn: (() => void) | null = null;
 let unauthorizedRedirectStarted = false;
 
-export const setAccessTokenProvider = (fn: (() => string | null) | null) => {
-  getAccessTokenFn = fn;
+export const setCsrfTokenProvider = (fn: (() => string | null) | null) => {
+  getCsrfTokenFn = fn;
   unauthorizedRedirectStarted = false;
 };
 
@@ -54,14 +54,10 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === normalizedName);
 }
 
-function getAuthHeaders(existingHeaders: Record<string, string> = {}): Record<string, string> {
-  if (hasHeader(existingHeaders, 'authorization')) {
-    return existingHeaders;
-  }
-
-  const token = getAccessTokenFn?.();
-  if (token) {
-    return { ...existingHeaders, Authorization: `Bearer ${token}` };
+function getSessionHeaders(existingHeaders: Record<string, string> = {}, csrf = false): Record<string, string> {
+  if (csrf && !hasHeader(existingHeaders, 'x-csrf-token')) {
+    const token = getCsrfTokenFn?.();
+    if (token) return { ...existingHeaders, 'X-CSRF-Token': token };
   }
   return existingHeaders;
 }
@@ -124,9 +120,9 @@ function makeJsonHeaders(data: unknown, headers?: Record<string, string>): Recor
   if (data instanceof FormData) {
     const out = { ...headers };
     delete out['Content-Type'];
-    return getAuthHeaders(out);
+    return getSessionHeaders(out, true);
   }
-  return getAuthHeaders({ 'Content-Type': 'application/json', ...headers });
+  return getSessionHeaders({ 'Content-Type': 'application/json', ...headers }, true);
 }
 
 export const client = {
@@ -136,7 +132,8 @@ export const client = {
   ): Promise<{ data: T }> => {
     const response = await fetch(buildUrl(url, options?.params), {
       method: 'GET',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json', ...options?.headers }),
+      credentials: 'same-origin',
+      headers: getSessionHeaders({ 'Content-Type': 'application/json', ...options?.headers }),
     });
 
     await handleResponse(response);
@@ -150,6 +147,7 @@ export const client = {
   ): Promise<{ data: T }> => {
     const response = await fetch(buildUrl(url, options?.params), {
       method: 'POST',
+      credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
     });
@@ -165,6 +163,7 @@ export const client = {
   ): Promise<{ data: T }> => {
     const response = await fetch(buildUrl(url, options?.params), {
       method: 'PUT',
+      credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
     });
@@ -179,6 +178,7 @@ export const client = {
   ): Promise<{ data: T }> => {
     const response = await fetch(buildUrl(url, options?.params), {
       method: 'PATCH',
+      credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
     });
@@ -192,7 +192,8 @@ export const client = {
   ): Promise<{ data: T }> => {
     const response = await fetch(buildUrl(url, options?.params), {
       method: 'DELETE',
-      headers: getAuthHeaders(options?.headers),
+      credentials: 'same-origin',
+      headers: getSessionHeaders(options?.headers, true),
     });
     await handleResponse(response);
     return { data: await parseResponse<T>(response, options?.responseType) };

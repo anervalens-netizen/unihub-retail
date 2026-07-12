@@ -13,7 +13,7 @@ import {
   loadSettingsScreen,
 } from './screenLoaders';
 import { useAuth } from './auth/AuthContext';
-import { setAccessTokenProvider, setUnauthorizedHandler } from './api/client';
+import { setUnauthorizedHandler } from './api/client';
 import { canAccessManagement } from './auth/permissions';
 import { pnlPermissionIsPending, shouldResetPnlSubtab } from './auth/pnlAccess';
 import { usePnlCapability } from './auth/usePnlCapability';
@@ -69,14 +69,13 @@ function loadSavedFilters(key: string): AppFilters {
 }
 
 export default function App() {
-  const { isAuthenticated, isLoading: isAuthLoading, login, logout, getAccessToken, user } = useAuth();
-  const hasManagementAccess = canAccessManagement(user?.profile, user?.access_token);
+  const { isAuthenticated, isLoading: isAuthLoading, login, logout, user } = useAuth();
+  const hasManagementAccess = canAccessManagement(user?.profile);
   const verifiedSubject = typeof user?.profile.sub === 'string' ? user.profile.sub : undefined;
   const { permissionPending: isPnlCapabilityPending, hasPnlAccess } = usePnlCapability(
     isAuthenticated,
     verifiedSubject,
     hasManagementAccess,
-    user?.access_token,
   );
   const isPnlPermissionPending = pnlPermissionIsPending(
     isAuthLoading,
@@ -84,11 +83,10 @@ export default function App() {
   );
 
   useEffect(() => {
-    setAccessTokenProvider(getAccessToken);
     setUnauthorizedHandler(() => {
       void login();
     });
-  }, [getAccessToken, login]);
+  }, [login]);
 
   const [activeTab, setActiveTab] = usePersistentState<ActiveTab>('unihub_active_tab', 'hub', {
     deserialize: (raw) => sanitizeActiveTab(raw, hasManagementAccess),
