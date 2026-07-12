@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from privileged_access import privileged_access_config_errors
+from oidc_settings import oidc_config_errors
 from salary_identity import SALARY_PERSON_ID_HMAC_KEY_ENV, validate_salary_person_id_key
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +68,7 @@ def validate_required_env_vars() -> None:
             )
 
     errors.extend(privileged_access_config_errors(_is_production()))
+    errors.extend(oidc_config_errors(_is_production()))
 
     person_id_key = os.getenv(SALARY_PERSON_ID_HMAC_KEY_ENV)
     if _is_production():

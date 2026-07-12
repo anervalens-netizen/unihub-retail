@@ -8,6 +8,12 @@ import pytest
 from config import ConfigError, get_visits_db_path, get_visits_images_dir, validate_required_env_vars, _is_production
 
 
+@pytest.fixture(autouse=True)
+def _clear_oidc_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_AUDIENCE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_GROUPS", "target-role")
     monkeypatch.setenv("GRILE_FINALIZER_GROUPS", "grile-role")
@@ -16,6 +22,12 @@ def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GRILE_FINALIZER_EMAILS", raising=False)
     monkeypatch.delenv("PNL_OWNER_EMAILS", raising=False)
     monkeypatch.delenv("VITE_PNL_OWNER_EMAILS", raising=False)
+
+
+def _set_oidc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OIDC_ISSUER", "https://issuer.example.invalid/oidc")
+    monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example.invalid/oidc/jwks")
+    monkeypatch.setenv("OIDC_AUDIENCE", "test-audience")
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -44,6 +56,7 @@ def test_salary_person_id_key_required_in_production(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("VISITS_DB_PATH", str(tmp_path / "visits.db"))
     (tmp_path / "visits.db").touch()
     _set_privileged_groups(monkeypatch)
+    _set_oidc_settings(monkeypatch)
     monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
     with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):
         validate_required_env_vars()
@@ -58,6 +71,7 @@ def test_salary_person_id_key_validation(monkeypatch: pytest.MonkeyPatch, tmp_pa
     monkeypatch.setenv("VISITS_DB_PATH", str(tmp_path / "visits.db"))
     (tmp_path / "visits.db").touch()
     _set_privileged_groups(monkeypatch)
+    _set_oidc_settings(monkeypatch)
     for value in ("short", " " + "x" * 48, "x" * 48 + "\n"):
         monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", value)
         with pytest.raises(ConfigError, match="SALARY_PERSON_ID_HMAC_KEY"):

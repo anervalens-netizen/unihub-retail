@@ -19,6 +19,13 @@ jobs:
           python3 -m venv venv
           venv/bin/pip install --disable-pip-version-check --quiet -r requirements.txt -r requirements-dev.txt
 
+      - name: Runtime dependency smoke
+        run: |
+          runtime_venv="$(mktemp -d)/venv"
+          python3 -m venv "$runtime_venv"
+          "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet -r requirements.txt
+          "$runtime_venv/bin/python" -c "import auth; import main; import worker"
+
       - name: Python typecheck
         run: |
           set +e

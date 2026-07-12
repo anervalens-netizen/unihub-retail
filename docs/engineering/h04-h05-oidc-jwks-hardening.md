@@ -262,3 +262,21 @@ H-04/H-05 is technically complete only when:
 - focused/full tests and CI pass;
 - no Authentik/environment/production modification has occurred;
 - PR #32 remains draft until later Wave 2 findings and a deployment runbook are complete.
+
+## Implementation evidence
+
+`OIDCVerifierSettings` is now a frozen, load-on-demand model. Production
+requires issuer, JWKS URL and audience; development may omit all three but
+cannot accept a partial configuration. The bounded defaults are TTL 3600s,
+maximum stale 86400s, fetch timeout 5s and clock skew 30s.
+
+The verifier owns one lifecycle-managed HTTP client and an immutable cache of
+validated `kid` to `PyJWK` entries. Refreshes are serialized by an event-loop
+lock; known keys can use stale data only after a failed refresh and before the
+configured maximum age. Header and claim failures use generic responses and
+the refresh/cache metrics have finite labels only.
+
+`httpx` moved to runtime requirements and CI now installs a separate runtime
+venv from that file alone before importing `auth`, `main` and `worker`. No
+Authentik, environment, production service, database, browser token storage,
+OIDC proxy or rate limiter was modified.

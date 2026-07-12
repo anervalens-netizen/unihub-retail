@@ -52,6 +52,7 @@ from db.connection import (
     prewarm_pool,
 )
 from auth import require_auth
+from oidc_verifier import close_oidc_runtime, init_oidc_runtime
 from permissions import (
     require_import_admin,
     require_management_access,
@@ -83,8 +84,9 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_required_env_vars()
-    await init_db_pool()
+    await init_oidc_runtime()
     try:
+        await init_db_pool()
         current_pool = await get_pool()
         attach_db_error_handler(current_pool)
         schema_applied = await ensure_schema_current()
@@ -112,7 +114,10 @@ async def lifespan(_: FastAPI):
             try:
                 await detach_db_error_handler()
             finally:
-                await close_db_pool()
+                try:
+                    await close_db_pool()
+                finally:
+                    await close_oidc_runtime()
 
 
 app = FastAPI(title="UniHub API", lifespan=lifespan)

@@ -58,6 +58,15 @@ person ID.
 - no change to salary totals, averages, eligibility thresholds or matching decisions;
 - no CNP values in Git, tests, logs or documentation.
 
+## H-04/H-05 — OIDC settings and JWKS hardening
+
+- [x] Typed OIDC verifier settings fail closed in production and permit an
+  entirely absent verifier configuration only in development/test.
+- [x] Runtime JWKS dependency is declared in production requirements and CI
+  imports backend runtime modules from a requirements-only virtualenv.
+- [x] JWKS cache lifecycle, bounded fetch, cache age limits and strict token
+  header/claim validation are implemented without production changes.
+
 ## H-01B — retained-CNP database protection (later)
 
 Raw CNP remains in PostgreSQL by explicit business decision. H-01B is therefore a protection and access-control phase, not a deletion phase:
