@@ -45,8 +45,21 @@ class StorePnlService:
     def __init__(self, repository: StorePnlRepository):
         self.repository = repository
 
-    async def overview(self, start: date, end: date, company: str | None) -> dict:
-        rows = await self.repository.rows(start, end, company)
+    async def overview(
+        self,
+        start: date,
+        end: date,
+        company: str | None,
+        site_code: str | None = None,
+        site_company: str | None = None,
+    ) -> dict:
+        rows = await self.repository.rows(
+            start,
+            end,
+            company,
+            site_code,
+            site_company,
+        )
         total = empty_metrics()
         monthly: dict[date, dict[str, Decimal]] = defaultdict(empty_metrics)
         stores: dict[tuple[str, str], dict] = {}
@@ -84,6 +97,8 @@ class StorePnlService:
             "start_month": start.strftime("%Y-%m"),
             "end_month": end.strftime("%Y-%m"),
             "company": company,
+            "site_code": site_code,
+            "site_company": site_company,
             "summary": finalize_metrics(total),
             "monthly": [
                 {
@@ -96,6 +111,31 @@ class StorePnlService:
             "categories": {key: round(float(value), 2) for key, value in sorted(categories.items())},
             "stores": store_payload,
         }
+
+    async def stores(self, company: str | None) -> list[dict]:
+        return [dict(row) for row in await self.repository.stores(company)]
+
+    async def annual(
+        self,
+        company: str | None,
+        site_code: str | None,
+        site_company: str | None = None,
+    ) -> list[dict]:
+        yearly: dict[int, dict[str, Decimal]] = defaultdict(empty_metrics)
+        estimate_years: set[int] = set()
+        for row in await self.repository.annual_rows(company, site_code, site_company):
+            year = row["year"]
+            add_amount(yearly[year], row["category_code"], row["amount"])
+            if row["is_estimated"]:
+                estimate_years.add(year)
+        return [
+            {
+                "year": str(year),
+                **finalize_metrics(values),
+                "is_estimated": year in estimate_years,
+            }
+            for year, values in sorted(yearly.items())
+        ]
 
     async def months(self) -> list[dict]:
         return [

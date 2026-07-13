@@ -97,6 +97,7 @@ def test_production_session_settings_fail_closed_without_leaking_values(
         "UNIHUB_ENV": "production",
         "SESSION_ENCRYPTION_KEY": KEY,
         "OIDC_CLIENT_ID": "retail",
+        "OIDC_AUDIENCE": "api-audience",
         "OIDC_CLIENT_SECRET": "synthetic-client-secret",
         "OIDC_ISSUER": "https://auth.example.invalid/application/o/unihub-retail/",
         "SESSION_PUBLIC_ORIGIN": "https://retail.example.invalid",
@@ -107,8 +108,8 @@ def test_production_session_settings_fail_closed_without_leaking_values(
         monkeypatch.setenv(name, value)
     assert session_auth.load_session_settings() is not None
     for missing in (
-        "SESSION_ENCRYPTION_KEY", "OIDC_CLIENT_SECRET", "OIDC_ISSUER",
-        "SESSION_VALKEY_URL",
+        "SESSION_ENCRYPTION_KEY", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
+        "OIDC_ISSUER", "SESSION_PUBLIC_ORIGIN", "SESSION_VALKEY_URL",
     ):
         with monkeypatch.context() as scoped:
             scoped.delenv(missing)
@@ -193,6 +194,13 @@ async def test_callback_consumes_state_sets_host_cookie_and_stores_only_encrypte
     assert len(session_values) == 1
     assert all(token not in session_values[0] for token in (b"private-access-token", b"private-id-token", b"private-refresh-token"))
     assert verify.await_count == 2
+    assert verify.await_args_list[0].args == ("private-access-token",)
+    assert verify.await_args_list[0].kwargs == {}
+    assert verify.await_args_list[1].args == ("private-id-token",)
+    assert verify.await_args_list[1].kwargs == {
+        "nonce": "nonce",
+        "audience": "retail",
+    }
 
 
 @pytest.mark.anyio

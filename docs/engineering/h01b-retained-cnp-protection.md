@@ -21,6 +21,9 @@ The runtime boundary is now based on a durable opaque identity:
   `salary_cnp` or the private schema;
 - the offline salary importer writes the private mapping and public-safe rows in
   the same transaction;
+- the offline agent matcher reads and persists the existing `person_id`; a
+  confirmed link without an unambiguous ID is downgraded to review and cannot
+  be written by `--apply-db`;
 - duplicate-import errors expose counts only, never names or identifiers.
 
 The `sp1_` identifiers are backfilled with the existing HMAC key, so URLs and
@@ -56,6 +59,8 @@ Automated coverage proves that:
 - multiple historical names for the same retained identifier resolve to one
   person;
 - confirmed retail links receive the same durable person ID;
+- blank confirmed legacy identities are excluded from derivation and make the
+  backfill fail with a targeted validation instead of inserting a null ID;
 - application repository source cannot query private identity columns;
 - API, OpenAPI and browser contracts remain CNP-free;
 - salary totals, averages, history and import replacement semantics are

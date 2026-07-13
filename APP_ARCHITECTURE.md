@@ -2,7 +2,9 @@
 
 ## Rol
 
-UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard operational, campanii focus, agenti, management de magazine, task-uri, HR, planificare target, salarii si raportare de vizite.
+UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard
+operational, campanii Focus, agenti, performanta managerilor, planificare
+target, salarii, P&L si raportare de vizite.
 
 ## Stack si runtime
 
@@ -43,7 +45,9 @@ cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
 Schema PostgreSQL este administrata exclusiv prin runnerul one-shot
 `unihub-retail-migrate.service`. Baseline-ul `schema_v2.sql` este inghetat,
 iar fiecare delta are checksum imutabil in manifest si in DB. Web-ul verifica
-read-only starea migrations la startup si nu executa DDL sau backfill.
+read-only starea migrations la startup si nu executa DDL sau backfill. Runnerul
+foloseste explicit `MIGRATION_DATABASE_URL`, iar bootstrap-ul nou reaplica doar
+seed-urile de date desemnate care nu pot exista in baseline-ul DDL.
 
 ## Diagrama
 
@@ -73,6 +77,15 @@ flowchart LR
 Navigatia principala ramane plata: sidebar-ul contine doar meniurile principale.
 Subtaburile Management sunt randate in interiorul ecranului Management, cu
 acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
+
+Contractele publice backend sunt separate pe domenii in `backend/schemas/`
+(`dashboard`, `agents`, `campaigns`, `premium_glass`, `contests`, `ai_forecast`
+si `salarii`). `models.py` pastreaza re-exporturi compatibile pentru modulele
+legacy. Lunile au format strict `YYYY-MM`, statusurile finite sunt expuse ca
+enum-uri OpenAPI, iar valorile de import/target si procentele Vizite sunt
+validate la boundary. Singura extensie intentionata este campul de perioada
+din evaluarea agentilor: acesta accepta si etichetele agregate
+`YYYY-MM..curent` si `custom`, deoarece randul poate reprezenta mai multe luni.
 
 ## Functionalitati majore
 
@@ -107,9 +120,15 @@ acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
   Grile, mutatii Target Calculator si scrieri business. Limitele sunt
   configurabile prin variabilele `RATE_LIMIT_*`; uploadul de vanzari ramane
   limitat separat prin `MAX_SALES_UPLOAD_BYTES`.
-- Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
-- Management -> `P&L` prezinta sumar financiar, evolutie lunara, structura pe
-  categorii si performanta pe magazine, cu lunile estimate marcate explicit.
+- Management cu subtab-uri pentru Manageri, Calculator Target, Salarii si P&L.
+  Scorurile CRM raman un read model intern consumat de Manageri; endpointurile
+  istorice Tasks/concedii/alerte CRM nu sunt expuse ca subtab-uri V2.
+- Management -> `P&L` prezinta sumar financiar, evolutii lunare si anuale,
+  structura pe categorii si performanta pe magazine, cu lunile estimate marcate
+  explicit. Scope-ul implicit este anul calendaristic curent, iar filtrele de
+  companie si magazin sunt aplicate in repository tuturor agregatelor. La fel
+  ca in restul raportarii istorice, selectarea magazinului domina compania,
+  pentru a pastra lunile dinaintea unei mutari intre entitati.
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
   grupului OIDC dedicat P&L, peste accesul general Management; ascunderea din
   frontend este dublata de sesiunea BFF si verificarea autoritativa OIDC in backend.
@@ -187,10 +206,34 @@ Backend-ul foloseste modelul `router -> service -> repository`.
 | Campanii | `campaigns.py` pe toate cele 3 straturi |
 | Concursuri | `routers/contests.py` -> `services/contests.py` -> `repositories/contests.py` |
 | HR/CRM/Tasks/Calculator Target | straturi separate per domeniu |
+| Grile lunar | `services/grile_monthly.py` -> `repositories/grile_monthly_operations.py` + state machine pur |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
 | Exporturi | `routers/exports.py` -> `services/exports.py` -> `repositories/exports.py` |
 
+Repository-ul Grile detine rezervarea tranzactionala, expirarea lease-urilor si
+checkpointurile per magazin. Claim-ul `pending -> running` si finalizarea din
+`running` sunt compare-and-set; un worker concurent sau intarziat nu poate
+suprascrie un checkpoint terminal. Service-ul pastreaza doar orchestrarea
+Google/filesystem si wrapper-ele publice folosite de worker.
+
 Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
+In aceste agregate, cantitatea Retail este `SUM(quantity)` dupa excluderea
+cartelelor si a locatiilor `TR %`: retururile negative reduc cantitatea totala,
+cantitatea Focus, mediile si breakdown-urile. Bonurile exclusiv de retur nu
+intra in Bon2Acc, dar retururile raman disponibile separat prin
+`return_receipt_count`.
+Contextul campaniei, unitatile promo excluse, summary-ul promo/incentive si
+cardurile speciale folosesc acelasi `current_scope`/`include_closed_stores`;
+taskul comun este asteptat numai dupa eliberarea conexiunii folosite pentru
+randurile si multiplicatorii cardului. Aceeasi regula se pastreaza la
+recalcularea excluderilor pentru campaniile incentive cu mai multe perioade.
+Frontendul reda aceleasi coloane curente si istorice RM/Magazine/Agenti prin
+componenta tipizata `dashboard/BreakdownTable.tsx`, care centralizeaza tabelul
+sortabil si exportul Excel fara a schimba payload-urile API.
+`Dashboard.tsx` orchestreaza query-urile, agregarea multi-luna, filtrele si
+state-ul comun; `dashboard/CurrentDashboard.tsx` si
+`dashboard/HistoryDashboard.tsx` sunt view-uri tipizate fara data fetching
+propriu.
 Tabelele curente RM si Magazine returneaza atat procentul realizat
 (`proc_realizare_target`), cat si proiectia la luna intreaga
 (`forecast_target_pct`) calculata pe baza `import_snapshots.is_month_final` si
@@ -201,7 +244,10 @@ request si il reutilizeaza pentru sumar si cardurile speciale. Reutilizarea
 este strict request-local, fara cache global care ar necesita invalidare dupa
 import. Latenta celor 15 componente fixe este expusa in Prometheus prin
 `dashboard_component_duration_seconds`; etichetele nu includ filtre sau date
-business. Componenta `daily_last_year` (vanzarile zilnice din aceeasi luna a
+business. Fan-out-ul ruleaza cel mult patru componente independente simultan,
+lasand capacitate in pool pentru readiness si alte requesturi; timpul de
+asteptare pentru slot este expus prin `dashboard_component_queue_seconds`, tot
+cu etichete finite. Componenta `daily_last_year` (vanzarile zilnice din aceeasi luna a
 anului anterior) este obtinuta printr-un query paralel pe
 `reporting_agent_day` cu `import_month = YYYY-1-MM` si aceleasi filtre de
 scope; in graficul Hub "Evolutie zilnica" este afisata ca linie comparativa
@@ -256,10 +302,18 @@ Importul din `backend/scripts/import_store_pnl.py` deduplica fisierele identice,
 alege snapshotul anual cu cea mai buna acoperire si importa numai valori reale.
 Codurile istorice din fisiere nu sunt fortate peste `stores.site_code`, iar
 orice luna estimata ulterior trebuie marcata explicit cu `data_kind=estimated`.
+La citire, cheia de business este companie + luna + magazin canonic + categorie
+(`source_site_code` ramane fallback pentru codurile nemapate). Un rand `actual`
+are prioritate fata de `estimated`, inclusiv cand estimarea si importul Finance
+folosesc aliasuri istorice sau companii diferite ale aceluiasi magazin, astfel
+incat veniturile sau costurile sa nu fie dublate in KPI-uri. Pentru randurile
+nemapate, cheia include in continuare compania si codul-sursa, evitand
+coliziunea accidentala intre magazine necunoscute.
 Legaturile auditabile catre master-data Retail sunt in `store_pnl_site_links`;
 scriptul `backend/scripts/map_store_pnl_sites.py` salveaza metoda, scorul si
 starea de review, fara sa forteze codurile istorice care nu mai exista in
-`stores`.
+`stores`. Egalitatile fuzzy raman explicit nerezolvate pentru review manual;
+randurile DB nu sunt folosite ca al doilea criteriu implicit de sortare.
 
 Lunile P&L lipsa pot fi generate cu
 `backend/scripts/estimate_store_pnl.py`. Modelul scaleaza veniturile si
@@ -417,7 +471,9 @@ Identitatea salariala persistata foloseste `person_id` opac. CNP-ul retinut si
 maparea sa sunt limitate la `salary_private.people` si la procedurile aprobate
 de import/backfill; repository-urile runtime nu citesc CNP. Pentru randurile
 istorice, backfill-ul a derivat acelasi ID HMAC din CNP sau din numele normalizat
-ca fallback, pastrand compatibilitatea API.
+ca fallback, pastrand compatibilitatea API. Matcherul offline persista
+`person_id` pentru orice link confirmat si refuza aplicarea unei potriviri fara
+ID unic; identitatile legacy confirmate dar goale opresc backfill-ul explicit.
 Inainte de agregare, read model-ul elimina
 duplicatele complet identice. Astfel, un agent cu doua randuri de plata in
 aceeasi luna contribuie cu suma ambelor randuri, dar este numarat o singura

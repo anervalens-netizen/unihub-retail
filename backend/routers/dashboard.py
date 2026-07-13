@@ -5,16 +5,16 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
-from models import (
+from schemas.dashboard import (
     DailySalesPoint,
     DashboardAllResponse,
     DashboardHistoryResponse,
     PerformanceDetailResponse,
     DashboardSpecialCardsResponse,
     DashboardSummary,
-    PremiumGlassAnalysis,
     YearHistoryResponse,
 )
+from schemas.premium_glass import PremiumGlassAnalysis
 from repositories.dashboard import DashboardRepository
 from services.dashboard_service import DashboardService
 

@@ -2,8 +2,8 @@
 
 Ultima actualizare: 2026-07-13
 Owner operational: Codex
-Status general: in executie; refactoringul functional continua dupa inchiderea
-Wave 2 de securitate si privacy.
+Status general: milestone-urile V2 planificate sunt inchise si active in
+productie; continua mentenanta, monitorizarea si remedierea regresiilor.
 
 Acest fisier este sursa activa pentru refactoring-ul complet Retail. Documentele
 anterioare de audit, handover si roadmap sunt pastrate doar pentru trasabilitate
@@ -28,7 +28,9 @@ mai "frumos", ci reducerea riscului operational:
 - Nu combinam refactorizari structurale cu schimbari de business.
 - Nu relaxam Authentik OIDC si nu adaugam fallback local de auth.
 - Nu schimbam raportarea Retail: `Cartele` si locatiile `TR %` nu intra in KPI
-  Retail, iar cartela ramane informationala separat.
+  Retail, iar cartela ramane informationala separat. Cantitatea Retail este
+  neta dupa retururi pe toate KPI-urile si breakdown-urile; retururile raman
+  monitorizate separat.
 - Cand `site_code` este selectat, domina scope-ul istoric.
 - Salariile sub 2000 RON sunt excluse doar din medii, nu din totaluri sau istoric.
 - `print()` din `backend/services/grile_monthly.py` ramane load-bearing; daca
@@ -84,15 +86,15 @@ Inchise in transele anterioare:
 
 ## Milestone 0 - Documentatie, baseline, guardrails
 
-Status: in executie.
+Status: complet.
 
 Livrabile:
 
 - [x] commit + push pentru snapshotul validat anterior;
 - [x] arhivare documente vechi de refactoring/audit/handover;
 - [x] un singur plan activ: acest fisier;
-- [ ] plan actualizat dupa fiecare transa implementata;
-- [ ] status git curat dupa fiecare commit/push.
+- [x] plan actualizat dupa fiecare transa implementata;
+- [x] status git curat dupa fiecare commit/push si la acceptarea finala.
 
 Criteriu de iesire:
 
@@ -102,7 +104,8 @@ Criteriu de iesire:
 
 ## Milestone 1 - Primitive frontend si query foundation
 
-Status: partial implementat.
+Status: inchis la 2026-07-13; abstractiile ramase sunt intentionat adoptate
+numai unde reduc complexitatea reala.
 
 Scop: reducem duplicarea si pregatim spargerea componentelor mari fara sa
 schimbam payload-uri sau UI business.
@@ -204,7 +207,7 @@ Validare transa:
 
 ## Milestone 2 - Dashboard pe TanStack Query si split frontend
 
-Status: partial implementat.
+Status: inchis la 2026-07-13.
 
 Livrabile:
 
@@ -218,8 +221,10 @@ Livrabile:
   daily aggregation si regula `special_cards` din ultima luna;
 - [x] `queryKeys.dashboard.yearHistory` adaugat si testat;
 - [x] data-fetching-ul Dashboard este extras in `useDashboardData`;
-- [ ] `Dashboard.tsx` se imparte in subcomponente:
-  `CurrentDashboard`, `HistoryDashboard`, `BreakdownTable`;
+- [x] cele sase tabele RM/Magazine/Agenti, curent si istoric, folosesc
+  componenta generica testata `dashboard/BreakdownTable.tsx`;
+- [x] prezentarea este separata in `CurrentDashboard` si `HistoryDashboard`;
+  `Dashboard.tsx` pastreaza query-urile, agregarea, filtrele si state-ul comun;
 - [x] drawerul de performanta, graficele si sumarul salarial sunt extrase in
   `dashboard/PerformanceDetailDrawer.tsx`;
 - [x] sortarile repetitive din tabelele Dashboard folosesc `useSortable`;
@@ -266,9 +271,29 @@ Validare sortari Dashboard:
 - health local si public - OK;
 - jurnal `unihub-backend.service` dupa restart - fara warnings.
 
+Validare `BreakdownTable` comun:
+
+- `npm run typecheck` - OK;
+- `npm run typecheck:strict` - OK;
+- `npm run lint` - OK;
+- `npm run test` - OK, 27 fisiere / 213 teste;
+- `npm run build` - OK;
+- payload-urile, coloanele, formatarea, sortarea si exporturile celor sase
+  tabele raman neschimbate; transa elimina numai markup-ul duplicat.
+
+Validare split Current/History:
+
+- `npm run typecheck` - OK;
+- `npm run typecheck:strict` - OK;
+- `npm run lint` - OK, fara warnings;
+- `npm run test` - OK, 29 fisiere / 216 teste;
+- `npm run build` - OK;
+- view-urile au teste server-rendered pentru overview, loading si continutul
+  istoric, iar data fetching-ul ramane exclusiv in orchestrator.
+
 ## Milestone 3 - Backend domain boundaries ramase
 
-Status: partial inchis.
+Status: inchis la 2026-07-13.
 
 Inchise:
 
@@ -282,9 +307,21 @@ Ramase:
   si response assembler;
 - [x] teste pentru pragurile, ponderile, eligibilitatea si trendurile evaluarii
   agentilor;
-- `grile_monthly.py` separat in orchestration + repository + state machine;
+- [x] state machine-ul pur pentru lifecycle-ul operatiilor lunare Grile este
+  separat si acoperit exhaustiv, iar CAS-urile start/heartbeat/finish/fail si
+  atasarea jobului sunt mutate in repository;
+- [x] rezervarea initiala si checkpointurile per magazin pentru reset sunt
+  mutate in `repositories/grile_monthly_operations.py`; claim/finalizare sunt
+  CAS, cu test PostgreSQL concurent care demonstreaza un singur claim si
+  protejeaza starea terminala de un worker intarziat;
 - [x] `dashboard_service.get_dashboard_all` mutat de la gather pozitional la
   rezultate concurente adresate nominal, fara indexuri numerice fragile;
+- [x] repository-ul P&L prefera randurile `actual` fata de `estimated` pe cheia
+  de business a magazinului canonic, inclusiv intre aliasuri istorice si
+  companii diferite, si aplica acelasi filtru de companie/magazin pentru
+  overview si evolutia anuala;
+  magazinul domina compania pentru continuitate istorica, iar egalitatile fuzzy
+  raman nerezolvate fara compararea obiectelor `asyncpg.Record`;
 - eliminare punctuala a celorlalte `replace()` pe SQL numai daca exista test
   care confirma comportamentul.
 
@@ -295,7 +332,7 @@ Criteriu:
 
 ## Milestone 4 - Performanta si optimizare masurata
 
-Status: in executie.
+Status: inchis.
 
 Livrabile:
 
@@ -307,9 +344,16 @@ Livrabile:
   identic, plannerul foloseste indexul partial si mediana este redusa cu 76,7%;
 - [x] sumarul promo/incentive este calculat o singura data in Dashboard all;
   raspuns identic si mediana redusa cu 25,8%;
-- reducere presiune pool DB in dashboard gather;
-- audit bundle frontend dupa spliturile mari;
-- pastrarea lazy-loading-ului pe ecranele principale.
+- [x] fan-out-ul Dashboard este limitat la 4 componente independente simultan
+  (vârf măsurat 5 conexiuni cu taskul dependent): pe 5 execuții identice,
+  vârful poolului scade 10 -> 5, acquire-urile peste 5 ms scad 24 -> 2, iar
+  mediana scade 400,3 -> 344,0 ms; timpul de coadă este expus prin histograma
+  `dashboard_component_queue_seconds` cu labeluri finite;
+- [x] audit bundle frontend dupa spliturile mari: ecranele principale raman
+  lazy-loaded, `charts` are 404,65 kB / 115,65 kB gzip si este exclus explicit
+  din preload, iar impartirea lui per ecran ar duplica Recharts/D3 fara un
+  beneficiu masurat;
+- [x] pastrarea lazy-loading-ului pe ecranele principale.
 
 Criteriu:
 
@@ -319,19 +363,26 @@ Criteriu:
 
 ## Milestone 5 - Hardening API, auth si erori
 
-Status: partial implementat prin audit Wave 1 si Wave 2.
+Status: inchis la 2026-07-13 prin audit Wave 1 si Wave 2.
 
 Livrabile:
 
 - [x] `ApiError` frontend cu `status`, `detail`, `body`;
-- handling uniform pentru 401/403/409/422;
+- [x] helper uniform pentru mesajele sigure 401/403/404/409/422, adoptat in
+  fluxurile cu impact ridicat Calculator Target, Grile si exporturi/importuri;
 - [x] OIDC/JWKS cache protejat cu lock, single-flight, cooldown si max-stale explicit;
 - [x] issuer/config auth tipizat si fail-closed, fara default-uri periculoase;
-- exceptii tipizate pentru Target Calculator finalize conflicts;
+- [x] exceptii tipizate pentru conflictele de revizie/finalizare Target
+  Calculator, mapate la 409 si afisate cu mesajul controlat de backend;
 - [x] rate limiter distribuit Valkey, cu trusted-proxy parsing, HMAC si failure-closed;
 
-Ramase: adoptarea uniforma a `ApiError` in call-site-urile 401/403/409/422 si
-exceptiile tipizate pentru conflictele Target Calculator.
+Inchis prin reconciliere cu navigatia reala: subtab-urile legacy Tasks, HR si
+CRM au fost eliminate intentionat din Management in iunie 2026, dar
+componentele frontend inaccesibile ramasesera in repository. Componentele si
+clientii folositi exclusiv de ele au fost eliminati; scoring-ul CRM consumat de
+Manageri si endpointurile backend compatibile raman active. Nu mai exista
+actiuni UI legacy care sa esueze doar in consola. Pentru fluxurile active,
+fallback-urile 5xx si de retea raman intentionat generice.
 
 Criteriu:
 
@@ -341,15 +392,30 @@ Criteriu:
 
 ## Milestone 6 - Curatenie de model si constante
 
-Status: planificat.
+Status: inchis la 2026-07-13.
 
 Livrabile:
 
-- `models.py` impartit gradual pe domenii;
-- `Literal`, pattern-uri si constrangeri Pydantic pentru status/luni/valori;
-- magic literals mutate in constante business numite;
-- `SELECT *` eliminat din repo-urile unde schema drift poate produce bug-uri;
-- grupurile RBAC similare documentate sau unificate.
+- [x] prima transa din `models.py` separata in `schemas/ai_forecast.py` si
+  `schemas/contests.py`, cu importuri directe in domenii si re-export compatibil
+  pentru consumatorii existenti;
+- [x] contractele Agents lifecycle/evaluation separate in `schemas/agents.py`;
+  routerul si serviciile importa direct domeniul, iar `models.py` pastreaza
+  re-exportul compatibil pentru consumatorii existenti;
+- [x] contractele Campaigns si Premium Glass separate in
+  `schemas/campaigns.py` si `schemas/premium_glass.py`, cu importuri directe in
+  routere/servicii si re-export compatibil din `models.py`;
+- [x] contractele Dashboard separate in `schemas/dashboard.py`; routerul si
+  serviciile importa direct domeniul, fara forward references, iar `models.py`
+  pastreaza re-exporturile compatibile;
+- [x] `Literal`, pattern-uri si constrangeri Pydantic pentru status, luni,
+  procente, valori de import si scrieri de target;
+- [x] literalurile business recurente pentru lifecycle/evaluare agenti,
+  incentive, promo, topuri Campaigns si retry Google mutate in constante numite;
+- [x] `SELECT *` eliminat din contractele persistente Grile unde schema drift
+  putea schimba payloadul; CTE-urile locale controlate raman intentionat intacte;
+- [x] grupurile RBAC unificate in `permissions.py`; capabilitatea P&L ramane
+  intentionat separata si fail-closed prin `STORE_PNL_ACCESS_GROUPS`.
 
 Criteriu:
 
@@ -358,7 +424,7 @@ Criteriu:
 
 ## Milestone 7 - Inchidere
 
-Status: in executie.
+Status: inchis la 2026-07-13.
 
 Livrabile:
 
@@ -368,12 +434,21 @@ Livrabile:
 - [x] acceptarea workflow-ului pe merge ref-ul PR #50: GitHub Actions
   `29225724923`, backend si frontend verzi;
 - [x] readiness/liveness separate, SLO-uri, alerte si unitati systemd
-  versionate; acceptarea merge-ref si rolloutul controlat raman obligatorii;
-- audit final pe docs, status git si live health;
-- checklist de performanta cu valori finale;
-- verificare ca documentele arhivate nu mai sunt folosite ca instructiuni active;
-- commit/push final;
-- optional: tag sau release intern daca se doreste.
+  versionate; PR #58 acceptat pe merge ref si rollout controlat la
+  `2fdb5e8ed3fe2f70ede820bc6247b6075da07e14`, cu probe locale/publice si
+  target Prometheus `up`;
+- [x] audit final pe docs, status git si live health: documentele canonice au
+  fost reconciliate, checkout-ul de productie este pe `main`, iar probele
+  `/livez` si `/readyz` sunt verzi local si public;
+- [x] checklist de performanta cu valori finale in
+  `docs/engineering/performance-baseline-v2.md`;
+- [x] documentele arhivate sunt marcate explicit ca istoric si nu sunt folosite
+  ca instructiuni active;
+- [x] contract hardening integrat prin PR #78, GitHub Actions
+  `29247244063` verde pe merge ref si rollout controlat la
+  `dbcedf0310685b9ad91e80c6d5d7452aa3b4ebb0`;
+- tag/release GitHub separat ramane optional; nu este criteriu de acceptare si nu
+  blocheaza versiunea V2.
 
 Criteriu final:
 
@@ -418,6 +493,71 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: Milestone 7 si programul V2 au fost acceptate operational.
+  PR #78 a trecut backend/frontend pe merge ref (`29247244063`), a fost
+  integrat la `dbcedf0310685b9ad91e80c6d5d7452aa3b4ebb0`, iar backendul si
+  workerul au fost repornite controlat. Shutdown-ul workerului a confirmat zero
+  joburi active; startup-ul, OpenAPI, health local/public si ambele targeturi
+  Prometheus Retail sunt verzi, fara restarturi neasteptate.
+- 2026-07-13: ultimele review-uri H-01B au fost inchise: backfill-ul filtreaza
+  si raporteaza tintit identitatile confirmate dar goale, iar matcherul offline
+  transporta `person_id` pana in upsert si refuza confirmari fara ID. Dry-run-ul
+  live a ramas read-only: 140 matched, 5 unknown, 4 unmatched si doua override-uri
+  manuale in review pana la aparitia lor in salarii, fara write in PostgreSQL.
+- 2026-07-13: review-urile istorice H-02 au fost inchise in runner: one-shot-ul
+  prefera `MIGRATION_DATABASE_URL`, bootstrap-ul fresh ruleaza seed-ul 014 in
+  afara baseline-ului DDL, iar bazele post-006 pot adopta sigur tombstone-ul 005
+  lipsa fara a-i executa corpul nerecuperabil. Probele sunt izolate si
+  productia curenta a fost verificata read-only ca avand 005, 014 si seed-urile.
+- 2026-07-13: review-ul post-merge din PR #70 a identificat ultima asimetrie de
+  scope a cardurilor speciale. `current_scope` si includerea magazinelor inchise
+  se propaga acum si in contextul campaniei, inclusiv raportul promo actual si
+  fallback-urile pe reguli si recomputarile multi-perioada; testele verifica
+  explicit expandarea Regional/ASM. Review-ul PR #71 a eliminat si fallback-ul
+  implicit dintre `OIDC_CLIENT_ID` si audienta API.
+- 2026-07-13: cele doua observatii Codex ramase din PR #40 au fost revalidate;
+  exemplul development nu mai activeaza accidental sesiunea BFF prin valori
+  placeholder, iar callback-ul valideaza ID token-ul fata de `OIDC_CLIENT_ID`,
+  distinct de `OIDC_AUDIENCE` folosit pentru access token. Testul real al
+  `.env.example` a inchis si configurarea partiala H-07 produsa de valorile
+  implicite `none`/`closed` fara CIDR si cheie HMAC.
+- 2026-07-13: feedback-ul Codex din PR #49 a fost revalidat pe codul curent;
+  special cards propaga acum acelasi scope ca summary-ul promo/incentive, iar
+  await-ul taskului comun are loc dupa eliberarea conexiunii DB. Testele
+  demonstreaza propagarea scope-ului si esueaza prin timeout daca pool slot-ul
+  ramane retinut.
+- 2026-07-13: auditul bundle confirma lazy-loading-ul tuturor ecranelor si
+  excluderea chunk-ului comun Recharts/D3 din preload; nu s-a introdus o
+  fragmentare speculativa. Prima transa de modele AI Forecast si Contest a fost
+  mutata in `backend/schemas`, cu re-export si teste de serializare compatibile.
+- 2026-07-13: contractele publice Agents, Campaigns si Premium Glass sunt
+  separate pe domenii in `backend/schemas`; consumatorii runtime importa direct
+  domeniul, iar `models.py` pastreaza temporar re-exporturile compatibile si a
+  scazut de la 985 la 529 de linii.
+- 2026-07-13: contractele Dashboard au fost extrase in
+  `backend/schemas/dashboard.py`, ordonate fara forward references. Splitul
+  major pe domenii este inchis, iar `models.py` a ramas un strat compatibil si
+  pentru contractele generice/import/vizite, cu 271 de linii.
+- 2026-07-13: Milestone 6 inchis: lunile publice folosesc contractul strict
+  `YYYY-MM`, statusurile finite sunt `Literal`, procentele Vizite sunt finite in
+  intervalul 0-100, iar scrierile de target/import au limite nenegative.
+  Datele live au zero luni neconforme in sursele verificate. Repo-urile Grile
+  selecteaza explicit coloanele persistente si au test anti-regresie;
+  constantele business recurente si politica retry Google au surse numite.
+- 2026-07-13: documentatia Management a fost reconciliata cu navigatia V2
+  Manageri / Calculator Target / Salarii / P&L. UI-urile legacy inaccesibile
+  Tasks/HR/CRM si clientii folositi exclusiv de ele au fost eliminati; scoring-ul
+  CRM folosit in Manageri si endpointurile backend compatibile sunt pastrate.
+- 2026-07-13: regula business de cantitate a fost reconciliata cu raportul
+  firmei: reporting-ul foloseste vanzari minus retururi pentru cantitate,
+  Focus/Acc, bonuri eligibile, medii si breakdown-uri; cartelele raman excluse
+  si separate, iar bonurile de retur raman monitorizate distinct.
+- 2026-07-13: `Dashboard.tsx` este orchestratorul pentru query-uri, agregare,
+  filtre si state comun; UI-ul curent si istoric este separat in componente
+  tipizate si testate `CurrentDashboard`/`HistoryDashboard`.
+- 2026-07-13: cele sase tabele breakdown Dashboard folosesc o singura
+  componenta generica tipizata si testata; `Dashboard.tsx` scade cu peste 150
+  de linii nete, pas intermediar inainte de extragerea Current/History.
 - 2026-07-13: `/livez` process-only si `/readyz` dependency-backed sunt
   separate; `/health` ramane alias compatibil. Readiness are timeout total de
   doua secunde, metrici finite si raspuns 503 fara detalii. Regulile SLO exclud

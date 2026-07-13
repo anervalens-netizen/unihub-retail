@@ -6,14 +6,15 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
-from models import (
+from business_rules import PROMOTION_DISCOUNT_RATE
+from schemas.dashboard import (
     BrandMixItem,
     CategoryMixItem,
     PeriodComparisonPayload,
     PeriodComparisonPoint,
-    PromoIncentiveSummary,
     ReceiptBucketItem,
 )
+from schemas.campaigns import PromoIncentiveSummary
 from services.dashboard.utils import (
     _expand_current_manager_scope,
     _month_day_range,
@@ -108,6 +109,8 @@ async def _compute_dashboard_promotion_result(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PromoCoPurchaseResult | None:
     products, error = load_promotion_rule_products(definition)
     if error is not None or products is None:
@@ -132,6 +135,8 @@ async def _compute_dashboard_promotion_result(
             asm=asm,
             site_code=site_code,
             agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
     except PromoActualsError:
         return PromoCoPurchaseResult()
@@ -156,6 +161,8 @@ async def _compute_dashboard_promotion_result(
             asm=asm,
             site_code=site_code,
             agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
         return merge_promo_results(actual_result, tail_result)
 
@@ -172,6 +179,8 @@ async def _compute_dashboard_promotion_result(
             asm=asm,
             site_code=site_code,
             agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
     if rule_type == "trigger_discounted":
         return await compute_promo_trigger_discounted(
@@ -186,6 +195,8 @@ async def _compute_dashboard_promotion_result(
             asm=asm,
             site_code=site_code,
             agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
     return await compute_promo_copurchase(
         conn,
@@ -198,6 +209,8 @@ async def _compute_dashboard_promotion_result(
         asm=asm,
         site_code=site_code,
         agent=agent,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
     )
 
 
@@ -209,6 +222,8 @@ async def _load_dashboard_campaign_context(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> DashboardCampaignContext:
     """Load and calculate campaign data once for all dashboard projections."""
     config, config_error = load_special_cards_config()
@@ -233,6 +248,8 @@ async def _load_dashboard_campaign_context(
                 asm=asm,
                 site_code=site_code,
                 agent=agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
             )
             if promo_result is None:
                 continue
@@ -1709,6 +1726,8 @@ async def _fetch_promo_incentive_summary(
             asm,
             site_code,
             agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
     promotion_definition = campaign_context.promotion_definition
     promotion_error = campaign_context.promotion_error
@@ -1817,6 +1836,8 @@ async def _fetch_promo_incentive_summary(
                             asm=asm,
                             site_code=site_code,
                             agent=agent,
+                            current_scope=current_scope,
+                            include_closed_stores=include_closed_stores,
                         )
                         if result is None:
                             continue
@@ -1940,7 +1961,7 @@ async def _fetch_promo_incentive_summary(
                 )
                 incentive_qualified_agents = int(aq_row["cnt"] or 0) if aq_row else 0
 
-    promo_impact = promo_sales * Decimal("0.20")
+    promo_impact = promo_sales * PROMOTION_DISCOUNT_RATE
     return PromoIncentiveSummary(
         promo_qty=promo_qty,
         promo_sales=promo_sales,

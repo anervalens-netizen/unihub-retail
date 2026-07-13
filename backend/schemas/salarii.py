@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from schemas.common import MonthStr
+
 SalaryPersonId = Annotated[str, Field(pattern=r"^sp1_[0-9a-f]{64}$")]
 
 
@@ -45,7 +47,7 @@ class AgentSalaryLinkPublic(_PublicModel):
     match_status: Literal["confirmed", "unknown"]
     match_source: Literal["auto", "manual"]
     confidence: Literal["high", "medium", "low", "unknown"]
-    effective_from_month: str | None
+    effective_from_month: MonthStr | None
     note: str | None
 
 

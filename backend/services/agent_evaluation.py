@@ -5,7 +5,46 @@ from decimal import Decimal
 from math import ceil
 from typing import Any
 
-from models import AgentEvaluationV2Row
+from schemas.agents import (
+    AgentEvaluationV2Row,
+    AgentRating,
+    EligibilityStatus,
+    TrendDirection,
+)
+
+
+PARTIAL_MONTH_WEIGHTS = {
+    "target": 10,
+    "daily": 25,
+    "bonuri": 20,
+    "focus": 20,
+    "premium": 10,
+    "value": 15,
+}
+FINAL_MONTH_WEIGHTS = {
+    "target": 25,
+    "daily": 20,
+    "bonuri": 15,
+    "focus": 15,
+    "premium": 10,
+    "value": 15,
+}
+RATING_BANDS: tuple[tuple[Decimal, AgentRating], ...] = (
+    (Decimal("85"), "Excelent"),
+    (Decimal("75"), "Foarte Bun"),
+    (Decimal("65"), "Bun"),
+    (Decimal("50"), "Risc"),
+)
+DAILY_SCORE_THRESHOLDS = (Decimal("85"), Decimal("100"), Decimal("115"))
+RECEIPT_SCORE_THRESHOLDS = (Decimal("25"), Decimal("30"), Decimal("35"))
+FOCUS_SCORE_THRESHOLDS = (Decimal("6"), Decimal("8"), Decimal("10"))
+VALUE_SCORE_THRESHOLDS = (Decimal("90"), Decimal("95"), Decimal("100"))
+PREMIUM_GLASS_SCORE_THRESHOLDS = (Decimal("30"), Decimal("40"), Decimal("50"))
+PARTIAL_MONTH_MINIMUM_DAY_SHARE = 0.4
+FINAL_MONTH_MINIMUM_WORKING_DAYS = 8
+PARTIAL_MONTH_MINIMUM_RECEIPTS = 20
+FINAL_MONTH_MINIMUM_RECEIPTS = 30
+PREMIUM_GLASS_CONFIDENCE_MINIMUM_QTY = 5
 
 
 def score_band(
@@ -26,19 +65,14 @@ def score_band(
     return (Decimal(weight) * points / Decimal(3)).quantize(Decimal("0.1"))
 
 
-def score_rating(score: Decimal | None, eligibility_status: str) -> str:
+def score_rating(score: Decimal | None, eligibility_status: EligibilityStatus) -> AgentRating:
     if eligibility_status == "insuficient":
         return "Insuficient"
     if score is None:
         return "Fara scor"
-    if score >= Decimal("85"):
-        return "Excelent"
-    if score >= Decimal("75"):
-        return "Foarte Bun"
-    if score >= Decimal("65"):
-        return "Bun"
-    if score >= Decimal("50"):
-        return "Risc"
+    for minimum_score, rating in RATING_BANDS:
+        if score >= minimum_score:
+            return rating
     return "Critic"
 
 
@@ -53,11 +87,25 @@ def build_agent_evaluation_v2_row(row: Mapping[str, Any]) -> AgentEvaluationV2Ro
     receipt_count = int(row["receipt_count"] or 0)
 
     if period_month_count == 1:
-        min_working_days = ceil(available_days * 0.4) if is_partial and available_days else 8
-        min_receipts = 20 if is_partial else 30
+        min_working_days = (
+            ceil(available_days * PARTIAL_MONTH_MINIMUM_DAY_SHARE)
+            if is_partial and available_days
+            else FINAL_MONTH_MINIMUM_WORKING_DAYS
+        )
+        min_receipts = (
+            PARTIAL_MONTH_MINIMUM_RECEIPTS
+            if is_partial
+            else FINAL_MONTH_MINIMUM_RECEIPTS
+        )
     else:
-        min_working_days = 8 * final_month_count + int(row["partial_min_working_days"] or 0)
-        min_receipts = 30 * final_month_count + 20 * partial_month_count
+        min_working_days = (
+            FINAL_MONTH_MINIMUM_WORKING_DAYS * final_month_count
+            + int(row["partial_min_working_days"] or 0)
+        )
+        min_receipts = (
+            FINAL_MONTH_MINIMUM_RECEIPTS * final_month_count
+            + PARTIAL_MONTH_MINIMUM_RECEIPTS * partial_month_count
+        )
 
     confidence_flags: list[str] = []
     if is_partial:
@@ -68,32 +116,18 @@ def build_agent_evaluation_v2_row(row: Mapping[str, Any]) -> AgentEvaluationV2Ro
         confidence_flags.append("target_alocat_din_magazin")
     if row["daily_reference_type"] != "colegi":
         confidence_flags.append(f"reper_{row['daily_reference_type']}")
-    if int(row["glass_qty"] or 0) < 5:
+    if int(row["glass_qty"] or 0) < PREMIUM_GLASS_CONFIDENCE_MINIMUM_QTY:
         confidence_flags.append("folii_volum_mic")
     if working_days < min_working_days or receipt_count < min_receipts:
         confidence_flags.append("volum_insuficient")
 
-    eligibility_status = (
+    eligibility_status: EligibilityStatus = (
         "insuficient" if "volum_insuficient" in confidence_flags else "eligibil"
     )
     if is_partial and period_month_count == 1:
-        weights = {
-            "target": 10,
-            "daily": 25,
-            "bonuri": 20,
-            "focus": 20,
-            "premium": 10,
-            "value": 15,
-        }
+        weights = PARTIAL_MONTH_WEIGHTS
     else:
-        weights = {
-            "target": 25,
-            "daily": 20,
-            "bonuri": 15,
-            "focus": 15,
-            "premium": 10,
-            "value": 15,
-        }
+        weights = FINAL_MONTH_WEIGHTS
 
     target_score_ratio = row["target_score_ratio"]
     target_score = (
@@ -103,31 +137,31 @@ def build_agent_evaluation_v2_row(row: Mapping[str, Any]) -> AgentEvaluationV2Ro
     )
     daily_score = score_band(
         row["daily_vs_reference_pct"],
-        (Decimal("85"), Decimal("100"), Decimal("115")),
+        DAILY_SCORE_THRESHOLDS,
         weights["daily"],
     )
     bonuri_score = score_band(
         row["bonuri_pct"],
-        (Decimal("25"), Decimal("30"), Decimal("35")),
+        RECEIPT_SCORE_THRESHOLDS,
         weights["bonuri"],
     )
     focus_score = score_band(
         row["focus_pct"],
-        (Decimal("6"), Decimal("8"), Decimal("10")),
+        FOCUS_SCORE_THRESHOLDS,
         weights["focus"],
     )
     value_score = score_band(
         row["value_reper"],
-        (Decimal("90"), Decimal("95"), Decimal("100")),
+        VALUE_SCORE_THRESHOLDS,
         weights["value"],
     )
     premium_score = (
         score_band(
             row["premium_glass_pct"],
-            (Decimal("30"), Decimal("40"), Decimal("50")),
+            PREMIUM_GLASS_SCORE_THRESHOLDS,
             weights["premium"],
         )
-        if int(row["glass_qty"] or 0) >= 5
+        if int(row["glass_qty"] or 0) >= PREMIUM_GLASS_CONFIDENCE_MINIMUM_QTY
         else None
     )
 
@@ -154,7 +188,7 @@ def build_agent_evaluation_v2_row(row: Mapping[str, Any]) -> AgentEvaluationV2Ro
 
     trend = row["trend_daily_pct"]
     if trend is None:
-        trend_direction = "flat"
+        trend_direction: TrendDirection = "flat"
     elif trend >= Decimal("5"):
         trend_direction = "up"
     elif trend <= Decimal("-5"):

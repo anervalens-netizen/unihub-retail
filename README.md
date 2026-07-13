@@ -1,6 +1,9 @@
 # UniHub
 
-UniHub este o aplicatie de operare comerciala pentru retail, construita pentru monitorizarea vanzarilor, a targetelor, a focus products, a promotiilor, a fiselor de vizita din magazine si a operatiunilor de management (echipa, CRM, tasks, HR, calculator target).
+UniHub este o aplicatie de operare comerciala pentru retail, construita pentru
+monitorizarea vanzarilor, targetelor, produselor Focus, promotiilor, fiselor de
+vizita si operatiunilor de management (manageri, calculator target, salarii si
+P&L).
 
 Starea curenta a planului de dezvoltare si drumul pana la urmatoarea versiune
 sunt sintetizate in
@@ -32,7 +35,10 @@ Reguli importante in Hub:
 - comparatia perioade foloseste aceeasi fereastra calendaristica pentru luna curenta, luna trecuta si aceeasi luna anul trecut; daca luna curenta este partiala, cutoff-ul este ultima zi cu vanzari importate
 - comparatia perioade este like-for-like: include in toate cele trei coloane doar magazinele cu vanzari Retail in luna analizata; la filtre RM/firma, istoricul urmareste aceleasi magazine chiar daca au fost realocate intre timp
 - KPI-urile de vanzari, cantitate, bonuri si medii exclud categoria `Cartele`;
-  `Medie produs` inseamna `vanzari / cantitate` pe acelasi scope
+  cantitatea Retail este neta (vanzari minus retururi), iar `Medie produs`
+  inseamna `vanzari nete / cantitate neta` pe acelasi scope
+- retururile raman monitorizate separat prin numarul de bonuri de retur, dar
+  nu umfla volumele, Focus/Acc sau distributiile RM/magazin/agent
 - randul `Cartele` este informativ si este calculat separat din tranzactiile brute
 - magazinele/locatiile de distributie cu nume `TR ...` sunt excluse din calculele Retail
 - in Hub exista un singur layer operational de management; rapoartele pastreaza
@@ -204,15 +210,26 @@ Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
 subtaburile sunt afisate in bara interna a ecranului, la fel ca in Agenti si
 Focus; sidebar-ul contine numai intrarea principala Management.
 
-- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM; cardurile expandate includ scorurile magazinelor alocate. Router: `/api/hr`
-- **Magazine (CRM, istoric intern)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
-- **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
-- **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
+- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) +
+  SQLite (vizite) + factor de forecast din scoring-ul CRM intern; cardurile
+  expandate includ scorurile magazinelor alocate. Router-e: `/api/hr`, `/api/crm`
 - **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
 - **Salarii** — overview, evolutie, raport salarii versus vanzari si istoric pe
   agent. Accesul ramane limitat server-side la rolurile salariale aprobate.
-- **P&L** — sumar financiar lunar pe magazin, evolutie si structura de cost,
-  vizibil numai utilizatorilor cu capabilitatea P&L verificata de backend.
+- **P&L** — sumar financiar pe magazin, evolutii lunare si anuale si structura
+  de cost, vizibil numai utilizatorilor cu capabilitatea P&L verificata de
+  backend. Intervalul initial este anul calendaristic curent (year-to-date),
+  iar compania si magazinul filtreaza autoritativ toate cardurile si graficele.
+  Cand este ales un magazin, identitatea lui canonica domina compania in
+  istoricul P&L, astfel incat mutarile intre entitati nu rup evolutia.
+  Daca pentru aceeasi luna, magazin canonic si categorie exista atat o estimare,
+  cat si un import real (inclusiv sub coduri istorice sau companii diferite),
+  raportarea foloseste exclusiv valoarea `actual`.
+
+Endpointurile backend pentru Tasks, cereri de concediu si alerte CRM raman
+compatibile cu datele istorice si integrarile, dar nu au subtab-uri in
+navigatia V2. Componentele frontend legacy inaccesibile au fost eliminate ca
+sa nu existe o a doua interfata neintretinuta.
 
 Evaluarea din **Agenti -> Analiza agenti** foloseste 6 segmente, fiecare cu 0-3 puncte:
 Target valoare, Medie zilnica, Valoare reper, % Bonuri, Focus si Folii Premium.
@@ -421,6 +438,9 @@ Scopul lui este sa evite raportarea direct din `sales_transactions` pentru fieca
 Agregatele de reporting sunt construite pentru analiza Retail:
 - exclud `is_cartela = true` din totaluri
 - exclud locatiile de distributie `stores.locatie ILIKE 'TR %'`
+- agrega cantitatile net, inclusiv retururile negative; bonurile exclusiv de
+  retur nu intra in `receipt_count`, iar produsele Focus returnate se scad din
+  numaratorul si denominatorul Focus/Acc
 - trebuie regenerate cu `backend/scripts/rebuild_reporting.py` dupa schimbari de reguli de raportare
 
 Exceptie: cardurile care afiseaza explicit volumul de `Cartele` citesc separat din `sales_transactions`, fara sa contamineze totalurile Retail.
@@ -511,6 +531,9 @@ ca `site_code` catre overview, evolutie, summary, trend si lista de agenti.
 API-ul public si repository-urile runtime folosesc identificatorul opac
 `person_id`. CNP-ul retinut este izolat pentru import si matching intern: nu
 este returnat browserului, folosit in URL-uri sau expus in contractele publice.
+Matcherul offline poate scrie un link confirmat numai impreuna cu `person_id`;
+potrivirile manuale fara identitate salariala unica raman `review` pana cand
+exista o inregistrare HR rezolvabila.
 Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
 unitar pe valorile agent-luna de cel putin `2.000 RON`. Identitatea principala
 este `person_id`. Daca acelasi agent are mai multe randuri de plata in aceeasi luna,
@@ -612,9 +635,11 @@ sudo systemctl status unihub-retail-migrate.service --no-pager
 ```
 
 Runnerul foloseste advisory lock PostgreSQL, tranzactii per migration si
-checksum-uri persistente. Backend-ul web nu executa DDL/DML de schema; la
+checksum-uri persistente, preferand credentialul owner din
+`MIGRATION_DATABASE_URL`. Backend-ul web nu executa DDL/DML de schema; la
 startup face numai verificarea read-only si refuza sa porneasca daca exista
-drift sau migrations neaplicate.
+drift sau migrations neaplicate. La un DB nou, baseline-ul DDL este urmat de
+seed-urile de date desemnate explicit de runner.
 
 Asta inseamna ca doua instante web nu pot concura pentru schema, fisierele
 istorice modificate sunt detectate, iar release-ul DB este separat de runtime.
@@ -685,6 +710,17 @@ Probe runtime:
 
 Contractul, SLO-urile si alertele sunt documentate in
 [docs/operations/retail-slo-readiness.md](./docs/operations/retail-slo-readiness.md).
+
+## Stare release V2
+
+Versiunea V2 este acceptata operational din 13 iulie 2026. Acceptarea finala
+include CI backend/frontend pe merge ref, teste PostgreSQL izolate, pragurile de
+coverage critice, typecheck strict, lint, build, Playwright/WCAG, rollout
+controlat backend/worker si probe locale/publice de liveness/readiness. Starea
+executiva si backlogul neblocant sunt mentinute in
+[development-plan-status.md](./docs/engineering/development-plan-status.md),
+iar probele de performanta in
+[performance-baseline-v2.md](./docs/engineering/performance-baseline-v2.md).
 
 ## Scripturi utile
 

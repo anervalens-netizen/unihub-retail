@@ -22,6 +22,18 @@ export class ApiError extends Error {
   }
 }
 
+const USER_ACTIONABLE_ERROR_STATUSES = new Set([400, 403, 404, 409, 422]);
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiError)) return fallback;
+  if (error.status === 401) {
+    return 'Sesiunea a expirat. Vei fi redirectionat catre autentificare.';
+  }
+  if (!USER_ACTIONABLE_ERROR_STATUSES.has(error.status)) return fallback;
+  const detail = error.detail.trim();
+  return detail || fallback;
+}
+
 function resolveApiBaseUrl(): string {
   const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL;
   if (configuredBaseUrl) {

@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from services.agents import AgentsService, get_prev_month, month_index_expr
+from repositories.agent_evaluation import AGENT_EVALUATION_OPTIONS_QUERY
+from business_rules import AGENT_LIFECYCLE_BASELINE_MONTH
 
 
 class FakeRow(dict):
@@ -38,6 +40,41 @@ def test_agent_evaluation_v2_service_contains_no_sql() -> None:
     assert "WITH " not in source
 
 
+def test_agent_evaluation_options_query_interpolates_baseline_month() -> None:
+    assert AGENT_LIFECYCLE_BASELINE_MONTH in AGENT_EVALUATION_OPTIONS_QUERY
+    assert "{AGENT_LIFECYCLE_BASELINE_MONTH}" not in AGENT_EVALUATION_OPTIONS_QUERY
+
+
+def _legacy_evaluation_row(period: str) -> FakeRow:
+    return FakeRow(
+        month=period,
+        firma="Firma",
+        site_code="S1",
+        locatie="Magazin",
+        regional="Regional",
+        asm="Manager",
+        agent="Agent",
+        total_sales=Decimal("10000"),
+        total_quantity=100,
+        working_days=10,
+        store_target=Decimal("10000"),
+        store_working_days=10,
+        target_value=Decimal("10000"),
+        target_pct=Decimal("100"),
+        daily_average=Decimal("1000"),
+        peer_daily_average=Decimal("900"),
+        value_reper=Decimal("100"),
+        receipt_count=40,
+        receipt_2plus_count=20,
+        bonuri_pct=Decimal("50"),
+        focus_quantity=10,
+        focus_pct=Decimal("10"),
+        glass_qty=5,
+        premium_glass_qty=3,
+        premium_glass_pct=Decimal("60"),
+    )
+
+
 @pytest.fixture
 def mock_repo():
     repo = MagicMock()
@@ -48,9 +85,50 @@ def mock_repo():
     repo.get_agent_profile = AsyncMock()
     repo.get_agent_history = AsyncMock(return_value=[])
     repo.get_stores_coverage = AsyncMock(return_value=[])
+    repo.get_agent_evaluation = AsyncMock(return_value=[])
     repo.get_agent_evaluation_v2 = AsyncMock(return_value=[])
     repo.get_agent_evaluation_options = AsyncMock(return_value=[])
     return repo
+
+
+@pytest.mark.asyncio
+async def test_legacy_agent_evaluation_uses_legacy_query_contract(service, mock_repo):
+    result = await service.get_agent_evaluation(
+        month="2026-05",
+        months="2026-04,2026-05",
+        firma="Firma",
+        asm="Manager",
+        site_code="S1",
+    )
+
+    assert mock_repo.get_agent_evaluation.await_count == 2
+    rows_call, options_call = mock_repo.get_agent_evaluation.await_args_list
+    assert "peer_daily_average" in rows_call.args[0]
+    assert rows_call.args[1] == ["2026-04,2026-05", "Firma", "Manager", "S1"]
+    assert "SELECT 'month' AS type" in options_call.args[0]
+    assert options_call.args[1] == ["Firma", "Manager"]
+    mock_repo.get_agent_evaluation_v2.assert_not_awaited()
+    mock_repo.get_agent_evaluation_options.assert_not_awaited()
+    assert result.rows == []
+
+
+@pytest.mark.parametrize(
+    ("months", "period"),
+    [(None, f"{AGENT_LIFECYCLE_BASELINE_MONTH}..curent"), ("2026-06,2026-07", "custom")],
+)
+@pytest.mark.asyncio
+async def test_legacy_agent_evaluation_preserves_aggregate_period_labels(
+    service,
+    mock_repo,
+    months: str | None,
+    period: str,
+):
+    mock_repo.get_agent_evaluation.side_effect = [[_legacy_evaluation_row(period)], []]
+
+    result = await service.get_agent_evaluation(None, months, None, None, None)
+
+    assert result.rows[0].month == period
+    assert mock_repo.get_agent_evaluation.await_args_list[0].args[1][0] == months
 
 
 @pytest.mark.asyncio

@@ -80,10 +80,19 @@ Pentru acces din LAN, adauga explicit origin-ul de dezvoltare in
 
 ## Authentik OIDC
 
-Frontend-ul foloseste providerul Authentik `unihub-retail`.
+Backend-ul BFF foloseste providerul Authentik `unihub-retail`; browserul nu
+primeste tokenurile OIDC.
 
 - callback-ul local trebuie permis explicit in provider;
-- backend-ul valideaza issuer, audience, expirare si semnatura RS256 prin JWKS;
+- backend-ul valideaza issuer, expirare si semnatura RS256 prin JWKS, audienta
+  API pentru access token si client ID-ul pentru ID token;
+- grupul de variabile `SESSION_*`/`OIDC_CLIENT_*` din `.env.example` ramane gol
+  in development; configureaza-l complet numai cand testezi login-ul BFF;
+- grupul distributed rate-limit (`TRUSTED_PROXY_CIDRS`, header mode, Valkey,
+  cheia HMAC si failure mode) ramane de asemenea complet gol in development;
+  in aceasta stare explicita dependintele de rate-limit sunt dezactivate local,
+  fara store global. O configurare partiala ramane invalida, iar production
+  continua sa porneasca si sa raspunda strict fail-closed;
 - rolurile si scope-ul provin din grupurile Authentik;
 - `offline_access` ramane activ conform politicii comune UniHub;
 - nu adauga fallback cu username/parola.

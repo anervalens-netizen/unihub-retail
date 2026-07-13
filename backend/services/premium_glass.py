@@ -4,9 +4,11 @@ from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
-from models import (
+from schemas.dashboard import (
     DashboardSpecialCard,
     DashboardSpecialCardMetric,
+)
+from schemas.premium_glass import (
     PremiumGlassAgentStat,
     PremiumGlassAnalysis,
     PremiumGlassManagerStat,

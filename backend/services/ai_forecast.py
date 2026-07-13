@@ -4,7 +4,7 @@ import json
 from decimal import Decimal
 from typing import Any, Literal
 
-from models import (
+from schemas.ai_forecast import (
     AiForecastDailyPoint,
     AiForecastManagerRow,
     AiForecastRollingManagerRow,

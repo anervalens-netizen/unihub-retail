@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 import pytest
 
@@ -86,9 +87,18 @@ def test_score_band_boundaries(value: Decimal | None, expected: Decimal | None) 
     ],
 )
 def test_score_rating_boundaries(
-    score: Decimal | None, eligibility: str, expected: str
+    score: Decimal | None,
+    eligibility: Literal["eligibil", "insuficient"],
+    expected: str,
 ) -> None:
     assert score_rating(score, eligibility) == expected
+
+
+@pytest.mark.parametrize("period", ["2025-01..curent", "custom"])
+def test_v2_row_preserves_aggregate_period_labels(period: str) -> None:
+    result = build_agent_evaluation_v2_row(_row(month=period))
+
+    assert result.month == period
 
 
 def test_final_month_full_score_and_threshold_flags() -> None:

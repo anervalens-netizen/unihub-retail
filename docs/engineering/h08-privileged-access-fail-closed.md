@@ -200,9 +200,11 @@ Authentik group assignment or service environment and restart the backend.
 
 ## Forward fix and deployment status
 
-No Authentik object, service environment, database schema or persisted job
-actor was changed by H-08. Deployment remains pending: provision the dedicated
-groups and service environment first, then deploy and perform the controlled
-permission-only verification above. If access is missing, correct the group
-claim or group environment configuration rather than restoring email-based
-authorization.
+H-08 did not change the database schema or persisted job actor. Production
+reconciliation (2026-07-13): the two dedicated groups were provisioned in
+Authentik, emitted in the OIDC group claim and configured through
+`TARGET_CALCULATOR_FINALIZER_GROUPS` and `GRILE_FINALIZER_GROUPS`; the
+group-only code is active in `unihub-backend.service`. Controlled permission
+checks confirmed the owner capabilities without executing a Grile reset or
+Target publication. If access is missing, correct the group claim or service
+environment configuration rather than restoring email-based authorization.

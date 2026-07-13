@@ -5,7 +5,9 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from models import (
+from business_rules import AGENT_LIFECYCLE_BASELINE_MONTH
+from schemas.agents import (
+    AgentQualifier,
     AgentsOverviewResponse,
     AgentMovementPoint,
     AgentMovementResponse,
@@ -24,6 +26,19 @@ from models import (
 from repositories.agents import AgentsRepository
 from services.agent_evaluation import build_agent_evaluation_v2_row
 from services.filters import base_filter_values, scoped_clauses, where_clauses
+
+
+V1_TARGET_THRESHOLDS = (Decimal("100"), Decimal("90"), Decimal("80"))
+V1_VALUE_THRESHOLDS = (Decimal("100"), Decimal("95"), Decimal("90"))
+V1_RECEIPT_THRESHOLDS = (Decimal("35"), Decimal("30"), Decimal("25"))
+V1_FOCUS_THRESHOLDS = (Decimal("8"), Decimal("7"), Decimal("6"))
+V1_PREMIUM_GLASS_THRESHOLDS = (Decimal("50"), Decimal("40"), Decimal("30"))
+V1_QUALIFIER_BANDS: tuple[tuple[int, AgentQualifier], ...] = (
+    (18, "Excelent"),
+    (14, "Foarte Bun"),
+    (10, "Bun"),
+    (6, "Mediu"),
+)
 
 def month_index_expr(col: str) -> str:
     return f"(CAST(SUBSTRING({col}, 1, 4) AS INTEGER) * 12 + CAST(SUBSTRING({col}, 6, 2) AS INTEGER))"
@@ -173,18 +188,13 @@ class AgentsService:
                 return 1
             return 0
 
-        def qualifier(points: int) -> str:
-            if points == 18:
-                return "Excelent"
-            if points >= 14:
-                return "Foarte Bun"
-            if points >= 10:
-                return "Bun"
-            if points >= 6:
-                return "Mediu"
+        def qualifier(points: int) -> AgentQualifier:
+            for minimum_points, label in V1_QUALIFIER_BANDS:
+                if points >= minimum_points:
+                    return label
             return "Scazut"
 
-        query = """
+        query = f"""
             WITH current_month AS (
                 SELECT MAX(import_month) AS month
                 FROM reporting_agent_month
@@ -211,7 +221,7 @@ class AgentsService:
                     site_code,
                     COUNT(DISTINCT sale_date)::INT AS working_days
                 FROM reporting_agent_day
-                WHERE import_month >= '2025-01'
+                WHERE import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
                 GROUP BY import_month, site_code
             ),
             monthly_base AS (
@@ -239,7 +249,7 @@ class AgentsService:
                 LEFT JOIN store_targets st
                   ON st.import_month = ram.import_month
                  AND st.site_code = ram.site_code
-                WHERE ram.import_month >= '2025-01'
+                WHERE ram.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
                   AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
@@ -266,7 +276,7 @@ class AgentsService:
             agent_period AS (
                 SELECT
                     CASE
-                        WHEN $1::TEXT IS NULL THEN '2025-01..curent'
+                        WHEN $1::TEXT IS NULL THEN '{AGENT_LIFECYCLE_BASELINE_MONTH}..curent'
                         WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
                         ELSE month
                     END AS month,
@@ -288,7 +298,7 @@ class AgentsService:
                 FROM monthly_targets
                 GROUP BY
                     CASE
-                        WHEN $1::TEXT IS NULL THEN '2025-01..curent'
+                        WHEN $1::TEXT IS NULL THEN '{AGENT_LIFECYCLE_BASELINE_MONTH}..curent'
                         WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
                         ELSE month
                     END,
@@ -329,7 +339,7 @@ class AgentsService:
                 SELECT DISTINCT
                     st.id,
                     CASE
-                        WHEN $1::TEXT IS NULL THEN '2025-01..curent'
+                        WHEN $1::TEXT IS NULL THEN '{AGENT_LIFECYCLE_BASELINE_MONTH}..curent'
                         WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
                         ELSE st.import_month
                     END AS month,
@@ -339,7 +349,7 @@ class AgentsService:
                 FROM sales_transactions st
                 JOIN current_agents ca ON ca.agent = st.agent
                 JOIN premium_glass_item_models pgm ON pgm.item_code = st.item_code
-                WHERE st.import_month >= '2025-01'
+                WHERE st.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
                   AND ($1::TEXT IS NULL OR st.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
@@ -375,7 +385,7 @@ class AgentsService:
             ORDER BY pm.month DESC, pm.asm, pm.locatie, pm.total_sales DESC, pm.agent
         """
 
-        option_query = """
+        option_query = f"""
             WITH current_month AS (
                 SELECT MAX(import_month) AS month
                 FROM reporting_agent_month
@@ -400,7 +410,7 @@ class AgentsService:
                 SELECT DISTINCT ram.import_month AS month, ca.firma, ca.regional, ca.asm, ca.site_code, ca.locatie
                 FROM reporting_agent_month ram
                 JOIN current_agents ca ON ca.agent = ram.agent
-                WHERE ram.import_month >= '2025-01'
+                WHERE ram.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
             )
             SELECT 'month' AS type, month AS value, month AS label FROM scoped
             UNION
@@ -415,13 +425,14 @@ class AgentsService:
             ORDER BY type, label
         """
 
-        rows = await self.repo.get_agent_evaluation_v2(
-            month_filter,
-            firma,
-            asm,
-            site_code,
+        rows = await self.repo.get_agent_evaluation(
+            query,
+            [month_filter, firma, asm, site_code],
         )
-        option_rows = await self.repo.get_agent_evaluation_options(firma, asm)
+        option_rows = await self.repo.get_agent_evaluation(
+            option_query,
+            [firma, asm],
+        )
 
         month_options: list[AgentEvaluationOption] = []
         firmas: list[AgentEvaluationOption] = []
@@ -445,12 +456,14 @@ class AgentsService:
 
         items: list[AgentEvaluationRow] = []
         for row in rows:
-            target_points = pct_points(row["target_pct"], (Decimal("100"), Decimal("90"), Decimal("80")))
+            target_points = pct_points(row["target_pct"], V1_TARGET_THRESHOLDS)
             daily_points = 3 if row["daily_average"] is not None and row["peer_daily_average"] is not None and row["daily_average"] > row["peer_daily_average"] else 0
-            value_reper_points = pct_points(row["value_reper"], (Decimal("100"), Decimal("95"), Decimal("90")))
-            bonuri_points = pct_points(row["bonuri_pct"], (Decimal("35"), Decimal("30"), Decimal("25")))
-            focus_points = pct_points(row["focus_pct"], (Decimal("8"), Decimal("7"), Decimal("6")))
-            premium_points = pct_points(row["premium_glass_pct"], (Decimal("50"), Decimal("40"), Decimal("30")))
+            value_reper_points = pct_points(row["value_reper"], V1_VALUE_THRESHOLDS)
+            bonuri_points = pct_points(row["bonuri_pct"], V1_RECEIPT_THRESHOLDS)
+            focus_points = pct_points(row["focus_pct"], V1_FOCUS_THRESHOLDS)
+            premium_points = pct_points(
+                row["premium_glass_pct"], V1_PREMIUM_GLASS_THRESHOLDS
+            )
             segment_points = [
                 target_points,
                 daily_points,
@@ -562,7 +575,12 @@ class AgentsService:
             store_alias="st",
             agent_alias="st",
         )
-        clauses.extend(["st.import_month >= '2025-01'", "st.import_month <= $1"])
+        clauses.extend(
+            [
+                f"st.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'",
+                "st.import_month <= $1",
+            ]
+        )
         where_sql = "WHERE " + " AND ".join(clauses)
 
         query = f"""
@@ -586,10 +604,10 @@ class AgentsService:
                 SELECT
                     sa.import_month AS month,
                     COUNT(DISTINCT sa.agent) FILTER (
-                        WHERE lc.is_new AND sa.import_month != '2025-01'
+                        WHERE lc.is_new AND sa.import_month != '{AGENT_LIFECYCLE_BASELINE_MONTH}'
                     )::INT AS new,
                     COUNT(DISTINCT sa.agent) FILTER (
-                        WHERE lc.is_reactivated AND sa.import_month != '2025-01'
+                        WHERE lc.is_reactivated AND sa.import_month != '{AGENT_LIFECYCLE_BASELINE_MONTH}'
                     )::INT AS reactivated
                 FROM scoped_active sa
                 JOIN reporting_agent_lifecycle_month lc
@@ -599,7 +617,10 @@ class AgentsService:
             churned AS (
                 SELECT
                     m.month,
-                    COUNT(pa.agent) FILTER (WHERE ca.agent IS NULL AND m.month != '2025-01')::INT AS churned
+                    COUNT(pa.agent) FILTER (
+                        WHERE ca.agent IS NULL
+                          AND m.month != '{AGENT_LIFECYCLE_BASELINE_MONTH}'
+                    )::INT AS churned
                 FROM months m
                 LEFT JOIN scoped_active pa
                   ON pa.import_month = to_char((TO_DATE(m.month, 'YYYY-MM') - INTERVAL '1 month'), 'YYYY-MM')
@@ -622,10 +643,10 @@ class AgentsService:
                 COALESCE(f.reactivated, 0)::INT AS reactivated,
                 COALESCE(ch.churned, 0)::INT AS churned,
                 CASE
-                    WHEN m.month = '2025-01' THEN 0
+                    WHEN m.month = '{AGENT_LIFECYCLE_BASELINE_MONTH}' THEN 0
                     ELSE COALESCE(mon.active, 0) - COALESCE(pt.previous_active, 0)
                 END::INT AS net_growth,
-                (m.month = '2025-01') AS is_baseline
+                (m.month = '{AGENT_LIFECYCLE_BASELINE_MONTH}') AS is_baseline
             FROM months m
             LEFT JOIN monthly mon ON mon.month = m.month
             LEFT JOIN flagged f ON f.month = m.month

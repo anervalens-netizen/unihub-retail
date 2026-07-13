@@ -60,12 +60,23 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
     ]
     pool = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
-    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+    connection_released = asyncio.Event()
+
+    async def release_connection(*_args):
+        connection_released.set()
+        return False
+
+    pool.acquire.return_value.__aexit__ = AsyncMock(side_effect=release_connection)
     shared_summary = PromoIncentiveSummary(
         incentive_qty=4,
         incentive_value=Decimal("40"),
     )
-    summary_task = asyncio.create_task(asyncio.sleep(0, result=shared_summary))
+
+    async def shared_summary_after_connection_release():
+        await connection_released.wait()
+        return shared_summary
+
+    summary_task = asyncio.create_task(shared_summary_after_connection_release())
 
     with (
         patch(
@@ -81,21 +92,26 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
             "services.dashboard.specials_data._get_store_incentive_multipliers",
             new_callable=AsyncMock,
             return_value=({"S1": 1.0}, {"S1": 1.0}),
-        ),
+        ) as mock_store_multipliers,
         patch(
             "services.dashboard.specials_data._fetch_promo_incentive_summary",
             new_callable=AsyncMock,
         ) as mock_fetch_summary,
     ):
-        cards = await _get_special_cards_data(
-            "2026-05",
-            None,
-            None,
-            None,
-            None,
-            None,
-            campaign_context=context,
-            promo_incentive_summary=summary_task,
+        cards = await asyncio.wait_for(
+            _get_special_cards_data(
+                "2026-05",
+                None,
+                "Regional curent",
+                None,
+                None,
+                None,
+                current_scope=True,
+                include_closed_stores=False,
+                campaign_context=context,
+                promo_incentive_summary=summary_task,
+            ),
+            timeout=1,
         )
 
     assert [card.key for card in cards] == ["incentive"]
@@ -106,3 +122,11 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
     sql = conn.fetch.await_args.args[0]
     assert "WITH filtered AS MATERIALIZED" in sql
     assert "UNION ALL" in sql
+    assert "JOIN stores s ON s.site_code = agg.site_code" in sql
+    assert "s.is_active = true" in sql
+    multiplier_call = mock_store_multipliers.await_args
+    assert multiplier_call is not None
+    assert multiplier_call.kwargs == {
+        "current_scope": True,
+        "include_closed_stores": False,
+    }

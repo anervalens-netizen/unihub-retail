@@ -83,6 +83,13 @@ Environment variables:
 - `RATE_LIMIT_FAILURE_MODE=closed` in production;
 - existing policy limit/window variables, parsed lazily and validated with explicit ranges.
 
+The distributed runtime group is intentionally empty in `.env.example`, so a
+plain development setup bypasses rate-limit dependencies explicitly and uses
+no global fallback store. Production must configure the complete group,
+including `RATE_LIMIT_FAILURE_MODE=closed`; the numeric policy defaults may
+still be kept from the example. A partial development configuration is invalid
+instead of silently entering bypass mode.
+
 Validation requirements:
 
 - production rejects missing, empty, partial or invalid distributed-limiter configuration;
@@ -381,5 +388,11 @@ with 7 skips, frontend 177 tests, typecheck and production build. Critical
 coverage is 100% for `client_ip.py`, `rate_limit_settings.py`,
 `rate_limit_store.py` and `rate_limits.py`. GitHub Actions run `29193554547`
 is green on the PR merge ref, so the application implementation is accepted
-technically. Production activation remains pending the separately approved
-proxy, firewall and environment rollout.
+technically.
+
+Production reconciliation (2026-07-13): the separately approved proxy,
+firewall and environment rollout was completed. Trusted direct-peer CIDRs,
+forwarded-header mode, the Valkey-backed atomic limiter, HMAC keying and the
+closed failure mode are active in `unihub-backend.service`; readiness remained
+green after restart. The numbered deployment steps above are retained as the
+runbook for future reprovisioning or rollback, not as pending work.

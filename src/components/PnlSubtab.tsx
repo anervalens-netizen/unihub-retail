@@ -19,10 +19,14 @@ import {
   YAxis,
 } from "recharts";
 import {
+  getPnlAnnual,
   getPnlMonths,
   getPnlOverview,
+  getPnlStores,
+  type PnlAnnualPoint,
   type PnlMetrics,
   type PnlMonthlyPoint,
+  type PnlStoreOption,
 } from "../api/storePnl";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -55,6 +59,27 @@ function monthLabel(value: string): string {
     month: "short",
     year: "2-digit",
   }).format(new Date(`${value}-01T00:00:00`));
+}
+
+export function defaultPnlRange(
+  months: string[],
+  now = new Date(),
+): { start: string; end: string } {
+  const available = [...months].sort();
+  const currentYear = String(now.getFullYear());
+  let selected = available.filter((month) => month.startsWith(`${currentYear}-`));
+  if (!selected.length && available.length) {
+    const latestYear = available.at(-1)?.slice(0, 4);
+    selected = available.filter((month) => month.startsWith(`${latestYear}-`));
+  }
+  return {
+    start: selected[0] ?? "",
+    end: selected.at(-1) ?? "",
+  };
+}
+
+export function pnlStoreOptionValue(store: PnlStoreOption): string {
+  return JSON.stringify([store.scope_company, store.site_code]);
 }
 
 function KpiCard({
@@ -94,6 +119,7 @@ export function PnlSubtab() {
   const [startMonth, setStartMonth] = useState("");
   const [endMonth, setEndMonth] = useState("");
   const [company, setCompany] = useState("");
+  const [storeScope, setStoreScope] = useState("");
   const [storeSearch, setStoreSearch] = useState("");
   const monthsQuery = useQuery({
     queryKey: ["store-pnl-months"],
@@ -103,15 +129,46 @@ export function PnlSubtab() {
 
   useEffect(() => {
     if (!monthsQuery.data?.length || endMonth) return;
-    const available = monthsQuery.data.map((item) => item.month).sort();
-    setEndMonth(available.at(-1) ?? "");
-    setStartMonth(available.at(-12) ?? available[0] ?? "");
+    const range = defaultPnlRange(monthsQuery.data.map((item) => item.month));
+    setStartMonth(range.start);
+    setEndMonth(range.end);
   }, [monthsQuery.data, endMonth]);
 
+  const storesQuery = useQuery({
+    queryKey: ["store-pnl-stores", company],
+    queryFn: () => getPnlStores(company),
+    staleTime: 5 * 60_000,
+  });
+  const selectedStore = useMemo(
+    () => storesQuery.data?.find(
+      (store) => pnlStoreOptionValue(store) === storeScope,
+    ),
+    [storeScope, storesQuery.data],
+  );
+  const siteCode = selectedStore?.site_code ?? "";
+  const siteCompany = selectedStore?.scope_company ?? "";
+
   const overviewQuery = useQuery({
-    queryKey: ["store-pnl-overview", startMonth, endMonth, company],
-    queryFn: () => getPnlOverview(startMonth, endMonth, company),
+    queryKey: [
+      "store-pnl-overview",
+      startMonth,
+      endMonth,
+      company,
+      siteCode,
+      siteCompany,
+    ],
+    queryFn: () => getPnlOverview(
+      startMonth,
+      endMonth,
+      company,
+      siteCode,
+      siteCompany,
+    ),
     enabled: Boolean(startMonth && endMonth),
+  });
+  const annualQuery = useQuery({
+    queryKey: ["store-pnl-annual", company, siteCode, siteCompany],
+    queryFn: () => getPnlAnnual(company, siteCode, siteCompany),
   });
   const data = overviewQuery.data;
   const filteredStores = useMemo(() => {
@@ -151,7 +208,7 @@ export function PnlSubtab() {
             Performanță financiară pe rețea, companie și magazin.
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <label className="text-xs text-slate-500">
             De la
             <select
@@ -186,12 +243,39 @@ export function PnlSubtab() {
             Companie
             <select
               value={company}
-              onChange={(e) => setCompany(e.target.value)}
+              onChange={(e) => {
+                setCompany(e.target.value);
+                setStoreScope("");
+              }}
               className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
             >
               <option value="">Toată rețeaua</option>
               <option value="Mobiup">Mobiup</option>
               <option value="Mobicell">Mobicell</option>
+            </select>
+          </label>
+          <label className="text-xs text-slate-500">
+            Magazin
+            <select
+              value={storeScope}
+              onChange={(e) => setStoreScope(e.target.value)}
+              disabled={storesQuery.isLoading || storesQuery.isError}
+              className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <option value="">
+                {storesQuery.isError
+                  ? "Magazine indisponibile"
+                  : "Toate magazinele"}
+              </option>
+              {storesQuery.data?.map((store) => (
+                <option
+                  key={`${store.company_name}-${store.site_code}`}
+                  value={pnlStoreOptionValue(store)}
+                >
+                  {store.location} · {store.site_code}
+                  {store.scope_company ? ` · ${store.scope_company}` : ""}
+                </option>
+              ))}
             </select>
           </label>
         </div>
@@ -296,21 +380,120 @@ export function PnlSubtab() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="ebitda"
-                    name="EBITDA"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                  />
-                  <Line
-                    type="monotone"
                     dataKey="ebit"
                     name="EBIT"
                     stroke="#f43f5e"
-                    strokeWidth={2}
+                    strokeWidth={3}
+                    strokeDasharray="8 6"
+                    dot={{ r: 2, fill: "#f43f5e" }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="ebitda"
+                    name="EBITDA"
+                    stroke="#10b981"
+                    strokeWidth={2.5}
+                    dot={{
+                      r: 4,
+                      fill: "#10b981",
+                      stroke: "#ffffff",
+                      strokeWidth: 1.5,
+                    }}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-slate-900 dark:text-white">
+                  Evoluție anuală
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Istoricul complet pentru compania și magazinul selectate;
+                  punctele portocalii includ estimări.
+                </p>
+              </div>
+              {annualQuery.isLoading && (
+                <span className="text-xs text-slate-500">Se încarcă…</span>
+              )}
+            </div>
+            {annualQuery.isError ? (
+              <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">
+                Nu am putut încărca evoluția anuală.
+              </div>
+            ) : annualQuery.data?.length ? (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={annualQuery.data}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#94a3b833" />
+                    <XAxis dataKey="year" fontSize={11} />
+                    <YAxis
+                      tickFormatter={(value) => compactMoney.format(value)}
+                      fontSize={11}
+                    />
+                    <Tooltip
+                      formatter={(value) => money.format(Number(value))}
+                      labelFormatter={(label) => `Anul ${String(label)}`}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="revenue"
+                      name="Venituri"
+                      stroke="#4f46e5"
+                      strokeWidth={2.5}
+                      dot={({
+                        cx,
+                        cy,
+                        payload,
+                      }: {
+                        cx?: number;
+                        cy?: number;
+                        payload: PnlAnnualPoint;
+                      }) => (
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={payload.is_estimated ? 6 : 4}
+                          fill={payload.is_estimated ? "#f59e0b" : "#4f46e5"}
+                        />
+                      )}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="ebit"
+                      name="EBIT"
+                      stroke="#f43f5e"
+                      strokeWidth={3}
+                      strokeDasharray="8 6"
+                      dot={{ r: 2, fill: "#f43f5e" }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="ebitda"
+                      name="EBITDA"
+                      stroke="#10b981"
+                      strokeWidth={2.5}
+                      dot={{
+                        r: 4,
+                        fill: "#10b981",
+                        stroke: "#ffffff",
+                        strokeWidth: 1.5,
+                      }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              !annualQuery.isLoading && (
+                <div className="py-12 text-center text-sm text-slate-500">
+                  Nu există istoric anual pentru selecția curentă.
+                </div>
+              )
+            )}
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">

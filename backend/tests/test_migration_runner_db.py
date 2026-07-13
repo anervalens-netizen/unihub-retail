@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -99,6 +100,24 @@ async def test_runner_is_idempotent_and_advisory_locked() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runner_prefers_explicit_migration_owner_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    manifest = runner.load_migration_manifest()
+    connection = _Connection(rows=dict(manifest.checksums))
+    connect = AsyncMock(return_value=connection)
+    monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://owner@localhost/db")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://runtime@localhost/db")
+    monkeypatch.setattr(runner.asyncpg, "connect", connect)
+
+    assert await run_migrations() == []
+    assert connect.await_args is not None
+    assert connect.await_args.args[0] == "postgresql://owner@localhost/db"
+
+
+@pytest.mark.asyncio
 async def test_existing_database_backfills_checksums_and_applies_pending(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -156,6 +175,81 @@ async def test_fresh_database_uses_frozen_baseline_then_later_migrations(
     assert await run_migrations("postgresql://unused") == [second.name]
     assert connection.rows == manifest.checksums
     assert baseline.read_text(encoding="utf-8") in connection.executed
+
+
+@pytest.mark.asyncio
+async def test_fresh_database_replays_seed_migration_omitted_from_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import db.migration_runner as runner
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    names = [
+        "001_schema.sql",
+        "014_target_calculator_store_exclusions.sql",
+        "022_baseline_end.sql",
+        "023_later.sql",
+    ]
+    files = []
+    for index, name in enumerate(names, start=1):
+        path = migrations / name
+        path.write_text(f"SELECT {index};", encoding="utf-8")
+        files.append(path)
+    baseline = tmp_path / "schema_v2.sql"
+    baseline.write_text("CREATE TABLE example(id int);", encoding="utf-8")
+    manifest = MigrationManifest(
+        runner._sha256(baseline),
+        "022_baseline_end.sql",
+        {path.name: runner._sha256(path) for path in files},
+    )
+    connection = _Connection(has_schema=False)
+    monkeypatch.setattr(runner, "load_migration_manifest", lambda: manifest)
+    monkeypatch.setattr(runner, "get_migrations_dir", lambda: migrations)
+    monkeypatch.setattr(runner, "get_schema_path", lambda: baseline)
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    assert await run_migrations("postgresql://unused") == [
+        "014_target_calculator_store_exclusions.sql",
+        "023_later.sql",
+    ]
+    assert "SELECT 2;" in connection.executed
+    assert connection.rows == manifest.checksums
+
+
+@pytest.mark.asyncio
+async def test_post_006_database_adopts_missing_unreplayable_tombstone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import db.migration_runner as runner
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    tombstone = migrations / "005_retail_ai_analysis_views.sql"
+    prerequisite = migrations / "006_drop_ai_analysis_views.sql"
+    tombstone.write_text("RAISE unreplayable;", encoding="utf-8")
+    prerequisite.write_text("SELECT 6;", encoding="utf-8")
+    baseline = tmp_path / "schema_v2.sql"
+    baseline.write_text("SELECT 0;", encoding="utf-8")
+    manifest = MigrationManifest(
+        runner._sha256(baseline),
+        prerequisite.name,
+        {
+            tombstone.name: runner._sha256(tombstone),
+            prerequisite.name: runner._sha256(prerequisite),
+        },
+    )
+    connection = _Connection(
+        rows={prerequisite.name: manifest.checksums[prerequisite.name]}
+    )
+    monkeypatch.setattr(runner, "load_migration_manifest", lambda: manifest)
+    monkeypatch.setattr(runner, "get_migrations_dir", lambda: migrations)
+    monkeypatch.setattr(runner, "get_schema_path", lambda: baseline)
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    assert await run_migrations("postgresql://unused") == []
+    assert connection.rows == manifest.checksums
+    assert "RAISE unreplayable;" not in connection.executed
 
 
 def _async_return(value: Any):

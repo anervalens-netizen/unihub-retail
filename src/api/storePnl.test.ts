@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getPnlPermissions } from './storePnl';
+import {
+  getPnlAnnual,
+  getPnlOverview,
+  getPnlPermissions,
+  getPnlStores,
+} from './storePnl';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -39,4 +44,52 @@ describe('getPnlPermissions', () => {
       await expect(getPnlPermissions()).rejects.toThrow('Invalid P&L permissions response');
     },
   );
+});
+
+describe('P&L scoped data requests', () => {
+  it('sends the company and store scope to monthly and annual endpoints', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ stores: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ annual: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ stores: [], monthly: [] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getPnlStores('Mobicell');
+    await getPnlAnnual('Mobicell', 'CRFORADEA');
+    await getPnlOverview('2026-01', '2026-07', 'Mobicell', 'CRFORADEA');
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      '/api/store-pnl/stores?company=Mobicell',
+      '/api/store-pnl/annual?company=Mobicell&site_code=CRFORADEA',
+      '/api/store-pnl/overview?start_month=2026-01&end_month=2026-07&company=Mobicell&site_code=CRFORADEA',
+    ]);
+  });
+
+  it('omits empty optional filters', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ annual: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ stores: [], monthly: [] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getPnlAnnual('', '');
+    await getPnlOverview('2026-01', '2026-07', '');
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      '/api/store-pnl/annual',
+      '/api/store-pnl/overview?start_month=2026-01&end_month=2026-07',
+    ]);
+  });
+
+  it('qualifies an unmapped source-code scope with its company', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ annual: [] }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getPnlAnnual('', 'LEGACY-CODE', 'Mobicell');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/store-pnl/annual?site_code=LEGACY-CODE&site_company=Mobicell',
+    );
+  });
 });

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from decimal import Decimal
 from collections.abc import Awaitable
 from typing import Any, Literal, cast
@@ -8,7 +9,7 @@ from typing import Any, Literal, cast
 import asyncpg
 from fastapi import HTTPException, status
 
-from models import (
+from schemas.dashboard import (
     DashboardSummary,
     DashboardAllResponse,
     DailySalesPoint,
@@ -24,14 +25,14 @@ from models import (
     CategoryMixItem,
     ReceiptBucketItem,
     BrandMixItem,
-    PromoIncentiveSummary,
-    PremiumGlassAnalysis,
     PerformanceDetailResponse,
     PerformancePeerRow,
     PerformanceScoreBreakdown,
     RegionalStats,
     AsmStats,
 )
+from schemas.campaigns import PromoIncentiveSummary
+from schemas.premium_glass import PremiumGlassAnalysis
 from repositories.dashboard import DashboardRepository
 from services.dashboard.queries import (
     _enrich_store_stats_with_campaign,
@@ -49,7 +50,10 @@ from services.dashboard.queries import (
     _load_dashboard_campaign_context,
 )
 from services.dashboard.specials_data import _get_special_cards_data
-from services.dashboard.metrics import observe_dashboard_component
+from services.dashboard.metrics import (
+    observe_dashboard_component,
+    record_dashboard_component_queue,
+)
 from services.dashboard.utils import _expand_current_manager_scope
 from services.filters import build_scoped_params, normalize_filter, scoped_clauses
 from services.premium_glass import build_premium_glass_card, get_premium_glass_analysis
@@ -62,13 +66,33 @@ _RO_MONTHS = {
 
 AGENT_FORECAST_WORKING_DAYS = Decimal("15")
 PERFORMANCE_COMPONENT_WEIGHT = Decimal("20")
+DASHBOARD_COMPONENT_CONCURRENCY = 4
 _MONEY = Decimal("0.01")
 
 
-async def _gather_named(**components: Awaitable[Any]) -> dict[str, Any]:
-    """Run independent dashboard loaders concurrently and preserve their names."""
+async def _gather_named(
+    max_concurrency: int,
+    **components: Awaitable[Any],
+) -> dict[str, Any]:
+    """Run named loaders with bounded concurrency and preserve their names."""
+    if max_concurrency < 1:
+        raise ValueError("max_concurrency must be positive")
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def run_component(name: str, component: Awaitable[Any]) -> Any:
+        queued_at = time.perf_counter()
+        async with semaphore:
+            record_dashboard_component_queue(
+                name,
+                time.perf_counter() - queued_at,
+            )
+            return await component
+
     names = tuple(components)
-    values = await asyncio.gather(*(components[name] for name in names))
+    values = await asyncio.gather(
+        *(run_component(name, components[name]) for name in names)
+    )
     return dict(zip(names, values, strict=True))
 
 
@@ -819,6 +843,8 @@ class DashboardService:
                     asm,
                     site_code,
                     agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         campaign_context_task = asyncio.create_task(
@@ -1006,6 +1032,8 @@ class DashboardService:
                 asm,
                 site_code,
                 agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
                 campaign_context=campaign_context,
                 promo_incentive_summary=promo_incentive_task,
             )
@@ -1053,6 +1081,7 @@ class DashboardService:
             return [AsmStats(**r) for r in rows]
 
         component_results = await _gather_named(
+            DASHBOARD_COMPONENT_CONCURRENCY,
             summary=observe_dashboard_component(
                 "summary",
                 self.get_summary(

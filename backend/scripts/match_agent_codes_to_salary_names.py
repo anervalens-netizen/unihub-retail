@@ -1,7 +1,7 @@
-"""Potriveste codurile de agent din reporting cu numele din salarii.
+"""Potriveste codurile de agent din reporting cu identitatile din salarii.
 
-Script read-only pe DB. Genereaza un CSV privat in backend/outputs/ cu potriviri automate si
-cazuri de verificat manual.
+Implicit este read-only pe DB si genereaza un CSV privat in backend/outputs/.
+Optiunea explicita ``--apply-db`` persista legaturile confirmate/necunoscute.
 """
 
 from __future__ import annotations
@@ -240,7 +240,8 @@ async def _load_data(reporting_month: str | None) -> tuple[str, int, list[Any], 
         )
         salary_latest = await conn.fetch(
             """
-            SELECT sr.site_code, sr.full_name, sr.company_name, sr.locatie, sr.total_salary, sr.cnp
+            SELECT sr.site_code, sr.full_name, sr.company_name, sr.locatie,
+                   sr.total_salary, sr.person_id
             FROM salary_records sr
             JOIN stores st ON st.site_code = sr.site_code
             WHERE sr.year = $1
@@ -254,24 +255,28 @@ async def _load_data(reporting_month: str | None) -> tuple[str, int, list[Any], 
         salary_history = await conn.fetch(
             """
             SELECT sr.site_code, sr.full_name, sr.company_name, sr.locatie,
+                   sr.person_id,
                    max(sr.year * 100 + sr.month) AS last_salary_key,
                    count(DISTINCT sr.year * 100 + sr.month) AS months_seen
             FROM salary_records sr
             JOIN stores st ON st.site_code = sr.site_code
             WHERE st.is_active
               AND st.locatie NOT ILIKE 'TR %'
-            GROUP BY sr.site_code, sr.full_name, sr.company_name, sr.locatie
+            GROUP BY sr.site_code, sr.full_name, sr.company_name, sr.locatie,
+                     sr.person_id
             """,
         )
         salary_global_history = await conn.fetch(
             """
-            SELECT sr.site_code, st.locatie AS current_locatie, sr.full_name, sr.company_name,
+            SELECT sr.site_code, st.locatie AS current_locatie, sr.full_name,
+                   sr.company_name, sr.person_id,
                    max(sr.year * 100 + sr.month) AS last_salary_key
             FROM salary_records sr
             JOIN stores st ON st.site_code = sr.site_code
             WHERE st.is_active
               AND st.locatie NOT ILIKE 'TR %'
-            GROUP BY sr.site_code, st.locatie, sr.full_name, sr.company_name
+            GROUP BY sr.site_code, st.locatie, sr.full_name, sr.company_name,
+                     sr.person_id
             """,
         )
     await close_db_pool()
@@ -310,6 +315,12 @@ async def main() -> None:
     for row in salary_history:
         history_by_store[row["site_code"]].append(dict(row))
 
+    person_ids_by_name: dict[str, set[str]] = defaultdict(set)
+    for row in [*salary_latest, *salary_history, *salary_global_history]:
+        person_id = row.get("person_id")
+        if person_id:
+            person_ids_by_name[_norm(row["full_name"])].add(str(person_id))
+
     output_rows: list[dict[str, Any]] = []
     for agent_row in agents:
         site_code = agent_row["site_code"]
@@ -331,6 +342,7 @@ async def main() -> None:
         second = candidates[1] if len(candidates) > 1 else None
 
         matched_name = ""
+        matched_person_id: str | None = None
         salary_company = ""
         salary_locatie = ""
         reason = ""
@@ -345,6 +357,7 @@ async def main() -> None:
             reason = best[1]
             salary_row = best[2]
             matched_name = salary_row["full_name"]
+            matched_person_id = salary_row.get("person_id")
             salary_company = salary_row.get("company_name", "")
             salary_locatie = salary_row.get("locatie", "")
             gap_value = best[0] - (second[0] if second else -999)
@@ -360,9 +373,19 @@ async def main() -> None:
             note = str(manual_override.get("note") or "")
             manual_name = manual_override.get("salary_full_name")
             matched_name = str(manual_name) if manual_name else ""
+            manual_person_ids = person_ids_by_name.get(_norm(matched_name), set())
+            matched_person_id = (
+                next(iter(manual_person_ids))
+                if len(manual_person_ids) == 1
+                else None
+            )
             salary_company = ""
             salary_locatie = ""
-            status = "matched" if manual_name else "unknown"
+            status = (
+                "matched"
+                if manual_name and matched_person_id
+                else "review" if manual_name else "unknown"
+            )
             confidence = str(manual_override.get("confidence") or ("high" if manual_name else "unknown"))
             match_score = ""
             score_gap = ""
@@ -390,6 +413,7 @@ async def main() -> None:
                 "receipt_count": agent_row["receipt_count"],
                 "working_days": agent_row["working_days"],
                 "matched_name": matched_name,
+                "person_id": matched_person_id,
                 "salary_company": salary_company,
                 "salary_locatie": salary_locatie,
                 "confidence": confidence,
@@ -429,13 +453,15 @@ async def main() -> None:
 
 
 async def _upsert_agent_salary_links(rows: list[dict[str, Any]]) -> None:
-    pool = await init_db_pool()
     payload: list[tuple[Any, ...]] = []
     for row in rows:
         if row["status"] not in {"matched", "unknown"}:
             continue
         salary_full_name = row["matched_name"] or None
         match_status = "confirmed" if salary_full_name else "unknown"
+        person_id = row.get("person_id") if match_status == "confirmed" else None
+        if match_status == "confirmed" and not person_id:
+            raise ValueError("Confirmed salary link is missing person_id")
         confidence = row["confidence"] if row["confidence"] in {"high", "medium", "low"} else "unknown"
         payload.append(
             (
@@ -448,16 +474,20 @@ async def _upsert_agent_salary_links(rows: list[dict[str, Any]]) -> None:
                 confidence,
                 "2026-07",
                 row["note"],
+                person_id,
             )
         )
-    async with pool.acquire() as conn:
-        await conn.executemany(
-            """
+    pool = await init_db_pool()
+    try:
+        async with pool.acquire() as conn:
+            await conn.executemany(
+                """
             INSERT INTO agent_salary_links (
                 agent_code, site_code, salary_full_name, salary_cnp,
-                match_status, match_source, confidence, effective_from_month, note
+                match_status, match_source, confidence, effective_from_month,
+                note, person_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (agent_code, site_code) DO UPDATE
             SET salary_full_name = EXCLUDED.salary_full_name,
                 salary_cnp = EXCLUDED.salary_cnp,
@@ -466,11 +496,13 @@ async def _upsert_agent_salary_links(rows: list[dict[str, Any]]) -> None:
                 confidence = EXCLUDED.confidence,
                 effective_from_month = EXCLUDED.effective_from_month,
                 note = EXCLUDED.note,
+                person_id = EXCLUDED.person_id,
                 updated_at = now()
-            """,
-            payload,
-        )
-    await close_db_pool()
+                """,
+                payload,
+            )
+    finally:
+        await close_db_pool()
     print(f"upserted_agent_salary_links={len(payload)}")
 
 

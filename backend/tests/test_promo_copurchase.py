@@ -105,6 +105,30 @@ class TestComputePromoCoPurchase:
         assert "st.site_code = ANY(string_to_array($5::TEXT, ','))" in sql
         assert conn.fetch.await_args.args[5] == "FOCCRARF,CRFFEER"
 
+    @pytest.mark.asyncio
+    async def test_current_manager_scope_expands_regional_and_excludes_closed_stores(self):
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
+
+        await compute_promo_copurchase(
+            conn,
+            month="2026-07",
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+            item_codes=["CL1"],
+            firma=None,
+            regional="Manager curent",
+            asm=None,
+            site_code=None,
+            agent=None,
+            current_scope=True,
+            include_closed_stores=False,
+        )
+
+        sql = conn.fetch.await_args.args[0]
+        assert "(s.regional = ANY(string_to_array($5::TEXT, ',')) OR s.asm = ANY(string_to_array($5::TEXT, ',')))" in sql
+        assert "s.is_active = true" in sql
+
 
 class TestComputePromoActualsFromReport:
     @pytest.mark.asyncio
@@ -116,10 +140,12 @@ class TestComputePromoActualsFromReport:
             definition={},
             item_codes=["CL1"],
             firma=None,
-            regional=None,
+            regional="Manager curent",
             asm=None,
             site_code=None,
             agent=None,
+            current_scope=True,
+            include_closed_stores=False,
         )
         assert result is None
         conn.fetch.assert_not_called()
@@ -182,10 +208,12 @@ class TestComputePromoActualsFromReport:
             },
             item_codes=["CL1"],
             firma=None,
-            regional=None,
+            regional="Manager curent",
             asm=None,
             site_code=None,
             agent=None,
+            current_scope=True,
+            include_closed_stores=False,
         )
 
         assert result is not None
@@ -195,6 +223,9 @@ class TestComputePromoActualsFromReport:
         assert result.active_agents == 2
         assert result.excluded_units[("S1", "Agent1", "CL1")] == 4
         assert result.excluded_units[("S1", "Agent2", "CL1")] == 1
+        sql = conn.fetch.await_args.args[0]
+        assert "(s.regional = ANY(string_to_array($7::TEXT, ',')) OR s.asm = ANY(string_to_array($7::TEXT, ',')))" in sql
+        assert "s.is_active = true" in sql
 
     @pytest.mark.asyncio
     async def test_agent_filter_is_applied_after_allocation(self, tmp_path):

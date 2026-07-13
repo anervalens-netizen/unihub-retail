@@ -31,14 +31,22 @@ Production also contained `005_retail_ai_analysis_views.sql`, whose original
 body was absent from every reachable Git object before H-02. Because migration
 006 removed those views and the frozen baseline contains the final state, H-02
 restores 005 as an explicit fail-closed tombstone: fresh databases mark it as
-incorporated, existing databases must already have the row, and no database may
-replay a guessed historical body.
+incorporated, and an existing/baseline-built database that already records 006
+may adopt the missing 005 checksum without executing its body. If 006 is not
+recorded, the tombstone remains fail-closed and no database replays a guessed
+historical body.
 
 ## Fresh database
 
 The runner applies the frozen baseline once, records migrations incorporated
-through `022_store_pnl_site_links.sql`, then applies every later delta in order.
-The baseline is not evolved after H-02.
+through `022_store_pnl_site_links.sql`, then replays the explicitly designated
+data seed `014_target_calculator_store_exclusions.sql` and applies every later
+delta in order. This preserves the CRFVUL/CRFARENA exclusions that are data, not
+DDL represented by the baseline. The baseline is not evolved after H-02.
+
+The one-shot runner prefers the owner-only `MIGRATION_DATABASE_URL`; only an
+explicit function argument may override it. Web and worker continue to use the
+runtime `DATABASE_URL` and never gain migration privileges.
 
 ## Deployment
 

@@ -4,7 +4,13 @@ import pytest
 from auth import AuthClaims
 from fastapi import HTTPException, Request
 from fastapi.routing import APIRoute
-from routers.store_pnl import can_access_store_pnl, pnl_permissions, require_store_pnl_owner, router
+from routers.store_pnl import (
+    can_access_store_pnl,
+    pnl_permissions,
+    require_store_pnl_owner,
+    router,
+    validate_company,
+)
 
 
 def claims(email: str, groups: list[str] | None = None) -> AuthClaims:
@@ -50,7 +56,21 @@ async def test_pnl_permissions_is_quiet_capability_endpoint(monkeypatch: pytest.
 
 
 def test_store_pnl_data_routes_keep_owner_dependency() -> None:
-    protected = {"/api/store-pnl/months", "/api/store-pnl/overview"}
+    protected = {
+        "/api/store-pnl/months",
+        "/api/store-pnl/stores",
+        "/api/store-pnl/annual",
+        "/api/store-pnl/overview",
+    }
     for route in router.routes:
         if isinstance(route, APIRoute) and route.path in protected:
             assert any(dependency.call is require_store_pnl_owner for dependency in route.dependant.dependencies)
+
+
+def test_store_pnl_company_filter_is_closed_to_known_values() -> None:
+    validate_company(None)
+    validate_company("Mobicell")
+    validate_company("Mobiup")
+    with pytest.raises(HTTPException) as exc_info:
+        validate_company("Other")
+    assert exc_info.value.status_code == 422
