@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from db.connection import get_pool
-from models import AiForecastResponse, AiForecastRollingResponse
 from repositories.ai_forecast import AiForecastRepository
+from schemas.ai_forecast import AiForecastResponse, AiForecastRollingResponse
 from services.ai_forecast import AiForecastService
 
 router = APIRouter(prefix="/api/ai-forecast", tags=["ai-forecast"])

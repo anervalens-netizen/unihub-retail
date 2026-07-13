@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Query
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
-from models import ContestResponse
 from repositories.contests import ContestsRepository
+from schemas.contests import ContestResponse
 from services.contests import ContestsService
 
 # NB: `/active` accepta `site_codes` (comma) ca override intern de scope.
