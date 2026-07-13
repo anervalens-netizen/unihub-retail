@@ -63,28 +63,32 @@ def test_import_and_target_write_values_are_bounded() -> None:
 
 def test_public_status_contracts_reject_unknown_values() -> None:
     with pytest.raises(ValidationError):
-        ImportJobStatus(job_id="job-1", status="running")
+        ImportJobStatus.model_validate({"job_id": "job-1", "status": "running"})
 
     with pytest.raises(ValidationError):
-        StoreCoverageItem(
-            site_code="S1",
-            locatie="Magazin",
-            firma="Firma",
-            regional="Regional",
-            asm="ASM",
-            status="unknown",
-            agent_count=0,
+        StoreCoverageItem.model_validate(
+            {
+                "site_code": "S1",
+                "locatie": "Magazin",
+                "firma": "Firma",
+                "regional": "Regional",
+                "asm": "ASM",
+                "status": "unknown",
+                "agent_count": 0,
+            }
         )
 
     with pytest.raises(ValidationError):
-        AgentListItem(
-            agent="Agent",
-            active_in_month=True,
-            is_new=False,
-            is_reactivated=False,
-            total_sales=Decimal("0"),
-            total_quantity=0,
-            current_status="unknown",
+        AgentListItem.model_validate(
+            {
+                "agent": "Agent",
+                "active_in_month": True,
+                "is_new": False,
+                "is_reactivated": False,
+                "total_sales": Decimal("0"),
+                "total_quantity": 0,
+                "current_status": "unknown",
+            }
         )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 import pytest
 
@@ -86,7 +87,9 @@ def test_score_band_boundaries(value: Decimal | None, expected: Decimal | None) 
     ],
 )
 def test_score_rating_boundaries(
-    score: Decimal | None, eligibility: str, expected: str
+    score: Decimal | None,
+    eligibility: Literal["eligibil", "insuficient"],
+    expected: str,
 ) -> None:
     assert score_rating(score, eligibility) == expected
 
