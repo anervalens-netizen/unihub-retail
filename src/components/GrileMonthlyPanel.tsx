@@ -18,6 +18,7 @@ import {
   runGrileMonthly,
   type GrileMonthlyOp,
 } from '../api/grile';
+import {getApiErrorMessage} from '../api/client';
 import { formatMonthLabel, shiftMonth } from '../lib/dates';
 import { cn } from '../lib/utils';
 
@@ -89,11 +90,10 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
       }
       setJob({ jobId: res.job_id, op, dryRun });
     } catch (exc: unknown) {
-      const detail =
-        typeof exc === 'object' && exc !== null && 'response' in exc
-          ? (exc as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : null;
-      setError(detail || 'Nu am putut porni operatia. Verifica permisiunile / serviciul grile.');
+      setError(getApiErrorMessage(
+        exc,
+        'Nu am putut porni operatia. Verifica permisiunile / serviciul grile.',
+      ));
     } finally {
       setBusy(false);
     }

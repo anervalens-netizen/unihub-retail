@@ -41,6 +41,7 @@ import {
   type TargetSourceMonth,
   type TargetStoreDetail,
 } from '../api/targetCalculator';
+import {getApiErrorMessage} from '../api/client';
 import { formatCurrency, formatPercent } from '../lib/formatters';
 import { formatMonthLabel, shiftMonth } from '../lib/dates';
 
@@ -260,7 +261,7 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
       .then(setDetail)
       .catch((err) => {
         console.error(err);
-        setError('Nu am putut incarca detaliile locatiei.');
+        setError(getApiErrorMessage(err, 'Nu am putut incarca detaliile locatiei.'));
       })
       .finally(() => setLoading(false));
   }, [scenarioId, siteCode]);
@@ -496,7 +497,7 @@ export function TargetCalculatorSubtab() {
       }
     } catch (err) {
       console.error(err);
-      setError('Nu am putut incarca calculatorul de target.');
+      setError(getApiErrorMessage(err, 'Nu am putut incarca calculatorul de target.'));
     } finally {
       setLoading(false);
     }
@@ -654,7 +655,10 @@ export function TargetCalculatorSubtab() {
       clearLocalEdits();
     } catch (err) {
       console.error(err);
-      setError('Calculul nu a putut fi salvat. Verifica parametrii si lunile cu date disponibile.');
+      setError(getApiErrorMessage(
+        err,
+        'Calculul nu a putut fi salvat. Verifica parametrii si lunile cu date disponibile.',
+      ));
     } finally {
       setBusy(false);
     }
@@ -783,7 +787,7 @@ export function TargetCalculatorSubtab() {
       await persistDraft();
     } catch (err) {
       console.error(err);
-      setError('Targetele finale nu au putut fi salvate.');
+      setError(getApiErrorMessage(err, 'Targetele finale nu au putut fi salvate.'));
     } finally {
       setBusy(false);
     }
@@ -796,7 +800,7 @@ export function TargetCalculatorSubtab() {
     const timeoutId = window.setTimeout(() => {
       void persistRows(pendingCodes).catch((err) => {
         console.error(err);
-        setError('Salvarea automata a targetelor finale nu a reusit.');
+        setError(getApiErrorMessage(err, 'Salvarea automata a targetelor finale nu a reusit.'));
       });
     }, 700);
     return () => window.clearTimeout(timeoutId);
@@ -843,7 +847,7 @@ export function TargetCalculatorSubtab() {
       clearLocalEdits();
     } catch (err) {
       console.error(err);
-      setError('Targetul nu a putut fi finalizat.');
+      setError(getApiErrorMessage(err, 'Targetul nu a putut fi finalizat.'));
     } finally {
       setBusy(false);
     }
@@ -860,7 +864,7 @@ export function TargetCalculatorSubtab() {
       await downloadTargetScenario(scenario.id, `targete_${scenario.target_month}.xlsx`);
     } catch (err) {
       console.error(err);
-      setError('Exportul Excel nu a putut fi generat.');
+      setError(getApiErrorMessage(err, 'Exportul Excel nu a putut fi generat.'));
     } finally {
       setBusy(false);
     }
