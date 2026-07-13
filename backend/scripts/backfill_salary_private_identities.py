@@ -55,6 +55,10 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
                 salary_full_name AS full_name
             FROM agent_salary_links
             WHERE match_status = 'confirmed'
+              AND (
+                  NULLIF(BTRIM(salary_cnp), '') IS NOT NULL
+                  OR NULLIF(BTRIM(salary_full_name), '') IS NOT NULL
+              )
         )
         INSERT INTO salary_private.people (
             person_id, cnp, normalized_name, identity_source
@@ -95,6 +99,10 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
                 salary_full_name AS full_name
             FROM agent_salary_links
             WHERE match_status = 'confirmed'
+              AND (
+                  NULLIF(BTRIM(salary_cnp), '') IS NOT NULL
+                  OR NULLIF(BTRIM(salary_full_name), '') IS NOT NULL
+              )
         )
         UPDATE agent_salary_links links
         SET person_id = {link_person_id}
@@ -114,6 +122,13 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
             (SELECT COUNT(*) FROM agent_salary_links WHERE match_status = 'confirmed') AS confirmed_links,
             (SELECT COUNT(*) FROM agent_salary_links WHERE match_status = 'confirmed' AND person_id IS NULL) AS links_missing,
             (
+                SELECT COUNT(*)
+                FROM agent_salary_links
+                WHERE match_status = 'confirmed'
+                  AND NULLIF(BTRIM(COALESCE(salary_cnp, '')), '') IS NULL
+                  AND NULLIF(BTRIM(COALESCE(salary_full_name, '')), '') IS NULL
+            ) AS blank_confirmed_links,
+            (
                 SELECT COUNT(*) FROM (
                     SELECT person_id
                     FROM salary_records
@@ -124,6 +139,8 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
         """
     )
     result = {name: int(stats[name]) for name in stats.keys()}
+    if result["blank_confirmed_links"]:
+        raise RuntimeError("Salary identity backfill found blank confirmed identities")
     if result["records_missing"] or result["links_missing"] or result["collisions"]:
         raise RuntimeError("Salary identity backfill validation failed")
     return result
