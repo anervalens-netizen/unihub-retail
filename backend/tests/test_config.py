@@ -4,8 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from dotenv import dotenv_values
 
 from config import ConfigError, get_visits_db_path, get_visits_images_dir, validate_required_env_vars, _is_production
+from session_auth import load_session_settings
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +64,17 @@ def test_config_passes_with_valid_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
     monkeypatch.setenv("UNIHUB_ENV", "development")
     validate_required_env_vars()  # nu ridică
+
+
+def test_env_example_keeps_optional_browser_session_disabled_in_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = dotenv_values(Path(__file__).resolve().parents[2] / ".env.example")
+    for name, value in values.items():
+        monkeypatch.setenv(name, value or "")
+
+    validate_required_env_vars()
+    assert load_session_settings() is None
 
 
 def test_salary_person_id_key_required_in_production(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -83,6 +83,11 @@ Environment variables:
 - `RATE_LIMIT_FAILURE_MODE=closed` in production;
 - existing policy limit/window variables, parsed lazily and validated with explicit ranges.
 
+The distributed runtime group is intentionally empty in `.env.example`, so a
+plain development setup uses no partially configured limiter. Production must
+configure the complete group, including `RATE_LIMIT_FAILURE_MODE=closed`; the
+numeric policy defaults may still be kept from the example.
+
 Validation requirements:
 
 - production rejects missing, empty, partial or invalid distributed-limiter configuration;

@@ -535,6 +535,10 @@ class TestGetDashboardAll:
         assert result.regionals == []
         assert result.asms == []
         mock_load_context.assert_awaited_once()
+        assert mock_load_context.await_args.kwargs == {
+            "current_scope": True,
+            "include_closed_stores": True,
+        }
         assert mock_promo.await_args.kwargs["campaign_context"] is campaign_context
         assert mock_specials.await_args.kwargs["campaign_context"] is campaign_context
         assert mock_specials.await_args.kwargs["current_scope"] is True

@@ -44,7 +44,9 @@ controlled integrations and smoke tooling.
 - Token endpoint URLs are derived only from the validated OIDC issuer origin;
   redirects are disabled and responses are size-bounded.
 - JWT signature, issuer, audience, algorithm, registered claims, groups and
-  nonce use the existing hardened verifier.
+  nonce use the existing hardened verifier. Access tokens are validated
+  against `OIDC_AUDIENCE`; ID tokens are validated against the confidential
+  client's `OIDC_CLIENT_ID`, as required when those identifiers differ.
 - Authentication and CSRF failures return generic bounded errors without
   tokens, cookies, secrets or provider responses.
 - Configuration fails closed in production if the encryption key, client
@@ -65,7 +67,12 @@ OIDC_CLIENT_SECRET=<existing confidential client secret>
 
 `SESSION_ENCRYPTION_KEY` is independent from the OIDC client secret and from
 the salary HMAC key. Rotation requires draining existing sessions (users log in
-again); never reuse another application secret.
+again); never reuse another application secret. `OIDC_CLIENT_ID` is mandatory
+when the BFF session is enabled and never falls back to `OIDC_AUDIENCE`.
+
+In `.env.example` this entire optional browser-session group is empty so the
+documented development startup remains valid. To enable it locally, configure
+the complete group; partial configuration is rejected.
 
 ## Verification and rollout
 

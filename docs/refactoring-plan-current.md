@@ -468,6 +468,18 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: review-ul post-merge din PR #70 a identificat ultima asimetrie de
+  scope a cardurilor speciale. `current_scope` si includerea magazinelor inchise
+  se propaga acum si in contextul campaniei, inclusiv raportul promo actual si
+  fallback-urile pe reguli si recomputarile multi-perioada; testele verifica
+  explicit expandarea Regional/ASM. Review-ul PR #71 a eliminat si fallback-ul
+  implicit dintre `OIDC_CLIENT_ID` si audienta API.
+- 2026-07-13: cele doua observatii Codex ramase din PR #40 au fost revalidate;
+  exemplul development nu mai activeaza accidental sesiunea BFF prin valori
+  placeholder, iar callback-ul valideaza ID token-ul fata de `OIDC_CLIENT_ID`,
+  distinct de `OIDC_AUDIENCE` folosit pentru access token. Testul real al
+  `.env.example` a inchis si configurarea partiala H-07 produsa de valorile
+  implicite `none`/`closed` fara CIDR si cheie HMAC.
 - 2026-07-13: feedback-ul Codex din PR #49 a fost revalidat pe codul curent;
   special cards propaga acum acelasi scope ca summary-ul promo/incentive, iar
   await-ul taskului comun are loc dupa eliberarea conexiunii DB. Testele

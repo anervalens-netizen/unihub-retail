@@ -87,7 +87,7 @@ def load_session_settings() -> SessionSettings | None:
         issuer = os.environ["OIDC_ISSUER"].rstrip("/")
     except (KeyError, ValueError, UnicodeError) as exc:
         raise ValueError("Session authentication configuration is invalid") from exc
-    client_id = os.getenv("OIDC_CLIENT_ID") or os.getenv("OIDC_AUDIENCE", "")
+    client_id = os.getenv("OIDC_CLIENT_ID", "")
     public_origin = os.getenv("SESSION_PUBLIC_ORIGIN", "http://localhost:3000").rstrip("/")
     valkey_url = os.getenv("SESSION_VALKEY_URL") or os.getenv("VALKEY_URL", "")
     try:
@@ -335,7 +335,11 @@ async def session_callback(request: Request) -> RedirectResponse:
     ):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Authentication provider returned an invalid response")
     claims = await verify_oidc_token(access_token)
-    await verify_oidc_token(id_token, nonce=str(flow["nonce"]))
+    await verify_oidc_token(
+        id_token,
+        nonce=str(flow["nonce"]),
+        audience=settings.client_id,
+    )
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     await _store_session(session_id, {**asdict(claims), "refresh_token": refresh_token, "csrf": csrf})
     result = RedirectResponse(settings.public_origin + "/", status_code=303)
