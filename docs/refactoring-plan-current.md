@@ -313,7 +313,11 @@ Livrabile:
   identic, plannerul foloseste indexul partial si mediana este redusa cu 76,7%;
 - [x] sumarul promo/incentive este calculat o singura data in Dashboard all;
   raspuns identic si mediana redusa cu 25,8%;
-- reducere presiune pool DB in dashboard gather;
+- [x] fan-out-ul Dashboard este limitat la 4 componente independente simultan
+  (vârf măsurat 5 conexiuni cu taskul dependent): pe 5 execuții identice,
+  vârful poolului scade 10 -> 5, acquire-urile peste 5 ms scad 24 -> 2, iar
+  mediana scade 400,3 -> 344,0 ms; timpul de coadă este expus prin histograma
+  `dashboard_component_queue_seconds` cu labeluri finite;
 - audit bundle frontend dupa spliturile mari;
 - pastrarea lazy-loading-ului pe ecranele principale.
 

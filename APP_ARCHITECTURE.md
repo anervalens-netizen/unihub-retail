@@ -208,7 +208,10 @@ request si il reutilizeaza pentru sumar si cardurile speciale. Reutilizarea
 este strict request-local, fara cache global care ar necesita invalidare dupa
 import. Latenta celor 15 componente fixe este expusa in Prometheus prin
 `dashboard_component_duration_seconds`; etichetele nu includ filtre sau date
-business. Componenta `daily_last_year` (vanzarile zilnice din aceeasi luna a
+business. Fan-out-ul ruleaza cel mult patru componente independente simultan,
+lasand capacitate in pool pentru readiness si alte requesturi; timpul de
+asteptare pentru slot este expus prin `dashboard_component_queue_seconds`, tot
+cu etichete finite. Componenta `daily_last_year` (vanzarile zilnice din aceeasi luna a
 anului anterior) este obtinuta printr-un query paralel pe
 `reporting_agent_day` cu `import_month = YYYY-1-MM` si aceleasi filtre de
 scope; in graficul Hub "Evolutie zilnica" este afisata ca linie comparativa
