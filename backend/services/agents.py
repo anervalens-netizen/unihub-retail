@@ -415,13 +415,14 @@ class AgentsService:
             ORDER BY type, label
         """
 
-        rows = await self.repo.get_agent_evaluation_v2(
-            month_filter,
-            firma,
-            asm,
-            site_code,
+        rows = await self.repo.get_agent_evaluation(
+            query,
+            [month_filter, firma, asm, site_code],
         )
-        option_rows = await self.repo.get_agent_evaluation_options(firma, asm)
+        option_rows = await self.repo.get_agent_evaluation(
+            option_query,
+            [firma, asm],
+        )
 
         month_options: list[AgentEvaluationOption] = []
         firmas: list[AgentEvaluationOption] = []

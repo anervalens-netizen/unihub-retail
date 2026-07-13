@@ -48,9 +48,31 @@ def mock_repo():
     repo.get_agent_profile = AsyncMock()
     repo.get_agent_history = AsyncMock(return_value=[])
     repo.get_stores_coverage = AsyncMock(return_value=[])
+    repo.get_agent_evaluation = AsyncMock(return_value=[])
     repo.get_agent_evaluation_v2 = AsyncMock(return_value=[])
     repo.get_agent_evaluation_options = AsyncMock(return_value=[])
     return repo
+
+
+@pytest.mark.asyncio
+async def test_legacy_agent_evaluation_uses_legacy_query_contract(service, mock_repo):
+    result = await service.get_agent_evaluation(
+        month="2026-05",
+        months="2026-04,2026-05",
+        firma="Firma",
+        asm="Manager",
+        site_code="S1",
+    )
+
+    assert mock_repo.get_agent_evaluation.await_count == 2
+    rows_call, options_call = mock_repo.get_agent_evaluation.await_args_list
+    assert "peer_daily_average" in rows_call.args[0]
+    assert rows_call.args[1] == ["2026-04,2026-05", "Firma", "Manager", "S1"]
+    assert "SELECT 'month' AS type" in options_call.args[0]
+    assert options_call.args[1] == ["Firma", "Manager"]
+    mock_repo.get_agent_evaluation_v2.assert_not_awaited()
+    mock_repo.get_agent_evaluation_options.assert_not_awaited()
+    assert result.rows == []
 
 
 @pytest.mark.asyncio
