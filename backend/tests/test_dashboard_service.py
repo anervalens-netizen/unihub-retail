@@ -1,6 +1,7 @@
 """Unit tests for DashboardService — mock-based, no DB needed."""
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,12 +10,43 @@ import pytest
 
 from models import AgentStats, DashboardSummary, DailySalesPoint, MonthlyHistoryPoint, PremiumGlassAnalysis, PremiumGlassSummary
 from services.dashboard.queries import DashboardCampaignContext
-from services.dashboard_service import DashboardService
+from services.dashboard.metrics import record_dashboard_component_queue
+from services.dashboard_service import DashboardService, _gather_named
 
 
 class FakeRow(dict):
     def __getattr__(self, name: str):
         return self[name]
+
+
+@pytest.mark.asyncio
+async def test_gather_named_bounds_component_concurrency() -> None:
+    active = 0
+    peak_active = 0
+
+    async def component(value: int) -> int:
+        nonlocal active, peak_active
+        active += 1
+        peak_active = max(peak_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return value
+
+    result = await _gather_named(
+        2,
+        summary=component(1),
+        agents=component(2),
+        stores=component(3),
+        daily=component(4),
+    )
+
+    assert result == {"summary": 1, "agents": 2, "stores": 3, "daily": 4}
+    assert peak_active == 2
+
+
+def test_dashboard_queue_metric_rejects_unbounded_labels() -> None:
+    with pytest.raises(ValueError, match="Unknown dashboard component"):
+        record_dashboard_component_queue("month=2026-07", 0.01)
 
 
 def _make_summary_row(**overrides) -> FakeRow:

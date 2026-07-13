@@ -78,7 +78,8 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 
 ### Wave 4 — Performance and modularization
 
-- [ ] Add DB pool wait/query metrics and bounded dashboard concurrency.
+- [x] Add bounded Dashboard concurrency and fixed-cardinality component queue
+  metrics; measured peak pool use decreased from 10 to 5 connections.
 - [ ] Consolidate dashboard read models and receipt summaries.
 - [ ] Optimize only after measured `EXPLAIN (ANALYZE, BUFFERS)` baselines.
 - [ ] Extract dashboard, salaries, grile, imports and agents into domain modules.
