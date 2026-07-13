@@ -21,6 +21,13 @@ refresh or ID tokens. Authentication is terminated by the FastAPI backend:
 - near-expiry requests use a distributed refresh lock, so concurrent requests
   produce one refresh exchange.
 
+The PWA navigation fallback explicitly excludes backend-owned routes,
+including `/auth/*`. Auth navigations must always reach FastAPI so
+`/auth/session/login` can return the Authentik redirect. Serving the cached SPA
+for that URL would remount the auth context and create a repeated
+`401 -> login navigation` loop. The development proxy mirrors the same route
+ownership.
+
 The former generic `/auth/proxy/{path}` endpoint and its browser-side client
 secret injection have been removed. A Bearer token remains accepted by the
 backend dependency only as a temporary non-browser compatibility path for
