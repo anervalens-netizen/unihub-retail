@@ -1,6 +1,9 @@
 # UniHub
 
-UniHub este o aplicatie de operare comerciala pentru retail, construita pentru monitorizarea vanzarilor, a targetelor, a focus products, a promotiilor, a fiselor de vizita din magazine si a operatiunilor de management (echipa, CRM, tasks, HR, calculator target).
+UniHub este o aplicatie de operare comerciala pentru retail, construita pentru
+monitorizarea vanzarilor, targetelor, produselor Focus, promotiilor, fiselor de
+vizita si operatiunilor de management (manageri, calculator target, salarii si
+P&L).
 
 Starea curenta a planului de dezvoltare si drumul pana la urmatoarea versiune
 sunt sintetizate in
@@ -207,15 +210,19 @@ Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
 subtaburile sunt afisate in bara interna a ecranului, la fel ca in Agenti si
 Focus; sidebar-ul contine numai intrarea principala Management.
 
-- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) + SQLite (vizite) + factor de forecast din CRM; cardurile expandate includ scorurile magazinelor alocate. Router: `/api/hr`
-- **Magazine (CRM, istoric intern)** — scoruri magazine per luna, alerte automate, recalculare manuala. Alertele pot fi convertite direct in Tasks. Router: `/api/crm`
-- **Tasks** — task-uri per agent/magazin cu deadline si status. Sursa poate fi manuala sau generata automat din alerte CRM (`source_meta` JSONB). Router: `/api/tasks`
-- **HR** — cereri concediu (creare, aprobare/respingere), pontaj zilnic, istoric performanta ASM. Router: `/api/hr`
+- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) +
+  SQLite (vizite) + factor de forecast din scoring-ul CRM intern; cardurile
+  expandate includ scorurile magazinelor alocate. Router-e: `/api/hr`, `/api/crm`
 - **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
 - **Salarii** — overview, evolutie, raport salarii versus vanzari si istoric pe
   agent. Accesul ramane limitat server-side la rolurile salariale aprobate.
 - **P&L** — sumar financiar lunar pe magazin, evolutie si structura de cost,
   vizibil numai utilizatorilor cu capabilitatea P&L verificata de backend.
+
+Endpointurile backend pentru Tasks, cereri de concediu si alerte CRM raman
+compatibile cu datele istorice si integrarile, dar nu au subtab-uri in
+navigatia V2. Componentele frontend legacy inaccesibile au fost eliminate ca
+sa nu existe o a doua interfata neintretinuta.
 
 Evaluarea din **Agenti -> Analiza agenti** foloseste 6 segmente, fiecare cu 0-3 puncte:
 Target valoare, Medie zilnica, Valoare reper, % Bonuri, Focus si Folii Premium.

@@ -2,7 +2,9 @@
 
 ## Rol
 
-UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard operational, campanii focus, agenti, management de magazine, task-uri, HR, planificare target, salarii si raportare de vizite.
+UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard
+operational, campanii Focus, agenti, performanta managerilor, planificare
+target, salarii, P&L si raportare de vizite.
 
 ## Stack si runtime
 
@@ -107,7 +109,9 @@ acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
   Grile, mutatii Target Calculator si scrieri business. Limitele sunt
   configurabile prin variabilele `RATE_LIMIT_*`; uploadul de vanzari ramane
   limitat separat prin `MAX_SALES_UPLOAD_BYTES`.
-- Management magazine, scoruri CRM, task-uri, concedii si documente lunare de target.
+- Management cu subtab-uri pentru Manageri, Calculator Target, Salarii si P&L.
+  Scorurile CRM raman un read model intern consumat de Manageri; endpointurile
+  istorice Tasks/concedii/alerte CRM nu sunt expuse ca subtab-uri V2.
 - Management -> `P&L` prezinta sumar financiar, evolutie lunara, structura pe
   categorii si performanta pe magazine, cu lunile estimate marcate explicit.
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
