@@ -32,7 +32,10 @@ Reguli importante in Hub:
 - comparatia perioade foloseste aceeasi fereastra calendaristica pentru luna curenta, luna trecuta si aceeasi luna anul trecut; daca luna curenta este partiala, cutoff-ul este ultima zi cu vanzari importate
 - comparatia perioade este like-for-like: include in toate cele trei coloane doar magazinele cu vanzari Retail in luna analizata; la filtre RM/firma, istoricul urmareste aceleasi magazine chiar daca au fost realocate intre timp
 - KPI-urile de vanzari, cantitate, bonuri si medii exclud categoria `Cartele`;
-  `Medie produs` inseamna `vanzari / cantitate` pe acelasi scope
+  cantitatea Retail este neta (vanzari minus retururi), iar `Medie produs`
+  inseamna `vanzari nete / cantitate neta` pe acelasi scope
+- retururile raman monitorizate separat prin numarul de bonuri de retur, dar
+  nu umfla volumele, Focus/Acc sau distributiile RM/magazin/agent
 - randul `Cartele` este informativ si este calculat separat din tranzactiile brute
 - magazinele/locatiile de distributie cu nume `TR ...` sunt excluse din calculele Retail
 - in Hub exista un singur layer operational de management; rapoartele pastreaza
@@ -421,6 +424,9 @@ Scopul lui este sa evite raportarea direct din `sales_transactions` pentru fieca
 Agregatele de reporting sunt construite pentru analiza Retail:
 - exclud `is_cartela = true` din totaluri
 - exclud locatiile de distributie `stores.locatie ILIKE 'TR %'`
+- agrega cantitatile net, inclusiv retururile negative; bonurile exclusiv de
+  retur nu intra in `receipt_count`, iar produsele Focus returnate se scad din
+  numaratorul si denominatorul Focus/Acc
 - trebuie regenerate cu `backend/scripts/rebuild_reporting.py` dupa schimbari de reguli de raportare
 
 Exceptie: cardurile care afiseaza explicit volumul de `Cartele` citesc separat din `sales_transactions`, fara sa contamineze totalurile Retail.

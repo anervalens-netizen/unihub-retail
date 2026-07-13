@@ -198,6 +198,11 @@ suprascrie un checkpoint terminal. Service-ul pastreaza doar orchestrarea
 Google/filesystem si wrapper-ele publice folosite de worker.
 
 Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
+In aceste agregate, cantitatea Retail este `SUM(quantity)` dupa excluderea
+cartelelor si a locatiilor `TR %`: retururile negative reduc cantitatea totala,
+cantitatea Focus, mediile si breakdown-urile. Bonurile exclusiv de retur nu
+intra in Bon2Acc, dar retururile raman disponibile separat prin
+`return_receipt_count`.
 Frontendul reda aceleasi coloane curente si istorice RM/Magazine/Agenti prin
 componenta tipizata `dashboard/BreakdownTable.tsx`, care centralizeaza tabelul
 sortabil si exportul Excel fara a schimba payload-urile API.

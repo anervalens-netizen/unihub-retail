@@ -67,6 +67,7 @@ describe('CurrentDashboard', () => {
     expect(html).toContain('Overview — 2026-07');
     expect(html).toContain('Luna in curs este in actualizare.');
     expect(html).toContain('Comparatie perioade');
+    expect(html).toContain('Accesorii nete');
     expect(html).toContain('RM — Regional Manager');
     expect(html).toContain('Magazine');
     expect(html).toContain('Agenti - Toti agentii');
