@@ -5,6 +5,7 @@ from typing import Any
 
 import asyncpg
 
+from business_rules import CAMPAIGN_RANKING_LIMIT
 from services.filters import build_scoped_params, scoped_clauses
 
 
@@ -212,7 +213,7 @@ class CampaignsRepository:
                 WHERE {" AND ".join(focus_clauses)}
                 GROUP BY agg.item_code
                 ORDER BY sales_total DESC, qty_total DESC, agg.item_code ASC
-                LIMIT 8
+                LIMIT {CAMPAIGN_RANKING_LIMIT}
                 """,
                 *params,
             )
@@ -228,7 +229,7 @@ class CampaignsRepository:
                 WHERE {" AND ".join(focus_clauses)}
                 GROUP BY agg.site_code
                 ORDER BY sales_total DESC, qty_total DESC, locatie ASC
-                LIMIT 8
+                LIMIT {CAMPAIGN_RANKING_LIMIT}
                 """,
                 *params,
             )

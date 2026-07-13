@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
+from business_rules import PROMOTION_DISCOUNT_RATE
 from schemas.dashboard import (
     BrandMixItem,
     CategoryMixItem,
@@ -1960,7 +1961,7 @@ async def _fetch_promo_incentive_summary(
                 )
                 incentive_qualified_agents = int(aq_row["cnt"] or 0) if aq_row else 0
 
-    promo_impact = promo_sales * Decimal("0.20")
+    promo_impact = promo_sales * PROMOTION_DISCOUNT_RATE
     return PromoIncentiveSummary(
         promo_qty=promo_qty,
         promo_sales=promo_sales,

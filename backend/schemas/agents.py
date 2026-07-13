@@ -2,8 +2,29 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel
+
+from schemas.common import MonthStr
+
+
+StoreCoverageStatus = Literal["covered", "uncovered", "closed", "inactive"]
+AgentCurrentStatus = Literal["active", "inactive_recent", "churned"]
+AgentQualifier = Literal["Excelent", "Foarte Bun", "Bun", "Mediu", "Scazut"]
+TargetSource = Literal["partial_agent_target", "allocated_store_target"]
+DailyReferenceType = Literal["colegi", "istoric_locatie", "media_manager", "none"]
+TrendDirection = Literal["up", "down", "flat"]
+EligibilityStatus = Literal["eligibil", "insuficient"]
+AgentRating = Literal[
+    "Insuficient",
+    "Fara scor",
+    "Excelent",
+    "Foarte Bun",
+    "Bun",
+    "Risc",
+    "Critic",
+]
 
 
 class AgentsOverviewResponse(BaseModel):
@@ -24,7 +45,7 @@ class StoreCoverageItem(BaseModel):
     firma: str
     regional: str
     asm: str
-    status: str
+    status: StoreCoverageStatus
     agent_count: int
     has_changes: bool = False
     previous_agent_count: int = 0
@@ -42,7 +63,7 @@ class StoreCoverageResponse(BaseModel):
 
 
 class AgentMovementPoint(BaseModel):
-    month: str
+    month: MonthStr
     active: int
     new: int
     reactivated: int
@@ -64,7 +85,7 @@ class AgentListItem(BaseModel):
     is_reactivated: bool
     total_sales: Decimal
     total_quantity: int
-    current_status: str
+    current_status: AgentCurrentStatus
 
 
 class AgentListResponse(BaseModel):
@@ -73,8 +94,8 @@ class AgentListResponse(BaseModel):
 
 class AgentProfileResponse(BaseModel):
     agent: str
-    first_seen_month: str
-    last_seen_month: str
+    first_seen_month: MonthStr
+    last_seen_month: MonthStr
     active_months_count: int
     distinct_store_count: int
     distinct_firma_count: int
@@ -86,13 +107,13 @@ class AgentProfileResponse(BaseModel):
     career_total_sales: Decimal
     career_total_quantity: int
     avg_monthly_sales: Decimal
-    best_month: str | None
+    best_month: MonthStr | None
     best_month_sales: Decimal
-    current_status: str
+    current_status: AgentCurrentStatus
 
 
 class AgentHistoryPoint(BaseModel):
-    month: str
+    month: MonthStr
     total_sales: Decimal
     total_quantity: int
     receipt_count: int
@@ -110,7 +131,7 @@ class AgentEvaluationOption(BaseModel):
 
 
 class AgentEvaluationRow(BaseModel):
-    month: str
+    month: MonthStr
     firma: str
     site_code: str
     locatie: str
@@ -143,7 +164,7 @@ class AgentEvaluationRow(BaseModel):
     premium_glass_points: int
     total_points: int
     has_red_segment: bool
-    qualifier: str
+    qualifier: AgentQualifier
 
 
 class AgentEvaluationResponse(BaseModel):
@@ -163,7 +184,7 @@ class AgentEvaluationV2Component(BaseModel):
 
 
 class AgentEvaluationV2Row(BaseModel):
-    month: str
+    month: MonthStr
     firma: str
     site_code: str
     locatie: str
@@ -176,7 +197,7 @@ class AgentEvaluationV2Row(BaseModel):
     working_days: int
     receipt_count: int
     target_value: Decimal
-    target_source: str
+    target_source: TargetSource
     target_pct: Decimal | None
     target_forecast_pct: Decimal | None
     is_partial: bool
@@ -186,7 +207,7 @@ class AgentEvaluationV2Row(BaseModel):
     forecast_factor: Decimal
     daily_average: Decimal | None
     daily_reference: Decimal | None
-    daily_reference_type: str
+    daily_reference_type: DailyReferenceType
     daily_vs_reference_pct: Decimal | None
     value_reper: Decimal | None
     receipt_2plus_count: int
@@ -197,8 +218,8 @@ class AgentEvaluationV2Row(BaseModel):
     premium_glass_qty: int
     premium_glass_pct: Decimal | None
     trend_daily_pct: Decimal | None
-    trend_direction: str
-    eligibility_status: str
+    trend_direction: TrendDirection
+    eligibility_status: EligibilityStatus
     confidence_flags: list[str]
     target_score: Decimal | None
     daily_score: Decimal | None
@@ -208,7 +229,7 @@ class AgentEvaluationV2Row(BaseModel):
     value_reper_score: Decimal | None
     total_score: Decimal | None
     max_score: int = 100
-    rating: str
+    rating: AgentRating
 
 
 class AgentEvaluationV2Response(BaseModel):

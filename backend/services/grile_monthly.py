@@ -46,6 +46,10 @@ from services.grile_monthly_state import (
     MonthlyOperationStartResult,
     safe_persisted_result,
 )
+from services.grile_constants import (
+    GOOGLE_API_RETRY_ATTEMPTS,
+    GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+)
 
 RO_MONTHS = [
     "", "Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
@@ -555,8 +559,8 @@ def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgen
         value_ranges = retry_api(
             read_values,
             label=f"read {entry.company}/{entry.store}",
-            attempts=6,
-            base_delay=3.0,
+            attempts=GOOGLE_API_RETRY_ATTEMPTS,
+            base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
         )
         rows: list[ExtractedAgentRow] = []
         idx = 0
@@ -833,8 +837,8 @@ async def archive_month(pool: asyncpg.Pool, month: str, only: str | None = None,
         result = retry_api(
             lambda entry=entry, output_path=output_path: export_sheet_xlsx(drive_service, entry, output_path),
             label=f"export {entry.company}/{entry.store}",
-            attempts=6,
-            base_delay=3.0,
+            attempts=GOOGLE_API_RETRY_ATTEMPTS,
+            base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
         )
         results.append(result)
         if result["status"] == "OK":
@@ -907,7 +911,12 @@ def reset_store(sheets_svc: Any | None, entry: StoreEntry, *, dry_run: bool) -> 
                 body={"ranges": list(RESET_RANGES)},
             ).execute()
 
-        retry_api(clear, label=f"reset {entry.company}/{entry.store}", attempts=6, base_delay=3.0)
+        retry_api(
+            clear,
+            label=f"reset {entry.company}/{entry.store}",
+            attempts=GOOGLE_API_RETRY_ATTEMPTS,
+            base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+        )
         return result
     except Exception as exc:  # noqa: BLE001
         result["status"] = "ERROR"

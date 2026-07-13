@@ -17,6 +17,19 @@ from services.grile_monthly_state import (
 )
 
 
+_OPERATION_COLUMNS = """
+    id, op, closing_month, only_filter, dry_run, status, job_id,
+    triggered_by_email, result, error_message, started_at, heartbeat_at,
+    finished_at, created_at
+"""
+
+_RESET_ITEM_COLUMNS = """
+    id, operation_id, closing_month, next_month, site_code, sheet_id,
+    company, store, status, ranges, error_message, started_at, completed_at,
+    updated_at, created_at
+"""
+
+
 @dataclass(frozen=True)
 class ResetItemInput:
     site_code: str
@@ -90,8 +103,8 @@ async def reserve(
                 )
 
             active = await conn.fetchrow(
-                """
-                SELECT *
+                f"""
+                SELECT {_OPERATION_COLUMNS}
                 FROM grile_monthly_operations
                 WHERE closing_month = $1 AND status IN ('queued', 'running')
                 ORDER BY created_at DESC
@@ -127,8 +140,8 @@ async def reserve(
 
                 if blocked_message is None:
                     completed = await conn.fetchrow(
-                        """
-                        SELECT *
+                        f"""
+                        SELECT {_OPERATION_COLUMNS}
                         FROM grile_monthly_operations
                         WHERE closing_month = $1
                           AND op = 'reset'
@@ -170,8 +183,8 @@ async def reserve(
                 )
                 if operation_id is None:
                     active = await conn.fetchrow(
-                        """
-                        SELECT *
+                        f"""
+                        SELECT {_OPERATION_COLUMNS}
                         FROM grile_monthly_operations
                         WHERE closing_month = $1 AND status IN ('queued', 'running')
                         ORDER BY created_at DESC
@@ -223,13 +236,13 @@ async def start(
 ) -> MonthlyOperationStartResult:
     async with pool.acquire() as conn:
         started = await conn.fetchrow(
-            """
+            f"""
             UPDATE grile_monthly_operations
             SET status = 'running',
                 started_at = COALESCE(started_at, now()),
                 heartbeat_at = now()
             WHERE id = $1 AND status = 'queued'
-            RETURNING *
+            RETURNING {_OPERATION_COLUMNS}
             """,
             operation_id,
         )
@@ -241,7 +254,7 @@ async def start(
             )
 
         current = await conn.fetchrow(
-            "SELECT * FROM grile_monthly_operations WHERE id = $1",
+            f"SELECT {_OPERATION_COLUMNS} FROM grile_monthly_operations WHERE id = $1",
             operation_id,
         )
 
@@ -359,8 +372,8 @@ async def get_previous_completed_reset_item(
 ) -> asyncpg.Record | None:
     async with pool.acquire() as conn:
         return await conn.fetchrow(
-            """
-            SELECT *
+            f"""
+            SELECT {_RESET_ITEM_COLUMNS}
             FROM grile_monthly_reset_items
             WHERE closing_month = $1
               AND site_code = $2

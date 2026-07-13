@@ -20,6 +20,10 @@ from typing import Any, Callable
 import asyncpg
 
 from services.grile import _retry_sync
+from services.grile_constants import (
+    GOOGLE_API_RETRY_ATTEMPTS,
+    GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+)
 from services.grile_sheets import build_services, get_credentials
 
 AGENT_TARGET_RANGES = [
@@ -437,8 +441,8 @@ def _build_google_fetcher(concurrency: int) -> FetchAgentRanges:
                 ranges=AGENT_TARGET_RANGES,
                 valueRenderOption="UNFORMATTED_VALUE",
             ).execute().get("valueRanges", []),
-            attempts=6,
-            base_delay=3.0,
+            attempts=GOOGLE_API_RETRY_ATTEMPTS,
+            base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
         )
 
     return fetch

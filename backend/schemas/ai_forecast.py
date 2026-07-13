@@ -7,11 +7,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from schemas.common import MonthStr
+
 
 class AiForecastRunInfo(BaseModel):
     id: int
-    forecast_month: str
-    source_month: str
+    forecast_month: MonthStr
+    source_month: MonthStr
     metric: Literal["sales_value", "units"] = "sales_value"
     horizon: Literal["current_month", "rolling_12m"] = "current_month"
     model_name: str
@@ -22,8 +24,8 @@ class AiForecastRunInfo(BaseModel):
 
 
 class AiForecastSummary(BaseModel):
-    forecast_month: str
-    source_month: str
+    forecast_month: MonthStr
+    source_month: MonthStr
     actual_last_date: date | None = None
     days_elapsed: int = 0
     days_in_month: int
@@ -75,9 +77,9 @@ class AiForecastResponse(BaseModel):
 
 
 class AiForecastRollingSummary(BaseModel):
-    source_month: str
-    start_month: str
-    end_month: str
+    source_month: MonthStr
+    start_month: MonthStr
+    end_month: MonthStr
     month_count: int
     store_count: int
     forecast_sales: Decimal
@@ -87,7 +89,7 @@ class AiForecastRollingSummary(BaseModel):
 
 
 class AiForecastRollingMonthlyPoint(BaseModel):
-    forecast_month: str
+    forecast_month: MonthStr
     store_count: int
     forecast_sales: Decimal
     actual_sales: Decimal | None = None

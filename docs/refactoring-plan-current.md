@@ -86,7 +86,7 @@ Inchise in transele anterioare:
 
 ## Milestone 0 - Documentatie, baseline, guardrails
 
-Status: in executie.
+Status: complet.
 
 Livrabile:
 
@@ -407,10 +407,14 @@ Livrabile:
 - [x] contractele Dashboard separate in `schemas/dashboard.py`; routerul si
   serviciile importa direct domeniul, fara forward references, iar `models.py`
   pastreaza re-exporturile compatibile;
-- `Literal`, pattern-uri si constrangeri Pydantic pentru status/luni/valori;
-- magic literals mutate in constante business numite;
-- `SELECT *` eliminat din repo-urile unde schema drift poate produce bug-uri;
-- grupurile RBAC similare documentate sau unificate.
+- [x] `Literal`, pattern-uri si constrangeri Pydantic pentru status, luni,
+  procente, valori de import si scrieri de target;
+- [x] literalurile business recurente pentru lifecycle/evaluare agenti,
+  incentive, promo, topuri Campaigns si retry Google mutate in constante numite;
+- [x] `SELECT *` eliminat din contractele persistente Grile unde schema drift
+  putea schimba payloadul; CTE-urile locale controlate raman intentionat intacte;
+- [x] grupurile RBAC unificate in `permissions.py`; capabilitatea P&L ramane
+  intentionat separata si fail-closed prin `STORE_PNL_ACCESS_GROUPS`.
 
 Criteriu:
 
@@ -520,6 +524,12 @@ build pot concura pe `dist/`.
   `backend/schemas/dashboard.py`, ordonate fara forward references. Splitul
   major pe domenii este inchis, iar `models.py` a ramas un strat compatibil si
   pentru contractele generice/import/vizite, cu 271 de linii.
+- 2026-07-13: Milestone 6 inchis: lunile publice folosesc contractul strict
+  `YYYY-MM`, statusurile finite sunt `Literal`, procentele Vizite sunt finite in
+  intervalul 0-100, iar scrierile de target/import au limite nenegative.
+  Datele live au zero luni neconforme in sursele verificate. Repo-urile Grile
+  selecteaza explicit coloanele persistente si au test anti-regresie;
+  constantele business recurente si politica retry Google au surse numite.
 - 2026-07-13: documentatia Management a fost reconciliata cu navigatia V2
   Manageri / Calculator Target / Salarii / P&L. UI-urile legacy inaccesibile
   Tasks/HR/CRM si clientii folositi exclusiv de ele au fost eliminati; scoring-ul

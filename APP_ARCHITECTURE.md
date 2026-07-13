@@ -78,6 +78,13 @@ Navigatia principala ramane plata: sidebar-ul contine doar meniurile principale.
 Subtaburile Management sunt randate in interiorul ecranului Management, cu
 acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
 
+Contractele publice backend sunt separate pe domenii in `backend/schemas/`
+(`dashboard`, `agents`, `campaigns`, `premium_glass`, `contests`, `ai_forecast`
+si `salarii`). `models.py` pastreaza re-exporturi compatibile pentru modulele
+legacy. Lunile au format strict `YYYY-MM`, statusurile finite sunt expuse ca
+enum-uri OpenAPI, iar valorile de import/target si procentele Vizite sunt
+validate la boundary.
+
 ## Functionalitati majore
 
 - KPI retail si istoric lunar.

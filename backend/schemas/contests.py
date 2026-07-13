@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from schemas.common import MonthStr
+
 
 class ContestRuleInfo(BaseModel):
     type: str
@@ -38,7 +40,7 @@ class ContestResponse(BaseModel):
     title: str
     subtitle: str = ""
     scope_label: str = ""
-    month: str
+    month: MonthStr
     start_date: str
     end_date: str
     store_count: int = 0
