@@ -220,8 +220,8 @@ Livrabile:
 - [x] data-fetching-ul Dashboard este extras in `useDashboardData`;
 - [x] cele sase tabele RM/Magazine/Agenti, curent si istoric, folosesc
   componenta generica testata `dashboard/BreakdownTable.tsx`;
-- [ ] continutul ramas din `Dashboard.tsx` se imparte in
-  `CurrentDashboard` si `HistoryDashboard`;
+- [x] prezentarea este separata in `CurrentDashboard` si `HistoryDashboard`;
+  `Dashboard.tsx` pastreaza query-urile, agregarea, filtrele si state-ul comun;
 - [x] drawerul de performanta, graficele si sumarul salarial sunt extrase in
   `dashboard/PerformanceDetailDrawer.tsx`;
 - [x] sortarile repetitive din tabelele Dashboard folosesc `useSortable`;
@@ -277,6 +277,16 @@ Validare `BreakdownTable` comun:
 - `npm run build` - OK;
 - payload-urile, coloanele, formatarea, sortarea si exporturile celor sase
   tabele raman neschimbate; transa elimina numai markup-ul duplicat.
+
+Validare split Current/History:
+
+- `npm run typecheck` - OK;
+- `npm run typecheck:strict` - OK;
+- `npm run lint` - OK, fara warnings;
+- `npm run test` - OK, 29 fisiere / 216 teste;
+- `npm run build` - OK;
+- view-urile au teste server-rendered pentru overview, loading si continutul
+  istoric, iar data fetching-ul ramane exclusiv in orchestrator.
 
 ## Milestone 3 - Backend domain boundaries ramase
 
@@ -445,6 +455,9 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: `Dashboard.tsx` este orchestratorul pentru query-uri, agregare,
+  filtre si state comun; UI-ul curent si istoric este separat in componente
+  tipizate si testate `CurrentDashboard`/`HistoryDashboard`.
 - 2026-07-13: cele sase tabele breakdown Dashboard folosesc o singura
   componenta generica tipizata si testata; `Dashboard.tsx` scade cu peste 150
   de linii nete, pas intermediar inainte de extragerea Current/History.
