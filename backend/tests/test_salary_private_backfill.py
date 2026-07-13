@@ -55,6 +55,8 @@ async def test_backfill_materializes_link_only_private_identities() -> None:
     assert "FROM salary_records" in private_inserts[0]
     assert "FROM agent_salary_links" in private_inserts[1]
     assert "match_status = 'confirmed'" in private_inserts[1]
+    assert "person_id AS stored_person_id" in private_inserts[1]
+    assert "COALESCE(identity.stored_person_id" in private_inserts[1]
     assert "NULLIF(BTRIM(salary_full_name), '') IS NOT NULL" in private_inserts[1]
     link_updates = [
         statement
@@ -62,6 +64,7 @@ async def test_backfill_materializes_link_only_private_identities() -> None:
         if "UPDATE agent_salary_links links" in statement
     ]
     assert len(link_updates) == 1
+    assert "person_id IS NULL" in link_updates[0]
     assert "NULLIF(BTRIM(salary_full_name), '') IS NOT NULL" in link_updates[0]
 
 
@@ -140,10 +143,9 @@ async def test_backfill_is_idempotent_and_persists_private_mapping() -> None:
                     agent_code, site_code, salary_full_name, salary_cnp,
                     match_status, match_source, confidence
                     , person_id
-                ) VALUES ('H01BACK', $1, 'Backfill Agent', $2, 'confirmed', 'manual', 'high', $3)
+                ) VALUES ('H01BACK', $1, 'Backfill Agent', NULL, 'confirmed', 'manual', 'high', $2)
                 """,
                 TEST_SITE,
-                TEST_PRIVATE_ID,
                 TEST_PERSON_ID,
             )
             async with connection.transaction():
