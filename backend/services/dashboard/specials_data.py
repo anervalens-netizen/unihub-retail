@@ -5,7 +5,7 @@ from collections.abc import Awaitable
 from typing import Any
 
 from db.connection import get_pool
-from models import DashboardSpecialCard
+from schemas.dashboard import DashboardSpecialCard
 from schemas.campaigns import PromoIncentiveSummary
 from services.dashboard.queries import (
     DashboardCampaignContext,

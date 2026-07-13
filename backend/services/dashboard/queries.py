@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
-from models import (
+from schemas.dashboard import (
     BrandMixItem,
     CategoryMixItem,
     PeriodComparisonPayload,

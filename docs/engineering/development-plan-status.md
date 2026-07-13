@@ -17,7 +17,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-06 BFF/server-side session | Merged and active in production | User-interactive login/logout observation and ongoing session metrics |
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
-| Performance/modularization | Dashboard split, bounded DB fan-out and bundle audit complete | Remaining domain-model cleanup |
+| Performance/modularization | Dashboard split, bounded DB fan-out, bundle audit and domain-schema split complete | Remaining validation/constants/SQL cleanup |
 | CI/CD and operations | Quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation and final release acceptance |
 
 ## What is already delivered
@@ -64,9 +64,9 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. finish the gradual backend model cleanup without changing public contracts;
+3. finish the remaining model validation, constants and SQL cleanup without changing public contracts;
 4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,
-H-01B and H-02 are operationally active, while the final model cleanup and
-operational acceptance work remains.
+H-01B and H-02 are operationally active, while the final validation/SQL cleanup
+and operational acceptance work remains.

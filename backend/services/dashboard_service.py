@@ -9,7 +9,7 @@ from typing import Any, Literal, cast
 import asyncpg
 from fastapi import HTTPException, status
 
-from models import (
+from schemas.dashboard import (
     DashboardSummary,
     DashboardAllResponse,
     DailySalesPoint,
