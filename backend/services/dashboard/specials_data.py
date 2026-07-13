@@ -1,10 +1,11 @@
 """Special cards data assembly (promotion + incentive) for /api/dashboard/special-cards."""
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from typing import Any
 
 from db.connection import get_pool
-from models import DashboardSpecialCard
+from models import DashboardSpecialCard, PromoIncentiveSummary
 from services.dashboard.queries import (
     DashboardCampaignContext,
     _fetch_promo_incentive_summary,
@@ -36,6 +37,7 @@ async def _get_special_cards_data(
     agent: str | None,
     *,
     campaign_context: DashboardCampaignContext | None = None,
+    promo_incentive_summary: Awaitable[PromoIncentiveSummary] | None = None,
 ) -> list[DashboardSpecialCard]:
     """Internal helper to build special cards data without HTTP dependencies."""
     pool = await get_pool()
@@ -147,16 +149,19 @@ async def _get_special_cards_data(
                 store_multipliers, _ = await _get_store_incentive_multipliers(
                     conn, month, firma, regional, asm, site_code
                 )
-                summary = await _fetch_promo_incentive_summary(
-                    conn,
-                    month,
-                    firma,
-                    regional,
-                    asm,
-                    site_code,
-                    agent,
-                    campaign_context=campaign_context,
-                )
+                if promo_incentive_summary is None:
+                    summary = await _fetch_promo_incentive_summary(
+                        conn,
+                        month,
+                        firma,
+                        regional,
+                        asm,
+                        site_code,
+                        agent,
+                        campaign_context=campaign_context,
+                    )
+                else:
+                    summary = await promo_incentive_summary
             net_qty = 0
             pos_qty = 0
             ret_qty = 0

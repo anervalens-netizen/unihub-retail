@@ -498,6 +498,9 @@ class TestGetDashboardAll:
         mock_load_context.assert_awaited_once()
         assert mock_promo.await_args.kwargs["campaign_context"] is campaign_context
         assert mock_specials.await_args.kwargs["campaign_context"] is campaign_context
+        shared_summary = mock_specials.await_args.kwargs["promo_incentive_summary"]
+        assert shared_summary.done()
+        assert shared_summary.result() is result.promo_incentive
 
     @pytest.mark.asyncio
     @patch("services.dashboard_service._get_special_cards_data", new_callable=AsyncMock, return_value=[])
