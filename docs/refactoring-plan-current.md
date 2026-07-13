@@ -325,7 +325,7 @@ Criteriu:
 
 ## Milestone 4 - Performanta si optimizare masurata
 
-Status: in executie.
+Status: inchis.
 
 Livrabile:
 
@@ -342,8 +342,11 @@ Livrabile:
   vârful poolului scade 10 -> 5, acquire-urile peste 5 ms scad 24 -> 2, iar
   mediana scade 400,3 -> 344,0 ms; timpul de coadă este expus prin histograma
   `dashboard_component_queue_seconds` cu labeluri finite;
-- audit bundle frontend dupa spliturile mari;
-- pastrarea lazy-loading-ului pe ecranele principale.
+- [x] audit bundle frontend dupa spliturile mari: ecranele principale raman
+  lazy-loaded, `charts` are 404,65 kB / 115,65 kB gzip si este exclus explicit
+  din preload, iar impartirea lui per ecran ar duplica Recharts/D3 fara un
+  beneficiu masurat;
+- [x] pastrarea lazy-loading-ului pe ecranele principale.
 
 Criteriu:
 
@@ -382,11 +385,15 @@ Criteriu:
 
 ## Milestone 6 - Curatenie de model si constante
 
-Status: planificat.
+Status: in executie.
 
 Livrabile:
 
-- `models.py` impartit gradual pe domenii;
+- [x] prima transa din `models.py` separata in `schemas/ai_forecast.py` si
+  `schemas/contests.py`, cu importuri directe in domenii si re-export compatibil
+  pentru consumatorii existenti;
+- `models.py` impartit gradual in continuare pe domeniile Dashboard, Campaigns
+  si Agents;
 - `Literal`, pattern-uri si constrangeri Pydantic pentru status/luni/valori;
 - magic literals mutate in constante business numite;
 - `SELECT *` eliminat din repo-urile unde schema drift poate produce bug-uri;
@@ -461,6 +468,10 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: auditul bundle confirma lazy-loading-ul tuturor ecranelor si
+  excluderea chunk-ului comun Recharts/D3 din preload; nu s-a introdus o
+  fragmentare speculativa. Prima transa de modele AI Forecast si Contest a fost
+  mutata in `backend/schemas`, cu re-export si teste de serializare compatibile.
 - 2026-07-13: documentatia Management a fost reconciliata cu navigatia V2
   Manageri / Calculator Target / Salarii / P&L. UI-urile legacy inaccesibile
   Tasks/HR/CRM si clientii folositi exclusiv de ele au fost eliminati; scoring-ul

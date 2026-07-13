@@ -5,7 +5,7 @@ from typing import Any
 
 import asyncpg
 
-from models import (
+from schemas.contests import (
     ContestLeaderboardRow,
     ContestPrizeInfo,
     ContestResponse,

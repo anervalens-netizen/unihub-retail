@@ -17,7 +17,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-06 BFF/server-side session | Merged and active in production | User-interactive login/logout observation and ongoing session metrics |
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
-| Performance/modularization | Dashboard split and bounded DB fan-out active in production | Bundle audit and remaining model cleanup |
+| Performance/modularization | Dashboard split, bounded DB fan-out and bundle audit complete | Remaining domain-model cleanup |
 | CI/CD and operations | Quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation and final release acceptance |
 
 ## What is already delivered
@@ -44,6 +44,9 @@ tracked in `docs/refactoring-plan-current.md`.
 - Management navigation reconciled to Manageri, Calculator Target, Salarii
   and P&L; unreachable legacy Tasks/HR/CRM frontend code removed while the CRM
   scoring read model and compatible backend endpoints remain available;
+- bundle audit confirms screen-level lazy loading and keeps the shared chart
+  runtime outside initial preload; AI Forecast and Contest public models are
+  the first bounded schemas extracted from the legacy model monolith;
 - frontend CI gates for general and strict typecheck, lint, unit tests, runtime
   dependency audit, production build, Playwright flows and WCAG A/AA smoke scans
   (GitHub Actions merge-ref run `29225724923`: backend and frontend green).
@@ -58,7 +61,7 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. finish the measured frontend bundle audit and gradual backend model cleanup;
+3. finish the gradual backend model cleanup without changing public contracts;
 4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,
