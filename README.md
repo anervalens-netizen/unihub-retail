@@ -625,9 +625,11 @@ sudo systemctl status unihub-retail-migrate.service --no-pager
 ```
 
 Runnerul foloseste advisory lock PostgreSQL, tranzactii per migration si
-checksum-uri persistente. Backend-ul web nu executa DDL/DML de schema; la
+checksum-uri persistente, preferand credentialul owner din
+`MIGRATION_DATABASE_URL`. Backend-ul web nu executa DDL/DML de schema; la
 startup face numai verificarea read-only si refuza sa porneasca daca exista
-drift sau migrations neaplicate.
+drift sau migrations neaplicate. La un DB nou, baseline-ul DDL este urmat de
+seed-urile de date desemnate explicit de runner.
 
 Asta inseamna ca doua instante web nu pot concura pentru schema, fisierele
 istorice modificate sunt detectate, iar release-ul DB este separat de runtime.
