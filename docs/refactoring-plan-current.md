@@ -282,7 +282,11 @@ Ramase:
   si response assembler;
 - [x] teste pentru pragurile, ponderile, eligibilitatea si trendurile evaluarii
   agentilor;
-- `grile_monthly.py` separat in orchestration + repository + state machine;
+- [x] state machine-ul pur pentru lifecycle-ul operatiilor lunare Grile este
+  separat si acoperit exhaustiv, iar CAS-urile start/heartbeat/finish/fail si
+  atasarea jobului sunt mutate in repository;
+- [ ] rezervarea initiala si checkpointurile per magazin pentru reset trebuie
+  mutate din `grile_monthly.py` in acelasi boundary de repository;
 - [x] `dashboard_service.get_dashboard_all` mutat de la gather pozitional la
   rezultate concurente adresate nominal, fara indexuri numerice fragile;
 - eliminare punctuala a celorlalte `replace()` pe SQL numai daca exista test

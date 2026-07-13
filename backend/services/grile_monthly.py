@@ -25,7 +25,20 @@ from googleapiclient.http import MediaIoBaseDownload
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from repositories.grile_monthly_operations import (
+    attach_job as persist_monthly_operation_job,
+    fail as persist_monthly_operation_failure,
+    finish as persist_monthly_operation_result,
+    heartbeat as persist_monthly_operation_heartbeat,
+    start as persist_monthly_operation_start,
+)
 from services.spreadsheet_safety import TrustedFormula, append_openpyxl_row
+from services.grile_monthly_state import (
+    GrileMonthlyRetryBlockedError,
+    MonthlyOperationReservation,
+    MonthlyOperationStartResult,
+    safe_persisted_result,
+)
 
 RO_MONTHS = [
     "", "Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
@@ -137,34 +150,6 @@ class ExtractedAgentRow:
     status: str
     error: str
     sheet_id: str
-
-
-@dataclass(frozen=True)
-class MonthlyOperationReservation:
-    status: Literal["enqueued", "already_running", "already_completed"]
-    operation_id: int
-    job_id: str | None = None
-    operation: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class MonthlyOperationStartResult:
-    """Result of the atomic queued -> running worker transition."""
-
-    status: Literal[
-        "started",
-        "already_running",
-        "already_completed",
-        "already_failed",
-        "not_found",
-    ]
-    operation_id: int
-    operation: dict[str, Any] | None = None
-    result: dict[str, Any] | None = None
-
-
-class GrileMonthlyRetryBlockedError(RuntimeError):
-    """Raised when a live reset has uncertain Google-side effects."""
 
 
 def ro_month_label(ym: str) -> str:
@@ -345,11 +330,7 @@ def _operation_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
 
 def _safe_operation_result(operation: dict[str, Any] | None) -> dict[str, Any] | None:
     """Return an independent copy of a persisted JSON result for replays."""
-
-    result = operation.get("result") if operation is not None else None
-    if not isinstance(result, dict):
-        return None
-    return json.loads(json.dumps(result, ensure_ascii=False))
+    return safe_persisted_result(operation)
 
 
 async def reserve_monthly_operation(
@@ -529,83 +510,21 @@ async def attach_monthly_operation_job(
     operation_id: int,
     job_id: str,
 ) -> bool:
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            UPDATE grile_monthly_operations
-            SET job_id = $2, heartbeat_at = now()
-            WHERE id = $1 AND status = 'queued'
-            RETURNING id
-            """,
-            operation_id,
-            job_id,
-        )
-    return row is not None
+    return await persist_monthly_operation_job(
+        pool,
+        operation_id=operation_id,
+        job_id=job_id,
+    )
 
 
 async def start_monthly_operation(
     pool: asyncpg.Pool, operation_id: int
 ) -> MonthlyOperationStartResult:
-    async with pool.acquire() as conn:
-        started = await conn.fetchrow(
-            """
-            UPDATE grile_monthly_operations
-            SET status = 'running',
-                started_at = COALESCE(started_at, now()),
-                heartbeat_at = now()
-            WHERE id = $1 AND status = 'queued'
-            RETURNING *
-            """,
-            operation_id,
-        )
-        if started is not None:
-            operation = _operation_to_dict(started)
-            return MonthlyOperationStartResult(
-                status="started",
-                operation_id=operation_id,
-                operation=operation,
-                result=_safe_operation_result(operation),
-            )
-
-        current = await conn.fetchrow(
-            "SELECT * FROM grile_monthly_operations WHERE id = $1",
-            operation_id,
-        )
-
-    if current is None:
-        return MonthlyOperationStartResult(status="not_found", operation_id=operation_id)
-
-    operation = _operation_to_dict(current)
-    current_status = str(current["status"])
-    status: Literal["already_running", "already_completed", "already_failed"]
-    if current_status == "running":
-        status = "already_running"
-    elif current_status == "completed":
-        status = "already_completed"
-    elif current_status == "failed":
-        status = "already_failed"
-    else:
-        # A queued row can only be observed if a new worker race reserved it
-        # after our failed CAS; never execute it without owning the transition.
-        status = "already_running"
-    return MonthlyOperationStartResult(
-        status=status,
-        operation_id=operation_id,
-        operation=operation,
-        result=_safe_operation_result(operation),
-    )
+    return await persist_monthly_operation_start(pool, operation_id)
 
 
 async def heartbeat_monthly_operation(pool: asyncpg.Pool, operation_id: int) -> None:
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE grile_monthly_operations
-            SET heartbeat_at = now()
-            WHERE id = $1 AND status = 'running'
-            """,
-            operation_id,
-        )
+    await persist_monthly_operation_heartbeat(pool, operation_id)
 
 
 async def finish_monthly_operation(
@@ -615,25 +534,12 @@ async def finish_monthly_operation(
     result: dict[str, Any],
     error_message: str | None = None,
 ) -> bool:
-    status = "completed" if result.get("status") == "success" else "failed"
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            UPDATE grile_monthly_operations
-            SET status = $2,
-                result = $3::jsonb,
-                error_message = $4,
-                finished_at = now(),
-                heartbeat_at = now()
-            WHERE id = $1 AND status = 'running'
-            RETURNING id
-            """,
-            operation_id,
-            status,
-            json.dumps(result, ensure_ascii=False),
-            error_message,
-        )
-    return row is not None
+    return await persist_monthly_operation_result(
+        pool,
+        operation_id,
+        result=result,
+        error_message=error_message,
+    )
 
 
 async def fail_monthly_operation(
@@ -642,21 +548,11 @@ async def fail_monthly_operation(
     *,
     error_message: str,
 ) -> bool:
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            UPDATE grile_monthly_operations
-            SET status = 'failed',
-                error_message = $2,
-                finished_at = now(),
-                heartbeat_at = now()
-            WHERE id = $1 AND status IN ('queued', 'running')
-            RETURNING id
-            """,
-            operation_id,
-            error_message,
-        )
-    return row is not None
+    return await persist_monthly_operation_failure(
+        pool,
+        operation_id,
+        error_message=error_message,
+    )
 
 
 async def ensure_reset_items(
