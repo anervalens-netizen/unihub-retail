@@ -4,6 +4,8 @@ import path from 'path';
 import {defineConfig} from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 
+import {PWA_NAVIGATION_DENYLIST} from './src/lib/pwaNavigation';
+
 export default defineConfig(() => {
   const backendTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000';
   const manualChunks = (id: string) => {
@@ -65,6 +67,9 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // Server-owned navigations must reach FastAPI. Falling back to the
+          // cached SPA for /auth/session/login creates an infinite login loop.
+          navigateFallbackDenylist: PWA_NAVIGATION_DENYLIST,
           globIgnores: [
             '**/logo-horizontal.png',
             '**/logo-inverted.png',
@@ -95,6 +100,10 @@ export default defineConfig(() => {
       host: '127.0.0.1',
       port: 3000,
       proxy: {
+        '/auth': {
+          target: backendTarget,
+          changeOrigin: true,
+        },
         '/api': {
           target: backendTarget,
           changeOrigin: true,
@@ -104,6 +113,18 @@ export default defineConfig(() => {
           changeOrigin: true,
         },
         '/health': {
+          target: backendTarget,
+          changeOrigin: true,
+        },
+        '/livez': {
+          target: backendTarget,
+          changeOrigin: true,
+        },
+        '/readyz': {
+          target: backendTarget,
+          changeOrigin: true,
+        },
+        '/metrics': {
           target: backendTarget,
           changeOrigin: true,
         },
