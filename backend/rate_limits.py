@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import os
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -94,6 +95,21 @@ async def enforce_rate_limit(
     active_store = store or _store
     active_settings = settings or _settings
     if active_store is None or active_settings is None:
+        if (
+            active_store is None
+            and active_settings is None
+            and store is None
+            and settings is None
+            and os.getenv("UNIHUB_ENV", "development").strip().lower() != "production"
+            and load_rate_limit_settings() is None
+        ):
+            _decisions.labels(policy.name, "disabled").inc()
+            return RateLimitDecision(
+                allowed=True,
+                remaining=policy.limit,
+                retry_after_seconds=0,
+                reset_after_seconds=policy.window_seconds,
+            )
         _decisions.labels(policy.name, "error").inc()
         raise _unavailable()
     configured_policy = _policy(policy, active_settings)
