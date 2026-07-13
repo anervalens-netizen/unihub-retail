@@ -663,11 +663,19 @@ Comenzi importante:
 backend/scripts/run_tests_isolated.sh
 python backend/scripts/smoke_api.py
 npm run typecheck
+npm run typecheck:strict
+npm run lint
+npm run test
+npm audit --omit=dev --audit-level=high
 npm run build
+npm run test:e2e
 ```
 
 `run_tests_isolated.sh` creeaza un PostgreSQL 18 temporar si refuza orice
 conectare a testelor la baza Retail de productie.
+Suita Playwright porneste singura preview-ul Vite si include smoke-uri de
+accesibilitate WCAG A/AA pentru Hub si Management. CI ruleaza aceleasi gate-uri
+frontend, inclusiv auditul dependentelor runtime la severitate `high`.
 
 ## Scripturi utile
 

@@ -12,7 +12,7 @@ test.describe('E2E: Management & Settings', () => {
 
     await page.getByRole('button', { name: 'Management' }).first().click();
 
-    await expect(page.getByRole('button', { name: 'Manageri' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: 'Manageri', exact: true })).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('button', { name: 'Calculator Target' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Salarii' })).toBeVisible();
   });

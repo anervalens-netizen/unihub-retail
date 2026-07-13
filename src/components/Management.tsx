@@ -48,7 +48,7 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
             className={`min-w-fit flex-1 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
               activeTab === tab.id
                 ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                : 'text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white'
             }`}
           >
             {tab.label}

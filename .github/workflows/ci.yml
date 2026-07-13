@@ -5,6 +5,10 @@ on:
   push:
     branches: [main, master]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend-check:
     runs-on: [self-hosted, unihub-server]
@@ -103,17 +107,43 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install & typecheck
-        run: |
-          npm ci
-          npx tsc --noEmit
-          echo "TypeScript: OK"
+      - name: Install frontend dependencies
+        run: npm ci --include=dev
+
+      - name: Frontend typecheck
+        run: npm run typecheck
+
+      - name: Strict frontend typecheck
+        run: npm run typecheck:strict
+
+      - name: Frontend lint
+        run: npm run lint
 
       - name: Unit tests
         run: npm run test
 
+      - name: Runtime dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Build
         run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Browser and accessibility tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: Upload source maps to GlitchTip
         if: success()
