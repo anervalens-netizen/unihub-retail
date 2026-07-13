@@ -8,6 +8,7 @@ from schemas.agents import AgentEvaluationV2Row, AgentsOverviewResponse
 from schemas.ai_forecast import AiForecastResponse, AiForecastRunInfo, AiForecastSummary
 from schemas.campaigns import CampaignSnapshot
 from schemas.contests import ContestResponse, ContestRuleInfo
+from schemas.dashboard import DashboardAllResponse, DashboardSummary
 from schemas.premium_glass import PremiumGlassAnalysis
 
 
@@ -20,6 +21,8 @@ def test_legacy_model_imports_reexport_domain_classes() -> None:
     assert models.AgentEvaluationV2Row is AgentEvaluationV2Row
     assert models.CampaignSnapshot is CampaignSnapshot
     assert models.PremiumGlassAnalysis is PremiumGlassAnalysis
+    assert models.DashboardSummary is DashboardSummary
+    assert models.DashboardAllResponse is DashboardAllResponse
 
 
 def test_ai_forecast_serialization_contract_is_preserved() -> None:

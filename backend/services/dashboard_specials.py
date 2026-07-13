@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
-from models import DashboardSpecialCard, DashboardSpecialCardMetric
+from schemas.dashboard import DashboardSpecialCard, DashboardSpecialCardMetric
 from services.phone_models import extract_phone_model_keys
 from services.product_lists import (
     get_data_dir,
