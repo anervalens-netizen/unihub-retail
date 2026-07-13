@@ -468,6 +468,11 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: ultimele review-uri H-01B au fost inchise: backfill-ul filtreaza
+  si raporteaza tintit identitatile confirmate dar goale, iar matcherul offline
+  transporta `person_id` pana in upsert si refuza confirmari fara ID. Dry-run-ul
+  live a ramas read-only: 140 matched, 5 unknown, 4 unmatched si doua override-uri
+  manuale in review pana la aparitia lor in salarii, fara write in PostgreSQL.
 - 2026-07-13: review-urile istorice H-02 au fost inchise in runner: one-shot-ul
   prefera `MIGRATION_DATABASE_URL`, bootstrap-ul fresh ruleaza seed-ul 014 in
   afara baseline-ului DDL, iar bazele post-006 pot adopta sigur tombstone-ul 005

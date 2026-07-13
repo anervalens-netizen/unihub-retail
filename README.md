@@ -524,6 +524,9 @@ ca `site_code` catre overview, evolutie, summary, trend si lista de agenti.
 API-ul public si repository-urile runtime folosesc identificatorul opac
 `person_id`. CNP-ul retinut este izolat pentru import si matching intern: nu
 este returnat browserului, folosit in URL-uri sau expus in contractele publice.
+Matcherul offline poate scrie un link confirmat numai impreuna cu `person_id`;
+potrivirile manuale fara identitate salariala unica raman `review` pana cand
+exista o inregistrare HR rezolvabila.
 Media salariala din overview, tabelul pe locatii si trendul lunar este calculata
 unitar pe valorile agent-luna de cel putin `2.000 RON`. Identitatea principala
 este `person_id`. Daca acelasi agent are mai multe randuri de plata in aceeasi luna,

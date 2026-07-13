@@ -37,6 +37,7 @@ class _BackfillConnection:
             "records_missing": 0,
             "confirmed_links": 1,
             "links_missing": 0,
+            "blank_confirmed_links": 0,
             "collisions": 0,
         }
 
@@ -54,6 +55,34 @@ async def test_backfill_materializes_link_only_private_identities() -> None:
     assert "FROM salary_records" in private_inserts[0]
     assert "FROM agent_salary_links" in private_inserts[1]
     assert "match_status = 'confirmed'" in private_inserts[1]
+    assert "NULLIF(BTRIM(salary_full_name), '') IS NOT NULL" in private_inserts[1]
+    link_updates = [
+        statement
+        for statement in connection.statements
+        if "UPDATE agent_salary_links links" in statement
+    ]
+    assert len(link_updates) == 1
+    assert "NULLIF(BTRIM(salary_full_name), '') IS NOT NULL" in link_updates[0]
+
+
+@pytest.mark.anyio
+async def test_backfill_rejects_blank_confirmed_link_identity_explicitly() -> None:
+    connection = _BackfillConnection()
+
+    async def blank_stats(_sql: str) -> dict[str, int]:
+        return {
+            "people": 0,
+            "records": 0,
+            "records_missing": 0,
+            "confirmed_links": 1,
+            "links_missing": 1,
+            "blank_confirmed_links": 1,
+            "collisions": 0,
+        }
+
+    connection.fetchrow = blank_stats  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="blank confirmed identities"):
+        await backfill(connection, TEST_KEY)  # type: ignore[arg-type]
 
 
 async def _cleanup() -> None:
