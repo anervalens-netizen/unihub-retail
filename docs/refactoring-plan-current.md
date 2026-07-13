@@ -563,6 +563,12 @@ build pot concura pe `dist/`.
   doua secunde, metrici finite si raspuns 503 fara detalii. Regulile SLO exclud
   probele, iar unitatile systemd web/worker/migrations sunt versionate si
   hardenizate. Validarea merge-ref si rolloutul raman criterii de acceptare.
+- 2026-07-13: mentenanta dependintelor V2 pastreaza toolchain-ul pe Node 22,
+  TypeScript 5 si `@types/node` 22 pana la o migrare majora explicita; update-urile
+  frontend minor/patch sunt validate prin toate gate-urile. `bcrypt` si
+  `passlib` au fost eliminate din runtime deoarece Retail foloseste exclusiv
+  Authentik OIDC si nu contine hashing local de parole; importul runtime este
+  verificat intr-un venv curat.
 - 2026-07-13: gate-urile frontend CI au fost extinse cu typecheck strict,
   ESLint, audit runtime, build si 15 scenarii Playwright. Doua smoke-uri axe
   acopera Hub si Management pentru incalcari WCAG A/AA critical/serious;
