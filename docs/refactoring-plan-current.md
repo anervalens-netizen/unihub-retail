@@ -2,8 +2,8 @@
 
 Ultima actualizare: 2026-07-13
 Owner operational: Codex
-Status general: in executie; refactoringul functional continua dupa inchiderea
-Wave 2 de securitate si privacy.
+Status general: milestone-urile V2 planificate sunt inchise si active in
+productie; continua mentenanta, monitorizarea si remedierea regresiilor.
 
 Acest fisier este sursa activa pentru refactoring-ul complet Retail. Documentele
 anterioare de audit, handover si roadmap sunt pastrate doar pentru trasabilitate

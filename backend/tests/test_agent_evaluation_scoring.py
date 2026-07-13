@@ -94,6 +94,13 @@ def test_score_rating_boundaries(
     assert score_rating(score, eligibility) == expected
 
 
+@pytest.mark.parametrize("period", ["2025-01..curent", "custom"])
+def test_v2_row_preserves_aggregate_period_labels(period: str) -> None:
+    result = build_agent_evaluation_v2_row(_row(month=period))
+
+    assert result.month == period
+
+
 def test_final_month_full_score_and_threshold_flags() -> None:
     result = build_agent_evaluation_v2_row(_row())
 

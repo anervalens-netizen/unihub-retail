@@ -351,7 +351,7 @@ ORDER BY pr.is_partial DESC, pr.asm, pr.locatie, pr.total_sales DESC, pr.agent
 """
 
 
-AGENT_EVALUATION_OPTIONS_QUERY = """
+AGENT_EVALUATION_OPTIONS_QUERY = f"""
 WITH current_month AS (
     SELECT MAX(import_month) AS month
     FROM reporting_agent_month

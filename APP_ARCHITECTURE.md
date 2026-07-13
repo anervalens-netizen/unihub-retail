@@ -83,7 +83,9 @@ Contractele publice backend sunt separate pe domenii in `backend/schemas/`
 si `salarii`). `models.py` pastreaza re-exporturi compatibile pentru modulele
 legacy. Lunile au format strict `YYYY-MM`, statusurile finite sunt expuse ca
 enum-uri OpenAPI, iar valorile de import/target si procentele Vizite sunt
-validate la boundary.
+validate la boundary. Singura extensie intentionata este campul de perioada
+din evaluarea agentilor: acesta accepta si etichetele agregate
+`YYYY-MM..curent` si `custom`, deoarece randul poate reprezenta mai multe luni.
 
 ## Functionalitati majore
 

@@ -3,10 +3,16 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from models import ImportJobStatus, ImportResponse, StoreTargetInput, VisitReportRow
-from schemas.agents import AgentListItem, StoreCoverageItem
+from models import (
+    ImportJobStatus,
+    ImportResponse,
+    StoreTargetInput,
+    VisitMonthGroup,
+    VisitReportRow,
+)
+from schemas.agents import AgentEvaluationPeriod, AgentListItem, StoreCoverageItem
 
 
 def test_month_contract_rejects_invalid_calendar_months() -> None:
@@ -128,3 +134,25 @@ def test_openapi_schema_exposes_month_pattern_and_status_enums() -> None:
         "closed",
         "inactive",
     ]
+
+
+@pytest.mark.parametrize("period", ["2026-07", "2025-01..curent", "custom"])
+def test_agent_evaluation_period_accepts_api_labels(period: str) -> None:
+    assert TypeAdapter(AgentEvaluationPeriod).validate_python(period) == period
+
+
+@pytest.mark.parametrize(
+    "period",
+    ["2026-00", "2026-13", "2026-1", "2025-01..2026-07", "all", ""],
+)
+def test_agent_evaluation_period_rejects_unknown_labels(period: str) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(AgentEvaluationPeriod).validate_python(period)
+
+
+def test_visit_month_group_accepts_explicit_undated_bucket() -> None:
+    group = VisitMonthGroup(month="—", nr_vizite=1, days=[])
+    assert group.month == "—"
+
+    with pytest.raises(ValidationError):
+        VisitMonthGroup(month="unknown", nr_vizite=1, days=[])
