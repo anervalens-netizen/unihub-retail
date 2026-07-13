@@ -17,6 +17,12 @@ UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard 
 | Public URL | `https://retail.unihub.ro/` |
 | Service | `unihub-backend.service` |
 
+Runtime probes are separated by contract: `/livez` is process-only, while
+`/readyz` checks PostgreSQL and the Valkey-backed BFF session within a bounded
+two-second deadline. `/health` remains a compatibility alias for `/readyz`.
+Prometheus excludes these probes from the user-request SLI and uses a dedicated
+public `/readyz` blackbox probe.
+
 API-ul normalizeaza sau genereaza `X-Request-ID`, il returneaza clientului,
 il include in loguri si GlitchTip si il propaga spre fluxurile interne si
 joburile ARQ. Workerul pastreaza acelasi ID pentru jobul derivat de verificare

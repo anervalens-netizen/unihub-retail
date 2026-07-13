@@ -18,7 +18,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
 | Performance/modularization | Partially implemented | Remaining backend boundaries, Dashboard splits and DB-pool pressure review |
-| CI/CD and operations | Required frontend quality gates accepted on PR #50 merge ref | Readiness/liveness, SLOs, alerts and service hardening |
+| CI/CD and operations | Quality gates merged; readiness/SLO tranche implemented locally | Merge-ref acceptance, controlled rollout and ongoing SLO observation |
 
 ## What is already delivered
 

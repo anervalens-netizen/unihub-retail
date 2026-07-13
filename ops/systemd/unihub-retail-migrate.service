@@ -1,6 +1,7 @@
 [Unit]
 Description=UniHub Retail database migration runner
-After=network.target docker.service
+After=network-online.target docker.service
+Wants=network-online.target
 Requires=docker.service
 
 [Service]
@@ -18,3 +19,18 @@ ReadWritePaths=/opt/Mobiup
 ProtectHome=read-only
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0077

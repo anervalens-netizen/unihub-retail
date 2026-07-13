@@ -1,7 +1,8 @@
 [Unit]
-Description=UniHub Retail background job worker (arq)
-After=network-online.target docker.service mobiup-dwh-postgres.service
-Wants=network-online.target docker.service
+Description=UniHub FastAPI Backend
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -9,9 +10,8 @@ StartLimitBurst=5
 Type=simple
 User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
-Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
-EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker
-ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
+EnvironmentFile=/opt/Mobiup/unihub-retail/.env
+ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 9898 --workers 1 --no-proxy-headers
 Restart=always
 RestartSec=5
 TimeoutStartSec=120
@@ -19,7 +19,7 @@ TimeoutStopSec=75
 KillSignal=SIGTERM
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=unihub-worker
+SyslogIdentifier=unihub-backend
 
 ProtectSystem=strict
 ReadWritePaths=/opt/Mobiup

@@ -1,0 +1,76 @@
+groups:
+  - name: unihub-retail-slo-recording
+    interval: 30s
+    rules:
+      - record: unihub_retail:http_requests_excluding_probes:rate5m
+        expr: >-
+          sum(rate(http_requests_total{
+            job="unihub_retail",
+            handler!~"/(health|readyz|livez)"
+          }[5m]))
+
+      - record: unihub_retail:http_5xx_ratio:rate5m
+        expr: >-
+          (sum(rate(http_requests_total{
+            job="unihub_retail",
+            status="5xx",
+            handler!~"/(health|readyz|livez)"
+          }[5m])) or vector(0))
+          /
+          clamp_min(sum(rate(http_requests_total{
+            job="unihub_retail",
+            handler!~"/(health|readyz|livez)"
+          }[5m])), 0.001)
+
+      - record: unihub_retail:http_latency_p95_seconds:rate5m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{
+              job="unihub_retail",
+              handler!~"/(health|readyz|livez)"
+            }[5m]))
+          )
+
+  - name: unihub-retail-slo-alerts
+    rules:
+      - alert: UniHubRetailReadinessProbeMissing
+        expr: absent(probe_success{job="blackbox_retail_readiness"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Retail readiness probe is missing"
+          description: "Prometheus has no external /readyz probe result for Retail."
+
+      - alert: UniHubRetailReadinessDown
+        expr: probe_success{job="blackbox_retail_readiness"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Retail is not ready"
+          description: "The public /readyz dependency probe has failed for 2 minutes."
+
+      - alert: UniHubRetailErrorRateSLO
+        expr: >-
+          unihub_retail:http_5xx_ratio:rate5m > 0.05
+          and
+          unihub_retail:http_requests_excluding_probes:rate5m > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Retail 5xx ratio exceeds the SLO guardrail"
+          description: "Non-probe 5xx ratio is {{ $value | humanizePercentage }}."
+
+      - alert: UniHubRetailLatencySLO
+        expr: >-
+          unihub_retail:http_latency_p95_seconds:rate5m > 2
+          and
+          unihub_retail:http_requests_excluding_probes:rate5m > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Retail p95 latency exceeds 2 seconds"
+          description: "Non-probe p95 latency is {{ $value | humanizeDuration }}."
