@@ -101,19 +101,33 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                     ),
                 ],
             )
-            await connection.execute(
+            await connection.executemany(
                 """
                 INSERT INTO store_pnl_monthly (
                     company_name, period, source_site_code,
                     source_location_name, category_code, category_name,
                     amount, data_kind, source_file, source_sha256
                 ) VALUES ('Mobiup', $1, $2, 'P&L previous-company history',
-                          'v1', 'Revenue', 80, 'actual',
-                          'previous-company.xlsx', $3)
+                          'v1', 'Revenue', $3, $4, $5, $6)
                 """,
-                TEST_OLD_COMPANY_PERIOD,
-                TEST_OLD_COMPANY_SOURCE,
-                "m" * 64,
+                [
+                    (
+                        TEST_OLD_COMPANY_PERIOD,
+                        TEST_OLD_COMPANY_SOURCE,
+                        Decimal("80.00"),
+                        "actual",
+                        "previous-company.xlsx",
+                        "m" * 64,
+                    ),
+                    (
+                        TEST_PERIOD,
+                        TEST_OLD_COMPANY_SOURCE,
+                        Decimal("777.00"),
+                        "estimated",
+                        "moved-store-estimate.xlsx",
+                        "x" * 64,
+                    ),
+                ],
             )
 
         rows = await StorePnlRepository(pool).rows(TEST_PERIOD, TEST_PERIOD, "Mobicell")

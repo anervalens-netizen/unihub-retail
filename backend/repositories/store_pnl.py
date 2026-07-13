@@ -36,8 +36,11 @@ class StorePnlRepository:
                            p.data_kind,
                            COALESCE(l.site_code, p.source_site_code) AS site_code,
                            ROW_NUMBER() OVER (
-                               PARTITION BY p.company_name, p.period,
-                                            COALESCE(l.site_code, p.source_site_code),
+                               PARTITION BY p.period,
+                                            COALESCE(
+                                                l.site_code,
+                                                p.company_name || ':' || p.source_site_code
+                                            ),
                                             p.category_code
                                ORDER BY CASE p.data_kind
                                    WHEN 'actual' THEN 0
@@ -109,8 +112,11 @@ class StorePnlRepository:
                            p.category_code, p.amount, p.data_kind,
                            COALESCE(l.site_code, p.source_site_code) AS site_code,
                            ROW_NUMBER() OVER (
-                               PARTITION BY p.company_name, p.period,
-                                            COALESCE(l.site_code, p.source_site_code),
+                               PARTITION BY p.period,
+                                            COALESCE(
+                                                l.site_code,
+                                                p.company_name || ':' || p.source_site_code
+                                            ),
                                             p.category_code
                                ORDER BY CASE p.data_kind
                                    WHEN 'actual' THEN 0
