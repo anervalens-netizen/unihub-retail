@@ -55,6 +55,8 @@ async def _get_special_cards_data(
                 asm,
                 site_code,
                 agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
             )
     config_error = campaign_context.config_error
     promotion_definition = campaign_context.promotion_definition

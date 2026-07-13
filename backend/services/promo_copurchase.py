@@ -28,6 +28,7 @@ from typing import Any
 import asyncpg
 import pandas as pd
 
+from services.dashboard.utils import _expand_current_manager_scope
 from services.filters import build_scoped_params, normalize_filter, scoped_clauses
 from services.product_lists import get_repo_root, normalize_column_name, resolve_path
 
@@ -46,6 +47,29 @@ _promo_actuals_cache: dict[
     tuple[str, float, str],
     tuple[dict[tuple[str, str], int] | None, str | None],
 ] = {}
+
+
+def _promo_scope_clauses(
+    positions: dict[str, int],
+    *,
+    site_alias: str,
+    agent_alias: str | None,
+    current_scope: bool,
+    include_closed_stores: bool,
+    include_cartela_filter: bool = False,
+) -> list[str]:
+    clauses = scoped_clauses(
+        positions,
+        site_alias=site_alias,
+        store_alias="s",
+        agent_alias=agent_alias,
+        include_cartela_filter=include_cartela_filter,
+    )
+    if current_scope:
+        clauses = _expand_current_manager_scope(clauses, positions)
+        if not include_closed_stores:
+            clauses.append("s.is_active = true")
+    return clauses
 
 
 class PromoActualsError(RuntimeError):
@@ -281,6 +305,8 @@ async def compute_promo_actuals_from_report(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PromoCoPurchaseResult | None:
     """Return POS-confirmed promo units from report, or None when not configured.
 
@@ -323,11 +349,12 @@ async def compute_promo_actuals_from_report(
         site_code=site_code,
         agent=None,
     )
-    scope = scoped_clauses(
+    scope = _promo_scope_clauses(
         positions,
         site_alias="a",
-        store_alias="s",
         agent_alias=None,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
     )
     scoped_where = " AND ".join(scope)
     rows = await conn.fetch(
@@ -408,6 +435,8 @@ async def compute_promo_copurchase(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PromoCoPurchaseResult:
     """Calculeaza bonurile calificate + unitatile reduse pentru promotia co-purchase.
 
@@ -425,11 +454,12 @@ async def compute_promo_copurchase(
         agent=agent,
     )
     # scoped_clauses adauga: TR% exclude, NOT st.is_cartela, si clauzele de scope.
-    scope = scoped_clauses(
+    scope = _promo_scope_clauses(
         positions,
         site_alias="st",
-        store_alias="s",
         agent_alias="st",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         include_cartela_filter=True,
     )
     scope_sql = "".join(f"\n              AND {clause}" for clause in scope)
@@ -524,6 +554,8 @@ async def compute_promo_trigger_discounted(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PromoCoPurchaseResult:
     """Calculeaza bonuri cu produs declansator + produs redus pe acelasi bon.
 
@@ -541,11 +573,12 @@ async def compute_promo_trigger_discounted(
         site_code=site_code,
         agent=agent,
     )
-    scope = scoped_clauses(
+    scope = _promo_scope_clauses(
         positions,
         site_alias="st",
-        store_alias="s",
         agent_alias="st",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         include_cartela_filter=True,
     )
     scope_sql = "".join(f"\n              AND {clause}" for clause in scope)
@@ -624,6 +657,8 @@ async def compute_promo_same_model_pair(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PromoCoPurchaseResult:
     """Calculeaza bonuri cu folie ecran + folie camera pentru acelasi model.
 
@@ -657,11 +692,12 @@ async def compute_promo_same_model_pair(
         site_code=site_code,
         agent=agent,
     )
-    scope = scoped_clauses(
+    scope = _promo_scope_clauses(
         positions,
         site_alias="st",
-        store_alias="s",
         agent_alias="st",
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
         include_cartela_filter=True,
     )
     scope_sql = "".join(f"\n              AND {clause}" for clause in scope)

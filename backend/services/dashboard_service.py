@@ -843,6 +843,8 @@ class DashboardService:
                     asm,
                     site_code,
                     agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
         campaign_context_task = asyncio.create_task(
