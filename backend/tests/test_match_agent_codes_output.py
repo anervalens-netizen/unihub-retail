@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -120,6 +121,10 @@ async def test_apply_db_rejects_confirmed_link_without_person_id(
     connection.executemany.assert_not_awaited()
 
 
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated test database",
+)
 @pytest.mark.anyio
 async def test_apply_db_round_trips_person_id_in_isolated_database() -> None:
     site_code = "H01MATCH"

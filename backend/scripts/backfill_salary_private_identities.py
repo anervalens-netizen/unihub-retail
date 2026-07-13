@@ -55,6 +55,7 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
                 salary_full_name AS full_name
             FROM agent_salary_links
             WHERE match_status = 'confirmed'
+              AND person_id IS NULL
               AND (
                   NULLIF(BTRIM(salary_cnp), '') IS NOT NULL
                   OR NULLIF(BTRIM(salary_full_name), '') IS NOT NULL
@@ -99,6 +100,7 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
                 salary_full_name AS full_name
             FROM agent_salary_links
             WHERE match_status = 'confirmed'
+              AND person_id IS NULL
               AND (
                   NULLIF(BTRIM(salary_cnp), '') IS NOT NULL
                   OR NULLIF(BTRIM(salary_full_name), '') IS NOT NULL
