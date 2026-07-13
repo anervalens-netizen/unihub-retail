@@ -17,7 +17,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-06 BFF/server-side session | Merged and active in production | User-interactive login/logout observation and ongoing session metrics |
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
-| Performance/modularization | Partially implemented | Dashboard splits, DB-pool pressure review and remaining model cleanup |
+| Performance/modularization | Dashboard split and bounded DB fan-out active in production | Bundle audit and remaining model cleanup |
 | CI/CD and operations | Quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation and final release acceptance |
 
 ## What is already delivered
@@ -36,6 +36,14 @@ tracked in `docs/refactoring-plan-current.md`.
   including the complete monthly Grile operation lifecycle;
 - measured Agent Evaluation and Dashboard optimizations, with identical response
   evidence and median reductions of 76.7% and 25.8% respectively;
+- bounded Dashboard fan-out, component queue metrics, reusable breakdown
+  tables and separate typed Current/History views;
+- net Retail quantity as the canonical KPI rule across all 35 reporting
+  months: returns reduce quantity, Focus, averages and breakdowns, while
+  return receipts remain monitored separately;
+- Management navigation reconciled to Manageri, Calculator Target, Salarii
+  and P&L; unreachable legacy Tasks/HR/CRM frontend code removed while the CRM
+  scoring read model and compatible backend endpoints remain available;
 - frontend CI gates for general and strict typecheck, lint, unit tests, runtime
   dependency audit, production build, Playwright flows and WCAG A/AA smoke scans
   (GitHub Actions merge-ref run `29225724923`: backend and frontend green).
@@ -50,9 +58,9 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. continue the remaining Dashboard and model modularization;
+3. finish the measured frontend bundle audit and gradual backend model cleanup;
 4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,
-H-01B and H-02 are operationally active, while performance, modularization and
+H-01B and H-02 are operationally active, while the final model cleanup and
 operational acceptance work remains.
