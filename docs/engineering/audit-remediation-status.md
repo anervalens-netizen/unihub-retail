@@ -6,9 +6,21 @@
 **Audit source date:** 2026-07-11  
 **Execution model:** incremental, tested, reversible; no big-bang rewrite.
 
+> Final reconciliation (2026-07-13): Waves 1 and 2, H-02 and the V2 operational
+> gates are integrated and active in production. The detailed entries below
+> preserve their pre-deployment implementation evidence and must not be read as
+> current deployment instructions. Current release status lives in
+> `docs/engineering/development-plan-status.md`; finding-specific contracts live
+> in their dedicated `h*.md` documents.
+
 ## Purpose
 
-This document is the live execution ledger for the July 2026 technical audit remediation. The original audit and development plan were produced against commit `5af4dd98f6f79086af5ec271965795aa4615af29`; therefore every finding must be revalidated against the current baseline before implementation.
+This document preserves the execution ledger for the July 2026 technical audit
+remediation. The original audit and development plan were produced against
+commit `5af4dd98f6f79086af5ec271965795aa4615af29`; its intermediate branch,
+pending-deploy and wave notes are retained as historical evidence. Use the
+final reconciliation above and the current development status for present
+operational decisions.
 
 ## Rules
 
@@ -31,7 +43,7 @@ This document is the live execution ledger for the July 2026 technical audit rem
 
 These items are not automatically considered to close an audit finding unless the finding acceptance criteria are explicitly satisfied.
 
-## Execution waves
+## Historical execution waves
 
 Stare reconciliata la 2026-07-12: Wave 1 este integrat in `main`; executia
 curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
@@ -95,7 +107,7 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 - [ ] Add liveness/readiness/dependency health separation.
 - [ ] Add runbooks, SLOs, alerts and service hardening.
 
-## Implemented findings
+## Historical implementation record (pre-deployment)
 
 ### H-08 — Privileged access fail-closed
 
@@ -244,7 +256,7 @@ Remaining before H-16 is operationally closed:
 - backend deployment;
 - controlled synthetic ERROR verification without simulating a production DB outage.
 
-## Active finding
+## Historical active-finding snapshot
 
 ### H-08 — Privileged access must fail closed
 
@@ -266,4 +278,8 @@ A finding is closed only when:
 
 ## Current status
 
-`Wave 0 — rebaseline in progress; Wave 1/H-03, H-11, H-16 and H-12 technically validated; H-08 implementation next`
+V2 operational acceptance is complete. H-03, H-11, H-16, H-12, H-08,
+H-01A, H-04/H-05, H-06, H-07, H-01B and H-02 are integrated and active in
+production. H-15 governed storage and any separately approved history purge
+remain explicit governance backlog; the worker-queue and persistent-upload/job
+items are future platform work, not incomplete audit-remediation deployments.

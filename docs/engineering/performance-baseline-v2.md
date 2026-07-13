@@ -94,3 +94,25 @@ The canonical response SHA-256 was identical before and after:
 The initial comparison worktree lacked ignored live `data/` inputs and was
 discarded; the accepted comparison pins both `UNIHUB_DATA_DIR` and
 `UNIHUB_HUB_SPECIALS_CONFIG` to the same production files.
+
+## Final V2 performance checklist
+
+- [x] Critical read paths measured through the production service/repository
+  layer with the least-privilege runtime role.
+- [x] Agent Evaluation v2 optimized only after `EXPLAIN (ANALYZE, BUFFERS)`;
+  canonical result hash unchanged and service median reduced by 76.7%.
+- [x] Dashboard duplicated promo/incentive work removed; canonical result hash
+  unchanged and warm median reduced by 25.8%.
+- [x] Campaign overview (6.5 ms median) and Salary overview (22.5 ms median)
+  left without speculative indexes because both already meet the 100 ms
+  service budget.
+- [x] Dashboard concurrency bounded to actual pool capacity with finite
+  component metrics; peak pool use reduced from 10 to 5 connections.
+- [x] Production rollout at
+  `dbcedf0310685b9ad91e80c6d5d7452aa3b4ebb0` retained green local/public
+  readiness and liveness, zero unexpected service restarts and healthy Retail
+  application/readiness Prometheus targets.
+
+No universal browser-latency target is claimed by these server-side numbers.
+Future optimization remains evidence driven and must preserve response hashes
+or an explicitly approved contract change.
