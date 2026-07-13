@@ -291,9 +291,11 @@ Importul din `backend/scripts/import_store_pnl.py` deduplica fisierele identice,
 alege snapshotul anual cu cea mai buna acoperire si importa numai valori reale.
 Codurile istorice din fisiere nu sunt fortate peste `stores.site_code`, iar
 orice luna estimata ulterior trebuie marcata explicit cu `data_kind=estimated`.
-La citire, cheia de business este companie + luna + cod istoric + categorie:
-un rand `actual` are prioritate fata de `estimated`, astfel incat sosirea
-importului Finance sa nu dubleze veniturile sau costurile in KPI-uri.
+La citire, cheia de business este companie + luna + magazin canonic + categorie
+(`source_site_code` ramane fallback pentru codurile nemapate). Un rand `actual`
+are prioritate fata de `estimated`, inclusiv cand estimarea si importul Finance
+folosesc aliasuri istorice diferite ale aceluiasi magazin, astfel incat
+veniturile sau costurile sa nu fie dublate in KPI-uri.
 Legaturile auditabile catre master-data Retail sunt in `store_pnl_site_links`;
 scriptul `backend/scripts/map_store_pnl_sites.py` salveaza metoda, scorul si
 starea de review, fara sa forteze codurile istorice care nu mai exista in

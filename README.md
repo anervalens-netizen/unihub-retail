@@ -220,8 +220,9 @@ Focus; sidebar-ul contine numai intrarea principala Management.
   de cost, vizibil numai utilizatorilor cu capabilitatea P&L verificata de
   backend. Intervalul initial este anul calendaristic curent (year-to-date),
   iar compania si magazinul filtreaza autoritativ toate cardurile si graficele.
-  Daca pentru aceeasi luna, locatie si categorie exista atat o estimare, cat si
-  un import real, raportarea foloseste exclusiv valoarea `actual`.
+  Daca pentru aceeasi luna, magazin canonic si categorie exista atat o estimare,
+  cat si un import real (inclusiv sub coduri istorice diferite), raportarea
+  foloseste exclusiv valoarea `actual`.
 
 Endpointurile backend pentru Tasks, cereri de concediu si alerte CRM raman
 compatibile cu datele istorice si integrarile, dar nu au subtab-uri in

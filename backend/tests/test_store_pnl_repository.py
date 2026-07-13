@@ -13,6 +13,7 @@ from services.store_pnl import StorePnlService
 
 
 TEST_SITE = "PNLPREF"
+TEST_OLD_SOURCE = "PNLPREF-OLD"
 TEST_PERIOD = date(2097, 7, 1)
 
 pytestmark = pytest.mark.skipif(
@@ -25,12 +26,12 @@ async def _reset_fixture() -> None:
     pool = await get_pool()
     async with pool.acquire() as connection:
         await connection.execute(
-            "DELETE FROM store_pnl_monthly WHERE source_site_code = $1",
-            TEST_SITE,
+            "DELETE FROM store_pnl_monthly WHERE source_site_code = ANY($1::text[])",
+            [TEST_SITE, TEST_OLD_SOURCE],
         )
         await connection.execute(
-            "DELETE FROM store_pnl_site_links WHERE source_site_code = $1",
-            TEST_SITE,
+            "DELETE FROM store_pnl_site_links WHERE source_site_code = ANY($1::text[])",
+            [TEST_SITE, TEST_OLD_SOURCE],
         )
         await connection.execute("DELETE FROM stores WHERE site_code = $1", TEST_SITE)
 
@@ -51,15 +52,17 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                 """,
                 TEST_SITE,
             )
-            await connection.execute(
+            await connection.executemany(
                 """
                 INSERT INTO store_pnl_site_links (
                     company_name, source_site_code, source_location_name,
                     site_code, match_method, confidence, reviewed
-                ) VALUES ('Mobicell', $1, 'P&L precedence test', $1,
-                          'exact_code', 1, true)
+                ) VALUES ('Mobicell', $1, $2, $3, $4, 1, true)
                 """,
-                TEST_SITE,
+                [
+                    (TEST_SITE, "P&L precedence test", TEST_SITE, "exact_code"),
+                    (TEST_OLD_SOURCE, "P&L old-code estimate", TEST_SITE, "manual_alias"),
+                ],
             )
             await connection.executemany(
                 """
@@ -73,6 +76,14 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                 [
                     (TEST_PERIOD, TEST_SITE, Decimal("100.00"), "estimated", "estimate.xlsx", "e" * 64),
                     (TEST_PERIOD, TEST_SITE, Decimal("125.00"), "actual", "actual.xlsx", "a" * 64),
+                    (
+                        TEST_PERIOD,
+                        TEST_OLD_SOURCE,
+                        Decimal("999.00"),
+                        "estimated",
+                        "old-code-estimate.xlsx",
+                        "o" * 64,
+                    ),
                 ],
             )
 
