@@ -28,7 +28,9 @@ mai "frumos", ci reducerea riscului operational:
 - Nu combinam refactorizari structurale cu schimbari de business.
 - Nu relaxam Authentik OIDC si nu adaugam fallback local de auth.
 - Nu schimbam raportarea Retail: `Cartele` si locatiile `TR %` nu intra in KPI
-  Retail, iar cartela ramane informationala separat.
+  Retail, iar cartela ramane informationala separat. Cantitatea Retail este
+  neta dupa retururi pe toate KPI-urile si breakdown-urile; retururile raman
+  monitorizate separat.
 - Cand `site_code` este selectat, domina scope-ul istoric.
 - Salariile sub 2000 RON sunt excluse doar din medii, nu din totaluri sau istoric.
 - `print()` din `backend/services/grile_monthly.py` ramane load-bearing; daca
@@ -455,6 +457,10 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: regula business de cantitate a fost reconciliata cu raportul
+  firmei: reporting-ul foloseste vanzari minus retururi pentru cantitate,
+  Focus/Acc, bonuri eligibile, medii si breakdown-uri; cartelele raman excluse
+  si separate, iar bonurile de retur raman monitorizate distinct.
 - 2026-07-13: `Dashboard.tsx` este orchestratorul pentru query-uri, agregare,
   filtre si state comun; UI-ul curent si istoric este separat in componente
   tipizate si testate `CurrentDashboard`/`HistoryDashboard`.

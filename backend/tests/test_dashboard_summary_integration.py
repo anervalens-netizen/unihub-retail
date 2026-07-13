@@ -21,6 +21,7 @@ import asyncpg
 
 from db.connection import close_db_pool, get_pool
 from repositories.dashboard import DashboardRepository
+from services.reporting_refresh import rebuild_reporting_month
 from services.filters import build_scoped_params, scoped_clauses
 
 
@@ -147,6 +148,9 @@ async def _seed_retail_tx(
     site_code: str,
     quantity: int,
     day: int = 1,
+    bon_nr: str = "BON-RETAIL-1",
+    is_return: bool = False,
+    item_code: str = "HUSA",
 ) -> None:
     from datetime import date
 
@@ -157,14 +161,17 @@ async def _seed_retail_tx(
             (import_month, sale_date, site_code, bon_nr, item_code, item_name,
              quantity, unit_price, total_value, agent, is_cartela, is_return, snapshot_id)
         VALUES
-            ($1, $2, $3, 'BON-RETAIL-1', 'HUSA', 'Husa telefon',
-             $4, 20.00, $5, 'Agent Test', false, false, $6)
+            ($1, $2, $3, $4, $5, 'Husa telefon',
+             $6, 20.00, $7, 'Agent Test', false, $8, $9)
         """,
         _TEST_MONTH,
         sale_date,
         site_code,
+        bon_nr,
+        item_code,
         quantity,
         Decimal(quantity) * Decimal("20.00"),
+        is_return,
         snapshot_id,
     )
 
@@ -189,6 +196,7 @@ async def _cleanup(conn: asyncpg.Connection) -> None:
     await conn.execute("DELETE FROM import_snapshots WHERE import_month = $1", _TEST_MONTH)
     await conn.execute("DELETE FROM stores WHERE site_code IN ($1, $2)", _SITE_A, _SITE_B)
     await conn.execute("DELETE FROM stores WHERE site_code = 'TR-DEPOT'")
+    await conn.execute("DELETE FROM focus_products WHERE item_code = 'TEST-NET-HUSA'")
 
 
 def _build_clauses_no_scope(month: str) -> tuple[list[str], list[str], list[Any]]:
@@ -231,6 +239,92 @@ async def test_cartela_does_not_contaminate_retail_totals() -> None:
             assert row["total_sales"] == Decimal("1000.00"), f"total_sales should be 1000 (Retail only), got {row['total_sales']}"
             assert row["total_quantity"] == 5, f"total_quantity should be 5 (Retail only), got {row['total_quantity']}"
             assert row["cartele_qty"] == 8, f"cartele_qty should be 8 (separate), got {row['cartele_qty']}"
+        finally:
+            await _cleanup(conn)
+
+
+async def test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate() -> None:
+    """Returns reduce quantity/focus/receipt KPIs but remain present in raw transactions."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _cleanup(conn)
+        await _seed_stores(conn)
+        snapshot_id = await _seed_snapshot(conn, is_month_final=True)
+        await conn.execute(
+            """
+            INSERT INTO focus_products (item_code, item_name)
+            VALUES ('TEST-NET-HUSA', 'Husa telefon')
+            ON CONFLICT (item_code) DO UPDATE SET item_name = EXCLUDED.item_name
+            """
+        )
+        await _seed_retail_tx(
+            conn,
+            snapshot_id=snapshot_id,
+            site_code=_SITE_A,
+            quantity=10,
+            bon_nr="BON-SALE",
+            item_code="TEST-NET-HUSA",
+        )
+        await _seed_retail_tx(
+            conn,
+            snapshot_id=snapshot_id,
+            site_code=_SITE_A,
+            quantity=-2,
+            bon_nr="BON-RETURN",
+            is_return=True,
+            item_code="TEST-NET-HUSA",
+        )
+
+        try:
+            await rebuild_reporting_month(conn, _TEST_MONTH)
+
+            agent_day = await conn.fetchrow(
+                """
+                SELECT total_sales, total_quantity, focus_quantity,
+                       receipt_count, receipt_2plus_count
+                FROM reporting_agent_day
+                WHERE import_month = $1 AND site_code = $2
+                """,
+                _TEST_MONTH,
+                _SITE_A,
+            )
+            focus_quantity = await conn.fetchval(
+                """
+                SELECT SUM(total_quantity)::INT
+                FROM reporting_focus_item_month
+                WHERE import_month = $1 AND site_code = $2
+                """,
+                _TEST_MONTH,
+                _SITE_A,
+            )
+            category_quantity = await conn.fetchval(
+                """
+                SELECT SUM(total_quantity)::INT
+                FROM reporting_category_month
+                WHERE import_month = $1 AND site_code = $2
+                """,
+                _TEST_MONTH,
+                _SITE_A,
+            )
+            raw_returns = await conn.fetchval(
+                """
+                SELECT COUNT(*)::INT
+                FROM sales_transactions
+                WHERE import_month = $1 AND site_code = $2 AND quantity < 0
+                """,
+                _TEST_MONTH,
+                _SITE_A,
+            )
+
+            assert agent_day is not None
+            assert agent_day["total_sales"] == Decimal("160.00")
+            assert agent_day["total_quantity"] == 8
+            assert agent_day["focus_quantity"] == 8
+            assert agent_day["receipt_count"] == 1
+            assert agent_day["receipt_2plus_count"] == 1
+            assert focus_quantity == 8
+            assert category_quantity == 8
+            assert raw_returns == 1
         finally:
             await _cleanup(conn)
 

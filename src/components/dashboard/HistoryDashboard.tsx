@@ -379,7 +379,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         </div>
         <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
           <Metric label="Bonuri" value={formatInt(historySummary?.total_receipts ?? selectedPoint.total_receipts)} className="p-2" />
-          <Metric label="Accesorii" value={formatInt(historySummary?.total_quantity ?? selectedPoint.total_quantity)} className="p-2" />
+          <Metric label="Accesorii nete" value={formatInt(historySummary?.total_quantity ?? selectedPoint.total_quantity)} className="p-2" />
           <Metric label="Magazine / Agenți" value={<span className="flex items-baseline gap-1.5"><span>{formatInt(historySummary?.total_stores ?? selectedPoint.total_stores)}</span><span className="text-slate-300 dark:text-slate-600">/</span><span>{formatInt(historySummary?.total_agents ?? selectedPoint.total_agents)}</span></span>} className="p-2" />
           <Metric label="Zile lucrate" value={formatInt(historySummary?.working_days ?? selectedPoint.working_days)} className="p-2" />
           <Metric label="Med. zilnica" value={formatAmount(historySummary?.daily_average ?? selectedPoint.daily_average ?? 0)} className="p-2" />

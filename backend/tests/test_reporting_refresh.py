@@ -78,6 +78,34 @@ async def test_rebuild_reporting_month_applies_destructive_steps_and_scope_guard
     assert insert_statements
     assert all("NOT st.is_cartela" in statement for statement in insert_statements)
     assert all("s.locatie NOT ILIKE 'TR %'" in statement for statement in insert_statements)
+    agent_day_insert = next(
+        statement
+        for statement in sql
+        if "INSERT INTO reporting_agent_day" in statement
+    )
+    assert "COALESCE(SUM(st.quantity), 0)::INT AS total_quantity" in agent_day_insert
+    assert "CASE WHEN fp.item_code IS NOT NULL THEN st.quantity ELSE 0 END" in agent_day_insert
+    assert "FILTER (WHERE tr.net_quantity > 0)::INT AS receipt_count" in agent_day_insert
+    assert "NOT st.is_return" not in agent_day_insert
+
+    focus_insert = next(
+        statement
+        for statement in sql
+        if "INSERT INTO reporting_focus_item_month" in statement
+    )
+    category_insert = next(
+        statement
+        for statement in sql
+        if "INSERT INTO reporting_category_month" in statement
+    )
+    assert "COALESCE(SUM(st.quantity), 0)::INT AS total_quantity" in focus_insert
+    assert "COALESCE(SUM(st.quantity), 0)::INT AS total_quantity" in category_insert
+    item_day_insert = next(
+        statement
+        for statement in sql
+        if "INSERT INTO reporting_item_day" in statement
+    )
+    assert "FILTER (WHERE NOT st.is_return AND st.quantity > 0)::INT AS receipt_count" in item_day_insert
     assert any("TRUNCATE premium_glass_item_models" in statement for statement in sql)
 
     month_args = [

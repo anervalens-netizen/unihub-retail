@@ -202,7 +202,7 @@ async def rebuild_reporting_month(
             site_code TEXT NOT NULL,
             agent TEXT NOT NULL,
             bon_nr TEXT NOT NULL,
-            qty_positive INTEGER NOT NULL
+            net_quantity INTEGER NOT NULL
         )
         """
     )
@@ -214,7 +214,7 @@ async def rebuild_reporting_month(
             site_code,
             agent,
             bon_nr,
-            qty_positive
+            net_quantity
         )
         SELECT
             st.import_month,
@@ -222,10 +222,7 @@ async def rebuild_reporting_month(
             st.site_code,
             st.agent,
             st.bon_nr,
-            COALESCE(
-                SUM(CASE WHEN st.quantity > 0 THEN st.quantity ELSE 0 END),
-                0
-            )::INT AS qty_positive
+            COALESCE(SUM(st.quantity), 0)::INT AS net_quantity
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
@@ -272,20 +269,17 @@ async def rebuild_reporting_month(
             s.asm,
             st.agent,
             COALESCE(SUM(st.total_value), 0)::NUMERIC(12, 2) AS total_sales,
+            COALESCE(SUM(st.quantity), 0)::INT AS total_quantity,
             COALESCE(
-                SUM(CASE WHEN NOT st.is_return AND st.quantity > 0 THEN st.quantity ELSE 0 END),
-                0
-            )::INT AS total_quantity,
-            COALESCE(
-                SUM(CASE WHEN fp.item_code IS NOT NULL AND st.quantity > 0 THEN st.quantity ELSE 0 END),
+                SUM(CASE WHEN fp.item_code IS NOT NULL THEN st.quantity ELSE 0 END),
                 0
             )::INT AS focus_quantity,
-            COUNT(DISTINCT st.bon_nr)::INT AS receipt_count,
-            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.qty_positive >= 2)::INT AS receipt_2plus_count,
-            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.qty_positive = 1)::INT AS receipt_1_count,
-            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.qty_positive = 2)::INT AS receipt_2_count,
-            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.qty_positive = 3)::INT AS receipt_3_count,
-            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.qty_positive >= 4)::INT AS receipt_4plus_count
+            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity > 0)::INT AS receipt_count,
+            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity >= 2)::INT AS receipt_2plus_count,
+            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity = 1)::INT AS receipt_1_count,
+            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity = 2)::INT AS receipt_2_count,
+            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity = 3)::INT AS receipt_3_count,
+            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity >= 4)::INT AS receipt_4plus_count
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         LEFT JOIN focus_products fp ON fp.item_code = st.item_code
@@ -390,7 +384,9 @@ async def rebuild_reporting_month(
             COALESCE(SUM(st.quantity), 0)::INT AS net_quantity,
             COALESCE(SUM(CASE WHEN st.quantity > 0 THEN st.quantity ELSE 0 END), 0)::INT AS positive_quantity,
             COALESCE(SUM(CASE WHEN st.quantity < 0 THEN st.quantity ELSE 0 END), 0)::INT AS return_quantity,
-            COUNT(DISTINCT st.bon_nr)::INT AS receipt_count
+            COUNT(DISTINCT st.bon_nr)
+                FILTER (WHERE NOT st.is_return AND st.quantity > 0)::INT
+                AS receipt_count
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1
@@ -441,10 +437,7 @@ async def rebuild_reporting_month(
                 'Necategorizat'
             ) AS focus_subcategory,
             COALESCE(SUM(st.total_value), 0)::NUMERIC(12, 2) AS total_sales,
-            COALESCE(
-                SUM(CASE WHEN NOT st.is_return AND st.quantity > 0 THEN st.quantity ELSE 0 END),
-                0
-            )::INT AS total_quantity
+            COALESCE(SUM(st.quantity), 0)::INT AS total_quantity
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         JOIN focus_products fp ON fp.item_code = st.item_code
@@ -543,10 +536,7 @@ async def rebuild_reporting_month(
             ) AS subcategory,
             {_BRAND_GROUP_SQL} AS brand_group,
             COALESCE(SUM(st.total_value), 0)::NUMERIC(12, 2) AS total_sales,
-            COALESCE(
-                SUM(CASE WHEN NOT st.is_return AND st.quantity > 0 THEN st.quantity ELSE 0 END),
-                0
-            )::INT AS total_quantity
+            COALESCE(SUM(st.quantity), 0)::INT AS total_quantity
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         WHERE st.import_month = $1

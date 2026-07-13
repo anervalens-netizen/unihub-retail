@@ -112,6 +112,7 @@ describe('HistoryDashboard', () => {
     expect(html).toContain('Luni analizate');
     expect(html).toContain('Overview — 2026-06');
     expect(html).toContain('Luna finala 2026-06.');
+    expect(html).toContain('Accesorii nete');
     expect(html).toContain('Magazine');
     expect(html).toContain('Agenti');
   });
