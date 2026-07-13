@@ -198,6 +198,9 @@ suprascrie un checkpoint terminal. Service-ul pastreaza doar orchestrarea
 Google/filesystem si wrapper-ele publice folosite de worker.
 
 Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
+Frontendul reda aceleasi coloane curente si istorice RM/Magazine/Agenti prin
+componenta tipizata `dashboard/BreakdownTable.tsx`, care centralizeaza tabelul
+sortabil si exportul Excel fara a schimba payload-urile API.
 Tabelele curente RM si Magazine returneaza atat procentul realizat
 (`proc_realizare_target`), cat si proiectia la luna intreaga
 (`forecast_target_pct`) calculata pe baza `import_snapshots.is_month_final` si
