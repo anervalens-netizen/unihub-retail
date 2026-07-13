@@ -55,7 +55,8 @@ async def test_backfill_materializes_link_only_private_identities() -> None:
     assert "FROM salary_records" in private_inserts[0]
     assert "FROM agent_salary_links" in private_inserts[1]
     assert "match_status = 'confirmed'" in private_inserts[1]
-    assert "person_id IS NULL" in private_inserts[1]
+    assert "person_id AS stored_person_id" in private_inserts[1]
+    assert "COALESCE(identity.stored_person_id" in private_inserts[1]
     assert "NULLIF(BTRIM(salary_full_name), '') IS NOT NULL" in private_inserts[1]
     link_updates = [
         statement

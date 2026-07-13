@@ -51,11 +51,11 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
             SELECT
                 agent_code,
                 site_code,
+                person_id AS stored_person_id,
                 salary_cnp AS cnp,
                 salary_full_name AS full_name
             FROM agent_salary_links
             WHERE match_status = 'confirmed'
-              AND person_id IS NULL
               AND (
                   NULLIF(BTRIM(salary_cnp), '') IS NOT NULL
                   OR NULLIF(BTRIM(salary_full_name), '') IS NOT NULL
@@ -71,7 +71,7 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
             identity_source
         FROM (
             SELECT
-                {link_person_id} AS person_id,
+                COALESCE(identity.stored_person_id, {link_person_id}) AS person_id,
                 NULLIF(BTRIM(identity.cnp), '') AS cnp,
                 LOWER(BTRIM(identity.full_name)) AS normalized_name,
                 CASE WHEN NULLIF(BTRIM(identity.cnp), '') IS NOT NULL THEN 'cnp' ELSE 'name' END AS identity_source
