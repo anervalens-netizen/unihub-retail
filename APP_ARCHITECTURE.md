@@ -45,7 +45,9 @@ cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
 Schema PostgreSQL este administrata exclusiv prin runnerul one-shot
 `unihub-retail-migrate.service`. Baseline-ul `schema_v2.sql` este inghetat,
 iar fiecare delta are checksum imutabil in manifest si in DB. Web-ul verifica
-read-only starea migrations la startup si nu executa DDL sau backfill.
+read-only starea migrations la startup si nu executa DDL sau backfill. Runnerul
+foloseste explicit `MIGRATION_DATABASE_URL`, iar bootstrap-ul nou reaplica doar
+seed-urile de date desemnate care nu pot exista in baseline-ul DDL.
 
 ## Diagrama
 

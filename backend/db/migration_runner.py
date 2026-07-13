@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,12 @@ from db.connection import get_database_url, get_migrations_dir, get_schema_path
 
 
 MIGRATION_ADVISORY_LOCK_ID = 7_221_904_202_607_12
+BASELINE_REPLAY_MIGRATIONS = frozenset(
+    {"014_target_calculator_store_exclusions.sql"}
+)
+TOMBSTONE_ADOPTION_PREREQUISITES = {
+    "005_retail_ai_analysis_views.sql": "006_drop_ai_analysis_views.sql",
+}
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -115,7 +122,9 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
     manifest = load_migration_manifest()
     verify_migration_files(manifest)
     connection = await asyncpg.connect(
-        database_url or get_database_url(),
+        database_url
+        or os.getenv("MIGRATION_DATABASE_URL")
+        or get_database_url(),
         command_timeout=120,
         server_settings={
             "application_name": "unihub-retail-migrations",
@@ -138,6 +147,19 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
             await connection.execute(TRACKING_SQL)
             applied = await _tracking_rows(connection)
             _validate_applied(applied, manifest, allow_missing_checksums=True)
+            for tombstone, prerequisite in TOMBSTONE_ADOPTION_PREREQUISITES.items():
+                if tombstone not in applied and prerequisite in applied:
+                    adopted_checksum = manifest.checksums[tombstone]
+                    await connection.execute(
+                        """
+                        INSERT INTO schema_migrations (filename, checksum)
+                        VALUES ($1, $2)
+                        ON CONFLICT (filename) DO NOTHING
+                        """,
+                        tombstone,
+                        adopted_checksum,
+                    )
+                    applied[tombstone] = adopted_checksum
             for filename, checksum in applied.items():
                 if checksum is None:
                     await connection.execute(
@@ -147,7 +169,10 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
                     )
             if not has_application_schema:
                 incorporated_names = [
-                    name for name in manifest.checksums if name <= manifest.incorporated_through
+                    name
+                    for name in manifest.checksums
+                    if name <= manifest.incorporated_through
+                    and name not in BASELINE_REPLAY_MIGRATIONS
                 ]
                 for filename in incorporated_names:
                     await connection.execute(

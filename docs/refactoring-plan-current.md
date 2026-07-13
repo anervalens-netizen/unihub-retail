@@ -468,6 +468,11 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: review-urile istorice H-02 au fost inchise in runner: one-shot-ul
+  prefera `MIGRATION_DATABASE_URL`, bootstrap-ul fresh ruleaza seed-ul 014 in
+  afara baseline-ului DDL, iar bazele post-006 pot adopta sigur tombstone-ul 005
+  lipsa fara a-i executa corpul nerecuperabil. Probele sunt izolate si
+  productia curenta a fost verificata read-only ca avand 005, 014 si seed-urile.
 - 2026-07-13: review-ul post-merge din PR #70 a identificat ultima asimetrie de
   scope a cardurilor speciale. `current_scope` si includerea magazinelor inchise
   se propaga acum si in contextul campaniei, inclusiv raportul promo actual si
