@@ -17,8 +17,8 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-06 BFF/server-side session | Merged and active in production | User-interactive login/logout observation and ongoing session metrics |
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
-| Performance/modularization | Partially implemented | Measured baselines, remaining backend boundaries and frontend splits |
-| CI/CD and operations | Partially implemented | Required E2E/a11y/security gates, readiness, SLOs, alerts and service hardening |
+| Performance/modularization | Partially implemented | Remaining backend boundaries, Dashboard splits and DB-pool pressure review |
+| CI/CD and operations | Required frontend quality gates accepted on PR #50 merge ref | Readiness/liveness, SLOs, alerts and service hardening |
 
 ## What is already delivered
 
@@ -32,7 +32,12 @@ tracked in `docs/refactoring-plan-current.md`.
 - opaque salary `person_id`, with CNP removed from browser and public API;
 - typed fail-closed OIDC settings, real JWKS rotation and bounded stale cache;
 - trusted client-IP resolution and atomic distributed Valkey rate limiting;
-- foundational query-cache/frontend primitives and selected backend repository boundaries.
+- foundational query-cache/frontend primitives and selected backend repository boundaries;
+- measured Agent Evaluation and Dashboard optimizations, with identical response
+  evidence and median reductions of 76.7% and 25.8% respectively;
+- frontend CI gates for general and strict typecheck, lint, unit tests, runtime
+  dependency audit, production build, Playwright flows and WCAG A/AA smoke scans
+  (GitHub Actions merge-ref run `29225724923`: backend and frontend green).
 
 ## Path to the new release
 
@@ -41,7 +46,7 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. continue the measured performance, modularization and operational milestones;
+3. implement readiness/liveness, SLOs, alerts and remaining modularization;
 4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,

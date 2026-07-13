@@ -1155,7 +1155,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     <h3 className="text-sm font-bold truncate">Overview — {currentMonth}</h3>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{currentStatusLabel}</p>
                   </div>
-                  <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:bg-slate-800">
+                  <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                     {summary.last_sale_date ?? '-'}
                   </span>
                 </div>
@@ -1165,19 +1165,19 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
               {/* Cele trei valori */}
               <div className="mb-3 grid grid-cols-3 gap-2 text-center">
                 <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Target</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div>
                   <div className="mt-0.5 text-[13px] font-bold text-slate-600 dark:text-slate-300">
                     <CompactCurrency value={Number(summary.total_target)} />
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Realizat</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Realizat</div>
                   <div className="mt-0.5 text-[13px] font-bold text-slate-800 dark:text-slate-100">
                     <CompactCurrency value={Number(summary.total_sales)} />
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-400">Previziune</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">Previziune</div>
                   <div className="mt-0.5 text-[13px] font-bold text-indigo-600 dark:text-indigo-400">
                     <CompactCurrency value={Number(summary.forecast_sales ?? summary.total_sales)} />
                   </div>
@@ -1201,7 +1201,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 <span className="text-indigo-600">
                   Actual {formatPercent(summary.target_progress_pct)}
                 </span>
-                <span className="text-slate-400">
+                <span className="text-slate-600 dark:text-slate-300">
                   Forecast {formatPercent(summary.forecast_target_progress_pct)}
                 </span>
               </div>
@@ -1817,7 +1817,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                     <h3 className="text-sm font-bold truncate">Overview — {historySelectionLabel}</h3>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{historyStatusLabel}</p>
                   </div>
-                  <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:bg-slate-800">
+                  <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                     {historySummary?.last_sale_date ?? '-'}
                   </span>
                 </div>
@@ -1826,19 +1826,19 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                 <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
                   <div className="mb-3 grid grid-cols-3 gap-2 text-center">
                     <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Target</div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div>
                       <div className="mt-0.5 text-[13px] font-bold text-slate-600 dark:text-slate-300">
                         <CompactCurrency value={Number(historySummary?.total_target ?? selectedHistoryPoint.total_target)} />
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Realizat</div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Realizat</div>
                       <div className="mt-0.5 text-[13px] font-bold text-slate-800 dark:text-slate-100">
                         <CompactCurrency value={Number(historySummary?.total_sales ?? selectedHistoryPoint.total_sales)} />
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-400">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
                         {historySummary?.is_month_final === false ? 'Previziune' : 'Realizat %'}
                       </div>
                       <div className="mt-0.5 text-[13px] font-bold text-indigo-600 dark:text-indigo-400">
@@ -1868,7 +1868,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
                       Actual {formatPercent(historySummary?.target_progress_pct ?? selectedHistoryPoint.target_progress_pct)}
                     </span>
                     {historySummary?.is_month_final === false && (
-                      <span className="text-slate-400">
+                      <span className="text-slate-600 dark:text-slate-300">
                         Forecast {formatPercent(historySummary?.forecast_target_progress_pct)}
                       </span>
                     )}

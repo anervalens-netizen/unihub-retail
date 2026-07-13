@@ -341,11 +341,17 @@ export function ASMSubtab() {
         <div className="flex items-center gap-2">
           <input
             type="month"
+            aria-label="Luna raportului manageri"
             className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
           />
-          <button onClick={load} className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500">
+          <button
+            type="button"
+            onClick={load}
+            aria-label="Reincarca raportul manageri"
+            className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+          >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>

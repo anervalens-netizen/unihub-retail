@@ -358,10 +358,16 @@ Criteriu:
 
 ## Milestone 7 - Inchidere
 
-Status: planificat.
+Status: in executie.
 
 Livrabile:
 
+- [x] workflow CI extins cu typecheck general si strict, lint, unit tests,
+  audit npm runtime, build, Playwright si artefacte de diagnostic;
+- [x] smoke WCAG A/AA automat pentru Hub si Management, fara excluderi de reguli;
+- [x] acceptarea workflow-ului pe merge ref-ul PR #50: GitHub Actions
+  `29225724923`, backend si frontend verzi;
+- [ ] readiness/liveness separate, SLO-uri si alerte operationale;
 - audit final pe docs, status git si live health;
 - checklist de performanta cu valori finale;
 - verificare ca documentele arhivate nu mai sunt folosite ca instructiuni active;
@@ -385,7 +391,9 @@ npm run typecheck
 npm run typecheck:strict
 npm run lint
 npm run test
+npm audit --omit=dev --audit-level=high
 npm run build
+CI=1 npm run test:e2e
 ```
 
 Pentru backend:
@@ -409,6 +417,12 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: gate-urile frontend CI au fost extinse cu typecheck strict,
+  ESLint, audit runtime, build si 15 scenarii Playwright. Doua smoke-uri axe
+  acopera Hub si Management pentru incalcari WCAG A/AA critical/serious;
+  problemele reale de nume accesibil si contrast gasite la introducerea gate-ului
+  au fost remediate. Acceptarea locala si merge ref-ul PR #50 sunt verzi;
+  GitHub Actions `29225724923` a trecut backend si frontend.
 - 2026-07-13: Dashboard reutilizeaza acelasi task promo/incentive pentru carduri
   si payload; hash identic, mediana 486,7 -> 361,0 ms (-25,8%). Comparatia
   acceptata foloseste explicit aceleasi fisiere live ignorate din `data/`.

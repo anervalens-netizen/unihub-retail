@@ -35,7 +35,7 @@ test.describe('E2E: Login → Dashboard', () => {
     await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Management' }).first().click();
-    await expect(page.getByRole('button', { name: 'Manageri' })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('button', { name: 'Manageri', exact: true })).toBeVisible({ timeout: 5000 });
   });
 
   test('filter button is visible on Hub tab', async ({ page }) => {
