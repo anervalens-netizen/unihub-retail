@@ -207,6 +207,9 @@ cartelelor si a locatiilor `TR %`: retururile negative reduc cantitatea totala,
 cantitatea Focus, mediile si breakdown-urile. Bonurile exclusiv de retur nu
 intra in Bon2Acc, dar retururile raman disponibile separat prin
 `return_receipt_count`.
+Summary-ul promo/incentive si cardurile speciale folosesc acelasi
+`current_scope`/`include_closed_stores`; taskul comun este asteptat numai dupa
+eliberarea conexiunii folosite pentru randurile si multiplicatorii cardului.
 Frontendul reda aceleasi coloane curente si istorice RM/Magazine/Agenti prin
 componenta tipizata `dashboard/BreakdownTable.tsx`, care centralizeaza tabelul
 sortabil si exportul Excel fara a schimba payload-urile API.

@@ -468,6 +468,11 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: feedback-ul Codex din PR #49 a fost revalidat pe codul curent;
+  special cards propaga acum acelasi scope ca summary-ul promo/incentive, iar
+  await-ul taskului comun are loc dupa eliberarea conexiunii DB. Testele
+  demonstreaza propagarea scope-ului si esueaza prin timeout daca pool slot-ul
+  ramane retinut.
 - 2026-07-13: auditul bundle confirma lazy-loading-ul tuturor ecranelor si
   excluderea chunk-ului comun Recharts/D3 din preload; nu s-a introdus o
   fragmentare speculativa. Prima transa de modele AI Forecast si Contest a fost
