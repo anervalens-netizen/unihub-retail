@@ -42,7 +42,7 @@ function writeUint32(view: DataView, offset: number, value: number): void {
   view.setUint32(offset, value >>> 0, true);
 }
 
-function concatBytes(parts: Uint8Array[]): Uint8Array {
+function concatBytes(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const total = parts.reduce((sum, part) => sum + part.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;
@@ -53,7 +53,7 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-function zipStore(files: WorkbookFile[]): Uint8Array {
+function zipStore(files: WorkbookFile[]): Uint8Array<ArrayBuffer> {
   const localParts: Uint8Array[] = [];
   const centralParts: Uint8Array[] = [];
   let offset = 0;
@@ -214,7 +214,7 @@ export function buildExcelWorkbook<T>({
   sheetName: string;
   columns: ExportColumn<T>[];
   rows: T[];
-}): Uint8Array {
+}): Uint8Array<ArrayBuffer> {
   const files: WorkbookFile[] = [
     {
       path: '[Content_Types].xml',
