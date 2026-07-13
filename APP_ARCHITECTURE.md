@@ -201,6 +201,10 @@ Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
 Frontendul reda aceleasi coloane curente si istorice RM/Magazine/Agenti prin
 componenta tipizata `dashboard/BreakdownTable.tsx`, care centralizeaza tabelul
 sortabil si exportul Excel fara a schimba payload-urile API.
+`Dashboard.tsx` orchestreaza query-urile, agregarea multi-luna, filtrele si
+state-ul comun; `dashboard/CurrentDashboard.tsx` si
+`dashboard/HistoryDashboard.tsx` sunt view-uri tipizate fara data fetching
+propriu.
 Tabelele curente RM si Magazine returneaza atat procentul realizat
 (`proc_realizare_target`), cat si proiectia la luna intreaga
 (`forecast_target_pct`) calculata pe baza `import_snapshots.is_month_final` si

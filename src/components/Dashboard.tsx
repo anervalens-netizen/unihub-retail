@@ -1,27 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Building2,
-  CalendarRange,
-  ChevronDown,
-  MapPin,
-  PieChart as PieChartIcon,
-  TrendingUp,
-  Users,
-} from 'lucide-react';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  CartesianGrid,
-  Cell,
-  ComposedChart,
-  Legend,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { MapPin } from 'lucide-react';
 import { getPerformanceDetail } from '../api/dashboard';
 import type {
   AgentStat,
@@ -38,29 +16,18 @@ import type {
   RegionalStat,
   StoreStat,
 } from '../api/types';
-import { formatAmount, formatCurrency, formatInt, formatPercent } from '../lib/formatters';
+import { formatAmount, formatInt, formatPercent } from '../lib/formatters';
 import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { VisiteSubtab } from './VisiteSubtab';
-import { AiForecastPanel } from './AiForecastPanel';
 import { useSortable } from '../lib/useSortable';
 import {
-  CompactCurrency,
-  CompactPieSection,
-  DeltaCard,
   ErrorCard,
-  KpiPerformanceCard,
   LoadingCard,
-  Metric,
-  PeriodTable,
   describeFilterScope,
-  formatCompactDonutValue,
   getAgentSortValue,
-  getBon2AccTone,
-  getFocusTone,
   getRegionalSortValue,
   getStoreSortValue,
-  sumChartValues,
 } from './dashboard/DashboardWidgets';
 import { useDashboardData, type AggregatedDashboardDetails } from './dashboard/useDashboardData';
 import { useAuth } from '../auth/AuthContext';
@@ -69,10 +36,9 @@ import {
   PerformanceDetailDrawer,
   type PerformanceSelection,
 } from './dashboard/PerformanceDetailDrawer';
-import {
-  BreakdownTable,
-  type BreakdownColumn,
-} from './dashboard/BreakdownTable';
+import type { BreakdownColumn } from './dashboard/BreakdownTable';
+import { CurrentDashboard } from './dashboard/CurrentDashboard';
+import { HistoryDashboard } from './dashboard/HistoryDashboard';
 
 const HISTORY_START_YEAR = 2018;
 
@@ -1239,798 +1205,89 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           onRetry={refetchCurrentData}
         />
       ) : activeSection === 'current' ? (
-        <>
-          <div className="glass flex rounded-2xl p-1">
-            <button
-              type="button"
-              onClick={() => setCurrentMode('overview')}
-              className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-                currentMode === 'overview'
-                  ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-                  : 'text-slate-500'
-              }`}
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentMode('forecast')}
-              className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-                currentMode === 'forecast'
-                  ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-                  : 'text-slate-500'
-              }`}
-            >
-              AI Forecast
-            </button>
-          </div>
-
-          {currentMode === 'forecast' ? (
-            <AiForecastPanel currentMonth={currentMonth} filters={filters} />
-          ) : (
-            <>
-              <div className="glass rounded-3xl p-4 space-y-4">
-
-                {/* 1. Header compact */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold truncate">Overview — {currentMonth}</h3>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{currentStatusLabel}</p>
-                  </div>
-                  <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {summary.last_sale_date ?? '-'}
-                  </span>
-                </div>
-
-            {/* 2. Bloc financiar cu bara de progres */}
-            <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
-              {/* Cele trei valori */}
-              <div className="mb-3 grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div>
-                  <div className="mt-0.5 text-[13px] font-bold text-slate-600 dark:text-slate-300">
-                    <CompactCurrency value={Number(summary.total_target)} />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Realizat</div>
-                  <div className="mt-0.5 text-[13px] font-bold text-slate-800 dark:text-slate-100">
-                    <CompactCurrency value={Number(summary.total_sales)} />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">Previziune</div>
-                  <div className="mt-0.5 text-[13px] font-bold text-indigo-600 dark:text-indigo-400">
-                    <CompactCurrency value={Number(summary.forecast_sales ?? summary.total_sales)} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bara duala actual + forecast */}
-              <div className="relative h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                {/* Forecast (fundal) */}
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-indigo-200 dark:bg-indigo-700"
-                  style={{ width: `${Math.min(Number(summary.forecast_target_progress_pct ?? 0), 100)}%` }}
-                />
-                {/* Actual (prim-plan) */}
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-indigo-600"
-                  style={{ width: `${Math.min(Number(summary.target_progress_pct ?? 0), 100)}%` }}
-                />
-              </div>
-              <div className="mt-1.5 flex justify-between text-[10px] font-semibold">
-                <span className="text-indigo-600">
-                  Actual {formatPercent(summary.target_progress_pct)}
-                </span>
-                <span className="text-slate-600 dark:text-slate-300">
-                  Forecast {formatPercent(summary.forecast_target_progress_pct)}
-                </span>
-              </div>
-            </div>
-
-            {/* 3. KPI-uri cheie */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <KpiPerformanceCard
-                title="ProcBon2Acc"
-                value={summary.proc_bon2acc}
-                tone={getBon2AccTone(Number(summary.proc_bon2acc ?? 0))}
-                chartData={receiptBucketChartData}
-                dataKey="receipt_count"
-                nameKey="bucket"
-                formatValue={formatInt}
-              />
-              <KpiPerformanceCard
-                title="PrcFocus/AccQtty"
-                value={summary.prc_focus_acc_qty}
-                tone={getFocusTone(Number(summary.prc_focus_acc_qty ?? 0))}
-                chartData={focusSubcategoryChartData}
-                dataKey="quantity_total"
-                nameKey="category"
-                formatValue={formatInt}
-              />
-            </div>
-
-            {/* 4. Metrici operationale */}
-            <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
-              <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
-              <Metric label="Accesorii" value={formatInt(summary.total_quantity)} className="p-2" />
-              <Metric
-                label="Magazine / Agenți"
-                value={
-                  <span className="flex items-baseline gap-1.5">
-                    <span>{formatInt(summary.total_stores)}</span>
-                    <span className="text-slate-300 dark:text-slate-600">/</span>
-                    <span>{formatInt(summary.total_agents)}</span>
-                  </span>
-                }
-                className="p-2"
-              />
-              <Metric label="Zile lucrate" value={formatInt(summary.working_days)} className="p-2" />
-              <Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} className="p-2" />
-              <Metric label="Medie produs" value={formatAmount(summary.medie_produs ?? 0)} className="p-2" />
-              <Metric
-                label="Val. medie bon"
-                value={formatAmount(
-                  summary.total_receipts > 0
-                    ? Number(summary.total_sales) / Number(summary.total_receipts)
-                    : 0
-                )}
-                className="p-2"
-              />
-              <Metric
-                label="Cartele"
-                value={formatInt(summary.cartele_qty ?? 0)}
-                className="p-2"
-              />
-            </div>
-
-          </div>
-
-          <div className="grid gap-3">
-            <div className="glass rounded-3xl p-4 overflow-hidden min-w-0">
-              <div className="mb-4 flex items-center gap-2">
-                <CalendarRange size={16} className="text-indigo-500" />
-                <h3 className="text-sm font-bold">Comparatie perioade</h3>
-              </div>
-              {!periodComparison || !comparisonDeltas ? (
-                <div className="text-xs text-slate-500">
-                  Date indisponibile pentru comparatia de perioade.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <PeriodTable
-                    current={periodComparison.current}
-                    previous={periodComparison.previous}
-                    yoy={periodComparison.year_over_year}
-                  />
-                  <div className="grid grid-cols-2 gap-3">
-                    <DeltaCard
-                      title="Vs luna trecuta"
-                      salesDelta={comparisonDeltas.previousSales}
-                      salesPct={comparisonDeltas.previousSalesPct}
-                      receiptsDelta={comparisonDeltas.previousReceipts}
-                      receiptsPct={comparisonDeltas.previousReceiptsPct}
-                      quantityDelta={comparisonDeltas.previousQuantity}
-                      quantityPct={comparisonDeltas.previousQuantityPct}
-                    />
-                    <DeltaCard
-                      title="Vs anul trecut"
-                      salesDelta={comparisonDeltas.yearSales}
-                      salesPct={comparisonDeltas.yearSalesPct}
-                      receiptsDelta={comparisonDeltas.yearReceipts}
-                      receiptsPct={comparisonDeltas.yearReceiptsPct}
-                      quantityDelta={comparisonDeltas.yearQuantity}
-                      quantityPct={comparisonDeltas.yearQuantityPct}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
-            <div className="glass rounded-3xl p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <CalendarRange size={16} className="text-indigo-500" />
-                <h3 className="text-sm font-bold">Evolutie zilnica pentru {currentMonth}</h3>
-              </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                  <ComposedChart data={dailyChartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                    <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      formatter={(value: number, _name: string) => formatAmount(value)}
-                    />
-                    <Legend />
-                    <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
-                    <Line yAxisId="sales" type="monotone" dataKey="sales_last_year" name="Anul trecut" stroke="#10b981" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />
-                    <Line yAxisId="sales" type="monotone" dataKey="sales_forecast" name="Prognoza" stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" dot={false} connectNulls />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="glass rounded-3xl p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <PieChartIcon size={16} className="text-indigo-500" />
-                <h3 className="text-sm font-bold">Top categorii si branduri</h3>
-              </div>
-              <div className="space-y-4">
-                <CompactPieSection
-                  title="Top categorii"
-                  emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta."
-                  pieData={categoryMixChartData}
-                  dataKey="sales_total"
-                  nameKey="category"
-                  valueFormatter={formatAmount}
-                  centerValue={formatCompactDonutValue(sumChartValues(categoryMixChartData, 'sales_total'))}
-                />
-                <CompactPieSection
-                  title="Branduri compatibile"
-                  emptyLabel="Nu exista date pentru brandurile urmarite."
-                  pieData={brandMixChartData}
-                  dataKey="sales_total"
-                  nameKey="brand"
-                  valueFormatter={formatAmount}
-                  centerValue={formatCompactDonutValue(sumChartValues(brandMixChartData, 'sales_total'))}
-                />
-              </div>
-            </div>
-          </div>
-
-          <BreakdownTable
-            title="RM — Regional Manager"
-            icon={<Users size={16} className="text-indigo-500" />}
-            subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${regionalColumnsVisible.find((column) => column.key === regionalSort.key)?.label} (${regionalSort.direction}) · ${regionals.length} regionale`}
-            rows={sortedRegionals}
-            columns={regionalBreakdownColumns(regionalColumnsVisible, openPerformanceDetail)}
-            sortKey={regionalSort.key}
-            sortDirection={regionalSort.direction}
-            onSort={handleSortRegionals}
-            rowKey={(row) => row.regional}
-            exportFilename={`hub_${currentMonth}_rm`}
-            exportSheetName={`RM ${currentMonth}`}
-            exportColumns={[
-              { header: 'Regional', value: (row) => row.regional },
-              { header: 'Target', value: (row) => formatCurrency(row.target) },
-              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-              { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
-              { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
-              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-              { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-              { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-            ]}
-          />
-
-          <BreakdownTable
-            title="Magazine"
-            icon={<Building2 size={16} className="text-indigo-500" />}
-            subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${storeColumnsVisible.find((column) => column.key === storeSort.key)?.label} (${storeSort.direction}) · ${stores.length} magazine`}
-            rows={sortedStores}
-            columns={storeBreakdownColumns(storeColumnsVisible, openPerformanceDetail)}
-            sortKey={storeSort.key}
-            sortDirection={storeSort.direction}
-            onSort={handleSortStores}
-            rowKey={(row) => row.site_code}
-            exportFilename={`hub_${currentMonth}_magazine`}
-            exportSheetName={`Magazine ${currentMonth}`}
-            exportColumns={[
-              { header: 'Firma', value: (row) => row.firma },
-              { header: 'Magazin', value: (row) => row.locatie },
-              { header: 'Target', value: (row) => formatCurrency(row.target) },
-              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-              { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
-              { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
-              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-              { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-              { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
-              { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
-            ]}
-          />
-
-          <BreakdownTable
-            title="Agenti - Toti agentii"
-            subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${agentColumnsVisible.find((column) => column.key === agentSort.key)?.label} (${agentSort.direction}) · ${agents.length} agenti`}
-            rows={sortedAgents}
-            columns={agentBreakdownColumns(agentColumnsVisible, openPerformanceDetail)}
-            sortKey={agentSort.key}
-            sortDirection={agentSort.direction}
-            onSort={handleSortAgents}
-            rowKey={(row) => `${row.agent}-${row.site_code}`}
-            exportFilename={`hub_${currentMonth}_agenti`}
-            exportSheetName={`Agenti ${currentMonth}`}
-            exportColumns={[
-              { header: 'Agent', value: (row) => row.agent },
-              { header: 'Firma', value: (row) => row.firma },
-              { header: 'Magazin', value: (row) => row.locatie },
-              { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
-              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-              { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
-              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-              { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-              { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
-              { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
-              { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-              { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-            ]}
-          />
-            </>
-          )}
-        </>
+        <CurrentDashboard
+          currentMonth={currentMonth}
+          filters={filters}
+          mode={currentMode}
+          onModeChange={setCurrentMode}
+          statusLabel={currentStatusLabel}
+          summary={summary}
+          receiptBucketChartData={receiptBucketChartData}
+          focusSubcategoryChartData={focusSubcategoryChartData}
+          periodComparison={periodComparison}
+          comparisonDeltas={comparisonDeltas}
+          dailyChartData={dailyChartData}
+          categoryMixChartData={categoryMixChartData}
+          brandMixChartData={brandMixChartData}
+          filterScopeLabel={filterScopeLabel}
+          regionals={regionals}
+          sortedRegionals={sortedRegionals}
+          regionalColumns={regionalBreakdownColumns(regionalColumnsVisible, openPerformanceDetail)}
+          regionalSort={regionalSort}
+          onSortRegionals={handleSortRegionals}
+          stores={stores}
+          sortedStores={sortedStores}
+          storeColumns={storeBreakdownColumns(storeColumnsVisible, openPerformanceDetail)}
+          storeSort={storeSort}
+          onSortStores={handleSortStores}
+          agents={agents}
+          sortedAgents={sortedAgents}
+          agentColumns={agentBreakdownColumns(agentColumnsVisible, openPerformanceDetail)}
+          agentSort={agentSort}
+          onSortAgents={handleSortAgents}
+        />
       ) : (
-        <>
-          {historyLoading ? (
-            <LoadingCard label="Se incarca istoricul..." />
-          ) : historyError ? (
-            <ErrorCard message={historyError} onRetry={refetchHistoryData} />
-          ) : !selectedHistoryPoint ? (
-            <ErrorCard message="Nu exista valori istorice pentru luna selectata." onRetry={refetchHistoryData} />
-          ) : (
-            <>
-              {/* Card 1 — Evolutie lunara (independent de historyMonth) */}
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold">Evolutie lunara</h3>
-                    <p className="text-[11px] text-slate-500">
-                      {historyYearFilter === null
-                        ? `Ultimele 13 luni finalizate${summary && !summary.is_month_final ? ' + previziune luna in curs' : ''}`
-                        : `Toate lunile disponibile — ${historyYearFilter}`}
-                    </p>
-                  </div>
-                  <select
-                    value={historyYearFilter ?? ''}
-                    onChange={(e) => setHistoryYearFilter(e.target.value === '' ? null : parseInt(e.target.value))}
-                    className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    <option value="">Standard</option>
-                    {availableYears.map((yr) => (
-                      <option key={yr} value={yr}>{yr}</option>
-                    ))}
-                  </select>
-                </div>
-                {(historyYearFilter === null ? currentHistoryLoading : yearHistoryLoading) ? (
-                  <div className="flex h-64 items-center justify-center text-xs text-slate-400">Se incarca...</div>
-                ) : historyYearFilter === null ? (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <ComposedChart data={currentHistoryChartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                        <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatAmount(value))} />
-                        <Legend />
-                        <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
-                          {currentHistoryChartData.map((entry, index) => (
-                            <Cell key={index} fill={entry.isForecast ? '#a78bfa' : '#4f46e5'} />
-                          ))}
-                        </Bar>
-                        <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#10b981" strokeWidth={2} dot={false} />
-                        <Line yAxisId="progress" type="monotone" dataKey="progress" name="% target" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : yearHistoryChartData.length === 0 ? (
-                  <div className="flex h-64 items-center justify-center text-xs text-slate-400">
-                    Nu exista date pentru {historyYearFilter} cu filtrele curente.
-                  </div>
-                ) : (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <ComposedChart data={yearHistoryChartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                        <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatAmount(value))} />
-                        <Legend />
-                        <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
-                          {yearHistoryChartData.map((entry, index) => (
-                            <Cell key={index} fill={entry.isAggregate ? '#818cf8' : '#4f46e5'} />
-                          ))}
-                        </Bar>
-                        {yearHistoryChartData.some((p) => p.target > 0) && (
-                          <Line yAxisId="sales" type="monotone" dataKey="target" name="Target" stroke="#10b981" strokeWidth={2} dot={false} />
-                        )}
-                        {yearHistoryChartData.some((p) => p.progress > 0) && (
-                          <Line yAxisId="progress" type="monotone" dataKey="progress" name="% target" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                        )}
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
-
-              {/* Card 2 — Trend KPI (inlocuieste area chart duplicat) */}
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp size={16} className="text-indigo-500" />
-                    <h3 className="text-sm font-bold">Trend KPI</h3>
-                  </div>
-                  <div className="flex gap-1">
-                    {([
-                      { key: 'proc_bon2acc', label: 'Bon2Acc' },
-                      { key: 'prc_focus_acc_qty', label: 'Focus' },
-                      { key: 'total_receipts', label: 'Bonuri' },
-                    ] as const).map(({ key, label }) => (
-                      <button
-                        key={key}
-                        onClick={() => setKpiMetric(key)}
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${
-                          kpiMetric === key
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {currentHistoryLoading ? (
-                  <div className="flex h-48 items-center justify-center text-xs text-slate-400">Se incarca...</div>
-                ) : (
-                  <div className="h-48">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <AreaChart data={kpiChartData}>
-                        <defs>
-                          <linearGradient id="kpiTrendArea" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
-                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                        <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          formatter={(value: number) =>
-                            kpiMetric === 'total_receipts' ? formatInt(value) : `${value.toFixed(1)}%`
-                          }
-                        />
-                        <Area type="monotone" dataKey="value" name={kpiMetric === 'proc_bon2acc' ? 'ProcBon2Acc' : kpiMetric === 'prc_focus_acc_qty' ? 'PrcFocus/AccQtty' : 'Total bonuri'} stroke="#4f46e5" fill="url(#kpiTrendArea)" strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
-
-              <div className="glass relative z-50 rounded-3xl p-4">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-bold">Luni analizate</h3>
-                    <p className="text-[11px] text-slate-500">
-                      Bifeaza una sau mai multe luni; rezultatele de mai jos se agrega automat
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-start gap-2">
-                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      <input
-                        type="checkbox"
-                        checked={includeClosedStores}
-                        onChange={(event) => setIncludeClosedStores(event.target.checked)}
-                        className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      Include magazine inchise
-                    </label>
-                    <details ref={historyMonthDropdownRef} onToggle={handleHistoryDropdownToggle} className="group relative z-50">
-                      <summary className="flex min-w-60 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700">
-                        <span className="truncate">
-                          {historyMonthDropdownOpen ? draftHistorySelectionLabel : historySelectionLabel}
-                        </span>
-                        <ChevronDown size={14} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
-                      </summary>
-                      <div className="absolute right-0 z-[100] mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                        <div className="max-h-72 overflow-auto pr-1">
-                          {months.map((month) => {
-                            const checked = draftSelectedHistoryMonths.includes(month);
-                            return (
-                              <label
-                                key={month}
-                                className={`flex cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors ${
-                                  checked
-                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300'
-                                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => handleToggleHistoryMonth(month)}
-                                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                />
-                                <span>{month}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
-                          <span className="text-[10px] font-semibold text-slate-400">
-                            {draftSelectedHistoryMonths.length} selectate
-                          </span>
-                          <button
-                            type="button"
-                            onClick={handleApplyHistoryMonths}
-                            className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700"
-                          >
-                            OK
-                          </button>
-                        </div>
-                      </div>
-                    </details>
-                  </div>
-                </div>
-              </div>
-
-              {/* Overview card — mirrors the first card from Luna in curs */}
-              <div className="glass rounded-3xl p-4 space-y-4">
-                {/* 1. Header */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold truncate">Overview — {historySelectionLabel}</h3>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{historyStatusLabel}</p>
-                  </div>
-                  <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {historySummary?.last_sale_date ?? '-'}
-                  </span>
-                </div>
-
-                {/* 2. Financial block with progress bar */}
-                <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
-                  <div className="mb-3 grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div>
-                      <div className="mt-0.5 text-[13px] font-bold text-slate-600 dark:text-slate-300">
-                        <CompactCurrency value={Number(historySummary?.total_target ?? selectedHistoryPoint.total_target)} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Realizat</div>
-                      <div className="mt-0.5 text-[13px] font-bold text-slate-800 dark:text-slate-100">
-                        <CompactCurrency value={Number(historySummary?.total_sales ?? selectedHistoryPoint.total_sales)} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
-                        {historySummary?.is_month_final === false ? 'Previziune' : 'Realizat %'}
-                      </div>
-                      <div className="mt-0.5 text-[13px] font-bold text-indigo-600 dark:text-indigo-400">
-                        {historySummary?.is_month_final === false
-                          ? <CompactCurrency value={Number(historySummary?.forecast_sales ?? historySummary?.total_sales ?? selectedHistoryPoint.total_sales)} />
-                          : formatPercent(historySummary?.target_progress_pct ?? selectedHistoryPoint.target_progress_pct)
-                        }
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Dual progress bar */}
-                  <div className="relative h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                    {historySummary?.is_month_final === false && (
-                      <div
-                        className="absolute inset-y-0 left-0 rounded-full bg-indigo-200 dark:bg-indigo-700"
-                        style={{ width: `${Math.min(Number(historySummary?.forecast_target_progress_pct ?? 0), 100)}%` }}
-                      />
-                    )}
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-indigo-600"
-                      style={{ width: `${Math.min(Number(historySummary?.target_progress_pct ?? selectedHistoryPoint.target_progress_pct ?? 0), 100)}%` }}
-                    />
-                  </div>
-                  <div className="mt-1.5 flex justify-between text-[10px] font-semibold">
-                    <span className="text-indigo-600">
-                      Actual {formatPercent(historySummary?.target_progress_pct ?? selectedHistoryPoint.target_progress_pct)}
-                    </span>
-                    {historySummary?.is_month_final === false && (
-                      <span className="text-slate-600 dark:text-slate-300">
-                        Forecast {formatPercent(historySummary?.forecast_target_progress_pct)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 3. KPI performance cards */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <KpiPerformanceCard
-                    title="ProcBon2Acc"
-                    value={historySummary?.proc_bon2acc ?? selectedHistoryPoint.proc_bon2acc}
-                    tone={getBon2AccTone(Number(historySummary?.proc_bon2acc ?? selectedHistoryPoint.proc_bon2acc ?? 0))}
-                    chartData={historyReceiptBucketChartData}
-                    dataKey="receipt_count"
-                    nameKey="bucket"
-                    formatValue={formatInt}
-                  />
-                  <KpiPerformanceCard
-                    title="PrcFocus/AccQtty"
-                    value={historySummary?.prc_focus_acc_qty ?? selectedHistoryPoint.prc_focus_acc_qty}
-                    tone={getFocusTone(Number(historySummary?.prc_focus_acc_qty ?? selectedHistoryPoint.prc_focus_acc_qty ?? 0))}
-                    chartData={historyFocusSubcategoryChartData}
-                    dataKey="quantity_total"
-                    nameKey="category"
-                    formatValue={formatInt}
-                  />
-                </div>
-
-                {/* 4. Operational metrics */}
-                <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
-                  <Metric label="Bonuri" value={formatInt(historySummary?.total_receipts ?? selectedHistoryPoint.total_receipts)} className="p-2" />
-                  <Metric label="Accesorii" value={formatInt(historySummary?.total_quantity ?? selectedHistoryPoint.total_quantity)} className="p-2" />
-                  <Metric
-                    label="Magazine / Agenți"
-                    value={
-                      <span className="flex items-baseline gap-1.5">
-                        <span>{formatInt(historySummary?.total_stores ?? selectedHistoryPoint.total_stores)}</span>
-                        <span className="text-slate-300 dark:text-slate-600">/</span>
-                        <span>{formatInt(historySummary?.total_agents ?? selectedHistoryPoint.total_agents)}</span>
-                      </span>
-                    }
-                    className="p-2"
-                  />
-                  <Metric label="Zile lucrate" value={formatInt(historySummary?.working_days ?? selectedHistoryPoint.working_days)} className="p-2" />
-                  <Metric label="Med. zilnica" value={formatAmount(historySummary?.daily_average ?? selectedHistoryPoint.daily_average ?? 0)} className="p-2" />
-                  <Metric label="Medie produs" value={formatAmount(historySummary?.medie_produs ?? selectedHistoryPoint.medie_produs ?? 0)} className="p-2" />
-                  <Metric
-                    label="Val. medie bon"
-                    value={formatAmount(
-                      (historySummary?.total_receipts ?? selectedHistoryPoint.total_receipts) > 0
-                        ? Number(historySummary?.total_sales ?? selectedHistoryPoint.total_sales) / Number(historySummary?.total_receipts ?? selectedHistoryPoint.total_receipts)
-                        : 0
-                    )}
-                    className="p-2"
-                  />
-                  <Metric
-                    label="Cartele"
-                    value={formatInt(historySummary?.cartele_qty ?? 0)}
-                    className="p-2"
-                  />
-                </div>
-              </div>
-
-              {/* Evolutie zilnica + Top categorii si branduri */}
-              <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
-                <div className="glass rounded-3xl p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <CalendarRange size={16} className="text-indigo-500" />
-                    <h3 className="text-sm font-bold">Evolutie zilnica pentru {historySelectionLabel}</h3>
-                  </div>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <ComposedChart data={historyDailyChartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-                        <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="qty" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          formatter={(value: number, name: string) =>
-                            name === 'Vanzari' ? formatAmount(value) : formatInt(value)
-                          }
-                        />
-                        <Legend />
-                        <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
-                        <Line yAxisId="qty" type="monotone" dataKey="qty" name="Cantitate" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="glass rounded-3xl p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <PieChartIcon size={16} className="text-indigo-500" />
-                    <h3 className="text-sm font-bold">Top categorii si branduri</h3>
-                  </div>
-                  <div className="space-y-4">
-                    <CompactPieSection
-                      title="Top categorii"
-                      emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta."
-                      pieData={historyCategoryMixChartData}
-                      dataKey="sales_total"
-                      nameKey="category"
-                      valueFormatter={formatAmount}
-                      centerValue={formatCompactDonutValue(sumChartValues(historyCategoryMixChartData, 'sales_total'))}
-                    />
-                    <CompactPieSection
-                      title="Branduri compatibile"
-                      emptyLabel="Nu exista date pentru brandurile urmarite."
-                      pieData={historyBrandMixChartData}
-                      dataKey="sales_total"
-                      nameKey="brand"
-                      valueFormatter={formatAmount}
-                      centerValue={formatCompactDonutValue(sumChartValues(historyBrandMixChartData, 'sales_total'))}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Breakdown tables — RM / Magazine / Agenti */}
-              <BreakdownTable
-                title="RM"
-                icon={<MapPin size={16} className="text-indigo-500" />}
-                subtitle={`Sortare: ${HIST_REGIONAL_COLUMNS.find((column) => column.key === historyRegionalSort.key)?.label} (${historyRegionalSort.direction}) · ${historyRegionals.length} regionali`}
-                rows={sortedHistoryRegionals}
-                columns={regionalBreakdownColumns(HIST_REGIONAL_COLUMNS)}
-                sortKey={historyRegionalSort.key}
-                sortDirection={historyRegionalSort.direction}
-                onSort={handleSortHistoryRegionals}
-                rowKey={(row) => row.regional}
-                exportFilename={`hub_${historySelectionSlug}_istoric_rm`}
-                exportSheetName="RM istoric"
-                exportColumns={[
-                  { header: 'Regional', value: (row) => row.regional },
-                  { header: 'Target', value: (row) => formatCurrency(row.target) },
-                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
-                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                  { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-                  { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-                ]}
-              />
-
-              <BreakdownTable
-                title="Magazine"
-                icon={<Building2 size={16} className="text-indigo-500" />}
-                subtitle={`Sortare: ${HIST_STORE_COLUMNS.find((column) => column.key === historyStoreSort.key)?.label} (${historyStoreSort.direction}) · ${historyStores.length} magazine`}
-                rows={sortedHistoryStores}
-                columns={storeBreakdownColumns(HIST_STORE_COLUMNS)}
-                sortKey={historyStoreSort.key}
-                sortDirection={historyStoreSort.direction}
-                onSort={handleSortHistoryStores}
-                rowKey={(row) => row.site_code}
-                exportFilename={`hub_${historySelectionSlug}_istoric_magazine`}
-                exportSheetName="Magazine istoric"
-                exportColumns={[
-                  { header: 'Firma', value: (row) => row.firma },
-                  { header: 'Magazin', value: (row) => row.locatie },
-                  { header: 'Target', value: (row) => formatCurrency(row.target) },
-                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
-                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                  { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-                  { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
-                  { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
-                ]}
-              />
-
-              <BreakdownTable
-                title="Agenti"
-                subtitle={`Sortare: ${HIST_AGENT_COLUMNS.find((column) => column.key === historyAgentSort.key)?.label} (${historyAgentSort.direction}) · ${historyAgents.length} agenti`}
-                rows={sortedHistoryAgents}
-                columns={agentBreakdownColumns(HIST_AGENT_COLUMNS)}
-                sortKey={historyAgentSort.key}
-                sortDirection={historyAgentSort.direction}
-                onSort={handleSortHistoryAgents}
-                rowKey={(row) => `${row.agent}-${row.site_code}`}
-                exportFilename={`hub_${historySelectionSlug}_istoric_agenti`}
-                exportSheetName="Agenti istoric"
-                exportColumns={[
-                  { header: 'Agent', value: (row) => row.agent },
-                  { header: 'Firma', value: (row) => row.firma },
-                  { header: 'Magazin', value: (row) => row.locatie },
-                  { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
-                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                  { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
-                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                  { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-                  { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
-                  { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
-                  { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-                  { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-                ]}
-              />
-            </>
-          )}
-        </>
+        <HistoryDashboard
+          loading={historyLoading}
+          error={historyError}
+          onRetry={refetchHistoryData}
+          selectedPoint={selectedHistoryPoint}
+          currentSummary={summary}
+          historySummary={historySummary}
+          yearFilter={historyYearFilter}
+          onYearFilterChange={setHistoryYearFilter}
+          availableYears={availableYears}
+          currentHistoryLoading={currentHistoryLoading}
+          yearHistoryLoading={yearHistoryLoading}
+          currentHistoryChartData={currentHistoryChartData}
+          yearHistoryChartData={yearHistoryChartData}
+          kpiMetric={kpiMetric}
+          onKpiMetricChange={setKpiMetric}
+          kpiChartData={kpiChartData}
+          includeClosedStores={includeClosedStores}
+          onIncludeClosedStoresChange={setIncludeClosedStores}
+          dropdownRef={historyMonthDropdownRef}
+          onDropdownToggle={handleHistoryDropdownToggle}
+          dropdownOpen={historyMonthDropdownOpen}
+          draftSelectionLabel={draftHistorySelectionLabel}
+          selectionLabel={historySelectionLabel}
+          months={months}
+          draftSelectedMonths={draftSelectedHistoryMonths}
+          onToggleMonth={handleToggleHistoryMonth}
+          onApplyMonths={handleApplyHistoryMonths}
+          historyStatusLabel={historyStatusLabel}
+          historyReceiptBucketChartData={historyReceiptBucketChartData}
+          historyFocusSubcategoryChartData={historyFocusSubcategoryChartData}
+          historyDailyChartData={historyDailyChartData}
+          historyCategoryMixChartData={historyCategoryMixChartData}
+          historyBrandMixChartData={historyBrandMixChartData}
+          selectionSlug={historySelectionSlug}
+          regionals={historyRegionals}
+          sortedRegionals={sortedHistoryRegionals}
+          regionalColumns={regionalBreakdownColumns(HIST_REGIONAL_COLUMNS)}
+          regionalSort={historyRegionalSort}
+          onSortRegionals={handleSortHistoryRegionals}
+          stores={historyStores}
+          sortedStores={sortedHistoryStores}
+          storeColumns={storeBreakdownColumns(HIST_STORE_COLUMNS)}
+          storeSort={historyStoreSort}
+          onSortStores={handleSortHistoryStores}
+          agents={historyAgents}
+          sortedAgents={sortedHistoryAgents}
+          agentColumns={agentBreakdownColumns(HIST_AGENT_COLUMNS)}
+          agentSort={historyAgentSort}
+          onSortAgents={handleSortHistoryAgents}
+        />
       )}
       <PerformanceDetailDrawer
         open={performanceSelection !== null}
