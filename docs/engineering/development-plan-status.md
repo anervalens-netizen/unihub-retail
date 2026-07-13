@@ -18,7 +18,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
 | Performance/modularization | Partially implemented | Remaining backend boundaries, Dashboard splits and DB-pool pressure review |
-| CI/CD and operations | Quality gates implemented locally; merge-ref acceptance pending | Readiness/liveness, SLOs, alerts and service hardening |
+| CI/CD and operations | Required frontend quality gates accepted on PR #50 merge ref | Readiness/liveness, SLOs, alerts and service hardening |
 
 ## What is already delivered
 
@@ -37,7 +37,7 @@ tracked in `docs/refactoring-plan-current.md`.
   evidence and median reductions of 76.7% and 25.8% respectively;
 - frontend CI gates for general and strict typecheck, lint, unit tests, runtime
   dependency audit, production build, Playwright flows and WCAG A/AA smoke scans
-  (local acceptance complete; GitHub merge-ref acceptance still required).
+  (GitHub Actions merge-ref run `29225724923`: backend and frontend green).
 
 ## Path to the new release
 
@@ -46,9 +46,8 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. accept the new quality gates on the GitHub PR merge ref;
-4. implement readiness/liveness, SLOs, alerts and remaining modularization;
-5. close with full regression, migration, security, accessibility and live-path acceptance.
+3. implement readiness/liveness, SLOs, alerts and remaining modularization;
+4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,
 H-01B and H-02 are operationally active, while performance, modularization and
