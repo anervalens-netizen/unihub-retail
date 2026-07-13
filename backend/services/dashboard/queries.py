@@ -11,9 +11,9 @@ from models import (
     CategoryMixItem,
     PeriodComparisonPayload,
     PeriodComparisonPoint,
-    PromoIncentiveSummary,
     ReceiptBucketItem,
 )
+from schemas.campaigns import PromoIncentiveSummary
 from services.dashboard.utils import (
     _expand_current_manager_scope,
     _month_day_range,
