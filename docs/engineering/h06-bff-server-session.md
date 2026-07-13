@@ -67,7 +67,8 @@ OIDC_CLIENT_SECRET=<existing confidential client secret>
 
 `SESSION_ENCRYPTION_KEY` is independent from the OIDC client secret and from
 the salary HMAC key. Rotation requires draining existing sessions (users log in
-again); never reuse another application secret.
+again); never reuse another application secret. `OIDC_CLIENT_ID` is mandatory
+when the BFF session is enabled and never falls back to `OIDC_AUDIENCE`.
 
 In `.env.example` this entire optional browser-session group is empty so the
 documented development startup remains valid. To enable it locally, configure

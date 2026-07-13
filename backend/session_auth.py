@@ -87,7 +87,7 @@ def load_session_settings() -> SessionSettings | None:
         issuer = os.environ["OIDC_ISSUER"].rstrip("/")
     except (KeyError, ValueError, UnicodeError) as exc:
         raise ValueError("Session authentication configuration is invalid") from exc
-    client_id = os.getenv("OIDC_CLIENT_ID") or os.getenv("OIDC_AUDIENCE", "")
+    client_id = os.getenv("OIDC_CLIENT_ID", "")
     public_origin = os.getenv("SESSION_PUBLIC_ORIGIN", "http://localhost:3000").rstrip("/")
     valkey_url = os.getenv("SESSION_VALKEY_URL") or os.getenv("VALKEY_URL", "")
     try:

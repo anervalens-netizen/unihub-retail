@@ -97,6 +97,7 @@ def test_production_session_settings_fail_closed_without_leaking_values(
         "UNIHUB_ENV": "production",
         "SESSION_ENCRYPTION_KEY": KEY,
         "OIDC_CLIENT_ID": "retail",
+        "OIDC_AUDIENCE": "api-audience",
         "OIDC_CLIENT_SECRET": "synthetic-client-secret",
         "OIDC_ISSUER": "https://auth.example.invalid/application/o/unihub-retail/",
         "SESSION_PUBLIC_ORIGIN": "https://retail.example.invalid",
@@ -107,8 +108,8 @@ def test_production_session_settings_fail_closed_without_leaking_values(
         monkeypatch.setenv(name, value)
     assert session_auth.load_session_settings() is not None
     for missing in (
-        "SESSION_ENCRYPTION_KEY", "OIDC_CLIENT_SECRET", "OIDC_ISSUER",
-        "SESSION_VALKEY_URL",
+        "SESSION_ENCRYPTION_KEY", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
+        "OIDC_ISSUER", "SESSION_PUBLIC_ORIGIN", "SESSION_VALKEY_URL",
     ):
         with monkeypatch.context() as scoped:
             scoped.delenv(missing)

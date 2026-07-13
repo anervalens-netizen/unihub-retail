@@ -210,7 +210,8 @@ intra in Bon2Acc, dar retururile raman disponibile separat prin
 Contextul campaniei, unitatile promo excluse, summary-ul promo/incentive si
 cardurile speciale folosesc acelasi `current_scope`/`include_closed_stores`;
 taskul comun este asteptat numai dupa eliberarea conexiunii folosite pentru
-randurile si multiplicatorii cardului.
+randurile si multiplicatorii cardului. Aceeasi regula se pastreaza la
+recalcularea excluderilor pentru campaniile incentive cu mai multe perioade.
 Frontendul reda aceleasi coloane curente si istorice RM/Magazine/Agenti prin
 componenta tipizata `dashboard/BreakdownTable.tsx`, care centralizeaza tabelul
 sortabil si exportul Excel fara a schimba payload-urile API.

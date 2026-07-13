@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from services.dashboard.queries import (
+    DashboardCampaignContext,
     _enrich_store_stats_with_campaign,
     _fetch_agent_stats_rows,
     _fetch_asm_stats,
@@ -23,6 +24,7 @@ from services.dashboard.queries import (
     _fetch_store_stats_rows,
     _get_store_incentive_multipliers,
 )
+from services.promo_copurchase import PromoCoPurchaseResult
 
 
 class FakeRow(dict):
@@ -536,6 +538,62 @@ class TestFetchPromoIncentiveSummary:
                                                        asm=None, site_code=None, agent=None)
         assert result.promo_qty == 0
         assert result.incentive_qty == 0
+
+    @pytest.mark.asyncio
+    @patch(
+        "services.dashboard.queries._compute_dashboard_promotion_result",
+        new_callable=AsyncMock,
+        return_value=PromoCoPurchaseResult(),
+    )
+    @patch(
+        "services.dashboard.queries._get_store_incentive_multipliers",
+        new_callable=AsyncMock,
+        return_value=({}, {}),
+    )
+    async def test_multi_period_recomputation_keeps_request_scope(
+        self,
+        _mock_multipliers,
+        mock_compute,
+        mock_conn,
+    ):
+        definition = {
+            "key": "promo",
+            "start_date": date(2026, 5, 1),
+            "end_date": date(2026, 5, 31),
+        }
+        context = DashboardCampaignContext(
+            config_error=None,
+            promotion_definitions=[definition],
+            promotion_definition=None,
+            promotion_error=None,
+            incentive_campaign={
+                "item_codes": ["C1"],
+                "periods": [
+                    {"valid_from": date(2026, 5, 1), "valid_to": date(2026, 5, 15)},
+                    {"valid_from": date(2026, 5, 16), "valid_to": date(2026, 5, 31)},
+                ],
+            },
+            promotion_results=[],
+            promo_excluded_units={},
+        )
+
+        await _fetch_promo_incentive_summary(
+            mock_conn,
+            month="2026-05",
+            firma=None,
+            regional="Manager curent",
+            asm=None,
+            site_code=None,
+            agent=None,
+            current_scope=True,
+            include_closed_stores=False,
+            campaign_context=context,
+        )
+
+        assert mock_compute.await_count == 2
+        for call in mock_compute.await_args_list:
+            assert call.kwargs["current_scope"] is True
+            assert call.kwargs["include_closed_stores"] is False
 
     @pytest.mark.asyncio
     @patch("services.dashboard.queries.load_special_cards_config", return_value=({}, None))

@@ -1835,6 +1835,8 @@ async def _fetch_promo_incentive_summary(
                             asm=asm,
                             site_code=site_code,
                             agent=agent,
+                            current_scope=current_scope,
+                            include_closed_stores=include_closed_stores,
                         )
                         if result is None:
                             continue
