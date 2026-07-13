@@ -95,8 +95,9 @@ async def test_cancellation_propagates() -> None:
 
 
 @pytest.mark.asyncio
-async def test_missing_runtime_is_fail_closed() -> None:
+async def test_missing_runtime_is_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     import rate_limits
+    monkeypatch.setenv("UNIHUB_ENV", "production")
     old_store, old_settings = rate_limits._store, rate_limits._settings
     rate_limits._store = None; rate_limits._settings = None
     try:
@@ -105,6 +106,71 @@ async def test_missing_runtime_is_fail_closed() -> None:
         assert exc.value.status_code == 503
     finally:
         rate_limits._store, rate_limits._settings = old_store, old_settings
+
+
+@pytest.mark.asyncio
+async def test_explicitly_disabled_development_limiter_bypasses_routes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rate_limits
+
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    for name in (
+        "TRUSTED_PROXY_CIDRS",
+        "RATE_LIMIT_CLIENT_IP_HEADER",
+        "RATE_LIMIT_VALKEY_URL",
+        "RATE_LIMIT_KEY_HMAC_SECRET",
+        "RATE_LIMIT_FAILURE_MODE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    old_store, old_settings = rate_limits._store, rate_limits._settings
+    rate_limits._store = None
+    rate_limits._settings = None
+    try:
+        decision = await enforce_rate_limit(
+            request(),
+            RateLimitPolicy("test", 5, 30),
+            claims(),
+        )
+        assert decision == RateLimitDecision(True, 5, 0, 30)
+    finally:
+        rate_limits._store, rate_limits._settings = old_store, old_settings
+
+
+@pytest.mark.anyio
+async def test_explicitly_disabled_development_dependency_allows_asgi_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rate_limits
+
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    for name in (
+        "TRUSTED_PROXY_CIDRS",
+        "RATE_LIMIT_CLIENT_IP_HEADER",
+        "RATE_LIMIT_VALKEY_URL",
+        "RATE_LIMIT_KEY_HMAC_SECRET",
+        "RATE_LIMIT_FAILURE_MODE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(rate_limits, "_store", None)
+    monkeypatch.setattr(rate_limits, "_settings", None)
+
+    app = FastAPI()
+    dependency = anonymous_rate_limit(RateLimitPolicy("test", 5, 30))
+
+    @app.get("/limited", dependencies=[Depends(dependency)])
+    async def limited() -> dict[str, bool]:
+        return {"ok": True}
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/limited")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert "ratelimit-limit" not in response.headers
 
 
 @pytest.mark.anyio

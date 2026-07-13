@@ -90,6 +90,9 @@ primeste tokenurile OIDC.
   in development; configureaza-l complet numai cand testezi login-ul BFF;
 - grupul distributed rate-limit (`TRUSTED_PROXY_CIDRS`, header mode, Valkey,
   cheia HMAC si failure mode) ramane de asemenea complet gol in development;
+  in aceasta stare explicita dependintele de rate-limit sunt dezactivate local,
+  fara store global. O configurare partiala ramane invalida, iar production
+  continua sa porneasca si sa raspunda strict fail-closed;
 - rolurile si scope-ul provin din grupurile Authentik;
 - `offline_access` ramane activ conform politicii comune UniHub;
 - nu adauga fallback cu username/parola.
