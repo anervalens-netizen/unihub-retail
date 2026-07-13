@@ -401,7 +401,10 @@ Livrabile:
 - [x] contractele Agents lifecycle/evaluation separate in `schemas/agents.py`;
   routerul si serviciile importa direct domeniul, iar `models.py` pastreaza
   re-exportul compatibil pentru consumatorii existenti;
-- `models.py` impartit gradual in continuare pe domeniile Dashboard si Campaigns;
+- [x] contractele Campaigns si Premium Glass separate in
+  `schemas/campaigns.py` si `schemas/premium_glass.py`, cu importuri directe in
+  routere/servicii si re-export compatibil din `models.py`;
+- `models.py` impartit gradual in continuare pe domeniul Dashboard;
 - `Literal`, pattern-uri si constrangeri Pydantic pentru status/luni/valori;
 - magic literals mutate in constante business numite;
 - `SELECT *` eliminat din repo-urile unde schema drift poate produce bug-uri;
@@ -507,6 +510,10 @@ build pot concura pe `dist/`.
   excluderea chunk-ului comun Recharts/D3 din preload; nu s-a introdus o
   fragmentare speculativa. Prima transa de modele AI Forecast si Contest a fost
   mutata in `backend/schemas`, cu re-export si teste de serializare compatibile.
+- 2026-07-13: contractele publice Agents, Campaigns si Premium Glass sunt
+  separate pe domenii in `backend/schemas`; consumatorii runtime importa direct
+  domeniul, iar `models.py` pastreaza temporar re-exporturile compatibile si a
+  scazut de la 985 la 529 de linii. Ramane extractia Dashboard.
 - 2026-07-13: documentatia Management a fost reconciliata cu navigatia V2
   Manageri / Calculator Target / Salarii / P&L. UI-urile legacy inaccesibile
   Tasks/HR/CRM si clientii folositi exclusiv de ele au fost eliminati; scoring-ul

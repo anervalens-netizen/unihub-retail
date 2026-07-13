@@ -43,6 +43,38 @@ from schemas.contests import (
     ContestResponse,
     ContestRuleInfo,
 )
+from schemas.campaigns import (
+    CampaignOverview,
+    CampaignProductStat,
+    CampaignPromotionOption,
+    CampaignsPromotionsResponse,
+    CampaignSnapshot,
+    CampaignStoreStat,
+    FocusHistoryPoint,
+    FocusHistoryResponse,
+    IncentiveAgentStat,
+    IncentiveCategory,
+    IncentiveCategoryBreakdown,
+    IncentiveData,
+    IncentivePeriodStat,
+    IncentiveTopAgent,
+    PromoData,
+    PromoIncentiveSummary,
+    PromoStoreStat,
+    PromoTopAgent,
+    PromoTopStore,
+    PromotionsIncentivesResponse,
+)
+from schemas.premium_glass import (
+    PremiumGlassAgentStat,
+    PremiumGlassAnalysis,
+    PremiumGlassManagerStat,
+    PremiumGlassModelStat,
+    PremiumGlassProductStat,
+    PremiumGlassStoreStat,
+    PremiumGlassSummary,
+    PremiumGlassSurfaceStat,
+)
 
 
 class DashboardSummary(BaseModel):
@@ -124,202 +156,6 @@ class DashboardSpecialCard(BaseModel):
 
 class DashboardSpecialCardsResponse(BaseModel):
     cards: list[DashboardSpecialCard] = Field(default_factory=list)
-
-
-class PromoIncentiveSummary(BaseModel):
-    promo_qty: int = 0
-    promo_sales: Decimal = Decimal(0)
-    promo_impact: Decimal = Decimal(0)
-    incentive_sold_qty: int = 0
-    incentive_qty: int = 0
-    incentive_value: Decimal = Decimal(0)
-    incentive_qualified_qty: int = 0
-    incentive_qualified_stores: int = 0
-    incentive_qualified_stores_full: int = 0
-    incentive_qualified_stores_half: int = 0
-    incentive_qualified_agents: int = 0
-    incentive_qualified_agents_full: int = 0
-    incentive_qualified_agents_half: int = 0
-
-
-class PremiumGlassSummary(BaseModel):
-    month: str
-    total_qty: int = 0
-    total_sales: Decimal = Decimal(0)
-    premium_qty: int = 0
-    premium_sales: Decimal = Decimal(0)
-    regular_qty: int = 0
-    regular_sales: Decimal = Decimal(0)
-    premium_qty_share_pct: Decimal | None = None
-    premium_sales_share_pct: Decimal | None = None
-    active_stores: int = 0
-    active_agents: int = 0
-    premium_active_stores: int = 0
-    premium_active_agents: int = 0
-    target_model_count: int = 0
-
-
-class PremiumGlassModelStat(BaseModel):
-    model_key: str
-    model_label: str
-    premium_qty: int = 0
-    regular_qty: int = 0
-    total_qty: int = 0
-    premium_sales: Decimal = Decimal(0)
-    regular_sales: Decimal = Decimal(0)
-    total_sales: Decimal = Decimal(0)
-    premium_qty_share_pct: Decimal | None = None
-    premium_item_count: int = 0
-    regular_item_count: int = 0
-
-
-class PremiumGlassSurfaceStat(BaseModel):
-    surface_key: Literal["screen", "camera"]
-    surface_label: str
-    premium_qty: int = 0
-    regular_qty: int = 0
-    total_qty: int = 0
-    premium_sales: Decimal = Decimal(0)
-    regular_sales: Decimal = Decimal(0)
-    total_sales: Decimal = Decimal(0)
-    premium_qty_share_pct: Decimal | None = None
-
-
-class PremiumGlassStoreStat(BaseModel):
-    site_code: str
-    locatie: str
-    firma: str
-    premium_qty: int = 0
-    regular_qty: int = 0
-    total_qty: int = 0
-    premium_sales: Decimal = Decimal(0)
-    regular_sales: Decimal = Decimal(0)
-    total_sales: Decimal = Decimal(0)
-    premium_qty_share_pct: Decimal | None = None
-
-
-class PremiumGlassManagerStat(BaseModel):
-    manager: str
-    premium_qty: int = 0
-    regular_qty: int = 0
-    total_qty: int = 0
-    premium_sales: Decimal = Decimal(0)
-    regular_sales: Decimal = Decimal(0)
-    total_sales: Decimal = Decimal(0)
-    premium_qty_share_pct: Decimal | None = None
-    store_count: int = 0
-    agent_count: int = 0
-
-
-class PremiumGlassAgentStat(BaseModel):
-    agent: str
-    site_code: str
-    locatie: str
-    firma: str
-    premium_qty: int = 0
-    regular_qty: int = 0
-    total_qty: int = 0
-    premium_sales: Decimal = Decimal(0)
-    regular_sales: Decimal = Decimal(0)
-    total_sales: Decimal = Decimal(0)
-    premium_qty_share_pct: Decimal | None = None
-
-
-class PremiumGlassProductStat(BaseModel):
-    item_code: str
-    item_name: str
-    is_premium: bool
-    model_labels: list[str] = Field(default_factory=list)
-    qty: int = 0
-    sales: Decimal = Decimal(0)
-    store_count: int = 0
-
-
-class PremiumGlassAnalysis(BaseModel):
-    summary: PremiumGlassSummary
-    models: list[PremiumGlassModelStat] = Field(default_factory=list)
-    surfaces: list[PremiumGlassSurfaceStat] = Field(default_factory=list)
-    managers: list[PremiumGlassManagerStat] = Field(default_factory=list)
-    stores: list[PremiumGlassStoreStat] = Field(default_factory=list)
-    agents: list[PremiumGlassAgentStat] = Field(default_factory=list)
-    products: list[PremiumGlassProductStat] = Field(default_factory=list)
-
-
-class CampaignOverview(BaseModel):
-    month: str
-    total_focus_sales: Decimal
-    total_focus_qty: int
-    focus_share_pct: Decimal | None
-    active_focus_products: int
-    active_focus_stores: int
-
-
-class CampaignProductStat(BaseModel):
-    item_code: str
-    item_name: str
-    qty_total: int
-    sales_total: Decimal
-    store_count: int
-
-
-class CampaignStoreStat(BaseModel):
-    site_code: str
-    locatie: str
-    qty_total: int
-    sales_total: Decimal
-    active_products: int
-
-
-class CampaignSnapshot(BaseModel):
-    overview: CampaignOverview
-    products: list[CampaignProductStat]
-    stores: list[CampaignStoreStat]
-
-
-class PromoStoreStat(BaseModel):
-    site_code: str
-    locatie: str
-    qty_total: int
-    sales_total: Decimal
-    target: Decimal | None = None
-    realizat_pct: Decimal | None = None
-
-
-class PromoData(BaseModel):
-    overall_qty: int
-    overall_sales: Decimal
-    category_qty: int | None = None
-    stores: list[PromoStoreStat]
-
-
-class IncentiveAgentStat(BaseModel):
-    agent: str
-    qty_total: int
-    value: Decimal
-
-
-class IncentiveData(BaseModel):
-    overall_qty: int
-    overall_value: Decimal
-    agents: list[IncentiveAgentStat]
-
-
-class PromotionsIncentivesResponse(BaseModel):
-    promo: PromoData | None
-    incentive: IncentiveData | None
-
-
-class FocusHistoryPoint(BaseModel):
-    month: str
-    total_focus_sales: Decimal
-    total_focus_qty: int
-    focus_share_pct: Decimal | None
-    active_focus_products: int
-    active_focus_stores: int
-
-
-class FocusHistoryResponse(BaseModel):
-    history: list[FocusHistoryPoint]
 
 
 class AgentStats(BaseModel):
@@ -690,98 +526,3 @@ class BrandMixItem(BaseModel):
     sales_total: Decimal
     quantity_total: int
     share_pct: Decimal | None
-
-
-class PromoTopStore(BaseModel):
-    store_name: str
-    qty: int
-    total_qty: int
-    category_qty: int
-    promo_bons: int = 0
-    incentive_value: float = 0.0
-    incentive_potential: float = 0.0
-    achievement: float | None = None  # ratio 0-1, None = no target configured
-    firma: str = ""
-
-
-class PromoTopAgent(BaseModel):
-    agent_name: str
-    store_name: str = ""
-    firma: str = ""
-    promo_bons: int = 0
-
-
-class IncentiveTopAgent(BaseModel):
-    agent_name: str
-    store_name: str = ""
-    firma: str = ""
-    qty_sold: int
-    val_incentive: float
-    incentive_potential: float = 0.0
-    achievement: float | None = None
-
-
-class IncentiveCategory(BaseModel):
-    label: str
-    qty: int
-    value: float
-
-
-class IncentivePeriodStat(BaseModel):
-    label: str
-    start_date: str
-    end_date: str
-    product_count: int
-    reward_values: list[float] = Field(default_factory=list)
-    qty: int = 0
-    potential: float = 0.0
-    value: float = 0.0
-
-
-class IncentiveCategoryBreakdown(BaseModel):
-    label: str
-    qty: int
-    potential: float
-    value: float
-
-
-class CampaignPromotionOption(BaseModel):
-    key: str
-    label: str
-
-
-class CampaignsPromotionsResponse(BaseModel):
-    promotions: list[CampaignPromotionOption] = Field(default_factory=list)
-    selected_promotion_key: str = ""
-    promo_title: str = ""
-    promo_description: str = ""
-    promo_qty: int = 0
-    promo_total_qty: int = 0
-    promo_category_qty: int | None = None
-    promo_impact: float = 0.0
-    # Metrici co-purchase (regula campaniei) — consistente cu cardul Hub:
-    promo_qualifying_bons: int = 0
-    promo_discounted_units: int = 0
-    promo_active_stores: int = 0
-    promo_active_agents: int = 0
-    incentive_title: str = ""
-    incentive_description: str = ""
-    incentive_qty: int = 0
-    incentive_sold_qty: int = 0
-    incentive_value: float = 0.0
-    incentive_potential: float = 0.0
-    incentive_qualified_qty: int = 0
-    incentive_qualified_stores: int = 0
-    incentive_qualified_stores_full: int = 0
-    incentive_qualified_stores_half: int = 0
-    incentive_qualified_agents: int = 0
-    incentive_qualified_agents_full: int = 0
-    incentive_qualified_agents_half: int = 0
-    incentive_product_count: int = 0
-    incentive_categories: list[IncentiveCategory] = Field(default_factory=list)
-    incentive_periods: list[IncentivePeriodStat] = Field(default_factory=list)
-    incentive_category_breakdown: list[IncentiveCategoryBreakdown] = Field(default_factory=list)
-    has_active_promotion: bool = False
-    top_stores: list[PromoTopStore] = Field(default_factory=list)
-    promo_agents: list[PromoTopAgent] = Field(default_factory=list)
-    top_agents: list[IncentiveTopAgent] = Field(default_factory=list)

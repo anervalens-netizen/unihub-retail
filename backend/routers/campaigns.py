@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
-from models import (
+from schemas.campaigns import (
     CampaignSnapshot,
     FocusHistoryResponse,
 )

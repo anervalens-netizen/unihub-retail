@@ -49,7 +49,7 @@ tracked in `docs/refactoring-plan-current.md`.
 - bundle audit confirms screen-level lazy loading and keeps the shared chart
   runtime outside initial preload; AI Forecast and Contest public models are
   bounded schemas extracted from monolit, impreuna cu contractele complete de
-  lifecycle si evaluare Agents;
+  lifecycle/evaluare Agents si contractele Campaigns/Premium Glass;
 - frontend CI gates for general and strict typecheck, lint, unit tests, runtime
   dependency audit, production build, Playwright flows and WCAG A/AA smoke scans
   (GitHub Actions merge-ref run `29225724923`: backend and frontend green).

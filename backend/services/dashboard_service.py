@@ -25,14 +25,14 @@ from models import (
     CategoryMixItem,
     ReceiptBucketItem,
     BrandMixItem,
-    PromoIncentiveSummary,
-    PremiumGlassAnalysis,
     PerformanceDetailResponse,
     PerformancePeerRow,
     PerformanceScoreBreakdown,
     RegionalStats,
     AsmStats,
 )
+from schemas.campaigns import PromoIncentiveSummary
+from schemas.premium_glass import PremiumGlassAnalysis
 from repositories.dashboard import DashboardRepository
 from services.dashboard.queries import (
     _enrich_store_stats_with_campaign,

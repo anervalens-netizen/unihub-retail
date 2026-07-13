@@ -12,9 +12,9 @@ from models import (
     PerformanceDetailResponse,
     DashboardSpecialCardsResponse,
     DashboardSummary,
-    PremiumGlassAnalysis,
     YearHistoryResponse,
 )
+from schemas.premium_glass import PremiumGlassAnalysis
 from repositories.dashboard import DashboardRepository
 from services.dashboard_service import DashboardService
 
