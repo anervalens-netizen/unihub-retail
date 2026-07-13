@@ -114,8 +114,12 @@ acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
 - Management cu subtab-uri pentru Manageri, Calculator Target, Salarii si P&L.
   Scorurile CRM raman un read model intern consumat de Manageri; endpointurile
   istorice Tasks/concedii/alerte CRM nu sunt expuse ca subtab-uri V2.
-- Management -> `P&L` prezinta sumar financiar, evolutie lunara, structura pe
-  categorii si performanta pe magazine, cu lunile estimate marcate explicit.
+- Management -> `P&L` prezinta sumar financiar, evolutii lunare si anuale,
+  structura pe categorii si performanta pe magazine, cu lunile estimate marcate
+  explicit. Scope-ul implicit este anul calendaristic curent, iar filtrele de
+  companie si magazin sunt aplicate in repository tuturor agregatelor. La fel
+  ca in restul raportarii istorice, selectarea magazinului domina compania,
+  pentru a pastra lunile dinaintea unei mutari intre entitati.
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
   grupului OIDC dedicat P&L, peste accesul general Management; ascunderea din
   frontend este dublata de sesiunea BFF si verificarea autoritativa OIDC in backend.
@@ -289,10 +293,18 @@ Importul din `backend/scripts/import_store_pnl.py` deduplica fisierele identice,
 alege snapshotul anual cu cea mai buna acoperire si importa numai valori reale.
 Codurile istorice din fisiere nu sunt fortate peste `stores.site_code`, iar
 orice luna estimata ulterior trebuie marcata explicit cu `data_kind=estimated`.
+La citire, cheia de business este companie + luna + magazin canonic + categorie
+(`source_site_code` ramane fallback pentru codurile nemapate). Un rand `actual`
+are prioritate fata de `estimated`, inclusiv cand estimarea si importul Finance
+folosesc aliasuri istorice sau companii diferite ale aceluiasi magazin, astfel
+incat veniturile sau costurile sa nu fie dublate in KPI-uri. Pentru randurile
+nemapate, cheia include in continuare compania si codul-sursa, evitand
+coliziunea accidentala intre magazine necunoscute.
 Legaturile auditabile catre master-data Retail sunt in `store_pnl_site_links`;
 scriptul `backend/scripts/map_store_pnl_sites.py` salveaza metoda, scorul si
 starea de review, fara sa forteze codurile istorice care nu mai exista in
-`stores`.
+`stores`. Egalitatile fuzzy raman explicit nerezolvate pentru review manual;
+randurile DB nu sunt folosite ca al doilea criteriu implicit de sortare.
 
 Lunile P&L lipsa pot fi generate cu
 `backend/scripts/estimate_store_pnl.py`. Modelul scaleaza veniturile si

@@ -216,8 +216,15 @@ Focus; sidebar-ul contine numai intrarea principala Management.
 - **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
 - **Salarii** — overview, evolutie, raport salarii versus vanzari si istoric pe
   agent. Accesul ramane limitat server-side la rolurile salariale aprobate.
-- **P&L** — sumar financiar lunar pe magazin, evolutie si structura de cost,
-  vizibil numai utilizatorilor cu capabilitatea P&L verificata de backend.
+- **P&L** — sumar financiar pe magazin, evolutii lunare si anuale si structura
+  de cost, vizibil numai utilizatorilor cu capabilitatea P&L verificata de
+  backend. Intervalul initial este anul calendaristic curent (year-to-date),
+  iar compania si magazinul filtreaza autoritativ toate cardurile si graficele.
+  Cand este ales un magazin, identitatea lui canonica domina compania in
+  istoricul P&L, astfel incat mutarile intre entitati nu rup evolutia.
+  Daca pentru aceeasi luna, magazin canonic si categorie exista atat o estimare,
+  cat si un import real (inclusiv sub coduri istorice sau companii diferite),
+  raportarea foloseste exclusiv valoarea `actual`.
 
 Endpointurile backend pentru Tasks, cereri de concediu si alerte CRM raman
 compatibile cu datele istorice si integrarile, dar nu au subtab-uri in

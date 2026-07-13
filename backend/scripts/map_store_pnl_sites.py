@@ -101,11 +101,18 @@ def build_links(source_rows: list[asyncpg.Record], stores: list[asyncpg.Record])
             continue
 
         scored = sorted(
-            (
-                difflib.SequenceMatcher(None, normalize(location), normalize(row["locatie"])).ratio(),
-                row,
-            )
-            for row in candidates
+            [
+                (
+                    difflib.SequenceMatcher(
+                        None,
+                        normalize(location),
+                        normalize(row["locatie"]),
+                    ).ratio(),
+                    row,
+                )
+                for row in candidates
+            ],
+            key=lambda item: item[0],
         )
         best_score, best = scored[-1]
         second_score = scored[-2][0] if len(scored) > 1 else 0.0

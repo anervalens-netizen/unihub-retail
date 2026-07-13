@@ -315,6 +315,12 @@ Ramase:
   protejeaza starea terminala de un worker intarziat;
 - [x] `dashboard_service.get_dashboard_all` mutat de la gather pozitional la
   rezultate concurente adresate nominal, fara indexuri numerice fragile;
+- [x] repository-ul P&L prefera randurile `actual` fata de `estimated` pe cheia
+  de business a magazinului canonic, inclusiv intre aliasuri istorice si
+  companii diferite, si aplica acelasi filtru de companie/magazin pentru
+  overview si evolutia anuala;
+  magazinul domina compania pentru continuitate istorica, iar egalitatile fuzzy
+  raman nerezolvate fara compararea obiectelor `asyncpg.Record`;
 - eliminare punctuala a celorlalte `replace()` pe SQL numai daca exista test
   care confirma comportamentul.
 
