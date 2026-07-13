@@ -14,6 +14,8 @@ from services.store_pnl import StorePnlService
 
 TEST_SITE = "PNLPREF"
 TEST_OLD_SOURCE = "PNLPREF-OLD"
+TEST_OLD_COMPANY_SOURCE = "PNLPREF-MOBIUP"
+TEST_OLD_COMPANY_PERIOD = date(2096, 7, 1)
 TEST_PERIOD = date(2097, 7, 1)
 
 pytestmark = pytest.mark.skipif(
@@ -27,11 +29,11 @@ async def _reset_fixture() -> None:
     async with pool.acquire() as connection:
         await connection.execute(
             "DELETE FROM store_pnl_monthly WHERE source_site_code = ANY($1::text[])",
-            [TEST_SITE, TEST_OLD_SOURCE],
+            [TEST_SITE, TEST_OLD_SOURCE, TEST_OLD_COMPANY_SOURCE],
         )
         await connection.execute(
             "DELETE FROM store_pnl_site_links WHERE source_site_code = ANY($1::text[])",
-            [TEST_SITE, TEST_OLD_SOURCE],
+            [TEST_SITE, TEST_OLD_SOURCE, TEST_OLD_COMPANY_SOURCE],
         )
         await connection.execute("DELETE FROM stores WHERE site_code = $1", TEST_SITE)
 
@@ -57,11 +59,24 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                 INSERT INTO store_pnl_site_links (
                     company_name, source_site_code, source_location_name,
                     site_code, match_method, confidence, reviewed
-                ) VALUES ('Mobicell', $1, $2, $3, $4, 1, true)
+                ) VALUES ($1, $2, $3, $4, $5, 1, true)
                 """,
                 [
-                    (TEST_SITE, "P&L precedence test", TEST_SITE, "exact_code"),
-                    (TEST_OLD_SOURCE, "P&L old-code estimate", TEST_SITE, "manual_alias"),
+                    ("Mobicell", TEST_SITE, "P&L precedence test", TEST_SITE, "exact_code"),
+                    (
+                        "Mobicell",
+                        TEST_OLD_SOURCE,
+                        "P&L old-code estimate",
+                        TEST_SITE,
+                        "manual_alias",
+                    ),
+                    (
+                        "Mobiup",
+                        TEST_OLD_COMPANY_SOURCE,
+                        "P&L previous-company history",
+                        TEST_SITE,
+                        "manual_alias",
+                    ),
                 ],
             )
             await connection.executemany(
@@ -86,6 +101,20 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                     ),
                 ],
             )
+            await connection.execute(
+                """
+                INSERT INTO store_pnl_monthly (
+                    company_name, period, source_site_code,
+                    source_location_name, category_code, category_name,
+                    amount, data_kind, source_file, source_sha256
+                ) VALUES ('Mobiup', $1, $2, 'P&L previous-company history',
+                          'v1', 'Revenue', 80, 'actual',
+                          'previous-company.xlsx', $3)
+                """,
+                TEST_OLD_COMPANY_PERIOD,
+                TEST_OLD_COMPANY_SOURCE,
+                "m" * 64,
+            )
 
         rows = await StorePnlRepository(pool).rows(TEST_PERIOD, TEST_PERIOD, "Mobicell")
 
@@ -109,10 +138,14 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
         assert store["location"] == "P&L precedence test"
 
         annual_rows = await StorePnlRepository(pool).annual_rows("Mobicell", TEST_SITE)
-        revenue = next(row for row in annual_rows if row["category_code"] == "v1")
-        assert revenue["year"] == 2097
-        assert revenue["amount"] == Decimal("125.00")
-        assert revenue["is_estimated"] is False
+        revenues = {
+            row["year"]: row
+            for row in annual_rows
+            if row["category_code"] == "v1"
+        }
+        assert revenues[2096]["amount"] == Decimal("80.00")
+        assert revenues[2097]["amount"] == Decimal("125.00")
+        assert all(row["is_estimated"] is False for row in revenues.values())
 
         service = StorePnlService(StorePnlRepository(pool))
         overview = await service.overview(
@@ -127,6 +160,17 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
 
         annual = await service.annual("Mobicell", TEST_SITE)
         assert annual == [
+            {
+                "year": "2096",
+                "revenue": 80.0,
+                "cogs": 0.0,
+                "gross_margin": 80.0,
+                "operating_costs": 0.0,
+                "ebitda": 80.0,
+                "depreciation": 0.0,
+                "ebit": 80.0,
+                "is_estimated": False,
+            },
             {
                 "year": "2097",
                 "revenue": 125.0,

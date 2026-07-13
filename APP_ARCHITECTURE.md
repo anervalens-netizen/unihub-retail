@@ -117,7 +117,9 @@ acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
 - Management -> `P&L` prezinta sumar financiar, evolutii lunare si anuale,
   structura pe categorii si performanta pe magazine, cu lunile estimate marcate
   explicit. Scope-ul implicit este anul calendaristic curent, iar filtrele de
-  companie si magazin sunt aplicate in repository tuturor agregatelor.
+  companie si magazin sunt aplicate in repository tuturor agregatelor. La fel
+  ca in restul raportarii istorice, selectarea magazinului domina compania,
+  pentru a pastra lunile dinaintea unei mutari intre entitati.
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
   grupului OIDC dedicat P&L, peste accesul general Management; ascunderea din
   frontend este dublata de sesiunea BFF si verificarea autoritativa OIDC in backend.

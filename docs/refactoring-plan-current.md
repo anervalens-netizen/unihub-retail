@@ -318,8 +318,8 @@ Ramase:
 - [x] repository-ul P&L prefera randurile `actual` fata de `estimated` pe cheia
   de business a magazinului canonic, inclusiv intre aliasuri istorice, si aplica
   acelasi filtru de companie/magazin pentru overview si evolutia anuala;
-  egalitatile fuzzy raman nerezolvate fara compararea obiectelor
-  `asyncpg.Record`;
+  magazinul domina compania pentru continuitate istorica, iar egalitatile fuzzy
+  raman nerezolvate fara compararea obiectelor `asyncpg.Record`;
 - eliminare punctuala a celorlalte `replace()` pe SQL numai daca exista test
   care confirma comportamentul.
 

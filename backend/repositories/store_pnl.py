@@ -50,7 +50,11 @@ class StorePnlRepository:
                     LEFT JOIN store_pnl_site_links l
                         USING (company_name, source_site_code)
                     WHERE p.period BETWEEN $1 AND $2
-                      AND ($3::text IS NULL OR p.company_name = $3)
+                      AND (
+                          $4::text IS NOT NULL
+                          OR $3::text IS NULL
+                          OR p.company_name = $3
+                      )
                 )
                 SELECT p.company_name, p.period, p.source_site_code,
                        p.source_location_name, p.category_code, p.amount,
@@ -118,7 +122,11 @@ class StorePnlRepository:
                     FROM store_pnl_monthly p
                     LEFT JOIN store_pnl_site_links l
                         USING (company_name, source_site_code)
-                    WHERE ($1::text IS NULL OR p.company_name = $1)
+                    WHERE (
+                        $2::text IS NOT NULL
+                        OR $1::text IS NULL
+                        OR p.company_name = $1
+                    )
                 )
                 SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
                        p.category_code,
