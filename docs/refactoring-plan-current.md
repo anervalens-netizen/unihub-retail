@@ -398,8 +398,10 @@ Livrabile:
 - [x] prima transa din `models.py` separata in `schemas/ai_forecast.py` si
   `schemas/contests.py`, cu importuri directe in domenii si re-export compatibil
   pentru consumatorii existenti;
-- `models.py` impartit gradual in continuare pe domeniile Dashboard, Campaigns
-  si Agents;
+- [x] contractele Agents lifecycle/evaluation separate in `schemas/agents.py`;
+  routerul si serviciile importa direct domeniul, iar `models.py` pastreaza
+  re-exportul compatibil pentru consumatorii existenti;
+- `models.py` impartit gradual in continuare pe domeniile Dashboard si Campaigns;
 - `Literal`, pattern-uri si constrangeri Pydantic pentru status/luni/valori;
 - magic literals mutate in constante business numite;
 - `SELECT *` eliminat din repo-urile unde schema drift poate produce bug-uri;

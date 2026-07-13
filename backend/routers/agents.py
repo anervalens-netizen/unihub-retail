@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
-from models import (
+from schemas.agents import (
     AgentsOverviewResponse,
     AgentMovementResponse,
     AgentListResponse,
