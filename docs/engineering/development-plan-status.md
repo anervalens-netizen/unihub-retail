@@ -23,6 +23,8 @@ tracked in `docs/refactoring-plan-current.md`.
 ## What is already delivered
 
 - P&L management dashboard and the OIDC/P&L login-race hotfix;
+- P&L actual-over-estimate precedence, authoritative company/store filtering,
+  current-year default scope and separate monthly/annual trends;
 - canonical return-receipt identity;
 - Grile monthly idempotency and safe transitions;
 - bounded, redacted DB error logging;

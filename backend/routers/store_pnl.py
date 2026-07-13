@@ -62,17 +62,43 @@ async def months(
     return {"months": await service.months()}
 
 
+def validate_company(company: str | None) -> None:
+    if company not in (None, "Mobicell", "Mobiup"):
+        raise HTTPException(status_code=422, detail="Companie P&L invalida.")
+
+
+@router.get("/stores")
+async def stores(
+    company: str | None = Query(default=None),
+    _claims: AuthClaims = Depends(require_store_pnl_owner),
+    service: StorePnlService = Depends(get_service),
+):
+    validate_company(company)
+    return {"stores": await service.stores(company)}
+
+
+@router.get("/annual")
+async def annual(
+    company: str | None = Query(default=None),
+    site_code: str | None = Query(default=None, max_length=100),
+    _claims: AuthClaims = Depends(require_store_pnl_owner),
+    service: StorePnlService = Depends(get_service),
+):
+    validate_company(company)
+    return {"annual": await service.annual(company, site_code)}
+
+
 @router.get("/overview")
 async def overview(
     start_month: str = Query(...),
     end_month: str = Query(...),
     company: str | None = Query(default=None),
+    site_code: str | None = Query(default=None, max_length=100),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
 ):
-    if company not in (None, "Mobicell", "Mobiup"):
-        raise HTTPException(status_code=422, detail="Companie P&L invalida.")
+    validate_company(company)
     start, end = parse_month(start_month), parse_month(end_month)
     if start > end:
         raise HTTPException(status_code=422, detail="Intervalul P&L este inversat.")
-    return await service.overview(start, end, company)
+    return await service.overview(start, end, company, site_code)

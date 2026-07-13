@@ -21,6 +21,17 @@ export interface PnlMonthlyPoint extends PnlMetrics {
   is_estimated: boolean;
 }
 
+export interface PnlAnnualPoint extends PnlMetrics {
+  year: string;
+  is_estimated: boolean;
+}
+
+export interface PnlStoreOption {
+  company_name: string;
+  site_code: string;
+  location: string;
+}
+
 export interface PnlStore extends PnlMetrics {
   company: string;
   site_code: string;
@@ -33,6 +44,7 @@ export interface PnlOverview {
   start_month: string;
   end_month: string;
   company: string | null;
+  site_code: string | null;
   summary: PnlMetrics;
   monthly: PnlMonthlyPoint[];
   categories: Record<string, number>;
@@ -65,16 +77,42 @@ export async function getPnlMonths(): Promise<PnlMonth[]> {
   return data.months;
 }
 
+export async function getPnlStores(company: string): Promise<PnlStoreOption[]> {
+  const { data } = await client.get<{ stores: PnlStoreOption[] }>(
+    "/api/store-pnl/stores",
+    { params: { company: company || undefined } },
+  );
+  return data.stores;
+}
+
+export async function getPnlAnnual(
+  company: string,
+  siteCode: string,
+): Promise<PnlAnnualPoint[]> {
+  const { data } = await client.get<{ annual: PnlAnnualPoint[] }>(
+    "/api/store-pnl/annual",
+    {
+      params: {
+        company: company || undefined,
+        site_code: siteCode || undefined,
+      },
+    },
+  );
+  return data.annual;
+}
+
 export async function getPnlOverview(
   startMonth: string,
   endMonth: string,
   company: string,
+  siteCode = "",
 ): Promise<PnlOverview> {
   const { data } = await client.get<PnlOverview>("/api/store-pnl/overview", {
     params: {
       start_month: startMonth,
       end_month: endMonth,
       company: company || undefined,
+      site_code: siteCode || undefined,
     },
   });
   return data;

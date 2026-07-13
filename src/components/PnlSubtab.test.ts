@@ -1,0 +1,30 @@
+import { describe, expect, it } from "vitest";
+
+import { defaultPnlRange } from "./PnlSubtab";
+
+describe("defaultPnlRange", () => {
+  it("selects the available year-to-date months from the current year", () => {
+    expect(
+      defaultPnlRange(
+        ["2025-12", "2026-03", "2026-01", "2026-07"],
+        new Date("2026-07-13T10:00:00Z"),
+      ),
+    ).toEqual({ start: "2026-01", end: "2026-07" });
+  });
+
+  it("falls back to the latest available year when the current year is absent", () => {
+    expect(
+      defaultPnlRange(
+        ["2024-12", "2025-04", "2025-01"],
+        new Date("2026-07-13T10:00:00Z"),
+      ),
+    ).toEqual({ start: "2025-01", end: "2025-04" });
+  });
+
+  it("returns an empty range when no months exist", () => {
+    expect(defaultPnlRange([], new Date("2026-07-13T10:00:00Z"))).toEqual({
+      start: "",
+      end: "",
+    });
+  });
+});
