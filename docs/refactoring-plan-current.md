@@ -285,8 +285,10 @@ Ramase:
 - [x] state machine-ul pur pentru lifecycle-ul operatiilor lunare Grile este
   separat si acoperit exhaustiv, iar CAS-urile start/heartbeat/finish/fail si
   atasarea jobului sunt mutate in repository;
-- [ ] rezervarea initiala si checkpointurile per magazin pentru reset trebuie
-  mutate din `grile_monthly.py` in acelasi boundary de repository;
+- [x] rezervarea initiala si checkpointurile per magazin pentru reset sunt
+  mutate in `repositories/grile_monthly_operations.py`; claim/finalizare sunt
+  CAS, cu test PostgreSQL concurent care demonstreaza un singur claim si
+  protejeaza starea terminala de un worker intarziat;
 - [x] `dashboard_service.get_dashboard_all` mutat de la gather pozitional la
   rezultate concurente adresate nominal, fara indexuri numerice fragile;
 - eliminare punctuala a celorlalte `replace()` pe SQL numai daca exista test

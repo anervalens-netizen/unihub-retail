@@ -26,10 +26,17 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from repositories.grile_monthly_operations import (
+    ResetItemInput,
     attach_job as persist_monthly_operation_job,
+    claim_reset_item as persist_reset_item_claim,
+    ensure_reset_items as persist_reset_items,
     fail as persist_monthly_operation_failure,
     finish as persist_monthly_operation_result,
+    finish_reset_item as persist_reset_item_result,
+    get_previous_completed_reset_item as fetch_previous_completed_reset_item,
     heartbeat as persist_monthly_operation_heartbeat,
+    operation_to_dict as persisted_operation_to_dict,
+    reserve as persist_monthly_operation_reservation,
     start as persist_monthly_operation_start,
 )
 from services.spreadsheet_safety import TrustedFormula, append_openpyxl_row
@@ -320,12 +327,7 @@ async def load_entries(pool: asyncpg.Pool, only: str | None = None) -> list[Stor
 
 
 def _operation_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    data = dict(row)
-    if data.get("result") and isinstance(data["result"], str):
-        data["result"] = json.loads(data["result"])
-    return data
+    return persisted_operation_to_dict(row)
 
 
 def _safe_operation_result(operation: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -344,163 +346,13 @@ async def reserve_monthly_operation(
 ) -> MonthlyOperationReservation:
     if op not in VALID_OPS:
         raise ValueError(f"Operatie necunoscuta: {op}")
-
-    normalized_only = only.strip() if only and only.strip() else None
-    reservation: MonthlyOperationReservation | None = None
-    blocked_message: str | None = None
-    operation_id: int | None = None
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            stale_ops = await conn.fetch(
-                """
-                SELECT id
-                FROM grile_monthly_operations
-                WHERE closing_month = $1
-                  AND status IN ('queued', 'running')
-                  AND COALESCE(heartbeat_at, started_at, created_at)
-                      < now() - interval '2 hours'
-                """,
-                month,
-            )
-            stale_ids = [int(row["id"]) for row in stale_ops]
-            if stale_ids:
-                await conn.execute(
-                    """
-                    UPDATE grile_monthly_reset_items
-                    SET status = 'uncertain',
-                        error_message = COALESCE(
-                            error_message,
-                            'Operatia a expirat inainte de confirmarea efectului Google; verifica manual grila.'
-                        ),
-                        updated_at = now()
-                    WHERE operation_id = ANY($1::int[])
-                      AND status IN ('pending', 'running')
-                    """,
-                    stale_ids,
-                )
-                await conn.execute(
-                    """
-                    UPDATE grile_monthly_operations
-                    SET status = 'failed',
-                        error_message = 'Rezervare expirata inainte de finalizare',
-                        finished_at = now(),
-                        heartbeat_at = now()
-                    WHERE id = ANY($1::int[])
-                    """,
-                    stale_ids,
-                )
-
-            active = await conn.fetchrow(
-                """
-                SELECT *
-                FROM grile_monthly_operations
-                WHERE closing_month = $1 AND status IN ('queued', 'running')
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                month,
-            )
-            if active is not None:
-                reservation = MonthlyOperationReservation(
-                    status="already_running",
-                    operation_id=int(active["id"]),
-                    job_id=active["job_id"],
-                    operation=_operation_to_dict(active),
-                )
-
-            if reservation is None and op == "reset" and not dry_run:
-                uncertain = await conn.fetchrow(
-                    """
-                    SELECT site_code, company, store
-                    FROM grile_monthly_reset_items
-                    WHERE closing_month = $1 AND status = 'uncertain'
-                    ORDER BY company, store
-                    LIMIT 1
-                    """,
-                    month,
-                )
-                if uncertain is not None:
-                    blocked_message = (
-                        "Resetul live nu poate fi reluat automat: exista checkpoint "
-                        f"uncertain pentru {uncertain['company']}/{uncertain['store']} "
-                        f"({uncertain['site_code']}). Verifica manual in Google Sheets."
-                    )
-
-                if blocked_message is None:
-                    completed = await conn.fetchrow(
-                        """
-                        SELECT *
-                        FROM grile_monthly_operations
-                        WHERE closing_month = $1
-                          AND op = 'reset'
-                          AND dry_run = false
-                          AND status = 'completed'
-                          AND COALESCE(only_filter, '') = COALESCE($2, '')
-                        ORDER BY finished_at DESC NULLS LAST, created_at DESC
-                        LIMIT 1
-                        """,
-                        month,
-                        normalized_only,
-                    )
-                    if completed is not None:
-                        reservation = MonthlyOperationReservation(
-                            status="already_completed",
-                            operation_id=int(completed["id"]),
-                            job_id=completed["job_id"],
-                            operation=_operation_to_dict(completed),
-                        )
-
-            if reservation is None and blocked_message is None:
-                operation_id = await conn.fetchval(
-                    """
-                    INSERT INTO grile_monthly_operations (
-                        op, closing_month, only_filter, dry_run,
-                        status, triggered_by_email, heartbeat_at
-                    )
-                    VALUES ($1, $2, $3, $4, 'queued', $5, now())
-                    ON CONFLICT (closing_month)
-                        WHERE status IN ('queued', 'running')
-                    DO NOTHING
-                    RETURNING id
-                    """,
-                    op,
-                    month,
-                    normalized_only,
-                    dry_run,
-                    triggered_by_email,
-                )
-                if operation_id is None:
-                    active = await conn.fetchrow(
-                        """
-                        SELECT *
-                        FROM grile_monthly_operations
-                        WHERE closing_month = $1 AND status IN ('queued', 'running')
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                        """,
-                        month,
-                    )
-                    if active is None:
-                        raise RuntimeError("Failed to reserve grile monthly operation")
-                    reservation = MonthlyOperationReservation(
-                        status="already_running",
-                        operation_id=int(active["id"]),
-                        job_id=active["job_id"],
-                        operation=_operation_to_dict(active),
-                    )
-
-    if blocked_message is not None:
-        raise GrileMonthlyRetryBlockedError(blocked_message)
-
-    if reservation is not None:
-        return reservation
-
-    if operation_id is None:
-        raise RuntimeError("Failed to reserve grile monthly operation")
-
-    return MonthlyOperationReservation(
-        status="enqueued",
-        operation_id=int(operation_id),
+    return await persist_monthly_operation_reservation(
+        pool,
+        op=op,
+        month=month,
+        only=only,
+        dry_run=dry_run,
+        triggered_by_email=triggered_by_email,
     )
 
 
@@ -563,30 +415,22 @@ async def ensure_reset_items(
     next_month_key: str,
     entries: list[StoreEntry],
 ) -> None:
-    async with pool.acquire() as conn:
-        await conn.executemany(
-            """
-            INSERT INTO grile_monthly_reset_items (
-                operation_id, closing_month, next_month, site_code, sheet_id,
-                company, store, status, ranges
+    await persist_reset_items(
+        pool,
+        operation_id=operation_id,
+        closing_month=closing_month_key,
+        next_month=next_month_key,
+        entries=[
+            ResetItemInput(
+                site_code=entry.site_code,
+                sheet_id=entry.sheet_id,
+                company=entry.company,
+                store=entry.store,
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8::jsonb)
-            ON CONFLICT (operation_id, site_code) DO NOTHING
-            """,
-            [
-                (
-                    operation_id,
-                    closing_month_key,
-                    next_month_key,
-                    entry.site_code,
-                    entry.sheet_id,
-                    entry.company,
-                    entry.store,
-                    json.dumps(list(RESET_RANGES), ensure_ascii=False),
-                )
-                for entry in entries
-            ],
-        )
+            for entry in entries
+        ],
+        ranges=RESET_RANGES,
+    )
 
 
 async def get_previous_completed_reset_item(
@@ -595,20 +439,11 @@ async def get_previous_completed_reset_item(
     closing_month_key: str,
     site_code: str,
 ) -> asyncpg.Record | None:
-    async with pool.acquire() as conn:
-        return await conn.fetchrow(
-            """
-            SELECT *
-            FROM grile_monthly_reset_items
-            WHERE closing_month = $1
-              AND site_code = $2
-              AND status = 'completed'
-            ORDER BY completed_at DESC NULLS LAST, updated_at DESC
-            LIMIT 1
-            """,
-            closing_month_key,
-            site_code,
-        )
+    return await fetch_previous_completed_reset_item(
+        pool,
+        closing_month=closing_month_key,
+        site_code=site_code,
+    )
 
 
 async def mark_reset_item_running(
@@ -616,19 +451,12 @@ async def mark_reset_item_running(
     *,
     operation_id: int,
     site_code: str,
-) -> None:
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE grile_monthly_reset_items
-            SET status = 'running',
-                started_at = COALESCE(started_at, now()),
-                updated_at = now()
-            WHERE operation_id = $1 AND site_code = $2 AND status = 'pending'
-            """,
-            operation_id,
-            site_code,
-        )
+) -> bool:
+    return await persist_reset_item_claim(
+        pool,
+        operation_id=operation_id,
+        site_code=site_code,
+    )
 
 
 async def finish_reset_item(
@@ -638,22 +466,14 @@ async def finish_reset_item(
     site_code: str,
     status: Literal["completed", "error", "skipped"],
     error_message: str | None = None,
-) -> None:
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE grile_monthly_reset_items
-            SET status = $3,
-                error_message = $4,
-                completed_at = CASE WHEN $3 IN ('completed', 'skipped') THEN now() ELSE completed_at END,
-                updated_at = now()
-            WHERE operation_id = $1 AND site_code = $2
-            """,
-            operation_id,
-            site_code,
-            status,
-            error_message,
-        )
+) -> bool:
+    return await persist_reset_item_result(
+        pool,
+        operation_id=operation_id,
+        site_code=site_code,
+        status=status,
+        error_message=error_message,
+    )
 
 
 def validate_archive_manifest(manifest: dict[str, Any], expected_count: int) -> tuple[bool, list[str]]:
@@ -1159,40 +979,52 @@ async def reset_month(
                     "error": skip_message,
                     "ranges": list(RESET_RANGES),
                 }
-                await finish_reset_item(
+                skipped_persisted = await finish_reset_item(
                     pool,
                     operation_id=checkpoint_operation_id,
                     site_code=entry.site_code,
                     status="skipped",
                     error_message=skip_message,
                 )
+                if not skipped_persisted:
+                    raise RuntimeError(
+                        f"Reset checkpoint could not be skipped for {entry.site_code}"
+                    )
                 report["stores"].append(skipped)
                 continue
 
-            await mark_reset_item_running(
+            claimed = await mark_reset_item_running(
                 pool,
                 operation_id=checkpoint_operation_id,
                 site_code=entry.site_code,
             )
+            if not claimed:
+                raise RuntimeError(
+                    f"Reset checkpoint could not be claimed for {entry.site_code}"
+                )
 
         result = reset_store(sheets_svc, entry, dry_run=dry_run)
         report["stores"].append(result)
 
         if checkpoint_operation_id is not None:
             if result["status"] == "OK":
-                await finish_reset_item(
+                persisted = await finish_reset_item(
                     pool,
                     operation_id=checkpoint_operation_id,
                     site_code=entry.site_code,
                     status="completed",
                 )
             else:
-                await finish_reset_item(
+                persisted = await finish_reset_item(
                     pool,
                     operation_id=checkpoint_operation_id,
                     site_code=entry.site_code,
                     status="error",
                     error_message=result.get("error") or "Reset Google failed",
+                )
+            if not persisted:
+                raise RuntimeError(
+                    f"Reset checkpoint result could not be persisted for {entry.site_code}"
                 )
 
     report_path = build_reset_report_path(OUTPUTS_DIR, next_month)

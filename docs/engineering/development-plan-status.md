@@ -17,7 +17,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-06 BFF/server-side session | Merged and active in production | User-interactive login/logout observation and ongoing session metrics |
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
-| Performance/modularization | Partially implemented | Remaining backend boundaries, Dashboard splits and DB-pool pressure review |
+| Performance/modularization | Partially implemented | Dashboard splits, DB-pool pressure review and remaining model cleanup |
 | CI/CD and operations | Quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation and final release acceptance |
 
 ## What is already delivered
@@ -32,7 +32,8 @@ tracked in `docs/refactoring-plan-current.md`.
 - opaque salary `person_id`, with CNP removed from browser and public API;
 - typed fail-closed OIDC settings, real JWKS rotation and bounded stale cache;
 - trusted client-IP resolution and atomic distributed Valkey rate limiting;
-- foundational query-cache/frontend primitives and selected backend repository boundaries;
+- foundational query-cache/frontend primitives and repository boundaries,
+  including the complete monthly Grile operation lifecycle;
 - measured Agent Evaluation and Dashboard optimizations, with identical response
   evidence and median reductions of 76.7% and 25.8% respectively;
 - frontend CI gates for general and strict typecheck, lint, unit tests, runtime
@@ -49,7 +50,7 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. continue the remaining Dashboard, Grile and model modularization;
+3. continue the remaining Dashboard and model modularization;
 4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,

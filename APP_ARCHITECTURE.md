@@ -187,8 +187,15 @@ Backend-ul foloseste modelul `router -> service -> repository`.
 | Campanii | `campaigns.py` pe toate cele 3 straturi |
 | Concursuri | `routers/contests.py` -> `services/contests.py` -> `repositories/contests.py` |
 | HR/CRM/Tasks/Calculator Target | straturi separate per domeniu |
+| Grile lunar | `services/grile_monthly.py` -> `repositories/grile_monthly_operations.py` + state machine pur |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
 | Exporturi | `routers/exports.py` -> `services/exports.py` -> `repositories/exports.py` |
+
+Repository-ul Grile detine rezervarea tranzactionala, expirarea lease-urilor si
+checkpointurile per magazin. Claim-ul `pending -> running` si finalizarea din
+`running` sunt compare-and-set; un worker concurent sau intarziat nu poate
+suprascrie un checkpoint terminal. Service-ul pastreaza doar orchestrarea
+Google/filesystem si wrapper-ele publice folosite de worker.
 
 Dashboard-ul operational citeste KPI-urile din agregatele `reporting_*`.
 Tabelele curente RM si Magazine returneaza atat procentul realizat

@@ -15,6 +15,9 @@ from services.grile_monthly import (
     StoreEntry,
     fail_monthly_operation,
     finish_monthly_operation,
+    finish_reset_item,
+    ensure_reset_items,
+    mark_reset_item_running,
     reserve_monthly_operation,
     reset_month,
     start_monthly_operation,
@@ -191,6 +194,65 @@ async def test_completed_live_reset_is_idempotent_for_same_scope() -> None:
         assert reservation.status == "already_completed"
         assert reservation.operation_id == operation_id
         assert reservation.job_id == "job-completed"
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+async def test_reset_checkpoint_claim_and_finish_are_compare_and_set() -> None:
+    pool = await get_pool()
+    month = "2099-09"
+    await _cleanup(month)
+
+    try:
+        async with pool.acquire() as conn:
+            operation_id = await conn.fetchval(
+                """
+                INSERT INTO grile_monthly_operations (op, closing_month, dry_run, status)
+                VALUES ('reset', $1, false, 'running')
+                RETURNING id
+                """,
+                month,
+            )
+
+        await ensure_reset_items(
+            pool,
+            operation_id=operation_id,
+            closing_month_key=month,
+            next_month_key="2099-10",
+            entries=[StoreEntry("Mobiup", "Store 1", "sheet-1", "SITE01", "Manager")],
+        )
+
+        claims = await asyncio.gather(
+            mark_reset_item_running(pool, operation_id=operation_id, site_code="SITE01"),
+            mark_reset_item_running(pool, operation_id=operation_id, site_code="SITE01"),
+        )
+        assert sorted(claims) == [False, True]
+
+        assert await finish_reset_item(
+            pool,
+            operation_id=operation_id,
+            site_code="SITE01",
+            status="completed",
+        ) is True
+        assert await finish_reset_item(
+            pool,
+            operation_id=operation_id,
+            site_code="SITE01",
+            status="error",
+            error_message="late worker",
+        ) is False
+
+        async with pool.acquire() as conn:
+            item = await conn.fetchrow(
+                """
+                SELECT status, error_message
+                FROM grile_monthly_reset_items
+                WHERE operation_id = $1 AND site_code = 'SITE01'
+                """,
+                operation_id,
+            )
+        assert dict(item) == {"status": "completed", "error_message": None}
     finally:
         await _cleanup(month)
         await close_db_pool()
