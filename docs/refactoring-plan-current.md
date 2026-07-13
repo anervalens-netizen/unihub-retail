@@ -218,8 +218,10 @@ Livrabile:
   daily aggregation si regula `special_cards` din ultima luna;
 - [x] `queryKeys.dashboard.yearHistory` adaugat si testat;
 - [x] data-fetching-ul Dashboard este extras in `useDashboardData`;
-- [ ] `Dashboard.tsx` se imparte in subcomponente:
-  `CurrentDashboard`, `HistoryDashboard`, `BreakdownTable`;
+- [x] cele sase tabele RM/Magazine/Agenti, curent si istoric, folosesc
+  componenta generica testata `dashboard/BreakdownTable.tsx`;
+- [ ] continutul ramas din `Dashboard.tsx` se imparte in
+  `CurrentDashboard` si `HistoryDashboard`;
 - [x] drawerul de performanta, graficele si sumarul salarial sunt extrase in
   `dashboard/PerformanceDetailDrawer.tsx`;
 - [x] sortarile repetitive din tabelele Dashboard folosesc `useSortable`;
@@ -265,6 +267,16 @@ Validare sortari Dashboard:
 - `sudo systemctl restart unihub-backend.service` - OK;
 - health local si public - OK;
 - jurnal `unihub-backend.service` dupa restart - fara warnings.
+
+Validare `BreakdownTable` comun:
+
+- `npm run typecheck` - OK;
+- `npm run typecheck:strict` - OK;
+- `npm run lint` - OK;
+- `npm run test` - OK, 27 fisiere / 213 teste;
+- `npm run build` - OK;
+- payload-urile, coloanele, formatarea, sortarea si exporturile celor sase
+  tabele raman neschimbate; transa elimina numai markup-ul duplicat.
 
 ## Milestone 3 - Backend domain boundaries ramase
 
@@ -433,6 +445,9 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: cele sase tabele breakdown Dashboard folosesc o singura
+  componenta generica tipizata si testata; `Dashboard.tsx` scade cu peste 150
+  de linii nete, pas intermediar inainte de extragerea Current/History.
 - 2026-07-13: `/livez` process-only si `/readyz` dependency-backed sunt
   separate; `/health` ramane alias compatibil. Readiness are timeout total de
   doua secunde, metrici finite si raspuns 503 fara detalii. Regulile SLO exclud

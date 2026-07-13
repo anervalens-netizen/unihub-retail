@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Building2,
   CalendarRange,
@@ -39,7 +39,6 @@ import type {
   StoreStat,
 } from '../api/types';
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../lib/formatters';
-import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { VisiteSubtab } from './VisiteSubtab';
@@ -54,7 +53,6 @@ import {
   LoadingCard,
   Metric,
   PeriodTable,
-  SortableHeader,
   describeFilterScope,
   formatCompactDonutValue,
   getAgentSortValue,
@@ -71,6 +69,10 @@ import {
   PerformanceDetailDrawer,
   type PerformanceSelection,
 } from './dashboard/PerformanceDetailDrawer';
+import {
+  BreakdownTable,
+  type BreakdownColumn,
+} from './dashboard/BreakdownTable';
 
 const HISTORY_START_YEAR = 2018;
 
@@ -131,15 +133,9 @@ type RegionalSortKey =
   | 'prc_focus_acc_qty'
   | 'return_receipt_count';
 
-const TABLE_MAX_HEIGHT_CLASS = 'max-h-[26rem]';
-const HUB_TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-[10.5px]';
-const COMPACT_TH_CLASS = 'px-1.5 py-1.5 align-bottom whitespace-normal text-[10px] leading-[1.05]';
 const COMPACT_TD_CLASS = 'px-1.5 py-1 whitespace-nowrap align-middle leading-tight';
 const COMPACT_NUM_TD_CLASS = `${COMPACT_TD_CLASS} text-right tabular-nums`;
 const COMPACT_TEXT_TD_CLASS = `${COMPACT_TD_CLASS} text-left`;
-const REGIONAL_TABLE_CLASS = HUB_TABLE_CLASS;
-const STORE_TABLE_CLASS = HUB_TABLE_CLASS;
-const AGENT_TABLE_CLASS = HUB_TABLE_CLASS;
 
 const CATEGORY_SHORT: Record<string, string> = {
   'Casti intraauriculare': 'Casti intraaur.',
@@ -206,6 +202,132 @@ const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && 
 const STORE_ASC_SORT_KEYS: StoreSortKey[] = ['locatie', 'site_code'];
 const AGENT_ASC_SORT_KEYS: AgentSortKey[] = ['locatie', 'agent'];
 const REGIONAL_ASC_SORT_KEYS: RegionalSortKey[] = ['regional'];
+
+function regionalBreakdownColumns(
+  columns: Array<{ key: RegionalSortKey; label: string }>,
+  onOpen?: (selection: PerformanceSelection) => void,
+): BreakdownColumn<RegionalStat, RegionalSortKey>[] {
+  return columns.map((column, index) => ({
+    ...column,
+    headerClassName: index === 0 ? 'w-24 max-w-24' : 'max-w-[4.5rem]',
+    cellClassName: column.key === 'regional'
+      ? `max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`
+      : column.key === 'proc_realizare_target'
+        ? `${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`
+        : column.key === 'forecast_target_pct'
+          ? `${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`
+          : COMPACT_NUM_TD_CLASS,
+    render: (row) => {
+      if (column.key === 'regional') {
+        return onOpen ? (
+          <button
+            type="button"
+            onClick={() => onOpen({ level: 'regional', key: row.regional })}
+            className="max-w-full truncate text-left font-semibold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
+            title="Detalii performanta"
+          >
+            {row.regional}
+          </button>
+        ) : row.regional;
+      }
+      if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_produs') {
+        return formatAmount(row[column.key] ?? 0);
+      }
+      if (column.key === 'proc_realizare_target' || column.key === 'forecast_target_pct' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
+        return formatPercent(row[column.key]);
+      }
+      return formatInt(row[column.key] ?? 0);
+    },
+  }));
+}
+
+function storeBreakdownColumns(
+  columns: Array<{ key: StoreSortKey; label: string }>,
+  onOpen?: (selection: PerformanceSelection) => void,
+): BreakdownColumn<StoreStat, StoreSortKey>[] {
+  return columns.map((column, index) => ({
+    ...column,
+    headerClassName: index === 0 ? 'w-32 max-w-32' : 'max-w-[4.5rem]',
+    cellClassName: column.key === 'locatie'
+      ? `max-w-32 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`
+      : column.key === 'proc_realizare_target'
+        ? `${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`
+        : column.key === 'forecast_target_pct'
+          ? `${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`
+          : column.key === 'return_receipt_count'
+            ? `${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`
+            : COMPACT_NUM_TD_CLASS,
+    render: (row) => {
+      if (column.key === 'locatie') {
+        const label = (
+          <>
+            <FirmaBadge firma={row.firma} />
+            <span className="truncate">{row.locatie}</span>
+          </>
+        );
+        return onOpen ? (
+          <button
+            type="button"
+            onClick={() => onOpen({ level: 'store', key: row.site_code })}
+            className="inline-flex min-w-0 max-w-full items-center text-left font-semibold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
+            title="Detalii performanta"
+          >
+            {label}
+          </button>
+        ) : <span className="inline-flex min-w-0 items-center">{label}</span>;
+      }
+      if (column.key === 'site_code') return row.firma;
+      if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_zilnica' || column.key === 'medie_produs') {
+        return formatAmount(row[column.key] ?? 0);
+      }
+      if (column.key === 'proc_realizare_target' || column.key === 'forecast_target_pct') {
+        return formatPercent(row[column.key]);
+      }
+      return formatInt(row[column.key] ?? 0);
+    },
+  }));
+}
+
+function agentBreakdownColumns(
+  columns: Array<{ key: AgentSortKey; label: string }>,
+  onOpen?: (selection: PerformanceSelection) => void,
+): BreakdownColumn<AgentStat, AgentSortKey>[] {
+  return columns.map((column, index) => ({
+    ...column,
+    headerClassName: index === 0 ? 'w-20 max-w-20' : index === 1 ? 'w-28 max-w-28' : 'max-w-[4.5rem]',
+    cellClassName: column.key === 'agent'
+      ? `max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`
+      : column.key === 'locatie'
+        ? `max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`
+        : column.key === 'total_vanzari'
+          ? `${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`
+          : column.key === 'return_receipt_count'
+            ? `${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`
+            : COMPACT_NUM_TD_CLASS,
+    render: (row) => {
+      if (column.key === 'agent') {
+        return onOpen ? (
+          <button
+            type="button"
+            onClick={() => onOpen({ level: 'agent', key: row.agent, site_code: row.site_code })}
+            className="max-w-full truncate text-left font-bold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
+            title="Detalii performanta"
+          >
+            {row.agent}
+          </button>
+        ) : row.agent;
+      }
+      if (column.key === 'locatie') return row.locatie;
+      if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_zilnica' || column.key === 'medie_produs') {
+        return formatAmount(row[column.key] ?? 0);
+      }
+      if (column.key === 'proc_realizare_target' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
+        return formatPercent(row[column.key]);
+      }
+      return formatInt(row[column.key] ?? 0);
+    },
+  }));
+}
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const n = (value: number | null | undefined): number => Number(value ?? 0);
@@ -1359,247 +1481,88 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
             </div>
           </div>
 
-          <div className="glass rounded-3xl p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Users size={16} className="text-indigo-500" />
-                  <h3 className="text-sm font-bold">RM — Regional Manager</h3>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Filtrare: {filterScopeLabel} · Sortare: {regionalColumnsVisible.find((column) => column.key === regionalSort.key)?.label} ({regionalSort.direction}) · {regionals.length} regionale
-                </p>
-              </div>
-              <ExportTableButton
-                filename={`hub_${currentMonth}_rm`}
-                sheetName={`RM ${currentMonth}`}
-                rows={sortedRegionals}
-                columns={[
-                  { header: 'Regional', value: (row) => row.regional },
-                  { header: 'Target', value: (row) => formatCurrency(row.target) },
-                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                  { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
-                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
-                  { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                  { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-                  { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-                ]}
-              />
-            </div>
-            <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-              <table className={REGIONAL_TABLE_CLASS}>
-                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {regionalColumnsVisible.map((column, i) => (
-                      <React.Fragment key={column.key}>
-                        <SortableHeader
-                          label={column.label}
-                          active={regionalSort.key === column.key}
-                          direction={regionalSort.direction}
-                          onClick={() => handleSortRegionals(column.key)}
-                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-24 max-w-24' : 'max-w-[4.5rem]'}`}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRegionals.map((regional, index) => (
-                    <tr
-                      key={regional.regional}
-                      className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                    >
-                      <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>
-                        <button
-                          type="button"
-                          onClick={() => openPerformanceDetail({ level: 'regional', key: regional.regional })}
-                          className="max-w-full truncate text-left font-semibold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
-                          title="Detalii performanta"
-                        >
-                          {regional.regional}
-                        </button>
-                      </td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(regional.target)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(regional.total_vanzari)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(regional.proc_realizare_target)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(regional.forecast_target_pct)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(regional.qty_total)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(regional.medie_produs ?? 0)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(regional.nr_bonuri)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(regional.proc_bon2acc)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(regional.prc_focus_acc_qty)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <BreakdownTable
+            title="RM — Regional Manager"
+            icon={<Users size={16} className="text-indigo-500" />}
+            subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${regionalColumnsVisible.find((column) => column.key === regionalSort.key)?.label} (${regionalSort.direction}) · ${regionals.length} regionale`}
+            rows={sortedRegionals}
+            columns={regionalBreakdownColumns(regionalColumnsVisible, openPerformanceDetail)}
+            sortKey={regionalSort.key}
+            sortDirection={regionalSort.direction}
+            onSort={handleSortRegionals}
+            rowKey={(row) => row.regional}
+            exportFilename={`hub_${currentMonth}_rm`}
+            exportSheetName={`RM ${currentMonth}`}
+            exportColumns={[
+              { header: 'Regional', value: (row) => row.regional },
+              { header: 'Target', value: (row) => formatCurrency(row.target) },
+              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+              { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
+              { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
+              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
+              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+              { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+              { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+            ]}
+          />
 
-          <div className="glass rounded-3xl p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Building2 size={16} className="text-indigo-500" />
-                  <h3 className="text-sm font-bold">Magazine</h3>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Filtrare: {filterScopeLabel} · Sortare: {storeColumnsVisible.find((column) => column.key === storeSort.key)?.label} ({storeSort.direction}) · {stores.length} magazine
-                </p>
-              </div>
-              <ExportTableButton
-                filename={`hub_${currentMonth}_magazine`}
-                sheetName={`Magazine ${currentMonth}`}
-                rows={sortedStores}
-                columns={[
-                  { header: 'Firma', value: (row) => row.firma },
-                  { header: 'Magazin', value: (row) => row.locatie },
-                  { header: 'Target', value: (row) => formatCurrency(row.target) },
-                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                  { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
-                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
-                  { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                  { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-                  { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
-                  { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
-                ]}
-              />
-            </div>
-            <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-              <table className={STORE_TABLE_CLASS}>
-                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {storeColumnsVisible.map((column, i) => (
-                      <React.Fragment key={column.key}>
-                        <SortableHeader
-                          label={column.label}
-                          active={storeSort.key === column.key}
-                          direction={storeSort.direction}
-                          onClick={() => handleSortStores(column.key)}
-                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-32 max-w-32' : 'max-w-[4.5rem]'}`}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedStores.map((store, index) => (
-                    <tr
-                      key={store.site_code}
-                      className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                    >
-                      <td className={`max-w-32 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>
-                        <button
-                          type="button"
-                          onClick={() => openPerformanceDetail({ level: 'store', key: store.site_code })}
-                          className="inline-flex min-w-0 max-w-full items-center text-left font-semibold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
-                          title="Detalii performanta"
-                        >
-                          <FirmaBadge firma={store.firma} />
-                          <span className="truncate">{store.locatie}</span>
-                        </button>
-                      </td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.target)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.total_vanzari)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-slate-700 dark:text-slate-200`}>{formatPercent(store.forecast_target_pct)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.medie_produs ?? 0)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(store.return_receipt_count)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <BreakdownTable
+            title="Magazine"
+            icon={<Building2 size={16} className="text-indigo-500" />}
+            subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${storeColumnsVisible.find((column) => column.key === storeSort.key)?.label} (${storeSort.direction}) · ${stores.length} magazine`}
+            rows={sortedStores}
+            columns={storeBreakdownColumns(storeColumnsVisible, openPerformanceDetail)}
+            sortKey={storeSort.key}
+            sortDirection={storeSort.direction}
+            onSort={handleSortStores}
+            rowKey={(row) => row.site_code}
+            exportFilename={`hub_${currentMonth}_magazine`}
+            exportSheetName={`Magazine ${currentMonth}`}
+            exportColumns={[
+              { header: 'Firma', value: (row) => row.firma },
+              { header: 'Magazin', value: (row) => row.locatie },
+              { header: 'Target', value: (row) => formatCurrency(row.target) },
+              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+              { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
+              { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
+              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
+              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+              { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
+              { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
+              { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
+            ]}
+          />
 
-          <div className="glass rounded-3xl p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-bold">Agenti - Toti agentii</h3>
-                  <p className="text-[11px] text-slate-500">
-                    Filtrare: {filterScopeLabel} · Sortare: {agentColumnsVisible.find((column) => column.key === agentSort.key)?.label} ({agentSort.direction}) · {agents.length} agenti
-                  </p>
-                </div>
-                <ExportTableButton
-                  filename={`hub_${currentMonth}_agenti`}
-                  sheetName={`Agenti ${currentMonth}`}
-                  rows={sortedAgents}
-                  columns={[
-                    { header: 'Agent', value: (row) => row.agent },
-                    { header: 'Firma', value: (row) => row.firma },
-                    { header: 'Magazin', value: (row) => row.locatie },
-                    { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
-                    { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                    { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                    { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
-                    { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-                    { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                    { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-                    { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
-                    { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
-                    { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-                    { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-                  ]}
-                />
-              </div>
-            <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-              <table className={AGENT_TABLE_CLASS}>
-                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    {agentColumnsVisible.map((column, i) => (
-                      <React.Fragment key={column.key}>
-                        <SortableHeader
-                          label={column.label}
-                          active={agentSort.key === column.key}
-                          direction={agentSort.direction}
-                          onClick={() => handleSortAgents(column.key)}
-                          className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-20 max-w-20' : i === 1 ? 'w-28 max-w-28' : 'max-w-[4.5rem]'}`}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedAgents.map((agentRow, index) => (
-                    <tr
-                      key={`${agentRow.agent}-${agentRow.site_code}`}
-                      className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                    >
-                      <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>
-                        <button
-                          type="button"
-                          onClick={() => openPerformanceDetail({ level: 'agent', key: agentRow.agent, site_code: agentRow.site_code })}
-                          className="max-w-full truncate text-left font-bold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300"
-                          title="Detalii performanta"
-                        >
-                          {agentRow.agent}
-                        </button>
-                      </td>
-                      <td className={`max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.locatie}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.target ?? 0)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatAmount(agentRow.total_vanzari)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_realizare_target)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_produs ?? 0)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
-                      <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(agentRow.return_receipt_count)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_zilnica ?? 0)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
-                      <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.prc_focus_acc_qty)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <BreakdownTable
+            title="Agenti - Toti agentii"
+            subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${agentColumnsVisible.find((column) => column.key === agentSort.key)?.label} (${agentSort.direction}) · ${agents.length} agenti`}
+            rows={sortedAgents}
+            columns={agentBreakdownColumns(agentColumnsVisible, openPerformanceDetail)}
+            sortKey={agentSort.key}
+            sortDirection={agentSort.direction}
+            onSort={handleSortAgents}
+            rowKey={(row) => `${row.agent}-${row.site_code}`}
+            exportFilename={`hub_${currentMonth}_agenti`}
+            exportSheetName={`Agenti ${currentMonth}`}
+            exportColumns={[
+              { header: 'Agent', value: (row) => row.agent },
+              { header: 'Firma', value: (row) => row.firma },
+              { header: 'Magazin', value: (row) => row.locatie },
+              { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
+              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+              { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
+              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
+              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+              { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
+              { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
+              { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
+              { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+              { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+            ]}
+          />
             </>
           )}
         </>
@@ -1988,214 +1951,83 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
               </div>
 
               {/* Breakdown tables — RM / Magazine / Agenti */}
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <MapPin size={16} className="text-indigo-500" />
-                      <h3 className="text-sm font-bold">RM</h3>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Sortare: {HIST_REGIONAL_COLUMNS.find((c) => c.key === historyRegionalSort.key)?.label} ({historyRegionalSort.direction}) · {historyRegionals.length} regionali
-                    </p>
-                  </div>
-                  <ExportTableButton
-                    filename={`hub_${historySelectionSlug}_istoric_rm`}
-                    sheetName={`RM istoric`}
-                    rows={sortedHistoryRegionals}
-                    columns={[
-                      { header: 'Regional', value: (row) => row.regional },
-                      { header: 'Target', value: (row) => formatCurrency(row.target) },
-                      { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                      { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                      { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
-                      { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                      { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-                      { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-                    ]}
-                  />
-                </div>
-                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-                  <table className={REGIONAL_TABLE_CLASS}>
-                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                        {HIST_REGIONAL_COLUMNS.map((column, i) => (
-                          <React.Fragment key={column.key}>
-                            <SortableHeader
-                              label={column.label}
-                              active={historyRegionalSort.key === column.key}
-                              direction={historyRegionalSort.direction}
-                              onClick={() => handleSortHistoryRegionals(column.key)}
-                              className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-24 max-w-24' : 'max-w-[4.5rem]'}`}
-                            />
-                          </React.Fragment>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedHistoryRegionals.map((row, index) => (
-                        <tr
-                          key={row.regional}
-                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                        >
-                          <td className={`max-w-24 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>{row.regional}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(row.target)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(row.total_vanzari)}</td>
-                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(row.proc_realizare_target)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.qty_total)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(row.nr_bonuri)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(row.proc_bon2acc)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(row.prc_focus_acc_qty)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <BreakdownTable
+                title="RM"
+                icon={<MapPin size={16} className="text-indigo-500" />}
+                subtitle={`Sortare: ${HIST_REGIONAL_COLUMNS.find((column) => column.key === historyRegionalSort.key)?.label} (${historyRegionalSort.direction}) · ${historyRegionals.length} regionali`}
+                rows={sortedHistoryRegionals}
+                columns={regionalBreakdownColumns(HIST_REGIONAL_COLUMNS)}
+                sortKey={historyRegionalSort.key}
+                sortDirection={historyRegionalSort.direction}
+                onSort={handleSortHistoryRegionals}
+                rowKey={(row) => row.regional}
+                exportFilename={`hub_${historySelectionSlug}_istoric_rm`}
+                exportSheetName="RM istoric"
+                exportColumns={[
+                  { header: 'Regional', value: (row) => row.regional },
+                  { header: 'Target', value: (row) => formatCurrency(row.target) },
+                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
+                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                  { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+                  { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+                ]}
+              />
 
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Building2 size={16} className="text-indigo-500" />
-                      <h3 className="text-sm font-bold">Magazine</h3>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Sortare: {HIST_STORE_COLUMNS.find((c) => c.key === historyStoreSort.key)?.label} ({historyStoreSort.direction}) · {historyStores.length} magazine
-                    </p>
-                  </div>
-                  <ExportTableButton
-                    filename={`hub_${historySelectionSlug}_istoric_magazine`}
-                    sheetName={`Magazine istoric`}
-                    rows={sortedHistoryStores}
-                    columns={[
-                      { header: 'Firma', value: (row) => row.firma },
-                      { header: 'Magazin', value: (row) => row.locatie },
-                      { header: 'Target', value: (row) => formatCurrency(row.target) },
-                      { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                      { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                      { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
-                      { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                      { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-                      { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
-                      { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
-                    ]}
-                  />
-                </div>
-                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-                  <table className={STORE_TABLE_CLASS}>
-                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                        {HIST_STORE_COLUMNS.map((column, i) => (
-                          <React.Fragment key={column.key}>
-                            <SortableHeader
-                              label={column.label}
-                              active={historyStoreSort.key === column.key}
-                              direction={historyStoreSort.direction}
-                              onClick={() => handleSortHistoryStores(column.key)}
-                              className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-32 max-w-32' : 'max-w-[4.5rem]'}`}
-                            />
-                          </React.Fragment>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedHistoryStores.map((store, index) => (
-                        <tr
-                          key={store.site_code}
-                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                        >
-                          <td className={`max-w-32 truncate font-semibold ${COMPACT_TEXT_TD_CLASS}`}>
-                            <span className="inline-flex min-w-0 items-center">
-                              <FirmaBadge firma={store.firma} />
-                              <span className="truncate">{store.locatie}</span>
-                            </span>
-                          </td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.target)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(store.total_vanzari)}</td>
-                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatPercent(store.proc_realizare_target)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.qty_total ?? 0)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_bonuri)}</td>
-                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(store.return_receipt_count)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.nr_agenti)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(store.zile_active)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <BreakdownTable
+                title="Magazine"
+                icon={<Building2 size={16} className="text-indigo-500" />}
+                subtitle={`Sortare: ${HIST_STORE_COLUMNS.find((column) => column.key === historyStoreSort.key)?.label} (${historyStoreSort.direction}) · ${historyStores.length} magazine`}
+                rows={sortedHistoryStores}
+                columns={storeBreakdownColumns(HIST_STORE_COLUMNS)}
+                sortKey={historyStoreSort.key}
+                sortDirection={historyStoreSort.direction}
+                onSort={handleSortHistoryStores}
+                rowKey={(row) => row.site_code}
+                exportFilename={`hub_${historySelectionSlug}_istoric_magazine`}
+                exportSheetName="Magazine istoric"
+                exportColumns={[
+                  { header: 'Firma', value: (row) => row.firma },
+                  { header: 'Magazin', value: (row) => row.locatie },
+                  { header: 'Target', value: (row) => formatCurrency(row.target) },
+                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                  { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
+                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                  { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
+                  { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
+                  { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
+                ]}
+              />
 
-              <div className="glass rounded-3xl p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-bold">Agenti</h3>
-                    <p className="text-[11px] text-slate-500">
-                      Sortare: {HIST_AGENT_COLUMNS.find((c) => c.key === historyAgentSort.key)?.label} ({historyAgentSort.direction}) · {historyAgents.length} agenti
-                    </p>
-                  </div>
-                  <ExportTableButton
-                    filename={`hub_${historySelectionSlug}_istoric_agenti`}
-                    sheetName={`Agenti istoric`}
-                    rows={sortedHistoryAgents}
-                    columns={[
-                      { header: 'Agent', value: (row) => row.agent },
-                      { header: 'Firma', value: (row) => row.firma },
-                      { header: 'Magazin', value: (row) => row.locatie },
-                      { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
-                      { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-                      { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-                      { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
-                      { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-                      { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-                      { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
-                      { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
-                      { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-                      { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-                    ]}
-                  />
-                </div>
-                <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
-                  <table className={AGENT_TABLE_CLASS}>
-                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                        {HIST_AGENT_COLUMNS.map((column, i) => (
-                          <React.Fragment key={column.key}>
-                            <SortableHeader
-                              label={column.label}
-                              active={historyAgentSort.key === column.key}
-                              direction={historyAgentSort.direction}
-                              onClick={() => handleSortHistoryAgents(column.key)}
-                              className={`${COMPACT_TH_CLASS} ${i === 0 ? 'w-20 max-w-20' : i === 1 ? 'w-28 max-w-28' : 'max-w-[4.5rem]'}`}
-                            />
-                          </React.Fragment>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedHistoryAgents.map((agentRow, index) => (
-                        <tr
-                          key={`${agentRow.agent}-${agentRow.site_code}`}
-                          className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
-                        >
-                          <td className={`max-w-20 truncate font-bold ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.agent}</td>
-                          <td className={`max-w-28 truncate text-slate-500 ${COMPACT_TEXT_TD_CLASS}`}>{agentRow.locatie}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.target ?? 0)}</td>
-                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-indigo-600`}>{formatAmount(agentRow.total_vanzari)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_realizare_target)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.acc_qty_realizat)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.nr_bonuri)}</td>
-                          <td className={`${COMPACT_NUM_TD_CLASS} font-bold text-rose-600 dark:text-rose-400`}>{formatInt(agentRow.return_receipt_count)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatInt(agentRow.zile_lucrate)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatAmount(agentRow.medie_zilnica ?? 0)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.proc_bon2acc)}</td>
-                          <td className={COMPACT_NUM_TD_CLASS}>{formatPercent(agentRow.prc_focus_acc_qty)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <BreakdownTable
+                title="Agenti"
+                subtitle={`Sortare: ${HIST_AGENT_COLUMNS.find((column) => column.key === historyAgentSort.key)?.label} (${historyAgentSort.direction}) · ${historyAgents.length} agenti`}
+                rows={sortedHistoryAgents}
+                columns={agentBreakdownColumns(HIST_AGENT_COLUMNS)}
+                sortKey={historyAgentSort.key}
+                sortDirection={historyAgentSort.direction}
+                onSort={handleSortHistoryAgents}
+                rowKey={(row) => `${row.agent}-${row.site_code}`}
+                exportFilename={`hub_${historySelectionSlug}_istoric_agenti`}
+                exportSheetName="Agenti istoric"
+                exportColumns={[
+                  { header: 'Agent', value: (row) => row.agent },
+                  { header: 'Firma', value: (row) => row.firma },
+                  { header: 'Magazin', value: (row) => row.locatie },
+                  { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
+                  { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
+                  { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
+                  { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
+                  { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
+                  { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
+                  { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
+                  { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
+                  { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
+                  { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+                ]}
+              />
             </>
           )}
         </>
