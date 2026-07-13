@@ -208,7 +208,7 @@ class VisitDayGroup(BaseModel):
 
 
 class VisitMonthGroup(BaseModel):
-    month: MonthStr
+    month: MonthStr | Literal["—"]
     nr_vizite: NonNegativeInt
     days: list[VisitDayGroup]
 

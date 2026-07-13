@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from schemas.common import MonthStr
 
@@ -24,6 +24,10 @@ AgentRating = Literal[
     "Bun",
     "Risc",
     "Critic",
+]
+AgentEvaluationPeriod = Annotated[
+    str,
+    Field(pattern=r"^(?:\d{4}-(?:0[1-9]|1[0-2])(?:\.\.curent)?|custom)$"),
 ]
 
 
@@ -131,7 +135,7 @@ class AgentEvaluationOption(BaseModel):
 
 
 class AgentEvaluationRow(BaseModel):
-    month: MonthStr
+    month: AgentEvaluationPeriod
     firma: str
     site_code: str
     locatie: str
@@ -184,7 +188,7 @@ class AgentEvaluationV2Component(BaseModel):
 
 
 class AgentEvaluationV2Row(BaseModel):
-    month: MonthStr
+    month: AgentEvaluationPeriod
     firma: str
     site_code: str
     locatie: str

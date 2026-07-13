@@ -1,7 +1,7 @@
 """Tests for forecast.py, visits_report.py, and misc coverage gaps."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -54,6 +54,37 @@ class TestVisitsReportImport:
     def test_imports(self):
         from services.visits_report import VisitsReportService
         assert VisitsReportService is not None
+
+    @pytest.mark.asyncio
+    async def test_undated_visit_is_returned_in_explicit_bucket(self):
+        from services.visits_report import VisitsReportService
+
+        repo = MagicMock()
+        repo.db_exists.return_value = True
+        repo.query_tree.return_value = [
+            {
+                "id": "visit-1",
+                "team_leader_name": "TL",
+                "data_raport": None,
+                "magazin": "Magazin",
+                "locatie": "Bucuresti",
+                "ora_trimitere": None,
+                "completion_pct": 0,
+                "firma": "Firma",
+                "foto1": None,
+                "foto2": None,
+                "foto3": None,
+                "foto4": None,
+            }
+        ]
+        service = VisitsReportService(repo)
+        service._resolve_store_scope = AsyncMock(return_value=({}, None))
+
+        result = await service.get_visits_tree(None, None, None, None)
+
+        assert result.team_leaders[0].months[0].month == "—"
+        assert result.team_leaders[0].months[0].days[0].date == "—"
+        assert result.team_leaders[0].months[0].nr_vizite == 1
 
 
 class TestProductListsImport:

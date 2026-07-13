@@ -386,5 +386,11 @@ with 7 skips, frontend 177 tests, typecheck and production build. Critical
 coverage is 100% for `client_ip.py`, `rate_limit_settings.py`,
 `rate_limit_store.py` and `rate_limits.py`. GitHub Actions run `29193554547`
 is green on the PR merge ref, so the application implementation is accepted
-technically. Production activation remains pending the separately approved
-proxy, firewall and environment rollout.
+technically.
+
+Production reconciliation (2026-07-13): the separately approved proxy,
+firewall and environment rollout was completed. Trusted direct-peer CIDRs,
+forwarded-header mode, the Valkey-backed atomic limiter, HMAC keying and the
+closed failure mode are active in `unihub-backend.service`; readiness remained
+green after restart. The numbered deployment steps above are retained as the
+runbook for future reprovisioning or rollback, not as pending work.
