@@ -13,6 +13,7 @@ import { getCachedView, setCachedView } from '../lib/viewCache';
 import { downloadBlob } from '../lib/download';
 import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
+import {getApiErrorMessage} from '../api/client';
 
 interface SettingsProps {
   theme: string;
@@ -930,9 +931,7 @@ function formatExportFilename(mode: ExportMode, dataset: string, months: string[
 }
 
 function formatExportError(error: unknown, fallback: string): string {
-  if (!(error instanceof Error)) return fallback;
-  const detail = error.message.replace(/^API error: \d+\s*-?\s*/i, '').trim();
-  return detail || fallback;
+  return getApiErrorMessage(error, fallback);
 }
 
 function ModeButton({

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, client, setCsrfTokenProvider, setUnauthorizedHandler } from './client';
+import {
+  ApiError,
+  client,
+  getApiErrorMessage,
+  setCsrfTokenProvider,
+  setUnauthorizedHandler,
+} from './client';
 
 const mockFetch = vi.fn();
 type FetchCall = [string, { method: string; headers: Record<string, string>; body?: BodyInit | string }];
@@ -28,6 +34,31 @@ function fetchCall(index = 0): FetchCall {
 function latestFetchCall(): FetchCall {
   return fetchCall(mockFetch.mock.calls.length - 1);
 }
+
+describe('getApiErrorMessage', () => {
+  it.each([400, 403, 404, 409, 422])(
+    'returns the controlled detail for actionable HTTP %s',
+    (status) => {
+      expect(getApiErrorMessage(
+        new ApiError(status, 'Mesaj pentru utilizator', {detail: 'Mesaj pentru utilizator'}),
+        'Fallback',
+      )).toBe('Mesaj pentru utilizator');
+    },
+  );
+
+  it('uses a stable session message for 401', () => {
+    expect(getApiErrorMessage(new ApiError(401, 'provider detail', null), 'Fallback'))
+      .toBe('Sesiunea a expirat. Vei fi redirectionat catre autentificare.');
+  });
+
+  it.each([
+    new Error('network details'),
+    new ApiError(409, '   ', null),
+    new ApiError(500, 'internal details', null),
+  ])('uses the caller fallback for non-actionable errors', (error) => {
+    expect(getApiErrorMessage(error, 'Mesaj sigur')).toBe('Mesaj sigur');
+  });
+});
 
 describe('client.get', () => {
   it('makes a GET request to the given URL', async () => {

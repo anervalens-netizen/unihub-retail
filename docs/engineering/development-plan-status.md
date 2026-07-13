@@ -18,7 +18,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
 | Performance/modularization | Partially implemented | Remaining backend boundaries, Dashboard splits and DB-pool pressure review |
-| CI/CD and operations | Quality gates merged; readiness/SLO tranche implemented locally | Merge-ref acceptance, controlled rollout and ongoing SLO observation |
+| CI/CD and operations | Quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation and final release acceptance |
 
 ## What is already delivered
 
@@ -38,6 +38,9 @@ tracked in `docs/refactoring-plan-current.md`.
 - frontend CI gates for general and strict typecheck, lint, unit tests, runtime
   dependency audit, production build, Playwright flows and WCAG A/AA smoke scans
   (GitHub Actions merge-ref run `29225724923`: backend and frontend green).
+- bounded `/livez` and `/readyz` probes, external readiness monitoring, Retail
+  SLO recording/alert rules and hardened versioned systemd units (PR #58,
+  production rollout `2fdb5e8ed3fe2f70ede820bc6247b6075da07e14`).
 
 ## Path to the new release
 
@@ -46,7 +49,7 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. implement readiness/liveness, SLOs, alerts and remaining modularization;
+3. continue the remaining Dashboard, Grile and model modularization;
 4. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,

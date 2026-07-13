@@ -91,7 +91,7 @@ Livrabile:
 - [x] commit + push pentru snapshotul validat anterior;
 - [x] arhivare documente vechi de refactoring/audit/handover;
 - [x] un singur plan activ: acest fisier;
-- [ ] plan actualizat dupa fiecare transa implementata;
+- [x] plan actualizat dupa fiecare transa implementata;
 - [ ] status git curat dupa fiecare commit/push.
 
 Criteriu de iesire:
@@ -324,14 +324,17 @@ Status: partial implementat prin audit Wave 1 si Wave 2.
 Livrabile:
 
 - [x] `ApiError` frontend cu `status`, `detail`, `body`;
-- handling uniform pentru 401/403/409/422;
+- [x] helper uniform pentru mesajele sigure 401/403/404/409/422, adoptat in
+  fluxurile cu impact ridicat Calculator Target, Grile si exporturi/importuri;
 - [x] OIDC/JWKS cache protejat cu lock, single-flight, cooldown si max-stale explicit;
 - [x] issuer/config auth tipizat si fail-closed, fara default-uri periculoase;
-- exceptii tipizate pentru Target Calculator finalize conflicts;
+- [x] exceptii tipizate pentru conflictele de revizie/finalizare Target
+  Calculator, mapate la 409 si afisate cu mesajul controlat de backend;
 - [x] rate limiter distribuit Valkey, cu trusted-proxy parsing, HMAC si failure-closed;
 
-Ramase: adoptarea uniforma a `ApiError` in call-site-urile 401/403/409/422 si
-exceptiile tipizate pentru conflictele Target Calculator.
+Ramase: modulele legacy Tasks/HR/CRM trebuie sa afiseze erorile actiunilor in
+UI, nu doar in consola; fallback-urile pentru 5xx si erori de retea raman
+intentionat generice.
 
 Criteriu:
 
@@ -368,7 +371,9 @@ Livrabile:
 - [x] acceptarea workflow-ului pe merge ref-ul PR #50: GitHub Actions
   `29225724923`, backend si frontend verzi;
 - [x] readiness/liveness separate, SLO-uri, alerte si unitati systemd
-  versionate; acceptarea merge-ref si rolloutul controlat raman obligatorii;
+  versionate; PR #58 acceptat pe merge ref si rollout controlat la
+  `2fdb5e8ed3fe2f70ede820bc6247b6075da07e14`, cu probe locale/publice si
+  target Prometheus `up`;
 - audit final pe docs, status git si live health;
 - checklist de performanta cu valori finale;
 - verificare ca documentele arhivate nu mai sunt folosite ca instructiuni active;
