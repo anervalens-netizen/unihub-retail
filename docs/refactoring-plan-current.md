@@ -94,7 +94,7 @@ Livrabile:
 - [x] arhivare documente vechi de refactoring/audit/handover;
 - [x] un singur plan activ: acest fisier;
 - [x] plan actualizat dupa fiecare transa implementata;
-- [ ] status git curat dupa fiecare commit/push.
+- [x] status git curat dupa fiecare commit/push si la acceptarea finala.
 
 Criteriu de iesire:
 
@@ -104,7 +104,8 @@ Criteriu de iesire:
 
 ## Milestone 1 - Primitive frontend si query foundation
 
-Status: partial implementat.
+Status: inchis la 2026-07-13; abstractiile ramase sunt intentionat adoptate
+numai unde reduc complexitatea reala.
 
 Scop: reducem duplicarea si pregatim spargerea componentelor mari fara sa
 schimbam payload-uri sau UI business.
@@ -206,7 +207,7 @@ Validare transa:
 
 ## Milestone 2 - Dashboard pe TanStack Query si split frontend
 
-Status: partial implementat.
+Status: inchis la 2026-07-13.
 
 Livrabile:
 
@@ -292,7 +293,7 @@ Validare split Current/History:
 
 ## Milestone 3 - Backend domain boundaries ramase
 
-Status: partial inchis.
+Status: inchis la 2026-07-13.
 
 Inchise:
 
@@ -362,7 +363,7 @@ Criteriu:
 
 ## Milestone 5 - Hardening API, auth si erori
 
-Status: partial implementat prin audit Wave 1 si Wave 2.
+Status: inchis la 2026-07-13 prin audit Wave 1 si Wave 2.
 
 Livrabile:
 
@@ -391,7 +392,7 @@ Criteriu:
 
 ## Milestone 6 - Curatenie de model si constante
 
-Status: in executie.
+Status: inchis la 2026-07-13.
 
 Livrabile:
 
@@ -423,7 +424,7 @@ Criteriu:
 
 ## Milestone 7 - Inchidere
 
-Status: in executie.
+Status: inchis la 2026-07-13.
 
 Livrabile:
 
@@ -436,11 +437,18 @@ Livrabile:
   versionate; PR #58 acceptat pe merge ref si rollout controlat la
   `2fdb5e8ed3fe2f70ede820bc6247b6075da07e14`, cu probe locale/publice si
   target Prometheus `up`;
-- audit final pe docs, status git si live health;
-- checklist de performanta cu valori finale;
-- verificare ca documentele arhivate nu mai sunt folosite ca instructiuni active;
-- commit/push final;
-- optional: tag sau release intern daca se doreste.
+- [x] audit final pe docs, status git si live health: documentele canonice au
+  fost reconciliate, checkout-ul de productie este pe `main`, iar probele
+  `/livez` si `/readyz` sunt verzi local si public;
+- [x] checklist de performanta cu valori finale in
+  `docs/engineering/performance-baseline-v2.md`;
+- [x] documentele arhivate sunt marcate explicit ca istoric si nu sunt folosite
+  ca instructiuni active;
+- [x] contract hardening integrat prin PR #78, GitHub Actions
+  `29247244063` verde pe merge ref si rollout controlat la
+  `dbcedf0310685b9ad91e80c6d5d7452aa3b4ebb0`;
+- tag/release GitHub separat ramane optional; nu este criteriu de acceptare si nu
+  blocheaza versiunea V2.
 
 Criteriu final:
 
@@ -485,6 +493,12 @@ build pot concura pe `dist/`.
 
 ## Update log
 
+- 2026-07-13: Milestone 7 si programul V2 au fost acceptate operational.
+  PR #78 a trecut backend/frontend pe merge ref (`29247244063`), a fost
+  integrat la `dbcedf0310685b9ad91e80c6d5d7452aa3b4ebb0`, iar backendul si
+  workerul au fost repornite controlat. Shutdown-ul workerului a confirmat zero
+  joburi active; startup-ul, OpenAPI, health local/public si ambele targeturi
+  Prometheus Retail sunt verzi, fara restarturi neasteptate.
 - 2026-07-13: ultimele review-uri H-01B au fost inchise: backfill-ul filtreaza
   si raporteaza tintit identitatile confirmate dar goale, iar matcherul offline
   transporta `person_id` pana in upsert si refuza confirmari fara ID. Dry-run-ul

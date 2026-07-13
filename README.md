@@ -711,6 +711,17 @@ Probe runtime:
 Contractul, SLO-urile si alertele sunt documentate in
 [docs/operations/retail-slo-readiness.md](./docs/operations/retail-slo-readiness.md).
 
+## Stare release V2
+
+Versiunea V2 este acceptata operational din 13 iulie 2026. Acceptarea finala
+include CI backend/frontend pe merge ref, teste PostgreSQL izolate, pragurile de
+coverage critice, typecheck strict, lint, build, Playwright/WCAG, rollout
+controlat backend/worker si probe locale/publice de liveness/readiness. Starea
+executiva si backlogul neblocant sunt mentinute in
+[development-plan-status.md](./docs/engineering/development-plan-status.md),
+iar probele de performanta in
+[performance-baseline-v2.md](./docs/engineering/performance-baseline-v2.md).
+
 ## Scripturi utile
 
 | Script | Utilizare |

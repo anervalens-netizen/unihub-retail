@@ -17,8 +17,8 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-06 BFF/server-side session | Merged and active in production | User-interactive login/logout observation and ongoing session metrics |
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
-| Performance/modularization | Dashboard split, bounded DB fan-out, bundle audit, domain schemas and contract hardening complete | Final release acceptance |
-| CI/CD and operations | Quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation and final release acceptance |
+| Performance/modularization | Dashboard split, bounded DB fan-out, bundle audit, domain schemas and contract hardening complete and active | Ongoing evidence-driven optimization only |
+| CI/CD and operations | V2 acceptance complete; quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation |
 
 ## What is already delivered
 
@@ -60,15 +60,23 @@ tracked in `docs/refactoring-plan-current.md`.
   SLO recording/alert rules and hardened versioned systemd units (PR #58,
   production rollout `2fdb5e8ed3fe2f70ede820bc6247b6075da07e14`).
 
-## Path to the new release
+## V2 release acceptance
 
-Wave 2 application hardening was released on 2026-07-12, but it is not the end
-of the modernization program. The remaining safe path is:
+UniHub Retail V2 was accepted operationally on 2026-07-13. The final contract
+hardening was integrated through PR #78 at merge commit
+`dbcedf0310685b9ad91e80c6d5d7452aa3b4ebb0`; merge-ref CI run `29247244063`
+passed backend and frontend, including strict typing, isolated PostgreSQL tests,
+coverage gates, build, browser flows and WCAG smoke tests. Backend and worker
+were then restarted cleanly, with local/public liveness and readiness, OpenAPI
+contracts and Prometheus targets verified.
 
-1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
-2. observe the released H-06 login/logout path and session metrics;
-3. close with full regression, migration, security, accessibility and live-path acceptance.
+Remaining work is operational or separately scoped backlog, not a V2 release
+blocker:
 
-The application should not yet be described as the final new version: H-06,
-H-01B and H-02 are operationally active, while final operational acceptance
-remains.
+1. continue monitoring privacy, OIDC/JWKS, sessions, rate limiting and SLOs;
+2. move generated/business artifacts to governed storage and decide separately
+   whether approved history purge is required for H-15;
+3. split worker queues and persistent upload/job orchestration only when load or
+   reliability evidence justifies that next platform tranche;
+4. apply further query/index optimization only from measured production
+   baselines.
