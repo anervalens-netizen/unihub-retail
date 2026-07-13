@@ -51,8 +51,15 @@ class StorePnlService:
         end: date,
         company: str | None,
         site_code: str | None = None,
+        site_company: str | None = None,
     ) -> dict:
-        rows = await self.repository.rows(start, end, company, site_code)
+        rows = await self.repository.rows(
+            start,
+            end,
+            company,
+            site_code,
+            site_company,
+        )
         total = empty_metrics()
         monthly: dict[date, dict[str, Decimal]] = defaultdict(empty_metrics)
         stores: dict[tuple[str, str], dict] = {}
@@ -91,6 +98,7 @@ class StorePnlService:
             "end_month": end.strftime("%Y-%m"),
             "company": company,
             "site_code": site_code,
+            "site_company": site_company,
             "summary": finalize_metrics(total),
             "monthly": [
                 {
@@ -107,10 +115,15 @@ class StorePnlService:
     async def stores(self, company: str | None) -> list[dict]:
         return [dict(row) for row in await self.repository.stores(company)]
 
-    async def annual(self, company: str | None, site_code: str | None) -> list[dict]:
+    async def annual(
+        self,
+        company: str | None,
+        site_code: str | None,
+        site_company: str | None = None,
+    ) -> list[dict]:
         yearly: dict[int, dict[str, Decimal]] = defaultdict(empty_metrics)
         estimate_years: set[int] = set()
-        for row in await self.repository.annual_rows(company, site_code):
+        for row in await self.repository.annual_rows(company, site_code, site_company):
             year = row["year"]
             add_amount(yearly[year], row["category_code"], row["amount"])
             if row["is_estimated"]:

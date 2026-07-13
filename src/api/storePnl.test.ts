@@ -79,4 +79,17 @@ describe('P&L scoped data requests', () => {
       '/api/store-pnl/overview?start_month=2026-01&end_month=2026-07',
     ]);
   });
+
+  it('qualifies an unmapped source-code scope with its company', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ annual: [] }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getPnlAnnual('', 'LEGACY-CODE', 'Mobicell');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/store-pnl/annual?site_code=LEGACY-CODE&site_company=Mobicell',
+    );
+  });
 });

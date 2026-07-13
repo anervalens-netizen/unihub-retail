@@ -30,6 +30,7 @@ export interface PnlStoreOption {
   company_name: string;
   site_code: string;
   location: string;
+  scope_company: string | null;
 }
 
 export interface PnlStore extends PnlMetrics {
@@ -45,6 +46,7 @@ export interface PnlOverview {
   end_month: string;
   company: string | null;
   site_code: string | null;
+  site_company: string | null;
   summary: PnlMetrics;
   monthly: PnlMonthlyPoint[];
   categories: Record<string, number>;
@@ -88,6 +90,7 @@ export async function getPnlStores(company: string): Promise<PnlStoreOption[]> {
 export async function getPnlAnnual(
   company: string,
   siteCode: string,
+  siteCompany = "",
 ): Promise<PnlAnnualPoint[]> {
   const { data } = await client.get<{ annual: PnlAnnualPoint[] }>(
     "/api/store-pnl/annual",
@@ -95,6 +98,7 @@ export async function getPnlAnnual(
       params: {
         company: company || undefined,
         site_code: siteCode || undefined,
+        site_company: siteCompany || undefined,
       },
     },
   );
@@ -106,6 +110,7 @@ export async function getPnlOverview(
   endMonth: string,
   company: string,
   siteCode = "",
+  siteCompany = "",
 ): Promise<PnlOverview> {
   const { data } = await client.get<PnlOverview>("/api/store-pnl/overview", {
     params: {
@@ -113,6 +118,7 @@ export async function getPnlOverview(
       end_month: endMonth,
       company: company || undefined,
       site_code: siteCode || undefined,
+      site_company: siteCompany || undefined,
     },
   });
   return data;

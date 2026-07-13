@@ -26,6 +26,7 @@ import {
   type PnlAnnualPoint,
   type PnlMetrics,
   type PnlMonthlyPoint,
+  type PnlStoreOption,
 } from "../api/storePnl";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -77,6 +78,10 @@ export function defaultPnlRange(
   };
 }
 
+export function pnlStoreOptionValue(store: PnlStoreOption): string {
+  return JSON.stringify([store.scope_company, store.site_code]);
+}
+
 function KpiCard({
   label,
   value,
@@ -114,7 +119,7 @@ export function PnlSubtab() {
   const [startMonth, setStartMonth] = useState("");
   const [endMonth, setEndMonth] = useState("");
   const [company, setCompany] = useState("");
-  const [siteCode, setSiteCode] = useState("");
+  const [storeScope, setStoreScope] = useState("");
   const [storeSearch, setStoreSearch] = useState("");
   const monthsQuery = useQuery({
     queryKey: ["store-pnl-months"],
@@ -134,15 +139,36 @@ export function PnlSubtab() {
     queryFn: () => getPnlStores(company),
     staleTime: 5 * 60_000,
   });
+  const selectedStore = useMemo(
+    () => storesQuery.data?.find(
+      (store) => pnlStoreOptionValue(store) === storeScope,
+    ),
+    [storeScope, storesQuery.data],
+  );
+  const siteCode = selectedStore?.site_code ?? "";
+  const siteCompany = selectedStore?.scope_company ?? "";
 
   const overviewQuery = useQuery({
-    queryKey: ["store-pnl-overview", startMonth, endMonth, company, siteCode],
-    queryFn: () => getPnlOverview(startMonth, endMonth, company, siteCode),
+    queryKey: [
+      "store-pnl-overview",
+      startMonth,
+      endMonth,
+      company,
+      siteCode,
+      siteCompany,
+    ],
+    queryFn: () => getPnlOverview(
+      startMonth,
+      endMonth,
+      company,
+      siteCode,
+      siteCompany,
+    ),
     enabled: Boolean(startMonth && endMonth),
   });
   const annualQuery = useQuery({
-    queryKey: ["store-pnl-annual", company, siteCode],
-    queryFn: () => getPnlAnnual(company, siteCode),
+    queryKey: ["store-pnl-annual", company, siteCode, siteCompany],
+    queryFn: () => getPnlAnnual(company, siteCode, siteCompany),
   });
   const data = overviewQuery.data;
   const filteredStores = useMemo(() => {
@@ -219,7 +245,7 @@ export function PnlSubtab() {
               value={company}
               onChange={(e) => {
                 setCompany(e.target.value);
-                setSiteCode("");
+                setStoreScope("");
               }}
               className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
             >
@@ -231,8 +257,8 @@ export function PnlSubtab() {
           <label className="text-xs text-slate-500">
             Magazin
             <select
-              value={siteCode}
-              onChange={(e) => setSiteCode(e.target.value)}
+              value={storeScope}
+              onChange={(e) => setStoreScope(e.target.value)}
               disabled={storesQuery.isLoading || storesQuery.isError}
               className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900"
             >
@@ -244,9 +270,10 @@ export function PnlSubtab() {
               {storesQuery.data?.map((store) => (
                 <option
                   key={`${store.company_name}-${store.site_code}`}
-                  value={store.site_code}
+                  value={pnlStoreOptionValue(store)}
                 >
                   {store.location} · {store.site_code}
+                  {store.scope_company ? ` · ${store.scope_company}` : ""}
                 </option>
               ))}
             </select>

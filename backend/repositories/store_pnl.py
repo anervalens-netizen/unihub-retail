@@ -26,6 +26,7 @@ class StorePnlRepository:
         end: date,
         company: str | None,
         site_code: str | None = None,
+        site_company: str | None = None,
     ) -> list[asyncpg.Record]:
         async with self.pool.acquire() as connection:
             return await connection.fetch(
@@ -54,9 +55,16 @@ class StorePnlRepository:
                         USING (company_name, source_site_code)
                     WHERE p.period BETWEEN $1 AND $2
                       AND (
-                          $4::text IS NOT NULL
-                          OR $3::text IS NULL
-                          OR p.company_name = $3
+                          (
+                              $4::text IS NULL
+                              AND ($3::text IS NULL OR p.company_name = $3)
+                          )
+                          OR l.site_code = $4
+                          OR (
+                              l.site_code IS NULL
+                              AND p.source_site_code = $4
+                              AND p.company_name = COALESCE($5, $3)
+                          )
                       )
                 )
                 SELECT p.company_name, p.period, p.source_site_code,
@@ -64,16 +72,13 @@ class StorePnlRepository:
                        p.data_kind, p.site_code
                 FROM preferred_rows p
                 WHERE p.preference_rank = 1
-                  AND (
-                      $4::text IS NULL
-                      OR p.site_code = $4
-                  )
                 ORDER BY p.period, p.company_name, p.source_location_name, p.category_code
                 """,
                 start,
                 end,
                 company,
                 site_code,
+                site_company,
             )
 
     async def stores(self, company: str | None) -> list[asyncpg.Record]:
@@ -81,16 +86,18 @@ class StorePnlRepository:
             return await connection.fetch(
                 """
                 SELECT DISTINCT ON (
-                    p.company_name,
+                    CASE WHEN l.site_code IS NULL THEN p.company_name ELSE '' END,
                     COALESCE(l.site_code, p.source_site_code)
                 )
                     p.company_name,
                     COALESCE(l.site_code, p.source_site_code) AS site_code,
-                    p.source_location_name AS location
+                    p.source_location_name AS location,
+                    CASE WHEN l.site_code IS NULL THEN p.company_name END
+                        AS scope_company
                 FROM store_pnl_monthly p
                 LEFT JOIN store_pnl_site_links l USING (company_name, source_site_code)
                 WHERE ($1::text IS NULL OR p.company_name = $1)
-                ORDER BY p.company_name,
+                ORDER BY CASE WHEN l.site_code IS NULL THEN p.company_name ELSE '' END,
                          COALESCE(l.site_code, p.source_site_code),
                          p.period DESC,
                          CASE p.data_kind WHEN 'actual' THEN 0 ELSE 1 END,
@@ -103,6 +110,7 @@ class StorePnlRepository:
         self,
         company: str | None,
         site_code: str | None,
+        site_company: str | None = None,
     ) -> list[asyncpg.Record]:
         async with self.pool.acquire() as connection:
             return await connection.fetch(
@@ -129,9 +137,16 @@ class StorePnlRepository:
                     LEFT JOIN store_pnl_site_links l
                         USING (company_name, source_site_code)
                     WHERE (
-                        $2::text IS NOT NULL
-                        OR $1::text IS NULL
-                        OR p.company_name = $1
+                        (
+                            $2::text IS NULL
+                            AND ($1::text IS NULL OR p.company_name = $1)
+                        )
+                        OR l.site_code = $2
+                        OR (
+                            l.site_code IS NULL
+                            AND p.source_site_code = $2
+                            AND p.company_name = COALESCE($3, $1)
+                        )
                     )
                 )
                 SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
@@ -140,13 +155,10 @@ class StorePnlRepository:
                        BOOL_OR(p.data_kind = 'estimated') AS is_estimated
                 FROM preferred_rows p
                 WHERE p.preference_rank = 1
-                  AND (
-                      $2::text IS NULL
-                      OR p.site_code = $2
-                  )
                 GROUP BY EXTRACT(YEAR FROM p.period), p.category_code
                 ORDER BY year, p.category_code
                 """,
                 company,
                 site_code,
+                site_company,
             )

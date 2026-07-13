@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultPnlRange } from "./PnlSubtab";
+import { defaultPnlRange, pnlStoreOptionValue } from "./PnlSubtab";
 
 describe("defaultPnlRange", () => {
   it("selects the available year-to-date months from the current year", () => {
@@ -26,5 +26,35 @@ describe("defaultPnlRange", () => {
       start: "",
       end: "",
     });
+  });
+});
+
+describe("pnlStoreOptionValue", () => {
+  it("keeps identical unmapped source codes distinct by company", () => {
+    const base = { site_code: "LEGACY", location: "Legacy" };
+    expect(
+      pnlStoreOptionValue({
+        ...base,
+        company_name: "Mobicell",
+        scope_company: "Mobicell",
+      }),
+    ).not.toBe(
+      pnlStoreOptionValue({
+        ...base,
+        company_name: "Mobiup",
+        scope_company: "Mobiup",
+      }),
+    );
+  });
+
+  it("uses a company-neutral value for canonical stores", () => {
+    expect(
+      pnlStoreOptionValue({
+        company_name: "Mobicell",
+        site_code: "CRFORADEA",
+        location: "Carrefour Oradea",
+        scope_company: null,
+      }),
+    ).toBe('[null,"CRFORADEA"]');
   });
 });

@@ -81,11 +81,13 @@ async def stores(
 async def annual(
     company: str | None = Query(default=None),
     site_code: str | None = Query(default=None, max_length=100),
+    site_company: str | None = Query(default=None),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
 ):
     validate_company(company)
-    return {"annual": await service.annual(company, site_code)}
+    validate_company(site_company)
+    return {"annual": await service.annual(company, site_code, site_company)}
 
 
 @router.get("/overview")
@@ -94,11 +96,13 @@ async def overview(
     end_month: str = Query(...),
     company: str | None = Query(default=None),
     site_code: str | None = Query(default=None, max_length=100),
+    site_company: str | None = Query(default=None),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
 ):
     validate_company(company)
+    validate_company(site_company)
     start, end = parse_month(start_month), parse_month(end_month)
     if start > end:
         raise HTTPException(status_code=422, detail="Intervalul P&L este inversat.")
-    return await service.overview(start, end, company, site_code)
+    return await service.overview(start, end, company, site_code, site_company)

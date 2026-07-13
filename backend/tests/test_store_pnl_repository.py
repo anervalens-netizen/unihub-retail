@@ -15,6 +15,7 @@ from services.store_pnl import StorePnlService
 TEST_SITE = "PNLPREF"
 TEST_OLD_SOURCE = "PNLPREF-OLD"
 TEST_OLD_COMPANY_SOURCE = "PNLPREF-MOBIUP"
+TEST_UNMAPPED_SOURCE = "PNL-UNMAPPED"
 TEST_OLD_COMPANY_PERIOD = date(2096, 7, 1)
 TEST_PERIOD = date(2097, 7, 1)
 
@@ -29,7 +30,12 @@ async def _reset_fixture() -> None:
     async with pool.acquire() as connection:
         await connection.execute(
             "DELETE FROM store_pnl_monthly WHERE source_site_code = ANY($1::text[])",
-            [TEST_SITE, TEST_OLD_SOURCE, TEST_OLD_COMPANY_SOURCE],
+            [
+                TEST_SITE,
+                TEST_OLD_SOURCE,
+                TEST_OLD_COMPANY_SOURCE,
+                TEST_UNMAPPED_SOURCE,
+            ],
         )
         await connection.execute(
             "DELETE FROM store_pnl_site_links WHERE source_site_code = ANY($1::text[])",
@@ -76,6 +82,36 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                         "P&L previous-company history",
                         TEST_SITE,
                         "manual_alias",
+                    ),
+                ],
+            )
+            await connection.executemany(
+                """
+                INSERT INTO store_pnl_monthly (
+                    company_name, period, source_site_code,
+                    source_location_name, category_code, category_name,
+                    amount, data_kind, source_file, source_sha256
+                ) VALUES ($1, $2, $3, $4, 'v2', 'Topups', $5,
+                          'actual', $6, $7)
+                """,
+                [
+                    (
+                        "Mobicell",
+                        TEST_PERIOD,
+                        TEST_UNMAPPED_SOURCE,
+                        "Mobicell unmapped collision",
+                        Decimal("10.00"),
+                        "mobicell-unmapped.xlsx",
+                        "c" * 64,
+                    ),
+                    (
+                        "Mobiup",
+                        TEST_PERIOD,
+                        TEST_UNMAPPED_SOURCE,
+                        "Mobiup unmapped collision",
+                        Decimal("20.00"),
+                        "mobiup-unmapped.xlsx",
+                        "u" * 64,
                     ),
                 ],
             )
@@ -150,6 +186,38 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
         store = next(row for row in stores if row["site_code"] == TEST_SITE)
         assert store["company_name"] == "Mobicell"
         assert store["location"] == "P&L precedence test"
+
+        all_stores = await StorePnlRepository(pool).stores(None)
+        unmapped = [
+            row for row in all_stores if row["site_code"] == TEST_UNMAPPED_SOURCE
+        ]
+        assert {row["scope_company"] for row in unmapped} == {"Mobicell", "Mobiup"}
+
+        mobicell_unmapped = await StorePnlRepository(pool).rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            None,
+            TEST_UNMAPPED_SOURCE,
+            "Mobicell",
+        )
+        assert [(row["company_name"], row["amount"]) for row in mobicell_unmapped] == [
+            ("Mobicell", Decimal("10.00"))
+        ]
+        assert await StorePnlRepository(pool).rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            None,
+            TEST_UNMAPPED_SOURCE,
+        ) == []
+
+        mobiup_unmapped = await StorePnlRepository(pool).annual_rows(
+            None,
+            TEST_UNMAPPED_SOURCE,
+            "Mobiup",
+        )
+        assert [(row["category_code"], row["amount"]) for row in mobiup_unmapped] == [
+            ("v2", Decimal("20.00"))
+        ]
 
         annual_rows = await StorePnlRepository(pool).annual_rows("Mobicell", TEST_SITE)
         revenues = {
