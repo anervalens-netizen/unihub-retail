@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload mypy diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mypy-report
           path: backend/mypy-report.txt
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload backend test diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: backend-test-report
           path: |
@@ -149,7 +149,7 @@ jobs:
 
       - name: Upload Playwright diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: |
