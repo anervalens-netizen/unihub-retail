@@ -692,8 +692,8 @@ async def test_reset_month_live_failure_marks_checkpoint(
     monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "get_previous_completed_reset_item", AsyncMock(return_value=None))
-    monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock())
-    finish = AsyncMock()
+    monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
+    finish = AsyncMock(return_value=True)
     monkeypatch.setattr(grile, "finish_reset_item", finish)
     monkeypatch.setattr(
         grile,
