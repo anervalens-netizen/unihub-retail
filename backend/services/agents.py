@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from models import (
+from schemas.agents import (
     AgentsOverviewResponse,
     AgentMovementPoint,
     AgentMovementResponse,

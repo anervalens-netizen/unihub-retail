@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import models
+from schemas.agents import AgentEvaluationV2Row, AgentsOverviewResponse
 from schemas.ai_forecast import AiForecastResponse, AiForecastRunInfo, AiForecastSummary
 from schemas.contests import ContestResponse, ContestRuleInfo
 
@@ -13,6 +14,8 @@ def test_legacy_model_imports_reexport_domain_classes() -> None:
     assert models.AiForecastRunInfo is AiForecastRunInfo
     assert models.ContestResponse is ContestResponse
     assert models.ContestRuleInfo is ContestRuleInfo
+    assert models.AgentsOverviewResponse is AgentsOverviewResponse
+    assert models.AgentEvaluationV2Row is AgentEvaluationV2Row
 
 
 def test_ai_forecast_serialization_contract_is_preserved() -> None:

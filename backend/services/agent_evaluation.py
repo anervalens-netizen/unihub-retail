@@ -5,7 +5,7 @@ from decimal import Decimal
 from math import ceil
 from typing import Any
 
-from models import AgentEvaluationV2Row
+from schemas.agents import AgentEvaluationV2Row
 
 
 def score_band(
