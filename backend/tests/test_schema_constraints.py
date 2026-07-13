@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+from pydantic import ValidationError
+
+from models import ImportJobStatus, ImportResponse, StoreTargetInput, VisitReportRow
+from schemas.agents import AgentListItem, StoreCoverageItem
+
+
+def test_month_contract_rejects_invalid_calendar_months() -> None:
+    valid = ImportResponse(
+        import_month="2026-12",
+        rows_in_file=1,
+        rows_imported=1,
+        rows_filtered=0,
+        store_count=1,
+        agent_count=1,
+        snapshot_id=1,
+        filename="sales.xlsx",
+        is_month_final=True,
+    )
+    assert valid.import_month == "2026-12"
+
+    for invalid_month in ("2026-00", "2026-13", "26-01", "2026-1", "not-a-month"):
+        with pytest.raises(ValidationError):
+            ImportResponse(
+                import_month=invalid_month,
+                rows_in_file=1,
+                rows_imported=1,
+                rows_filtered=0,
+                store_count=1,
+                agent_count=1,
+                snapshot_id=1,
+                filename="sales.xlsx",
+                is_month_final=True,
+            )
+
+
+def test_import_and_target_write_values_are_bounded() -> None:
+    with pytest.raises(ValidationError):
+        ImportResponse(
+            import_month="2026-01",
+            rows_in_file=-1,
+            rows_imported=0,
+            rows_filtered=0,
+            store_count=0,
+            agent_count=0,
+            snapshot_id=1,
+            filename="sales.xlsx",
+            is_month_final=False,
+        )
+
+    for invalid_target in (Decimal("-0.01"), Decimal("NaN"), Decimal("Infinity")):
+        with pytest.raises(ValidationError):
+            StoreTargetInput(
+                site_code="S1",
+                import_month="2026-01",
+                target_value=invalid_target,
+            )
+
+
+def test_public_status_contracts_reject_unknown_values() -> None:
+    with pytest.raises(ValidationError):
+        ImportJobStatus(job_id="job-1", status="running")
+
+    with pytest.raises(ValidationError):
+        StoreCoverageItem(
+            site_code="S1",
+            locatie="Magazin",
+            firma="Firma",
+            regional="Regional",
+            asm="ASM",
+            status="unknown",
+            agent_count=0,
+        )
+
+    with pytest.raises(ValidationError):
+        AgentListItem(
+            agent="Agent",
+            active_in_month=True,
+            is_new=False,
+            is_reactivated=False,
+            total_sales=Decimal("0"),
+            total_quantity=0,
+            current_status="unknown",
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_percentage",
+    [-0.01, 100.01, float("nan"), float("inf")],
+)
+def test_visit_percentages_are_finite_and_bounded(invalid_percentage: float) -> None:
+    with pytest.raises(ValidationError):
+        VisitReportRow(
+            magazin="Magazin",
+            asm=None,
+            regional=None,
+            firma=None,
+            nr_vizite=1,
+            avg_completion=invalid_percentage,
+            curatenie_pct=100,
+            imagine_pct=100,
+            uniforma_pct=100,
+            afise_pct=100,
+            produse_promo_pct=100,
+            last_visit=None,
+        )
+
+def test_openapi_schema_exposes_month_pattern_and_status_enums() -> None:
+    import_schema = ImportResponse.model_json_schema()["properties"]
+    assert import_schema["import_month"]["pattern"] == r"^\d{4}-(0[1-9]|1[0-2])$"
+    assert ImportJobStatus.model_json_schema()["properties"]["status"]["enum"] == [
+        "queued",
+        "in_progress",
+        "complete",
+        "not_found",
+    ]
+    assert StoreCoverageItem.model_json_schema()["properties"]["status"]["enum"] == [
+        "covered",
+        "uncovered",
+        "closed",
+        "inactive",
+    ]

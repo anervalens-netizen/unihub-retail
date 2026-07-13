@@ -17,7 +17,7 @@ tracked in `docs/refactoring-plan-current.md`.
 | H-06 BFF/server-side session | Merged and active in production | User-interactive login/logout observation and ongoing session metrics |
 | H-01B retained-CNP protection | Merged and active in production | Ongoing access/backup monitoring |
 | H-02 migration lifecycle | Merged and active in production | Ongoing checksum and migration-runner monitoring |
-| Performance/modularization | Dashboard split, bounded DB fan-out, bundle audit and domain-schema split complete | Remaining validation/constants/SQL cleanup |
+| Performance/modularization | Dashboard split, bounded DB fan-out, bundle audit, domain schemas and contract hardening complete | Final release acceptance |
 | CI/CD and operations | Quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation and final release acceptance |
 
 ## What is already delivered
@@ -49,7 +49,10 @@ tracked in `docs/refactoring-plan-current.md`.
 - bundle audit confirms screen-level lazy loading and keeps the shared chart
   runtime outside initial preload; AI Forecast and Contest public models are
   bounded schemas extracted from monolit, impreuna cu contractele complete de
-  lifecycle/evaluare Agents si contractele Campaigns/Premium Glass;
+  lifecycle/evaluare Agents si contractele Campaigns/Premium Glass/Dashboard;
+- public month/status/value contracts are constrained in OpenAPI, persisted
+  Grile reads use explicit columns, and repeated business/retry literals have
+  named sources of truth;
 - frontend CI gates for general and strict typecheck, lint, unit tests, runtime
   dependency audit, production build, Playwright flows and WCAG A/AA smoke scans
   (GitHub Actions merge-ref run `29225724923`: backend and frontend green).
@@ -64,9 +67,8 @@ of the modernization program. The remaining safe path is:
 
 1. monitor the released privacy, OIDC/JWKS and rate-limit paths;
 2. observe the released H-06 login/logout path and session metrics;
-3. finish the remaining model validation, constants and SQL cleanup without changing public contracts;
-4. close with full regression, migration, security, accessibility and live-path acceptance.
+3. close with full regression, migration, security, accessibility and live-path acceptance.
 
 The application should not yet be described as the final new version: H-06,
-H-01B and H-02 are operationally active, while the final validation/SQL cleanup
-and operational acceptance work remains.
+H-01B and H-02 are operationally active, while final operational acceptance
+remains.

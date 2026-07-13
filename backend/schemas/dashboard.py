@@ -7,11 +7,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.campaigns import PromoIncentiveSummary
+from schemas.common import MonthStr
 from schemas.premium_glass import PremiumGlassAnalysis
 
 
 class DashboardSummary(BaseModel):
-    month: str
+    month: MonthStr
     total_sales: Decimal
     total_target: Decimal
     target_progress_pct: Decimal | None
@@ -47,7 +48,7 @@ class DailySalesPoint(BaseModel):
 
 
 class MonthlyHistoryPoint(BaseModel):
-    month: str
+    month: MonthStr
     total_sales: Decimal
     total_target: Decimal
     target_progress_pct: Decimal | None
@@ -94,7 +95,7 @@ class DashboardSpecialCardsResponse(BaseModel):
 class AgentStats(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    import_month: str
+    import_month: MonthStr
     agent: str
     site_code: str
     locatie: str
@@ -121,7 +122,7 @@ class AgentStats(BaseModel):
 class StoreStats(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    import_month: str
+    import_month: MonthStr
     site_code: str
     locatie: str
     firma: str
@@ -185,7 +186,7 @@ class PerformanceDetailResponse(BaseModel):
     key: str
     title: str
     subtitle: str | None = None
-    month: str
+    month: MonthStr
     summary: DashboardSummary
     history: list[MonthlyHistoryPoint] = Field(default_factory=list)
     daily: list[DailySalesPoint] = Field(default_factory=list)
@@ -234,7 +235,7 @@ class YearHistoryResponse(BaseModel):
 
 class PeriodComparisonPoint(BaseModel):
     label: str
-    month: str
+    month: MonthStr
     day_range: str
     total_sales: Decimal
     total_quantity: int

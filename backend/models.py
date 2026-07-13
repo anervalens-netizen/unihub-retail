@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
+from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from schemas.ai_forecast import (
@@ -97,6 +97,17 @@ from schemas.dashboard import (
     YearHistoryPoint,
     YearHistoryResponse,
 )
+from schemas.common import (
+    MonthStr,
+    NonNegativeDecimal,
+    NonNegativeInt,
+    PercentageFloat,
+    PercentageInt,
+)
+
+
+ImportSnapshotStatus = Literal["processing", "completed", "failed"]
+ImportJobState = Literal["queued", "in_progress", "complete", "not_found"]
 
 
 class AgentOption(BaseModel):
@@ -118,41 +129,41 @@ class FilterOptions(BaseModel):
 
 class ImportHistoryEntry(BaseModel):
     id: int
-    import_month: str
+    import_month: MonthStr
     filename: str
     upload_date: date
     is_month_final: bool
-    rows_in_file: int | None
-    rows_imported: int | None
-    status: str
+    rows_in_file: NonNegativeInt | None
+    rows_imported: NonNegativeInt | None
+    status: ImportSnapshotStatus
     error_message: str | None
     created_at: datetime
 
 
 class ImportResponse(BaseModel):
-    import_month: str
-    rows_in_file: int
-    rows_imported: int
-    rows_filtered: int
-    store_count: int
-    agent_count: int
-    snapshot_id: int
+    import_month: MonthStr
+    rows_in_file: NonNegativeInt
+    rows_imported: NonNegativeInt
+    rows_filtered: NonNegativeInt
+    store_count: NonNegativeInt
+    agent_count: NonNegativeInt
+    snapshot_id: NonNegativeInt
     filename: str
     is_month_final: bool
 
 
 class PromoActualImportResponse(BaseModel):
-    import_month: str
+    import_month: MonthStr
     cutoff_date: date
     filename: str
-    report_rows: int
-    promo_units: int
-    updated_promotions: int
+    report_rows: NonNegativeInt
+    promo_units: NonNegativeInt
+    updated_promotions: NonNegativeInt
 
 
 class ImportJobStatus(BaseModel):
     job_id: str
-    status: str
+    status: ImportJobState
     result: ImportResponse | None = None
     error: str | None = None
 
@@ -162,21 +173,21 @@ class VisitReportRow(BaseModel):
     asm: str | None
     regional: str | None
     firma: str | None
-    nr_vizite: int
-    avg_completion: float
-    curatenie_pct: float
-    imagine_pct: float
-    uniforma_pct: float
-    afise_pct: float
-    produse_promo_pct: float
+    nr_vizite: NonNegativeInt
+    avg_completion: PercentageFloat
+    curatenie_pct: PercentageFloat
+    imagine_pct: PercentageFloat
+    uniforma_pct: PercentageFloat
+    afise_pct: PercentageFloat
+    produse_promo_pct: PercentageFloat
     last_visit: str | None
 
 
 class VisitReportResponse(BaseModel):
-    month: str
-    total_vizite: int
-    magazine_unice: int
-    avg_completion: float
+    month: MonthStr
+    total_vizite: NonNegativeInt
+    magazine_unice: NonNegativeInt
+    avg_completion: PercentageFloat
     rows: list[VisitReportRow]
 
 
@@ -185,26 +196,26 @@ class VisitSummaryItem(BaseModel):
     magazin: str
     locatie: str | None
     ora: str | None
-    completion_pct: int
+    completion_pct: PercentageInt
     firma: str | None
     has_photos: bool
 
 
 class VisitDayGroup(BaseModel):
     date: str
-    nr_vizite: int
+    nr_vizite: NonNegativeInt
     visits: list[VisitSummaryItem]
 
 
 class VisitMonthGroup(BaseModel):
-    month: str
-    nr_vizite: int
+    month: MonthStr
+    nr_vizite: NonNegativeInt
     days: list[VisitDayGroup]
 
 
 class TeamLeaderGroup(BaseModel):
     team_leader: str
-    nr_vizite: int
+    nr_vizite: NonNegativeInt
     months: list[VisitMonthGroup]
 
 
@@ -264,5 +275,5 @@ class StoreTargetInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     site_code: str
-    import_month: str
-    target_value: Decimal
+    import_month: MonthStr
+    target_value: NonNegativeDecimal

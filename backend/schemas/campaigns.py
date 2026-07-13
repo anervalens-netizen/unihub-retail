@@ -4,6 +4,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from schemas.common import MonthStr
+
 
 class PromoIncentiveSummary(BaseModel):
     promo_qty: int = 0
@@ -22,7 +24,7 @@ class PromoIncentiveSummary(BaseModel):
 
 
 class CampaignOverview(BaseModel):
-    month: str
+    month: MonthStr
     total_focus_sales: Decimal
     total_focus_qty: int
     focus_share_pct: Decimal | None
@@ -86,7 +88,7 @@ class PromotionsIncentivesResponse(BaseModel):
 
 
 class FocusHistoryPoint(BaseModel):
-    month: str
+    month: MonthStr
     total_focus_sales: Decimal
     total_focus_qty: int
     focus_share_pct: Decimal | None

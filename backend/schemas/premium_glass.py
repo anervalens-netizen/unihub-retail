@@ -5,9 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from schemas.common import MonthStr
+
 
 class PremiumGlassSummary(BaseModel):
-    month: str
+    month: MonthStr
     total_qty: int = 0
     total_sales: Decimal = Decimal(0)
     premium_qty: int = 0

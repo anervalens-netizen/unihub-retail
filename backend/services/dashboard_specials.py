@@ -7,6 +7,13 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
+from business_rules import (
+    INCENTIVE_FULL_ACHIEVEMENT_RATIO,
+    INCENTIVE_FULL_MULTIPLIER,
+    INCENTIVE_HALF_ACHIEVEMENT_RATIO,
+    INCENTIVE_HALF_MULTIPLIER,
+    INCENTIVE_ZERO_MULTIPLIER,
+)
 from schemas.dashboard import DashboardSpecialCard, DashboardSpecialCardMetric
 from services.phone_models import extract_phone_model_keys
 from services.product_lists import (
@@ -460,11 +467,11 @@ def load_incentive_reward_map(
 
 def incentive_multiplier(achievement: float) -> float:
     """Map store target achievement ratio to incentive multiplier (0.0, 0.5, or 1.0)."""
-    if achievement >= 1.0:
-        return 1.0
-    if achievement >= 0.9:
-        return 0.5
-    return 0.0
+    if achievement >= INCENTIVE_FULL_ACHIEVEMENT_RATIO:
+        return INCENTIVE_FULL_MULTIPLIER
+    if achievement >= INCENTIVE_HALF_ACHIEVEMENT_RATIO:
+        return INCENTIVE_HALF_MULTIPLIER
+    return INCENTIVE_ZERO_MULTIPLIER
 
 
 def prewarm_special_cards_cache() -> None:

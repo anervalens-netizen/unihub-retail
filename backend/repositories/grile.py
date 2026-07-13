@@ -6,6 +6,20 @@ from typing import Any
 import asyncpg
 
 
+_RUN_COLUMNS = """
+    id, run_month, source_snapshot_id, status, source, progress_current,
+    progress_total, ok_count, problem_count, error_count, duration_ms,
+    triggered_by_email, error_message, started_at, heartbeat_at, finished_at,
+    created_at
+"""
+
+_STORE_STATUS_COLUMNS = """
+    run_id, site_code, completion_pct, last_edit, grila_target, grila_sales,
+    db_target, db_sales_mtd, db_max_sale_date, fill_status, target_status,
+    sales_status, tolerance, error_code, error_message, raw_summary
+"""
+
+
 class GrileRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
@@ -258,8 +272,8 @@ class GrileRepository:
     async def get_latest_run(self, month: str) -> asyncpg.Record | None:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
-                """
-                SELECT * FROM grile_runs
+                f"""
+                SELECT {_RUN_COLUMNS} FROM grile_runs
                 WHERE run_month = $1
                 ORDER BY created_at DESC
                 LIMIT 1
@@ -269,13 +283,16 @@ class GrileRepository:
 
     async def get_run(self, run_id: int) -> asyncpg.Record | None:
         async with self.pool.acquire() as conn:
-            return await conn.fetchrow("SELECT * FROM grile_runs WHERE id = $1", run_id)
+            return await conn.fetchrow(
+                f"SELECT {_RUN_COLUMNS} FROM grile_runs WHERE id = $1",
+                run_id,
+            )
 
     async def get_running_run(self, month: str) -> asyncpg.Record | None:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
-                """
-                SELECT * FROM grile_runs
+                f"""
+                SELECT {_RUN_COLUMNS} FROM grile_runs
                 WHERE run_month = $1 AND status IN ('queued', 'running')
                 ORDER BY created_at DESC LIMIT 1
                 """,
@@ -285,6 +302,6 @@ class GrileRepository:
     async def get_run_statuses(self, run_id: int) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
-                "SELECT * FROM grile_store_status WHERE run_id = $1",
+                f"SELECT {_STORE_STATUS_COLUMNS} FROM grile_store_status WHERE run_id = $1",
                 run_id,
             )

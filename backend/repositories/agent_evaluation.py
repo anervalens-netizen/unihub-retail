@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from business_rules import AGENT_LIFECYCLE_BASELINE_MONTH
 
-AGENT_EVALUATION_V2_QUERY = """
+AGENT_EVALUATION_V2_QUERY = f"""
 WITH current_month AS (
     SELECT MAX(import_month) AS month
     FROM reporting_agent_month
@@ -26,7 +27,7 @@ selected_months AS (
     SELECT DISTINCT ram.import_month
     FROM reporting_agent_month ram
     JOIN current_agents ca ON ca.agent = ram.agent
-    WHERE ram.import_month >= '2025-01'
+    WHERE ram.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
       AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
       AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
@@ -94,7 +95,7 @@ monthly_base AS (
     SELECT
         ram.import_month AS raw_month,
         CASE
-            WHEN $1::TEXT IS NULL THEN '2025-01..curent'
+            WHEN $1::TEXT IS NULL THEN '{AGENT_LIFECYCLE_BASELINE_MONTH}..curent'
             WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
             ELSE ram.import_month
         END AS month,
@@ -125,7 +126,7 @@ monthly_base AS (
     LEFT JOIN store_targets st
       ON st.import_month = ram.import_month
      AND st.site_code = ram.site_code
-    WHERE ram.import_month >= '2025-01'
+    WHERE ram.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
       AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
       AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
@@ -270,7 +271,7 @@ premium_lines AS (
     SELECT DISTINCT
         st.id,
         CASE
-            WHEN $1::TEXT IS NULL THEN '2025-01..curent'
+            WHEN $1::TEXT IS NULL THEN '{AGENT_LIFECYCLE_BASELINE_MONTH}..curent'
             WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
             ELSE st.import_month
         END AS month,
@@ -280,7 +281,7 @@ premium_lines AS (
     FROM sales_transactions st
     JOIN current_agents ca ON ca.agent = st.agent
     JOIN premium_glass_item_models pgm ON pgm.item_code = st.item_code
-    WHERE st.import_month >= '2025-01'
+    WHERE st.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
       AND ($1::TEXT IS NULL OR st.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
       AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
@@ -375,7 +376,7 @@ scoped AS (
     SELECT DISTINCT ram.import_month AS month, ca.firma, ca.regional, ca.asm, ca.site_code, ca.locatie
     FROM reporting_agent_month ram
     JOIN current_agents ca ON ca.agent = ram.agent
-    WHERE ram.import_month >= '2025-01'
+    WHERE ram.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
 )
 SELECT 'month' AS type, month AS value, month AS label FROM scoped
 UNION
