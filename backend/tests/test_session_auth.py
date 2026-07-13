@@ -193,6 +193,13 @@ async def test_callback_consumes_state_sets_host_cookie_and_stores_only_encrypte
     assert len(session_values) == 1
     assert all(token not in session_values[0] for token in (b"private-access-token", b"private-id-token", b"private-refresh-token"))
     assert verify.await_count == 2
+    assert verify.await_args_list[0].args == ("private-access-token",)
+    assert verify.await_args_list[0].kwargs == {}
+    assert verify.await_args_list[1].args == ("private-id-token",)
+    assert verify.await_args_list[1].kwargs == {
+        "nonce": "nonce",
+        "audience": "retail",
+    }
 
 
 @pytest.mark.anyio

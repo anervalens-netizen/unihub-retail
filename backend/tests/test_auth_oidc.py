@@ -85,6 +85,32 @@ async def test_real_asgi_valid_rsa_token_and_key_rotation(monkeypatch: pytest.Mo
 
 
 @pytest.mark.anyio
+async def test_real_rsa_token_supports_explicit_client_id_audience(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = _private_key()
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"keys": [_jwk(key, "A")]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(_settings(), client)
+        monkeypatch.setattr(auth, "get_oidc_verifier", lambda: verifier)
+        claims = await auth.verify_oidc_token(
+            _token(key, aud="browser-client"),
+            audience="browser-client",
+        )
+        with pytest.raises(auth.HTTPException) as denied:
+            await auth.verify_oidc_token(
+                _token(key, aud=AUDIENCE),
+                audience="browser-client",
+            )
+
+    assert claims.aud == "browser-client"
+    assert denied.value.status_code == 401
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "changes,algorithm,kid",
     [
