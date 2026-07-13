@@ -11,12 +11,14 @@ from services.dashboard.queries import (
     _fetch_promo_incentive_summary,
     _get_store_incentive_multipliers,
     _load_dashboard_campaign_context,
+    _scope_clauses,
+    _scope_join,
 )
 from services.dashboard_specials import (
     build_incentive_card,
     build_promotion_card,
 )
-from services.filters import build_scoped_params, scoped_clauses
+from services.filters import build_scoped_params
 
 
 def _excluded_by_site_item(
@@ -36,6 +38,8 @@ async def _get_special_cards_data(
     site_code: str | None,
     agent: str | None,
     *,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
     campaign_context: DashboardCampaignContext | None = None,
     promo_incentive_summary: Awaitable[PromoIncentiveSummary] | None = None,
 ) -> list[DashboardSpecialCard]:
@@ -90,13 +94,13 @@ async def _get_special_cards_data(
                 "agg.import_month = $1",
                 "agg.item_code = ANY($2::TEXT[])",
             ]
-            query_clauses = scoped_clauses(
+            query_clauses = _scope_clauses(
                 positions,
-                site_alias="agg",
-                store_alias="agg",
-                agent_alias="agg",
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
             )
             clauses.extend(query_clauses)
+            summary: PromoIncentiveSummary | None = None
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     f"""
@@ -109,6 +113,7 @@ async def _get_special_cards_data(
                             agg.positive_quantity,
                             agg.return_quantity
                         FROM reporting_item_month agg
+                        {_scope_join(current_scope)}
                         WHERE {" AND ".join(clauses)}
                     ),
                     item_totals AS (
@@ -147,7 +152,14 @@ async def _get_special_cards_data(
                 item_rows = [row for row in rows if not row["is_meta"]]
                 meta_row = next((row for row in rows if row["is_meta"]), None)
                 store_multipliers, _ = await _get_store_incentive_multipliers(
-                    conn, month, firma, regional, asm, site_code
+                    conn,
+                    month,
+                    firma,
+                    regional,
+                    asm,
+                    site_code,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
                 if promo_incentive_summary is None:
                     summary = await _fetch_promo_incentive_summary(
@@ -158,10 +170,13 @@ async def _get_special_cards_data(
                         asm,
                         site_code,
                         agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
                         campaign_context=campaign_context,
                     )
-                else:
-                    summary = await promo_incentive_summary
+            if promo_incentive_summary is not None:
+                summary = await promo_incentive_summary
+            assert summary is not None
             net_qty = 0
             pos_qty = 0
             ret_qty = 0

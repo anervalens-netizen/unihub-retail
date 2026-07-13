@@ -517,7 +517,14 @@ class TestGetDashboardAll:
             return_value=campaign_context,
         ) as mock_load_context:
             result = await service.get_dashboard_all(
-                "2026-05", None, None, None, None, None
+                "2026-05",
+                None,
+                None,
+                None,
+                None,
+                None,
+                current_scope=True,
+                include_closed_stores=True,
             )
         assert result.summary.total_sales == Decimal(0)
         assert result.agents == []
@@ -530,6 +537,8 @@ class TestGetDashboardAll:
         mock_load_context.assert_awaited_once()
         assert mock_promo.await_args.kwargs["campaign_context"] is campaign_context
         assert mock_specials.await_args.kwargs["campaign_context"] is campaign_context
+        assert mock_specials.await_args.kwargs["current_scope"] is True
+        assert mock_specials.await_args.kwargs["include_closed_stores"] is True
         shared_summary = mock_specials.await_args.kwargs["promo_incentive_summary"]
         assert shared_summary.done()
         assert shared_summary.result() is result.promo_incentive
