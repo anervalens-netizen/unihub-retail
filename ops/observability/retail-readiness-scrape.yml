@@ -1,0 +1,15 @@
+# Merge this scrape job into the shared Prometheus scrape_configs list.
+- job_name: "blackbox_retail_readiness"
+  metrics_path: /probe
+  params:
+    module: [http_public]
+  static_configs:
+    - targets:
+        - https://retail.unihub.ro/readyz
+  relabel_configs:
+    - source_labels: [__address__]
+      target_label: __param_target
+    - source_labels: [__param_target]
+      target_label: instance
+    - target_label: __address__
+      replacement: unihub-blackbox:9115

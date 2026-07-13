@@ -61,9 +61,8 @@ from session_auth import (
     close_session_runtime,
     init_session_runtime,
     router as session_router,
-    verify_session_runtime_ready,
 )
-from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
+from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, health, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
 from services.dashboard_specials import prewarm_special_cards_cache
 from services.retail_metrics import update_business_metrics
 from services.visits_sync import sync_visits_snapshot
@@ -131,7 +130,18 @@ app = FastAPI(title="UniHub API", lifespan=lifespan)
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         started_at = time.perf_counter()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            if request.url.path != "/metrics":
+                route = request.scope.get("route")
+                handler = getattr(route, "path", request.url.path)
+                labels = (request.method, "5xx", handler)
+                HTTP_REQUESTS_TOTAL.labels(*labels).inc()
+                HTTP_REQUEST_DURATION_SECONDS.labels(*labels).observe(
+                    time.perf_counter() - started_at
+                )
+            raise
         for name, value in getattr(request.state, "rate_limit_headers", {}).items():
             response.headers[name] = value
         if request.url.path != "/metrics":
@@ -224,6 +234,7 @@ _auth = [Depends(require_auth)]
 
 app.include_router(session_router)
 app.include_router(session_callback_router)
+app.include_router(health.router)
 
 app.include_router(agents.router, dependencies=_auth)
 app.include_router(ai_forecast.router, dependencies=_auth)
@@ -245,29 +256,6 @@ app.include_router(crm.router, dependencies=_auth)
 app.include_router(target_calculator.router, dependencies=[Depends(require_management_access)])
 app.include_router(grile.router, dependencies=_auth)
 app.include_router(store_pnl.router)
-
-
-@app.get("/health")
-async def health() -> JSONResponse:
-    """Readiness probe: verifica pool-ul DB cu SELECT 1.
-
-    Returneaza 200 daca pool-ul raspunde, 503 altfel. Load balancer-ul
-    vede diferenta intre "procesul e sus" si "poate servi request-uri".
-    """
-    try:
-        current_pool = await get_pool()
-        async with current_pool.acquire() as conn:
-            await conn.fetchval("SELECT 1")
-        await verify_session_runtime_ready()
-    except Exception:  # noqa: BLE001 — orice exceptie = unhealthy
-        # Log complet pentru diagnoza, dar raspunsul HTTP nu expune detalii
-        # (connection string-uri / path-uri pot ajunge la load balancer).
-        logger.exception("Health check failed")
-        return JSONResponse(
-            status_code=503,
-            content={"status": "unhealthy"},
-        )
-    return JSONResponse(content={"status": "ok"})
 
 
 @app.get("/metrics")

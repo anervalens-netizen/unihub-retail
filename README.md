@@ -677,6 +677,15 @@ Suita Playwright porneste singura preview-ul Vite si include smoke-uri de
 accesibilitate WCAG A/AA pentru Hub si Management. CI ruleaza aceleasi gate-uri
 frontend, inclusiv auditul dependentelor runtime la severitate `high`.
 
+Probe runtime:
+
+- `/livez` confirma doar procesul;
+- `/readyz` confirma PostgreSQL si sesiunea BFF din Valkey;
+- `/health` ramane alias compatibil pentru `/readyz`.
+
+Contractul, SLO-urile si alertele sunt documentate in
+[docs/operations/retail-slo-readiness.md](./docs/operations/retail-slo-readiness.md).
+
 ## Scripturi utile
 
 | Script | Utilizare |

@@ -45,6 +45,19 @@ jobs:
         run: |
           venv/bin/python -c "from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())"
 
+      - name: Operational configuration validation
+        working-directory: .
+        run: |
+          systemd-analyze verify \
+            "$GITHUB_WORKSPACE/ops/systemd/unihub-backend.service" \
+            "$GITHUB_WORKSPACE/unihub-worker.service" \
+            "$GITHUB_WORKSPACE/ops/systemd/unihub-retail-migrate.service"
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            -v "$GITHUB_WORKSPACE/ops/observability/retail-slo-rules.yml:/rules.yml:ro" \
+            prom/prometheus:v3.11.3 \
+            check rules /rules.yml
+
       - name: Upload mypy diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
