@@ -568,7 +568,9 @@ build pot concura pe `dist/`.
   frontend minor/patch sunt validate prin toate gate-urile. `bcrypt` si
   `passlib` au fost eliminate din runtime deoarece Retail foloseste exclusiv
   Authentik OIDC si nu contine hashing local de parole; importul runtime este
-  verificat intr-un venv curat.
+  verificat intr-un venv curat. `redis` ramane pe majorul 5 cat timp `arq 0.28`
+  declara explicit `redis<6`; Dependabot ignora doar saltul major incompatibil,
+  nu actualizarile compatibile minor/patch.
 - 2026-07-13: gate-urile frontend CI au fost extinse cu typecheck strict,
   ESLint, audit runtime, build si 15 scenarii Playwright. Doua smoke-uri axe
   acopera Hub si Management pentru incalcari WCAG A/AA critical/serious;
