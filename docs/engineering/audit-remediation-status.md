@@ -64,7 +64,9 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 - [x] H-16 DB error logging reliability and bounded failure path — implemented, review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs — runtime/offline writers and DataFrame missing-value handling are review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-08 Remove privileged real-email fallbacks and fail closed — technically complete; production deploy pending dedicated-group provisioning.
-- [x] H-15 Inventory and Git HEAD cleanup complete; secure archive verified, while governed storage and separate history-purge approval remain pending.
+- [x] H-15 inventory, Git HEAD cleanup, governed storage and approved `main`
+  history rewrite complete; GitHub Support dereference of read-only PR refs is
+  tracked as the only external closure dependency.
 
 ### Wave 2 — Privacy and identity
 
@@ -103,7 +105,7 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 
 - [x] Harden PR runners and workflow permissions/timeouts/concurrency.
 - [x] Make lint, strict TS, E2E, accessibility, migration and security scans required.
-- [ ] Move business/generated artifacts to governed storage with retention and audit.
+- [x] Move business/generated artifacts to governed storage with retention and audit.
 - [x] Add liveness/readiness/dependency health separation.
 - [x] Add runbooks, SLOs, alerts and service hardening.
 
@@ -280,6 +282,7 @@ A finding is closed only when:
 
 V2 operational acceptance is complete. H-03, H-11, H-16, H-12, H-08,
 H-01A, H-04/H-05, H-06, H-07, H-01B and H-02 are integrated and active in
-production. H-15 governed storage and any separately approved history purge
-remain explicit governance backlog; the worker-queue and persistent-upload/job
-items are future platform work, not incomplete audit-remediation deployments.
+production. H-15 storage and the controllable history purge are complete;
+GitHub Support must still dereference cached/read-only historical PR refs. The
+worker-queue and persistent-upload/job items are future platform work, not
+incomplete audit-remediation deployments.

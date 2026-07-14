@@ -1,6 +1,6 @@
 # UniHub Retail — development plan status
 
-Last reconciled: 2026-07-13
+Last reconciled: 2026-07-14
 
 This is the executive view of the active development plan. Detailed acceptance
 evidence remains in the finding-specific documents; structural refactoring is
@@ -10,7 +10,7 @@ tracked in `docs/refactoring-plan-current.md`.
 
 | Area | Status | Remaining exit work |
 | --- | --- | --- |
-| Wave 1 correctness/security | Integrated in `main` | H-15 governed storage and any separately approved history purge |
+| Wave 1 correctness/security | Integrated in `main` | GitHub Support dereference for historical H-15 PR refs |
 | H-01A salary API privacy | Merged and active in production | Continue with the retained-data boundary in H-01B |
 | H-04/H-05 OIDC and JWKS | Merged and active in production | Ongoing operational monitoring |
 | H-07 distributed rate limiting | Merged and active in production | Ongoing metrics and alert monitoring |
@@ -30,7 +30,8 @@ tracked in `docs/refactoring-plan-current.md`.
 - bounded, redacted DB error logging;
 - spreadsheet formula neutralization;
 - privileged capability authorization by OIDC groups, without email fallback;
-- generated-artifact cleanup from Git HEAD;
+- generated-artifact cleanup from Git HEAD and rewritten `main` history, with
+  governed local/NAS rollback storage;
 - opaque salary `person_id`, with CNP removed from browser and public API;
 - typed fail-closed OIDC settings, real JWKS rotation and bounded stale cache;
 - trusted client-IP resolution and atomic distributed Valkey rate limiting;
@@ -74,8 +75,8 @@ Remaining work is operational or separately scoped backlog, not a V2 release
 blocker:
 
 1. continue monitoring privacy, OIDC/JWKS, sessions, rate limiting and SLOs;
-2. move generated/business artifacts to governed storage and decide separately
-   whether approved history purge is required for H-15;
+2. obtain GitHub Support confirmation that the historical H-15 PR refs and
+   cached views were dereferenced server-side;
 3. split worker queues and persistent upload/job orchestration only when load or
    reliability evidence justifies that next platform tranche;
 4. apply further query/index optimization only from measured production
