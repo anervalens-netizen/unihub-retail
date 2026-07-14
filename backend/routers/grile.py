@@ -24,7 +24,10 @@ MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 # ── verificare (read-only) ────────────────────────────────────────────────────
 
 @router.get("/overview")
-async def grile_overview(month: str | None = Query(default=None)) -> dict[str, Any]:
+async def grile_overview(
+    month: str | None = Query(default=None),
+    _claims: AuthClaims = Depends(require_auth),
+) -> dict[str, Any]:
     pool = await get_pool()
     return await get_overview(pool, await resolve_month(pool, month))
 
@@ -54,7 +57,10 @@ async def grile_run(
 
 
 @router.get("/run-status")
-async def grile_run_status(month: str | None = Query(default=None)) -> dict[str, Any]:
+async def grile_run_status(
+    month: str | None = Query(default=None),
+    _claims: AuthClaims = Depends(require_auth),
+) -> dict[str, Any]:
     pool = await get_pool()
     repo = GrileRepository(pool)
     latest = await repo.get_latest_run(await resolve_month(pool, month))
