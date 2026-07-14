@@ -580,6 +580,9 @@ build pot concura pe `dist/`.
   constatare noua medium/high si `detect-secrets` pentru orice secret nou in
   arborele tracked. Baseline-urile contin exclusiv cele 17 constatari Bandit si
   42 detectii false-positive existente, revizuite; regulile nu sunt dezactivate.
+- 2026-07-14: workflow-ul self-hosted ruleaza backend si frontend secvential,
+  cu permisiuni implicite limitate la `contents: read` si timeout-uri explicite
+  de 30, respectiv 20 minute, pentru a evita saturarea hostului comun.
 - 2026-07-13: gate-urile frontend CI au fost extinse cu typecheck strict,
   ESLint, audit runtime, build si 15 scenarii Playwright. Doua smoke-uri axe
   acopera Hub si Management pentru incalcari WCAG A/AA critical/serious;
