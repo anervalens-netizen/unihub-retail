@@ -478,6 +478,10 @@ Pentru backend:
 backend/scripts/run_tests_isolated.sh
 backend/venv/bin/mypy backend --ignore-missing-imports --explicit-package-bases
 backend/venv/bin/mypy . --ignore-missing-imports --explicit-package-bases
+backend/venv/bin/pip-audit -r backend/requirements.txt --strict --progress-spinner off
+backend/venv/bin/bandit -r backend -x backend/tests,backend/venv -ll -ii -q -b .bandit-baseline.json
+mapfile -d '' tracked_files < <(git ls-files -z -- . ':(exclude).secrets.baseline' ':(exclude).bandit-baseline.json')
+backend/venv/bin/detect-secrets-hook --baseline .secrets.baseline "${tracked_files[@]}"
 ```
 
 Pentru live path:
@@ -571,6 +575,11 @@ build pot concura pe `dist/`.
   verificat intr-un venv curat. `redis` ramane pe majorul 5 cat timp `arq 0.28`
   declara explicit `redis<6`; Dependabot ignora doar saltul major incompatibil,
   nu actualizarile compatibile minor/patch.
+- 2026-07-14: CI are gate-uri locale, independente de GitHub Advanced
+  Security: `pip-audit` pentru dependintele runtime Python, Bandit pentru orice
+  constatare noua medium/high si `detect-secrets` pentru orice secret nou in
+  arborele tracked. Baseline-urile contin exclusiv cele 17 constatari Bandit si
+  42 detectii false-positive existente, revizuite; regulile nu sunt dezactivate.
 - 2026-07-13: gate-urile frontend CI au fost extinse cu typecheck strict,
   ESLint, audit runtime, build si 15 scenarii Playwright. Doua smoke-uri axe
   acopera Hub si Management pentru incalcari WCAG A/AA critical/serious;
