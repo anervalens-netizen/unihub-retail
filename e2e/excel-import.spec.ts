@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { setupBaseMocks, mockApiRoute } from './helpers';
 
 test.describe('E2E: Excel Import (Settings)', () => {

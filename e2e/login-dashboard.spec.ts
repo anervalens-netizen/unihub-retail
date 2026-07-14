@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { setupBaseMocks } from './helpers';
 
 test.describe('E2E: Login → Dashboard', () => {

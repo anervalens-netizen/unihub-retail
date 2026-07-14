@@ -1,4 +1,5 @@
 import { BrowserContext } from '@playwright/test';
+import type { CampaignsPromotionsResponse } from '../src/api/types';
 
 export const MOCK_USER = {
   sub: 'test-user-123',
@@ -114,13 +115,43 @@ export const MOCK_DASHBOARD_YEAR_HISTORY = {
   ],
 };
 
+export const MOCK_PROMOTIONS_RESPONSE: CampaignsPromotionsResponse = {
+  promotions: [],
+  selected_promotion_key: '',
+  promo_title: '',
+  promo_description: '',
+  promo_qty: 0,
+  promo_total_qty: 0,
+  promo_category_qty: null,
+  promo_impact: 0,
+  promo_qualifying_bons: 0,
+  promo_discounted_units: 0,
+  promo_active_stores: 0,
+  promo_active_agents: 0,
+  incentive_title: '',
+  incentive_description: '',
+  incentive_qty: 0,
+  incentive_sold_qty: 0,
+  incentive_value: 0,
+  incentive_potential: 0,
+  incentive_qualified_qty: 0,
+  incentive_qualified_stores: 0,
+  incentive_qualified_stores_full: 0,
+  incentive_qualified_stores_half: 0,
+  incentive_qualified_agents: 0,
+  incentive_qualified_agents_full: 0,
+  incentive_qualified_agents_half: 0,
+  incentive_product_count: 0,
+  incentive_categories: [],
+  incentive_periods: [],
+  incentive_category_breakdown: [],
+  has_active_promotion: false,
+  top_stores: [],
+  promo_agents: [],
+  top_agents: [],
+};
+
 export async function setupBaseMocks(context: BrowserContext) {
-  context.on('page', (page) => {
-    page.on('pageerror', (error) => console.error('E2E page error:', error.message));
-    page.on('console', (message) => {
-      if (message.type() === 'error') console.error('E2E console error:', message.text());
-    });
-  });
   await mockAuthenticatedSession(context);
 
   await context.route((url) => url.pathname.startsWith('/api/'), (route) => {
@@ -144,12 +175,11 @@ export async function setupBaseMocks(context: BrowserContext) {
     has_active_promotion: false, has_active_incentive: false,
   });
   await mockApiRoute(context, 'GET', /\/api\/campaigns\/history/, { history: [] });
-  await mockApiRoute(context, 'GET', /\/api\/campaigns\/promotions-incentives/, {
-    has_active_promotion: false, promo_title: null,
-    promo_total_qty: 0, promo_category_qty: 0,
-    top_stores: [], top_agents: [],
-    incentive_title: null, incentive_categories: [],
-    incentive_product_count: 0,
-  });
+  await mockApiRoute(
+    context,
+    'GET',
+    /\/api\/campaigns\/promotions-incentives/,
+    MOCK_PROMOTIONS_RESPONSE,
+  );
   await mockApiRoute(context, 'GET', /\/api\/import\/history/, []);
 }

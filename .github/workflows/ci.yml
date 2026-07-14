@@ -9,9 +9,13 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   backend-check:
     runs-on: [self-hosted, unihub-server]
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -32,6 +36,32 @@ jobs:
           "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet -r requirements.txt
           "$runtime_venv/bin/pip" check
           "$runtime_venv/bin/python" -c "import auth; import main; import worker"
+
+      - name: Python dependency vulnerability audit
+        run: venv/bin/pip-audit -r requirements.txt --strict --progress-spinner off
+
+      - name: Tracked secret regression scan
+        working-directory: .
+        run: |
+          mapfile -d '' tracked_files < <(
+            git ls-files -z -- . \
+              ':(exclude).secrets.baseline' \
+              ':(exclude).bandit-baseline.json'
+          )
+          backend/venv/bin/detect-secrets-hook \
+            --baseline .secrets.baseline \
+            "${tracked_files[@]}"
+
+      - name: Python static security regression scan
+        working-directory: .
+        run: |
+          backend/venv/bin/bandit \
+            -r backend \
+            -x backend/tests,backend/venv \
+            -ll \
+            -ii \
+            -q \
+            -b .bandit-baseline.json
 
       - name: Python typecheck
         run: |
@@ -113,7 +143,9 @@ jobs:
           retention-days: 3
 
   frontend-check:
+    needs: backend-check
     runs-on: [self-hosted, unihub-server]
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: .

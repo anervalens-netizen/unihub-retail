@@ -101,11 +101,11 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 
 ### Wave 5 — CI/CD, governance and operations
 
-- [ ] Harden PR runners and workflow permissions/timeouts/concurrency.
-- [ ] Make lint, strict TS, E2E, accessibility, migration and security scans required.
+- [x] Harden PR runners and workflow permissions/timeouts/concurrency.
+- [x] Make lint, strict TS, E2E, accessibility, migration and security scans required.
 - [ ] Move business/generated artifacts to governed storage with retention and audit.
-- [ ] Add liveness/readiness/dependency health separation.
-- [ ] Add runbooks, SLOs, alerts and service hardening.
+- [x] Add liveness/readiness/dependency health separation.
+- [x] Add runbooks, SLOs, alerts and service hardening.
 
 ## Historical implementation record (pre-deployment)
 
