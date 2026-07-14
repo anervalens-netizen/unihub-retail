@@ -55,13 +55,12 @@ Exact `reports/timesfm/**` paths:
   `KEEP_SOURCE`.
 - Fixture-urile/configurațiile legitime: `KEEP_SOURCE`/`KEEP_SYNTHETIC_FIXTURE`.
 
-## Următorul pas
+## Reguli preventive active
 
-Nu există consumer runtime de schimbat pentru `reports/**`, dar e necesară
-decizie business înainte de eliminare. Recomandări `.gitignore` neaplicate:
-`/reports/`, `/public.bak-*/`, `/backend/outputs/`; nu globuri globale pentru
-XLSX/CSV/JSON. Storage țintă: object storage guvernat cu retention/audit;
-arhivă server securizată doar temporar. Nu s-a creat, mutat sau copiat nimic.
+Nu există consumer runtime pentru `reports/**`. Generatorul offline identificat
+în inventar scrie în `backend/outputs/`, nu în repository. `.gitignore` și
+testul de igienă blochează `reports/` și `public.bak-*`, fără globuri generale
+pentru XLSX/CSV/JSON.
 
 ## Curățare HEAD executată
 
@@ -71,5 +70,15 @@ din `public.bak-logo-20260626-155400/**` (30 total), după arhivare din commitul
 `/opt/Mobiup/secure-archive/unihub-retail/h15/unihub-retail-h15-head-43e39f3efd36.tar.gz`,
 SHA-256 `568a43ed5e9f6d23e3fe7ba8b97e8209af558e354e336b083173e7f34a6e15c7`,
 owner `root:root`, mode `0600`; gzip și 30 intrări au fost verificate.
-Campanii-promo și docs/archive au rămas tracked. History purge nu a fost
-executat și necesită proces separat aprobat.
+Campanii-promo și docs/archive au rămas tracked.
+
+## Storage guvernat și history purge
+
+La 2026-07-14, după aprobarea explicită a ownerului business, arhiva HEAD,
+bundle-urile Git pre/post-purge și hărțile de commit/ref au fost copiate în
+storage local și NAS cu permisiuni owner-only, checksum-uri verificate,
+manifest de audit și retenție minimă 90 de zile. Namespace-ul istoric complet
+`reports/` — 34 path-uri în 8 commituri — a fost eliminat din `main`, clonele
+locale și runner fără schimbarea tree-ului final. Detaliile și limitarea
+refs-urilor PR administrate de GitHub sunt în
+`docs/engineering/h15-history-purge-plan.md`.
