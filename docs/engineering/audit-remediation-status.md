@@ -65,8 +65,9 @@ curenta continua pe Wave 2. Ledgerul detaliat si probele Wave 2 sunt in
 - [x] H-12 Spreadsheet formula neutralization across XLSX/CSV/Sheets outputs — runtime/offline writers and DataFrame missing-value handling are review-hardened and CI-green; production deploy pending Wave 1 release.
 - [x] H-08 Remove privileged real-email fallbacks and fail closed — technically complete; production deploy pending dedicated-group provisioning.
 - [x] H-15 inventory, Git HEAD cleanup, governed storage and approved `main`
-  history rewrite complete; GitHub Support dereference of read-only PR refs is
-  tracked as the only external closure dependency.
+  history rewrite complete; the private read-only PR-ref residual was accepted
+  explicitly by the business owner, so optional GitHub Support cleanup is not
+  a closure dependency.
 
 ### Wave 2 — Privacy and identity
 
@@ -283,6 +284,7 @@ A finding is closed only when:
 V2 operational acceptance is complete. H-03, H-11, H-16, H-12, H-08,
 H-01A, H-04/H-05, H-06, H-07, H-01B and H-02 are integrated and active in
 production. H-15 storage and the controllable history purge are complete;
-GitHub Support must still dereference cached/read-only historical PR refs. The
+the owner accepted the private read-only PR-ref residual and H-15 is closed.
+Optional GitHub Support cleanup remains future repository hygiene. The
 worker-queue and persistent-upload/job items are future platform work, not
 incomplete audit-remediation deployments.
