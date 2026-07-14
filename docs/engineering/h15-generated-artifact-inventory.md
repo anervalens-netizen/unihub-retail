@@ -82,3 +82,9 @@ manifest de audit și retenție minimă 90 de zile. Namespace-ul istoric complet
 locale și runner fără schimbarea tree-ului final. Detaliile și limitarea
 refs-urilor PR administrate de GitHub sunt în
 `docs/engineering/h15-history-purge-plan.md`.
+
+Ownerul business a acceptat explicit la 2026-07-14 riscul rezidual al
+refs-urilor PR read-only: repository-ul este privat, are un singur colaborator,
+nu are forkuri, iar refs-urile nu sunt folosite de runtime sau deploy. Curățarea
+lor prin GitHub Support este opțională și nu mai reprezintă o dependență de
+închidere. H-15 este închis.

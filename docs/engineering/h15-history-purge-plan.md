@@ -36,7 +36,7 @@ Copiile canonice sunt locale sub
 `/storage/backups/server-68/governed/unihub-retail/h15/`. Checksum-urile au
 fost verificate local și remote fără citirea conținutului business.
 
-## Limitare GitHub administrată extern
+## Limitare GitHub administrată extern și acceptarea riscului rezidual
 
 Force-push-ul nu poate modifica refs-urile read-only `refs/pull/*/head`.
 Auditul după rescriere a găsit 89 refs PR interne; 79 păstrează direct vechiul
@@ -46,11 +46,15 @@ primul commit schimbat
 `00555607a21542425b3ad5f4c4d0e8c61fa8779b`.
 
 Eliminarea acestor refs, cached views și obiecte server-side poate fi făcută
-numai de GitHub Support. Ticketul trebuie să includă repository-ul
+numai de GitHub Support. Dacă se solicită ulterior această igienizare
+suplimentară, ticketul trebuie să includă repository-ul
 `anervalens-netizen/unihub-retail`, 89 PR-uri afectate, primul commit schimbat
 de mai sus și faptul că nu există forks sau obiecte LFS. Procedura oficială:
 <https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository>.
 
-Până la confirmarea GitHub Support, purge-ul din `main`, din clonele locale și
-din runner este complet, dar ștergerea server-side a refs-urilor PR rămâne o
-dependență externă explicită.
+La 2026-07-14, ownerul business a acceptat explicit riscul rezidual după
+confirmarea că repository-ul este privat, are un singur colaborator, nu are
+forkuri, iar refs-urile PR interne nu au expunere publică și nu sunt folosite
+de runtime sau de calea de deploy. Purge-ul din `main`, clonele locale și runner
+este complet. Curățarea server-side prin GitHub Support rămâne o opțiune de
+igienizare viitoare, nu o dependență de închidere. Findingul H-15 este închis.

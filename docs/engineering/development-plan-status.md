@@ -10,7 +10,7 @@ tracked in `docs/refactoring-plan-current.md`.
 
 | Area | Status | Remaining exit work |
 | --- | --- | --- |
-| Wave 1 correctness/security | Integrated in `main` | GitHub Support dereference for historical H-15 PR refs |
+| Wave 1 correctness/security | Integrated in `main`; H-15 closed with explicit residual-risk acceptance | Ongoing monitoring only |
 | H-01A salary API privacy | Merged and active in production | Continue with the retained-data boundary in H-01B |
 | H-04/H-05 OIDC and JWKS | Merged and active in production | Ongoing operational monitoring |
 | H-07 distributed rate limiting | Merged and active in production | Ongoing metrics and alert monitoring |
@@ -75,9 +75,26 @@ Remaining work is operational or separately scoped backlog, not a V2 release
 blocker:
 
 1. continue monitoring privacy, OIDC/JWKS, sessions, rate limiting and SLOs;
-2. obtain GitHub Support confirmation that the historical H-15 PR refs and
-   cached views were dereferenced server-side;
+2. optionally ask GitHub Support to remove historical H-15 PR refs and cached
+   views as additional repository hygiene; the accepted private residual is not
+   an open audit finding or release blocker;
 3. split worker queues and persistent upload/job orchestration only when load or
    reliability evidence justifies that next platform tranche;
 4. apply further query/index optimization only from measured production
    baselines.
+
+## Release versioning
+
+The accepted product generation is V2. Formal releases should use a
+SemVer-inspired scheme:
+
+- `v2.0.0` identifies the accepted V2 baseline;
+- `v2.MINOR.0` identifies a compatible tranche of product functionality;
+- `v2.MINOR.PATCH` identifies compatible fixes and hardening;
+- `v3.0.0` is reserved for a deliberate, materially incompatible product,
+  contract or architecture transition with its own migration and acceptance.
+
+Feature count alone does not justify a major version. The repository currently
+has no formal release tag and its package metadata remains `0.0.0`; creating
+the first `v2.0.0` tag/GitHub Release is a separate release action, not part of
+the H-15 audit closure.
