@@ -94,7 +94,6 @@ SemVer-inspired scheme:
 - `v3.0.0` is reserved for a deliberate, materially incompatible product,
   contract or architecture transition with its own migration and acceptance.
 
-Feature count alone does not justify a major version. The repository currently
-has no formal release tag and its package metadata remains `0.0.0`; creating
-the first `v2.0.0` tag/GitHub Release is a separate release action, not part of
-the H-15 audit closure.
+Feature count alone does not justify a major version. The first formal release
+is `v2.0.0`; package metadata and canonical release notes are versioned with the
+release, and the Git tag/GitHub Release identify its CI-green merge commit.

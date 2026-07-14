@@ -1,5 +1,8 @@
 # UniHub
 
+**Versiune curenta:** `v2.0.0` — detalii in
+[`docs/releases/v2.0.0.md`](docs/releases/v2.0.0.md).
+
 UniHub este o aplicatie de operare comerciala pentru retail, construita pentru
 monitorizarea vanzarilor, targetelor, produselor Focus, promotiilor, fiselor de
 vizita si operatiunilor de management (manageri, calculator target, salarii si
