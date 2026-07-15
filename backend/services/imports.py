@@ -36,7 +36,10 @@ async def trigger_grile_check_after_import(import_month: str, snapshot_id: int |
     """
     try:
         result = await enqueue_grile_check(
-            month=import_month, source="auto", source_snapshot_id=snapshot_id
+            month=import_month,
+            source="auto",
+            source_snapshot_id=snapshot_id,
+            triggered_by_sub="system:sales-import",
         )
         logger.info(
             "grile check %s (auto) for %s snapshot=%s run=%s",

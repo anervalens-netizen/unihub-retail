@@ -35,13 +35,13 @@ async def test_grile_run_reservation_is_atomic_and_reusable() -> None:
                 run_month=run_month,
                 source="manual",
                 source_snapshot_id=None,
-                triggered_by_email="first@example.com",
+                triggered_by_sub="synthetic-subject-one",
             ),
             repo.reserve_run(
                 run_month=run_month,
                 source="manual",
                 source_snapshot_id=None,
-                triggered_by_email="second@example.com",
+                triggered_by_sub="synthetic-subject-two",
             ),
         )
         run_ids = [run_id for run_id in reservations if run_id is not None]
@@ -55,7 +55,7 @@ async def test_grile_run_reservation_is_atomic_and_reusable() -> None:
             run_month=run_month,
             source="auto",
             source_snapshot_id=None,
-            triggered_by_email=None,
+            triggered_by_sub=None,
         ) is None
 
         await repo.finalize_run(
@@ -70,7 +70,7 @@ async def test_grile_run_reservation_is_atomic_and_reusable() -> None:
             run_month=run_month,
             source="manual",
             source_snapshot_id=None,
-            triggered_by_email="next@example.com",
+            triggered_by_sub="synthetic-subject-next",
         )
         assert next_run_id is not None
         assert int(next_run_id) != run_id
@@ -113,7 +113,7 @@ async def test_grile_run_reservation_recovers_an_expired_lease() -> None:
             run_month=run_month,
             source="auto",
             source_snapshot_id=None,
-            triggered_by_email=None,
+            triggered_by_sub=None,
         )
         assert replacement_id is not None
         assert int(replacement_id) != int(stale_id)

@@ -483,7 +483,6 @@ export function GrileSubtab() {
                 <Clock className="h-3.5 w-3.5" />
                 {run.source === 'auto' ? 'automat după import' : 'manual'} ·{' '}
                 {relTime(run.finished_at ?? run.started_at)}
-                {run.triggered_by_email ? ` · ${run.triggered_by_email}` : ''}
               </div>
             </>
           ) : (

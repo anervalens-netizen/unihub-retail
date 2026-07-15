@@ -15,13 +15,19 @@ from privileged_access import (
     DEPRECATED_TARGET_EMAILS_ENV,
     DEPRECATED_VITE_PNL_OWNER_EMAILS_ENV,
     GRILE_FINALIZER_GROUPS_ENV,
+    GRILE_TARGET_SYNC_GROUPS_ENV,
     STORE_PNL_ACCESS_GROUPS_ENV,
     TARGET_FINALIZER_GROUPS_ENV,
     configured_groups,
     has_configured_group,
     parse_group_list,
 )
-from routers.grile import can_grile_admin, require_grile_admin
+from routers.grile import (
+    can_grile_admin,
+    can_grile_target_sync,
+    require_grile_admin,
+    require_grile_target_sync,
+)
 from routers.store_pnl import can_access_store_pnl
 from routers.target_calculator import can_finalize_targets, require_target_owner
 
@@ -61,14 +67,18 @@ def test_invalid_policy_is_not_partially_accepted(monkeypatch: pytest.MonkeyPatc
 def test_dedicated_groups_are_isolated_and_broad_groups_do_not_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(TARGET_FINALIZER_GROUPS_ENV, "unihub-target-finalizer")
     monkeypatch.setenv(GRILE_FINALIZER_GROUPS_ENV, "unihub-grile-admin")
+    monkeypatch.setenv(GRILE_TARGET_SYNC_GROUPS_ENV, "unihub-grile-target-sync")
     monkeypatch.setenv(STORE_PNL_ACCESS_GROUPS_ENV, "unihub-pnl-owner")
     assert can_finalize_targets(_claims(["UNIHUB-TARGET-FINALIZER"])) is True
     assert can_grile_admin(_claims(["UNIHUB-GRILE-ADMIN"])) is True
+    assert can_grile_target_sync(_claims(["UNIHUB-GRILE-TARGET-SYNC"])) is True
+    assert can_grile_target_sync(_claims(["unihub-grile-admin"])) is False
     assert can_grile_admin(_claims(["unihub-target-finalizer"])) is False
     assert can_finalize_targets(_claims(["unihub-grile-admin"])) is False
     for group in ("unihub-admin", "authentik Admins", "unihub-manager", "hub-service"):
         assert can_finalize_targets(_claims([group])) is False
         assert can_grile_admin(_claims([group])) is False
+        assert can_grile_target_sync(_claims([group])) is False
     assert can_finalize_targets(_claims([], "historical@example.invalid")) is False
     assert can_access_store_pnl(_claims(["unihub-pnl-owner"])) is False
     assert can_finalize_targets(_claims(["unihub-pnl-owner"])) is False
@@ -78,9 +88,11 @@ def test_dedicated_groups_are_isolated_and_broad_groups_do_not_bypass(monkeypatc
 def test_privileged_dependencies_audit_allowed_and_denied_without_email_or_groups(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setenv(TARGET_FINALIZER_GROUPS_ENV, "target-role")
     monkeypatch.setenv(GRILE_FINALIZER_GROUPS_ENV, "grile-role")
+    monkeypatch.setenv(GRILE_TARGET_SYNC_GROUPS_ENV, "grile-sync-role")
     with caplog.at_level("INFO", logger="permissions"):
         assert require_target_owner(_request("/api/target-calculator/scenarios/calculate"), _claims(["target-role"])) .sub == "subject-1"
         assert require_grile_admin(_request("/api/grile/monthly/run"), _claims(["grile-role"])) .sub == "subject-1"
+        assert require_grile_target_sync(_request("/api/grile/agent-targets/sync"), _claims(["grile-sync-role"])).sub == "subject-1"
         with pytest.raises(HTTPException) as exc_info:
             require_target_owner(_request("/api/target-calculator/scenarios/finalize"), _claims(["unihub-admin"]))
     assert exc_info.value.status_code == 403
@@ -120,6 +132,7 @@ def test_production_requires_valid_groups_and_rejects_deprecated_emails(monkeypa
     _set_production_base(monkeypatch, tmp_path)
     monkeypatch.setenv(TARGET_FINALIZER_GROUPS_ENV, "target-role")
     monkeypatch.setenv(GRILE_FINALIZER_GROUPS_ENV, "grile-role")
+    monkeypatch.setenv(GRILE_TARGET_SYNC_GROUPS_ENV, "grile-sync-role")
     monkeypatch.setenv(STORE_PNL_ACCESS_GROUPS_ENV, "pnl-role")
     validate_required_env_vars()
     monkeypatch.delenv(TARGET_FINALIZER_GROUPS_ENV)
@@ -130,6 +143,10 @@ def test_production_requires_valid_groups_and_rejects_deprecated_emails(monkeypa
     with pytest.raises(ConfigError, match=GRILE_FINALIZER_GROUPS_ENV):
         validate_required_env_vars()
     monkeypatch.setenv(GRILE_FINALIZER_GROUPS_ENV, "grile-role")
+    monkeypatch.delenv(GRILE_TARGET_SYNC_GROUPS_ENV)
+    with pytest.raises(ConfigError, match=GRILE_TARGET_SYNC_GROUPS_ENV):
+        validate_required_env_vars()
+    monkeypatch.setenv(GRILE_TARGET_SYNC_GROUPS_ENV, "grile-sync-role")
     monkeypatch.delenv(STORE_PNL_ACCESS_GROUPS_ENV)
     with pytest.raises(ConfigError, match=STORE_PNL_ACCESS_GROUPS_ENV):
         validate_required_env_vars()
@@ -168,10 +185,12 @@ def test_development_missing_groups_starts_but_denies(monkeypatch: pytest.Monkey
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv(TARGET_FINALIZER_GROUPS_ENV, raising=False)
     monkeypatch.delenv(GRILE_FINALIZER_GROUPS_ENV, raising=False)
+    monkeypatch.delenv(GRILE_TARGET_SYNC_GROUPS_ENV, raising=False)
     monkeypatch.delenv(STORE_PNL_ACCESS_GROUPS_ENV, raising=False)
     validate_required_env_vars()
     assert can_finalize_targets(_claims([])) is False
     assert can_grile_admin(_claims([])) is False
+    assert can_grile_target_sync(_claims([])) is False
     assert can_access_store_pnl(_claims(["unihub-manager"])) is False
 
 

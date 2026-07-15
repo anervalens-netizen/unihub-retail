@@ -554,17 +554,23 @@ per `site_code` si din `store_targets`, cu apartenenta ASM curenta
 ### Targete agent
 
 Tabela `agent_targets` este un override optional pentru targetele reale per
-agent. Sync-ul curent este legat de verificarea zilnica Grile si citeste
-read-only celulele `D2/D8` si `D16/D22` din Google Sheets, numai pentru
-managerii activati prin `GRILE_AGENT_TARGET_ENABLED_MANAGERS`. Implicit sunt
-activati Andrei Stancu, Adrian Badea, Mihai Condorateanu si Elena Minca.
+agent. Verificarea zilnica Grile citeste celulele `D2/D8` si `D16/D22` din
+Google Sheets numai ca dry-run/diff si demonstreaza prin hash inainte/dupa ca
+`agent_targets` ramane identic. `POST /api/grile/agent-targets/diff` este un
+job read-only disponibil utilizatorilor autentificati. Scrierea este separata
+in `POST /api/grile/agent-targets/sync`, ruleaza exclusiv in worker si necesita
+grupul dedicat `GRILE_TARGET_SYNC_GROUPS`, CSRF pentru sesiunea browser, rate
+limit si audit persistent cu subject OIDC in
+`grile_agent_target_sync_runs`. Apply este fail-closed daca orice sheet activ
+nu a fost citit sau exista un target/agent nerezolvat. Workerul ia luna si
+modul exclusiv din operatia rezervata in DB; schimbarea `agent_targets` si
+finalizarea auditului se comit in aceeasi tranzactie. Scriptul CLI istoric este
+doar read-only si nu mai ofera `--apply`.
 
-Managerii exclusi prin `GRILE_AGENT_TARGET_DISABLED_MANAGERS` (implicit
-Bogdan Radu si Bogdana Costan) nu primesc override-uri si raman pe fallback-ul
-istoric. Cand targetul agentului lipseste din grila sau numele nu se poate
-mapa sigur la codul de agent Retail, randul din `agent_targets` nu se scrie
-sau este scos pentru magazinul citit, deci tabelul Hub revine la
-`store_targets.target_value / numar agenti activi`.
+Managerii exclusi prin `GRILE_AGENT_TARGET_DISABLED_MANAGERS` nu primesc
+override-uri si raman pe fallback-ul istoric. Cand targetul agentului lipseste
+din grila sau identitatea nu se poate mapa sigur la codul Retail, dry-run-ul
+raporteaza blockerul fara sa modifice DB; sync-ul privilegiat este refuzat.
 
 Nu exista validare ca suma targetelor celor doi agenti trebuie sa fie egala cu
 targetul magazinului. Diferentele sunt acceptate deoarece pot exista agenti,

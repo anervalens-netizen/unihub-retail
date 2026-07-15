@@ -136,7 +136,7 @@ async def run_grile_check(
     month: str,
     source: str = "manual",
     source_snapshot_id: int | None = None,
-    triggered_by_email: str | None = None,
+    triggered_by_sub: str | None = None,
     run_id: int | None = None,
     tolerance: float = DEFAULT_TOLERANCE,
     concurrency: int = DEFAULT_CONCURRENCY,
@@ -150,7 +150,7 @@ async def run_grile_check(
             run_month=month,
             source=source,
             source_snapshot_id=source_snapshot_id,
-            triggered_by_email=triggered_by_email,
+            triggered_by_sub=triggered_by_sub,
         )
         if run_id is None:
             active = await repo.get_running_run(month)
@@ -432,7 +432,6 @@ def _run_to_dict(r: Mapping[str, Any]) -> dict[str, Any]:
         "problem_count": r["problem_count"],
         "error_count": r["error_count"],
         "duration_ms": r["duration_ms"],
-        "triggered_by_email": r["triggered_by_email"],
         "error_message": r["error_message"],
         "started_at": r["started_at"].isoformat() if r["started_at"] else None,
         "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,

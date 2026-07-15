@@ -14,7 +14,6 @@ export interface GrileRun {
   problem_count: number;
   error_count: number;
   duration_ms: number | null;
-  triggered_by_email: string | null;
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -109,7 +108,6 @@ export interface GrileMonthlyResult {
   output: string;
   exit_code: number | null;
   dry_run?: boolean | null;
-  triggered_by_email?: string | null;
 }
 
 export interface GrileMonthlyEnqueue {

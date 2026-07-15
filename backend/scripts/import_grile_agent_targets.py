@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Dry-run/apply pentru targetele reale per agent citite din Grile Retail.
+"""Dry-run pentru targetele reale per agent citite din Grile Retail.
 
-Default ruleaza dry-run. Foloseste `--apply` ca sa inlocuiasca override-urile
-sigur citite pentru managerii activati. Grilele Google sunt citite read-only.
+Aplicarea este disponibila numai prin endpointul privilegiat auditat. Acest
+script citeste Google si baza Retail fara sa modifice `agent_targets`.
 """
 
 from __future__ import annotations
@@ -42,19 +42,12 @@ async def main() -> None:
     parser.add_argument("--month", required=True, help="Luna Retail, format YYYY-MM")
     parser.add_argument(
         "--managers",
-        help=(
-            "Lista comma-separated de manageri activati. Default: "
-            "GRILE_AGENT_TARGET_ENABLED_MANAGERS sau Andrei Stancu."
-        ),
+        help="Lista comma-separated de manageri activati sau configuratia din mediu.",
     )
     parser.add_argument(
         "--disabled-managers",
-        help=(
-            "Lista comma-separated de manageri exclusi. Default: "
-            "GRILE_AGENT_TARGET_DISABLED_MANAGERS sau Bogdan Radu,Bogdana Costan."
-        ),
+        help="Lista comma-separated de manageri exclusi sau configuratia din mediu.",
     )
-    parser.add_argument("--apply", action="store_true", help="Scrie in agent_targets")
     args = parser.parse_args()
 
     enabled = _parse_managers(args.managers) or configured_enabled_managers()
@@ -66,45 +59,29 @@ async def main() -> None:
     result = await sync_agent_targets_from_grile(
         pool,
         month=args.month,
-        apply=args.apply,
         enabled_managers=enabled,
         disabled_managers=disabled,
     )
 
     print(f"Luna: {result.month}")
     print(f"Apply: {'da' if result.apply else 'nu'}")
-    print(f"Manageri activati: {', '.join(result.enabled_managers) or '-'}")
-    print(f"Manageri exclusi: {', '.join(result.disabled_managers) or '-'}")
+    print(f"Configuratii manageri activate: {len(result.enabled_managers)}")
+    print(f"Configuratii manageri excluse: {len(result.disabled_managers)}")
     print(f"Magazine candidate: {result.sites_considered}")
     print(f"Magazine citite: {result.sites_read}")
     print(f"Targete rezolvate: {result.resolved_count}")
     print(f"Nerezolvate: {result.unresolved_count}")
 
     if result.skipped_managers:
-        print("\nZONE NESINCRONIZATE (raman pe fallback)")
-        for manager, count in sorted(result.skipped_managers.items()):
-            print(f"- {manager}: {count} magazine")
-
-    if result.unresolved:
-        print("\nNEREZOLVATE (raman pe fallback)")
-        for unresolved in result.unresolved:
-            print(
-                f"- {unresolved.get('site_code')} | {unresolved.get('source_store_key')} | "
-                f"{unresolved.get('agent_name', '')} | target={unresolved.get('target_value')} | "
-                f"status={unresolved.get('status')}"
-            )
-
-    print("\nREZOLVATE")
-    for resolved in result.resolved:
         print(
-            f"- {resolved.site_code} | {resolved.source_agent_name} -> {resolved.agent} | "
-            f"target={resolved.target_value} | {resolved.match_method}"
+            "Magazine nesincronizate pe configuratia managerilor: "
+            f"{sum(result.skipped_managers.values())}"
         )
 
-    if result.apply:
-        print(f"\nImport finalizat: {result.resolved_count} randuri upsert in agent_targets.")
-    else:
-        print("\nDRY RUN: nu s-a scris nimic. Ruleaza cu --apply pentru import.")
+    if result.unresolved:
+        print("Exista randuri nerezolvate; output-ul afiseaza numai totalurile de control.")
+
+    print("\nDRY RUN: nu s-a scris nimic. Aplicarea se face numai prin API-ul privilegiat.")
 
     await close_db_pool()
 

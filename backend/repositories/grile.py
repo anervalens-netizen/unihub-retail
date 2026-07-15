@@ -9,7 +9,7 @@ import asyncpg
 _RUN_COLUMNS = """
     id, run_month, source_snapshot_id, status, source, progress_current,
     progress_total, ok_count, problem_count, error_count, duration_ms,
-    triggered_by_email, error_message, started_at, heartbeat_at, finished_at,
+    triggered_by_sub, error_message, started_at, heartbeat_at, finished_at,
     created_at
 """
 
@@ -138,7 +138,7 @@ class GrileRepository:
         run_month: str,
         source: str,
         source_snapshot_id: int | None,
-        triggered_by_email: str | None,
+        triggered_by_sub: str | None,
     ) -> int | None:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -160,7 +160,7 @@ class GrileRepository:
                     """
                     INSERT INTO grile_runs (
                         run_month, source, source_snapshot_id,
-                        triggered_by_email, status, heartbeat_at
+                        triggered_by_sub, status, heartbeat_at
                     )
                     VALUES ($1, $2, $3, $4, 'queued', now())
                     ON CONFLICT (run_month)
@@ -171,7 +171,7 @@ class GrileRepository:
                     run_month,
                     source,
                     source_snapshot_id,
-                    triggered_by_email,
+                    triggered_by_sub,
                 )
 
     async def start_run(self, run_id: int, progress_total: int) -> bool:

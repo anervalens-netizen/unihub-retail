@@ -31,6 +31,7 @@
     "023_salary_private_identity_boundary.sql": "e8bbd208da17a6e604aa4310159faad376d6d9a62a9b0207d07a28dd16c99ce8",
     "024_salary_identity_contract.sql": "23a6d8a2094f02ecb30f5a636ec3731e34f2749e105c1d5eb90a4facbe3904eb",
     "025_agent_evaluation_premium_index.sql": "fece696ba453ce531240a0f322609b467f74fb5a5fea9fcb39ca4cf20c75c3f8",
-    "026_import_master_data_safety.sql": "30063b80755ed86db05cd87c9b130fa632f8ea435df7ddf8c26ce0a38d2999b7"
+    "026_import_master_data_safety.sql": "30063b80755ed86db05cd87c9b130fa632f8ea435df7ddf8c26ce0a38d2999b7",
+    "027_grile_target_sync_audit.sql": "2e355bd8f78be6f9532ea0c1aa9d1eb164f244e5bdb86c0262cb4daa40209483"
   }
 }
