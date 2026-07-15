@@ -125,12 +125,7 @@ async def grile_check_background(
 
 async def grile_monthly_background(
     ctx: dict,
-    op: str,
-    month: str,
-    only: str | None = None,
-    dry_run: bool = True,
-    triggered_by_email: str | None = None,
-    operation_id: int | None = None,
+    operation_id: int,
     request_id: str | None = None,
 ) -> dict:
     """Inchidere luna grile: ruleaza operatiile native din Retail.
@@ -143,15 +138,7 @@ async def grile_monthly_background(
     try:
         from services.grile_monthly import run_monthly_op
 
-        result = await run_monthly_op(
-            op=op,
-            month=month,
-            only=only,
-            dry_run=dry_run,
-            operation_id=operation_id,
-        )
-        result["triggered_by_email"] = triggered_by_email
-        return result
+        return await run_monthly_op(operation_id=operation_id)
     finally:
         if token is not None:
             reset_request_id(token)

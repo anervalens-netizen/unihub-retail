@@ -181,7 +181,8 @@ async def enqueue_grile_monthly(
     month: str,
     only: str | None = None,
     dry_run: bool = True,
-    triggered_by_email: str | None = None,
+    requested_by_sub: str,
+    approved_manifest_id: int | None = None,
 ) -> GrileMonthlyEnqueueResult:
     from db.connection import get_pool
     from services.grile_monthly import (
@@ -197,7 +198,8 @@ async def enqueue_grile_monthly(
         month=month,
         only=only,
         dry_run=dry_run,
-        triggered_by_email=triggered_by_email,
+        requested_by_sub=requested_by_sub,
+        approved_manifest_id=approved_manifest_id,
     )
     if reservation.status != "enqueued":
         return GrileMonthlyEnqueueResult(
@@ -226,11 +228,6 @@ async def enqueue_grile_monthly(
         pool = await get_arq_pool()
         job = await pool.enqueue_job(
             "grile_monthly_background",
-            op,
-            month,
-            only,
-            dry_run,
-            triggered_by_email,
             reservation.operation_id,
             get_request_id(),
             _job_id=job_id,

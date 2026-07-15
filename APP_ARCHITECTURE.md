@@ -591,6 +591,17 @@ controlat al range-urilor editabile. Output-urile sunt generate in
 `queued/running` per luna inainte de enqueue; workerul actualizeaza heartbeat-ul,
 iar o rezervare abandonata poate fi inlocuita dupa doua ore.
 
+Operatiunile lunare sunt fail-closed si folosesc manifestele persistente din
+`grile_monthly_manifests`. Finalizarea valideaza strict valorile si coverage-ul
+magazinelor/agentilor inainte de promovarea atomica a workbookului. Arhiva
+necesita manifestul finalizarii si copii complete, verificate SHA-256, ale
+surselor. Resetul live accepta numai un manifest de arhiva verificat si aprobat
+prin subject OIDC; inaintea oricarui clear salveaza snapshoturi recuperabile.
+Reset manifest + finalizare operatie + consumare aprobare se comit intr-o
+singura tranzactie DB, iar orice esec ulterior clear-ului declanseaza
+restaurarea si verificarea snapshoturilor. Contractul complet este documentat
+in `docs/engineering/h11-grile-monthly-idempotency.md`.
+
 ### Calculator Target
 
 Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile

@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Download,
@@ -12,7 +13,9 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  approveGrileMonthlyManifest,
   downloadGrileMonthly,
+  getGrileMonthlyManifest,
   getGrileMonthlyJob,
   getGrileMonthlyPermissions,
   runGrileMonthly,
@@ -38,6 +41,7 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [downloading, setDownloading] = useState<'final' | 'archive' | null>(null);
+  const [approving, setApproving] = useState(false);
 
   const perms = useQuery({
     queryKey: ['grile-monthly-perms'],
@@ -55,12 +59,29 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
     },
   });
 
+  const {
+    data: closeoutManifest = null,
+    refetch: refetchManifest,
+  } = useQuery({
+    queryKey: ['grile-monthly-manifest', month],
+    queryFn: () => getGrileMonthlyManifest(month),
+    enabled: !!month && perms.data?.can_run === true,
+    staleTime: 10_000,
+  });
+
+  useEffect(() => {
+    if (jobQuery.data?.status === 'complete') {
+      void refetchManifest();
+    }
+  }, [jobQuery.data?.status, refetchManifest]);
+
   // Ascuns complet daca utilizatorul nu e admin grile (gate-ul real e server-side)
   if (perms.data && !perms.data.can_run) return null;
 
   const result = jobQuery.data?.result ?? null;
   const jobStatus = jobQuery.data?.status;
-  const running = busy || (!!job && jobStatus !== 'complete' && jobStatus !== 'not_found');
+  const running = busy || approving || (!!job && jobStatus !== 'complete' && jobStatus !== 'not_found');
+  const approvedManifestId = closeoutManifest?.status === 'approved' ? closeoutManifest.id : null;
 
   async function trigger(op: GrileMonthlyOp, dryRun: boolean) {
     if (!month || running) return;
@@ -75,7 +96,12 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
     setError(null);
     setBusy(true);
     try {
-      const res = await runGrileMonthly({ op, month, dry_run: dryRun });
+      const res = await runGrileMonthly({
+        op,
+        month,
+        dry_run: dryRun,
+        approved_manifest_id: op === 'reset' && !dryRun ? approvedManifestId : undefined,
+      });
       if (res.status === 'already_completed') {
         setError('Resetul LIVE pentru luna selectata este deja marcat finalizat. Nu il reluam automat.');
         return;
@@ -96,6 +122,26 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
       ));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function approveManifest() {
+    if (!closeoutManifest || closeoutManifest.status !== 'verified' || running) return;
+    const expectedStores = closeoutManifest.expected.stores ?? 0;
+    const expectedAgents = closeoutManifest.expected.agents ?? 0;
+    if (!window.confirm(
+      `Aprobi manifestul verificat pentru ${roLabel(month)}: ${expectedStores} magazine si ` +
+        `${expectedAgents} agenti, zero erori? Resetul LIVE va fi permis numai pentru acest manifest.`,
+    )) return;
+    setError(null);
+    setApproving(true);
+    try {
+      await approveGrileMonthlyManifest(closeoutManifest.id);
+      await refetchManifest();
+    } catch (exc: unknown) {
+      setError(getApiErrorMessage(exc, 'Manifestul nu a putut fi aprobat.'));
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -184,12 +230,43 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
             <ActionButton
               icon={<Trash2 className="h-4 w-4" />}
               label="Reset LIVE"
-              hint={`Curata grilele → ${month ? nextLabel(month) : 'luna noua'}. Ireversibil.`}
+              hint={approvedManifestId
+                ? `Curata grilele → ${month ? nextLabel(month) : 'luna noua'}, cu backup verificat.`
+                : 'Necesita arhiva verificata si manifest aprobat.'}
               danger
               onClick={() => trigger('reset', false)}
-              disabled={!month || running}
+              disabled={!month || running || !approvedManifestId}
             />
           </div>
+
+          {closeoutManifest && (
+            <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-xs dark:border-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-slate-600 dark:text-slate-300">
+                  Manifest arhiva: {closeoutManifest.processed.stores ?? 0}/{closeoutManifest.expected.stores ?? 0} magazine ·{' '}
+                  {closeoutManifest.processed.agents ?? 0}/{closeoutManifest.expected.agents ?? 0} agenti ·{' '}
+                  {closeoutManifest.error_count} erori
+                </div>
+                {closeoutManifest.status === 'verified' && (
+                  <button
+                    type="button"
+                    onClick={approveManifest}
+                    disabled={running}
+                    className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 font-semibold text-white disabled:opacity-50"
+                  >
+                    {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    Aproba manifest
+                  </button>
+                )}
+                {closeoutManifest.status === 'approved' && (
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">Aprobat pentru reset</span>
+                )}
+                {closeoutManifest.status === 'consumed' && (
+                  <span className="font-semibold text-slate-500">Reset consumat</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Download */}
           <div className="mt-3 flex flex-wrap gap-4 text-sm">

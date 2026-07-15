@@ -9,6 +9,7 @@ import pytest
 import db.connection as db_connection
 import services.grile_monthly as grile_monthly
 import services.jobs as jobs
+import worker
 from services.grile_monthly import MonthlyOperationReservation
 
 
@@ -51,6 +52,7 @@ def _patch_reservation(
 
     async def reserve(*args: Any, **kwargs: Any) -> MonthlyOperationReservation:
         events.append("reserve")
+        assert kwargs["requested_by_sub"] == "subject-1"
         return reservation
 
     async def attach(*args: Any, **kwargs: Any) -> bool:
@@ -80,7 +82,7 @@ async def test_h11_monthly_enqueue_persists_job_id_before_queue_publish(
         op="finalize",
         month="2099-01",
         dry_run=False,
-        triggered_by_email="admin@example.com",
+        requested_by_sub="subject-1",
     )
 
     assert events == ["reserve", "attach", "enqueue"]
@@ -89,6 +91,11 @@ async def test_h11_monthly_enqueue_persists_job_id_before_queue_publish(
     assert result.job_id == "grile-monthly:42"
     queue.enqueue_job.assert_awaited_once()
     assert queue.enqueue_job.await_args is not None
+    assert queue.enqueue_job.await_args.args == (
+        "grile_monthly_background",
+        42,
+        None,
+    )
     assert queue.enqueue_job.await_args.kwargs["_job_id"] == "grile-monthly:42"
 
 
@@ -108,7 +115,11 @@ async def test_h11_monthly_enqueue_does_not_publish_when_attachment_is_rejected(
     monkeypatch.setattr(jobs, "get_arq_pool", get_queue)
 
     with pytest.raises(RuntimeError, match="no longer queued"):
-        await jobs.enqueue_grile_monthly(op="archive", month="2099-02")
+        await jobs.enqueue_grile_monthly(
+            op="archive",
+            month="2099-02",
+            requested_by_sub="subject-1",
+        )
 
     assert events == ["reserve", "attach"]
     get_queue.assert_not_awaited()
@@ -136,7 +147,12 @@ async def test_h11_monthly_enqueue_failure_transitions_queued_reservation_to_fai
     monkeypatch.setattr(jobs, "get_arq_pool", AsyncMock(return_value=queue))
 
     with pytest.raises((RuntimeError, ConnectionError)):
-        await jobs.enqueue_grile_monthly(op="reset", month="2099-03", dry_run=True)
+        await jobs.enqueue_grile_monthly(
+            op="reset",
+            month="2099-03",
+            dry_run=True,
+            requested_by_sub="subject-1",
+        )
 
     assert events == ["reserve", "attach", "enqueue"]
     fail.assert_awaited_once_with(
@@ -165,7 +181,11 @@ async def test_h11_existing_monthly_reservation_bypasses_queue_publication(
     get_queue = AsyncMock(return_value=queue)
     monkeypatch.setattr(jobs, "get_arq_pool", get_queue)
 
-    result = await jobs.enqueue_grile_monthly(op="finalize", month="2099-04")
+    result = await jobs.enqueue_grile_monthly(
+        op="finalize",
+        month="2099-04",
+        requested_by_sub="subject-1",
+    )
 
     assert events == ["reserve"]
     assert result.status == "already_running"
@@ -173,3 +193,19 @@ async def test_h11_existing_monthly_reservation_bypasses_queue_publication(
     get_queue.assert_not_awaited()
     queue.enqueue_job.assert_not_awaited()
     fail.assert_not_awaited()
+
+
+async def test_monthly_worker_accepts_only_persisted_operation_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = AsyncMock(return_value={"status": "success"})
+    monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
+
+    result = await worker.grile_monthly_background(
+        {},
+        operation_id=51,
+        request_id=None,
+    )
+
+    assert result == {"status": "success"}
+    run.assert_awaited_once_with(operation_id=51)

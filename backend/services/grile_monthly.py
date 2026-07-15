@@ -8,21 +8,21 @@ XLSX/ZIP si ruleaza resetul controlat direct cu Google APIs.
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import io
 import json
 import os
+import shutil
 import time
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 
 import asyncpg
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from repositories.grile_monthly_operations import (
@@ -32,9 +32,17 @@ from repositories.grile_monthly_operations import (
     ensure_reset_items as persist_reset_items,
     fail as persist_monthly_operation_failure,
     finish as persist_monthly_operation_result,
+    finish_reset_success as persist_reset_success,
     finish_reset_item as persist_reset_item_result,
+    get_latest_manifest as fetch_latest_monthly_manifest,
+    get_manifest as fetch_monthly_manifest,
+    get_operation_manifest as fetch_operation_manifest,
     get_previous_completed_reset_item as fetch_previous_completed_reset_item,
     heartbeat as persist_monthly_operation_heartbeat,
+    approve_manifest as persist_monthly_manifest_approval,
+    persist_manifest_result,
+    record_reset_item_backup as persist_reset_item_backup,
+    record_reset_item_rollback as persist_reset_item_rollback,
     operation_to_dict as persisted_operation_to_dict,
     reserve as persist_monthly_operation_reservation,
     start as persist_monthly_operation_start,
@@ -49,6 +57,24 @@ from services.grile_monthly_state import (
 from services.grile_constants import (
     GOOGLE_API_RETRY_ATTEMPTS,
     GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+)
+from services.grile_monthly_integrity import (
+    MonthlyIntegrityError,
+    base_manifest,
+    canonical_snapshot,
+    decimal_text,
+    file_sha256,
+    finalize_manifest,
+    manifest_sha256,
+    parse_required_decimal,
+    relative_artifact,
+    resolve_artifact_path,
+    secure_file,
+    secure_write_json,
+    snapshot_sha256,
+    utc_now,
+    validate_verified_manifest,
+    verify_artifacts,
 )
 
 RO_MONTHS = [
@@ -161,6 +187,21 @@ class ExtractedAgentRow:
     status: str
     error: str
     sheet_id: str
+    site_code: str = ""
+    error_code: str = ""
+
+
+@dataclass(frozen=True)
+class MonthlyExecution:
+    path: Path
+    manifest: dict[str, Any]
+    rollback: Callable[[], Awaitable[dict[str, Any]]] | None = None
+
+
+class MonthlyManifestError(MonthlyIntegrityError):
+    def __init__(self, code: str, message: str, manifest: dict[str, Any]):
+        super().__init__(code, message)
+        self.manifest = manifest
 
 
 def ro_month_label(ym: str) -> str:
@@ -241,6 +282,14 @@ def build_reset_report_path(outputs_dir: Path, next_month: str) -> Path:
     return outputs_dir / f"reset-report-{month_slug(next_month)}.json"
 
 
+def build_reset_dry_run_report_path(outputs_dir: Path, next_month: str) -> Path:
+    return outputs_dir / f"reset-dry-run-{month_slug(next_month)}.json"
+
+
+def build_reset_backup_dir(outputs_dir: Path, closing_month: str, operation_id: int) -> Path:
+    return outputs_dir / "reset-backups" / month_slug(closing_month) / str(operation_id)
+
+
 def build_store_export_path(outputs_dir: Path, month: str, entry: StoreEntry) -> Path:
     return build_archive_dir(outputs_dir, month) / safe_filename(entry.company) / f"{safe_filename(entry.store)}.xlsx"
 
@@ -263,6 +312,17 @@ def _is_transient(exc: Exception) -> bool:
     return status in _TRANSIENT
 
 
+def _google_error_code(exc: Exception) -> str:
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    if status == 429:
+        return "google_rate_limited"
+    if status in {500, 502, 503, 504}:
+        return "google_unavailable"
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return "google_timeout"
+    return "google_request_failed"
+
+
 def retry_api(fn, *, label: str, attempts: int = 4, base_delay: float = 1.0):
     last: Exception | None = None
     for attempt in range(attempts):
@@ -270,10 +330,12 @@ def retry_api(fn, *, label: str, attempts: int = 4, base_delay: float = 1.0):
             return fn()
         except Exception as exc:  # noqa: BLE001
             last = exc
+            if isinstance(exc, MonthlyIntegrityError):
+                raise
             if attempt < attempts - 1 and _is_transient(exc):
                 time.sleep(base_delay * (2**attempt))
                 continue
-            raise RuntimeError(f"{label}: {exc}") from exc
+            raise MonthlyIntegrityError(_google_error_code(exc), f"{label} failed") from exc
     assert last is not None
     raise last
 
@@ -346,7 +408,8 @@ async def reserve_monthly_operation(
     month: str,
     only: str | None,
     dry_run: bool,
-    triggered_by_email: str | None,
+    requested_by_sub: str,
+    approved_manifest_id: int | None = None,
 ) -> MonthlyOperationReservation:
     if op not in VALID_OPS:
         raise ValueError(f"Operatie necunoscuta: {op}")
@@ -356,7 +419,8 @@ async def reserve_monthly_operation(
         month=month,
         only=only,
         dry_run=dry_run,
-        triggered_by_email=triggered_by_email,
+        requested_by_sub=requested_by_sub,
+        approved_manifest_id=approved_manifest_id,
     )
 
 
@@ -408,6 +472,26 @@ async def fail_monthly_operation(
         pool,
         operation_id,
         error_message=error_message,
+    )
+
+
+async def get_monthly_manifest(
+    pool: asyncpg.Pool,
+    manifest_id: int,
+) -> dict[str, Any] | None:
+    return await fetch_monthly_manifest(pool, manifest_id)
+
+
+async def get_latest_monthly_manifest(
+    pool: asyncpg.Pool,
+    *,
+    month: str,
+) -> dict[str, Any] | None:
+    return await fetch_latest_monthly_manifest(
+        pool,
+        closing_month=month,
+        operation="archive",
+        statuses=("verified", "approved", "consumed"),
     )
 
 
@@ -480,6 +564,40 @@ async def finish_reset_item(
     )
 
 
+async def record_reset_item_backup(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    site_code: str,
+    backup_path: str,
+    backup_sha256: str,
+) -> bool:
+    return await persist_reset_item_backup(
+        pool,
+        operation_id=operation_id,
+        site_code=site_code,
+        backup_path=backup_path,
+        backup_sha256=backup_sha256,
+    )
+
+
+async def record_reset_item_rollback(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    site_code: str,
+    restored: bool,
+    error_message: str | None = None,
+) -> bool:
+    return await persist_reset_item_rollback(
+        pool,
+        operation_id=operation_id,
+        site_code=site_code,
+        restored=restored,
+        error_message=error_message,
+    )
+
+
 def validate_archive_manifest(manifest: dict[str, Any], expected_count: int) -> tuple[bool, list[str]]:
     errors: list[str] = []
     if manifest.get("registry_count") != expected_count:
@@ -515,24 +633,42 @@ def scalar(values: list[list[Any]]) -> Any:
     return values[0][0]
 
 
-def to_number(value: Any) -> float:
-    if value in ("", None):
-        return 0.0
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        cleaned = value.strip().replace(" ", "")
-        if "," in cleaned:
-            cleaned = cleaned.replace(".", "").replace(",", ".")
-        try:
-            return float(cleaned)
-        except ValueError:
-            return 0.0
-    return 0.0
+def to_number(value: Any, *, field: str = "value") -> float:
+    return float(parse_required_decimal(value, field=field))
 
 
-def sum_scalars(value_ranges: list[dict[str, Any]]) -> float:
-    return sum(to_number(scalar(vr.get("values", []))) for vr in value_ranges)
+def sum_scalars(value_ranges: list[dict[str, Any]], *, field: str = "value") -> float:
+    return float(
+        sum(
+            (parse_required_decimal(scalar(vr.get("values", [])), field=field) for vr in value_ranges),
+            start=Decimal("0"),
+        )
+    )
+
+
+def _error_row(
+    entry: StoreEntry,
+    *,
+    slot: int,
+    code: str,
+) -> ExtractedAgentRow:
+    return ExtractedAgentRow(
+        site_code=entry.site_code,
+        company=entry.company,
+        store=entry.store,
+        slot=slot,
+        agent="",
+        base_salary="",
+        sales_commission="",
+        extra_location_commission="",
+        extra_hours_pay="",
+        bonuri="",
+        worked_hours="",
+        status="ERROR",
+        error_code=code,
+        error=code,
+        sheet_id=entry.sheet_id,
+    )
 
 
 def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgentRow]:
@@ -549,44 +685,59 @@ def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgen
                 f"Grila!{cells['bonuri']}",
                 cells["worked_hours"],
             ]
-        return sheets_svc.spreadsheets().values().batchGet(
+        response = sheets_svc.spreadsheets().values().batchGet(
             spreadsheetId=entry.sheet_id,
             ranges=ranges,
             valueRenderOption="UNFORMATTED_VALUE",
-        ).execute()["valueRanges"]
+        ).execute()
+        value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
+        if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
+            raise MonthlyIntegrityError(
+                "google_response_incomplete",
+                "Google sheet response is incomplete",
+            )
+        return value_ranges
 
     try:
         value_ranges = retry_api(
             read_values,
-            label=f"read {entry.company}/{entry.store}",
+            label="Google sheet read",
             attempts=GOOGLE_API_RETRY_ATTEMPTS,
             base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
         )
         rows: list[ExtractedAgentRow] = []
         idx = 0
         for slot in (1, 2):
-            agent = scalar(value_ranges[idx].get("values", []))
-            idx += 1
-            base_salary = scalar(value_ranges[idx].get("values", []))
-            idx += 1
-            sales_commission = sum_scalars(value_ranges[idx : idx + 5])
-            idx += 5
-            commission = scalar(value_ranges[idx].get("values", []))
-            idx += 1
-            extra_hours = scalar(value_ranges[idx].get("values", []))
-            idx += 1
-            bonuri = scalar(value_ranges[idx].get("values", []))
-            idx += 1
-            worked_hours = scalar(value_ranges[idx].get("values", []))
-            idx += 1
-            if not agent:
+            slot_ranges = value_ranges[idx : idx + 11]
+            idx += 11
+            slot_values = [scalar(item.get("values", [])) for item in slot_ranges]
+            if not any(value not in (None, "") for value in slot_values):
+                continue
+            agent = slot_values[0]
+            if (
+                not isinstance(agent, str)
+                or not agent.strip()
+                or any(ord(char) < 32 or ord(char) == 127 for char in agent)
+            ):
+                rows.append(_error_row(entry, slot=slot, code="missing_or_invalid_agent"))
+                continue
+            try:
+                base_salary = to_number(slot_values[1], field="base_salary")
+                sales_commission = sum_scalars(slot_ranges[2:7], field="sales_commission")
+                commission = to_number(slot_values[7], field="extra_location_commission")
+                extra_hours = to_number(slot_values[8], field="extra_hours_pay")
+                bonuri = to_number(slot_values[9], field="meal_vouchers")
+                worked_hours = to_number(slot_values[10], field="worked_hours")
+            except MonthlyIntegrityError as exc:
+                rows.append(_error_row(entry, slot=slot, code=exc.code))
                 continue
             rows.append(
                 ExtractedAgentRow(
+                    site_code=entry.site_code,
                     company=entry.company,
                     store=entry.store,
                     slot=slot,
-                    agent=agent,
+                    agent=agent.strip(),
                     base_salary=base_salary,
                     sales_commission=sales_commission,
                     extra_location_commission=commission,
@@ -594,29 +745,27 @@ def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgen
                     bonuri=bonuri,
                     worked_hours=worked_hours,
                     status="OK",
+                    error_code="",
                     error="",
                     sheet_id=entry.sheet_id,
                 )
             )
-        return rows
+        if not rows:
+            return [_error_row(entry, slot=0, code="store_has_no_agent")]
+        seen_agents: set[str] = set()
+        deduplicated: list[ExtractedAgentRow] = []
+        for row in rows:
+            normalized = str(row.agent).strip().casefold()
+            if row.status == "OK" and normalized in seen_agents:
+                deduplicated.append(_error_row(entry, slot=row.slot, code="duplicate_agent"))
+                continue
+            if row.status == "OK":
+                seen_agents.add(normalized)
+            deduplicated.append(row)
+        return deduplicated
     except Exception as exc:  # noqa: BLE001
-        return [
-            ExtractedAgentRow(
-                company=entry.company,
-                store=entry.store,
-                slot=0,
-                agent="",
-                base_salary="",
-                sales_commission="",
-                extra_location_commission="",
-                extra_hours_pay="",
-                bonuri="",
-                worked_hours="",
-                status="ERROR",
-                error=str(exc),
-                sheet_id=entry.sheet_id,
-            )
-        ]
+        code = exc.code if isinstance(exc, MonthlyIntegrityError) else _google_error_code(exc)
+        return [_error_row(entry, slot=0, code=code)]
 
 
 def make_output_row(row: ExtractedAgentRow, nr: int, metadata: dict[str, Any]) -> list[Any]:
@@ -730,26 +879,252 @@ def build_workbook(
     wb.save(output_path)
 
 
-async def finalize_month(pool: asyncpg.Pool, month: str, only: str | None = None, delay: float = 1.1) -> Path:
+def _validate_finalization_coverage(
+    entries: list[StoreEntry],
+    rows: list[ExtractedAgentRow],
+) -> tuple[int, int, int, int, list[str]]:
+    errors: list[str] = []
+    entries_by_site: dict[str, StoreEntry] = {}
+    sheet_ids: set[str] = set()
+    for entry in entries:
+        if entry.site_code in entries_by_site or entry.sheet_id in sheet_ids:
+            errors.append("duplicate_registry_entry")
+        entries_by_site[entry.site_code] = entry
+        sheet_ids.add(entry.sheet_id)
+
+    rows_by_site: dict[str, list[ExtractedAgentRow]] = {}
+    for row in rows:
+        expected = entries_by_site.get(row.site_code)
+        if expected is None:
+            errors.append("unexpected_store")
+            continue
+        if (
+            row.sheet_id != expected.sheet_id
+            or row.company != expected.company
+            or row.store != expected.store
+        ):
+            errors.append("contradictory_store_metadata")
+        rows_by_site.setdefault(row.site_code, []).append(row)
+
+    expected_agents = 0
+    processed_agents = 0
+    processed_stores = 0
+    for site_code in entries_by_site:
+        store_rows = rows_by_site.get(site_code, [])
+        slot_rows = [row for row in store_rows if row.slot in (1, 2)]
+        expected_agents += len(slot_rows)
+        valid_rows = [row for row in slot_rows if row.status == "OK"]
+        processed_agents += len(valid_rows)
+        store_errors = [row.error_code or "store_read_failed" for row in store_rows if row.status != "OK"]
+        if not store_rows:
+            store_errors.append("store_not_processed")
+        if not slot_rows:
+            store_errors.append("store_has_no_agent")
+        if len({str(row.agent).strip().casefold() for row in valid_rows}) != len(valid_rows):
+            store_errors.append("duplicate_agent")
+        if store_errors:
+            errors.extend(store_errors)
+        else:
+            processed_stores += 1
+
+    return (
+        len(entries_by_site),
+        processed_stores,
+        expected_agents,
+        processed_agents,
+        sorted(set(errors)),
+    )
+
+
+def _control_totals(rows: list[ExtractedAgentRow]) -> dict[str, str]:
+    fields = (
+        "base_salary",
+        "sales_commission",
+        "extra_location_commission",
+        "extra_hours_pay",
+        "bonuri",
+        "worked_hours",
+    )
+    totals: dict[str, str] = {}
+    valid_rows = [row for row in rows if row.status == "OK"]
+    for field in fields:
+        total = sum(
+            (Decimal(str(getattr(row, field))) for row in valid_rows),
+            start=Decimal("0"),
+        )
+        totals[field] = decimal_text(total)
+    totals["salary_components"] = decimal_text(
+        sum(
+            (
+                Decimal(str(row.base_salary))
+                + Decimal(str(row.sales_commission))
+                + Decimal(str(row.extra_location_commission))
+                + Decimal(str(row.extra_hours_pay))
+                + Decimal(str(row.bonuri))
+                for row in valid_rows
+            ),
+            start=Decimal("0"),
+        )
+    )
+    return totals
+
+
+def _validate_final_workbook(path: Path, *, expected_agents: int) -> None:
+    try:
+        workbook = load_workbook(path, read_only=True, data_only=False)
+        try:
+            if set(workbook.sheetnames) != {"Mobiup", "Mobicell", "Audit"}:
+                raise MonthlyIntegrityError("workbook_structure_invalid", "Workbook structure is invalid")
+            agent_rows = sum(
+                max(workbook[company].max_row - 1, 0)
+                for company in ("Mobiup", "Mobicell")
+            )
+            if agent_rows != expected_agents:
+                raise MonthlyIntegrityError("workbook_coverage_incomplete", "Workbook coverage is incomplete")
+            audit = workbook["Audit"]
+            statuses = [row[11].value for row in audit.iter_rows(min_row=2) if len(row) >= 12]
+            if len(statuses) != expected_agents or any(status != "OK" for status in statuses):
+                raise MonthlyIntegrityError("workbook_audit_invalid", "Workbook audit is invalid")
+        finally:
+            workbook.close()
+    except MonthlyIntegrityError:
+        raise
+    except Exception as exc:
+        raise MonthlyIntegrityError("workbook_invalid", "Workbook cannot be verified") from exc
+
+
+def _staging_dir(operation: str, operation_id: int | None) -> Path:
+    suffix = str(operation_id) if operation_id is not None else "direct"
+    path = OUTPUTS_DIR / ".staging" / f"{operation}-{suffix}"
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True, mode=0o700)
+    return path
+
+
+def _promote_file(staged: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    revision: Path | None = None
+    if destination.exists():
+        revision_dir = OUTPUTS_DIR / ".revisions"
+        revision_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        revision = revision_dir / f"{destination.name}.{file_sha256(destination)[:16]}"
+        if revision.exists():
+            destination.unlink()
+        else:
+            os.replace(destination, revision)
+    try:
+        os.replace(staged, destination)
+        secure_file(destination)
+    except Exception:
+        if revision is not None and revision.exists() and not destination.exists():
+            os.replace(revision, destination)
+        raise
+
+
+async def _finalize_month_execution(
+    pool: asyncpg.Pool,
+    month: str,
+    *,
+    month_key: str,
+    requested_by_sub: str,
+    operation_id: int | None,
+    only: str | None = None,
+    delay: float = 1.1,
+) -> MonthlyExecution:
     entries = await load_entries(pool, only=only)
     metadata = {(e.company, e.store): {"Manager": e.manager} for e in entries}
     sheets_svc, _ = build_google_services()
     all_rows: list[ExtractedAgentRow] = []
     for idx, entry in enumerate(entries, start=1):
-        print(f"[{idx:02d}/{len(entries):02d}] Read {entry.company}/{entry.store}", flush=True)
         all_rows.extend(extract_store_rows(sheets_svc, entry))
         if delay > 0 and idx < len(entries):
             await asyncio.sleep(delay)
 
-    output_path = resolve_output_path(month, only, OUTPUTS_DIR)
-    build_workbook(all_rows, output_path, metadata)
+    expected_stores, processed_stores, expected_agents, processed_agents, errors = (
+        _validate_finalization_coverage(entries, all_rows)
+    )
+    totals = _control_totals(all_rows)
+    if errors or processed_stores != expected_stores or processed_agents != expected_agents:
+        failed = base_manifest(
+            month=month_key,
+            operation="finalize",
+            requested_by_sub=requested_by_sub,
+            expected_stores=expected_stores,
+            expected_agents=expected_agents,
+            processed_stores=processed_stores,
+            processed_agents=processed_agents,
+            control_totals=totals,
+            artifacts=[],
+            errors=errors or ["coverage_incomplete"],
+            status="failed",
+        )
+        raise MonthlyManifestError("finalization_incomplete", "Finalization coverage is incomplete", failed)
 
-    errors = [row for row in all_rows if row.status != "OK"]
-    print(f"Generated: {output_path}")
-    print(f"Rows: {sum(1 for row in all_rows if row.status == 'OK')} OK, {len(errors)} errors")
-    if errors:
-        print("Errors are listed in the Audit sheet.")
-    return output_path
+    stage_dir = _staging_dir("finalize", operation_id)
+    staged_path = stage_dir / "candidate.xlsx"
+    output_path = resolve_output_path(month, only, OUTPUTS_DIR)
+    try:
+        build_workbook(all_rows, staged_path, metadata)
+        secure_file(staged_path)
+        _validate_final_workbook(staged_path, expected_agents=expected_agents)
+        _promote_file(staged_path, output_path)
+    except Exception as exc:
+        code = exc.code if isinstance(exc, MonthlyIntegrityError) else "workbook_promotion_failed"
+        failed = base_manifest(
+            month=month_key,
+            operation="finalize",
+            requested_by_sub=requested_by_sub,
+            expected_stores=expected_stores,
+            expected_agents=expected_agents,
+            processed_stores=processed_stores,
+            processed_agents=processed_agents,
+            control_totals=totals,
+            artifacts=[],
+            errors=[code],
+            status="failed",
+        )
+        raise MonthlyManifestError(code, "Final workbook could not be verified", failed) from exc
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+
+    artifact = relative_artifact(output_path, root=OUTPUTS_DIR, kind="final_workbook")
+    manifest = base_manifest(
+        month=month_key,
+        operation="finalize",
+        requested_by_sub=requested_by_sub,
+        expected_stores=expected_stores,
+        expected_agents=expected_agents,
+        processed_stores=processed_stores,
+        processed_agents=processed_agents,
+        control_totals=totals,
+        artifacts=[artifact],
+    )
+    validate_verified_manifest(manifest, operation="finalize")
+    verify_artifacts(manifest, root=OUTPUTS_DIR)
+    return MonthlyExecution(path=output_path, manifest=manifest)
+
+
+async def finalize_month(
+    pool: asyncpg.Pool,
+    month: str,
+    only: str | None = None,
+    delay: float = 1.1,
+    *,
+    month_key: str | None = None,
+    requested_by_sub: str = "direct-execution",
+    operation_id: int | None = None,
+) -> Path:
+    execution = await _finalize_month_execution(
+        pool,
+        month,
+        month_key=month_key or month,
+        requested_by_sub=requested_by_sub,
+        operation_id=operation_id,
+        only=only,
+        delay=delay,
+    )
+    return execution.path
 
 
 def export_sheet_xlsx(drive_service: Any, entry: StoreEntry, output_path: Path) -> dict[str, Any]:
@@ -764,24 +1139,22 @@ def export_sheet_xlsx(drive_service: Any, entry: StoreEntry, output_path: Path) 
         "bytes": 0,
         "error": "",
     }
+    output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    request = drive_service.files().export_media(fileId=entry.sheet_id, mimeType=XLSX_MIME)
     try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        request = drive_service.files().export_media(fileId=entry.sheet_id, mimeType=XLSX_MIME)
         with output_path.open("wb") as fh:
             downloader = MediaIoBaseDownload(fh, request)
             done = False
             while not done:
                 _, done = downloader.next_chunk()
+        secure_file(output_path)
         result["bytes"] = output_path.stat().st_size
         if result["bytes"] == 0:
-            result["status"] = "ERROR"
-            result["error"] = "exported file is empty"
+            raise MonthlyIntegrityError("empty_source_backup", "Exported source backup is empty")
         return result
-    except Exception as exc:  # noqa: BLE001
-        result["status"] = "ERROR"
-        result["error"] = str(exc)
-        result["xlsx_path"] = ""
-        return result
+    except Exception:
+        output_path.unlink(missing_ok=True)
+        raise
 
 
 def create_archive_zip(zip_path: Path, exported_files: list[Path], archive_dir: Path) -> None:
@@ -826,68 +1199,415 @@ def summarize_archive_results(
     }
 
 
-async def archive_month(pool: asyncpg.Pool, month: str, only: str | None = None, delay: float = 0.5) -> Path:
-    entries = await load_entries(pool, only=only)
+def _validate_archive_zip(zip_path: Path, *, expected_files: int) -> None:
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            members = [item for item in archive.infolist() if not item.is_dir()]
+            if len(members) != expected_files or len({item.filename for item in members}) != expected_files:
+                raise MonthlyIntegrityError("archive_coverage_incomplete", "Archive coverage is incomplete")
+            if archive.testzip() is not None:
+                raise MonthlyIntegrityError("archive_corrupt", "Archive is corrupt")
+    except MonthlyIntegrityError:
+        raise
+    except Exception as exc:
+        raise MonthlyIntegrityError("archive_invalid", "Archive cannot be verified") from exc
+
+
+def _validate_source_workbook(path: Path) -> None:
+    try:
+        workbook = load_workbook(path, read_only=True, data_only=False)
+        try:
+            if not {"Grila", "Pontaj"}.issubset(workbook.sheetnames):
+                raise MonthlyIntegrityError(
+                    "source_workbook_partial",
+                    "Source workbook is missing required sheets",
+                )
+        finally:
+            workbook.close()
+    except MonthlyIntegrityError:
+        raise
+    except Exception as exc:
+        raise MonthlyIntegrityError("source_workbook_invalid", "Source workbook is invalid") from exc
+
+
+def _future_artifact(
+    staged_path: Path,
+    *,
+    staged_archive_dir: Path,
+    official_archive_dir: Path,
+    kind: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    relative_inside = staged_path.resolve().relative_to(staged_archive_dir.resolve())
+    future_path = official_archive_dir / relative_inside
+    artifact = {
+        "kind": kind,
+        "path": future_path.resolve().relative_to(OUTPUTS_DIR.resolve()).as_posix(),
+        "bytes": staged_path.stat().st_size,
+        "sha256": file_sha256(staged_path),
+    }
+    if extra:
+        artifact.update(extra)
+    return artifact
+
+
+def _promote_directory(staged: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    revision: Path | None = None
+    if destination.exists():
+        revision_dir = OUTPUTS_DIR / ".revisions"
+        revision_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        revision = revision_dir / f"archive-{safe_filename(destination.name)}-{time.time_ns()}"
+        os.replace(destination, revision)
+    try:
+        os.replace(staged, destination)
+    except Exception:
+        if revision is not None and revision.exists() and not destination.exists():
+            os.replace(revision, destination)
+        raise
+
+
+async def _archive_month_execution(
+    pool: asyncpg.Pool,
+    month: str,
+    *,
+    month_key: str,
+    requested_by_sub: str,
+    operation_id: int | None,
+    only: str | None = None,
+    delay: float = 0.5,
+) -> MonthlyExecution:
+    if only:
+        failed = base_manifest(
+            month=month_key,
+            operation="archive",
+            requested_by_sub=requested_by_sub,
+            expected_stores=0,
+            expected_agents=0,
+            processed_stores=0,
+            processed_agents=0,
+            control_totals={},
+            artifacts=[],
+            errors=["partial_archive_forbidden"],
+            status="failed",
+        )
+        raise MonthlyManifestError("partial_archive_forbidden", "Partial archive is not allowed", failed)
+
+    final_record = await fetch_latest_monthly_manifest(
+        pool,
+        closing_month=month_key,
+        operation="finalize",
+        statuses=("verified",),
+    )
+    final_manifest = final_record.get("manifest") if final_record else None
+    if not isinstance(final_manifest, dict):
+        failed = base_manifest(
+            month=month_key,
+            operation="archive",
+            requested_by_sub=requested_by_sub,
+            expected_stores=0,
+            expected_agents=0,
+            processed_stores=0,
+            processed_agents=0,
+            control_totals={},
+            artifacts=[],
+            errors=["verified_finalization_missing"],
+            status="failed",
+        )
+        raise MonthlyManifestError("verified_finalization_missing", "Verified finalization is required", failed)
+    validate_verified_manifest(final_manifest, operation="finalize")
+    verify_artifacts(final_manifest, root=OUTPUTS_DIR)
+
+    entries = await load_entries(pool)
+    expected = final_manifest["expected"]
+    if (
+        len(entries) != expected["stores"]
+        or len({entry.site_code for entry in entries}) != len(entries)
+        or len({entry.sheet_id for entry in entries}) != len(entries)
+    ):
+        failed = base_manifest(
+            month=month_key,
+            operation="archive",
+            requested_by_sub=requested_by_sub,
+            expected_stores=int(expected["stores"]),
+            expected_agents=int(expected["agents"]),
+            processed_stores=0,
+            processed_agents=0,
+            control_totals=final_manifest.get("control_totals", {}),
+            artifacts=[],
+            errors=["registry_changed_or_duplicate_after_finalization"],
+            status="failed",
+        )
+        raise MonthlyManifestError(
+            "registry_changed_or_duplicate_after_finalization",
+            "Registry changed after finalization",
+            failed,
+        )
+
     _, drive_service = build_google_services()
+    stage_root = _staging_dir("archive", operation_id)
+    staged_archive_dir = build_archive_dir(stage_root, month)
+    official_archive_dir = build_archive_dir(OUTPUTS_DIR, month)
     results: list[dict[str, Any]] = []
     exported_files: list[Path] = []
-    for idx, entry in enumerate(entries, start=1):
-        print(f"[{idx:02d}/{len(entries):02d}] Export {entry.company}/{entry.store}", flush=True)
-        output_path = build_store_export_path(OUTPUTS_DIR, month, entry)
-        result = retry_api(
-            lambda entry=entry, output_path=output_path: export_sheet_xlsx(drive_service, entry, output_path),
-            label=f"export {entry.company}/{entry.store}",
+    errors: list[str] = []
+    try:
+        for idx, entry in enumerate(entries, start=1):
+            output_path = build_store_export_path(stage_root, month, entry)
+            try:
+                result = retry_api(
+                    lambda entry=entry, output_path=output_path: export_sheet_xlsx(
+                        drive_service,
+                        entry,
+                        output_path,
+                    ),
+                    label="Google source export",
+                    attempts=GOOGLE_API_RETRY_ATTEMPTS,
+                    base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+                )
+                _validate_source_workbook(Path(result["xlsx_path"]))
+            except MonthlyIntegrityError as exc:
+                result = {
+                    "company": entry.company,
+                    "store": entry.store,
+                    "site_code": entry.site_code,
+                    "manager": entry.manager,
+                    "sheet_id": entry.sheet_id,
+                    "status": "ERROR",
+                    "xlsx_path": "",
+                    "bytes": 0,
+                    "error": exc.code,
+                }
+                errors.append(exc.code)
+            results.append(result)
+            if result["status"] == "OK":
+                exported_files.append(Path(result["xlsx_path"]))
+            if delay > 0 and idx < len(entries):
+                await asyncio.sleep(delay)
+
+        if errors or len(exported_files) != len(entries):
+            failed = base_manifest(
+                month=month_key,
+                operation="archive",
+                requested_by_sub=requested_by_sub,
+                expected_stores=len(entries),
+                expected_agents=int(expected["agents"]),
+                processed_stores=len(exported_files),
+                processed_agents=int(expected["agents"]) if not errors else 0,
+                control_totals=final_manifest.get("control_totals", {}),
+                artifacts=[],
+                errors=errors or ["archive_coverage_incomplete"],
+                status="failed",
+            )
+            raise MonthlyManifestError("archive_incomplete", "Archive is incomplete", failed)
+
+        zip_path = build_archive_zip_path(stage_root, month)
+        create_archive_zip(zip_path, exported_files, staged_archive_dir)
+        secure_file(zip_path)
+        _validate_archive_zip(zip_path, expected_files=len(entries))
+        manager_zip_paths = create_manager_zips(stage_root, month, results)
+        for path in manager_zip_paths.values():
+            secure_file(path)
+
+        source_backups = [
+            _future_artifact(
+                Path(result["xlsx_path"]),
+                staged_archive_dir=staged_archive_dir,
+                official_archive_dir=official_archive_dir,
+                kind="source_workbook",
+                extra={"site_code": result["site_code"], "sheet_id": result["sheet_id"]},
+            )
+            for result in results
+        ]
+        archive_artifacts = [
+            _future_artifact(
+                zip_path,
+                staged_archive_dir=staged_archive_dir,
+                official_archive_dir=official_archive_dir,
+                kind="archive_zip",
+            ),
+            *source_backups,
+            *[
+                _future_artifact(
+                    path,
+                    staged_archive_dir=staged_archive_dir,
+                    official_archive_dir=official_archive_dir,
+                    kind="manager_archive_zip",
+                )
+                for path in manager_zip_paths.values()
+            ],
+            *[dict(item) for item in final_manifest["artifacts"]],
+        ]
+        manifest = base_manifest(
+            month=month_key,
+            operation="archive",
+            requested_by_sub=requested_by_sub,
+            expected_stores=len(entries),
+            expected_agents=int(expected["agents"]),
+            processed_stores=len(entries),
+            processed_agents=int(expected["agents"]),
+            control_totals=final_manifest.get("control_totals", {}),
+            artifacts=archive_artifacts,
+            source_backups=source_backups,
+        )
+        validate_verified_manifest(manifest, operation="archive")
+        manifest_path = build_archive_manifest_path(stage_root, month)
+        secure_write_json(manifest_path, manifest)
+        _promote_directory(staged_archive_dir, official_archive_dir)
+        official_manifest_path = build_archive_manifest_path(OUTPUTS_DIR, month)
+        verify_artifacts(manifest, root=OUTPUTS_DIR)
+        return MonthlyExecution(path=official_manifest_path, manifest=manifest)
+    finally:
+        shutil.rmtree(stage_root, ignore_errors=True)
+
+
+async def archive_month(
+    pool: asyncpg.Pool,
+    month: str,
+    only: str | None = None,
+    delay: float = 0.5,
+    *,
+    month_key: str | None = None,
+    requested_by_sub: str = "direct-execution",
+    operation_id: int | None = None,
+) -> Path:
+    execution = await _archive_month_execution(
+        pool,
+        month,
+        month_key=month_key or month,
+        requested_by_sub=requested_by_sub,
+        operation_id=operation_id,
+        only=only,
+        delay=delay,
+    )
+    return execution.path
+
+
+def public_manifest_payload(record: dict[str, Any]) -> dict[str, Any]:
+    raw_manifest = record.get("manifest")
+    manifest: dict[str, Any] = raw_manifest if isinstance(raw_manifest, dict) else {}
+    return {
+        "id": record.get("id"),
+        "operation_id": record.get("operation_id"),
+        "month": record.get("closing_month"),
+        "operation": record.get("operation"),
+        "status": record.get("status"),
+        "expected": manifest.get("expected", {}),
+        "processed": manifest.get("processed", {}),
+        "error_count": record.get("error_count", 0),
+        "manifest_sha256": record.get("manifest_sha256"),
+        "approved": bool(record.get("approved_by_sub")),
+        "created_at": record.get("created_at"),
+        "verified_at": record.get("verified_at"),
+        "approved_at": record.get("approved_at"),
+        "consumed_at": record.get("consumed_at"),
+    }
+
+
+async def approve_monthly_manifest(
+    pool: asyncpg.Pool,
+    *,
+    manifest_id: int,
+    approved_by_sub: str,
+) -> dict[str, Any]:
+    record = await fetch_monthly_manifest(pool, manifest_id)
+    if record is None:
+        raise FileNotFoundError("Manifestul nu exista.")
+    manifest = record.get("manifest")
+    if record.get("operation") != "archive" or record.get("status") != "verified":
+        raise MonthlyIntegrityError("manifest_not_approvable", "Manifest is not approvable")
+    if not isinstance(manifest, dict):
+        raise MonthlyIntegrityError("manifest_invalid", "Manifest is invalid")
+    validate_verified_manifest(manifest, operation="archive")
+    verify_artifacts(manifest, root=OUTPUTS_DIR)
+    current_sha = manifest.get("manifest_sha256")
+    if not isinstance(current_sha, str):
+        raise MonthlyIntegrityError("manifest_hash_invalid", "Manifest hash is invalid")
+    approved_manifest = dict(manifest)
+    approved_manifest["status"] = "approved"
+    approved_manifest["approved_by_sub"] = approved_by_sub
+    approved_manifest["approved_at"] = utc_now()
+    approved_manifest = finalize_manifest(approved_manifest)
+    approved = await persist_monthly_manifest_approval(
+        pool,
+        manifest_id=manifest_id,
+        expected_sha256=current_sha,
+        approved_by_sub=approved_by_sub,
+        approved_manifest=approved_manifest,
+    )
+    if approved is None:
+        current = await fetch_monthly_manifest(pool, manifest_id)
+        if current is not None and current.get("status") in {"approved", "consumed"}:
+            return public_manifest_payload(current)
+        raise MonthlyIntegrityError("manifest_approval_race", "Manifest approval changed concurrently")
+    return public_manifest_payload(approved)
+
+
+def _read_reset_snapshot(sheets_svc: Any, entry: StoreEntry) -> dict[str, Any]:
+    def read() -> dict[str, Any]:
+        response = sheets_svc.spreadsheets().values().batchGet(
+            spreadsheetId=entry.sheet_id,
+            ranges=list(RESET_RANGES),
+            valueRenderOption="FORMULA",
+            dateTimeRenderOption="SERIAL_NUMBER",
+        ).execute()
+        value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
+        if not isinstance(value_ranges, list) or len(value_ranges) != len(RESET_RANGES):
+            raise MonthlyIntegrityError(
+                "backup_response_incomplete",
+                "Google backup response is incomplete",
+            )
+        return canonical_snapshot(value_ranges)
+
+    return retry_api(
+        read,
+        label="Google reset backup",
+        attempts=GOOGLE_API_RETRY_ATTEMPTS,
+        base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+    )
+
+
+def _restore_reset_snapshot(
+    sheets_svc: Any,
+    entry: StoreEntry,
+    snapshot: dict[str, Any],
+) -> None:
+    value_ranges = snapshot.get("value_ranges")
+    if not isinstance(value_ranges, list):
+        raise MonthlyIntegrityError("backup_invalid", "Reset backup is invalid")
+    data = [
+        {
+            "range": item["range"],
+            "majorDimension": item.get("majorDimension", "ROWS"),
+            "values": item.get("values", []),
+        }
+        for item in value_ranges
+        if isinstance(item, dict) and item.get("values")
+    ]
+
+    def restore() -> dict[str, Any]:
+        return sheets_svc.spreadsheets().values().batchUpdate(
+            spreadsheetId=entry.sheet_id,
+            body={"valueInputOption": "USER_ENTERED", "data": data},
+        ).execute()
+
+    if data:
+        retry_api(
+            restore,
+            label="Google reset rollback",
             attempts=GOOGLE_API_RETRY_ATTEMPTS,
             base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
         )
-        results.append(result)
-        if result["status"] == "OK":
-            exported_files.append(Path(result["xlsx_path"]))
-        if delay > 0 and idx < len(entries):
-            await asyncio.sleep(delay)
-
-    zip_path = build_archive_zip_path(OUTPUTS_DIR, month)
-    manager_zip_paths: dict[str, Path] = {}
-    if len(exported_files) == len(entries):
-        create_archive_zip(zip_path, exported_files, build_archive_dir(OUTPUTS_DIR, month))
-        manager_zip_paths = create_manager_zips(OUTPUTS_DIR, month, results)
-
-    manifest = summarize_archive_results(month, len(entries), results, zip_path, manager_zip_paths)
-    manifest_path = build_archive_manifest_path(OUTPUTS_DIR, month)
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    ok, errors = validate_archive_manifest(manifest, expected_count=len(entries))
-    print(f"Archive manifest: {manifest_path}")
-    print(f"Exports: {manifest['exported_count']}/{manifest['registry_count']}, errors: {manifest['error_count']}")
-    if manager_zip_paths:
-        print(f"ASM zips: {len(manager_zip_paths)}")
-        for manager, path in sorted(manager_zip_paths.items()):
-            print(f"  {manager}: {path}")
-    if not ok:
-        for error in errors:
-            print(f"ERROR: {error}")
-        raise RuntimeError("Archive is incomplete")
-    return manifest_path
+    restored = _read_reset_snapshot(sheets_svc, entry)
+    if snapshot_sha256(restored) != snapshot_sha256(snapshot):
+        raise MonthlyIntegrityError("rollback_verification_failed", "Reset rollback verification failed")
 
 
-def assert_final_export_exists(final_export: Path, force: bool) -> None:
-    if final_export.exists() or force:
-        return
-    raise RuntimeError(f"Final export does not exist: {final_export}. Ruleaza intai Finalizare salarii.")
-
-
-def assert_archive_complete(output_dir: Path, closing_month: str, expected_count: int, force: bool) -> None:
-    if force:
-        return
-    manifest_path = build_archive_manifest_path(output_dir, closing_month)
-    if not manifest_path.exists():
-        raise RuntimeError(f"Archive manifest does not exist: {manifest_path}. Ruleaza intai Exporta arhiva.")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    ok, errors = validate_archive_manifest(manifest, expected_count=expected_count)
-    if not ok:
-        detail = "\n".join(f"- {error}" for error in errors)
-        raise RuntimeError(f"Archive is incomplete for {closing_month}:\n{detail}")
+def _verify_reset_cleared(sheets_svc: Any, entry: StoreEntry) -> None:
+    snapshot = _read_reset_snapshot(sheets_svc, entry)
+    value_ranges = snapshot.get("value_ranges", [])
+    if any(item.get("values") for item in value_ranges if isinstance(item, dict)):
+        raise MonthlyIntegrityError("reset_verification_failed", "Reset verification failed")
 
 
 def reset_store(sheets_svc: Any | None, entry: StoreEntry, *, dry_run: bool) -> dict[str, Any]:
@@ -913,15 +1633,392 @@ def reset_store(sheets_svc: Any | None, entry: StoreEntry, *, dry_run: bool) -> 
 
         retry_api(
             clear,
-            label=f"reset {entry.company}/{entry.store}",
+            label="Google reset",
             attempts=GOOGLE_API_RETRY_ATTEMPTS,
             base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
         )
         return result
     except Exception as exc:  # noqa: BLE001
         result["status"] = "ERROR"
-        result["error"] = str(exc)
+        result["error"] = exc.code if isinstance(exc, MonthlyIntegrityError) else _google_error_code(exc)
         return result
+
+
+async def _rollback_reset_entries(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    entries: list[StoreEntry],
+    sheets_svc: Any,
+    snapshots: dict[str, dict[str, Any]],
+) -> bool:
+    rollback_failed = False
+    for entry in reversed(entries):
+        try:
+            _restore_reset_snapshot(sheets_svc, entry, snapshots[entry.site_code])
+            restored = True
+        except Exception:  # noqa: BLE001 - checkpoint below records the uncertainty
+            restored = False
+            rollback_failed = True
+        try:
+            rollback_recorded = await record_reset_item_rollback(
+                pool,
+                operation_id=operation_id,
+                site_code=entry.site_code,
+                restored=restored,
+                error_message="reset_rolled_back" if restored else "reset_rollback_failed",
+            )
+        except Exception:  # noqa: BLE001 - Google restoration still took precedence
+            rollback_recorded = False
+        if not rollback_recorded:
+            rollback_failed = True
+    return not rollback_failed
+
+
+async def _reset_month_execution(
+    pool: asyncpg.Pool,
+    closing_month: str,
+    next_month: str,
+    *,
+    closing_month_key: str,
+    next_month_key: str,
+    requested_by_sub: str,
+    operation_id: int | None,
+    approved_manifest_id: int | None,
+    only: str | None = None,
+    dry_run: bool = True,
+) -> MonthlyExecution:
+    if not dry_run and (operation_id is None or approved_manifest_id is None):
+        failed = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=0,
+            expected_agents=0,
+            processed_stores=0,
+            processed_agents=0,
+            control_totals={},
+            artifacts=[],
+            errors=["approved_manifest_required"],
+            status="failed",
+        )
+        raise MonthlyManifestError("approved_manifest_required", "Approved manifest is required", failed)
+    if only and not dry_run:
+        failed = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=0,
+            expected_agents=0,
+            processed_stores=0,
+            processed_agents=0,
+            control_totals={},
+            artifacts=[],
+            errors=["partial_live_reset_forbidden"],
+            status="failed",
+        )
+        raise MonthlyManifestError("partial_live_reset_forbidden", "Partial live reset is forbidden", failed)
+
+    if approved_manifest_id is not None:
+        prerequisite = await fetch_monthly_manifest(pool, approved_manifest_id)
+    else:
+        prerequisite = await fetch_latest_monthly_manifest(
+            pool,
+            closing_month=closing_month_key,
+            operation="archive",
+            statuses=("approved", "verified"),
+        )
+    archive_manifest = prerequisite.get("manifest") if prerequisite else None
+    allowed_statuses = {"approved"} if not dry_run else {"verified", "approved"}
+    if (
+        prerequisite is None
+        or prerequisite.get("status") not in allowed_statuses
+        or not isinstance(archive_manifest, dict)
+    ):
+        failed = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=0,
+            expected_agents=0,
+            processed_stores=0,
+            processed_agents=0,
+            control_totals={},
+            artifacts=[],
+            errors=["verified_archive_required"],
+            status="failed",
+        )
+        raise MonthlyManifestError("verified_archive_required", "Verified archive is required", failed)
+    validate_verified_manifest(archive_manifest, operation="archive")
+    verify_artifacts(archive_manifest, root=OUTPUTS_DIR)
+
+    entries = await load_entries(pool, only=only)
+    expected = archive_manifest["expected"]
+    source_backups = archive_manifest.get("source_backups")
+    archived_by_site = {
+        item.get("site_code"): item
+        for item in source_backups
+        if isinstance(item, dict) and isinstance(item.get("site_code"), str)
+    } if isinstance(source_backups, list) else {}
+    archived_sites = set(archived_by_site)
+    current_sites = {entry.site_code for entry in entries}
+    if (
+        len(entries) != int(expected["stores"])
+        or archived_sites != current_sites
+        or len(current_sites) != len(entries)
+        or not isinstance(source_backups, list)
+        or len(source_backups) != len(entries)
+        or any(
+            archived_by_site[entry.site_code].get("sheet_id") != entry.sheet_id
+            for entry in entries
+        )
+    ):
+        failed = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=int(expected["stores"]),
+            expected_agents=int(expected["agents"]),
+            processed_stores=0,
+            processed_agents=0,
+            control_totals=archive_manifest.get("control_totals", {}),
+            artifacts=[],
+            errors=["registry_or_archive_coverage_changed"],
+            status="failed",
+        )
+        raise MonthlyManifestError(
+            "registry_or_archive_coverage_changed",
+            "Registry or archive coverage changed before reset",
+            failed,
+        )
+
+    sheets_svc, _ = build_google_services()
+    if operation_id is not None and not dry_run:
+        await ensure_reset_items(
+            pool,
+            operation_id=operation_id,
+            closing_month_key=closing_month_key,
+            next_month_key=next_month_key,
+            entries=entries,
+        )
+
+    snapshots: dict[str, dict[str, Any]] = {}
+    backup_artifacts: list[dict[str, Any]] = []
+    backup_dir = (
+        build_reset_backup_dir(OUTPUTS_DIR, closing_month, operation_id)
+        if operation_id is not None and not dry_run
+        else None
+    )
+    try:
+        for entry in entries:
+            snapshot = _read_reset_snapshot(sheets_svc, entry)
+            snapshots[entry.site_code] = snapshot
+            if backup_dir is not None and operation_id is not None:
+                token = manifest_sha256({"site_code": entry.site_code})[:20]
+                backup_path = backup_dir / f"source-{token}.json"
+                payload = {
+                    "schema_version": 1,
+                    "operation_id": operation_id,
+                    "closing_month": closing_month_key,
+                    "site_code": entry.site_code,
+                    "sheet_id": entry.sheet_id,
+                    "snapshot": snapshot,
+                    "snapshot_sha256": snapshot_sha256(snapshot),
+                    "created_at": utc_now(),
+                }
+                secure_write_json(backup_path, payload)
+                artifact = relative_artifact(backup_path, root=OUTPUTS_DIR, kind="reset_source_snapshot")
+                artifact.update({"site_code": entry.site_code, "sheet_id": entry.sheet_id})
+                backup_artifacts.append(artifact)
+                recorded = await record_reset_item_backup(
+                    pool,
+                    operation_id=operation_id,
+                    site_code=entry.site_code,
+                    backup_path=artifact["path"],
+                    backup_sha256=artifact["sha256"],
+                )
+                if not recorded:
+                    raise MonthlyIntegrityError("backup_checkpoint_failed", "Backup checkpoint failed")
+        if backup_artifacts:
+            verify_artifacts({"artifacts": backup_artifacts}, root=OUTPUTS_DIR)
+    except Exception as exc:
+        code = exc.code if isinstance(exc, MonthlyIntegrityError) else "reset_preflight_failed"
+        failed = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=int(expected["stores"]),
+            expected_agents=int(expected["agents"]),
+            processed_stores=len(snapshots),
+            processed_agents=0,
+            control_totals=archive_manifest.get("control_totals", {}),
+            artifacts=[],
+            source_backups=backup_artifacts,
+            errors=[code],
+            status="failed",
+        )
+        raise MonthlyManifestError(code, "Reset preflight failed", failed) from exc
+
+    if dry_run:
+        report = {
+            "schema_version": 1,
+            "operation": "reset",
+            "month": closing_month_key,
+            "next_month": next_month_key,
+            "dry_run": True,
+            "expected_store_count": int(expected["stores"]),
+            "processed_store_count": len(snapshots),
+            "error_count": 0,
+            "created_at": utc_now(),
+        }
+        report_path = build_reset_dry_run_report_path(OUTPUTS_DIR, next_month)
+        stage_dir = _staging_dir("reset-dry-run", operation_id)
+        staged_report = stage_dir / "report.json"
+        try:
+            secure_write_json(staged_report, report)
+            _promote_file(staged_report, report_path)
+        finally:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+        artifact = relative_artifact(report_path, root=OUTPUTS_DIR, kind="reset_dry_run_report")
+        manifest = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=int(expected["stores"]),
+            expected_agents=int(expected["agents"]),
+            processed_stores=len(snapshots),
+            processed_agents=int(expected["agents"]),
+            control_totals=archive_manifest.get("control_totals", {}),
+            artifacts=[artifact],
+            source_backups=archive_manifest.get("source_backups", []),
+        )
+        return MonthlyExecution(path=report_path, manifest=manifest)
+
+    assert operation_id is not None
+    touched: list[StoreEntry] = []
+    try:
+        for entry in entries:
+            await heartbeat_monthly_operation(pool, operation_id)
+            claimed = await mark_reset_item_running(
+                pool,
+                operation_id=operation_id,
+                site_code=entry.site_code,
+            )
+            if not claimed:
+                raise MonthlyIntegrityError("reset_checkpoint_claim_failed", "Reset checkpoint claim failed")
+            touched.append(entry)
+            result = reset_store(sheets_svc, entry, dry_run=False)
+            if result["status"] != "OK":
+                raise MonthlyIntegrityError(result["error"], "Google reset failed")
+            _verify_reset_cleared(sheets_svc, entry)
+            persisted = await finish_reset_item(
+                pool,
+                operation_id=operation_id,
+                site_code=entry.site_code,
+                status="completed",
+            )
+            if not persisted:
+                raise MonthlyIntegrityError("reset_checkpoint_finish_failed", "Reset checkpoint finish failed")
+    except Exception as exc:
+        code = exc.code if isinstance(exc, MonthlyIntegrityError) else "reset_failed"
+        rollback_ok = await _rollback_reset_entries(
+            pool,
+            operation_id=operation_id,
+            entries=touched,
+            sheets_svc=sheets_svc,
+            snapshots=snapshots,
+        )
+        rollback_failed = not rollback_ok
+        status = "uncertain" if rollback_failed else "rolled_back"
+        errors = [code, "rollback_failed" if rollback_failed else "rollback_verified"]
+        failed = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=int(expected["stores"]),
+            expected_agents=int(expected["agents"]),
+            processed_stores=0,
+            processed_agents=0,
+            control_totals=archive_manifest.get("control_totals", {}),
+            artifacts=[],
+            source_backups=backup_artifacts,
+            errors=errors,
+            status=status,
+        )
+        raise MonthlyManifestError(status, "Reset failed and rollback was evaluated", failed) from exc
+
+    async def rollback_after_commit_failure() -> dict[str, Any]:
+        rollback_ok = await _rollback_reset_entries(
+            pool,
+            operation_id=operation_id,
+            entries=touched,
+            sheets_svc=sheets_svc,
+            snapshots=snapshots,
+        )
+        status = "rolled_back" if rollback_ok else "uncertain"
+        return base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=int(expected["stores"]),
+            expected_agents=int(expected["agents"]),
+            processed_stores=0,
+            processed_agents=0,
+            control_totals=archive_manifest.get("control_totals", {}),
+            artifacts=[],
+            source_backups=backup_artifacts,
+            errors=["reset_commit_failed", "rollback_verified" if rollback_ok else "rollback_failed"],
+            status=status,
+        )
+
+    try:
+        report = {
+            "schema_version": 1,
+            "operation": "reset",
+            "month": closing_month_key,
+            "next_month": next_month_key,
+            "dry_run": False,
+            "approved_manifest_id": approved_manifest_id,
+            "expected_store_count": int(expected["stores"]),
+            "processed_store_count": len(entries),
+            "error_count": 0,
+            "created_at": utc_now(),
+        }
+        report_path = build_reset_report_path(OUTPUTS_DIR, next_month)
+        stage_dir = _staging_dir("reset", operation_id)
+        staged_report = stage_dir / "report.json"
+        try:
+            secure_write_json(staged_report, report)
+            _promote_file(staged_report, report_path)
+        finally:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+        artifact = relative_artifact(report_path, root=OUTPUTS_DIR, kind="reset_report")
+        manifest = base_manifest(
+            month=closing_month_key,
+            operation="reset",
+            requested_by_sub=requested_by_sub,
+            expected_stores=int(expected["stores"]),
+            expected_agents=int(expected["agents"]),
+            processed_stores=len(entries),
+            processed_agents=int(expected["agents"]),
+            control_totals=archive_manifest.get("control_totals", {}),
+            artifacts=[artifact],
+            source_backups=backup_artifacts,
+        )
+        validate_verified_manifest(manifest, operation="reset")
+        verify_artifacts(manifest, root=OUTPUTS_DIR)
+        return MonthlyExecution(
+            path=report_path,
+            manifest=manifest,
+            rollback=rollback_after_commit_failure,
+        )
+    except Exception as exc:
+        failed = await rollback_after_commit_failure()
+        raise MonthlyManifestError(
+            str(failed["status"]),
+            "Reset output failed and rollback was evaluated",
+            failed,
+        ) from exc
 
 
 async def reset_month(
@@ -930,139 +2027,47 @@ async def reset_month(
     next_month: str,
     only: str | None = None,
     dry_run: bool = True,
-    force: bool = False,
     operation_id: int | None = None,
     closing_month_key: str | None = None,
     next_month_key: str | None = None,
+    requested_by_sub: str = "direct-execution",
+    approved_manifest_id: int | None = None,
 ) -> Path:
-    entries = await load_entries(pool, only=only)
-    final_export = build_final_export_path(OUTPUTS_DIR, closing_month)
-    assert_final_export_exists(final_export, force=force)
-    assert_archive_complete(OUTPUTS_DIR, closing_month, expected_count=len(entries), force=force)
-
-    sheets_svc = None
-    if not dry_run:
-        sheets_svc, _ = build_google_services()
-
-    report: dict[str, Any] = {
-        "closing_month": closing_month,
-        "next_month": next_month,
-        "dry_run": dry_run,
-        "forced": force,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "stores": [],
-    }
-    if operation_id is not None:
-        report["operation_id"] = operation_id
-
-    checkpoint_operation_id = operation_id if operation_id is not None and not dry_run else None
-    if checkpoint_operation_id is not None:
-        await ensure_reset_items(
-            pool,
-            operation_id=checkpoint_operation_id,
-            closing_month_key=closing_month_key or closing_month,
-            next_month_key=next_month_key or next_month,
-            entries=entries,
-        )
-
-    for idx, entry in enumerate(entries, start=1):
-        suffix = " (dry-run)" if dry_run else ""
-        print(f"[{idx:02d}/{len(entries):02d}] Reset {entry.company}/{entry.store}{suffix}", flush=True)
-        if operation_id is not None:
-            await heartbeat_monthly_operation(pool, operation_id)
-
-        if checkpoint_operation_id is not None:
-            completed = await get_previous_completed_reset_item(
-                pool,
-                closing_month_key=closing_month_key or closing_month,
-                site_code=entry.site_code,
-            )
-            if completed is not None:
-                skip_message = "already completed by a previous reset checkpoint"
-                skipped = {
-                    "company": entry.company,
-                    "store": entry.store,
-                    "site_code": entry.site_code,
-                    "sheet_id": entry.sheet_id,
-                    "status": "SKIPPED",
-                    "error": skip_message,
-                    "ranges": list(RESET_RANGES),
-                }
-                skipped_persisted = await finish_reset_item(
-                    pool,
-                    operation_id=checkpoint_operation_id,
-                    site_code=entry.site_code,
-                    status="skipped",
-                    error_message=skip_message,
-                )
-                if not skipped_persisted:
-                    raise RuntimeError(
-                        f"Reset checkpoint could not be skipped for {entry.site_code}"
-                    )
-                report["stores"].append(skipped)
-                continue
-
-            claimed = await mark_reset_item_running(
-                pool,
-                operation_id=checkpoint_operation_id,
-                site_code=entry.site_code,
-            )
-            if not claimed:
-                raise RuntimeError(
-                    f"Reset checkpoint could not be claimed for {entry.site_code}"
-                )
-
-        result = reset_store(sheets_svc, entry, dry_run=dry_run)
-        report["stores"].append(result)
-
-        if checkpoint_operation_id is not None:
-            if result["status"] == "OK":
-                persisted = await finish_reset_item(
-                    pool,
-                    operation_id=checkpoint_operation_id,
-                    site_code=entry.site_code,
-                    status="completed",
-                )
-            else:
-                persisted = await finish_reset_item(
-                    pool,
-                    operation_id=checkpoint_operation_id,
-                    site_code=entry.site_code,
-                    status="error",
-                    error_message=result.get("error") or "Reset Google failed",
-                )
-            if not persisted:
-                raise RuntimeError(
-                    f"Reset checkpoint result could not be persisted for {entry.site_code}"
-                )
-
-    report_path = build_reset_report_path(OUTPUTS_DIR, next_month)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    errors = [store for store in report["stores"] if store["status"] == "ERROR"]
-    print(f"Reset report: {report_path}")
-    print(f"Stores: {len(report['stores'])}, errors: {len(errors)}")
-    if errors and not dry_run:
-        raise RuntimeError(f"Reset finished with {len(errors)} errors")
-    return report_path
+    execution = await _reset_month_execution(
+        pool,
+        closing_month,
+        next_month,
+        closing_month_key=closing_month_key or closing_month,
+        next_month_key=next_month_key or next_month,
+        requested_by_sub=requested_by_sub,
+        operation_id=operation_id,
+        approved_manifest_id=approved_manifest_id,
+        only=only,
+        dry_run=dry_run,
+    )
+    return execution.path
 
 
 async def run_monthly_op(
     *,
-    op: str,
-    month: str,
+    op: str | None = None,
+    month: str | None = None,
     only: str | None = None,
     dry_run: bool = True,
     operation_id: int | None = None,
 ) -> dict[str, Any]:
-    if op not in VALID_OPS:
-        raise ValueError(f"Operatie necunoscuta: {op}")
+    if operation_id is None:
+        if op not in VALID_OPS:
+            raise ValueError(f"Operatie necunoscuta: {op}")
+        if month is None:
+            raise ValueError("month is required")
 
     from db.connection import get_pool
 
     pool = await get_pool()
-    month_label = ro_month_label(month)
+    operation: dict[str, Any] | None = None
+    requested_by_sub = "direct-execution"
+    approved_manifest_id: int | None = None
 
     if operation_id is not None:
         start = await start_monthly_operation(pool, operation_id)
@@ -1078,67 +2083,272 @@ async def run_monthly_op(
                 )
                 return replay
 
+            persisted = start.operation or {}
+            persisted_op = str(persisted.get("op") or op or "unknown")
+            persisted_month = persisted.get("closing_month") or month
+            persisted_dry_run = bool(persisted.get("dry_run", dry_run))
             operation_status = start.status.removeprefix("already_")
             return {
-                "op": op,
-                "month_label": month_label,
+                "op": persisted_op,
+                "month_label": ro_month_label(str(persisted_month)) if persisted_month else None,
                 "status": "failed" if start.status in {"already_failed", "not_found"} else "no_op",
                 "output": f"Operation {operation_id} was not started: {start.status}.",
                 "exit_code": -1 if start.status == "not_found" else 0,
-                "dry_run": dry_run if op == "reset" else None,
+                "dry_run": persisted_dry_run if persisted_op == "reset" else None,
                 "operation_id": operation_id,
                 "operation_status": operation_status,
                 "idempotent_replay": True,
             }
 
-    buffer = io.StringIO()
+        operation = start.operation
+        if operation is None:
+            raise RuntimeError("Started monthly operation has no persisted state")
+        op = str(operation["op"])
+        persisted_month = operation.get("closing_month")
+        month = persisted_month if isinstance(persisted_month, str) and persisted_month else None
+        only = operation.get("only_filter")
+        dry_run = bool(operation["dry_run"])
+        requested_by_sub = str(operation.get("requested_by_sub") or "")
+        approved_manifest_id = operation.get("approved_manifest_id")
+        if not requested_by_sub:
+            raise RuntimeError("Persisted monthly operation has no OIDC subject")
+
+    if op not in VALID_OPS:
+        raise ValueError(f"Operatie necunoscuta: {op}")
+    if month is None:
+        raise ValueError("month is required")
+    if operation_id is not None and only and (op != "reset" or not dry_run):
+        error_manifest = base_manifest(
+            month=month,
+            operation=op,
+            requested_by_sub=requested_by_sub,
+            expected_stores=0,
+            expected_agents=0,
+            processed_stores=0,
+            processed_agents=0,
+            control_totals={},
+            artifacts=[],
+            errors=["partial_official_operation_forbidden"],
+            status="failed",
+        )
+        await persist_manifest_result(
+            pool,
+            operation_id=operation_id,
+            manifest=error_manifest,
+            error_code="partial_official_operation_forbidden",
+        )
+        result = {
+            "op": op,
+            "month_label": ro_month_label(month),
+            "status": "failed",
+            "output": "Operation failed: partial_official_operation_forbidden",
+            "exit_code": -1,
+            "dry_run": dry_run if op == "reset" else None,
+            "operation_id": operation_id,
+            "operation_status": "failed",
+        }
+        await finish_monthly_operation(
+            pool,
+            operation_id,
+            result=result,
+            error_message="partial_official_operation_forbidden",
+        )
+        return result
+
+    month_label = ro_month_label(month)
+
     status = "success"
     exit_code = 0
-
-    async def _run() -> None:
+    error_code: str | None = None
+    execution: MonthlyExecution | None = None
+    manifest_record: dict[str, Any] | None = None
+    try:
         if operation_id is not None:
             await heartbeat_monthly_operation(pool, operation_id)
         if op == "finalize":
-            await finalize_month(pool, month_label, only=only)
+            execution = await _finalize_month_execution(
+                pool,
+                month_label,
+                month_key=month,
+                requested_by_sub=requested_by_sub,
+                operation_id=operation_id,
+                only=only,
+            )
         elif op == "archive":
-            await archive_month(pool, month_label, only=only)
+            execution = await _archive_month_execution(
+                pool,
+                month_label,
+                month_key=month,
+                requested_by_sub=requested_by_sub,
+                operation_id=operation_id,
+                only=only,
+            )
         else:
-            await reset_month(
+            execution = await _reset_month_execution(
                 pool,
                 closing_month=month_label,
                 next_month=ro_month_label(next_ym(month)),
-                only=only,
-                dry_run=dry_run,
-                operation_id=operation_id,
                 closing_month_key=month,
                 next_month_key=next_ym(month),
+                requested_by_sub=requested_by_sub,
+                operation_id=operation_id,
+                approved_manifest_id=int(approved_manifest_id) if approved_manifest_id is not None else None,
+                only=only,
+                dry_run=dry_run,
             )
-
-    try:
-        with contextlib.redirect_stdout(buffer):
-            await _run()
+        if operation_id is not None and not (
+            op == "reset" and not dry_run and approved_manifest_id is not None
+        ):
+            manifest_record = await persist_manifest_result(
+                pool,
+                operation_id=operation_id,
+                manifest=execution.manifest,
+            )
+    except MonthlyManifestError as exc:
+        status = "failed"
+        exit_code = -1
+        error_code = exc.code
+        if operation_id is not None:
+            manifest_record = await persist_manifest_result(
+                pool,
+                operation_id=operation_id,
+                manifest=exc.manifest,
+                error_code=exc.code,
+            )
     except Exception as exc:  # noqa: BLE001
         status = "failed"
         exit_code = -1
-        print(f"ERROR: {exc}", file=buffer)
+        error_code = exc.code if isinstance(exc, MonthlyIntegrityError) else "monthly_operation_failed"
+        if operation_id is not None:
+            failed_manifest = base_manifest(
+                month=month,
+                operation=op,
+                requested_by_sub=requested_by_sub,
+                expected_stores=0,
+                expected_agents=0,
+                processed_stores=0,
+                processed_agents=0,
+                control_totals={},
+                artifacts=[],
+                errors=[error_code],
+                status="failed",
+            )
+            manifest_record = await persist_manifest_result(
+                pool,
+                operation_id=operation_id,
+                manifest=failed_manifest,
+                error_code=error_code,
+            )
 
     result = {
         "op": op,
         "month_label": month_label,
         "status": status,
-        "output": buffer.getvalue(),
+        "output": (
+            "Operation completed with verified coverage."
+            if status == "success"
+            else f"Operation failed: {error_code or 'monthly_operation_failed'}"
+        ),
         "exit_code": exit_code,
         "dry_run": dry_run if op == "reset" else None,
     }
+    if manifest_record is not None:
+        result["manifest"] = public_manifest_payload(manifest_record)
     if operation_id is not None:
         result["operation_id"] = operation_id
         result["operation_status"] = "completed" if status == "success" else "failed"
-        await finish_monthly_operation(
-            pool,
-            operation_id,
-            result=result,
-            error_message=buffer.getvalue()[-1000:] if status == "failed" else None,
-        )
+        if (
+            status == "success"
+            and op == "reset"
+            and not dry_run
+            and approved_manifest_id is not None
+        ):
+            try:
+                approved_record = await fetch_monthly_manifest(pool, int(approved_manifest_id))
+                approved_payload = approved_record.get("manifest") if approved_record else None
+                approved_sha = approved_record.get("manifest_sha256") if approved_record else None
+                if not isinstance(approved_payload, dict) or not isinstance(approved_sha, str):
+                    raise RuntimeError("Approved manifest disappeared before consumption")
+                if execution is None:
+                    raise RuntimeError("Reset execution disappeared before commit")
+                consumed_manifest = dict(approved_payload)
+                consumed_manifest["status"] = "consumed"
+                consumed_manifest["consumed_at"] = utc_now()
+                consumed_manifest = finalize_manifest(consumed_manifest)
+                manifest_record = await persist_reset_success(
+                    pool,
+                    operation_id,
+                    result=result,
+                    reset_manifest=execution.manifest,
+                    manifest_id=int(approved_manifest_id),
+                    expected_manifest_sha256=approved_sha,
+                    consumed_manifest=consumed_manifest,
+                )
+                result["manifest"] = public_manifest_payload(manifest_record)
+                finished = True
+            except Exception:  # noqa: BLE001 - rollback must run for every commit failure
+                rollback_manifest: dict[str, Any]
+                try:
+                    if execution is None or execution.rollback is None:
+                        raise RuntimeError("Reset rollback callback is unavailable")
+                    rollback_manifest = await execution.rollback()
+                except Exception:  # noqa: BLE001 - persisted as uncertain below
+                    rollback_manifest = base_manifest(
+                        month=month,
+                        operation="reset",
+                        requested_by_sub=requested_by_sub,
+                        expected_stores=0,
+                        expected_agents=0,
+                        processed_stores=0,
+                        processed_agents=0,
+                        control_totals={},
+                        artifacts=[],
+                        errors=["reset_commit_failed", "rollback_failed"],
+                        status="uncertain",
+                    )
+                try:
+                    manifest_record = await persist_manifest_result(
+                        pool,
+                        operation_id=operation_id,
+                        manifest=rollback_manifest,
+                        error_code="reset_commit_failed",
+                    )
+                except Exception:  # noqa: BLE001 - operation still transitions to failed below
+                    manifest_record = None
+                result.update(
+                    {
+                        "status": "failed",
+                        "output": f"Operation failed: {rollback_manifest['status']}",
+                        "exit_code": -1,
+                        "operation_status": "failed",
+                    }
+                )
+                if manifest_record is not None:
+                    result["manifest"] = public_manifest_payload(manifest_record)
+                finished = await finish_monthly_operation(
+                    pool,
+                    operation_id,
+                    result=result,
+                    error_message="reset_commit_failed",
+                )
+        else:
+            finished = await finish_monthly_operation(
+                pool,
+                operation_id,
+                result=result,
+                error_message=error_code if status == "failed" else None,
+            )
+        if not finished:
+            return {
+                "op": op,
+                "month_label": month_label,
+                "status": "failed",
+                "output": "Operation failed: operation_lease_lost",
+                "exit_code": -1,
+                "dry_run": dry_run if op == "reset" else None,
+                "operation_id": operation_id,
+                "operation_status": "failed",
+            }
     return result
 
 

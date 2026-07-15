@@ -19,13 +19,23 @@ from services.grile_monthly_state import (
 
 _OPERATION_COLUMNS = """
     id, op, closing_month, only_filter, dry_run, status, job_id,
-    triggered_by_email, result, error_message, started_at, heartbeat_at,
-    finished_at, created_at
+    triggered_by_email, requested_by_sub, approved_manifest_id, result,
+    error_message, started_at, heartbeat_at, finished_at, created_at
 """
 
 _RESET_ITEM_COLUMNS = """
     id, operation_id, closing_month, next_month, site_code, sheet_id,
     company, store, status, ranges, error_message, started_at, completed_at,
+    backup_path, backup_sha256, rollback_status, restored_at, updated_at,
+    created_at
+"""
+
+_MANIFEST_COLUMNS = """
+    id, operation_id, closing_month, operation, status,
+    expected_store_count, processed_store_count, expected_agent_count,
+    processed_agent_count, error_count, control_totals, artifacts,
+    source_backups, manifest, manifest_sha256, requested_by_sub,
+    approved_by_sub, approved_at, error_code, verified_at, consumed_at,
     updated_at, created_at
 """
 
@@ -47,6 +57,16 @@ def operation_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
     return data
 
 
+def manifest_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    data = dict(row)
+    for key in ("control_totals", "artifacts", "source_backups", "manifest"):
+        if data.get(key) is not None and isinstance(data[key], str):
+            data[key] = json.loads(data[key])
+    return data
+
+
 async def reserve(
     pool: asyncpg.Pool,
     *,
@@ -54,12 +74,16 @@ async def reserve(
     month: str,
     only: str | None,
     dry_run: bool,
-    triggered_by_email: str | None,
+    requested_by_sub: str,
+    approved_manifest_id: int | None = None,
 ) -> MonthlyOperationReservation:
     normalized_only = only.strip() if only and only.strip() else None
     reservation: MonthlyOperationReservation | None = None
     blocked_message: str | None = None
     operation_id: int | None = None
+
+    if not requested_by_sub or not requested_by_sub.strip():
+        raise ValueError("requested_by_sub is required")
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -121,6 +145,51 @@ async def reserve(
                 )
 
             if reservation is None and op == "reset" and not dry_run:
+                completed = await conn.fetchrow(
+                    f"""
+                    SELECT {_OPERATION_COLUMNS}
+                    FROM grile_monthly_operations
+                    WHERE closing_month = $1
+                      AND op = 'reset'
+                      AND dry_run = false
+                      AND status = 'completed'
+                      AND COALESCE(only_filter, '') = COALESCE($2, '')
+                    ORDER BY finished_at DESC NULLS LAST, created_at DESC
+                    LIMIT 1
+                    """,
+                    month,
+                    normalized_only,
+                )
+                if completed is not None:
+                    reservation = MonthlyOperationReservation(
+                        status="already_completed",
+                        operation_id=int(completed["id"]),
+                        job_id=completed["job_id"],
+                        operation=operation_to_dict(completed),
+                    )
+
+                if reservation is None and approved_manifest_id is None:
+                    blocked_message = "Resetul live necesita un manifest verificat si aprobat."
+                elif reservation is None:
+                    approved = await conn.fetchrow(
+                        """
+                        SELECT id
+                        FROM grile_monthly_manifests
+                        WHERE id = $1
+                          AND closing_month = $2
+                          AND operation = 'archive'
+                          AND status = 'approved'
+                          AND error_count = 0
+                          AND processed_store_count = expected_store_count
+                          AND processed_agent_count = expected_agent_count
+                        FOR SHARE
+                        """,
+                        approved_manifest_id,
+                        month,
+                    )
+                    if approved is None:
+                        blocked_message = "Manifestul selectat nu este verificat si aprobat pentru luna ceruta."
+
                 uncertain = await conn.fetchrow(
                     """
                     SELECT site_code, company, store
@@ -131,35 +200,31 @@ async def reserve(
                     """,
                     month,
                 )
-                if uncertain is not None:
+                if reservation is None and uncertain is not None:
                     blocked_message = (
                         "Resetul live nu poate fi reluat automat: exista checkpoint "
                         f"uncertain pentru {uncertain['company']}/{uncertain['store']} "
                         f"({uncertain['site_code']}). Verifica manual in Google Sheets."
                     )
 
-                if blocked_message is None:
-                    completed = await conn.fetchrow(
-                        f"""
-                        SELECT {_OPERATION_COLUMNS}
-                        FROM grile_monthly_operations
-                        WHERE closing_month = $1
-                          AND op = 'reset'
-                          AND dry_run = false
-                          AND status = 'completed'
-                          AND COALESCE(only_filter, '') = COALESCE($2, '')
-                        ORDER BY finished_at DESC NULLS LAST, created_at DESC
+                if reservation is None and blocked_message is None:
+                    legacy_partial = await conn.fetchrow(
+                        """
+                        SELECT i.site_code
+                        FROM grile_monthly_reset_items i
+                        JOIN grile_monthly_operations o ON o.id = i.operation_id
+                        WHERE i.closing_month = $1
+                          AND i.status = 'completed'
+                          AND o.status <> 'completed'
+                        ORDER BY i.id
                         LIMIT 1
                         """,
                         month,
-                        normalized_only,
                     )
-                    if completed is not None:
-                        reservation = MonthlyOperationReservation(
-                            status="already_completed",
-                            operation_id=int(completed["id"]),
-                            job_id=completed["job_id"],
-                            operation=operation_to_dict(completed),
+                    if legacy_partial is not None:
+                        blocked_message = (
+                            "Resetul live nu poate continua automat: exista un efect Google "
+                            "partial dintr-o operatie anterioara. Verifica si reconciliaza manual."
                         )
 
             if reservation is None and blocked_message is None:
@@ -167,9 +232,9 @@ async def reserve(
                     """
                     INSERT INTO grile_monthly_operations (
                         op, closing_month, only_filter, dry_run,
-                        status, triggered_by_email, heartbeat_at
+                        status, requested_by_sub, approved_manifest_id, heartbeat_at
                     )
-                    VALUES ($1, $2, $3, $4, 'queued', $5, now())
+                    VALUES ($1, $2, $3, $4, 'queued', $5, $6, now())
                     ON CONFLICT (closing_month)
                         WHERE status IN ('queued', 'running')
                     DO NOTHING
@@ -179,8 +244,23 @@ async def reserve(
                     month,
                     normalized_only,
                     dry_run,
-                    triggered_by_email,
+                    requested_by_sub,
+                    approved_manifest_id if op == "reset" and not dry_run else None,
                 )
+                if operation_id is not None:
+                    await conn.execute(
+                        """
+                        INSERT INTO grile_monthly_manifests (
+                            operation_id, closing_month, operation, status,
+                            requested_by_sub
+                        )
+                        VALUES ($1, $2, $3, 'building', $4)
+                        """,
+                        operation_id,
+                        month,
+                        op,
+                        requested_by_sub,
+                    )
                 if operation_id is None:
                     active = await conn.fetchrow(
                         f"""
@@ -305,6 +385,110 @@ async def finish(
     return row is not None
 
 
+async def finish_reset_success(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    result: dict[str, Any],
+    reset_manifest: dict[str, Any],
+    manifest_id: int,
+    expected_manifest_sha256: str,
+    consumed_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    expected = reset_manifest.get("expected") or {}
+    processed = reset_manifest.get("processed") or {}
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            reset_record = await conn.fetchrow(
+                f"""
+                UPDATE grile_monthly_manifests
+                SET status = $2,
+                    expected_store_count = $3,
+                    processed_store_count = $4,
+                    expected_agent_count = $5,
+                    processed_agent_count = $6,
+                    error_count = $7,
+                    control_totals = $8::jsonb,
+                    artifacts = $9::jsonb,
+                    source_backups = $10::jsonb,
+                    manifest = $11::jsonb,
+                    manifest_sha256 = $12,
+                    error_code = NULL,
+                    verified_at = now(),
+                    updated_at = now()
+                WHERE operation_id = $1
+                  AND operation = 'reset'
+                  AND status = 'building'
+                RETURNING {_MANIFEST_COLUMNS}
+                """,
+                operation_id,
+                reset_manifest.get("status"),
+                int(expected.get("stores", 0)),
+                int(processed.get("stores", 0)),
+                int(expected.get("agents", 0)),
+                int(processed.get("agents", 0)),
+                int(reset_manifest.get("error_count", 0)),
+                json.dumps(reset_manifest.get("control_totals", {}), ensure_ascii=False),
+                json.dumps(reset_manifest.get("artifacts", []), ensure_ascii=False),
+                json.dumps(reset_manifest.get("source_backups", []), ensure_ascii=False),
+                json.dumps(reset_manifest, ensure_ascii=False),
+                reset_manifest.get("manifest_sha256"),
+            )
+            if reset_record is None:
+                raise RuntimeError("Reset manifest lost its building lease")
+            operation = await conn.fetchrow(
+                """
+                UPDATE grile_monthly_operations
+                SET status = 'completed',
+                    result = $2::jsonb,
+                    error_message = NULL,
+                    finished_at = now(),
+                    heartbeat_at = now()
+                WHERE id = $1
+                  AND op = 'reset'
+                  AND dry_run = false
+                  AND status = 'running'
+                  AND approved_manifest_id = $3
+                RETURNING id
+                """,
+                operation_id,
+                json.dumps(result, ensure_ascii=False),
+                manifest_id,
+            )
+            if operation is None:
+                raise RuntimeError("Reset operation lost its completion lease")
+            consumed = await conn.fetchrow(
+                """
+                UPDATE grile_monthly_manifests
+                SET status = 'consumed',
+                    consumed_at = now(),
+                    manifest = $4::jsonb,
+                    manifest_sha256 = $5,
+                    updated_at = now()
+                WHERE id = $1
+                  AND status = 'approved'
+                  AND manifest_sha256 = $2
+                  AND closing_month = (
+                      SELECT closing_month
+                      FROM grile_monthly_operations
+                      WHERE id = $3
+                  )
+                RETURNING id
+                """,
+                manifest_id,
+                expected_manifest_sha256,
+                operation_id,
+                json.dumps(consumed_manifest, ensure_ascii=False),
+                consumed_manifest.get("manifest_sha256"),
+            )
+            if consumed is None:
+                raise RuntimeError("Approved manifest lost its consumption lease")
+    converted = manifest_to_dict(reset_record)
+    if converted is None:
+        raise RuntimeError("Reset manifest disappeared after commit")
+    return converted
+
+
 async def fail(
     pool: asyncpg.Pool,
     operation_id: int,
@@ -326,6 +510,143 @@ async def fail(
             error_message,
         )
     return row is not None
+
+
+async def get_manifest(
+    pool: asyncpg.Pool,
+    manifest_id: int,
+) -> dict[str, Any] | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"SELECT {_MANIFEST_COLUMNS} FROM grile_monthly_manifests WHERE id = $1",
+            manifest_id,
+        )
+    return manifest_to_dict(row)
+
+
+async def get_operation_manifest(
+    pool: asyncpg.Pool,
+    operation_id: int,
+) -> dict[str, Any] | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"SELECT {_MANIFEST_COLUMNS} FROM grile_monthly_manifests WHERE operation_id = $1",
+            operation_id,
+        )
+    return manifest_to_dict(row)
+
+
+async def get_latest_manifest(
+    pool: asyncpg.Pool,
+    *,
+    closing_month: str,
+    operation: str | None = None,
+    statuses: Sequence[str] = ("verified", "approved", "consumed"),
+) -> dict[str, Any] | None:
+    if not statuses:
+        return None
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""
+            SELECT {_MANIFEST_COLUMNS}
+            FROM grile_monthly_manifests
+            WHERE closing_month = $1
+              AND ($2::text IS NULL OR operation = $2)
+              AND status = ANY($3::text[])
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            closing_month,
+            operation,
+            list(statuses),
+        )
+    return manifest_to_dict(row)
+
+
+async def persist_manifest_result(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    manifest: dict[str, Any],
+    error_code: str | None = None,
+) -> dict[str, Any]:
+    expected = manifest.get("expected") or {}
+    processed = manifest.get("processed") or {}
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""
+            UPDATE grile_monthly_manifests
+            SET status = $2,
+                expected_store_count = $3,
+                processed_store_count = $4,
+                expected_agent_count = $5,
+                processed_agent_count = $6,
+                error_count = $7,
+                control_totals = $8::jsonb,
+                artifacts = $9::jsonb,
+                source_backups = $10::jsonb,
+                manifest = $11::jsonb,
+                manifest_sha256 = $12,
+                error_code = $13,
+                verified_at = CASE WHEN $2 IN ('verified', 'approved') THEN now() ELSE NULL END,
+                updated_at = now()
+            WHERE operation_id = $1 AND status = 'building'
+            RETURNING {_MANIFEST_COLUMNS}
+            """,
+            operation_id,
+            manifest.get("status", "failed"),
+            int(expected.get("stores", 0)),
+            int(processed.get("stores", 0)),
+            int(expected.get("agents", 0)),
+            int(processed.get("agents", 0)),
+            int(manifest.get("error_count", 0)),
+            json.dumps(manifest.get("control_totals", {}), ensure_ascii=False),
+            json.dumps(manifest.get("artifacts", []), ensure_ascii=False),
+            json.dumps(manifest.get("source_backups", []), ensure_ascii=False),
+            json.dumps(manifest, ensure_ascii=False),
+            manifest.get("manifest_sha256"),
+            error_code,
+        )
+    converted = manifest_to_dict(row)
+    if converted is None:
+        raise RuntimeError("Monthly manifest lost its building lease")
+    return converted
+
+
+async def approve_manifest(
+    pool: asyncpg.Pool,
+    *,
+    manifest_id: int,
+    expected_sha256: str,
+    approved_by_sub: str,
+    approved_manifest: dict[str, Any],
+) -> dict[str, Any] | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""
+            UPDATE grile_monthly_manifests
+            SET status = 'approved',
+                approved_by_sub = $3,
+                approved_at = now(),
+                manifest = $4::jsonb,
+                manifest_sha256 = $5,
+                updated_at = now()
+            WHERE id = $1
+              AND operation = 'archive'
+              AND status = 'verified'
+              AND manifest_sha256 = $2
+              AND error_count = 0
+              AND processed_store_count = expected_store_count
+              AND processed_agent_count = expected_agent_count
+            RETURNING {_MANIFEST_COLUMNS}
+            """,
+            manifest_id,
+            expected_sha256,
+            approved_by_sub,
+            json.dumps(approved_manifest, ensure_ascii=False),
+            approved_manifest.get("manifest_sha256"),
+        )
+    return manifest_to_dict(row)
 
 
 async def ensure_reset_items(
@@ -404,6 +725,66 @@ async def claim_reset_item(
             """,
             operation_id,
             site_code,
+        )
+    return row is not None
+
+
+async def record_reset_item_backup(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    site_code: str,
+    backup_path: str,
+    backup_sha256: str,
+) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE grile_monthly_reset_items
+            SET backup_path = $3,
+                backup_sha256 = $4,
+                updated_at = now()
+            WHERE operation_id = $1
+              AND site_code = $2
+              AND status = 'pending'
+              AND backup_path IS NULL
+              AND backup_sha256 IS NULL
+            RETURNING id
+            """,
+            operation_id,
+            site_code,
+            backup_path,
+            backup_sha256,
+        )
+    return row is not None
+
+
+async def record_reset_item_rollback(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    site_code: str,
+    restored: bool,
+    error_message: str | None = None,
+) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE grile_monthly_reset_items
+            SET status = 'error',
+                rollback_status = CASE WHEN $3 THEN 'restored' ELSE 'failed' END,
+                restored_at = CASE WHEN $3 THEN now() ELSE NULL END,
+                error_message = $4,
+                updated_at = now()
+            WHERE operation_id = $1
+              AND site_code = $2
+              AND status IN ('running', 'completed', 'error')
+            RETURNING id
+            """,
+            operation_id,
+            site_code,
+            restored,
+            error_message,
         )
     return row is not None
 

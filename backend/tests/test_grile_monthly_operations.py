@@ -10,6 +10,11 @@ import pytest
 
 import services.grile_monthly as grile_monthly
 from db.connection import close_db_pool, get_pool
+from repositories.grile_monthly_operations import (
+    approve_manifest,
+    finish_reset_success,
+    persist_manifest_result,
+)
 from services.grile_monthly import (
     GrileMonthlyRetryBlockedError,
     StoreEntry,
@@ -55,7 +60,7 @@ async def test_monthly_operation_reservation_serializes_same_month() -> None:
                 month=month,
                 only=None,
                 dry_run=False,
-                triggered_by_email="first@example.com",
+                requested_by_sub="subject-first",
             ),
             reserve_monthly_operation(
                 pool,
@@ -63,7 +68,7 @@ async def test_monthly_operation_reservation_serializes_same_month() -> None:
                 month=month,
                 only=None,
                 dry_run=False,
-                triggered_by_email="second@example.com",
+                requested_by_sub="subject-second",
             ),
         )
 
@@ -90,7 +95,7 @@ async def test_monthly_operation_reservation_serializes_same_month() -> None:
             month=month,
             only=None,
             dry_run=False,
-            triggered_by_email="third@example.com",
+            requested_by_sub="subject-third",
         )
         assert next_reservation.status == "enqueued"
         assert next_reservation.operation_id != active.operation_id
@@ -139,7 +144,7 @@ async def test_live_reset_retry_blocks_after_uncertain_stale_checkpoint() -> Non
                 month=month,
                 only=None,
                 dry_run=False,
-                triggered_by_email="admin@example.com",
+                requested_by_sub="subject-admin",
             )
 
         async with pool.acquire() as conn:
@@ -188,7 +193,7 @@ async def test_completed_live_reset_is_idempotent_for_same_scope() -> None:
             month=month,
             only="  Store 1  ",
             dry_run=False,
-            triggered_by_email="admin@example.com",
+            requested_by_sub="subject-admin",
         )
 
         assert reservation.status == "already_completed"
@@ -258,112 +263,76 @@ async def test_reset_checkpoint_claim_and_finish_are_compare_and_set() -> None:
         await close_db_pool()
 
 
-async def test_live_reset_checkpoint_skips_already_completed_store(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_live_reset_reservation_requires_and_links_approved_manifest() -> None:
     pool = await get_pool()
     month = "2099-07"
     await _cleanup(month)
-    calls: list[tuple[str, dict[str, Any]]] = []
-    entries = [
-        StoreEntry("Mobiup", "Store 1", "sheet-1", "SITE01", "Manager"),
-        StoreEntry("Mobiup", "Store 2", "sheet-2", "SITE02", "Manager"),
-    ]
-
-    async def load_entries(_: Any, only: str | None = None) -> list[StoreEntry]:
-        return entries
-
-    class FakeRequest:
-        def execute(self) -> dict[str, Any]:
-            return {}
-
-    class FakeValues:
-        def batchClear(self, *, spreadsheetId: str, body: dict[str, Any]) -> FakeRequest:  # noqa: N802
-            calls.append((spreadsheetId, body))
-            return FakeRequest()
-
-    class FakeSpreadsheets:
-        def values(self) -> FakeValues:
-            return FakeValues()
-
-    class FakeSheets:
-        def spreadsheets(self) -> FakeSpreadsheets:
-            return FakeSpreadsheets()
-
-    monkeypatch.setattr(grile_monthly, "OUTPUTS_DIR", tmp_path)
-    monkeypatch.setattr(grile_monthly, "load_entries", load_entries)
-    monkeypatch.setattr(grile_monthly, "build_google_services", lambda: (FakeSheets(), None))
-    monkeypatch.setattr(grile_monthly, "assert_final_export_exists", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(grile_monthly, "assert_archive_complete", lambda *_args, **_kwargs: None)
-
     try:
+        with pytest.raises(grile_monthly.GrileMonthlyRetryBlockedError, match="manifest"):
+            await reserve_monthly_operation(
+                pool,
+                op="reset",
+                month=month,
+                only=None,
+                dry_run=False,
+                requested_by_sub="reset-subject",
+            )
+
         async with pool.acquire() as conn:
-            first_operation_id = await conn.fetchval(
+            archive_operation_id = await conn.fetchval(
                 """
-                INSERT INTO grile_monthly_operations (op, closing_month, dry_run, status)
-                VALUES ('reset', $1, false, 'running')
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, dry_run, status, requested_by_sub
+                )
+                VALUES ('archive', $1, false, 'completed', 'archive-subject')
                 RETURNING id
                 """,
                 month,
             )
-
-        await reset_month(
-            pool,
-            closing_month="Iulie 2099",
-            next_month="August 2099",
-            dry_run=False,
-            operation_id=first_operation_id,
-            closing_month_key=month,
-            next_month_key="2099-08",
-        )
-        assert [call[0] for call in calls] == ["sheet-1", "sheet-2"]
-
-        async with pool.acquire() as conn:
-            await conn.execute(
+            approved_manifest_id = await conn.fetchval(
                 """
-                UPDATE grile_monthly_operations
-                SET status = 'completed', finished_at = now()
-                WHERE id = $1
-                """,
-                first_operation_id,
-            )
-            second_operation_id = await conn.fetchval(
-                """
-                INSERT INTO grile_monthly_operations (op, closing_month, dry_run, status)
-                VALUES ('reset', $1, false, 'running')
+                INSERT INTO grile_monthly_manifests (
+                    operation_id, closing_month, operation, status,
+                    expected_store_count, processed_store_count,
+                    expected_agent_count, processed_agent_count, error_count,
+                    requested_by_sub, approved_by_sub, approved_at
+                )
+                VALUES ($1, $2, 'archive', 'approved', 2, 2, 3, 3, 0,
+                        'archive-subject', 'approval-subject', now())
                 RETURNING id
                 """,
+                archive_operation_id,
                 month,
             )
 
-        await reset_month(
+        reservation = await reserve_monthly_operation(
             pool,
-            closing_month="Iulie 2099",
-            next_month="August 2099",
+            op="reset",
+            month=month,
+            only=None,
             dry_run=False,
-            operation_id=second_operation_id,
-            closing_month_key=month,
-            next_month_key="2099-08",
+            requested_by_sub="reset-subject",
+            approved_manifest_id=approved_manifest_id,
         )
-        assert [call[0] for call in calls] == ["sheet-1", "sheet-2"]
+        assert reservation.status == "enqueued"
 
         async with pool.acquire() as conn:
-            statuses = await conn.fetch(
+            row = await conn.fetchrow(
                 """
-                SELECT operation_id, site_code, status
-                FROM grile_monthly_reset_items
-                WHERE closing_month = $1
-                ORDER BY operation_id, site_code
+                SELECT o.requested_by_sub, o.approved_manifest_id,
+                       m.status AS manifest_status, m.requested_by_sub AS manifest_subject
+                FROM grile_monthly_operations o
+                JOIN grile_monthly_manifests m ON m.operation_id = o.id
+                WHERE o.id = $1
                 """,
-                month,
+                reservation.operation_id,
             )
-        assert [row["status"] for row in statuses] == [
-            "completed",
-            "completed",
-            "skipped",
-            "skipped",
-        ]
+        assert dict(row) == {
+            "requested_by_sub": "reset-subject",
+            "approved_manifest_id": approved_manifest_id,
+            "manifest_status": "building",
+            "manifest_subject": "reset-subject",
+        }
     finally:
         await _cleanup(month)
         await close_db_pool()
@@ -541,8 +510,170 @@ async def test_h11_direct_execution_without_operation_id_runs_once(
 
     pool = object()
     monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=pool))
-    for name in ("finalize_month", "archive_month", "reset_month"):
-        monkeypatch.setattr(grile_monthly, name, AsyncMock())
+    execution = grile_monthly.MonthlyExecution(Path("unused"), {"status": "verified"})
+    implementations = {
+        "finalize": "_finalize_month_execution",
+        "archive": "_archive_month_execution",
+        "reset": "_reset_month_execution",
+    }
+    for name in implementations.values():
+        monkeypatch.setattr(grile_monthly, name, AsyncMock(return_value=execution))
     result = await grile_monthly.run_monthly_op(op=op, month="2099-03", dry_run=True)
     assert result["status"] == "success"
-    getattr(grile_monthly, f"{op}_month").assert_awaited_once()
+    getattr(grile_monthly, implementations[op]).assert_awaited_once()
+
+
+async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic() -> None:
+    pool = await get_pool()
+    month = "2099-10"
+    await _cleanup(month)
+    try:
+        archive_reservation = await reserve_monthly_operation(
+            pool,
+            op="archive",
+            month=month,
+            only=None,
+            dry_run=False,
+            requested_by_sub="request-subject",
+        )
+        archive_start = await start_monthly_operation(pool, archive_reservation.operation_id)
+        assert archive_start.status == "started"
+        archive_manifest = grile_monthly.base_manifest(
+            month=month,
+            operation="archive",
+            requested_by_sub="request-subject",
+            expected_stores=2,
+            expected_agents=3,
+            processed_stores=2,
+            processed_agents=3,
+            control_totals={"salary_components": "1.00"},
+            artifacts=[
+                {
+                    "kind": "archive_zip",
+                    "path": "synthetic/archive.zip",
+                    "bytes": 1,
+                    "sha256": "a" * 64,
+                }
+            ],
+        )
+        persisted_archive = await persist_manifest_result(
+            pool,
+            operation_id=archive_reservation.operation_id,
+            manifest=archive_manifest,
+        )
+        assert persisted_archive["requested_by_sub"] == "request-subject"
+        assert await finish_monthly_operation(
+            pool,
+            archive_reservation.operation_id,
+            result={"status": "success"},
+        )
+
+        approved_payload = dict(archive_manifest)
+        approved_payload["status"] = "approved"
+        approved_payload["approved_by_sub"] = "approval-subject"
+        approved_payload["approved_at"] = grile_monthly.utc_now()
+        approved_payload = grile_monthly.finalize_manifest(approved_payload)
+        approved = await approve_manifest(
+            pool,
+            manifest_id=int(persisted_archive["id"]),
+            expected_sha256=archive_manifest["manifest_sha256"],
+            approved_by_sub="approval-subject",
+            approved_manifest=approved_payload,
+        )
+        assert approved is not None
+        assert approved["status"] == "approved"
+        assert approved["approved_by_sub"] == "approval-subject"
+
+        reset_reservation = await reserve_monthly_operation(
+            pool,
+            op="reset",
+            month=month,
+            only=None,
+            dry_run=False,
+            requested_by_sub="reset-subject",
+            approved_manifest_id=int(persisted_archive["id"]),
+        )
+        reset_start = await start_monthly_operation(pool, reset_reservation.operation_id)
+        assert reset_start.status == "started"
+        reset_manifest = grile_monthly.base_manifest(
+            month=month,
+            operation="reset",
+            requested_by_sub="reset-subject",
+            expected_stores=2,
+            expected_agents=3,
+            processed_stores=2,
+            processed_agents=3,
+            control_totals={"salary_components": "1.00"},
+            artifacts=[
+                {
+                    "kind": "reset_report",
+                    "path": "synthetic/reset.json",
+                    "bytes": 1,
+                    "sha256": "b" * 64,
+                }
+            ],
+        )
+        consumed_payload = dict(approved_payload)
+        consumed_payload["status"] = "consumed"
+        consumed_payload["consumed_at"] = grile_monthly.utc_now()
+        consumed_payload = grile_monthly.finalize_manifest(consumed_payload)
+        with pytest.raises(RuntimeError, match="consumption lease"):
+            await finish_reset_success(
+                pool,
+                reset_reservation.operation_id,
+                result={"status": "success"},
+                reset_manifest=reset_manifest,
+                manifest_id=int(persisted_archive["id"]),
+                expected_manifest_sha256="0" * 64,
+                consumed_manifest=consumed_payload,
+            )
+        async with pool.acquire() as conn:
+            state_after_failed_commit = await conn.fetchrow(
+                """
+                SELECT o.status AS operation_status, m.status AS manifest_status
+                FROM grile_monthly_operations o
+                JOIN grile_monthly_manifests m ON m.operation_id = o.id
+                WHERE o.id = $1
+                """,
+                reset_reservation.operation_id,
+            )
+        assert dict(state_after_failed_commit) == {
+            "operation_status": "running",
+            "manifest_status": "building",
+        }
+        committed_reset = await finish_reset_success(
+            pool,
+            reset_reservation.operation_id,
+            result={"status": "success"},
+            reset_manifest=reset_manifest,
+            manifest_id=int(persisted_archive["id"]),
+            expected_manifest_sha256=approved_payload["manifest_sha256"],
+            consumed_manifest=consumed_payload,
+        )
+        assert committed_reset["status"] == "verified"
+
+        async with pool.acquire() as conn:
+            state = await conn.fetchrow(
+                """
+                SELECT o.status AS operation_status,
+                       approved.status AS approved_status,
+                       approved.manifest->>'status' AS approved_json_status,
+                       reset_manifest.status AS reset_manifest_status
+                FROM grile_monthly_operations o
+                JOIN grile_monthly_manifests approved
+                  ON approved.id = o.approved_manifest_id
+                JOIN grile_monthly_manifests reset_manifest
+                  ON reset_manifest.operation_id = o.id
+                WHERE o.id = $1
+                """,
+                reset_reservation.operation_id,
+            )
+        assert dict(state) == {
+            "operation_status": "completed",
+            "approved_status": "consumed",
+            "approved_json_status": "consumed",
+            "reset_manifest_status": "verified",
+        }
+    finally:
+        await _cleanup(month)
+        await close_db_pool()

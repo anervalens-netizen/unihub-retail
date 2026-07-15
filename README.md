@@ -206,7 +206,10 @@ Tabul principal Agenti include `Prezentare Generala`, `Grile` si
 - **Grile** — verificarea grilelor salariale permanente, antet desktop sticky,
   grupuri manager/Team Leader memorate local, statusul pe magazine
   si operatiunile lunare controlate. Operatiunile privilegiate raman autorizate
-  separat in backend.
+  separat in backend. Finalizarea si arhivarea necesita coverage complet si
+  artefacte verificate SHA-256; resetul live este disponibil numai dupa
+  aprobarea manifestului arhivei si pastreaza snapshoturi recuperabile pentru
+  rollback verificat.
 
 - **Analiza agenti** — evaluare agenti pe agentii activi curent, cu alocarea
   curenta de firma/magazin/manager. Scorul 0-100 (`/api/agents/evaluation-v2`)
