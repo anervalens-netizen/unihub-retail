@@ -83,6 +83,15 @@ RO_MONTHS = [
 ]
 
 VALID_OPS = {"finalize", "archive", "reset"}
+MANIFEST_ATTEMPT_STATUSES = (
+    "building",
+    "failed",
+    "verified",
+    "approved",
+    "consumed",
+    "rolled_back",
+    "uncertain",
+)
 VALID_DOWNLOADS = {"final": "final", "archive": "archive"}
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 SCOPES = [
@@ -1326,10 +1335,14 @@ async def _archive_month_execution(
         pool,
         closing_month=month_key,
         operation="finalize",
-        statuses=("verified",),
+        statuses=MANIFEST_ATTEMPT_STATUSES,
     )
     final_manifest = final_record.get("manifest") if final_record else None
-    if not isinstance(final_manifest, dict):
+    if (
+        final_record is None
+        or final_record.get("status") != "verified"
+        or not isinstance(final_manifest, dict)
+    ):
         failed = base_manifest(
             month=month_key,
             operation="archive",
@@ -1751,15 +1764,22 @@ async def _reset_month_execution(
         )
         raise MonthlyManifestError("partial_live_reset_forbidden", "Partial live reset is forbidden", failed)
 
+    latest_archive = await fetch_latest_monthly_manifest(
+        pool,
+        closing_month=closing_month_key,
+        operation="archive",
+        statuses=MANIFEST_ATTEMPT_STATUSES,
+    )
     if approved_manifest_id is not None:
         prerequisite = await fetch_monthly_manifest(pool, approved_manifest_id)
+        if (
+            latest_archive is None
+            or prerequisite is None
+            or latest_archive.get("id") != prerequisite.get("id")
+        ):
+            prerequisite = None
     else:
-        prerequisite = await fetch_latest_monthly_manifest(
-            pool,
-            closing_month=closing_month_key,
-            operation="archive",
-            statuses=("approved", "verified"),
-        )
+        prerequisite = latest_archive
     archive_manifest = prerequisite.get("manifest") if prerequisite else None
     allowed_statuses = {"approved"} if not dry_run else {"verified", "approved"}
     if (

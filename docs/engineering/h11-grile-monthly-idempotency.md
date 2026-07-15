@@ -32,14 +32,18 @@ operation. The staged workbook is structurally re-read before atomic promotion,
 so a partial artifact never receives the official filename and an existing
 official artifact is preserved as a revision.
 
-Archive requires the verified finalization manifest and the exact active sheet
-registry. Every source workbook must contain `Grila` and `Pontaj`; source files,
+Archive requires the latest finalization attempt for the month to be verified;
+a newer failed or still-building attempt blocks reuse of an older verified
+manifest. It also requires the exact active sheet registry. Every source
+workbook must contain `Grila` and `Pontaj`; source files,
 the aggregate ZIP and manager ZIPs are hashed before the staged archive
 directory is promoted. Approval re-verifies the manifest and every artifact,
 then persists `approved_by_sub`. The public payload never returns either OIDC
 subject.
 
-Live reset requires the approved archive manifest ID and an exact registry,
+Live reset requires the approved archive manifest ID to remain the latest
+archive attempt for the month; any newer archive attempt, regardless of state,
+invalidates the older approval. It also requires an exact registry,
 sheet-ID and source-backup match. Before the first clear, all editable ranges
 are captured with formulas, written mode `0600`, hashed and checkpointed. Every
 clear is read back. Any Google, checkpoint or output failure restores all
@@ -61,7 +65,12 @@ operation ends `failed` with a `rolled_back` or `uncertain` manifest.
 - `already_failed`;
 - `not_found`.
 
-Start uses `UPDATE ... WHERE id = $1 AND status = 'queued' RETURNING *`; only the worker receiving `started` may execute business work. A failed compare-and-set reads the current row without changing it.
+Start uses a guarded `UPDATE ... WHERE status = 'queued' RETURNING *`; only a
+reservation with a nonblank persisted OIDC subject and a matching building
+manifest may become `running`. A queued legacy reservation without that
+contract is atomically moved to `failed` before business or Google work. Only
+the worker receiving `started` may execute business work; other compare-and-set
+outcomes read the current terminal or active state without overwriting it.
 
 Allowed transitions are `queued -> running`, `running -> completed|failed`, and `queued -> failed` when queue publication fails. `finish_monthly_operation()` and `fail_monthly_operation()` return whether their guarded transition applied. Terminal rows cannot be overwritten by late workers or enqueue error handling.
 

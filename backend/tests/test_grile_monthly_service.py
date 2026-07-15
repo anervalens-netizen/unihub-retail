@@ -1443,6 +1443,22 @@ async def test_archive_requires_full_verified_finalization(
         )
     assert exc_info.value.code == "verified_finalization_missing"
 
+    latest_attempt = AsyncMock(
+        return_value={"id": 2, "status": "failed", "manifest": {}}
+    )
+    monkeypatch.setattr(grile, "fetch_latest_monthly_manifest", latest_attempt)
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._archive_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            month_key="2026-06",
+            requested_by_sub="subject-1",
+            operation_id=2,
+        )
+    assert exc_info.value.code == "verified_finalization_missing"
+    assert latest_attempt.await_args is not None
+    assert "failed" in latest_attempt.await_args.kwargs["statuses"]
+
     patch_verified_final_manifest(monkeypatch, tmp_path, stores=1, agents=1)
     duplicate = [entry(), entry(store="Duplicate")]
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=duplicate))
@@ -1621,6 +1637,31 @@ async def test_reset_rejects_missing_approval_partial_and_registry_drift(
             operation_id=1,
             approved_manifest_id=None,
             dry_run=True,
+        )
+    assert exc_info.value.code == "verified_archive_required"
+
+    approved = patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    monkeypatch.setattr(
+        grile,
+        "fetch_latest_monthly_manifest",
+        AsyncMock(return_value={"id": 32, "status": "failed", "manifest": {}}),
+    )
+    monkeypatch.setattr(
+        grile,
+        "fetch_monthly_manifest",
+        AsyncMock(return_value=approved),
+    )
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._reset_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            requested_by_sub="subject-1",
+            operation_id=1,
+            approved_manifest_id=31,
+            dry_run=False,
         )
     assert exc_info.value.code == "verified_archive_required"
 
