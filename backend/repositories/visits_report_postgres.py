@@ -17,8 +17,11 @@ def _wire_row(row: Any) -> dict[str, Any]:
     return {key: _wire_value(value) for key, value in dict(row).items()}
 
 
-class VisitsReportPostgresRepository(VisitsReportRepository):
+class VisitsReportPostgresRepository:
     """Async read repository for FieldOps-owned PostgreSQL visits."""
+
+    def __init__(self, *, images_dir=None) -> None:
+        self._report_helpers = VisitsReportRepository(images_dir=images_dir)
 
     async def query_report(
         self,
@@ -48,7 +51,7 @@ class VisitsReportPostgresRepository(VisitsReportRepository):
                 *params,
             )
         raw_rows = [_wire_row(record) for record in records]
-        rows = self._aggregate_report_rows(raw_rows, store_metadata)
+        rows = self._report_helpers._aggregate_report_rows(raw_rows, store_metadata)
         total = len(raw_rows)
         completion_values = [float(row.get("completion_pct") or 0) for row in raw_rows]
         return {
@@ -89,7 +92,7 @@ class VisitsReportPostgresRepository(VisitsReportRepository):
                 *params,
             )
         return [
-            self._enrich_visit_row(_wire_row(record), store_metadata)
+            self._report_helpers._enrich_visit_row(_wire_row(record), store_metadata)
             for record in records
         ]
 

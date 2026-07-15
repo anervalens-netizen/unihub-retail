@@ -42,7 +42,11 @@ async def test_sqlite_primary_is_returned_while_postgres_matches(
     postgres_repo = MagicMock()
     postgres_repo.query_report = AsyncMock(return_value=result)
     service = VisitsReportService(sqlite_repo, postgres_repo)
-    service._resolve_store_scope = AsyncMock(return_value=({}, None))
+    monkeypatch.setattr(
+        service,
+        "_resolve_store_scope",
+        AsyncMock(return_value=({}, None)),
+    )
     monkeypatch.setattr(visits_service_module, "get_visits_read_source", lambda: "sqlite")
     monkeypatch.setattr(
         visits_service_module,
@@ -67,7 +71,11 @@ async def test_postgres_primary_does_not_require_sqlite(
     postgres_repo = MagicMock()
     postgres_repo.query_tree = AsyncMock(return_value=[])
     service = VisitsReportService(sqlite_repo, postgres_repo)
-    service._resolve_store_scope = AsyncMock(return_value=({}, None))
+    monkeypatch.setattr(
+        service,
+        "_resolve_store_scope",
+        AsyncMock(return_value=({}, None)),
+    )
     monkeypatch.setattr(visits_service_module, "get_visits_read_source", lambda: "postgres")
     monkeypatch.setattr(
         visits_service_module,
@@ -91,7 +99,11 @@ async def test_shadow_failure_never_breaks_sqlite_primary(
     postgres_repo = MagicMock()
     postgres_repo.query_tree = AsyncMock(side_effect=RuntimeError("pg unavailable"))
     service = VisitsReportService(sqlite_repo, postgres_repo)
-    service._resolve_store_scope = AsyncMock(return_value=({}, None))
+    monkeypatch.setattr(
+        service,
+        "_resolve_store_scope",
+        AsyncMock(return_value=({}, None)),
+    )
     monkeypatch.setattr(visits_service_module, "get_visits_read_source", lambda: "sqlite")
     monkeypatch.setattr(
         visits_service_module,

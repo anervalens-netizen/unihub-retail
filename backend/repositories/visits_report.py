@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -176,7 +176,7 @@ class VisitsReportRepository:
 
     def _aggregate_report_rows(
         self,
-        raw_rows: list[Mapping[str, Any]],
+        raw_rows: Sequence[Mapping[str, Any]],
         store_metadata: dict[str, dict[str, str]],
     ) -> list[dict[str, Any]]:
         grouped: dict[tuple[str, str | None, str | None, str | None], dict[str, Any]] = {}
