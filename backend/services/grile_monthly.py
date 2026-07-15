@@ -500,7 +500,7 @@ async def get_latest_monthly_manifest(
         pool,
         closing_month=month,
         operation="archive",
-        statuses=("verified", "approved", "consumed"),
+        statuses=MANIFEST_ATTEMPT_STATUSES,
     )
 
 

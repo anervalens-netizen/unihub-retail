@@ -1222,6 +1222,8 @@ async def test_repository_delegates_and_invalid_reservation(
     assert await grile.finish_monthly_operation(pool, 1, result={"ok": True}) is True
     assert await grile.get_monthly_manifest(pool, 1) == {"id": 1}
     assert await grile.get_latest_monthly_manifest(pool, month="2026-06") == {"id": 2}
+    assert latest_manifest.await_args is not None
+    assert latest_manifest.await_args.kwargs["statuses"] == grile.MANIFEST_ATTEMPT_STATUSES
     assert await grile.record_reset_item_backup(
         pool,
         operation_id=1,
