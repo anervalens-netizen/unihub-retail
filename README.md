@@ -1,7 +1,11 @@
 # UniHub
 
-**Versiune curenta:** `v2.0.0` — detalii in
+**Ultimul release publicat:** `v2.0.0` — detalii in
 [`docs/releases/v2.0.0.md`](docs/releases/v2.0.0.md).
+
+**Candidat pregatit, nepublicat:** `v2.0.1` — integritate si securitate; vezi
+[`docs/releases/v2.0.1.md`](docs/releases/v2.0.1.md). Tagul si deployul se fac
+numai dupa environment approval, verificarea artefactului, acceptanta si rollback.
 
 UniHub este o aplicatie de operare comerciala pentru retail, construita pentru
 monitorizarea vanzarilor, targetelor, produselor Focus, promotiilor, fiselor de
@@ -600,12 +604,20 @@ backend/venv/bin/python backend/scripts/import_salary_records.py \
 La import:
 
 1. se citeste fisierul Excel
-2. se valideaza si normalizeaza coloanele
-3. se creeaza un snapshot de import
-4. se inlocuieste snapshot-ul completed anterior pentru luna respectiva
-5. se insereaza liniile brute in `sales_transactions`
-6. se reconstruieste reporting-ul pentru luna respectiva
-7. snapshot-ul devine `completed`
+2. se resping antete/randuri duplicate, valori numerice invalide, identificatori
+   lipsa si metadate contradictorii
+3. se creeaza rezervarea unica a snapshotului pentru luna identificata
+4. se persista coverage-ul si diff-ul agregat fata de magazinele active si
+   snapshotul anterior
+5. se actualizeaza numai metadatele magazinelor prezente; absenta nu scrie
+   niciodata `stores.is_active`
+6. se inlocuieste atomic snapshotul lunii, se insereaza liniile brute si se
+   reconstruieste reporting-ul
+7. snapshotul devine `completed`; esecul lasa operatia `failed` si tranzactia
+   fara efect partial
+
+Inchiderea sau reactivarea unui magazin este o operatie separata cu optimistic
+CAS, motiv obligatoriu, `requested_by_sub` si audit in `store_activity_events`.
 
 Implementarea este in:
 - `backend/services/importer.py`
@@ -751,6 +763,12 @@ executiva si backlogul neblocant sunt mentinute in
 [development-plan-status.md](./docs/engineering/development-plan-status.md),
 iar probele de performanta in
 [performance-baseline-v2.md](./docs/engineering/performance-baseline-v2.md).
+
+`v2.0.1` este candidatul de hotfix pentru P0 importuri, Grile read-only,
+inchiderea salariala fail-closed si izolarea runnerului de PR, impreuna cu
+patch-urile no-store/HTTP/Target Calculator/session refresh. Codul candidatului
+este integrat, dar versiunea nu este declarata live si tagul nu exista pana la
+inchiderea gate-urilor din [release notes](./docs/releases/v2.0.1.md).
 
 ## Scripturi utile
 

@@ -48,6 +48,14 @@ protection or required environment reviewers; release/deploy remains blocked
 until the repository plan or hosting policy supplies those controls. Manual
 merge discipline is not represented as an enforced GitHub protection.
 
+Pre-rollout inspection also found that the expected root-owned entrypoint
+`/opt/Mobiup/ops/scripts/deploy-retail-artifact.sh` is not provisioned. This is a
+second intentional fail-closed prerequisite: do not register the deploy runner
+or enable `PRODUCTION_DEPLOY_APPROVALS_ENFORCED` until the entrypoint is installed
+from a separately reviewed operations source, owned and writable only by root,
+and its backup, migration, health and rollback behavior has been exercised. The
+deploy job must never install that privileged entrypoint from PR-controlled code.
+
 ## Controlled isolation evidence
 
 The `runner-isolation` job is the repeatable proof. It must remain required by

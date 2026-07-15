@@ -666,8 +666,9 @@ extinderea formulei.
 - Hub consuma KPI-uri Retail prin API intern.
 - Prometheus si Grafana pentru metrics.
 - GlitchTip pentru erori.
-- `/metrics` este consumat numai pe calea interna Prometheus; Caddy raspunde
-  404 public pentru `/metrics`, `/docs`, `/redoc` si `/openapi.json`, iar
+- In configuratia tinta `v2.0.1`, `/metrics` este consumat numai pe calea interna
+  Prometheus; Caddy trebuie sa raspunda 404 public pentru `/metrics`, `/docs`,
+  `/redoc` si `/openapi.json`, iar
   FastAPI nu publica UI/schema OpenAPI. Fallback-ul SPA se aplica numai
   navigarilor GET/HEAD care accepta HTML si niciodata namespace-urilor
   API/auth/server sau assetelor lipsa. Raspunsurile `/api/*`, `/salarii/*` si

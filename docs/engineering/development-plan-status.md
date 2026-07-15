@@ -1,6 +1,7 @@
 # UniHub Retail — development plan status
 
-Last reconciled: 2026-07-14
+Last reconciled: 2026-07-15 on code candidate
+`6dafc72899dcf9e500e675d68973aec21e495880`
 
 This is the executive view of the active development plan. Detailed acceptance
 evidence remains in the finding-specific documents; structural refactoring is
@@ -10,6 +11,9 @@ tracked in `docs/refactoring-plan-current.md`.
 
 | Area | Status | Remaining exit work |
 | --- | --- | --- |
+| v2.0.1 P0 import/Grile/salary | Integrated through PRs #96-#98; PostgreSQL import evidence strengthened in PR #101 | Migrations 026-028, approved rollout, production acceptance and rollback |
+| v2.0.1 PR runner boundary | GitHub-hosted PR CI integrated in PR #95; direct TimesFM probe corrected in PR #101; former production-host runner stopped/removed | Required production environment reviewers and the root-owned deploy entrypoint are not provisioned, so deploy remains fail-closed |
+| v2.0.1 isolated hardening | no-store, HTTP surface, Target Calculator atomicity and session refresh integrated in PR #99 | Caddy rollout verification and production acceptance |
 | Wave 1 correctness/security | Integrated in `main`; H-15 closed with explicit residual-risk acceptance | Ongoing monitoring only |
 | H-01A salary API privacy | Merged and active in production | Continue with the retained-data boundary in H-01B |
 | H-04/H-05 OIDC and JWKS | Merged and active in production | Ongoing operational monitoring |
@@ -21,6 +25,20 @@ tracked in `docs/refactoring-plan-current.md`.
 | CI/CD and operations | V2 acceptance complete; quality gates, readiness/liveness and SLO guardrails active in production | Ongoing SLO observation |
 
 ## What is already delivered
+
+The items below remain the accepted V2 baseline. In addition, the `v2.0.1` code
+candidate now includes:
+
+- sales imports that validate strictly, persist coverage/diff and never change
+  store activity by omission; explicit audited store activity writes;
+- read-only Grile checks plus separate OIDC-subject-audited privileged diff/sync;
+- fail-closed salary finalization/archive/reset with persistent verified manifests,
+  complete source backups, checkpoints and verified rollback;
+- GitHub-hosted PR checks, vendored private packages and an immutable verified
+  main artifact boundary;
+- private/no-store sensitive responses, disabled public FastAPI docs in the app,
+  namespace-safe SPA fallback, atomic Target Calculator batches and bounded
+  race-safe session refresh.
 
 - P&L management dashboard and the OIDC/P&L login-race hotfix;
 - P&L actual-over-estimate precedence, authoritative company/store filtering,
@@ -83,12 +101,29 @@ blocker:
 4. apply further query/index optimization only from measured production
    baselines.
 
+## v2.0.1 release gate
+
+The code candidate passed local isolated PostgreSQL tests and GitHub merge-ref
+checks. Main CI run `29444282142` passed runner isolation, dependency/security
+scans, mypy, backend coverage, frontend typechecks/lint/tests/build and sequential
+Playwright/accessibility, then produced the verified artifact for
+`6dafc72899dcf9e500e675d68973aec21e495880`.
+
+This is not yet a released/deployed claim. Before tagging `v2.0.1`, the exact
+final documentation merge SHA must pass CI, receive enforced environment approval,
+run migrations and deploy from the verified artifact, pass local/public acceptance
+and demonstrate rollback. The deploy workflow intentionally cannot start while
+required environment reviewers are unavailable; manual deployment is not a valid
+substitute.
+
 ## Release versioning
 
 The accepted product generation is V2. Formal releases should use a
 SemVer-inspired scheme:
 
 - `v2.0.0` identifies the accepted V2 baseline;
+- `v2.0.1` is the prepared compatible integrity/security hotfix and remains
+  unpublished until its deployment gates pass;
 - `v2.MINOR.0` identifies a compatible tranche of product functionality;
 - `v2.MINOR.PATCH` identifies compatible fixes and hardening;
 - `v3.0.0` is reserved for a deliberate, materially incompatible product,
