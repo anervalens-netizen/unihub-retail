@@ -125,7 +125,12 @@ async def grile_check_background(
 
 async def grile_monthly_background(
     ctx: dict,
-    operation_id: int,
+    operation_id: int | str,
+    legacy_month: str | None = None,
+    legacy_only: str | None = None,
+    legacy_dry_run: bool | None = None,
+    legacy_triggered_by_email: str | None = None,
+    legacy_operation_id: int | None = None,
     request_id: str | None = None,
 ) -> dict:
     """Inchidere luna grile: ruleaza operatiile native din Retail.
@@ -134,11 +139,38 @@ async def grile_monthly_background(
     edge Cloudflare). Rezultatul (output + exit_code) e citit din rezultatul
     jobului arq de catre UI (`/api/grile/monthly/job/{id}`).
     """
+    if isinstance(operation_id, bool):
+        raise ValueError("Invalid Grile monthly operation identity")
+    if isinstance(operation_id, int):
+        if any(
+            value is not None
+            for value in (
+                legacy_month,
+                legacy_only,
+                legacy_dry_run,
+                legacy_triggered_by_email,
+                legacy_operation_id,
+            )
+        ):
+            raise ValueError("Unexpected legacy Grile monthly payload")
+        persisted_operation_id = operation_id
+    else:
+        # Jobs published before v2.0.1 carry the full request payload. The DB
+        # reservation remains authoritative: normalize only its immutable id
+        # and never authorize or execute from the legacy email/op arguments.
+        if isinstance(legacy_operation_id, bool) or not isinstance(
+            legacy_operation_id, int
+        ):
+            raise ValueError("Legacy Grile monthly job has no operation identity")
+        persisted_operation_id = legacy_operation_id
+    if persisted_operation_id <= 0:
+        raise ValueError("Invalid Grile monthly operation identity")
+
     token = bind_request_id(request_id) if request_id else None
     try:
         from services.grile_monthly import run_monthly_op
 
-        return await run_monthly_op(operation_id=operation_id)
+        return await run_monthly_op(operation_id=persisted_operation_id)
     finally:
         if token is not None:
             reset_request_id(token)

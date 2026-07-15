@@ -94,8 +94,8 @@ async def test_h11_monthly_enqueue_persists_job_id_before_queue_publish(
     assert queue.enqueue_job.await_args.args == (
         "grile_monthly_background",
         42,
-        None,
     )
+    assert queue.enqueue_job.await_args.kwargs["request_id"] is None
     assert queue.enqueue_job.await_args.kwargs["_job_id"] == "grile-monthly:42"
 
 
@@ -209,3 +209,45 @@ async def test_monthly_worker_accepts_only_persisted_operation_identity(
 
     assert result == {"status": "success"}
     run.assert_awaited_once_with(operation_id=51)
+
+
+async def test_monthly_worker_normalizes_already_queued_legacy_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = AsyncMock(return_value={"status": "success"})
+    monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
+
+    result = await worker.grile_monthly_background(
+        {},
+        "finalize",
+        "2099-05",
+        None,
+        False,
+        "ignored-legacy-identity",
+        52,
+        "legacy-request-id",
+    )
+
+    assert result == {"status": "success"}
+    run.assert_awaited_once_with(operation_id=52)
+
+
+async def test_monthly_worker_rejects_legacy_payload_without_reservation_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = AsyncMock(return_value={"status": "success"})
+    monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
+
+    with pytest.raises(ValueError, match="no operation identity"):
+        await worker.grile_monthly_background(
+            {},
+            "finalize",
+            "2099-05",
+            None,
+            False,
+            "ignored-legacy-identity",
+            None,
+            "legacy-request-id",
+        )
+
+    run.assert_not_awaited()

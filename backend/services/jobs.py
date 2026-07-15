@@ -229,7 +229,7 @@ async def enqueue_grile_monthly(
         job = await pool.enqueue_job(
             "grile_monthly_background",
             reservation.operation_id,
-            get_request_id(),
+            request_id=get_request_id(),
             _job_id=job_id,
         )
         if job is None:
