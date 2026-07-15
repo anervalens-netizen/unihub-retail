@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 REPO_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = REPO_DIR / "data" / "P&L"
 VALID_CODES = {"v1", "v11", "v2", "v3", "c1", "c11", "c2", "c3", "c4", "c5", "c6", "a1"}
+REVENUE_CODES = {"v1", "v11", "v2", "v3"}
 UNALLOCATED_SOURCE = "__FINANCE_UNALLOCATED__"
 UNALLOCATED_LOCATION = "Diferenta consolidat Finance nealocata pe magazine"
 
@@ -261,14 +262,45 @@ def merged_rows(selected: list[WorkbookData]) -> list[PnlRow]:
     return sorted(result.values(), key=lambda row: (row.period, row.company_name, row.source_site_code, row.category_code))
 
 
-def unallocated_rows(detail_rows: list[PnlRow], selected: list[WorkbookData]) -> list[PnlRow]:
-    """Return exact Finance consolidated-minus-detail deltas per category."""
+def unallocated_rows(detail_rows: list[PnlRow], workbooks: list[WorkbookData]) -> list[PnlRow]:
+    """Return trustworthy Finance consolidated-minus-detail deltas.
+
+    ``P&L Magazine`` is driven by an Excel location selector. Some supplied
+    snapshots were saved with one store selected, while ``Detaliere`` still
+    contains the complete company data. A summary can therefore be used as a
+    company total only when its revenue is at least the selected detail total.
+    Among valid snapshots, prefer the most complete one for that month.
+    """
     detailed_totals: dict[tuple[str, date, str], Decimal] = defaultdict(Decimal)
     for row in detail_rows:
         detailed_totals[(row.company_name, row.period, row.category_code)] += row.amount
-    result: list[PnlRow] = []
-    for workbook in selected:
+
+    candidates: dict[tuple[str, date], list[tuple[WorkbookData, list[PnlRow]]]] = defaultdict(list)
+    for workbook in workbooks:
+        by_period: dict[date, list[PnlRow]] = defaultdict(list)
         for total in workbook.consolidated_rows:
+            by_period[total.period].append(total)
+        for period, totals in by_period.items():
+            detail_revenue = sum(
+                detailed_totals[(workbook.company_name, period, code)]
+                for code in REVENUE_CODES
+            )
+            summary_revenue = sum(
+                total.amount for total in totals if total.category_code in REVENUE_CODES
+            )
+            # A lower summary is a store-filtered worksheet, not a consolidated
+            # company total. The one-cent tolerance only absorbs Excel rounding.
+            if summary_revenue + Decimal("0.01") < detail_revenue:
+                continue
+            candidates[(workbook.company_name, period)].append((workbook, totals))
+
+    result: list[PnlRow] = []
+    for period_candidates in candidates.values():
+        workbook, totals = max(
+            period_candidates,
+            key=lambda item: (item[0].populated_months, item[0].numeric_cells, str(item[0].path)),
+        )
+        for total in totals:
             delta = total.amount - detailed_totals[(total.company_name, total.period, total.category_code)]
             if abs(delta) <= Decimal("0.01"):
                 continue
@@ -317,6 +349,19 @@ async def apply_rows(rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
     connection = await asyncpg.connect(database_url)
     try:
         async with connection.transaction():
+            imported_years = sorted({(row.company_name, row.period.year) for row in rows})
+            for company, year in imported_years:
+                await connection.execute(
+                    """
+                    DELETE FROM store_pnl_monthly
+                    WHERE data_kind = 'actual'
+                      AND company_name = $1
+                      AND period >= make_date($2, 1, 1)
+                      AND period < make_date($2 + 1, 1, 1)
+                    """,
+                    company,
+                    year,
+                )
             await connection.execute(
                 "DELETE FROM store_pnl_monthly WHERE data_kind = 'actual' AND source_site_code = $1",
                 UNALLOCATED_SOURCE,
@@ -344,6 +389,19 @@ async def apply_rows(rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
                     for row in [*rows, *reconciliation]
                 ],
             )
+            await connection.execute(
+                """
+                DELETE FROM store_pnl_monthly estimate
+                WHERE estimate.data_kind = 'estimated'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM store_pnl_monthly actual
+                      WHERE actual.data_kind = 'actual'
+                        AND actual.company_name = estimate.company_name
+                        AND actual.period = estimate.period
+                  )
+                """
+            )
         print(f"Import finalizat: {len(rows)} valori detaliate + {len(reconciliation)} diferente consolidate actuale.")
     finally:
         await connection.close()
@@ -359,7 +417,9 @@ def main() -> int:
     workbooks, duplicates = discover(args.input_dir)
     selected, superseded = select_snapshots(workbooks)
     rows = merged_rows(selected)
-    reconciliation = unallocated_rows(rows, selected)
+    # Consolidated totals may come from an older, still trustworthy snapshot
+    # even when a newer detail snapshot was saved with one store selected.
+    reconciliation = unallocated_rows(rows, workbooks)
     print_audit(selected, superseded, duplicates, rows, reconciliation)
     if args.apply:
         asyncio.run(apply_rows(rows, reconciliation))

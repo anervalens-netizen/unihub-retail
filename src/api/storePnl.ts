@@ -24,6 +24,7 @@ export interface PnlMonthlyPoint extends PnlMetrics {
 export interface PnlAnnualPoint extends PnlMetrics {
   year: string;
   store_count: number;
+  month_count: number;
   is_estimated: boolean;
 }
 

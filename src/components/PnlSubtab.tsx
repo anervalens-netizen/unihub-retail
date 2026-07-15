@@ -446,8 +446,8 @@ export function PnlSubtab() {
                   Evoluție anuală
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Istoricul complet pentru compania și magazinul selectate;
-                  punctele portocalii includ estimări.
+                  Total pentru lunile disponibile din fiecare an; punctele
+                  portocalii includ estimări.
                 </p>
               </div>
               {annualQuery.isLoading && (
@@ -472,7 +472,7 @@ export function PnlSubtab() {
                       formatter={(value) => money.format(Number(value))}
                       labelFormatter={(label, payload) => {
                         const point = payload?.[0]?.payload as PnlAnnualPoint | undefined;
-                        return `Anul ${String(label)}${point ? ` · ${point.store_count} magazine` : ""}`;
+                        return `Anul ${String(label)}${point ? ` · ${point.store_count} magazine · ${point.month_count} luni` : ""}`;
                       }}
                     />
                     <Legend />

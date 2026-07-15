@@ -31,7 +31,7 @@ describe("defaultPnlRange", () => {
 
 describe("pnlStoreOptionValue", () => {
   it("keeps identical unmapped source codes distinct by company", () => {
-    const base = { site_code: "LEGACY", location: "Legacy" };
+    const base = { site_code: "LEGACY", location: "Legacy", regional: "Nealocat" };
     expect(
       pnlStoreOptionValue({
         ...base,
@@ -53,6 +53,7 @@ describe("pnlStoreOptionValue", () => {
         company_name: "Mobicell",
         site_code: "CRFORADEA",
         location: "Carrefour Oradea",
+        regional: "Vest",
         scope_company: null,
       }),
     ).toBe('[null,"CRFORADEA"]');

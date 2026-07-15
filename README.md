@@ -226,9 +226,9 @@ Focus; sidebar-ul contine numai intrarea principala Management.
   si graficele.
   Cand este ales un magazin, identitatea lui canonica domina compania in
   istoricul P&L, astfel incat mutarile intre entitati nu rup evolutia.
-  Daca pentru aceeasi luna, magazin canonic si categorie exista atat o estimare,
-  cat si un import real (inclusiv sub coduri istorice sau companii diferite),
-  raportarea foloseste exclusiv valoarea `actual`.
+  Pentru fiecare firma-luna, existenta unui import Finance face ca raportarea
+  sa ignore toate estimarile acelei firme-luni si sa insumeze integral
+  centrele de profit `actual`, inclusiv aliasurile aceluiasi magazin.
 
 Endpointurile backend pentru Tasks, cereri de concediu si alerte CRM raman
 compatibile cu datele istorice si integrarile, dar nu au subtab-uri in
