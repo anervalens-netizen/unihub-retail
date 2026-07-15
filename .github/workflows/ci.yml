@@ -34,7 +34,10 @@ jobs:
             echo "Unexpected Tailscale interface on PR runner" >&2
             exit 1
           fi
-          if curl --silent --show-error --fail \
+          # Any HTTP response, including 401/403/404, proves that the private
+          # peer is reachable. Bypass proxies and intentionally do not use
+          # --fail, which would misclassify HTTP error responses as isolation.
+          if curl --silent --show-error --noproxy '*' \
             --connect-timeout 2 --max-time 4 \
             "http://$BLOCKED_TIMESFM_PEER:8000/" >/dev/null 2>&1; then
             echo "PR runner unexpectedly reached the private TimesFM peer" >&2
