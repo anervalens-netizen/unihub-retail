@@ -81,7 +81,10 @@ flock -n 9 || die "another approval operation is active"
 
 PREFIX="${CI_RUN_ID}-${SOURCE_SHA}-${ARTIFACT_SHA256}"
 shopt -s nullglob
-ACTIVE=("$APPROVAL_ROOT/${PREFIX}-"*.approved)
+ACTIVE=(
+  "$APPROVAL_ROOT/${PREFIX}-"*.approved
+  "$APPROVAL_ROOT/${PREFIX}-"*.claimed.*
+)
 shopt -u nullglob
 [[ "${#ACTIVE[@]}" -eq 0 ]] || die "an unconsumed approval already exists for this release"
 

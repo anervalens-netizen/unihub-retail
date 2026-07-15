@@ -102,6 +102,16 @@ DUPLICATE_APPROVAL_RC=$?
 set -e
 [[ "$DUPLICATE_APPROVAL_RC" -ne 0 ]]
 
+ACTIVE_APPROVAL="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' -print -quit)"
+CLAIMED_APPROVAL="${ACTIVE_APPROVAL%.approved}.claimed.99999"
+mv -- "$ACTIVE_APPROVAL" "$CLAIMED_APPROVAL"
+set +e
+approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null 2>&1
+CLAIMED_DUPLICATE_RC=$?
+set -e
+[[ "$CLAIMED_DUPLICATE_RC" -ne 0 ]]
+mv -- "$CLAIMED_APPROVAL" "$ACTIVE_APPROVAL"
+
 run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]

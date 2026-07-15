@@ -261,6 +261,8 @@ claim_approval() {
       || die "approval store must be root:root mode 0700"
   fi
 
+  exec 8>"$APPROVAL_ROOT/.approval.lock"
+  flock -x 8
   shopt -s nullglob
   local -a matches=("$APPROVAL_ROOT/${prefix}-"*.approved)
   shopt -u nullglob
@@ -275,6 +277,8 @@ claim_approval() {
 
   APPROVAL_CLAIM="${approval_file%.approved}.claimed.$$"
   mv -- "$approval_file" "$APPROVAL_CLAIM"
+  flock -u 8
+  exec 8>&-
 
   local record_run_id record_source_sha record_artifact_sha256 approval_id approver approved_at expires_at state now
   approval_id="$(read_approval_value "$APPROVAL_CLAIM" approval_id)"
@@ -492,7 +496,8 @@ verify_local_health() {
 
   local attempt
   for attempt in {1..30}; do
-    if systemctl is-active --quiet "$BACKEND_SERVICE" "$WORKER_SERVICE" \
+    if systemctl is-active --quiet "$BACKEND_SERVICE" \
+      && systemctl is-active --quiet "$WORKER_SERVICE" \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/health >/dev/null \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/readyz >/dev/null; then
       return 0
