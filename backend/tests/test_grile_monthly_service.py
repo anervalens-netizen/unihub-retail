@@ -375,10 +375,10 @@ def make_sheets_value_service(value_ranges: list[dict[str, Any]] | Exception):
 
 def test_extract_store_rows_reads_two_slots_and_returns_error_row() -> None:
     values: list[dict[str, Any]] = []
-    for agent in ("Agent 1", ""):
-        raw = ([
-            agent, 2600, 10, 20, 30, 40, 50, 25, 150, 480, 176,
-        ] if agent else [""] * 11)
+    for raw in (
+        ["Agent 1", 2600, 10, 20, 30, 40, 50, 25, 150, 480, 176],
+        ["", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ):
         values.extend({"values": [[value]]} if value != "" else {"values": []} for value in raw)
 
     rows = grile.extract_store_rows(make_sheets_value_service(values), entry())

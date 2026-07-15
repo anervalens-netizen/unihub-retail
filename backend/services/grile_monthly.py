@@ -711,9 +711,16 @@ def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgen
             slot_ranges = value_ranges[idx : idx + 11]
             idx += 11
             slot_values = [scalar(item.get("values", [])) for item in slot_ranges]
-            if not any(value not in (None, "") for value in slot_values):
-                continue
             agent = slot_values[0]
+            # Template formulas can leave numeric zeroes in every salary cell
+            # of an unused slot. Treat that slot as empty only when its agent
+            # cell is blank and every remaining value is blank/zero. A blank
+            # agent with meaningful data remains a fail-closed error.
+            if agent in (None, "") and all(
+                value in (None, "", 0, 0.0, False)
+                for value in slot_values[1:]
+            ):
+                continue
             if (
                 not isinstance(agent, str)
                 or not agent.strip()
