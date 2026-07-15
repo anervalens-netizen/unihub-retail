@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import { Building2, CalendarRange, ChevronDown, MapPin, PieChart as PieChartIcon, TrendingUp } from 'lucide-react';
 import {
   Area,
@@ -30,6 +30,7 @@ import {
   getFocusTone,
   sumChartValues,
 } from './DashboardWidgets';
+import { SegmentedTabs } from '../common/SegmentedTabs';
 
 export type HistoryKpiMetric = 'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts';
 
@@ -135,6 +136,7 @@ interface HistoryDashboardProps<RegionalKey extends string, StoreKey extends str
   draftSelectedMonths: string[];
   onToggleMonth: (month: string) => void;
   onApplyMonths: () => void;
+  onApplyPreset?: (count: number) => void;
   historyStatusLabel: string;
   historyReceiptBucketChartData: ReceiptBucketChartPoint[];
   historyFocusSubcategoryChartData: FocusChartPoint[];
@@ -187,6 +189,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
   draftSelectedMonths,
   onToggleMonth,
   onApplyMonths,
+  onApplyPreset,
   historyStatusLabel,
   historyReceiptBucketChartData,
   historyFocusSubcategoryChartData,
@@ -210,13 +213,26 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
   agentSort,
   onSortAgents,
 }: HistoryDashboardProps<RegionalKey, StoreKey, AgentKey>) {
+  const [mobileSection, setMobileSection] = useState<'summary' | 'trend' | 'details'>('summary');
   if (loading) return <LoadingCard label="Se incarca istoricul..." />;
   if (error) return <ErrorCard message={error} onRetry={onRetry} />;
   if (!selectedPoint) return <ErrorCard message="Nu exista valori istorice pentru luna selectata." onRetry={onRetry} />;
 
   return (
     <>
-      <div className="glass rounded-3xl p-4">
+      <SegmentedTabs<'summary' | 'trend' | 'details'>
+        ariaLabel="Conținut istoric mobil"
+        className="glass lg:hidden"
+        options={[
+          { value: 'summary', label: 'Sumar' },
+          { value: 'trend', label: 'Trend' },
+          { value: 'details', label: 'Detalii' },
+        ]}
+        value={mobileSection}
+        onChange={setMobileSection}
+      />
+
+      <div className={`glass rounded-3xl p-4 ${mobileSection !== 'trend' ? 'hidden lg:block' : ''}`}>
         <div className="mb-3 flex items-start justify-between gap-2">
           <div>
             <h3 className="text-sm font-bold">Evolutie lunara</h3>
@@ -278,7 +294,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         )}
       </div>
 
-      <div className="glass rounded-3xl p-4">
+      <div className={`glass rounded-3xl p-4 ${mobileSection !== 'trend' ? 'hidden lg:block' : ''}`}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2"><TrendingUp size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Trend KPI</h3></div>
           <div className="flex gap-1">
@@ -315,9 +331,24 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         )}
       </div>
 
-      <div className="glass relative z-50 rounded-3xl p-4">
+      <div className={`glass relative z-50 rounded-3xl p-4 ${mobileSection !== 'summary' ? 'hidden lg:block' : ''}`}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div><h3 className="text-sm font-bold">Luni analizate</h3><p className="text-[11px] text-slate-500">Bifeaza una sau mai multe luni; rezultatele de mai jos se agrega automat</p></div>
+          <div>
+            <h3 className="text-sm font-bold">Luni analizate</h3>
+            <p className="text-[11px] text-slate-500">Alege un interval rapid sau bifează lunile; rezultatele se agregă automat.</p>
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Intervale rapide">
+              {[3, 6, 12, 13].map((count) => (
+                <button
+                  key={count}
+                  type="button"
+                  onClick={() => onApplyPreset?.(count)}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  Ultimele {count} luni
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-wrap items-start gap-2">
             <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
               <input type="checkbox" checked={includeClosedStores} onChange={(event) => onIncludeClosedStoresChange(event.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
@@ -348,9 +379,12 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
             </details>
           </div>
         </div>
+        <p className="mt-3 rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">
+          Implicit, comparația păstrează doar magazinele active în cohorta curentă. Activează „Include magazine închise” pentru o vedere istorică completă.
+        </p>
       </div>
 
-      <div className="glass space-y-4 rounded-3xl p-4">
+      <div className={`glass space-y-4 rounded-3xl p-4 ${mobileSection !== 'summary' ? 'hidden lg:block' : ''}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0"><h3 className="truncate text-sm font-bold">Overview — {selectionLabel}</h3><p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{historyStatusLabel}</p></div>
           <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{historySummary?.last_sale_date ?? '-'}</span>
@@ -374,8 +408,8 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2.5">
-          <KpiPerformanceCard title="ProcBon2Acc" value={historySummary?.proc_bon2acc ?? selectedPoint.proc_bon2acc} tone={getBon2AccTone(Number(historySummary?.proc_bon2acc ?? selectedPoint.proc_bon2acc ?? 0))} chartData={historyReceiptBucketChartData} dataKey="receipt_count" nameKey="bucket" formatValue={formatInt} />
-          <KpiPerformanceCard title="PrcFocus/AccQtty" value={historySummary?.prc_focus_acc_qty ?? selectedPoint.prc_focus_acc_qty} tone={getFocusTone(Number(historySummary?.prc_focus_acc_qty ?? selectedPoint.prc_focus_acc_qty ?? 0))} chartData={historyFocusSubcategoryChartData} dataKey="quantity_total" nameKey="category" formatValue={formatInt} />
+          <KpiPerformanceCard title="Bonuri cu accesorii" value={historySummary?.proc_bon2acc ?? selectedPoint.proc_bon2acc} tone={getBon2AccTone(Number(historySummary?.proc_bon2acc ?? selectedPoint.proc_bon2acc ?? 0))} chartData={historyReceiptBucketChartData} dataKey="receipt_count" nameKey="bucket" formatValue={formatInt} />
+          <KpiPerformanceCard title="Pondere produse Focus" value={historySummary?.prc_focus_acc_qty ?? selectedPoint.prc_focus_acc_qty} tone={getFocusTone(Number(historySummary?.prc_focus_acc_qty ?? selectedPoint.prc_focus_acc_qty ?? 0))} chartData={historyFocusSubcategoryChartData} dataKey="quantity_total" nameKey="category" formatValue={formatInt} />
         </div>
         <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
           <Metric label="Bonuri" value={formatInt(historySummary?.total_receipts ?? selectedPoint.total_receipts)} className="p-2" />
@@ -389,7 +423,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+      <div className={`grid gap-3 lg:grid-cols-[1.2fr_1fr] ${mobileSection !== 'details' ? 'hidden lg:grid' : ''}`}>
         <div className="glass rounded-3xl p-4">
           <div className="mb-3 flex items-center gap-2"><CalendarRange size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Evolutie zilnica pentru {selectionLabel}</h3></div>
           <div className="h-64">
@@ -416,6 +450,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         </div>
       </div>
 
+      <div className={mobileSection !== 'details' ? 'hidden lg:contents' : 'contents'}>
       <BreakdownTable
         title="RM"
         icon={<MapPin size={16} className="text-indigo-500" />}
@@ -491,6 +526,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
           { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
         ]}
       />
+      </div>
     </>
   );
 }

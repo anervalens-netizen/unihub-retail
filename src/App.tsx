@@ -302,6 +302,7 @@ export default function App() {
             activeSubTab={mgmtSubTab}
             setActiveSubTab={setMgmtSubTab}
             hasPnlAccess={hasPnlAccess}
+            currentMonth={currentMonth}
             salaryFilters={agentsFilters}
           />
         )}

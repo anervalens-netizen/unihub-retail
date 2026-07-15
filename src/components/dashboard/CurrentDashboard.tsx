@@ -14,6 +14,7 @@ import {
 import type { AgentStat, DashboardSummary, PeriodComparisonPayload, RegionalStat, StoreStat } from '../../api/types';
 import type { AppFilters } from '../MainLayout';
 import { AiForecastPanel } from '../AiForecastPanel';
+import { SegmentedTabs } from '../common/SegmentedTabs';
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
 import {
@@ -151,30 +152,16 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
 }: CurrentDashboardProps<RegionalKey, StoreKey, AgentKey>) {
   return (
     <>
-      <div className="glass flex rounded-2xl p-1">
-        <button
-          type="button"
-          onClick={() => onModeChange('overview')}
-          className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            mode === 'overview'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-              : 'text-slate-500'
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          type="button"
-          onClick={() => onModeChange('forecast')}
-          className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            mode === 'forecast'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-              : 'text-slate-500'
-          }`}
-        >
-          AI Forecast
-        </button>
-      </div>
+      <SegmentedTabs
+        ariaLabel="Mod analiză lună curentă"
+        className="glass"
+        options={[
+          { value: 'overview', label: 'Overview' },
+          { value: 'forecast', label: 'AI Forecast' },
+        ]}
+        value={mode}
+        onChange={onModeChange}
+      />
 
       {mode === 'forecast' ? (
         <AiForecastPanel currentMonth={currentMonth} filters={filters} />
@@ -230,7 +217,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
 
             <div className="grid grid-cols-2 gap-2.5">
               <KpiPerformanceCard
-                title="ProcBon2Acc"
+                title="Bonuri cu accesorii"
                 value={summary.proc_bon2acc}
                 tone={getBon2AccTone(Number(summary.proc_bon2acc ?? 0))}
                 chartData={receiptBucketChartData}
@@ -239,7 +226,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                 formatValue={formatInt}
               />
               <KpiPerformanceCard
-                title="PrcFocus/AccQtty"
+                title="Pondere produse Focus"
                 value={summary.prc_focus_acc_qty}
                 tone={getFocusTone(Number(summary.prc_focus_acc_qty ?? 0))}
                 chartData={focusSubcategoryChartData}

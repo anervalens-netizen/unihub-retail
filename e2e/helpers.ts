@@ -37,11 +37,11 @@ export async function mockApiRoute(context: BrowserContext, method: string, urlP
 export const MOCK_MONTHS = ['2026-05', '2026-04', '2026-03', '2026-02', '2026-01'];
 
 export const MOCK_FILTER_OPTIONS = {
-  firme: [{ label: 'Firma 1', value: 'Firma 1' }],
-  regionali: [{ label: 'Regional 1', value: 'Regional 1' }],
-  asmi: [{ label: 'ASM 1', value: 'ASM 1' }],
-  magazine: [{ label: 'Magazin 1', value: 'Magazin 1' }],
-  agenti: [{ label: 'Agent 1', value: 'Agent 1' }],
+  firme: ['Firma 1'],
+  regionali: ['Regional 1'],
+  asmi: ['ASM 1'],
+  magazine: [{ site_code: 'S1', locatie: 'Magazin 1', firma: 'Firma 1', regional: 'Regional 1', asm: 'ASM 1' }],
+  agenti: [{ agent: 'Agent 1', site_code: 'S1', locatie: 'Magazin 1', firma: 'Firma 1', regional: 'Regional 1', asm: 'ASM 1' }],
 };
 
 export const MOCK_DASHBOARD_ALL = {
@@ -169,6 +169,7 @@ export async function setupBaseMocks(context: BrowserContext) {
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/history-year/, MOCK_DASHBOARD_YEAR_HISTORY);
   await mockApiRoute(context, 'GET', /\/api\/stores$/, []);
   await mockApiRoute(context, 'GET', /\/api\/hr\/asm-performance/, []);
+  await mockApiRoute(context, 'GET', /\/api\/hr\/manager-overview/, []);
   await mockApiRoute(context, 'GET', /\/api\/crm\/scores/, []);
   await mockApiRoute(context, 'GET', /\/api\/campaigns\/overview/, {
     snapshot: null, focus_products: [], promo_products: [],

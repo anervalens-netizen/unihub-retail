@@ -86,6 +86,31 @@ async def test_asm_performance_returns_list():
 
 
 @pytest.mark.anyio
+async def test_manager_overview_returns_team_and_portfolio_data():
+    pool = await get_pool()
+    repo = HrRepository(pool)
+    svc = HrService(repo)
+    result = await svc.get_manager_overview("2026-07")
+    assert isinstance(result, list)
+    if result:
+        row = result[0]
+        assert "manager" in row
+        assert "active_stores" in row
+        assert "active_agents" in row
+        assert "agents_added" in row
+        assert "agents_left" in row
+        assert "stores_without_agents" in row
+        assert "visit_coverage_pct" in row
+        assert isinstance(row["stores"], list)
+        if row["stores"]:
+            store = row["stores"][0]
+            assert "site_code" in store
+            assert "active_agents" in store
+            assert "previous_active_agents" in store
+            assert store["agent_delta"] == store["active_agents"] - store["previous_active_agents"]
+
+
+@pytest.mark.anyio
 async def test_asm_performance_history_returns_list():
     pool = await get_pool()
     repo = HrRepository(pool)

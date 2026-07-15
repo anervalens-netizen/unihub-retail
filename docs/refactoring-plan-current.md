@@ -379,8 +379,9 @@ Livrabile:
 Inchis prin reconciliere cu navigatia reala: subtab-urile legacy Tasks, HR si
 CRM au fost eliminate intentionat din Management in iunie 2026, dar
 componentele frontend inaccesibile ramasesera in repository. Componentele si
-clientii folositi exclusiv de ele au fost eliminati; scoring-ul CRM consumat de
-Manageri si endpointurile backend compatibile raman active. Nu mai exista
+clientii folositi exclusiv de ele au fost eliminati. Manageri foloseste acum
+overview-ul operational HR, iar scoring-ul CRM nu mai este consumat de acest
+ecran; endpointurile backend compatibile raman active. Nu mai exista
 actiuni UI legacy care sa esueze doar in consola. Pentru fluxurile active,
 fallback-urile 5xx si de retea raman intentionat generice.
 
@@ -550,8 +551,9 @@ build pot concura pe `dist/`.
   constantele business recurente si politica retry Google au surse numite.
 - 2026-07-13: documentatia Management a fost reconciliata cu navigatia V2
   Manageri / Calculator Target / Salarii / P&L. UI-urile legacy inaccesibile
-  Tasks/HR/CRM si clientii folositi exclusiv de ele au fost eliminati; scoring-ul
-  CRM folosit in Manageri si endpointurile backend compatibile sunt pastrate.
+  Tasks/HR/CRM si clientii folositi exclusiv de ele au fost eliminati. Manageri
+  afiseaza structura si sanatatea operationala a echipei, fara scoring CRM;
+  endpointurile backend compatibile sunt pastrate.
 - 2026-07-13: regula business de cantitate a fost reconciliata cu raportul
   firmei: reporting-ul foloseste vanzari minus retururi pentru cantitate,
   Focus/Acc, bonuri eligibile, medii si breakdown-uri; cartelele raman excluse

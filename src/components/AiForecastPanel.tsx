@@ -105,6 +105,16 @@ function isWeekendDate(value: string) {
   return day === 0 || day === 6;
 }
 
+function formatGeneratedAt(value: string | undefined): string {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('ro-RO', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
 function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
   return points.map((point) => {
     const hasActual = point.actual_sales > 0 || point.cumulative_actual > 0;
@@ -256,9 +266,10 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
               {statusText}
             </p>
           </div>
-          <div className="rounded-2xl bg-slate-100 px-3 py-2 text-right text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            <div>{run.model_mode}</div>
-            <div className="text-slate-400">sursa {summary.source_month}</div>
+          <div className="grid w-full grid-cols-2 gap-2 rounded-2xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300 sm:w-auto sm:grid-cols-3">
+            <div><span className="block text-slate-400">Model</span>{run.model_mode}</div>
+            <div><span className="block text-slate-400">Sursă</span>{summary.source_month}</div>
+            <div><span className="block text-slate-400">Generat</span>{formatGeneratedAt(run.generated_at)}</div>
           </div>
         </div>
 
@@ -419,7 +430,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onHorizonChange('current_month')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 horizonMode === 'current_month'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -430,7 +441,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onHorizonChange('rolling_12m')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 horizonMode === 'rolling_12m'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -443,7 +454,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onMetricChange('sales_value')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 metric === 'sales_value'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -454,7 +465,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onMetricChange('units')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 metric === 'units'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -533,9 +544,10 @@ function RollingForecastView({ currentMonth, filters, metric }: ForecastViewProp
               Prognoza lunara pentru urmatoarele 12 luni, salvata offline pe magazine active si agregata pe structura curenta.
             </p>
           </div>
-          <div className="rounded-2xl bg-slate-100 px-3 py-2 text-right text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            <div>{modelRun?.model_mode ?? 'xreg + timesfm'}</div>
-            <div className="text-slate-400">sursa {summary.source_month}</div>
+          <div className="grid w-full grid-cols-2 gap-2 rounded-2xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300 sm:w-auto sm:grid-cols-3">
+            <div><span className="block text-slate-400">Model</span>{modelRun?.model_mode ?? 'xreg + timesfm'}</div>
+            <div><span className="block text-slate-400">Sursă</span>{summary.source_month}</div>
+            <div><span className="block text-slate-400">Generat</span>{formatGeneratedAt(modelRun?.generated_at)}</div>
           </div>
         </div>
 

@@ -200,25 +200,42 @@ Geolocatia a fost eliminata complet din arhitectura aplicatiei.
 
 ### Agenti
 Tabul principal Agenti include `Prezentare Generala`, `Grile` si
-`Analiza agenti`.
+`Analiza agenti`. Prezentarea generala are navigare interna persistenta intre
+`Echipa`, `Acoperire magazine` si `Lista agentilor`, fara a dubla datele.
 
-- **Grile** — verificarea grilelor salariale permanente, statusul pe magazine
+- **Grile** — verificarea grilelor salariale permanente, antet desktop sticky,
+  grupuri manager/Team Leader memorate local, statusul pe magazine
   si operatiunile lunare controlate. Operatiunile privilegiate raman autorizate
   separat in backend.
 
-- **Analiza agenti** — evaluare agenti pe agentii activi curent, cu alocarea curenta de firma/magazin/manager. Sectiunea are doua moduri comutabile: evaluarea actuala (`/api/agents/evaluation`) si evaluarea noua, separata (`/api/agents/evaluation-v2`).
+- **Analiza agenti** — evaluare agenti pe agentii activi curent, cu alocarea
+  curenta de firma/magazin/manager. Scorul 0-100 (`/api/agents/evaluation-v2`)
+  este modul implicit; evaluarea veche (`/api/agents/evaluation`) ramane numai
+  ca vedere de comparatie.
+
+Pe mobil, filtrele Analizei agentilor sunt intr-un drawer, rezultatele sunt
+carduri responsive, iar comparatia veche ramane un mod secundar. Hub Istoric
+foloseste `Sumar / Trend / Detalii`, Grile foloseste un selector compact de
+stare, iar Salarii afiseaza carduri pentru magazine si agenti in locul
+tabelelor late.
 
 ### Management
 Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
 subtaburile sunt afisate in bara interna a ecranului, la fel ca in Agenti si
 Focus; sidebar-ul contine numai intrarea principala Management.
 
-- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) +
-  SQLite (vizite) + factor de forecast din scoring-ul CRM intern; cardurile
-  expandate includ scorurile magazinelor alocate. Router-e: `/api/hr`, `/api/crm`
-- **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
-- **Salarii** — overview, evolutie, raport salarii versus vanzari si istoric pe
-  agent. Accesul ramane limitat server-side la rolurile salariale aprobate.
+- **Manageri** — overview operational pe structura Retail curenta: numar de
+  magazine si agenti, fluxul agentilor fata de luna precedenta, magazine fara
+  agent raportat si sanatatea operationala din Vizite. Cardurile expandate
+  prezinta acoperirea pe magazine, fara evaluarea de vanzari duplicata din Hub.
+  Pentru Mihai Condorateanu ramane disponibila grila salariala, protejata de
+  acelasi RBAC ca Salarii. Router: `/api/hr`
+- **Calculator Target** — un document de target per luna, ghidat vizual prin
+  Configurare, Verificare, Ajustari manageri si Finalizare; revizia si starea
+  salvarii raman vizibile in timpul editarii. Router: `/api/target-calculator`
+- **Salarii** — vederi separate `Overview`, `Magazine` si `Agenti`, evolutie,
+  raport salarii versus vanzari si istoric pe agent. Regula mediei eligibile
+  ramane permanent vizibila, iar accesul este limitat server-side.
 - **P&L** — sumar financiar pe magazin, evolutii lunare si anuale si structura
   de cost, vizibil numai utilizatorilor cu capabilitatea P&L verificata de
   backend. Intervalul initial este anul calendaristic curent (year-to-date),

@@ -355,7 +355,7 @@ export function Campaigns({
             <CampaignMonthBar title="Concurs" icon={Trophy} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
             {contests.length > 0 ? (
               <div className="space-y-3">
-                {contests.length > 1 && (
+                {contests.length > 0 && (
                   <ContestSelector
                     contests={contests}
                     selectedKey={selectedContest?.key ?? ''}
@@ -401,13 +401,14 @@ export function Campaigns({
 
                 <div className="mb-3">
                   <div className="text-3xl font-black">{formatInt(promoData.promo_qualifying_bons)}</div>
-                  <div className="text-[11px] text-slate-500">unitati promo efective / bonuri calificate</div>
+                  <div className="text-[11px] font-semibold text-slate-500">bonuri calificate</div>
+                  <p className="mt-1 text-xs text-slate-500">Bonurile respectă mecanismul promoției; unitățile efective sunt raportate separat.</p>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <div className="text-lg font-black text-amber-600">{formatInt(promoData.promo_discounted_units)}</div>
-                    <div className="text-[10px] text-slate-500">Produse reduse</div>
+                    <div className="text-[10px] text-slate-500">Unități promo efective</div>
                   </div>
                   <div>
                     <div className="text-lg font-black">{formatInt(promoData.promo_active_stores)}</div>
@@ -737,6 +738,7 @@ export function Campaigns({
         </>
       ) : (
         <>
+          <CampaignMonthBar title="Focus" icon={Sparkles} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
           <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
             <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <Sparkles size={16} />
@@ -867,6 +869,7 @@ function PremiumGlassFocusSection({
   surfaceMode: PremiumGlassSurfaceMode;
   onSurfaceModeChange: (mode: PremiumGlassSurfaceMode) => void;
 }) {
+  const [mobileDetail, setMobileDetail] = useState<'overview' | 'models' | 'stores' | 'agents'>('overview');
   const summary = analysis?.summary;
   const modelChartData = (analysis?.models ?? []).map((model) => ({
     model: model.model_label.replace('Samsung ', 'S. '),
@@ -889,7 +892,7 @@ function PremiumGlassFocusSection({
                 key={option.value}
                 type="button"
                 onClick={() => onSurfaceModeChange(option.value)}
-                className={`rounded-lg px-3 py-1.5 transition ${
+                className={`min-h-11 rounded-lg px-3 py-2 transition lg:min-h-0 lg:py-1.5 ${
                   surfaceMode === option.value
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 dark:text-slate-300 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-200'
@@ -913,8 +916,23 @@ function PremiumGlassFocusSection({
       </div>
 
       {analysis && (
+        <SegmentedTabs<'overview' | 'models' | 'stores' | 'agents'>
+          ariaLabel="Detalii folii premium pe mobil"
+          className="glass lg:hidden"
+          options={[
+            { value: 'overview', label: 'Sumar' },
+            { value: 'models', label: 'Modele' },
+            { value: 'stores', label: 'Magazine' },
+            { value: 'agents', label: 'Agenți' },
+          ]}
+          value={mobileDetail}
+          onChange={setMobileDetail}
+        />
+      )}
+
+      {analysis && (
         <>
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+          <div className={`grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] ${mobileDetail !== 'overview' ? 'hidden lg:grid' : ''}`}>
             <div className="glass rounded-3xl p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-bold">Premium vs rest pe modele</h3>
@@ -943,10 +961,10 @@ function PremiumGlassFocusSection({
             <PremiumGlassSurfaceBreakdown rows={analysis.surfaces ?? []} />
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <PremiumGlassModelTable rows={analysis.models} />
-            <PremiumGlassManagerTable rows={analysis.managers} />
-            <PremiumGlassStoreTable rows={analysis.stores} />
-            <PremiumGlassAgentTable rows={analysis.agents} />
+            <div className={mobileDetail !== 'models' ? 'hidden lg:block' : ''}><PremiumGlassModelTable rows={analysis.models} /></div>
+            <div className={mobileDetail !== 'overview' ? 'hidden lg:block' : ''}><PremiumGlassManagerTable rows={analysis.managers} /></div>
+            <div className={mobileDetail !== 'stores' ? 'hidden lg:block' : ''}><PremiumGlassStoreTable rows={analysis.stores} /></div>
+            <div className={mobileDetail !== 'agents' ? 'hidden lg:block' : ''}><PremiumGlassAgentTable rows={analysis.agents} /></div>
           </div>
         </>
       )}
@@ -1110,6 +1128,7 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
 }
 
 function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse | null }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const tiers: IncentiveCategory[] = promoData?.incentive_categories ?? [];
   const periods = promoData?.incentive_periods ?? [];
 
@@ -1137,30 +1156,41 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-200 py-3 sm:grid-cols-4 dark:border-slate-700">
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_sold_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati vandute</div></div>
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati eligibile dupa promo</div></div>
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] text-slate-500">unitati in magazine calificate</div></div>
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_sold_qty) : '-'}</div><div className="text-[11px] text-slate-500">unități vândute</div></div>
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] text-slate-500">unități eligibile după promo</div></div>
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] text-slate-500">unități în magazine calificate</div></div>
         <div><div className="text-2xl font-black text-indigo-600">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] text-slate-500">incentive calculat acum</div></div>
       </div>
 
       {periods.length > 0 && (
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
-          {periods.map((period) => (
-            <div key={`${period.start_date}-${period.end_date}`} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-              <div className="flex flex-wrap items-center justify-between gap-1">
-                <div><div className="text-xs font-black">{period.label}</div><div className="text-[10px] text-slate-500">{period.start_date} – {period.end_date} · {formatInt(period.product_count)} coduri</div></div>
-                <div className="text-right text-xs font-black text-indigo-600">{formatCurrency(period.value)}</div>
+        <div className="mt-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{periods.length > 1 ? `${periods.length} mecanisme în luna selectată` : 'Mecanismul lunii'}</p>
+            <span className="text-[10px] font-semibold text-slate-400">valorile se aplică după data vânzării</span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {periods.map((period) => (
+              <div key={`${period.start_date}-${period.end_date}`} className="rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/20">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div><div className="text-xs font-black text-indigo-700 dark:text-indigo-300">{period.label}</div><div className="mt-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">{period.start_date} – {period.end_date}</div></div>
+                  <span className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300">{formatInt(period.product_count)} produse</span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <div><p className="text-[10px] text-slate-400">Valori</p><p className="font-bold">{period.reward_values.map((value) => `${formatInt(value)} RON`).join(' · ')}</p></div>
+                  <div><p className="text-[10px] text-slate-400">Unități</p><p className="font-bold">{formatInt(period.qty)}</p></div>
+                  <div className="text-right"><p className="text-[10px] text-slate-400">Calculat</p><p className="font-black text-indigo-600 dark:text-indigo-300">{formatCurrency(period.value)}</p></div>
+                </div>
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500">
-                <span><strong className="text-slate-700 dark:text-slate-200">{formatInt(period.qty)}</strong> unitati</span>
-                <span><strong className="text-slate-700 dark:text-slate-200">{formatCurrency(period.potential)}</strong> potential</span>
-                <span>{period.reward_values.map((value) => `${formatInt(value)} RON`).join(' · ')}</span>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
+      <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="mt-3 min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 md:hidden">
+        {detailsOpen ? 'Ascunde mecanismul de calificare' : 'Vezi mecanismul de calificare'}
+      </button>
+
+      <div className={detailsOpen ? 'contents' : 'hidden md:contents'}>
       {promoData && (
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-900/40">
           <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-slate-200 pb-3 dark:border-slate-700">
@@ -1213,6 +1243,7 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
           {tiers.map((tier) => <span key={tier.label} className="rounded-full bg-indigo-50 px-2 py-1 font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">{tier.label}: {formatInt(tier.qty)}</span>)}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -1296,7 +1327,7 @@ function ContestSelector({
   onSelect: (key: string) => void;
 }) {
   return (
-    <div className="glass grid grid-cols-2 gap-1 rounded-2xl p-1">
+    <div className="glass sticky top-2 z-20 grid grid-cols-2 gap-1 rounded-2xl p-1">
       {contests.map((contest) => (
         <button
           key={contest.key}

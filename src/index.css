@@ -176,3 +176,65 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Desktop data surfaces must remain readable and visibly scrollable. Tiny labels
+   are preserved on mobile where space is constrained, but never drop below
+   12px on desktop. */
+@media (min-width: 1024px) {
+  .text-\[9px\],
+  .text-\[10px\],
+  .text-\[11px\] {
+    font-size: 0.75rem !important;
+    line-height: 1rem !important;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  ::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: #cbd5e1;
+  }
+}
+
+@media (max-width: 1023px) {
+  main button,
+  main summary,
+  main select,
+  main input[type='text'],
+  main input[type='search'],
+  main input[type='month'],
+  main input[type='number'] {
+    min-height: 44px;
+  }
+
+  .segmented-tabs-scroll {
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
+  }
+
+  .segmented-tabs-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-bottom-nav {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .mobile-floating-filter {
+    bottom: calc(5.25rem + env(safe-area-inset-bottom));
+  }
+
+  .mobile-filter-sheet {
+    padding-bottom: max(1rem, calc(env(safe-area-inset-bottom) + 1rem));
+  }
+}

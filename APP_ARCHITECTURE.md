@@ -76,7 +76,13 @@ flowchart LR
 
 Navigatia principala ramane plata: sidebar-ul contine doar meniurile principale.
 Subtaburile Management sunt randate in interiorul ecranului Management, cu
-acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
+acelasi `SegmentedTabs` accesibil folosit de Hub, Focus, Agenti si Setari.
+Pe desktop, textul functional foarte mic este ridicat la minimum 12 px, iar
+scrollbar-urile pentru tabele si selectoare raman vizibile.
+Pe mobil, `SegmentedTabs` are snap si indiciu de overflow; shell-ul pastreaza
+filtrul global ca actiune flotanta discreta, coordoneaza barele sticky cu navigarea de jos si foloseste
+`safe-area-inset-bottom`. Ecranele cu tabele late pastreaza tabelul pe desktop
+si expun carduri sau sectiuni progresive la viewport mobil.
 
 Contractele publice backend sunt separate pe domenii in `backend/schemas/`
 (`dashboard`, `agents`, `campaigns`, `premium_glass`, `contests`, `ai_forecast`
@@ -121,11 +127,14 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   configurabile prin variabilele `RATE_LIMIT_*`; uploadul de vanzari ramane
   limitat separat prin `MAX_SALES_UPLOAD_BYTES`.
 - Management cu subtab-uri pentru Manageri, Calculator Target, Salarii si P&L.
-  Scorurile CRM raman un read model intern consumat de Manageri; endpointurile
-  istorice Tasks/concedii/alerte CRM nu sunt expuse ca subtab-uri V2.
+  Manageri foloseste `/api/hr/manager-overview` pentru structura operationala,
+  acoperirea cu agenti, fluxul fata de luna precedenta si indicatorii Vizite;
+  evaluarea de vanzari si scorurile CRM nu mai sunt duplicate in acest ecran.
+  Endpointurile istorice Tasks/concedii/alerte CRM nu sunt expuse ca subtab-uri V2.
 - Management -> `P&L` prezinta sumar financiar, evolutii lunare si anuale,
   structura pe categorii si performanta pe magazine, cu lunile estimate marcate
-  explicit. Scope-ul implicit este anul calendaristic curent, iar filtrele de
+  explicit, variatie fata de luna precedenta si avertismente de reconciliere
+  scoase inaintea detaliilor. Scope-ul implicit este anul calendaristic curent, iar filtrele de
   companie si magazin sunt aplicate in repository tuturor agregatelor. La fel
   ca in restul raportarii istorice, selectarea magazinului domina compania,
   pentru a pastra lunile dinaintea unei mutari intre entitati.
@@ -163,7 +172,8 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   inchise ca `failed`, fara stergerea istoricului de audit; restartul workerului
   reconciliaza imediat lease-urile intrerupte.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
-  builder Excel controlat server-side cu doua moduri: `Tabel detaliat` pentru
+  builder Excel ghidat prin `Dataset`, `Perioada si scope`, `Coloane` si
+  `Preview si export`, controlat server-side, cu doua moduri: `Tabel detaliat` pentru
   Agenti, Magazine, RM, ASM si `Incentive pe produs` cu filtre pe
   luni/agent/magazin/firma/RM/ASM,
   coloane bifabile, evolutii lunare/zilnice, preview si download `.xlsx`;

@@ -17,7 +17,7 @@ test.describe('E2E: accessibility smoke', () => {
         await expect(page.getByText('2026-05-06', { exact: true })).toBeVisible();
       } else {
         await page.getByRole('button', { name: 'Management' }).first().click();
-        await expect(page.getByRole('button', { name: 'Manageri', exact: true })).toBeVisible();
+        await expect(page.getByRole('tab', { name: 'Manageri', exact: true })).toBeVisible();
       }
 
       const results = await new AxeBuilder({ page })

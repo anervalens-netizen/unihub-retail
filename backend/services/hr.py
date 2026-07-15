@@ -73,6 +73,59 @@ class HrService:
             })
         return result
 
+    async def get_manager_overview(self, month: str) -> list[dict]:
+        """Construiește overview-ul managerial fără evaluarea duplicată de vânzări."""
+        manager_rows = await self.repo.get_manager_overview_rows(month)
+        store_rows = await self.repo.get_manager_store_overview_rows(month)
+        snapshot_rows = await self.repo.get_visits_snapshot(month)
+
+        stores_by_manager: dict[str, list[dict]] = {}
+        for row in store_rows:
+            manager = str(row["asm"])
+            active_agents = int(row["active_agents"] or 0)
+            previous_active_agents = int(row["previous_active_agents"] or 0)
+            stores_by_manager.setdefault(manager, []).append({
+                "site_code": row["site_code"],
+                "locatie": row["locatie"],
+                "firma": row["firma"],
+                "active_agents": active_agents,
+                "previous_active_agents": previous_active_agents,
+                "agent_delta": active_agents - previous_active_agents,
+            })
+
+        visits_by_manager = {str(row["asm"]): dict(row) for row in snapshot_rows}
+        result: list[dict] = []
+        for row in manager_rows:
+            manager = str(row["asm"])
+            active_stores = int(row["active_stores"] or 0)
+            active_agents = int(row["active_agents"] or 0)
+            previous_active_agents = int(row["previous_active_agents"] or 0)
+            visits = visits_by_manager.get(manager)
+            visited_stores = int(visits.get("distinct_stores") or 0) if visits else 0
+            result.append({
+                "manager": manager,
+                "regional": row["regional"],
+                "month": month,
+                "reporting_available": bool(row["reporting_available"]),
+                "active_stores": active_stores,
+                "active_agents": active_agents,
+                "previous_active_agents": previous_active_agents,
+                "agent_delta": active_agents - previous_active_agents,
+                "agents_added": int(row["agents_added"] or 0),
+                "agents_left": int(row["agents_left"] or 0),
+                "stores_without_agents": int(row["stores_without_agents"] or 0),
+                "agents_per_store": round(active_agents / active_stores, 1) if active_stores else 0,
+                "visits_available": visits is not None,
+                "total_visits": int(visits.get("total_visits") or 0) if visits else 0,
+                "visited_stores": visited_stores,
+                "visit_coverage_pct": round(visited_stores / active_stores * 100, 1) if visits and active_stores else None,
+                "avg_visit_completion": float(visits["avg_completion"]) if visits and visits.get("avg_completion") is not None else None,
+                "checklist_score": float(visits["checklist_score"]) if visits and visits.get("checklist_score") is not None else None,
+                "approved_pct": float(visits["approved_pct"]) if visits and visits.get("approved_pct") is not None else None,
+                "stores": stores_by_manager.get(manager, []),
+            })
+        return result
+
     async def get_asm_performance_history(self, asm_name: str, months: int = 6) -> list[dict]:
         pg_rows = await self.repo.get_asm_history_rows(asm_name, months)
         snapshot_hist = await self.repo.get_visits_snapshot_history(asm_name, months)

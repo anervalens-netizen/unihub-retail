@@ -5,22 +5,24 @@ import { SalariiSubtab } from './SalariiSubtab';
 import { PnlSubtab } from './PnlSubtab';
 import type { ManagementTab } from '../lib/tabs';
 import type { AppFilters } from './MainLayout';
+import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 
-const TABS: { id: ManagementTab; label: string }[] = [
-  { id: 'asm', label: 'Manageri' },
-  { id: 'target-calculator', label: 'Calculator Target' },
-  { id: 'salarii', label: 'Salarii' },
-  { id: 'pnl', label: 'P&L' },
+const TABS: SegmentedTabOption<ManagementTab>[] = [
+  { value: 'asm', label: 'Manageri' },
+  { value: 'target-calculator', label: 'Calculator Target' },
+  { value: 'salarii', label: 'Salarii' },
+  { value: 'pnl', label: 'P&L' },
 ];
 
 interface Props {
   activeSubTab?: ManagementTab;
   setActiveSubTab?: (tab: ManagementTab) => void;
   hasPnlAccess?: boolean;
+  currentMonth?: string;
   salaryFilters: AppFilters;
 }
 
-export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false, salaryFilters }: Props) {
+export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false, currentMonth, salaryFilters }: Props) {
   const [localTab, setLocalTab] = useState<ManagementTab>('asm');
 
   const activeTab = activeSubTab ?? localTab;
@@ -40,24 +42,16 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
         </div>
       </div>
 
-      <div className="mx-3 mt-3 flex gap-1 overflow-x-auto rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-        {TABS.filter((tab) => tab.id !== 'pnl' || hasPnlAccess).map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setTab(tab.id)}
-            className={`min-w-fit flex-1 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
-              activeTab === tab.id
-                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
-                : 'text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        ariaLabel="Secțiuni Management"
+        className="glass mx-3 mt-3"
+        options={TABS.filter((tab) => tab.value !== 'pnl' || hasPnlAccess)}
+        value={activeTab}
+        onChange={setTab}
+      />
 
-      <div className="mt-3 flex-1 overflow-y-auto">
-        {activeTab === 'asm' && <ASMSubtab />}
+      <div className="mt-3 flex-1">
+        {activeTab === 'asm' && <ASMSubtab currentMonth={currentMonth} />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
         {activeTab === 'salarii' && <SalariiSubtab globalFilters={salaryFilters} />}
         {activeTab === 'pnl' && hasPnlAccess && <PnlSubtab />}

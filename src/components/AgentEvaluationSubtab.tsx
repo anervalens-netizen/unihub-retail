@@ -653,6 +653,69 @@ function AgentV2Row({ row }: { row: AgentEvaluationV2Row }) {
   );
 }
 
+function AgentV2MobileCard({ row }: { row: AgentEvaluationV2Row }) {
+  const indicators = [
+    ['Target', row.target_pct, row.target_score],
+    ['Productivitate', row.daily_vs_reference_pct, row.daily_score],
+    ['Bon2Acc', row.bonuri_pct, row.bonuri_score],
+    ['Focus', row.focus_pct, row.focus_score],
+    ['Folii premium', row.premium_glass_pct, row.premium_glass_score],
+  ] as const;
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:hidden">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{row.agent}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-500">{row.locatie} · <MonthLabel month={row.month} /></p>
+          <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{formatMoney(row.total_sales)} RON · {row.working_days} zile</p>
+        </div>
+        <div className="text-right">
+          <span className={`inline-flex min-w-14 justify-center rounded-xl px-2 py-1.5 text-base font-black ${score100Color(row.total_score, row.eligibility_status)}`}>
+            {row.total_score === null ? '—' : Number(row.total_score).toFixed(1)}
+          </span>
+          <p className="mt-1 text-[10px] font-semibold text-slate-500">{row.rating}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {indicators.map(([label, value, score]) => (
+          <div key={label} className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/70">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+            <div className="mt-0.5 flex items-baseline justify-between gap-2">
+              <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{formatPct(value)}</span>
+              <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">{score === null ? '—' : Number(score).toFixed(1)}p</span>
+            </div>
+          </div>
+        ))}
+        <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/70">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Valoare reper</p>
+          <p className="mt-0.5 text-sm font-bold text-slate-800 dark:text-slate-100">{formatNumber(row.value_reper, 0)} RON</p>
+        </div>
+      </div>
+      {row.confidence_flags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {row.confidence_flags.slice(0, 3).map((flag) => <span key={flag} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-500 dark:bg-slate-800">{flagLabel(flag)}</span>)}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function AgentLegacyMobileCard({ row }: { row: AgentEvaluationRow }) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:hidden">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0"><p className="truncate text-sm font-bold">{row.agent}</p><p className="truncate text-xs text-slate-500">{row.locatie} · <MonthLabel month={row.month} /></p></div>
+        <span className={`rounded-xl px-2.5 py-1.5 text-sm font-black ${scoreColor(row.total_points)}`}>{row.total_points}/18</span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div><p className="text-[10px] text-slate-400">Vânzare</p><p className="text-xs font-bold">{formatMoney(row.total_sales)}</p></div>
+        <div><p className="text-[10px] text-slate-400">Target</p><p className="text-xs font-bold">{formatPct(row.target_pct)}</p></div>
+        <div><p className="text-[10px] text-slate-400">Focus</p><p className="text-xs font-bold">{formatPct(row.focus_pct)}</p></div>
+      </div>
+    </article>
+  );
+}
+
 function NewEvaluationSubsection({
   rows,
   sortKey,
@@ -664,7 +727,7 @@ function NewEvaluationSubsection({
   sortDirection: 'asc' | 'desc';
   onSort: (key: V2SortKey) => void;
 }) {
-  const [showMechanism, setShowMechanism] = useState(true);
+  const [showMechanism, setShowMechanism] = useState(false);
   const summary = useMemo(() => {
     const scored = rows.filter((row) => row.total_score !== null);
     const agents = new Set(rows.map((row) => row.agent)).size;
@@ -799,7 +862,11 @@ function NewEvaluationSubsection({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
+      <div className="space-y-2 lg:hidden">
+        {rows.map((row) => <AgentV2MobileCard key={`${row.month}:${row.site_code}:${row.agent}:mobile`} row={row} />)}
+        {rows.length === 0 && <p className="rounded-2xl border border-slate-200 p-6 text-center text-sm text-slate-400 dark:border-slate-700">Fără agenți pentru filtrele selectate.</p>}
+      </div>
+      <div className="hidden rounded-2xl border border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/40 lg:block lg:overflow-hidden">
         <div className="max-h-[68vh] overflow-auto">
           <table className="min-w-[1320px] w-full text-left">
             <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
@@ -843,7 +910,7 @@ const EMPTY_V2_RESPONSE: AgentEvaluationV2Response = { months: [], firmas: [], a
 export function AgentEvaluationSubtab() {
   const [data, setData] = useState<AgentEvaluationResponse>(EMPTY_RESPONSE);
   const [v2Data, setV2Data] = useState<AgentEvaluationV2Response>(EMPTY_V2_RESPONSE);
-  const [mode, setMode] = useState<'current' | 'new'>('current');
+  const [mode, setMode] = useState<'current' | 'new'>('new');
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [firma, setFirma] = useState('');
   const [asm, setAsm] = useState('');
@@ -853,6 +920,7 @@ export function AgentEvaluationSubtab() {
   const [v2SortKey, setV2SortKey] = useState<V2SortKey>('total_score');
   const [v2SortDirection, setV2SortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -980,15 +1048,15 @@ export function AgentEvaluationSubtab() {
 
   return (
     <div className="p-3 md:p-4 space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Analiză agenți</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">Din ianuarie 2025</p>
         </div>
-        <div className="inline-flex h-9 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
+        <div className="hidden h-9 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800 lg:inline-flex">
           {[
-            { key: 'current', label: 'Evaluare actuală' },
-            { key: 'new', label: 'Evaluare nouă' },
+            { key: 'new', label: 'Scor 0–100' },
+            { key: 'current', label: 'Comparație veche' },
           ].map((item) => (
             <button
               key={item.key}
@@ -1004,9 +1072,18 @@ export function AgentEvaluationSubtab() {
             </button>
           ))}
         </div>
+        <button type="button" onClick={() => setMobileFiltersOpen(true)} className="min-h-11 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-xs font-bold text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 lg:hidden">Filtre</button>
+        <details className="relative lg:hidden">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Mod</summary>
+          <div className="absolute right-0 z-40 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <button type="button" onClick={() => setMode('new')} className="min-h-11 w-full rounded-lg px-3 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Scor 0–100</button>
+            <button type="button" onClick={() => setMode('current')} className="min-h-11 w-full rounded-lg px-3 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Comparație veche</button>
+          </div>
+        </details>
         <button
           onClick={load}
-          className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500"
+          aria-label="Reîncarcă analiza"
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
         >
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
@@ -1059,14 +1136,28 @@ export function AgentEvaluationSubtab() {
         )}
       </div>
 
+      {mobileFiltersOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 lg:hidden" onClick={() => setMobileFiltersOpen(false)}>
+          <div className="mobile-filter-sheet w-full rounded-t-3xl bg-white p-4 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-bold">Filtre analiză</h3><button type="button" onClick={() => setMobileFiltersOpen(false)} className="h-11 rounded-xl bg-slate-100 px-3 text-xs font-bold dark:bg-slate-800">Închide</button></div>
+            {filterControls}
+            <button type="button" onClick={() => setMobileFiltersOpen(false)} className="mt-4 min-h-11 w-full rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">Aplică filtrele</button>
+          </div>
+        </div>
+      )}
+
       {mode === 'current' ? (
         <>
           <MechanismCard />
           <CompactSummary rows={rows} summary={summary}>
-            {filterControls}
+            <div className="hidden lg:block">{filterControls}</div>
           </CompactSummary>
 
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white/70 dark:bg-slate-900/40">
+          <div className="space-y-2 lg:hidden">
+            {rows.map((row) => <AgentLegacyMobileCard key={`${row.month}:${row.site_code}:${row.agent}:legacy-mobile`} row={row} />)}
+          </div>
+
+          <div className="hidden rounded-2xl border border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/40 lg:block lg:overflow-hidden">
             <div className="max-h-[68vh] overflow-auto">
               <table className="min-w-[1060px] xl:min-w-0 w-full text-left">
                 <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
@@ -1102,7 +1193,7 @@ export function AgentEvaluationSubtab() {
         </>
       ) : (
         <>
-          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 p-2.5">
+          <div className="hidden rounded-xl border border-slate-200 bg-white/80 p-2.5 dark:border-slate-700 dark:bg-slate-900/50 lg:block">
             {filterControls}
           </div>
           <NewEvaluationSubsection

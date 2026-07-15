@@ -21,6 +21,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ExportTableButton } from './ExportTableButton';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { usePersistentState } from '../lib/usePersistentState';
+import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 import { 
   fetchAgentsOverview, 
   fetchAgentsMovement, 
@@ -39,6 +40,19 @@ const nfNum = new Intl.NumberFormat('ro-RO');
 
 type AgentListTab = 'active' | 'movement' | 'inactive' | 'churned' | 'all';
 type AgentsMainTab = 'overview' | 'grile' | 'analysis';
+type AgentsOverviewSection = 'team' | 'coverage' | 'list';
+
+const AGENTS_MAIN_OPTIONS: SegmentedTabOption<AgentsMainTab>[] = [
+  { value: 'overview', label: 'Prezentare generală' },
+  { value: 'grile', label: 'Grile' },
+  { value: 'analysis', label: 'Analiză agenți' },
+];
+
+const AGENTS_OVERVIEW_OPTIONS: SegmentedTabOption<AgentsOverviewSection>[] = [
+  { value: 'team', label: 'Echipă' },
+  { value: 'coverage', label: 'Acoperire magazine' },
+  { value: 'list', label: 'Lista agenților' },
+];
 
 const AGENT_LIST_TABS = new Set<AgentListTab>([
   'active',
@@ -348,6 +362,20 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
   const [cardMagazin, setCardMagazin] = useState(ALL_STORES);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [expandedSection, setExpandedSection] = useState<'active' | 'modified' | 'inactive' | null>(null);
+  const [overviewSection, setOverviewSection] = useState<AgentsOverviewSection>('team');
+  const teamSectionRef = useRef<HTMLDivElement>(null);
+  const coverageSectionRef = useRef<HTMLDivElement>(null);
+  const listSectionRef = useRef<HTMLDivElement>(null);
+
+  const selectOverviewSection = (section: AgentsOverviewSection) => {
+    setOverviewSection(section);
+    const target = section === 'team'
+      ? teamSectionRef.current
+      : section === 'coverage'
+        ? coverageSectionRef.current
+        : listSectionRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const queryParams = useMemo(() => {
     const p: AgentsQuery = { selected_month: currentMonth };
@@ -505,38 +533,13 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
         </p>
       </div>
 
-      <div className="flex gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-        <button
-          onClick={() => setMainTab('overview')}
-          className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
-            mainTab === 'overview'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          Prezentare Generala
-        </button>
-        <button
-          onClick={() => setMainTab('grile')}
-          className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
-            mainTab === 'grile'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          Grile
-        </button>
-        <button
-          onClick={() => setMainTab('analysis')}
-          className={`flex-1 rounded-xl py-2 text-sm font-bold transition-all ${
-            mainTab === 'analysis'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          Analiza agenti
-        </button>
-      </div>
+      <SegmentedTabs<AgentsMainTab>
+        ariaLabel="Secțiuni Agenți"
+        className="glass"
+        options={AGENTS_MAIN_OPTIONS}
+        value={mainTab}
+        onChange={setMainTab}
+      />
 
       {mainTab === 'analysis' ? (
         <ErrorBoundary>
@@ -548,8 +551,16 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
         </ErrorBoundary>
       ) : (
         <>
+          <div className="sticky top-2 z-20 rounded-2xl bg-white/90 p-1 shadow-sm backdrop-blur-xl dark:bg-slate-900/90">
+            <SegmentedTabs<AgentsOverviewSection>
+              ariaLabel="Zone prezentare generală agenți"
+              options={AGENTS_OVERVIEW_OPTIONS}
+              value={overviewSection}
+              onChange={selectOverviewSection}
+            />
+          </div>
           {/* Zone A: Snapshot Luna Curenta */}
-      <div className="glass rounded-3xl p-4">
+      <div ref={teamSectionRef} className="glass scroll-mt-20 rounded-3xl p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold">Snapshot — {currentMonth}</h3>
@@ -776,7 +787,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
       </div>
 
       {/* Store Coverage Section */}
-      <div className="glass rounded-3xl p-4">
+      <div ref={coverageSectionRef} className="glass scroll-mt-20 rounded-3xl p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold">Magazine si Flux</h3>
@@ -927,7 +938,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
         )}
       </div>
 
-      <div className="glass rounded-3xl p-4">
+      <div ref={listSectionRef} className="glass scroll-mt-20 rounded-3xl p-4">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold">Lista Agenti</h3>

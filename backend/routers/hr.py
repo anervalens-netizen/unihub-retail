@@ -80,6 +80,15 @@ async def get_asm_perf(
     return await svc.get_asm_performance(month, regional)
 
 
+@router.get("/manager-overview")
+async def get_manager_overview(
+    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    svc: HrService = Depends(get_hr_service),
+):
+    """Overview operațional de portofoliu și sănătate a echipei per manager."""
+    return await svc.get_manager_overview(month)
+
+
 @router.get("/asm-performance/{asm_name}/history")
 async def get_asm_perf_history(
     asm_name: str,
