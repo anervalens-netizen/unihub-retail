@@ -37,6 +37,7 @@ REFRESH_LOCK_TTL_SECONDS = int(
     + MAX_JWKS_REFRESH_SECONDS
     + REFRESH_OWNER_BUFFER_SECONDS
 )
+REFRESH_OWNER_TIMEOUT_SECONDS = float(REFRESH_LOCK_TTL_SECONDS - 5)
 REFRESH_WAIT_SECONDS = float(REFRESH_LOCK_TTL_SECONDS + 5)
 REFRESH_POLL_SECONDS = 0.1
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -258,6 +259,28 @@ async def _release_refresh_lock(client: Redis, lock_key: str, lock_token: bytes)
     )
 
 
+async def _delete_session_if_unchanged(
+    client: Redis,
+    session_key: str,
+    expected_payload: bytes,
+) -> bool:
+    result = await cast(
+        Awaitable[Any],
+        client.eval(
+            """
+            if redis.call('get', KEYS[1]) == ARGV[1] then
+                return redis.call('del', KEYS[1])
+            end
+            return 0
+            """,
+            1,
+            session_key,
+            expected_payload.decode("ascii"),
+        ),
+    )
+    return bool(result)
+
+
 async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | None:
     settings, client, cipher, http = _runtime()
     lock_key = LOCK_PREFIX + session_id
@@ -291,28 +314,35 @@ async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | 
             await asyncio.sleep(REFRESH_POLL_SECONDS)
         raise ConcurrentSessionRefreshUnavailable
     try:
-        refresh_token = record.get("refresh_token")
-        if not isinstance(refresh_token, str) or not refresh_token:
-            return None
-        response = await http.post(settings.token_url, data={
-            "grant_type": "refresh_token", "refresh_token": refresh_token,
-            "client_id": settings.client_id, "client_secret": settings.client_secret,
-        })
-        if response.status_code != 200 or len(response.content) > 256 * 1024:
-            return None
-        tokens = response.json()
-        if not isinstance(tokens, dict):
-            return None
-        access_token = tokens.get("access_token")
-        if not isinstance(access_token, str):
-            return None
-        claims = await verify_oidc_token(access_token)
-        record.update(asdict(claims))
-        if isinstance(tokens.get("refresh_token"), str):
-            record["refresh_token"] = tokens["refresh_token"]
-        await _store_session(session_id, record)
-        return record
-    except (httpx.HTTPError, ValueError, json.JSONDecodeError, HTTPException):
+        async with asyncio.timeout(REFRESH_OWNER_TIMEOUT_SECONDS):
+            refresh_token = record.get("refresh_token")
+            if not isinstance(refresh_token, str) or not refresh_token:
+                return None
+            response = await http.post(settings.token_url, data={
+                "grant_type": "refresh_token", "refresh_token": refresh_token,
+                "client_id": settings.client_id, "client_secret": settings.client_secret,
+            })
+            if response.status_code != 200 or len(response.content) > 256 * 1024:
+                return None
+            tokens = response.json()
+            if not isinstance(tokens, dict):
+                return None
+            access_token = tokens.get("access_token")
+            if not isinstance(access_token, str):
+                return None
+            claims = await verify_oidc_token(access_token)
+            record.update(asdict(claims))
+            if isinstance(tokens.get("refresh_token"), str):
+                record["refresh_token"] = tokens["refresh_token"]
+            await _store_session(session_id, record)
+            return record
+    except (
+        TimeoutError,
+        httpx.HTTPError,
+        ValueError,
+        json.JSONDecodeError,
+        HTTPException,
+    ):
         return None
     finally:
         try:
@@ -326,8 +356,10 @@ async def authenticate_session(request: Request) -> AuthClaims:
     session_id = request.cookies.get(_cookie_name(settings), "")
     if not OPAQUE_RE.fullmatch(session_id):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
-    record = _unpack(cipher, await client.get(SESSION_PREFIX + session_id))
-    if record is None:
+    session_key = SESSION_PREFIX + session_id
+    packed_record = await client.get(session_key)
+    record = _unpack(cipher, packed_record)
+    if record is None or packed_record is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     if int(record.get("exp", 0)) <= int(time.time()) + 60:
         try:
@@ -338,8 +370,32 @@ async def authenticate_session(request: Request) -> AuthClaims:
                 "Session refresh temporarily unavailable",
             ) from exc
         if record is None:
-            await client.delete(SESSION_PREFIX + session_id)
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+            current = _unpack(cipher, await client.get(session_key))
+            if current is not None and int(current.get("exp", 0)) > int(time.time()) + 60:
+                record = current
+            elif await _delete_session_if_unchanged(
+                client,
+                session_key,
+                packed_record,
+            ):
+                raise HTTPException(
+                    status.HTTP_401_UNAUTHORIZED,
+                    "Authentication required",
+                )
+            else:
+                # Another owner changed the ciphertext after our read. Never
+                # delete that state; consume it only when it is now valid.
+                current = _unpack(cipher, await client.get(session_key))
+                if (
+                    current is not None
+                    and int(current.get("exp", 0)) > int(time.time()) + 60
+                ):
+                    record = current
+                else:
+                    raise HTTPException(
+                        status.HTTP_503_SERVICE_UNAVAILABLE,
+                        "Session refresh temporarily unavailable",
+                    )
     if request.method not in SAFE_METHODS:
         supplied = request.headers.get("X-CSRF-Token", "")
         expected = record.get("csrf", "")

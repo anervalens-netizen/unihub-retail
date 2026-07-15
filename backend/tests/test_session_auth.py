@@ -42,9 +42,10 @@ class FakeRedis:
         _script: str,
         _keys: int,
         key: str,
-        token: str,
+        token: str | bytes,
     ) -> int:
-        if self.values.get(key) != token.encode("ascii"):
+        expected = token if isinstance(token, bytes) else token.encode("ascii")
+        if self.values.get(key) != expected:
             return 0
         return int(self.values.pop(key, None) is not None)
 
@@ -107,6 +108,8 @@ def test_refresh_singleflight_window_covers_bounded_owner_work() -> None:
         + session_auth.MAX_JWKS_REFRESH_SECONDS
     )
     assert session_auth.REFRESH_LOCK_TTL_SECONDS >= bounded_provider_work + 10
+    assert bounded_provider_work + 10 <= session_auth.REFRESH_OWNER_TIMEOUT_SECONDS
+    assert session_auth.REFRESH_OWNER_TIMEOUT_SECONDS < session_auth.REFRESH_LOCK_TTL_SECONDS
     assert session_auth.REFRESH_WAIT_SECONDS > session_auth.REFRESH_LOCK_TTL_SECONDS
 
 
@@ -370,3 +373,81 @@ async def test_refresh_waiter_timeout_preserves_owner_session(
     assert unavailable.value.status_code == 503
     assert session_key in redis.values
     assert redis.values[lock_key] == b"other-owner"
+
+
+@pytest.mark.anyio
+async def test_refresh_owner_work_is_bounded_below_lock_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+
+    class SlowHttp(FakeHttp):
+        async def post(self, url: str, data: dict[str, object]) -> httpx.Response:
+            await asyncio.sleep(0.05)
+            return await super().post(url, data)
+
+    _install(redis, SlowHttp({"access_token": "late-access"}))
+    session_id = "o" * 43
+    lock_key = session_auth.LOCK_PREFIX + session_id
+    monkeypatch.setattr(session_auth, "REFRESH_OWNER_TIMEOUT_SECONDS", 0.01)
+
+    result = await session_auth._refresh(
+        session_id,
+        {"refresh_token": "old-refresh"},
+    )
+
+    assert result is None
+    assert lock_key not in redis.values
+
+
+@pytest.mark.anyio
+async def test_failed_refresh_cannot_delete_concurrently_rotated_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "z" * 43
+    session_key = session_auth.SESSION_PREFIX + session_id
+    now = int(time.time())
+    expired = {
+        "sub": "subject",
+        "email": "user@example.invalid",
+        "preferred_username": "user",
+        "groups": ["unihub-manager"],
+        "iss": "issuer",
+        "aud": "retail",
+        "iat": now - 600,
+        "exp": now - 1,
+        "refresh_token": "old-refresh",
+        "csrf": "csrf",
+    }
+    refreshed = {**expired, "iat": now, "exp": now + 600}
+
+    class RotateBeforeCompareRedis(FakeRedis):
+        rotate = False
+
+        async def eval(
+            self,
+            script: str,
+            keys: int,
+            key: str,
+            token: str | bytes,
+        ) -> int:
+            if self.rotate and key == session_key:
+                assert session_auth._cipher is not None
+                self.values[session_key] = session_auth._pack(
+                    session_auth._cipher,
+                    refreshed,
+                )
+                self.rotate = False
+            return await super().eval(script, keys, key, token)
+
+    redis = RotateBeforeCompareRedis()
+    _install(redis)
+    await session_auth._store_session(session_id, expired)
+    redis.rotate = True
+    monkeypatch.setattr(session_auth, "_refresh", AsyncMock(return_value=None))
+
+    claims = await session_auth.authenticate_session(_request("GET", session_id))
+
+    assert claims.sub == "subject"
+    stored = session_auth._unpack(session_auth._cipher, redis.values[session_key])  # type: ignore[arg-type]
+    assert stored is not None and stored["exp"] == refreshed["exp"]
