@@ -336,6 +336,63 @@ finalize_approval() {
   APPROVAL_CLAIM=""
 }
 
+verify_completed_deploy_record() {
+  local ci_run_id="$1"
+  local source_sha="$2"
+  local artifact_sha256="$3"
+  local prefix="${ci_run_id}-${source_sha}-${artifact_sha256}"
+
+  [[ -d "$APPROVAL_ROOT" && ! -L "$APPROVAL_ROOT" ]] || die "approval store is unavailable"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    [[ "$(stat -c '%u:%g:%a' "$APPROVAL_ROOT")" == "0:0:700" ]] \
+      || die "approval store must be root:root mode 0700"
+  fi
+
+  shopt -s nullglob
+  local -a matches=("$APPROVAL_ROOT/${prefix}-"*.consumed)
+  shopt -u nullglob
+  [[ "${#matches[@]}" -ge 1 ]] || die "a consumed approval is required to reverify an existing deploy"
+
+  local record approval_id approver backup_handle canonical_handle release_manifest approval_link
+  local active_records=0
+  for record in "${matches[@]}"; do
+    [[ -f "$record" && ! -L "$record" ]] || die "consumed approval record is invalid"
+    if [[ "$TEST_MODE" != "1" ]]; then
+      [[ "$(stat -c '%u:%g:%a' "$record")" == "0:0:600" ]] \
+        || die "consumed approval record must be root:root mode 0600"
+    fi
+    [[ "$(read_approval_value "$record" state)" == "consumed" ]] || die "completed approval state is invalid"
+    [[ "$(read_approval_value "$record" ci_run_id)" == "$ci_run_id" ]] || die "completed approval CI run mismatch"
+    [[ "$(read_approval_value "$record" source_sha)" == "$source_sha" ]] || die "completed approval source SHA mismatch"
+    [[ "$(read_approval_value "$record" artifact_sha256)" == "$artifact_sha256" ]] || die "completed approval artifact mismatch"
+    approval_id="$(read_approval_value "$record" approval_id)"
+    [[ "$approval_id" == "$(basename "${record%.consumed}")" ]] || die "completed approval ID mismatch"
+    approver="$(read_approval_value "$record" approved_by_os)"
+    [[ "$approver" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$approver" != "root" && "$approver" != "unihub-deploy" ]] \
+      || die "completed approval has an invalid human identity"
+
+    backup_handle="$(read_approval_value "$record" backup_handle)"
+    [[ -d "$backup_handle" && ! -L "$backup_handle" ]] || die "completed deploy backup handle is invalid"
+    canonical_handle="$(realpath -e -- "$backup_handle")"
+    [[ "$(dirname "$canonical_handle")" == "$BACKUP_ROOT" ]] || die "completed deploy backup handle is outside the backup root"
+    [[ "$(basename "$canonical_handle")" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}-to-[0-9a-f]{12}-[0-9a-f]{16}$ ]] \
+      || die "completed deploy backup handle name is invalid"
+    release_manifest="$canonical_handle/release.env"
+    approval_link="$canonical_handle/approval.env"
+    [[ -f "$release_manifest" && -f "$approval_link" ]] || die "completed deploy audit link is missing"
+    [[ "$(read_approval_value "$release_manifest" NEW_SHA)" == "$source_sha" ]] || die "completed deploy manifest SHA mismatch"
+    [[ "$(read_approval_value "$approval_link" approval_id)" == "$approval_id" ]] || die "completed deploy approval link mismatch"
+    [[ "$(read_approval_value "$approval_link" ci_run_id)" == "$ci_run_id" ]] || die "completed deploy linked CI run mismatch"
+    [[ "$(read_approval_value "$approval_link" source_sha)" == "$source_sha" ]] || die "completed deploy linked SHA mismatch"
+    [[ "$(read_approval_value "$approval_link" artifact_sha256)" == "$artifact_sha256" ]] || die "completed deploy linked artifact mismatch"
+    if [[ "$(read_approval_value "$release_manifest" STATE)" == "deployed" ]]; then
+      active_records=$((active_records + 1))
+    fi
+  done
+
+  [[ "$active_records" -eq 1 ]] || die "exactly one deployed audit record is required for reverification"
+}
+
 run_verified_backup() {
   local started_at="$1"
   if [[ "$TEST_MODE" == "1" ]]; then
@@ -487,7 +544,18 @@ deploy_release() {
 
   local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce
   old_sha="$(git_service rev-parse HEAD)"
-  [[ "$old_sha" != "$expected_sha" ]] || die "requested SHA is already deployed"
+  if [[ "$old_sha" == "$expected_sha" ]]; then
+    verify_completed_deploy_record "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
+    work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-reverify.XXXXXX")"
+    trap 'rm -rf -- "$work_dir"' RETURN
+    artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+    [[ -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
+    diff -qr -- "$LIVE_ROOT/dist" "$artifact_tree/dist" >/dev/null \
+      || die "live frontend differs from the tested release artifact"
+    verify_local_health
+    log "existing deployment reverified without mutation: $expected_sha"
+    return 0
+  fi
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   backup_nonce="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
   backup_dir="$BACKUP_ROOT/${stamp}-${old_sha:0:12}-to-${expected_sha:0:12}-${backup_nonce}"
@@ -499,7 +567,7 @@ deploy_release() {
   local approval_claimed=0
   on_deploy_error() {
     local rc=$?
-    trap - ERR
+    trap - EXIT ERR
     if [[ "$rollback_needed" == "1" ]]; then
       log "deployment failed after switch; starting automatic rollback"
       if ! (rollback_from_backup "$backup_dir" "$expected_sha" "$old_sha"); then
@@ -515,10 +583,14 @@ deploy_release() {
     fi
     exit "$rc"
   }
+  # ERR performs rollback while deploy_release locals are still in scope.
+  # EXIT is the fail-safe for explicit exits (for example, validation via die).
+  # The handler clears both traps before cleanup, so it can run only once.
   trap on_deploy_error ERR
+  trap on_deploy_error EXIT
 
-  claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   approval_claimed=1
+  claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
   ensure_backup_root
   mkdir -p "$backup_dir"
@@ -545,7 +617,7 @@ deploy_release() {
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "deployed Git SHA mismatch"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"
   finalize_approval consumed "$backup_dir"
-  trap - ERR
+  trap - EXIT ERR
   log "deployment verified: $expected_sha"
   log "rollback handle: $backup_dir"
 }

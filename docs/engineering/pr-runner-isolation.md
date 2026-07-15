@@ -70,10 +70,13 @@ the `unihub-deploy` service identity is
 explicitly refused that mode.
 
 The sandbox covers missing approval, invalid approval identity, duplicates,
-single consumption, expiry, digest mismatch, success, manual rollback, injected
-health failure with automatic rollback, source tampering, path traversal,
-archive symlinks and an unexpected dirty worktree. The exact final CI artifact
-must also pass the entrypoint's read-only `validate` mode before approval.
+single consumption, exact read-only reverification of an already deployed release,
+expiry, digest mismatch, success, manual rollback, injected health failure with
+automatic rollback, source tampering, path traversal, archive symlinks and an
+unexpected dirty worktree. Workflow-level public probes retry transient failures;
+a rerun can reverify the exact consumed approval, CI run, SHA and artifact without
+performing another deployment. The exact final CI artifact must also pass the
+entrypoint's read-only `validate` mode before approval.
 
 ## Controlled isolation evidence
 

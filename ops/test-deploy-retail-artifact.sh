@@ -121,6 +121,25 @@ grep -q "^artifact_sha256=$ARTIFACT_SHA256$" "$HANDLE/approval.env"
 grep -q '^approved_by_os=test-approver$' "$HANDLE/approval.env"
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" -eq 1 ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)" -eq 0 ]]
+BACKUP_COUNT="$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" -eq 1 ]]
+[[ "$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$BACKUP_COUNT" ]]
+
+printf 'corrupted frontend\n' >"$LIVE/dist/index.html"
+set +e
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+REVERIFY_CORRUPT_DIST_RC=$?
+set -e
+[[ "$REVERIFY_CORRUPT_DIST_RC" -ne 0 ]]
+printf 'new frontend\n' >"$LIVE/dist/index.html"
+
+set +e
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$(printf '0%.0s' {1..64})" >/dev/null 2>&1
+REVERIFY_WRONG_DIGEST_RC=$?
+set -e
+[[ "$REVERIFY_WRONG_DIGEST_RC" -ne 0 ]]
 
 printf 'print("newer")\n' >"$BUILDER/backend/main.py"
 printf 'published audit v2\n' >"$BUILDER/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md"
@@ -140,7 +159,13 @@ run_deploy "$NEWER_ARTIFACT" "$NEWER_SHA" "$((CI_RUN_ID + 10))" "$NEWER_ARTIFACT
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEWER_SHA" ]]
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit v2" ]]
 [[ "$(<"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md")" == "published plan v2" ]]
-SECOND_HANDLE="$(rg -l '^STATE=deployed$' "$OPS/backups/retail-deploy"/*/release.env | xargs -r -n1 dirname | tail -1)"
+SECOND_HANDLE="$(
+  for manifest in "$OPS/backups/retail-deploy"/*/release.env; do
+    if grep -q "^NEW_SHA=$NEWER_SHA$" "$manifest" && grep -q '^STATE=deployed$' "$manifest"; then
+      dirname "$manifest"
+    fi
+  done
+)"
 [[ -n "$SECOND_HANDLE" && "$SECOND_HANDLE" != "$HANDLE" ]]
 
 run_deploy rollback "$SECOND_HANDLE"
@@ -183,12 +208,15 @@ printf 'tampered\n' >"$ROOT/tampered/backend/main.py"
 tar -czf "$ROOT/tampered.tar.gz" -C "$ROOT/tampered" .
 TAMPER_SHA256="$(sha256sum "$ROOT/tampered.tar.gz" | awk '{print $1}')"
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$TAMPER_SHA256" >/dev/null
+FAILED_BEFORE_TAMPER="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
 set +e
 run_deploy "$ROOT/tampered.tar.gz" "$NEW_SHA" "$CI_RUN_ID" "$TAMPER_SHA256" >/dev/null 2>&1
 TAMPER_RC=$?
 set -e
 [[ "$TAMPER_RC" -ne 0 ]]
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$((FAILED_BEFORE_TAMPER + 1))" ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)" -eq 0 ]]
 
 python3 - "$ROOT/unsafe.tar.gz" <<'PY'
 import io
