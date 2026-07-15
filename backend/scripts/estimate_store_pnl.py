@@ -103,11 +103,15 @@ def predict_amount(
     if category == "c3" and target_salary > 0:
         salary_ratios = ratio_history(history, salary_history, target, causal=causal)
         if salary_ratios:
-            return median(ratio for _, ratio in salary_ratios) * target_salary
+            median_ratio = median(ratio for _, ratio in salary_ratios)
+            if median_ratio is not None:
+                return median_ratio * target_salary
     if category in VARIABLE_CODES or category == "c3":
         sales_ratios = ratio_history(history, sales_history, target, causal=causal)
         if sales_ratios and target_sales > 0:
-            return median(ratio for _, ratio in sales_ratios) * target_sales
+            median_ratio = median(ratio for _, ratio in sales_ratios)
+            if median_ratio is not None:
+                return median_ratio * target_sales
     if category in FIXED_CODES:
         same_month = [amount for period, amount in nearest if period.month == target.month]
         return median(same_month) if same_month else median(amount for _, amount in nearest[:3])
@@ -139,12 +143,18 @@ def choose_ratio(
 async def load_data(connection: asyncpg.Connection):
     actual = await connection.fetch(
         """
-        SELECT p.company_name, p.period, p.source_site_code, p.source_location_name,
-               p.category_code, p.category_name, p.amount,
+        SELECT p.company_name, p.period,
+               MIN(p.source_site_code) AS source_site_code,
+               MIN(p.source_location_name) AS source_location_name,
+               p.category_code, MAX(p.category_name) AS category_name,
+               SUM(p.amount) AS amount,
                COALESCE(l.site_code, p.source_site_code) AS site_code
         FROM store_pnl_monthly p
         LEFT JOIN store_pnl_site_links l USING (company_name, source_site_code)
         WHERE p.data_kind = 'actual'
+          AND p.source_site_code <> '__FINANCE_UNALLOCATED__'
+        GROUP BY p.company_name, p.period,
+                 COALESCE(l.site_code, p.source_site_code), p.category_code
         """
     )
     sales = await connection.fetch(
@@ -244,20 +254,25 @@ def build_estimates(
         for category in sorted(VALID_CODES):
             key = (company, site_code, category)
             store_values = store_history.get(key, [])
+            estimate_amount: float | None
             if category == "c3" and target_salary > 0:
                 ratio = choose_ratio(store_salary_ratios.get(key, []), company_salary_ratios.get((company, category), []), target, causal=causal)
-                amount = ratio * target_salary if ratio is not None else None
+                estimate_amount = ratio * target_salary if ratio is not None else None
             elif category in VARIABLE_CODES or category == "c3":
                 ratio = choose_ratio(store_sales_ratios.get(key, []), company_sales_ratios.get((company, category), []), target, causal=causal)
-                amount = ratio * target_sales if ratio is not None else None
+                estimate_amount = ratio * target_sales if ratio is not None else None
             else:
                 values = relevant_history(store_values, target, causal=causal)
                 fallback = relevant_history(company_values.get((company, category), []), target, causal=causal)
                 chosen = values if len(values) >= 2 else fallback
                 same_month = [value for period, value in chosen if period.month == target.month]
-                amount = median(same_month) if same_month else median(value for _, value in chosen[:3])
-            if amount is not None:
-                estimated_amounts[category] = amount
+                estimate_amount = (
+                    median(same_month)
+                    if same_month
+                    else median(value for _, value in chosen[:3])
+                )
+            if estimate_amount is not None:
+                estimated_amounts[category] = estimate_amount
 
         # For a completely missing P&L store-month, the estimated P&L revenue
         # must equal the Retail sale without TVA. Retain the observed revenue

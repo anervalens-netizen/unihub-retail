@@ -141,6 +141,7 @@ async def run(apply: bool) -> int:
                 company_name, source_site_code, source_location_name
             FROM store_pnl_monthly
             WHERE data_kind = 'actual'
+              AND source_site_code <> '__FINANCE_UNALLOCATED__'
             ORDER BY company_name, source_site_code, period DESC
             """
         )

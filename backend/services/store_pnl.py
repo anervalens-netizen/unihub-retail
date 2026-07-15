@@ -9,6 +9,7 @@ from repositories.store_pnl import StorePnlRepository
 REVENUE_CODES = {"v1", "v11", "v2", "v3"}
 COGS_CODES = {"c1", "c11", "c2"}
 OPERATING_CODES = {"c3", "c4", "c5", "c6"}
+UNALLOCATED_SOURCE = "__FINANCE_UNALLOCATED__"
 
 
 def empty_metrics() -> dict[str, Decimal]:
@@ -76,7 +77,9 @@ class StorePnlService:
             categories[category] += amount
             if row["data_kind"] == "estimated":
                 estimate_months.add(row["period"])
-            store_key = (row["company_name"], row["source_site_code"])
+            if row["source_site_code"] == UNALLOCATED_SOURCE:
+                continue
+            store_key = (row["company_name"], row["site_code"])
             if store_key not in stores:
                 stores[store_key] = {
                     "company": row["company_name"],
@@ -150,16 +153,19 @@ class StorePnlService:
         yearly: dict[int, dict[str, Decimal]] = defaultdict(empty_metrics)
         estimate_years: set[int] = set()
         store_counts: dict[int, int] = defaultdict(int)
+        month_counts: dict[int, int] = defaultdict(int)
         for row in await self.repository.annual_rows(company, site_code, site_company, regional):
             year = row["year"]
             add_amount(yearly[year], row["category_code"], row["amount"])
             store_counts[year] = max(store_counts[year], row["store_count"])
+            month_counts[year] = max(month_counts[year], row["month_count"])
             if row["is_estimated"]:
                 estimate_years.add(year)
         return [
             {
                 "year": str(year),
                 "store_count": store_counts[year],
+                "month_count": month_counts[year],
                 **finalize_metrics(values),
                 "is_estimated": year in estimate_years,
             }

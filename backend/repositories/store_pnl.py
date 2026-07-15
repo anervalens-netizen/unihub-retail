@@ -32,29 +32,27 @@ class StorePnlRepository:
         async with self.pool.acquire() as connection:
             return await connection.fetch(
                 """
-                WITH preferred_rows AS (
+                WITH preferred_kind AS (
+                    SELECT company_name, period,
+                           CASE WHEN BOOL_OR(data_kind = 'actual')
+                               THEN 'actual' ELSE 'estimated'
+                           END AS data_kind
+                    FROM store_pnl_monthly
+                    GROUP BY company_name, period
+                ), preferred_rows AS (
                     SELECT p.company_name, p.period, p.source_site_code,
                            p.source_location_name, p.category_code, p.amount,
                            p.data_kind,
                            COALESCE(l.site_code, p.source_site_code) AS site_code,
-                           COALESCE(s.regional, 'Nealocat') AS regional,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY p.period,
-                                            COALESCE(
-                                                l.site_code,
-                                                p.company_name || ':' || p.source_site_code
-                                            ),
-                                            p.category_code
-                               ORDER BY CASE p.data_kind
-                                   WHEN 'actual' THEN 0
-                                   ELSE 1
-                               END,
-                               p.imported_at DESC,
-                               p.id DESC
-                           ) AS preference_rank
+                           COALESCE(s.regional, 'Nealocat') AS regional
                     FROM store_pnl_monthly p
+                    JOIN preferred_kind k
+                        ON k.company_name = p.company_name
+                       AND k.period = p.period
+                       AND k.data_kind = p.data_kind
                     LEFT JOIN store_pnl_site_links l
-                        USING (company_name, source_site_code)
+                        ON l.company_name = p.company_name
+                       AND l.source_site_code = p.source_site_code
                     LEFT JOIN stores s
                         ON s.site_code = COALESCE(l.site_code, p.source_site_code)
                     WHERE p.period BETWEEN $1 AND $2
@@ -76,7 +74,6 @@ class StorePnlRepository:
                        p.source_location_name, p.category_code, p.amount,
                        p.data_kind, p.site_code, p.regional
                 FROM preferred_rows p
-                WHERE p.preference_rank = 1
                 ORDER BY p.period, p.company_name, p.source_location_name, p.category_code
                 """,
                 start,
@@ -193,28 +190,26 @@ class StorePnlRepository:
         async with self.pool.acquire() as connection:
             return await connection.fetch(
                 """
-                WITH preferred_rows AS (
+                WITH preferred_kind AS (
+                    SELECT company_name, period,
+                           CASE WHEN BOOL_OR(data_kind = 'actual')
+                               THEN 'actual' ELSE 'estimated'
+                           END AS data_kind
+                    FROM store_pnl_monthly
+                    GROUP BY company_name, period
+                ), preferred_rows AS (
                     SELECT p.company_name, p.period, p.source_site_code,
                            p.category_code, p.amount, p.data_kind,
                            COALESCE(l.site_code, p.source_site_code) AS site_code,
-                           COALESCE(s.regional, 'Nealocat') AS regional,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY p.period,
-                                            COALESCE(
-                                                l.site_code,
-                                                p.company_name || ':' || p.source_site_code
-                                            ),
-                                            p.category_code
-                               ORDER BY CASE p.data_kind
-                                   WHEN 'actual' THEN 0
-                                   ELSE 1
-                               END,
-                               p.imported_at DESC,
-                               p.id DESC
-                           ) AS preference_rank
+                           COALESCE(s.regional, 'Nealocat') AS regional
                     FROM store_pnl_monthly p
+                    JOIN preferred_kind k
+                        ON k.company_name = p.company_name
+                       AND k.period = p.period
+                       AND k.data_kind = p.data_kind
                     LEFT JOIN store_pnl_site_links l
-                        USING (company_name, source_site_code)
+                        ON l.company_name = p.company_name
+                       AND l.source_site_code = p.source_site_code
                     LEFT JOIN stores s
                         ON s.site_code = COALESCE(l.site_code, p.source_site_code)
                     WHERE (
@@ -241,9 +236,9 @@ class StorePnlRepository:
                                p.company_name || ':' || p.source_site_code
                            )
                        END)::integer AS store_count,
+                       COUNT(DISTINCT p.period)::integer AS month_count,
                        BOOL_OR(p.data_kind = 'estimated') AS is_estimated
                 FROM preferred_rows p
-                WHERE p.preference_rank = 1
                 GROUP BY EXTRACT(YEAR FROM p.period), p.category_code
                 ORDER BY year, p.category_code
                 """,

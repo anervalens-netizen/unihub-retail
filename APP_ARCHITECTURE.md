@@ -132,6 +132,15 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
   grupului OIDC dedicat P&L, peste accesul general Management; ascunderea din
   frontend este dublata de sesiunea BFF si verificarea autoritativa OIDC in backend.
+  Importul pastreaza detalierea actuala din foaia `Detaliere`. Totalul din
+  `P&L Magazine` este folosit pentru reconcilierea locatiilor lipsa numai daca
+  venitul consolidat este cel putin egal cu suma detaliata; astfel, workbook-urile
+  salvate accidental cu un singur magazin selectat nu reduc totalul companiei.
+  La citire, existenta oricarei valori actuale pentru o firma-luna exclude
+  estimarile acelei firme-luni, dar toate centrele de profit actuale sunt
+  insumate chiar daca mai multe coduri istorice indica acelasi magazin Retail.
+  Bucket-ul de reconciliere nealocat intra numai in totalul companiei/retelei;
+  nu este expus ca magazin si nu este folosit la antrenarea estimarilor.
 - Raportare vizite citita din SQLite shared.
 - Agenti -> Grile include verificare read-only si inchidere de luna; actiunile
   privilegiate raman protejate individual in backend.
@@ -302,13 +311,12 @@ Importul din `backend/scripts/import_store_pnl.py` deduplica fisierele identice,
 alege snapshotul anual cu cea mai buna acoperire si importa numai valori reale.
 Codurile istorice din fisiere nu sunt fortate peste `stores.site_code`, iar
 orice luna estimata ulterior trebuie marcata explicit cu `data_kind=estimated`.
-La citire, cheia de business este companie + luna + magazin canonic + categorie
-(`source_site_code` ramane fallback pentru codurile nemapate). Un rand `actual`
-are prioritate fata de `estimated`, inclusiv cand estimarea si importul Finance
-folosesc aliasuri istorice sau companii diferite ale aceluiasi magazin, astfel
-incat veniturile sau costurile sa nu fie dublate in KPI-uri. Pentru randurile
-nemapate, cheia include in continuare compania si codul-sursa, evitand
-coliziunea accidentala intre magazine necunoscute.
+La citire, tipul de date se alege la granularitatea companie + luna: daca
+exista orice rand `actual`, toate estimarile acelei companii-luni sunt excluse;
+altfel sunt folosite randurile `estimated`. Toate centrele de profit actuale
+raman in agregat si sunt insumate chiar daca mai multe coduri istorice indica
+acelasi magazin canonic. Pentru randurile nemapate, scope-ul include compania
+si codul-sursa, evitand coliziunea accidentala intre magazine necunoscute.
 Legaturile auditabile catre master-data Retail sunt in `store_pnl_site_links`;
 scriptul `backend/scripts/map_store_pnl_sites.py` salveaza metoda, scorul si
 starea de review, fara sa forteze codurile istorice care nu mai exista in
@@ -331,7 +339,9 @@ Unele fisiere Finance contin un total consolidat mai mare decat suma foii
 `Detaliere`. Importul pastreaza randurile pe magazine neschimbate si salveaza
 exclusiv diferenta ca bucket actual `__FINANCE_UNALLOCATED__`; astfel totalul
 companiei ramane identic cu Excel fara a atribui artificial diferenta unui RM
-sau magazin.
+sau magazin. Reconcilierea este acceptata numai daca venitul sumarului este cel
+putin egal cu detalierea; foile salvate cu un singur magazin selectat sunt
+respinse ca total consolidat.
 
 ### AI Forecast
 

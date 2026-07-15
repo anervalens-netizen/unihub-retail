@@ -251,6 +251,8 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                 "ebitda": 80.0,
                 "depreciation": 0.0,
                 "ebit": 80.0,
+                "store_count": 1,
+                "month_count": 1,
                 "is_estimated": False,
             },
             {
@@ -262,6 +264,8 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                 "ebitda": 125.0,
                 "depreciation": 0.0,
                 "ebit": 125.0,
+                "store_count": 1,
+                "month_count": 1,
                 "is_estimated": False,
             }
         ]

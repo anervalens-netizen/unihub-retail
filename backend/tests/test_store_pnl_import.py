@@ -36,3 +36,25 @@ def test_unallocated_rows_preserve_finance_consolidated_total() -> None:
     assert len(rows) == 1
     assert rows[0].source_site_code == UNALLOCATED_SOURCE
     assert rows[0].amount == Decimal("10.00")
+
+
+def test_unallocated_rows_reject_store_filtered_summary() -> None:
+    detail = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v11", "Venit", Decimal("100.00"), "late.xls", "a" * 64)
+    filtered_total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("10.00"), "late.xls", "a" * 64)
+    source = WorkbookData(Path("late.xls"), "a" * 64, "Mobiup", (date(2025, 1, 1),), (detail,), (filtered_total,), 10, 100)
+
+    assert unallocated_rows([detail], [source]) == []
+
+
+def test_unallocated_rows_can_use_older_valid_consolidated_snapshot() -> None:
+    detail = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v11", "Venit", Decimal("100.00"), "late.xls", "a" * 64)
+    valid_total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("120.00"), "early.xls", "b" * 64)
+    filtered_total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("10.00"), "late.xls", "a" * 64)
+    early = WorkbookData(Path("early.xls"), "b" * 64, "Mobiup", (date(2025, 1, 1),), (), (valid_total,), 7, 70)
+    late = WorkbookData(Path("late.xls"), "a" * 64, "Mobiup", (date(2025, 1, 1),), (detail,), (filtered_total,), 10, 100)
+
+    rows = unallocated_rows([detail], [early, late])
+
+    assert len(rows) == 1
+    assert rows[0].amount == Decimal("20.00")
+    assert rows[0].source_file == "early.xls"
