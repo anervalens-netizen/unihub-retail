@@ -4,7 +4,7 @@ import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
@@ -17,7 +17,16 @@ from privileged_access import (
 from rate_limits import GRILE_JOB_LIMIT, rate_limit
 from repositories.grile import GrileRepository
 from services.grile import _run_to_dict, get_overview, resolve_month
-from services.grile_monthly import GrileMonthlyRetryBlockedError, fetch_download, next_ym, ro_month_label
+from services.grile_monthly import (
+    GrileMonthlyRetryBlockedError,
+    MonthlyIntegrityError,
+    approve_monthly_manifest,
+    fetch_download,
+    get_latest_monthly_manifest,
+    next_ym,
+    public_manifest_payload,
+    ro_month_label,
+)
 from services.jobs import (
     enqueue_grile_check,
     enqueue_grile_monthly,
@@ -212,8 +221,8 @@ class MonthlyRunRequest(BaseModel):
 
     op: Literal["finalize", "archive", "reset"]
     month: str
-    only: str | None = None
     dry_run: bool = True
+    approved_manifest_id: int | None = None
 
     @field_validator("month")
     @classmethod
@@ -221,6 +230,14 @@ class MonthlyRunRequest(BaseModel):
         if not MONTH_PATTERN.match(v):
             raise ValueError("month trebuie sa fie YYYY-MM")
         return v
+
+    @model_validator(mode="after")
+    def _manifest_contract(self) -> "MonthlyRunRequest":
+        if self.op == "reset" and not self.dry_run and self.approved_manifest_id is None:
+            raise ValueError("resetul live necesita approved_manifest_id")
+        if self.op != "reset" and self.approved_manifest_id is not None:
+            raise ValueError("approved_manifest_id este permis numai pentru reset")
+        return self
 
 
 @router.get("/monthly/permissions")
@@ -239,9 +256,9 @@ async def grile_monthly_run(
         result = await enqueue_grile_monthly(
             op=body.op,
             month=body.month,
-            only=body.only,
             dry_run=body.dry_run,
-            triggered_by_email=claims.email,
+            requested_by_sub=claims.sub,
+            approved_manifest_id=body.approved_manifest_id,
         )
     except GrileMonthlyRetryBlockedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -260,6 +277,38 @@ async def grile_monthly_run(
         payload["next_month_label"] = ro_month_label(next_ym(body.month))
         payload["dry_run"] = body.dry_run
     return payload
+
+
+@router.get("/monthly/manifests/{month}")
+async def grile_monthly_manifest(
+    month: str,
+    _claims: AuthClaims = Depends(require_grile_admin),
+) -> dict[str, Any]:
+    if not MONTH_PATTERN.match(month):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month invalid (YYYY-MM)")
+    pool = await get_pool()
+    manifest = await get_latest_monthly_manifest(pool, month=month)
+    return {"manifest": public_manifest_payload(manifest) if manifest is not None else None}
+
+
+@router.post("/monthly/manifests/{manifest_id}/approve")
+async def grile_monthly_manifest_approve(
+    manifest_id: int,
+    claims: AuthClaims = Depends(require_grile_admin),
+    _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
+) -> dict[str, Any]:
+    pool = await get_pool()
+    try:
+        manifest = await approve_monthly_manifest(
+            pool,
+            manifest_id=manifest_id,
+            approved_by_sub=claims.sub,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except MonthlyIntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"manifest": manifest}
 
 
 @router.get("/monthly/job/{job_id}")

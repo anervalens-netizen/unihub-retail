@@ -61,6 +61,18 @@ def test_grile_sync_audit_migration_grants_established_runtime_role() -> None:
     )
 
 
+def test_grile_monthly_manifest_migration_grants_established_runtime_role() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "db/migrations/028_grile_monthly_fail_closed.sql"
+    ).read_text(encoding="utf-8")
+    assert "ON TABLE grile_monthly_manifests TO unihub_runtime" in source
+    assert (
+        "ON SEQUENCE grile_monthly_manifests_id_seq TO unihub_runtime"
+        in source
+    )
+
+
 @pytest.mark.anyio
 @pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
