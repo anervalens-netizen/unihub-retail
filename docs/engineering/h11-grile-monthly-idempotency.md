@@ -37,9 +37,11 @@ a newer failed or still-building attempt blocks reuse of an older verified
 manifest. It also requires the exact active sheet registry. Every source
 workbook must contain `Grila` and `Pontaj`; source files,
 the aggregate ZIP and manager ZIPs are hashed before the staged archive
-directory is promoted. Approval re-verifies the manifest and every artifact,
-then persists `approved_by_sub`. The public payload never returns either OIDC
-subject.
+directory is promoted. Post-promotion verification is part of the same
+filesystem transition: any failure removes the unverified directory from the
+official path and restores the previous archive revision. Approval re-verifies
+the manifest and every artifact, then persists `approved_by_sub`. The public
+payload never returns either OIDC subject.
 
 Live reset requires the approved archive manifest ID to remain the latest
 archive attempt for the month; any newer archive attempt, regardless of state,

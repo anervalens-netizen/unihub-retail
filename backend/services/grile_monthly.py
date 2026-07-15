@@ -1289,9 +1289,15 @@ def _future_artifact(
     return artifact
 
 
-def _promote_directory(staged: Path, destination: Path) -> None:
+def _promote_directory(
+    staged: Path,
+    destination: Path,
+    *,
+    verify: Callable[[], None] | None = None,
+) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     revision: Path | None = None
+    promoted = False
     if destination.exists():
         revision_dir = OUTPUTS_DIR / ".revisions"
         revision_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1299,9 +1305,29 @@ def _promote_directory(staged: Path, destination: Path) -> None:
         os.replace(destination, revision)
     try:
         os.replace(staged, destination)
-    except Exception:
+        promoted = True
+        if verify is not None:
+            verify()
+    except Exception as exc:
+        rollback_error: Exception | None = None
+        if promoted and destination.exists():
+            try:
+                os.replace(destination, staged)
+            except Exception:  # noqa: BLE001 - remove unverified output
+                try:
+                    shutil.rmtree(destination)
+                except Exception as remove_error:  # noqa: BLE001 - surfaced below
+                    rollback_error = remove_error
         if revision is not None and revision.exists() and not destination.exists():
-            os.replace(revision, destination)
+            try:
+                os.replace(revision, destination)
+            except Exception as restore_error:  # noqa: BLE001 - surfaced below
+                rollback_error = restore_error
+        if rollback_error is not None:
+            raise MonthlyIntegrityError(
+                "archive_promotion_rollback_failed",
+                "Archive promotion rollback failed",
+            ) from exc
         raise
 
 
@@ -1498,9 +1524,12 @@ async def _archive_month_execution(
         validate_verified_manifest(manifest, operation="archive")
         manifest_path = build_archive_manifest_path(stage_root, month)
         secure_write_json(manifest_path, manifest)
-        _promote_directory(staged_archive_dir, official_archive_dir)
         official_manifest_path = build_archive_manifest_path(OUTPUTS_DIR, month)
-        verify_artifacts(manifest, root=OUTPUTS_DIR)
+        _promote_directory(
+            staged_archive_dir,
+            official_archive_dir,
+            verify=lambda: verify_artifacts(manifest, root=OUTPUTS_DIR),
+        )
         return MonthlyExecution(path=official_manifest_path, manifest=manifest)
     finally:
         shutil.rmtree(stage_root, ignore_errors=True)

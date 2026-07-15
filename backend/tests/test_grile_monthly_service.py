@@ -1401,6 +1401,27 @@ def test_archive_zip_and_directory_promotion_fail_closed(
     grile._promote_directory(staged, destination)
     assert (destination / "new").exists()
 
+    staged_unverified = tmp_path / "staged-archive-unverified"
+    staged_unverified.mkdir()
+    (staged_unverified / "unverified").write_text("unverified")
+
+    def fail_verification() -> None:
+        raise grile.MonthlyIntegrityError(
+            "artifact_hash_mismatch",
+            "verification failed",
+        )
+
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(
+            staged_unverified,
+            destination,
+            verify=fail_verification,
+        )
+    assert exc_info.value.code == "artifact_hash_mismatch"
+    assert (destination / "new").exists()
+    assert not (destination / "unverified").exists()
+    assert (staged_unverified / "unverified").exists()
+
     staged_failure = tmp_path / "staged-archive-failure"
     staged_failure.mkdir()
     (staged_failure / "bad").write_text("failure")
