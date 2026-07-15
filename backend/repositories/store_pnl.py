@@ -105,6 +105,7 @@ class StorePnlRepository:
                 LEFT JOIN store_pnl_site_links l USING (company_name, source_site_code)
                 LEFT JOIN stores s ON s.site_code = COALESCE(l.site_code, p.source_site_code)
                 WHERE ($1::text IS NULL OR p.company_name = $1)
+                  AND p.source_site_code <> '__FINANCE_UNALLOCATED__'
                   AND ($2::text IS NULL OR COALESCE(s.regional, 'Nealocat') = $2)
                 ORDER BY CASE WHEN l.site_code IS NULL THEN p.company_name ELSE '' END,
                          COALESCE(l.site_code, p.source_site_code),
@@ -125,6 +126,7 @@ class StorePnlRepository:
                 LEFT JOIN store_pnl_site_links l USING (company_name, source_site_code)
                 LEFT JOIN stores s ON s.site_code = COALESCE(l.site_code, p.source_site_code)
                 WHERE ($1::text IS NULL OR p.company_name = $1)
+                  AND p.source_site_code <> '__FINANCE_UNALLOCATED__'
                 ORDER BY regional
                 """,
                 company,
@@ -232,6 +234,13 @@ class StorePnlRepository:
                 SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
                        p.category_code,
                        SUM(p.amount) AS amount,
+                       COUNT(DISTINCT CASE
+                           WHEN p.source_site_code <> '__FINANCE_UNALLOCATED__'
+                           THEN COALESCE(
+                               p.site_code,
+                               p.company_name || ':' || p.source_site_code
+                           )
+                       END)::integer AS store_count,
                        BOOL_OR(p.data_kind = 'estimated') AS is_estimated
                 FROM preferred_rows p
                 WHERE p.preference_rank = 1

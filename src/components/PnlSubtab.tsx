@@ -470,7 +470,10 @@ export function PnlSubtab() {
                     />
                     <Tooltip
                       formatter={(value) => money.format(Number(value))}
-                      labelFormatter={(label) => `Anul ${String(label)}`}
+                      labelFormatter={(label, payload) => {
+                        const point = payload?.[0]?.payload as PnlAnnualPoint | undefined;
+                        return `Anul ${String(label)}${point ? ` · ${point.store_count} magazine` : ""}`;
+                      }}
                     />
                     <Legend />
                     <Line

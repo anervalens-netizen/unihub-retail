@@ -316,14 +316,23 @@ starea de review, fara sa forteze codurile istorice care nu mai exista in
 `stores`. Egalitatile fuzzy raman explicit nerezolvate pentru review manual;
 randurile DB nu sunt folosite ca al doilea criteriu implicit de sortare.
 
-Lunile P&L lipsa, inclusiv magazinele absente dintr-o luna Finance partiala,
-pot fi generate cu `backend/scripts/estimate_store_pnl.py`. Modelul citeste
-strict read-only vanzarile Retail si le normalizeaza fara TVA (impartire la
-1,19) inainte de a scala veniturile si costurile variabile. Costul salarial
-foloseste raportul istoric dintre P&L si salariul net importat, iar costurile
-fixe folosesc mediana recenta si aceeasi luna din anul anterior. Scriptul
-afiseaza backtestul inainte de import, scrie numai `data_kind=estimated` si nu
-suprascrie valori `actual`; importul Finance are prioritate la citire.
+Lunile P&L lipsa pentru intreaga companie pot fi generate cu
+`backend/scripts/estimate_store_pnl.py`. Modelul citeste strict read-only
+vanzarile Retail si le normalizeaza fara TVA (impartire la 1,19). Pentru o
+luna fara nicio sursa Finance, venitul estimat este exact vanzarea fara TVA,
+iar costul salarial foloseste raportul istoric dintre P&L si salariul net
+importat; costurile fixe folosesc mediana recenta si aceeasi luna din anul
+anterior. Cand exista P&L Finance pentru companie in luna respectiva, nu se
+adauga ori recalculeaza estimari, chiar daca detalierea nu cuprinde toate
+magazinele. Scriptul afiseaza backtestul inainte de import, scrie numai
+`data_kind=estimated` si nu suprascrie valori `actual`; importul Finance are
+prioritate la citire.
+
+Unele fisiere Finance contin un total consolidat mai mare decat suma foii
+`Detaliere`. Importul pastreaza randurile pe magazine neschimbate si salveaza
+exclusiv diferenta ca bucket actual `__FINANCE_UNALLOCATED__`; astfel totalul
+companiei ramane identic cu Excel fara a atribui artificial diferenta unui RM
+sau magazin.
 
 ### AI Forecast
 
