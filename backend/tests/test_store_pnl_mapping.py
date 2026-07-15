@@ -37,3 +37,28 @@ def test_equal_fuzzy_scores_remain_unresolved_without_comparing_records() -> Non
     assert links == []
     assert len(unresolved) == 1
     assert "marja 0.00" in unresolved[0]
+
+
+def test_prahova_carrefour_alias_does_not_conflate_balotesti() -> None:
+    source_rows = cast(
+        list[asyncpg.Record],
+        [{
+            "company_name": "Mobiup",
+            "source_site_code": "CARPL",
+            "source_location_name": "CARREFOUR PLOIESTI",
+        }],
+    )
+    stores = cast(
+        list[asyncpg.Record],
+        [
+            {"site_code": "PLCRF", "locatie": "PLOIESTI CARREFOUR", "firma": "Mobiup"},
+            {"site_code": "MCRFBAL", "locatie": "CARREFOUR BALOTESTI", "firma": "Mobiup"},
+        ],
+    )
+
+    links, unresolved = build_links(source_rows, stores)
+
+    assert unresolved == []
+    assert [(link.site_code, link.match_method, link.reviewed) for link in links] == [
+        ("PLCRF", "manual_alias", True)
+    ]

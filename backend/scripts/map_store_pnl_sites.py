@@ -27,6 +27,9 @@ MANUAL_ALIASES: dict[tuple[str, str], str] = {
     ("Mobiup", "SBPFV"): "MSBFEST",
     ("Mobiup", "MGML"): "MEGAMALL",
     ("Mobiup", "DEVA"): "DVSHP",
+    # Carrefour Ploiesti and Carrefour Balotesti coexist in Finance; fuzzy
+    # matching previously conflated the former with the latter.
+    ("Mobiup", "CARPL"): "PLCRF",
     ("Mobicell", "BRAILAPROMENADA"): "BRPRMALL",
     ("Mobicell", "SIBIUFESTIBAL"): "SBFESTIV",
     ("Mobicell", "CARRFORERA"): "CRFORADEA",

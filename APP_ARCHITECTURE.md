@@ -315,13 +315,14 @@ starea de review, fara sa forteze codurile istorice care nu mai exista in
 `stores`. Egalitatile fuzzy raman explicit nerezolvate pentru review manual;
 randurile DB nu sunt folosite ca al doilea criteriu implicit de sortare.
 
-Lunile P&L lipsa pot fi generate cu
-`backend/scripts/estimate_store_pnl.py`. Modelul scaleaza veniturile si
-costurile variabile cu vanzarile reale ale magazinului, costul salarial cu
-raportul istoric dintre P&L si salariul net importat, iar costurile fixe cu
-mediana recenta si aceeasi luna din anul anterior. Scriptul afiseaza backtestul
-inainte de import, scrie numai `data_kind=estimated` si nu suprascrie valori
-`actual`.
+Lunile P&L lipsa, inclusiv magazinele absente dintr-o luna Finance partiala,
+pot fi generate cu `backend/scripts/estimate_store_pnl.py`. Modelul citeste
+strict read-only vanzarile Retail si le normalizeaza fara TVA (impartire la
+1,19) inainte de a scala veniturile si costurile variabile. Costul salarial
+foloseste raportul istoric dintre P&L si salariul net importat, iar costurile
+fixe folosesc mediana recenta si aceeasi luna din anul anterior. Scriptul
+afiseaza backtestul inainte de import, scrie numai `data_kind=estimated` si nu
+suprascrie valori `actual`; importul Finance are prioritate la citire.
 
 ### AI Forecast
 

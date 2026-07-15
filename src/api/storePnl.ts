@@ -30,6 +30,7 @@ export interface PnlStoreOption {
   company_name: string;
   site_code: string;
   location: string;
+  regional: string;
   scope_company: string | null;
 }
 
@@ -38,7 +39,17 @@ export interface PnlStore extends PnlMetrics {
   site_code: string;
   source_site_code: string;
   location: string;
+  regional: string;
   has_estimates: boolean;
+}
+
+export interface PnlReconciliation {
+  month: string;
+  pnl_revenue: number;
+  retail_sales_gross: number;
+  retail_sales_net: number;
+  difference_to_net: number;
+  pnl_to_net_sales_pct: number | null;
 }
 
 export interface PnlOverview {
@@ -47,10 +58,12 @@ export interface PnlOverview {
   company: string | null;
   site_code: string | null;
   site_company: string | null;
+  regional: string | null;
   summary: PnlMetrics;
   monthly: PnlMonthlyPoint[];
   categories: Record<string, number>;
   stores: PnlStore[];
+  reconciliation: PnlReconciliation[];
 }
 
 export interface PnlPermissions {
@@ -79,18 +92,27 @@ export async function getPnlMonths(): Promise<PnlMonth[]> {
   return data.months;
 }
 
-export async function getPnlStores(company: string): Promise<PnlStoreOption[]> {
+export async function getPnlStores(company: string, regional = ""): Promise<PnlStoreOption[]> {
   const { data } = await client.get<{ stores: PnlStoreOption[] }>(
     "/api/store-pnl/stores",
-    { params: { company: company || undefined } },
+    { params: { company: company || undefined, regional: regional || undefined } },
   );
   return data.stores;
+}
+
+export async function getPnlRegions(company: string): Promise<string[]> {
+  const { data } = await client.get<{ regions: string[] }>(
+    "/api/store-pnl/regions",
+    { params: { company: company || undefined } },
+  );
+  return data.regions;
 }
 
 export async function getPnlAnnual(
   company: string,
   siteCode: string,
   siteCompany = "",
+  regional = "",
 ): Promise<PnlAnnualPoint[]> {
   const { data } = await client.get<{ annual: PnlAnnualPoint[] }>(
     "/api/store-pnl/annual",
@@ -99,6 +121,7 @@ export async function getPnlAnnual(
         company: company || undefined,
         site_code: siteCode || undefined,
         site_company: siteCompany || undefined,
+        regional: regional || undefined,
       },
     },
   );
@@ -111,6 +134,7 @@ export async function getPnlOverview(
   company: string,
   siteCode = "",
   siteCompany = "",
+  regional = "",
 ): Promise<PnlOverview> {
   const { data } = await client.get<PnlOverview>("/api/store-pnl/overview", {
     params: {
@@ -119,6 +143,7 @@ export async function getPnlOverview(
       company: company || undefined,
       site_code: siteCode || undefined,
       site_company: siteCompany || undefined,
+      regional: regional || undefined,
     },
   });
   return data;

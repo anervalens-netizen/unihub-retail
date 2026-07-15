@@ -222,7 +222,8 @@ Focus; sidebar-ul contine numai intrarea principala Management.
 - **P&L** — sumar financiar pe magazin, evolutii lunare si anuale si structura
   de cost, vizibil numai utilizatorilor cu capabilitatea P&L verificata de
   backend. Intervalul initial este anul calendaristic curent (year-to-date),
-  iar compania si magazinul filtreaza autoritativ toate cardurile si graficele.
+  iar regiunea/RM, compania si magazinul filtreaza autoritativ toate cardurile
+  si graficele.
   Cand este ales un magazin, identitatea lui canonica domina compania in
   istoricul P&L, astfel incat mutarile intre entitati nu rup evolutia.
   Daca pentru aceeasi luna, magazin canonic si categorie exista atat o estimare,

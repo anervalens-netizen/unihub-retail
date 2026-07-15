@@ -22,6 +22,7 @@ import {
   getPnlAnnual,
   getPnlMonths,
   getPnlOverview,
+  getPnlRegions,
   getPnlStores,
   type PnlAnnualPoint,
   type PnlMetrics,
@@ -82,7 +83,7 @@ export function pnlStoreOptionValue(store: PnlStoreOption): string {
   return JSON.stringify([store.scope_company, store.site_code]);
 }
 
-function KpiCard({
+function FinancialMetric({
   label,
   value,
   icon: Icon,
@@ -93,7 +94,7 @@ function KpiCard({
 }) {
   const positive = value >= 0;
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="min-w-0 p-4 sm:p-5">
       <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
         <span className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/40">
@@ -119,6 +120,7 @@ export function PnlSubtab() {
   const [startMonth, setStartMonth] = useState("");
   const [endMonth, setEndMonth] = useState("");
   const [company, setCompany] = useState("");
+  const [regional, setRegional] = useState("");
   const [storeScope, setStoreScope] = useState("");
   const [storeSearch, setStoreSearch] = useState("");
   const monthsQuery = useQuery({
@@ -135,8 +137,13 @@ export function PnlSubtab() {
   }, [monthsQuery.data, endMonth]);
 
   const storesQuery = useQuery({
-    queryKey: ["store-pnl-stores", company],
-    queryFn: () => getPnlStores(company),
+    queryKey: ["store-pnl-stores", company, regional],
+    queryFn: () => getPnlStores(company, regional),
+    staleTime: 5 * 60_000,
+  });
+  const regionsQuery = useQuery({
+    queryKey: ["store-pnl-regions", company],
+    queryFn: () => getPnlRegions(company),
     staleTime: 5 * 60_000,
   });
   const selectedStore = useMemo(
@@ -154,6 +161,7 @@ export function PnlSubtab() {
       startMonth,
       endMonth,
       company,
+      regional,
       siteCode,
       siteCompany,
     ],
@@ -163,12 +171,13 @@ export function PnlSubtab() {
       company,
       siteCode,
       siteCompany,
+      regional,
     ),
     enabled: Boolean(startMonth && endMonth),
   });
   const annualQuery = useQuery({
-    queryKey: ["store-pnl-annual", company, siteCode, siteCompany],
-    queryFn: () => getPnlAnnual(company, siteCode, siteCompany),
+    queryKey: ["store-pnl-annual", company, regional, siteCode, siteCompany],
+    queryFn: () => getPnlAnnual(company, siteCode, siteCompany, regional),
   });
   const data = overviewQuery.data;
   const filteredStores = useMemo(() => {
@@ -196,7 +205,7 @@ export function PnlSubtab() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-5">
         <div>
           <div className="flex items-center gap-2">
             <BadgeDollarSign className="text-indigo-600" />
@@ -205,10 +214,10 @@ export function PnlSubtab() {
             </h2>
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Performanță financiară pe rețea, companie și magazin.
+            Performanță financiară pe rețea, regiune, companie și magazin.
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
           <label className="text-xs text-slate-500">
             De la
             <select
@@ -245,6 +254,7 @@ export function PnlSubtab() {
               value={company}
               onChange={(e) => {
                 setCompany(e.target.value);
+                setRegional("");
                 setStoreScope("");
               }}
               className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
@@ -255,6 +265,23 @@ export function PnlSubtab() {
             </select>
           </label>
           <label className="text-xs text-slate-500">
+            RM / regiune
+            <select
+              value={regional}
+              onChange={(e) => {
+                setRegional(e.target.value);
+                setStoreScope("");
+              }}
+              disabled={regionsQuery.isLoading || regionsQuery.isError}
+              className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <option value="">Toate regiunile</option>
+              {regionsQuery.data?.map((region) => (
+                <option key={region} value={region}>{region}</option>
+              ))}
+            </select>
+          </label>
+          <label className="col-span-2 text-xs text-slate-500 lg:col-span-1">
             Magazin
             <select
               value={storeScope}
@@ -303,32 +330,39 @@ export function PnlSubtab() {
       )}
       {data && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <KpiCard
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="grid divide-y divide-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5 dark:divide-slate-700">
+            <FinancialMetric
               label="Venituri"
               value={data.summary.revenue}
               icon={TrendingUp}
             />
-            <KpiCard
+            <FinancialMetric
               label="Marjă brută"
               value={data.summary.gross_margin}
               icon={ChartNoAxesCombined}
             />
-            <KpiCard
+            <FinancialMetric
               label="Costuri operaționale"
               value={data.summary.operating_costs}
               icon={TrendingDown}
             />
-            <KpiCard
+            <FinancialMetric
               label="EBITDA"
               value={data.summary.ebitda}
               icon={BadgeDollarSign}
             />
-            <KpiCard
+            <FinancialMetric
               label={`EBIT · ${marginPct(data.summary)}`}
               value={data.summary.ebit}
               icon={Building2}
             />
+            </div>
+            {data.reconciliation.length === 1 && data.reconciliation[0].pnl_to_net_sales_pct !== null && (
+              <div className="border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-700">
+                Vânzări Retail fără TVA: {money.format(data.reconciliation[0].retail_sales_net)} · Venit P&amp;L / vânzări nete: {data.reconciliation[0].pnl_to_net_sales_pct?.toFixed(1)}%
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">

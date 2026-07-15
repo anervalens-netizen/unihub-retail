@@ -52,6 +52,7 @@ class StorePnlService:
         company: str | None,
         site_code: str | None = None,
         site_company: str | None = None,
+        regional: str | None = None,
     ) -> dict:
         rows = await self.repository.rows(
             start,
@@ -59,6 +60,7 @@ class StorePnlService:
             company,
             site_code,
             site_company,
+            regional,
         )
         total = empty_metrics()
         monthly: dict[date, dict[str, Decimal]] = defaultdict(empty_metrics)
@@ -81,6 +83,7 @@ class StorePnlService:
                     "site_code": row["site_code"] or row["source_site_code"],
                     "source_site_code": row["source_site_code"],
                     "location": row["source_location_name"],
+                    "regional": row["regional"],
                     "metrics": empty_metrics(),
                     "has_estimates": False,
                 }
@@ -93,12 +96,30 @@ class StorePnlService:
             store_payload.append({**store, **metrics})
         store_payload.sort(key=lambda item: item["ebit"], reverse=True)
 
+        sales_by_month = {
+            row["period"]: (row["gross_amount"], row["net_amount"])
+            for row in await self.repository.sales_rows(start, end, company, site_code, site_company, regional)
+        }
+        reconciliation = []
+        for period, values in sorted(monthly.items()):
+            metrics = finalize_metrics(values.copy())
+            gross_sales, net_sales = sales_by_month.get(period, (Decimal("0"), Decimal("0")))
+            reconciliation.append({
+                "month": period.strftime("%Y-%m"),
+                "pnl_revenue": metrics["revenue"],
+                "retail_sales_gross": round(float(gross_sales), 2),
+                "retail_sales_net": round(float(net_sales), 2),
+                "difference_to_net": round(metrics["revenue"] - float(net_sales), 2),
+                "pnl_to_net_sales_pct": round((metrics["revenue"] / float(net_sales) * 100), 2) if net_sales else None,
+            })
+
         return {
             "start_month": start.strftime("%Y-%m"),
             "end_month": end.strftime("%Y-%m"),
             "company": company,
             "site_code": site_code,
             "site_company": site_company,
+            "regional": regional,
             "summary": finalize_metrics(total),
             "monthly": [
                 {
@@ -110,20 +131,25 @@ class StorePnlService:
             ],
             "categories": {key: round(float(value), 2) for key, value in sorted(categories.items())},
             "stores": store_payload,
+            "reconciliation": reconciliation,
         }
 
-    async def stores(self, company: str | None) -> list[dict]:
-        return [dict(row) for row in await self.repository.stores(company)]
+    async def stores(self, company: str | None, regional: str | None = None) -> list[dict]:
+        return [dict(row) for row in await self.repository.stores(company, regional)]
+
+    async def regions(self, company: str | None) -> list[str]:
+        return await self.repository.regions(company)
 
     async def annual(
         self,
         company: str | None,
         site_code: str | None,
         site_company: str | None = None,
+        regional: str | None = None,
     ) -> list[dict]:
         yearly: dict[int, dict[str, Decimal]] = defaultdict(empty_metrics)
         estimate_years: set[int] = set()
-        for row in await self.repository.annual_rows(company, site_code, site_company):
+        for row in await self.repository.annual_rows(company, site_code, site_company, regional):
             year = row["year"]
             add_amount(yearly[year], row["category_code"], row["amount"])
             if row["is_estimated"]:
