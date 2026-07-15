@@ -51,11 +51,6 @@ export function SegmentedTabs<T extends string>({
           );
         })}
       </div>
-      {options.length > 4 && (
-        <p className="mt-1 pr-1 text-right text-[10px] font-medium text-slate-400 sm:hidden" aria-hidden="true">
-          Glisează pentru toate secțiunile →
-        </p>
-      )}
     </div>
   );
 }

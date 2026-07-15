@@ -104,10 +104,11 @@ test.describe('E2E: responsive mobile', () => {
     await expect(page.getByText('Evolutie lunara')).toBeVisible();
   });
 
-  test('exposes long Focus navigation and compact Agent analysis controls', async ({ page }) => {
+  test('keeps Focus navigation clean and Agent analysis controls compact', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Focus' }).first().click();
-    await expect(page.getByText('Glisează pentru toate secțiunile →')).toBeVisible();
+    await expect(page.getByText('Glisează pentru toate secțiunile →')).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Focus', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Agenti' }).first().click();
     await page.getByRole('tab', { name: 'Analiză agenți' }).click();
