@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import date
+from io import BytesIO
 
 import asyncpg
 import pandas as pd
@@ -9,7 +10,12 @@ import pytest
 
 from db.connection import close_db_pool, get_pool
 from repositories.stores import StoresRepository
-from services.importer import build_import_coverage_report, upsert_stores
+from services.importer import (
+    SALES_COLUMNS,
+    build_import_coverage_report,
+    import_sales_file,
+    upsert_stores,
+)
 
 
 pytestmark = [
@@ -47,6 +53,55 @@ def sales_frame(site_codes: list[str], *, company: str = "Synthetic-A") -> pd.Da
             for index, site_code in enumerate(site_codes, start=1)
         ]
     )
+
+
+def sales_workbook(frame: pd.DataFrame) -> bytes:
+    source = frame[SALES_COLUMNS].copy()
+    source["Data"] = source["Data"].map(lambda value: value.strftime("%d.%m.%Y"))
+    output = BytesIO()
+    source.to_excel(output, index=False)
+    return output.getvalue()
+
+
+async def store_state(
+    conn: asyncpg.Connection,
+    site_code: str,
+) -> dict[str, object]:
+    row = await conn.fetchrow(
+        """
+        SELECT locatie, firma, regional, asm, is_active,
+               first_seen_month, last_seen_month
+        FROM stores
+        WHERE site_code = $1
+        """,
+        site_code,
+    )
+    assert row is not None
+    return dict(row)
+
+
+async def assert_rejected_workbook_has_no_database_effects(
+    conn: asyncpg.Connection,
+    frame: pd.DataFrame,
+    *,
+    filename: str,
+    site_code: str,
+    error_pattern: str,
+) -> None:
+    before = await store_state(conn, site_code)
+
+    with pytest.raises(ValueError, match=error_pattern):
+        await import_sales_file(conn, sales_workbook(frame), filename)
+
+    assert await store_state(conn, site_code) == before
+    assert await conn.fetchval(
+        "SELECT count(*) FROM import_snapshots WHERE filename = $1",
+        filename,
+    ) == 0
+    assert await conn.fetchval(
+        "SELECT count(*) FROM sales_transactions WHERE site_code = $1",
+        site_code,
+    ) == 0
 
 
 async def seed_stores(
@@ -128,6 +183,65 @@ async def test_single_company_file_does_not_change_other_company_activity() -> N
             await conn.execute(
                 "DELETE FROM stores WHERE site_code = ANY($1::text[])", first + second
             )
+        await close_db_pool()
+
+
+async def test_conflicting_store_metadata_is_rejected_before_any_database_write() -> None:
+    pool = await get_pool()
+    site_code = "P0CONFLICT-01"
+    filename = "synthetic-p0-conflict.xlsx"
+    frame = sales_frame([site_code])
+    conflicting = frame.copy()
+    conflicting.loc[0, "Nr"] = "RECEIPT-CONFLICT"
+    conflicting.loc[0, "Locatie"] = "Contradictory synthetic store"
+    frame = pd.concat([frame, conflicting], ignore_index=True)
+    try:
+        async with pool.acquire() as conn:
+            await seed_stores(conn, [site_code])
+            await assert_rejected_workbook_has_no_database_effects(
+                conn,
+                frame,
+                filename=filename,
+                site_code=site_code,
+                error_pattern="contradictorii",
+            )
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM sales_transactions WHERE site_code = $1", site_code
+            )
+            await conn.execute(
+                "DELETE FROM import_snapshots WHERE filename = $1", filename
+            )
+            await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
+        await close_db_pool()
+
+
+async def test_duplicate_rows_are_rejected_before_any_database_write() -> None:
+    pool = await get_pool()
+    site_code = "P0DUPLICATE-01"
+    filename = "synthetic-p0-duplicate.xlsx"
+    row = sales_frame([site_code])
+    frame = pd.concat([row, row], ignore_index=True)
+    try:
+        async with pool.acquire() as conn:
+            await seed_stores(conn, [site_code])
+            await assert_rejected_workbook_has_no_database_effects(
+                conn,
+                frame,
+                filename=filename,
+                site_code=site_code,
+                error_pattern="duplicate",
+            )
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM sales_transactions WHERE site_code = $1", site_code
+            )
+            await conn.execute(
+                "DELETE FROM import_snapshots WHERE filename = $1", filename
+            )
+            await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
         await close_db_pool()
 
 
