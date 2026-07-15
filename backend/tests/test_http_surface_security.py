@@ -25,10 +25,12 @@ def test_spa_fallback_is_only_for_html_navigation() -> None:
     [
         "api/unknown",
         "auth/unknown",
+        "livez/unknown",
         "metrics/unknown",
         "docs",
         "redoc",
         "openapi.json",
+        "salarii/unknown",
         "assets/missing.js",
     ],
 )

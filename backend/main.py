@@ -285,10 +285,12 @@ _SERVER_NAMESPACES = {
     "auth",
     "docs",
     "health",
+    "livez",
     "metrics",
     "openapi.json",
     "readyz",
     "redoc",
+    "salarii",
 }
 
 

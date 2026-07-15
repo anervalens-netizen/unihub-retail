@@ -29,12 +29,23 @@ COOKIE_NAME = "__Host-unihub_session"
 FLOW_PREFIX = "unihub:retail:oidc-flow:v1:"
 SESSION_PREFIX = "unihub:retail:session:v1:"
 LOCK_PREFIX = "unihub:retail:session-refresh:v1:"
-REFRESH_LOCK_TTL_SECONDS = 30
-REFRESH_WAIT_SECONDS = 30.0
+TOKEN_EXCHANGE_TIMEOUT_SECONDS = 15.0
+MAX_JWKS_REFRESH_SECONDS = 30.0
+REFRESH_OWNER_BUFFER_SECONDS = 15.0
+REFRESH_LOCK_TTL_SECONDS = int(
+    TOKEN_EXCHANGE_TIMEOUT_SECONDS
+    + MAX_JWKS_REFRESH_SECONDS
+    + REFRESH_OWNER_BUFFER_SECONDS
+)
+REFRESH_WAIT_SECONDS = float(REFRESH_LOCK_TTL_SECONDS + 5)
 REFRESH_POLL_SECONDS = 0.1
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 OPAQUE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 logger = logging.getLogger(__name__)
+
+
+class ConcurrentSessionRefreshUnavailable(RuntimeError):
+    """A waiter must not destroy state owned by an in-flight refresh."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +173,10 @@ async def init_session_runtime() -> None:
     if settings is None:
         return
     client = Redis.from_url(settings.valkey_url, decode_responses=False, socket_timeout=2.0)
-    http = httpx.AsyncClient(timeout=15.0, follow_redirects=False)
+    http = httpx.AsyncClient(
+        timeout=TOKEN_EXCHANGE_TIMEOUT_SECONDS,
+        follow_redirects=False,
+    )
     try:
         await asyncio.wait_for(client.ping(), timeout=2.0)
     except Exception:
@@ -273,9 +287,9 @@ async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | 
                     and int(refreshed.get("exp", 0)) > int(time.time()) + 60
                 ):
                     return refreshed
-                return None
+                raise ConcurrentSessionRefreshUnavailable
             await asyncio.sleep(REFRESH_POLL_SECONDS)
-        return None
+        raise ConcurrentSessionRefreshUnavailable
     try:
         refresh_token = record.get("refresh_token")
         if not isinstance(refresh_token, str) or not refresh_token:
@@ -316,7 +330,13 @@ async def authenticate_session(request: Request) -> AuthClaims:
     if record is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     if int(record.get("exp", 0)) <= int(time.time()) + 60:
-        record = await _refresh(session_id, record)
+        try:
+            record = await _refresh(session_id, record)
+        except ConcurrentSessionRefreshUnavailable as exc:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Session refresh temporarily unavailable",
+            ) from exc
         if record is None:
             await client.delete(SESSION_PREFIX + session_id)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")

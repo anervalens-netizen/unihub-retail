@@ -101,6 +101,15 @@ def test_session_settings_use_provider_endpoints_not_issuer_children() -> None:
     assert settings.redirect_uri == "https://retail.example.invalid/auth/callback"
 
 
+def test_refresh_singleflight_window_covers_bounded_owner_work() -> None:
+    bounded_provider_work = (
+        session_auth.TOKEN_EXCHANGE_TIMEOUT_SECONDS
+        + session_auth.MAX_JWKS_REFRESH_SECONDS
+    )
+    assert session_auth.REFRESH_LOCK_TTL_SECONDS >= bounded_provider_work + 10
+    assert session_auth.REFRESH_WAIT_SECONDS > session_auth.REFRESH_LOCK_TTL_SECONDS
+
+
 def test_production_session_settings_fail_closed_without_leaking_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -326,3 +335,38 @@ async def test_refresh_waiter_rechecks_session_after_lock_release() -> None:
     result = await session_auth._refresh(session_id, expired)
 
     assert result == refreshed
+
+
+@pytest.mark.anyio
+async def test_refresh_waiter_timeout_preserves_owner_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    _install(redis)
+    now = int(time.time())
+    session_id = "v" * 43
+    session_key = session_auth.SESSION_PREFIX + session_id
+    lock_key = session_auth.LOCK_PREFIX + session_id
+    expired = {
+        "sub": "subject",
+        "email": "user@example.invalid",
+        "preferred_username": "user",
+        "groups": ["unihub-manager"],
+        "iss": "issuer",
+        "aud": "retail",
+        "iat": now - 600,
+        "exp": now - 1,
+        "refresh_token": "old-refresh",
+        "csrf": "csrf",
+    }
+    await session_auth._store_session(session_id, expired)
+    redis.values[lock_key] = b"other-owner"
+    monkeypatch.setattr(session_auth, "REFRESH_WAIT_SECONDS", 0.01)
+    monkeypatch.setattr(session_auth, "REFRESH_POLL_SECONDS", 0.001)
+
+    with pytest.raises(session_auth.HTTPException) as unavailable:
+        await session_auth.authenticate_session(_request("GET", session_id))
+
+    assert unavailable.value.status_code == 503
+    assert session_key in redis.values
+    assert redis.values[lock_key] == b"other-owner"

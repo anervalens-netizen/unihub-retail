@@ -57,6 +57,9 @@ controlled integrations and smoke tooling.
   delete a newer request's lock. A waiter never deletes the session while the
   lock owner is still inside the bounded token/verification window and re-reads
   the session after observing lock release to cover the store/release boundary.
+  The 60-second lock lease covers the 15-second token exchange, the configured
+  maximum 30-second JWKS fetch and a 15-second processing margin; waiters use a
+  65-second window and return a non-destructive 503 if contention outlives it.
 
 ## Configuration
 
