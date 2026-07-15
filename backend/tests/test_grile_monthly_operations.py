@@ -415,23 +415,36 @@ async def _insert_operation(
 ) -> int:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        return int(
-            await conn.fetchval(
-                """
-                INSERT INTO grile_monthly_operations
-                    (op, closing_month, dry_run, status, result, error_message, finished_at, heartbeat_at)
-                VALUES
-                    ('finalize', $1, true, $2, $3::jsonb, $4,
-                     CASE WHEN $2 IN ('completed', 'failed') THEN now() ELSE NULL END,
-                     now())
-                RETURNING id
-                """,
-                month,
-                status,
-                None if result is None else json.dumps(result),
-                error_message,
+        async with conn.transaction():
+            operation_id = int(
+                await conn.fetchval(
+                    """
+                    INSERT INTO grile_monthly_operations
+                        (op, closing_month, dry_run, status, result, error_message,
+                         finished_at, heartbeat_at, requested_by_sub)
+                    VALUES
+                        ('finalize', $1, true, $2, $3::jsonb, $4,
+                         CASE WHEN $2 IN ('completed', 'failed') THEN now() ELSE NULL END,
+                         now(), 'synthetic-operation-subject')
+                    RETURNING id
+                    """,
+                    month,
+                    status,
+                    None if result is None else json.dumps(result),
+                    error_message,
+                )
             )
-        )
+            await conn.execute(
+                """
+                INSERT INTO grile_monthly_manifests (
+                    operation_id, closing_month, operation, status, requested_by_sub
+                )
+                VALUES ($1, $2, 'finalize', 'building', 'synthetic-operation-subject')
+                """,
+                operation_id,
+                month,
+            )
+        return operation_id
 
 
 async def test_h11_concurrent_start_allows_exactly_one_worker() -> None:
@@ -449,6 +462,65 @@ async def test_h11_concurrent_start_allows_exactly_one_worker() -> None:
             assert await conn.fetchval(
                 "SELECT status FROM grile_monthly_operations WHERE id = $1", operation_id
             ) == "running"
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+async def test_legacy_queued_operation_without_subject_or_manifest_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    month = "2098-09"
+    await _cleanup(month)
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as conn:
+            operation_id = int(
+                await conn.fetchval(
+                    """
+                    INSERT INTO grile_monthly_operations (
+                        op, closing_month, dry_run, status, heartbeat_at
+                    )
+                    VALUES ('finalize', $1, false, 'queued', now())
+                    RETURNING id
+                    """,
+                    month,
+                )
+            )
+
+        monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=pool))
+        execute = AsyncMock()
+        heartbeat = AsyncMock()
+        monkeypatch.setattr(grile_monthly, "_finalize_month_execution", execute)
+        monkeypatch.setattr(grile_monthly, "heartbeat_monthly_operation", heartbeat)
+
+        result = await grile_monthly.run_monthly_op(operation_id=operation_id)
+
+        assert result["status"] == "failed"
+        assert result["operation_status"] == "failed"
+        assert result["exit_code"] == -1
+        assert result["idempotent_replay"] is True
+        execute.assert_not_awaited()
+        heartbeat.assert_not_awaited()
+        async with pool.acquire() as conn:
+            operation = await conn.fetchrow(
+                """
+                SELECT status, error_message, finished_at
+                FROM grile_monthly_operations
+                WHERE id = $1
+                """,
+                operation_id,
+            )
+            manifest_count = await conn.fetchval(
+                "SELECT count(*) FROM grile_monthly_manifests WHERE operation_id = $1",
+                operation_id,
+            )
+        assert operation["status"] == "failed"
+        assert operation["error_message"] == "legacy_operation_missing_identity_or_manifest"
+        assert operation["finished_at"] is not None
+        assert manifest_count == 0
     finally:
         await _cleanup(month)
         await close_db_pool()

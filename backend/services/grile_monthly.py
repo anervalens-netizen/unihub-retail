@@ -2125,7 +2125,7 @@ async def run_monthly_op(
                 "month_label": ro_month_label(str(persisted_month)) if persisted_month else None,
                 "status": "failed" if start.status in {"already_failed", "not_found"} else "no_op",
                 "output": f"Operation {operation_id} was not started: {start.status}.",
-                "exit_code": -1 if start.status == "not_found" else 0,
+                "exit_code": -1 if start.status in {"already_failed", "not_found"} else 0,
                 "dry_run": persisted_dry_run if persisted_op == "reset" else None,
                 "operation_id": operation_id,
                 "operation_status": operation_status,

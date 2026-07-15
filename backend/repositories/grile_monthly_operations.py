@@ -316,28 +316,66 @@ async def start(
     operation_id: int,
 ) -> MonthlyOperationStartResult:
     async with pool.acquire() as conn:
-        started = await conn.fetchrow(
-            f"""
-            UPDATE grile_monthly_operations
-            SET status = 'running',
-                started_at = COALESCE(started_at, now()),
-                heartbeat_at = now()
-            WHERE id = $1 AND status = 'queued'
-            RETURNING {_OPERATION_COLUMNS}
-            """,
-            operation_id,
-        )
-        if started is not None:
-            return operation_start_result(
-                operation_id=operation_id,
-                operation=operation_to_dict(started),
-                transition_claimed=True,
+        async with conn.transaction():
+            started = await conn.fetchrow(
+                f"""
+                UPDATE grile_monthly_operations AS operation
+                SET status = 'running',
+                    started_at = COALESCE(operation.started_at, now()),
+                    heartbeat_at = now()
+                WHERE operation.id = $1
+                  AND operation.status = 'queued'
+                  AND NULLIF(btrim(operation.requested_by_sub), '') IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM grile_monthly_manifests AS manifest
+                      WHERE manifest.operation_id = operation.id
+                        AND manifest.status = 'building'
+                        AND manifest.requested_by_sub = operation.requested_by_sub
+                  )
+                RETURNING {_OPERATION_COLUMNS}
+                """,
+                operation_id,
             )
+            if started is not None:
+                return operation_start_result(
+                    operation_id=operation_id,
+                    operation=operation_to_dict(started),
+                    transition_claimed=True,
+                )
 
-        current = await conn.fetchrow(
-            f"SELECT {_OPERATION_COLUMNS} FROM grile_monthly_operations WHERE id = $1",
-            operation_id,
-        )
+            # Reservations created before the subject/manifest contract cannot
+            # be authorized safely. Fail them atomically while still queued so
+            # a rolling-deploy delivery cannot remain active until stale cleanup.
+            invalid = await conn.fetchrow(
+                f"""
+                UPDATE grile_monthly_operations AS operation
+                SET status = 'failed',
+                    error_message = 'legacy_operation_missing_identity_or_manifest',
+                    finished_at = now(),
+                    heartbeat_at = now()
+                WHERE operation.id = $1
+                  AND operation.status = 'queued'
+                  AND (
+                      NULLIF(btrim(operation.requested_by_sub), '') IS NULL
+                      OR NOT EXISTS (
+                          SELECT 1
+                          FROM grile_monthly_manifests AS manifest
+                          WHERE manifest.operation_id = operation.id
+                            AND manifest.status = 'building'
+                            AND manifest.requested_by_sub = operation.requested_by_sub
+                      )
+                  )
+                RETURNING {_OPERATION_COLUMNS}
+                """,
+                operation_id,
+            )
+            current = invalid
+            if current is None:
+                current = await conn.fetchrow(
+                    f"SELECT {_OPERATION_COLUMNS} FROM grile_monthly_operations WHERE id = $1",
+                    operation_id,
+                )
 
     return operation_start_result(
         operation_id=operation_id,
