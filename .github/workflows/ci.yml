@@ -127,12 +127,37 @@ jobs:
           PROMETHEUS_VERSION: 3.11.3
           PROMETHEUS_SHA256: 9479af67673316278958cda1f39b88a09f8921084e039c65acca060d0447bb38  # pragma: allowlist secret
         run: |
-          systemd-analyze verify \
+          systemd_root="$(mktemp -d)"
+          prom_root="$(mktemp -d)"
+          trap 'rm -rf "$systemd_root" "$prom_root"' EXIT
+          mkdir -p \
+            "$systemd_root/usr/lib/systemd" \
+            "$systemd_root/etc/systemd/system" \
+            "$systemd_root/usr/bin" \
+            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin"
+          cp -a /usr/lib/systemd/system "$systemd_root/usr/lib/systemd/"
+          cp \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-backend.service" \
             "$GITHUB_WORKSPACE/unihub-worker.service" \
-            "$GITHUB_WORKSPACE/ops/systemd/unihub-retail-migrate.service"
-          prom_root="$(mktemp -d)"
-          trap 'rm -rf "$prom_root"' EXIT
+            "$GITHUB_WORKSPACE/ops/systemd/unihub-retail-migrate.service" \
+            "$systemd_root/etc/systemd/system/"
+          printf '[Service]\nType=oneshot\nExecStart=/usr/bin/true\n' \
+            > "$systemd_root/etc/systemd/system/docker.service"
+          cp "$systemd_root/etc/systemd/system/docker.service" \
+            "$systemd_root/etc/systemd/system/mobiup-dwh-postgres.service"
+          touch \
+            "$systemd_root/opt/Mobiup/unihub-retail/.env" \
+            "$systemd_root/opt/Mobiup/unihub-retail/.env.worker" \
+            "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations"
+          cp /usr/bin/true "$systemd_root/usr/bin/true"
+          cp /usr/bin/true \
+            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python"
+          cp /usr/bin/true \
+            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python3"
+          systemd-analyze verify --root="$systemd_root" \
+            "$systemd_root/etc/systemd/system/unihub-backend.service" \
+            "$systemd_root/etc/systemd/system/unihub-worker.service" \
+            "$systemd_root/etc/systemd/system/unihub-retail-migrate.service"
           archive="$prom_root/prometheus.tar.gz"
           curl --fail --silent --show-error --location \
             "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
