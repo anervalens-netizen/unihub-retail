@@ -31,6 +31,10 @@ test.describe('E2E: Excel Import (Settings)', () => {
         filename: 'vanzari_mai.xlsx',
         status: 'completed',
         rows_imported: 250,
+        coverage_report: {
+          active_store_coverage_pct: 90,
+          missing_active_store_count: 3,
+        },
         created_at: '2026-05-06T10:00:00',
       },
     ]);
@@ -41,5 +45,6 @@ test.describe('E2E: Excel Import (Settings)', () => {
     await page.getByRole('button', { name: /Setari/i }).first().click();
 
     await expect(page.getByText('vanzari_mai.xlsx')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Coverage magazine active 90%.*3 absente/)).toBeVisible();
   });
 });

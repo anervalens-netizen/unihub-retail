@@ -581,7 +581,7 @@ export function Settings({
                     {entry.is_month_final ? '✓ Final' : 'Intermediar'} ·{' '}
                     {entry.created_at.slice(0, 16).replace('T', ' ')}
                   </div>
-                  {entry.coverage_report.active_store_coverage_pct != null && (
+                  {entry.coverage_report?.active_store_coverage_pct != null && (
                     <div className="mt-1 text-slate-500">
                       Coverage magazine active {entry.coverage_report.active_store_coverage_pct}% ·{' '}
                       {entry.coverage_report.missing_active_store_count ?? 0} absente · 0 schimbări de stare

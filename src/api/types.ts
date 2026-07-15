@@ -495,7 +495,7 @@ export interface ImportHistoryEntry {
   rows_imported: number | null;
   status: string;
   error_message: string | null;
-  coverage_report: ImportCoverageReport;
+  coverage_report?: ImportCoverageReport | null;
   created_at: string;
 }
 
