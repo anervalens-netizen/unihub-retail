@@ -125,7 +125,7 @@ jobs:
         working-directory: .
         env:
           PROMETHEUS_VERSION: 3.11.3
-          PROMETHEUS_SHA256: 9479af67673316278958cda1f39b88a09f8921084e039c65acca060d0447bb38
+          PROMETHEUS_SHA256: 9479af67673316278958cda1f39b88a09f8921084e039c65acca060d0447bb38  # pragma: allowlist secret
         run: |
           systemd-analyze verify \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-backend.service" \
