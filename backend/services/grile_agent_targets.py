@@ -16,6 +16,7 @@ import threading
 import time
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
@@ -383,7 +384,8 @@ async def read_agent_targets_state_on_connection(
     rows = await conn.fetch(
         """
         SELECT site_code, agent, target_value, source_agent_name,
-               source_store_key, source_file, manager, match_method
+               source_store_key, source_file, manager, match_method,
+               created_at, updated_at
         FROM agent_targets
         WHERE import_month = $1
         ORDER BY site_code, agent
@@ -400,6 +402,8 @@ async def read_agent_targets_state_on_connection(
             str(row["source_file"] or ""),
             str(row["manager"] or ""),
             str(row["match_method"] or ""),
+            _canonical_state_timestamp(row["created_at"]),
+            _canonical_state_timestamp(row["updated_at"]),
         ]
         for row in rows
     ]
@@ -407,6 +411,11 @@ async def read_agent_targets_state_on_connection(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     return AgentTargetsState(sha256=digest, row_count=len(payload))
+
+
+def _canonical_state_timestamp(value: datetime) -> str:
+    """Serialize PostgreSQL write markers deterministically for state hashes."""
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
 
 
 def require_applicable_agent_target_sync(result: AgentTargetSyncResult) -> None:

@@ -441,6 +441,62 @@ async def test_dry_run_preserves_hash_and_privileged_sync_applies_atomically(
 
 @pytest.mark.asyncio
 @pytestmark_db
+async def test_agent_target_state_hash_detects_timestamp_only_write() -> None:
+    pool = await get_pool()
+    month = "2098-11"
+    site_code = "SYNTHETIC-TARGET-STATE-HASH"
+    agent_code = "SYNTHETIC-AGENT"
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO stores (
+                    site_code, locatie, firma, regional, asm,
+                    is_active, first_seen_month, last_seen_month
+                )
+                VALUES ($1, 'Synthetic store', 'Synthetic company',
+                        'Synthetic region', 'Synthetic manager', true, $2, $2)
+                """,
+                site_code,
+                month,
+            )
+            await conn.execute(
+                """
+                INSERT INTO agent_targets (
+                    import_month, site_code, agent, target_value, source_file
+                )
+                VALUES ($1, $2, $3, 100, 'retail-grile/synthetic')
+                """,
+                month,
+                site_code,
+                agent_code,
+            )
+
+        before = await read_agent_targets_state(pool, month)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE agent_targets
+                SET updated_at = updated_at + INTERVAL '1 microsecond'
+                WHERE import_month = $1 AND site_code = $2 AND agent = $3
+                """,
+                month,
+                site_code,
+                agent_code,
+            )
+        after = await read_agent_targets_state(pool, month)
+
+        assert before.row_count == after.row_count == 1
+        assert before.sha256 != after.sha256
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM agent_targets WHERE import_month = $1", month)
+            await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytestmark_db
 async def test_sync_blocks_non_grile_target_conflict_without_overwrite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
