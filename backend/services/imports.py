@@ -234,4 +234,11 @@ class ImportsService:
 
     async def get_import_history(self) -> list[ImportHistoryEntry]:
         rows = await self.repo.get_import_history()
-        return [ImportHistoryEntry(**dict(row)) for row in rows]
+        history: list[ImportHistoryEntry] = []
+        for row in rows:
+            payload = dict(row)
+            report = payload.get("coverage_report")
+            if isinstance(report, str):
+                payload["coverage_report"] = json.loads(report)
+            history.append(ImportHistoryEntry(**payload))
+        return history

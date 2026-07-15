@@ -12,7 +12,7 @@ class ImportsRepository:
             return await conn.fetch(
                 """
                 SELECT id, import_month, filename, upload_date, is_month_final, rows_in_file,
-                       rows_imported, status, error_message, created_at
+                       rows_imported, status, error_message, coverage_report, created_at
                 FROM import_snapshots
                 ORDER BY created_at DESC
                 """

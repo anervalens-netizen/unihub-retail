@@ -58,8 +58,8 @@ def test_load_sales_dataframe_normalizes_and_flags_rows() -> None:
                 Nr="BON2",
                 Firma="MOBICELL",
                 Cantitate=-1,
-                Pret=None,
-                Valoare=None,
+                Pret=0,
+                Valoare=0,
                 Brand=None,
                 Categorie=None,
                 SubCategorie=None,
@@ -87,6 +87,46 @@ def test_load_sales_dataframe_rejects_missing_columns() -> None:
 
     with pytest.raises(ValueError, match="Lipsesc coloane obligatorii"):
         load_sales_dataframe(output.getvalue())
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        ("Pret", None, "Pret"),
+        ("Valoare", "invalid", "Valoare"),
+        ("Cantitate", 1.5, "Cantitate"),
+    ],
+)
+def test_load_sales_dataframe_rejects_invalid_numeric_values(
+    column: str,
+    value: object,
+    message: str,
+) -> None:
+    content = sales_workbook([sales_row(**{column: value})])
+
+    with pytest.raises(ValueError, match=message):
+        load_sales_dataframe(content)
+
+
+def test_load_sales_dataframe_rejects_duplicate_rows() -> None:
+    row = sales_row()
+
+    with pytest.raises(ValueError, match="duplicate"):
+        load_sales_dataframe(sales_workbook([row, row]))
+
+
+def test_load_sales_dataframe_rejects_missing_required_identifier() -> None:
+    with pytest.raises(ValueError, match="identificatori obligatorii"):
+        load_sales_dataframe(sales_workbook([sales_row(Agent=None)]))
+
+
+def test_load_sales_dataframe_rejects_conflicting_store_metadata() -> None:
+    with pytest.raises(ValueError, match="contradictorii"):
+        load_sales_dataframe(
+            sales_workbook(
+                [sales_row(), sales_row(Nr="BON2", Locatie="Alt magazin")]
+            )
+        )
 
 
 def test_detect_month_rejects_mixed_months() -> None:
