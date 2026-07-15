@@ -81,17 +81,31 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
 
 def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     if isinstance(source, bytes):
+        header_content: str | BytesIO = BytesIO(source)
         content: str | BytesIO = BytesIO(source)
     else:
-        content = str(source)
+        header_content = content = str(source)
 
-    df = pd.read_excel(content, engine=None)
-    normalized_columns = [str(value).strip() for value in df.columns]
+    # pandas mangles duplicate labels before exposing ``df.columns`` (for
+    # example ``SiteCode`` / ``SiteCode.1``).  Inspect the raw first row so a
+    # contradictory workbook cannot bypass the duplicate-header gate.
+    raw_header = pd.read_excel(header_content, header=None, nrows=1, engine=None)
+    raw_columns = [
+        "" if pd.isna(value) else str(value).strip()
+        for value in raw_header.iloc[0].tolist()
+    ]
     duplicate_headers = sorted(
-        {column for column in normalized_columns if normalized_columns.count(column) > 1}
+        {
+            column
+            for column in raw_columns
+            if column and raw_columns.count(column) > 1
+        }
     )
     if duplicate_headers:
         raise ValueError("Fișierul conține antete duplicate.")
+
+    df = pd.read_excel(content, engine=None)
+    normalized_columns = [str(value).strip() for value in df.columns]
     df.columns = normalized_columns
     missing = [column for column in SALES_COLUMNS if column not in df.columns]
     if missing:

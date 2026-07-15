@@ -115,6 +115,18 @@ def test_load_sales_dataframe_rejects_duplicate_rows() -> None:
         load_sales_dataframe(sales_workbook([row, row]))
 
 
+def test_load_sales_dataframe_rejects_duplicate_raw_excel_headers() -> None:
+    output = BytesIO()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(SALES_COLUMNS)
+    sheet.cell(row=1, column=3, value="SiteCode")
+    workbook.save(output)
+
+    with pytest.raises(ValueError, match="antete duplicate"):
+        load_sales_dataframe(output.getvalue())
+
+
 def test_load_sales_dataframe_rejects_missing_required_identifier() -> None:
     with pytest.raises(ValueError, match="identificatori obligatorii"):
         load_sales_dataframe(sales_workbook([sales_row(Agent=None)]))
