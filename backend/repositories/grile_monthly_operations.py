@@ -194,7 +194,8 @@ async def reserve(
                     """
                     SELECT site_code, company, store
                     FROM grile_monthly_reset_items
-                    WHERE closing_month = $1 AND status = 'uncertain'
+                    WHERE closing_month = $1
+                      AND (status = 'uncertain' OR rollback_status = 'failed')
                     ORDER BY company, store
                     LIMIT 1
                     """,
@@ -771,7 +772,7 @@ async def record_reset_item_rollback(
         row = await conn.fetchrow(
             """
             UPDATE grile_monthly_reset_items
-            SET status = 'error',
+            SET status = CASE WHEN $3 THEN 'error' ELSE 'uncertain' END,
                 rollback_status = CASE WHEN $3 THEN 'restored' ELSE 'failed' END,
                 restored_at = CASE WHEN $3 THEN now() ELSE NULL END,
                 error_message = $4,

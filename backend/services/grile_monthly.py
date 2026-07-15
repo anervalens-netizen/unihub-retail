@@ -969,6 +969,25 @@ def _control_totals(rows: list[ExtractedAgentRow]) -> dict[str, str]:
     return totals
 
 
+def _source_registry(entries: list[StoreEntry]) -> list[dict[str, str]]:
+    return sorted(
+        (
+            {"site_code": entry.site_code, "sheet_id": entry.sheet_id}
+            for entry in entries
+        ),
+        key=lambda item: (item["site_code"], item["sheet_id"]),
+    )
+
+
+def _with_source_registry(
+    manifest: dict[str, Any],
+    entries: list[StoreEntry],
+) -> dict[str, Any]:
+    enriched = dict(manifest)
+    enriched["source_registry"] = _source_registry(entries)
+    return finalize_manifest(enriched)
+
+
 def _validate_final_workbook(path: Path, *, expected_agents: int) -> None:
     try:
         workbook = load_workbook(path, read_only=True, data_only=False)
@@ -1089,16 +1108,19 @@ async def _finalize_month_execution(
         shutil.rmtree(stage_dir, ignore_errors=True)
 
     artifact = relative_artifact(output_path, root=OUTPUTS_DIR, kind="final_workbook")
-    manifest = base_manifest(
-        month=month_key,
-        operation="finalize",
-        requested_by_sub=requested_by_sub,
-        expected_stores=expected_stores,
-        expected_agents=expected_agents,
-        processed_stores=processed_stores,
-        processed_agents=processed_agents,
-        control_totals=totals,
-        artifacts=[artifact],
+    manifest = _with_source_registry(
+        base_manifest(
+            month=month_key,
+            operation="finalize",
+            requested_by_sub=requested_by_sub,
+            expected_stores=expected_stores,
+            expected_agents=expected_agents,
+            processed_stores=processed_stores,
+            processed_agents=processed_agents,
+            control_totals=totals,
+            artifacts=[artifact],
+        ),
+        entries,
     )
     validate_verified_manifest(manifest, operation="finalize")
     verify_artifacts(manifest, root=OUTPUTS_DIR)
@@ -1320,10 +1342,13 @@ async def _archive_month_execution(
 
     entries = await load_entries(pool)
     expected = final_manifest["expected"]
+    finalized_registry = final_manifest.get("source_registry")
+    current_registry = _source_registry(entries)
     if (
         len(entries) != expected["stores"]
         or len({entry.site_code for entry in entries}) != len(entries)
         or len({entry.sheet_id for entry in entries}) != len(entries)
+        or finalized_registry != current_registry
     ):
         failed = base_manifest(
             month=month_key,

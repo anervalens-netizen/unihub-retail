@@ -167,6 +167,26 @@ def validate_verified_manifest(manifest: Mapping[str, Any], *, operation: str) -
         value = expected.get(key)
         if not isinstance(value, int) or value <= 0 or processed.get(key) != value:
             raise MonthlyIntegrityError("manifest_coverage_incomplete", "Manifest coverage is incomplete")
+    if operation == "finalize":
+        source_registry = manifest.get("source_registry")
+        if not isinstance(source_registry, list) or len(source_registry) != expected.get("stores"):
+            raise MonthlyIntegrityError("manifest_registry_invalid", "Manifest registry is invalid")
+        identities: set[tuple[str, str]] = set()
+        for item in source_registry:
+            if not isinstance(item, Mapping):
+                raise MonthlyIntegrityError("manifest_registry_invalid", "Manifest registry is invalid")
+            site_code = item.get("site_code")
+            sheet_id = item.get("sheet_id")
+            if (
+                not isinstance(site_code, str)
+                or not site_code.strip()
+                or not isinstance(sheet_id, str)
+                or not sheet_id.strip()
+            ):
+                raise MonthlyIntegrityError("manifest_registry_invalid", "Manifest registry is invalid")
+            identities.add((site_code, sheet_id))
+        if len(identities) != len(source_registry):
+            raise MonthlyIntegrityError("manifest_registry_invalid", "Manifest registry is invalid")
     if manifest.get("error_count") != 0 or manifest.get("errors") not in ([], None):
         raise MonthlyIntegrityError("manifest_has_errors", "Manifest contains errors")
     claimed = manifest.get("manifest_sha256")

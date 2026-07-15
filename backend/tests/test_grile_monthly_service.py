@@ -610,20 +610,32 @@ def patch_verified_final_manifest(
     *,
     stores: int,
     agents: int,
+    registry: list[StoreEntry] | None = None,
 ) -> dict[str, Any]:
     final_path = grile.build_final_export_path(output_dir, "Iunie 2026")
     final_path.parent.mkdir(parents=True, exist_ok=True)
     final_path.write_bytes(b"verified-final")
-    manifest = grile.base_manifest(
-        month="2026-06",
-        operation="finalize",
-        requested_by_sub="test-subject",
-        expected_stores=stores,
-        expected_agents=agents,
-        processed_stores=stores,
-        processed_agents=agents,
-        control_totals={"salary_components": "1.00"},
-        artifacts=[grile.relative_artifact(final_path, root=output_dir, kind="final_workbook")],
+    source_entries = registry or [
+        entry(
+            store=f"Store {index}",
+            site_code=f"SITE{index:02d}",
+            sheet_id=f"sheet-{index}",
+        )
+        for index in range(1, stores + 1)
+    ]
+    manifest = grile._with_source_registry(
+        grile.base_manifest(
+            month="2026-06",
+            operation="finalize",
+            requested_by_sub="test-subject",
+            expected_stores=stores,
+            expected_agents=agents,
+            processed_stores=stores,
+            processed_agents=agents,
+            control_totals={"salary_components": "1.00"},
+            artifacts=[grile.relative_artifact(final_path, root=output_dir, kind="final_workbook")],
+        ),
+        source_entries,
     )
     monkeypatch.setattr(
         grile,
@@ -649,7 +661,9 @@ async def test_archive_month_writes_valid_manifest(
         ),
     ]
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
-    patch_verified_final_manifest(monkeypatch, tmp_path, stores=2, agents=3)
+    patch_verified_final_manifest(
+        monkeypatch, tmp_path, stores=2, agents=3, registry=entries
+    )
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
     monkeypatch.setattr(grile, "_validate_source_workbook", lambda _path: None)
@@ -725,7 +739,9 @@ async def test_archive_month_sleeps_only_between_entries(
         sleeps.append(delay)
 
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
-    patch_verified_final_manifest(monkeypatch, tmp_path, stores=2, agents=2)
+    patch_verified_final_manifest(
+        monkeypatch, tmp_path, stores=2, agents=2, registry=entries
+    )
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
     monkeypatch.setattr(grile, "_validate_source_workbook", lambda _path: None)
@@ -1438,6 +1454,41 @@ async def test_archive_requires_full_verified_finalization(
             requested_by_sub="subject-1",
             operation_id=1,
         )
+    assert exc_info.value.code == "registry_changed_or_duplicate_after_finalization"
+
+
+@pytest.mark.asyncio
+async def test_archive_rejects_same_count_registry_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finalized_entries = [
+        entry(),
+        entry(store="Store 2", site_code="SITE02", sheet_id="sheet-2"),
+    ]
+    current_entries = [
+        entry(),
+        entry(store="Store 3", site_code="SITE03", sheet_id="sheet-3"),
+    ]
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    patch_verified_final_manifest(
+        monkeypatch,
+        tmp_path,
+        stores=2,
+        agents=2,
+        registry=finalized_entries,
+    )
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=current_entries))
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._archive_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            month_key="2026-06",
+            requested_by_sub="subject-1",
+            operation_id=1,
+        )
+
     assert exc_info.value.code == "registry_changed_or_duplicate_after_finalization"
 
 
