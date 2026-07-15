@@ -1,0 +1,5 @@
+Defaults:unihub-deploy env_reset, use_pty
+
+Cmnd_Alias UNIHUB_RETAIL_DEPLOY_ARTIFACT = /opt/Mobiup/ops/scripts/deploy-retail-artifact.sh *
+
+unihub-deploy ALL=(root) NOPASSWD: UNIHUB_RETAIL_DEPLOY_ARTIFACT

@@ -42,19 +42,38 @@ The deploy workflow:
 6. is fail-closed unless repository variable
    `PRODUCTION_DEPLOY_APPROVALS_ENFORCED=true` is present.
 
-The production environment must have required-reviewer protection before that
-variable is enabled. The current private repository plan does not expose branch
-protection or required environment reviewers; release/deploy remains blocked
-until the repository plan or hosting policy supplies those controls. Manual
-merge discipline is not represented as an enforced GitHub protection.
+GitHub required reviewers are available for private repositories only with
+GitHub Enterprise, which is not part of the current plan. The production gate
+therefore uses a host-enforced human approval rather than pretending that an
+unprotected GitHub environment is sufficient. `approve-retail-release.sh`
+creates a root-only, 30-minute, one-time record bound to the exact successful CI
+run, `main` source SHA and artifact SHA-256. The deploy entrypoint must claim the
+matching record before any application mutation. It finalizes the record as
+`consumed` or `failed`; expiry, reuse, duplicates and mismatches fail closed.
 
-Pre-rollout inspection also found that the expected root-owned entrypoint
-`/opt/Mobiup/ops/scripts/deploy-retail-artifact.sh` is not provisioned. This is a
-second intentional fail-closed prerequisite: do not register the deploy runner
-or enable `PRODUCTION_DEPLOY_APPROVALS_ENFORCED` until the entrypoint is installed
-from a separately reviewed operations source, owned and writable only by root,
-and its backup, migration, health and rollback behavior has been exercised. The
-deploy job must never install that privileged entrypoint from PR-controlled code.
+The reviewed entrypoint source is `ops/deploy-retail-artifact.sh`; its sandbox
+test is `ops/test-deploy-retail-artifact.sh`. The production copy is installed
+separately at `/opt/Mobiup/ops/scripts/deploy-retail-artifact.sh`, with both the
+file and parent directory owned by root and writable only by root. Its installed
+SHA-256 is recorded during rollout and must match the reviewed source exactly.
+The deploy job must never install or replace this privileged copy.
+
+Before changing production, the entrypoint copies the runner-owned artifact to
+a root-only temporary directory, rejects unsafe archive members, and compares
+all source files (excluding only the separately tested root `dist/`) to the exact
+`origin/main` commit. It permits only a fast-forward from the current production
+SHA, preserves the two known pre-release documents by exact SHA-256, requires a
+fresh verified backup generation, stops web/worker, switches the tested frontend,
+runs the one-shot migration unit, and checks local liveness/readiness. Failure
+after the switch automatically restores the old Git SHA, frontend and preserved
+documents. Manual rollback is root-only; the `unihub-deploy` service identity is
+explicitly refused that mode.
+
+The sandbox covers missing approval, invalid approval identity, duplicates,
+single consumption, expiry, digest mismatch, success, manual rollback, injected
+health failure with automatic rollback, source tampering, path traversal,
+archive symlinks and an unexpected dirty worktree. The exact final CI artifact
+must also pass the entrypoint's read-only `validate` mode before approval.
 
 ## Controlled isolation evidence
 
@@ -62,10 +81,12 @@ The `runner-isolation` job is the repeatable proof. It must remain required by
 both backend and frontend jobs. Its assertions intentionally refer only to
 infrastructure identity and reachability; they never inspect or print secrets.
 
-After PR-00 is merged, remove the `unihub-server` label from the persistent
-Retail runner or stop that runner. If it is retained for deployment, register
-it only with the dedicated `unihub-deploy` label and never add that label to a
-pull-request workflow.
+The old `unihub-server` Retail runner is stopped and removed from the repository
+runner inventory. It must not be reused for deployment. Register a separate OS
+identity only with the dedicated `unihub-deploy` label after the root approval
+boundary and exact sudo policy are installed, and never add that label to a
+pull-request workflow. That identity must have no Docker group, production
+secret read access, interactive credentials or general sudo.
 
 ## Rollback
 
@@ -73,3 +94,8 @@ Reverting package vendoring or restoring the self-hosted PR labels reopens the
 critical finding and is not an acceptable production rollback. If hosted CI is
 unavailable, stop merges and deployments until it recovers. Existing releases
 remain runnable because runtime does not fetch npm packages.
+
+Application rollback uses the root entrypoint's verified backup handle. The
+three v2.0.1 migrations are additive, so code rollback keeps the expanded schema;
+the verified PostgreSQL dump is reserved for disaster recovery rather than an
+automatic destructive restore that could discard writes made after deployment.

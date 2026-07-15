@@ -28,10 +28,11 @@ păstrează deschise domeniile în care același principiu nu este încă aplica
 **Recomandare de release:** candidatul poate continua către rollout numai după
 publicarea documentației, un CI verde pe SHA-ul final `main`, backup și verificarea
 migrațiilor, environment approval, deploy din artefactul verificat, acceptanță și
-rollback demonstrat. La data reconcilierii, planul GitHub al repository-ului privat
-nu permite required reviewers pentru environment; workflow-ul de deploy rămâne
-intenționat fail-closed până când acel control este disponibil. Nu se autorizează
-ocolirea lui prin deploy manual.
+rollback demonstrat. Planul GitHub al repository-ului privat nu permite required
+reviewers; controlul echivalent este implementat host-side ca approval root-only,
+interactiv, one-time și legat de CI run/SHA/hash. Workflow-ul rămâne fail-closed
+până la instalarea și verificarea acestui boundary. Nu se autorizează ocolirea
+lui prin deploy manual.
 
 ## Metodă și independență
 
@@ -141,7 +142,7 @@ reziduale și nu sunt prezentate drept remediate.
 | M-53 | **Deschis** | Unitățile systemd rulează încă sub utilizatorul uman configurat; izolarea runnerului nu schimbă identitatea serviciilor. |
 | M-54 | **Deschis** | Backendul/workerul rămân single-host/single-process conform unităților systemd. |
 | M-55 | **Deschis** | `backend/requirements.txt` nu este un lock cu hash-uri complet reproductibil. |
-| M-56 | **Parțial, release blocat fail-closed** | `.github/workflows/deploy.yml` verifică runul `main`, SHA-ul și hashurile artefactului și cere environment `production`; jobul nu pornește fără `PRODUCTION_DEPLOY_APPROVALS_ENFORCED=true`. Required reviewers nu sunt disponibili pe planul curent, deci deploy-ul rămâne blocat. |
+| M-56 | **Remediere implementată, rollout pending** | `.github/workflows/deploy.yml` verifică runul `main`, SHA-ul și hashurile artefactului. `ops/approve-retail-release.sh` creează approval root-only, interactiv, valabil 30 de minute și legat de run/SHA/hash; `ops/deploy-retail-artifact.sh` îl consumă atomic înainte de orice mutație și refuză lipsa, expirarea, reutilizarea, duplicatele și mismatch-ul. Runnerul dedicat și variabila rămân fail-closed până la merge și instalarea boundary-ului revizuit. |
 | M-57 | **Deschis** | `backend/services/grile_monthly.py`, exports și componentele mari frontend rămân monoliți, deși integritatea salarială a fost extrasă în `grile_monthly_integrity.py`. |
 
 ## Minore

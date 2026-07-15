@@ -5,7 +5,8 @@
 
 **Candidat pregatit, nepublicat:** `v2.0.1` — integritate si securitate; vezi
 [`docs/releases/v2.0.1.md`](docs/releases/v2.0.1.md). Tagul si deployul se fac
-numai dupa environment approval, verificarea artefactului, acceptanta si rollback.
+numai dupa approval-ul de productie pentru run/SHA/hash, verificarea artefactului,
+acceptanta si rollback.
 
 UniHub este o aplicatie de operare comerciala pentru retail, construita pentru
 monitorizarea vanzarilor, targetelor, produselor Focus, promotiilor, fiselor de
