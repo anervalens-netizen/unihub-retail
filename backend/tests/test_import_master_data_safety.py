@@ -70,7 +70,7 @@ async def store_state(
     row = await conn.fetchrow(
         """
         SELECT locatie, firma, regional, asm, is_active,
-               first_seen_month, last_seen_month
+               first_seen_month, last_seen_month, updated_at
         FROM stores
         WHERE site_code = $1
         """,
@@ -78,6 +78,62 @@ async def store_state(
     )
     assert row is not None
     return dict(row)
+
+
+async def seed_completed_snapshot(
+    conn: asyncpg.Connection,
+    *,
+    import_month: str,
+    filename: str,
+    site_code: str,
+) -> None:
+    snapshot_id = await conn.fetchval(
+        """
+        INSERT INTO import_snapshots (
+            import_month, filename, rows_in_file, rows_imported,
+            status, is_month_final
+        )
+        VALUES ($1, $2, 1, 1, 'completed', true)
+        RETURNING id
+        """,
+        import_month,
+        filename,
+    )
+    assert snapshot_id is not None
+    await conn.execute(
+        """
+        INSERT INTO sales_transactions (
+            import_month, sale_date, site_code, bon_nr, item_code, item_name,
+            quantity, unit_price, total_value, agent,
+            is_cartela, is_return, snapshot_id
+        )
+        VALUES (
+            $1, $2, $3, 'BASELINE-RECEIPT', 'BASELINE-ITEM',
+            'Baseline synthetic item', 1, 10, 10, 'SYNTHETIC-AGENT',
+            false, false, $4
+        )
+        """,
+        import_month,
+        date.fromisoformat(f"{import_month}-01"),
+        site_code,
+        snapshot_id,
+    )
+
+
+async def import_month_state(
+    conn: asyncpg.Connection,
+    *,
+    import_month: str,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    snapshots = await conn.fetch(
+        "SELECT * FROM import_snapshots WHERE import_month = $1 ORDER BY id",
+        import_month,
+    )
+    transactions = await conn.fetch(
+        "SELECT * FROM sales_transactions WHERE import_month = $1 ORDER BY id",
+        import_month,
+    )
+    return [dict(row) for row in snapshots], [dict(row) for row in transactions]
 
 
 async def assert_rejected_workbook_has_no_database_effects(
@@ -88,19 +144,31 @@ async def assert_rejected_workbook_has_no_database_effects(
     site_code: str,
     error_pattern: str,
 ) -> None:
+    import_month = frame.iloc[0]["Data"].strftime("%Y-%m")
+    existing_filename = f"existing-{filename}"
+    await seed_completed_snapshot(
+        conn,
+        import_month=import_month,
+        filename=existing_filename,
+        site_code=site_code,
+    )
     before = await store_state(conn, site_code)
+    month_state_before = await import_month_state(
+        conn,
+        import_month=import_month,
+    )
 
     with pytest.raises(ValueError, match=error_pattern):
         await import_sales_file(conn, sales_workbook(frame), filename)
 
     assert await store_state(conn, site_code) == before
+    assert await import_month_state(
+        conn,
+        import_month=import_month,
+    ) == month_state_before
     assert await conn.fetchval(
         "SELECT count(*) FROM import_snapshots WHERE filename = $1",
         filename,
-    ) == 0
-    assert await conn.fetchval(
-        "SELECT count(*) FROM sales_transactions WHERE site_code = $1",
-        site_code,
     ) == 0
 
 
@@ -211,7 +279,9 @@ async def test_conflicting_store_metadata_is_rejected_before_any_database_write(
                 "DELETE FROM sales_transactions WHERE site_code = $1", site_code
             )
             await conn.execute(
-                "DELETE FROM import_snapshots WHERE filename = $1", filename
+                "DELETE FROM import_snapshots WHERE filename IN ($1, $2)",
+                filename,
+                f"existing-{filename}",
             )
             await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
         await close_db_pool()
@@ -239,7 +309,9 @@ async def test_duplicate_rows_are_rejected_before_any_database_write() -> None:
                 "DELETE FROM sales_transactions WHERE site_code = $1", site_code
             )
             await conn.execute(
-                "DELETE FROM import_snapshots WHERE filename = $1", filename
+                "DELETE FROM import_snapshots WHERE filename IN ($1, $2)",
+                filename,
+                f"existing-{filename}",
             )
             await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
         await close_db_pool()
