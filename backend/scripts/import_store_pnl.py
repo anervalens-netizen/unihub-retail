@@ -25,6 +25,8 @@ from dotenv import load_dotenv
 REPO_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = REPO_DIR / "data" / "P&L"
 VALID_CODES = {"v1", "v11", "v2", "v3", "c1", "c11", "c2", "c3", "c4", "c5", "c6", "a1"}
+UNALLOCATED_SOURCE = "__FINANCE_UNALLOCATED__"
+UNALLOCATED_LOCATION = "Diferenta consolidat Finance nealocata pe magazine"
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,7 @@ class WorkbookData:
     company_name: str
     periods: tuple[date, ...]
     rows: tuple[PnlRow, ...]
+    consolidated_rows: tuple[PnlRow, ...]
     populated_months: int
     numeric_cells: int
 
@@ -112,15 +115,98 @@ def parse_workbook(path: Path, root: Path) -> WorkbookData:
 
     # Remove template cells from months without any real amount.
     rows = [row for row in rows if row.period in months_with_values]
+    consolidated_rows = parse_consolidated_rows(
+        summary,
+        company,
+        periods,
+        source_file,
+        digest,
+        months_with_values,
+    )
     return WorkbookData(
         path=path,
         sha256=digest,
         company_name=company,
         periods=tuple(periods),
         rows=tuple(rows),
+        consolidated_rows=tuple(consolidated_rows),
         populated_months=len(months_with_values),
         numeric_cells=len(rows),
     )
+
+
+def summary_category_code(code_value: object, name_value: object) -> str | None:
+    code = str(code_value).strip().lower()
+    if code in VALID_CODES:
+        return code
+    # Summary-only subtotals (for example v10 "alte venituri din exploatare")
+    # are not store P&L accounting categories and must not overwrite v3.
+    if code and not code.replace(".", "", 1).isdigit():
+        return None
+    normalized = " ".join(str(name_value).lower().split())
+    if "venituri din vanzari cartele" in normalized:
+        return "v1"
+    if "venituri din accesor" in normalized:
+        return "v11"
+    if "venituri din incarcare" in normalized:
+        return "v2"
+    if "alte venituri" in normalized:
+        return "v3"
+    if "marfa cartele" in normalized:
+        return "c1"
+    if "marfa accesori" in normalized:
+        return "c11"
+    if "cheltuieli cu incarcare" in normalized:
+        return "c2"
+    if "cost salari" in normalized:
+        return "c3"
+    if "chirii" in normalized:
+        return "c4"
+    if "utilit" in normalized:
+        return "c5"
+    if "alte costuri" in normalized:
+        return "c6"
+    if "amortizare" in normalized:
+        return "a1"
+    return None
+
+
+def parse_consolidated_rows(
+    summary: xlrd.sheet.Sheet,
+    company: str,
+    periods: list[date],
+    source_file: str,
+    digest: str,
+    populated_months: set[date],
+) -> list[PnlRow]:
+    """Read the Finance consolidated totals without rewriting store detail.
+
+    Some workbooks reconcile to company totals that contain locations absent
+    from ``Detaliere``. The delta is persisted as an explicit unallocated
+    Finance bucket so company P&L remains faithful to the supplied workbook.
+    """
+    rows: list[PnlRow] = []
+    for row_index in range(summary.nrows):
+        category = summary_category_code(summary.cell_value(row_index, 2), summary.cell_value(row_index, 3))
+        if category is None:
+            continue
+        category_name = str(summary.cell_value(row_index, 3)).strip() or category
+        for month_index, period in enumerate(periods):
+            value = summary.cell_value(row_index, 5 + month_index)
+            if period not in populated_months or not isinstance(value, (int, float)) or isinstance(value, bool):
+                continue
+            rows.append(PnlRow(
+                company_name=company,
+                period=period,
+                source_site_code=UNALLOCATED_SOURCE,
+                source_location_name=UNALLOCATED_LOCATION,
+                category_code=category,
+                category_name=category_name,
+                amount=money(float(value)),
+                source_file=source_file,
+                source_sha256=digest,
+            ))
+    return rows
 
 
 def discover(input_dir: Path) -> tuple[list[WorkbookData], list[tuple[Path, Path]]]:
@@ -175,7 +261,32 @@ def merged_rows(selected: list[WorkbookData]) -> list[PnlRow]:
     return sorted(result.values(), key=lambda row: (row.period, row.company_name, row.source_site_code, row.category_code))
 
 
-def print_audit(selected: list[WorkbookData], superseded: list[WorkbookData], duplicates: list[tuple[Path, Path]], rows: list[PnlRow]) -> None:
+def unallocated_rows(detail_rows: list[PnlRow], selected: list[WorkbookData]) -> list[PnlRow]:
+    """Return exact Finance consolidated-minus-detail deltas per category."""
+    detailed_totals: dict[tuple[str, date, str], Decimal] = defaultdict(Decimal)
+    for row in detail_rows:
+        detailed_totals[(row.company_name, row.period, row.category_code)] += row.amount
+    result: list[PnlRow] = []
+    for workbook in selected:
+        for total in workbook.consolidated_rows:
+            delta = total.amount - detailed_totals[(total.company_name, total.period, total.category_code)]
+            if abs(delta) <= Decimal("0.01"):
+                continue
+            result.append(PnlRow(
+                company_name=total.company_name,
+                period=total.period,
+                source_site_code=UNALLOCATED_SOURCE,
+                source_location_name=UNALLOCATED_LOCATION,
+                category_code=total.category_code,
+                category_name=total.category_name,
+                amount=delta,
+                source_file=total.source_file,
+                source_sha256=total.source_sha256,
+            ))
+    return sorted(result, key=lambda row: (row.period, row.company_name, row.category_code))
+
+
+def print_audit(selected: list[WorkbookData], superseded: list[WorkbookData], duplicates: list[tuple[Path, Path]], rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
     print(f"Duplicate binare: {len(duplicates)}")
     for duplicate, original in duplicates:
         print(f"  DUPLICAT {duplicate} == {original}")
@@ -196,15 +307,20 @@ def print_audit(selected: list[WorkbookData], superseded: list[WorkbookData], du
         companies = sorted({row.company_name for row in period_rows})
         sites = len({(row.company_name, row.source_site_code) for row in period_rows})
         print(f"  {period:%Y-%m}: {len(period_rows)} valori, {sites} magazine, {', '.join(companies)}")
+    print(f"Diferente consolidat Finance nealocate pe magazine: {len(reconciliation)} valori")
 
 
-async def apply_rows(rows: list[PnlRow]) -> None:
+async def apply_rows(rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("DATABASE_URL lipseste din .env")
     connection = await asyncpg.connect(database_url)
     try:
         async with connection.transaction():
+            await connection.execute(
+                "DELETE FROM store_pnl_monthly WHERE data_kind = 'actual' AND source_site_code = $1",
+                UNALLOCATED_SOURCE,
+            )
             await connection.executemany(
                 """
                 INSERT INTO store_pnl_monthly (
@@ -225,10 +341,10 @@ async def apply_rows(rows: list[PnlRow]) -> None:
                         row.company_name, row.period, row.source_site_code, row.source_location_name,
                         row.category_code, row.category_name, row.amount, row.source_file, row.source_sha256,
                     )
-                    for row in rows
+                    for row in [*rows, *reconciliation]
                 ],
             )
-        print(f"Import finalizat: {len(rows)} valori actuale.")
+        print(f"Import finalizat: {len(rows)} valori detaliate + {len(reconciliation)} diferente consolidate actuale.")
     finally:
         await connection.close()
 
@@ -243,9 +359,10 @@ def main() -> int:
     workbooks, duplicates = discover(args.input_dir)
     selected, superseded = select_snapshots(workbooks)
     rows = merged_rows(selected)
-    print_audit(selected, superseded, duplicates, rows)
+    reconciliation = unallocated_rows(rows, selected)
+    print_audit(selected, superseded, duplicates, rows, reconciliation)
     if args.apply:
-        asyncio.run(apply_rows(rows))
+        asyncio.run(apply_rows(rows, reconciliation))
     else:
         print("Dry-run: baza de date nu a fost modificata. Foloseste --apply dupa aplicarea migrarii 021.")
     return 0

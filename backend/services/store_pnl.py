@@ -149,14 +149,17 @@ class StorePnlService:
     ) -> list[dict]:
         yearly: dict[int, dict[str, Decimal]] = defaultdict(empty_metrics)
         estimate_years: set[int] = set()
+        store_counts: dict[int, int] = defaultdict(int)
         for row in await self.repository.annual_rows(company, site_code, site_company, regional):
             year = row["year"]
             add_amount(yearly[year], row["category_code"], row["amount"])
+            store_counts[year] = max(store_counts[year], row["store_count"])
             if row["is_estimated"]:
                 estimate_years.add(year)
         return [
             {
                 "year": str(year),
+                "store_count": store_counts[year],
                 **finalize_metrics(values),
                 "is_estimated": year in estimate_years,
             }

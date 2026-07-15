@@ -4,7 +4,8 @@
 Vanzarile din ``historical_monthly_sales`` si ``reporting_agent_month`` sunt
 citite exclusiv ca semnal pentru model. Ele sunt stocate cu TVA, iar modelul
 lucreaza cu valoarea fara TVA (standard 19%), pentru a nu compara venituri P&L
-cu vanzari brute. Valorile Finance ``actual`` au intotdeauna prioritate.
+cu vanzari brute. Un magazin-luna care exista in Finance ramane exclusiv
+Finance; estimarile se creeaza numai pentru magazine-luni complet absente.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ REPO_DIR = Path(__file__).resolve().parents[2]
 MODEL_VERSION = "store-pnl-estimator-v2"
 VAT_DIVISOR = 1.19
 VARIABLE_CODES = {"v1", "v11", "v2", "v3", "c1", "c11", "c2"}
+REVENUE_CODES = {"v1", "v11", "v2", "v3"}
 FIXED_CODES = {"c4", "c5", "c6", "a1"}
 VALID_CODES = VARIABLE_CODES | FIXED_CODES | {"c3"}
 CATEGORY_NAMES = {
@@ -191,7 +193,7 @@ def build_estimates(
     sales = {(row["company_name"], row["period"], row["site_code"]): float(row["amount"]) for row in sales_rows}
     salaries = {(row["company_name"], row["period"], row["site_code"]): float(row["amount"]) for row in salary_rows}
     store_lookup = {row["site_code"]: row for row in stores}
-    actual_index = {(row["company_name"], row["period"], row["site_code"], row["category_code"]) for row in actual}
+    actual_store_months = {(row["company_name"], row["period"], row["site_code"]) for row in actual}
     store_history: dict[tuple[str, str, str], list[tuple[date, float]]] = defaultdict(list)
     company_values: dict[tuple[str, str], list[tuple[date, float]]] = defaultdict(list)
     store_sales_ratios: dict[tuple[str, str, str], list[tuple[date, float]]] = defaultdict(list)
@@ -229,14 +231,17 @@ def build_estimates(
         store = store_lookup.get(site_code)
         if not store:
             continue
+        # Finance is authoritative at store-month level. Never alter or
+        # supplement a source that exists in the imported P&L workbook.
+        if not include_actual_targets and (company, target, site_code) in actual_store_months:
+            continue
         _, source_code, location = metadata.get((company, site_code), (target, site_code, store["locatie"]))
         target_sales = sales.get((company, target, site_code), 0.0)
         target_salary = salaries.get((company, target, site_code), 0.0)
         if target_sales <= 0:
             continue
+        estimated_amounts: dict[str, float] = {}
         for category in sorted(VALID_CODES):
-            if not include_actual_targets and (company, target, site_code, category) in actual_index:
-                continue
             key = (company, site_code, category)
             store_values = store_history.get(key, [])
             if category == "c3" and target_salary > 0:
@@ -252,16 +257,30 @@ def build_estimates(
                 same_month = [value for period, value in chosen if period.month == target.month]
                 amount = median(same_month) if same_month else median(value for _, value in chosen[:3])
             if amount is not None:
-                estimates.append(Estimate(company, target, site_code, source_code, location, category, category_names[category], money(amount)))
+                estimated_amounts[category] = amount
+
+        # For a completely missing P&L store-month, the estimated P&L revenue
+        # must equal the Retail sale without TVA. Retain the observed revenue
+        # category mix only as an allocation detail.
+        revenue_amount = sum(estimated_amounts.get(category, 0) for category in REVENUE_CODES)
+        if revenue_amount > 0:
+            scale = target_sales / revenue_amount
+            for category in REVENUE_CODES:
+                if category in estimated_amounts:
+                    estimated_amounts[category] *= scale
+        for category, amount in estimated_amounts.items():
+            estimates.append(Estimate(company, target, site_code, source_code, location, category, category_names[category], money(amount)))
     return estimates
 
 
-def all_missing_targets(sales_rows) -> set[tuple[str, date, str]]:
+def all_missing_targets(actual, sales_rows) -> set[tuple[str, date, str]]:
     today = date.today().replace(day=1)
+    actual_company_months = {(row["company_name"], row["period"]) for row in actual}
     return {
         (row["company_name"], row["period"], row["site_code"])
         for row in sales_rows
         if date(2018, 1, 1) <= row["period"] < today and float(row["amount"]) > 0
+        and (row["company_name"], row["period"]) not in actual_company_months
     }
 
 
@@ -302,7 +321,7 @@ async def run(months: list[date] | None, apply: bool) -> int:
         actual, sales_rows, salary_rows, stores = await load_data(connection)
         print(f"Vanzari Retail citite read-only, normalizate fara TVA (impartire la {VAT_DIVISOR:.2f}).")
         backtest(actual, sales_rows, salary_rows, stores)
-        targets = all_missing_targets(sales_rows)
+        targets = all_missing_targets(actual, sales_rows)
         if months is not None:
             targets = {target for target in targets if target[1] in months}
         estimates = build_estimates(actual, sales_rows, salary_rows, stores, targets, causal=False)

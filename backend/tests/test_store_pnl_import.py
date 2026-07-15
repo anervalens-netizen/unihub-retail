@@ -2,12 +2,12 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from scripts.import_store_pnl import PnlRow, WorkbookData, merged_rows, select_snapshots
+from scripts.import_store_pnl import PnlRow, UNALLOCATED_SOURCE, WorkbookData, merged_rows, select_snapshots, unallocated_rows
 
 
 def workbook(path: str, months: int, cells: int) -> WorkbookData:
     row = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v1", "Venit", Decimal("1.00"), path, "a" * 64)
-    return WorkbookData(Path(path), "a" * 64, "Mobiup", (date(2025, 1, 1),), (row,), months, cells)
+    return WorkbookData(Path(path), "a" * 64, "Mobiup", (date(2025, 1, 1),), (row,), (), months, cells)
 
 
 def test_select_snapshots_prefers_most_complete_file() -> None:
@@ -24,3 +24,15 @@ def test_merged_rows_sums_duplicate_accounting_lines() -> None:
     rows = merged_rows([one, two])
     assert len(rows) == 1
     assert rows[0].amount == Decimal("2.00")
+
+
+def test_unallocated_rows_preserve_finance_consolidated_total() -> None:
+    detail = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v11", "Venit", Decimal("90.00"), "file.xls", "a" * 64)
+    total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("100.00"), "file.xls", "a" * 64)
+    source = WorkbookData(Path("file.xls"), "a" * 64, "Mobiup", (date(2025, 1, 1),), (detail,), (total,), 1, 1)
+
+    rows = unallocated_rows([detail], [source])
+
+    assert len(rows) == 1
+    assert rows[0].source_site_code == UNALLOCATED_SOURCE
+    assert rows[0].amount == Decimal("10.00")
