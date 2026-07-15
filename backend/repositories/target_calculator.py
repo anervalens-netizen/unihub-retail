@@ -317,6 +317,8 @@ class TargetCalculatorRepository:
                     scenario_id,
                     [row["site_code"] for row in rows],
                 )
+                if int(existing or 0) != len(rows):
+                    return int(existing or 0)
                 await conn.executemany(
                     """
                     UPDATE target_scenario_rows

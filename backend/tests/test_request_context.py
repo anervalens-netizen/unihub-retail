@@ -137,7 +137,7 @@ async def test_api_responses_are_not_cached_by_browser_or_cdn() -> None:
         response = await client.get("/api/filters/months")
 
     assert response.status_code == 401
-    assert response.headers["cache-control"] == "no-cache, no-store, must-revalidate"
+    assert response.headers["cache-control"] == "private, no-store, max-age=0"
     assert response.headers["cdn-cache-control"] == "no-store"
     assert response.headers["surrogate-control"] == "no-store"
 

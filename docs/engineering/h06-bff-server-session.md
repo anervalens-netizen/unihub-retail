@@ -18,8 +18,10 @@ refresh or ID tokens. Authentication is terminated by the FastAPI backend:
 - unsafe authenticated requests also require `X-CSRF-Token`;
 - refresh tokens and session claims are encrypted with Fernet before storage in
   Valkey; the browser-visible session ID is random and opaque;
-- near-expiry requests use a distributed refresh lock, so concurrent requests
-  produce one refresh exchange.
+- near-expiry requests use a token-owned distributed refresh lock, so
+  concurrent requests produce one refresh exchange; waiters follow the full
+  bounded refresh window instead of treating a normal slow provider response
+  as logout.
 
 The PWA navigation fallback explicitly excludes backend-owned routes,
 including `/auth/*`. Auth navigations must always reach FastAPI so
@@ -51,6 +53,10 @@ controlled integrations and smoke tooling.
   tokens, cookies, secrets or provider responses.
 - Configuration fails closed in production if the encryption key, client
   credentials, issuer, public origin or Valkey URL is missing or invalid.
+- Refresh lock release uses compare-and-delete, so an expired owner cannot
+  delete a newer request's lock. A waiter never deletes the session while the
+  lock owner is still inside the bounded token/verification window and re-reads
+  the session after observing lock release to cover the store/release boundary.
 
 ## Configuration
 
@@ -78,9 +84,10 @@ the complete group; partial configuration is rejected.
 
 Automated tests cover encrypted PKCE state, exact provider endpoints, callback
 state consumption, Secure/HttpOnly cookie attributes, CSRF enforcement,
-encrypted token storage, refresh-token rotation and 20-request refresh
-single-flight. Static frontend tests reject token libraries, token fields,
-localStorage auth and Bearer injection.
+encrypted token storage, refresh-token rotation, 20-request refresh
+single-flight and a provider response longer than the former two-second waiter
+window. Static frontend tests reject token libraries, token fields, localStorage
+auth and Bearer injection.
 
 Production rollout order:
 

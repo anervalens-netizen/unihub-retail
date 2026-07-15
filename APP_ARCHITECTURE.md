@@ -628,7 +628,9 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    evidentiaza, iar finalizarea este blocata cat timp exista randuri goale.
    Rezumatul pe manager afiseaza cresterea propunerii fata de forecastul lunii
    curente si cresterea sezoniera observata anul trecut intre luna baza si
-   luna tinta.
+   luna tinta. Salvarea batch este atomica: toate codurile de locatie sunt
+   validate sub lockul scenariului inaintea primului update; un singur cod
+   invalid lasa toate valorile si `revision` neschimbate.
 5. Tabelul de lucru permite filtru multi-select pe locatie. Click pe numele
    locatiei deschide un drawer cu 16 luni de istoric. Graficul din drawer
    comuta intre vanzari versus target, Bon2Acc si Focus/Acc; KPI-ul
@@ -664,6 +666,13 @@ extinderea formulei.
 - Hub consuma KPI-uri Retail prin API intern.
 - Prometheus si Grafana pentru metrics.
 - GlitchTip pentru erori.
+- `/metrics` este consumat numai pe calea interna Prometheus; Caddy raspunde
+  404 public pentru `/metrics`, `/docs`, `/redoc` si `/openapi.json`, iar
+  FastAPI nu publica UI/schema OpenAPI. Fallback-ul SPA se aplica numai
+  navigarilor GET/HEAD care accepta HTML si niciodata namespace-urilor
+  API/auth/server sau assetelor lipsa. Raspunsurile `/api/*`, `/salarii/*` si
+  `/auth/session*`, inclusiv P&L, fotografii si exporturi, folosesc
+  `private, no-store` si dezactiveaza cache-urile CDN.
 
 ## Teste si calitate
 

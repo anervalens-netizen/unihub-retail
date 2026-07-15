@@ -37,6 +37,17 @@ class FakeRedis:
     async def delete(self, key: str) -> int:
         return int(self.values.pop(key, None) is not None)
 
+    async def eval(
+        self,
+        _script: str,
+        _keys: int,
+        key: str,
+        token: str,
+    ) -> int:
+        if self.values.get(key) != token.encode("ascii"):
+            return 0
+        return int(self.values.pop(key, None) is not None)
+
     async def ping(self) -> bool:
         return True
 
@@ -235,3 +246,83 @@ async def test_expired_concurrent_session_requests_singleflight_refresh(
     assert len(http.posts) == 1
     stored = session_auth._unpack(session_auth._cipher, redis.values[session_auth.SESSION_PREFIX + session_id])  # type: ignore[arg-type]
     assert stored and stored["refresh_token"] == "rotated-refresh"
+
+
+@pytest.mark.anyio
+async def test_slow_session_refresh_does_not_log_out_waiting_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+
+    class SlowHttp(FakeHttp):
+        async def post(self, url: str, data: dict[str, object]) -> httpx.Response:
+            await asyncio.sleep(2.2)
+            return await super().post(url, data)
+
+    http = SlowHttp({"access_token": "rotated-access", "refresh_token": "rotated-refresh"})
+    _install(redis, http)
+    session_id = "w" * 43
+    old = AuthClaims(
+        "subject", "user@example.invalid", "user", ["unihub-manager"],
+        "issuer", "retail", int(time.time()) - 600, int(time.time()) - 1, {},
+    )
+    await session_auth._store_session(
+        session_id,
+        {**session_auth.asdict(old), "refresh_token": "old-refresh", "csrf": "csrf"},
+    )
+    refreshed = AuthClaims(
+        "subject", "user@example.invalid", "user", ["unihub-manager"],
+        "issuer", "retail", int(time.time()), int(time.time()) + 600, {},
+    )
+    monkeypatch.setattr(session_auth, "verify_oidc_token", AsyncMock(return_value=refreshed))
+
+    claims = await asyncio.gather(
+        session_auth.authenticate_session(_request("GET", session_id)),
+        session_auth.authenticate_session(_request("GET", session_id)),
+    )
+
+    assert [claim.sub for claim in claims] == ["subject", "subject"]
+    assert len(http.posts) == 1
+    assert session_auth.SESSION_PREFIX + session_id in redis.values
+
+
+@pytest.mark.anyio
+async def test_refresh_waiter_rechecks_session_after_lock_release() -> None:
+    session_id = "q" * 43
+    session_key = session_auth.SESSION_PREFIX + session_id
+    lock_key = session_auth.LOCK_PREFIX + session_id
+
+    class ReleaseBetweenReadsRedis(FakeRedis):
+        async def get(self, key: str) -> bytes | None:
+            if key == lock_key and key in self.values:
+                self.values.pop(lock_key)
+                assert session_auth._cipher is not None
+                self.values[session_key] = session_auth._pack(
+                    session_auth._cipher,
+                    refreshed,
+                )
+                return None
+            return await super().get(key)
+
+    redis = ReleaseBetweenReadsRedis()
+    _install(redis)
+    now = int(time.time())
+    expired = {
+        "sub": "subject",
+        "email": "user@example.invalid",
+        "preferred_username": "user",
+        "groups": ["unihub-manager"],
+        "iss": "issuer",
+        "aud": "retail",
+        "iat": now - 600,
+        "exp": now - 1,
+        "refresh_token": "old-refresh",
+        "csrf": "csrf",
+    }
+    refreshed = {**expired, "iat": now, "exp": now + 600}
+    await session_auth._store_session(session_id, expired)
+    redis.values[lock_key] = b"other-owner"
+
+    result = await session_auth._refresh(session_id, expired)
+
+    assert result == refreshed

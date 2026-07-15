@@ -248,6 +248,26 @@ def make_repository_connection() -> tuple[TargetCalculatorRepository, AsyncMock]
 
 
 @pytest.mark.asyncio
+async def test_target_batch_with_unknown_site_code_has_zero_writes() -> None:
+    repo, conn = make_repository_connection()
+    conn.fetchrow.return_value = {"status": "draft", "revision": 2}
+    conn.fetchval.return_value = 1
+
+    updated = await repo.update_final_targets(
+        8,
+        [
+            {"site_code": "SITE01", "final_target": Decimal("10.00")},
+            {"site_code": "INVALID", "final_target": Decimal("20.00")},
+        ],
+        expected_revision=2,
+    )
+
+    assert updated == 1
+    conn.executemany.assert_not_awaited()
+    conn.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_source_metrics_falls_back_to_historical_monthly_without_duplicates() -> None:
     repo, conn = make_repository_connection()
     conn.fetch = AsyncMock(return_value=[])
@@ -428,6 +448,94 @@ async def test_concurrent_recalculations_allow_exactly_one_writer() -> None:
                 "DELETE FROM target_scenarios WHERE target_month = $1",
                 target_month,
             )
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_postgres_invalid_site_code_rolls_back_entire_target_batch() -> None:
+    pool = await get_pool()
+    repo = TargetCalculatorRepository(pool)
+    target_month = "2099-11"
+    scenario = {
+        "target_month": target_month,
+        "cohort_month": "2099-10",
+        "total_target": Decimal("100.00"),
+        "min_floor": Decimal("35.00"),
+        "previous_month_floor_pct": Decimal("0.90"),
+        "calculation_method": CALCULATION_METHOD,
+        "source_months": [],
+        "warnings": [],
+    }
+    rows = [{
+        "site_code": "TATOMIC01",
+        "locatie": "Synthetic Store",
+        "firma": "Synthetic Company",
+        "regional": "Synthetic Regional",
+        "asm": "Synthetic Manager",
+        "calculated_weight": Decimal("1"),
+        "floor_target": Decimal("35.00"),
+        "proposed_target": Decimal("100.00"),
+        "is_floor_limited": False,
+        "history": [],
+    }]
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM target_scenarios WHERE target_month = $1",
+                target_month,
+            )
+            await conn.execute(
+                """
+                INSERT INTO stores (
+                    site_code, locatie, firma, regional, asm,
+                    first_seen_month, last_seen_month
+                )
+                VALUES (
+                    'TATOMIC01', 'Synthetic Store', 'Synthetic Company',
+                    'Synthetic Regional', 'Synthetic Manager', '2099-10', '2099-10'
+                )
+                ON CONFLICT (site_code) DO NOTHING
+                """
+            )
+        scenario_id = await repo.save_draft_scenario(
+            scenario,
+            rows,
+            expected_revision=None,
+        )
+
+        updated = await repo.update_final_targets(
+            scenario_id,
+            [
+                {"site_code": "TATOMIC01", "final_target": Decimal("10.00")},
+                {"site_code": "INVALID", "final_target": Decimal("20.00")},
+            ],
+            expected_revision=1,
+        )
+
+        assert updated == 1
+        async with pool.acquire() as conn:
+            state = await conn.fetchrow(
+                """
+                SELECT ts.revision, tr.final_target
+                FROM target_scenarios ts
+                JOIN target_scenario_rows tr ON tr.scenario_id = ts.id
+                WHERE ts.id = $1 AND tr.site_code = 'TATOMIC01'
+                """,
+                scenario_id,
+            )
+        assert dict(state) == {"revision": 1, "final_target": None}
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM target_scenarios WHERE target_month = $1",
+                target_month,
+            )
+            await conn.execute("DELETE FROM stores WHERE site_code = 'TATOMIC01'")
         await close_db_pool()
 
 

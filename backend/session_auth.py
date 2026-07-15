@@ -6,12 +6,13 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
 import time
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Awaitable, cast
 from urllib.parse import urlencode, urlsplit
 
 import httpx
@@ -28,8 +29,12 @@ COOKIE_NAME = "__Host-unihub_session"
 FLOW_PREFIX = "unihub:retail:oidc-flow:v1:"
 SESSION_PREFIX = "unihub:retail:session:v1:"
 LOCK_PREFIX = "unihub:retail:session-refresh:v1:"
+REFRESH_LOCK_TTL_SECONDS = 30
+REFRESH_WAIT_SECONDS = 30.0
+REFRESH_POLL_SECONDS = 0.1
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 OPAQUE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,15 +227,54 @@ async def _store_session(session_id: str, payload: dict[str, Any]) -> None:
     await client.set(SESSION_PREFIX + session_id, _pack(cipher, payload), ex=settings.session_ttl_seconds)
 
 
+async def _release_refresh_lock(client: Redis, lock_key: str, lock_token: bytes) -> None:
+    await cast(
+        Awaitable[Any],
+        client.eval(
+            """
+            if redis.call('get', KEYS[1]) == ARGV[1] then
+                return redis.call('del', KEYS[1])
+            end
+            return 0
+            """,
+            1,
+            lock_key,
+            lock_token.decode("ascii"),
+        ),
+    )
+
+
 async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | None:
     settings, client, cipher, http = _runtime()
     lock_key = LOCK_PREFIX + session_id
-    if not await client.set(lock_key, b"1", ex=15, nx=True):
-        for _attempt in range(20):
-            await asyncio.sleep(0.1)
+    lock_token = secrets.token_urlsafe(24).encode("ascii")
+    if not await client.set(
+        lock_key,
+        lock_token,
+        ex=REFRESH_LOCK_TTL_SECONDS,
+        nx=True,
+    ):
+        deadline = time.monotonic() + REFRESH_WAIT_SECONDS
+        while time.monotonic() < deadline:
             refreshed = _unpack(cipher, await client.get(SESSION_PREFIX + session_id))
             if refreshed is not None and int(refreshed.get("exp", 0)) > int(time.time()) + 60:
                 return refreshed
+            if await client.get(lock_key) is None:
+                # The owner can store the refreshed session between our first
+                # session read and the lock read/release.  Re-read once after
+                # observing the released lock so a successful refresh is never
+                # mistaken for logout.
+                refreshed = _unpack(
+                    cipher,
+                    await client.get(SESSION_PREFIX + session_id),
+                )
+                if (
+                    refreshed is not None
+                    and int(refreshed.get("exp", 0)) > int(time.time()) + 60
+                ):
+                    return refreshed
+                return None
+            await asyncio.sleep(REFRESH_POLL_SECONDS)
         return None
     try:
         refresh_token = record.get("refresh_token")
@@ -257,7 +301,10 @@ async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | 
     except (httpx.HTTPError, ValueError, json.JSONDecodeError, HTTPException):
         return None
     finally:
-        await client.delete(lock_key)
+        try:
+            await _release_refresh_lock(client, lock_key, lock_token)
+        except Exception:  # noqa: BLE001 - the expiring lock must not discard a refreshed session
+            logger.warning("Session refresh lock release failed")
 
 
 async def authenticate_session(request: Request) -> AuthClaims:
