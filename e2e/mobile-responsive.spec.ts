@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { mockApiRoute, setupBaseMocks } from './helpers';
+import { MOCK_DASHBOARD_ALL, mockApiRoute, setupBaseMocks } from './helpers';
 
 test.describe('E2E: responsive mobile', () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -34,6 +34,64 @@ test.describe('E2E: responsive mobile', () => {
     await filterButton.click();
     await expect(page.getByRole('heading', { name: 'Filtre active' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Inchide' })).toBeVisible();
+  });
+
+  test('keeps interactive Hub breakdown rows compact', async ({ page }) => {
+    const regionals = Array.from({ length: 6 }, (_, index) => ({
+      regional: `Regional ${index + 1}`,
+      target: 100000 - index * 1000,
+      total_vanzari: 50000 - index * 1000,
+      proc_realizare_target: 50,
+      forecast_target_pct: 95,
+      qty_total: 100,
+      nr_bonuri: 50,
+      proc_bon2acc: 20,
+      prc_focus_acc_qty: 10,
+    }));
+    const stores = Array.from({ length: 12 }, (_, index) => ({
+      site_code: `S${index + 1}`,
+      locatie: `Magazin ${index + 1}`,
+      firma: index % 2 === 0 ? 'Mobiup' : 'Mobicell',
+      target: 50000,
+      total_vanzari: 25000,
+      proc_realizare_target: 50,
+      forecast_target_pct: 100,
+      qty_total: 50,
+      nr_bonuri: 25,
+      return_receipt_count: 0,
+      nr_agenti: 2,
+      zile_active: 10,
+    }));
+    await page.route(/\/api\/dashboard\/all(?:\?|$)/, (route) => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...MOCK_DASHBOARD_ALL,
+          regionals,
+          stores,
+        }),
+      });
+    });
+
+    await page.goto('/');
+    const regionalTable = page.locator('.compact-data-table').first();
+    await expect(regionalTable.locator('tbody tr')).toHaveCount(6);
+
+    const measurements = await regionalTable.evaluate((table) => {
+      const rows = [...table.querySelectorAll('tbody tr')];
+      const detailButton = table.querySelector<HTMLButtonElement>('tbody button');
+      return {
+        rowHeights: rows.map((row) => row.getBoundingClientRect().height),
+        buttonMinHeight: detailButton ? getComputedStyle(detailButton).minHeight : null,
+        scrollHeight: table.scrollHeight,
+        clientHeight: table.clientHeight,
+      };
+    });
+
+    expect(Math.max(...measurements.rowHeights)).toBeLessThanOrEqual(32);
+    expect(measurements.buttonMinHeight).toBe('0px');
+    expect(measurements.scrollHeight).toBeLessThanOrEqual(measurements.clientHeight + 1);
   });
 
   test('splits Hub history into summary, trend and details on mobile', async ({ page }) => {

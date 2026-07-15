@@ -27,17 +27,9 @@ interface BreakdownTableProps<Row, SortKey extends string> {
   exportColumns: ExportColumn<Row>[];
 }
 
-const TABLE_HEADER_HEIGHT_REM = 3;
-const TABLE_ROW_HEIGHT_REM = 1.75;
-const TABLE_MAX_HEIGHT_REM = 26;
 const TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-xs lg:text-[13px]';
 const HEADER_CLASS = 'px-2 py-1.5 align-bottom whitespace-normal text-[11px] leading-tight lg:text-xs';
 const DEFAULT_CELL_CLASS = 'px-2 py-1.5 whitespace-nowrap align-middle leading-tight text-right tabular-nums';
-
-export function breakdownViewportHeight(rowCount: number): string {
-  const safeRowCount = Math.max(0, Math.floor(rowCount));
-  return `${Math.min(TABLE_HEADER_HEIGHT_REM + safeRowCount * TABLE_ROW_HEIGHT_REM, TABLE_MAX_HEIGHT_REM)}rem`;
-}
 
 export function BreakdownTable<Row, SortKey extends string>({
   title,
@@ -70,10 +62,7 @@ export function BreakdownTable<Row, SortKey extends string>({
           columns={exportColumns}
         />
       </div>
-      <div
-        className="overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70"
-        style={{ height: breakdownViewportHeight(rows.length) }}
-      >
+      <div className="compact-data-table max-h-[26rem] overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
         <table className={TABLE_CLASS}>
           <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
             <tr className="h-12 text-left text-[11px] uppercase tracking-wide text-slate-500">

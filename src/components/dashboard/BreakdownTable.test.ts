@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { BreakdownTable, breakdownViewportHeight, type BreakdownColumn } from './BreakdownTable';
+import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
 
 type Row = {
   id: string;
@@ -53,12 +53,6 @@ function renderTable(tableRows: Row[] = rows) {
 }
 
 describe('BreakdownTable', () => {
-  it('sizes short tables by their actual row count and caps long tables', () => {
-    expect(breakdownViewportHeight(0)).toBe('3rem');
-    expect(breakdownViewportHeight(2)).toBe('6.5rem');
-    expect(breakdownViewportHeight(74)).toBe('26rem');
-  });
-
   it('renders the shared heading, sortable columns and every row', () => {
     const html = renderTable();
 
@@ -70,7 +64,9 @@ describe('BreakdownTable', () => {
     const tableBody = html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] ?? '';
     expect(tableBody.match(/<tr/g)).toHaveLength(2);
     expect(html).toContain('title="Export Excel"');
-    expect(html).toContain('style="height:6.5rem"');
+    expect(html).toContain('compact-data-table');
+    expect(html).toContain('max-h-[26rem]');
+    expect(html).not.toContain('style="height:');
     expect(html).not.toContain('disabled=""');
   });
 

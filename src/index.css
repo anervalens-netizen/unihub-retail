@@ -216,6 +216,13 @@ body {
     min-height: 44px;
   }
 
+  /* Interactive labels in dense tables open detail drawers. They must not
+     inherit the 44px standalone-control height, otherwise every data row is
+     stretched to roughly double its intended height. */
+  main .compact-data-table button {
+    min-height: 0;
+  }
+
   .segmented-tabs-scroll {
     scrollbar-width: none;
     -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
