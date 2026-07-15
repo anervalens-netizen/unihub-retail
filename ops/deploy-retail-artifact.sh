@@ -58,11 +58,6 @@ BACKUP_COMMAND="$OPS_ROOT/scripts/backup.sh"
 MIGRATION_SERVICE="unihub-retail-migrate.service"
 BACKEND_SERVICE="unihub-backend.service"
 WORKER_SERVICE="unihub-worker.service"
-ALLOWED_UNTRACKED=(
-  "docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md"
-  "docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md"
-)
-
 if [[ "$TEST_MODE" != "1" && "${SUDO_USER:-}" == "unihub-deploy" ]]; then
   [[ "$READ_ONLY_MODE" == "0" && "$#" -eq 4 && "$1" == /* ]] \
     || die "deploy runner may invoke only the four-argument production deployment"
@@ -179,20 +174,11 @@ assert_live_checkout() {
 }
 
 assert_worktree_safe() {
-  local line path allowed allowed_path
+  local line
 
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    [[ "$line" == "?? "* ]] || die "tracked production change blocks deploy: $line"
-    path="${line#\?\? }"
-    allowed=0
-    for allowed_path in "${ALLOWED_UNTRACKED[@]}"; do
-      if [[ "$path" == "$allowed_path" ]]; then
-        allowed=1
-        break
-      fi
-    done
-    [[ "$allowed" == "1" ]] || die "unexpected untracked production content blocks deploy: $path"
+    die "production worktree is not clean: $line"
   done < <(git_service status --porcelain=v1 --untracked-files=all)
 }
 
@@ -396,41 +382,6 @@ read_manifest_value() {
   sed -n "s/^${key}=//p" "$manifest"
 }
 
-preserve_untracked_documents() {
-  local backup_dir="$1"
-  local path hash
-  mkdir -p "$backup_dir/untracked"
-  : >"$backup_dir/untracked.sha256"
-  for path in "${ALLOWED_UNTRACKED[@]}"; do
-    if [[ -f "$LIVE_ROOT/$path" ]]; then
-      mkdir -p "$backup_dir/untracked/$(dirname "$path")"
-      install -m 0600 -- "$LIVE_ROOT/$path" "$backup_dir/untracked/$path"
-      hash="$(sha256sum "$LIVE_ROOT/$path" | awk '{print $1}')"
-      [[ "$(sha256sum "$backup_dir/untracked/$path" | awk '{print $1}')" == "$hash" ]] || die "untracked document backup mismatch"
-      printf '%s  %s\n' "$hash" "$path" >>"$backup_dir/untracked.sha256"
-      rm -- "$LIVE_ROOT/$path"
-    fi
-  done
-}
-
-restore_untracked_documents() {
-  local backup_dir="$1"
-  local path expected actual
-  [[ -f "$backup_dir/untracked.sha256" ]] || return 0
-  while read -r expected path; do
-    [[ -n "$path" ]] || continue
-    [[ -f "$backup_dir/untracked/$path" ]] || die "preserved untracked document is missing"
-    mkdir -p "$LIVE_ROOT/$(dirname "$path")"
-    if [[ "$TEST_MODE" == "1" ]]; then
-      install -m 0600 -- "$backup_dir/untracked/$path" "$LIVE_ROOT/$path"
-    else
-      install -m 0600 -o "$SERVICE_USER" -g "$SERVICE_GROUP" -- "$backup_dir/untracked/$path" "$LIVE_ROOT/$path"
-    fi
-    actual="$(sha256sum "$LIVE_ROOT/$path" | awk '{print $1}')"
-    [[ "$actual" == "$expected" ]] || die "restored untracked document hash mismatch"
-  done <"$backup_dir/untracked.sha256"
-}
-
 prepare_tested_dist() {
   local artifact_tree="$1"
   local next_dist="$LIVE_ROOT/.dist.deploy.$$"
@@ -516,7 +467,6 @@ rollback_from_backup() {
   stop_runtime || true
   git_service reset --hard "$old_sha"
   restore_dist "$backup_dir"
-  restore_untracked_documents "$backup_dir"
   start_runtime
   verify_local_health || die "rollback completed but local health failed"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_current_sha" "rolled_back"
@@ -544,7 +494,6 @@ deploy_release() {
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-deploy.XXXXXX")"
   trap 'rm -rf -- "$work_dir"' RETURN
 
-  local documents_preserved=0
   local runtime_touched=0
   local rollback_needed=0
   local approval_claimed=0
@@ -557,9 +506,6 @@ deploy_release() {
         log "ERROR: automatic rollback did not restore healthy runtime" >&2
       fi
     else
-      if [[ "$documents_preserved" == "1" ]]; then
-        restore_untracked_documents "$backup_dir" || true
-      fi
       if [[ "$runtime_touched" == "1" ]]; then
         start_runtime || true
       fi
@@ -581,8 +527,6 @@ deploy_release() {
   sha256sum "$backup_dir/source-${old_sha}.tar.gz" >"$backup_dir/source.sha256"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "preparing"
   write_approval_link "$backup_dir" "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
-  preserve_untracked_documents "$backup_dir"
-  documents_preserved=1
   backup_started="$(date +%s)"
   run_verified_backup "$backup_started"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "backed_up"

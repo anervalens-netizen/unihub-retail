@@ -34,12 +34,8 @@ git -C "$BUILDER" push --quiet -u origin main
 git --git-dir="$REMOTE" symbolic-ref HEAD refs/heads/main
 
 git clone --quiet "$REMOTE" "$LIVE"
-mkdir -p "$LIVE/dist" "$LIVE/docs"
+mkdir -p "$LIVE/dist"
 printf 'old frontend\n' >"$LIVE/dist/index.html"
-printf 'original audit\n' >"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md"
-printf 'original plan\n' >"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md"
-ORIGINAL_AUDIT_SHA="$(sha256sum "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" | awk '{print $1}')"
-ORIGINAL_PLAN_SHA="$(sha256sum "$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md" | awk '{print $1}')"
 
 mkdir -p "$BUILDER/docs"
 printf 'print("new")\n' >"$BUILDER/backend/main.py"
@@ -118,8 +114,6 @@ run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
 HANDLE="$(rg -l '^STATE=deployed$' "$OPS/backups/retail-deploy"/*/release.env | xargs -r -n1 dirname | tail -1)"
 [[ -n "$HANDLE" ]]
-grep -q "^$ORIGINAL_AUDIT_SHA  docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md$" "$HANDLE/untracked.sha256"
-grep -q "^$ORIGINAL_PLAN_SHA  docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md$" "$HANDLE/untracked.sha256"
 grep -q '^STATE=deployed$' "$HANDLE/release.env"
 grep -q "^ci_run_id=$CI_RUN_ID$" "$HANDLE/approval.env"
 grep -q "^source_sha=$NEW_SHA$" "$HANDLE/approval.env"
@@ -128,12 +122,39 @@ grep -q '^approved_by_os=test-approver$' "$HANDLE/approval.env"
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" -eq 1 ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)" -eq 0 ]]
 
+printf 'print("newer")\n' >"$BUILDER/backend/main.py"
+printf 'published audit v2\n' >"$BUILDER/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md"
+printf 'published plan v2\n' >"$BUILDER/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md"
+git -C "$BUILDER" add .
+git -C "$BUILDER" commit --quiet -m newer
+NEWER_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
+git -C "$BUILDER" push --quiet origin main
+git -C "$BUILDER" archive --format=tar "$NEWER_SHA" >"$ROOT/release-newer.tar"
+tar -rf "$ROOT/release-newer.tar" -C "$BUILDER" dist
+gzip -n "$ROOT/release-newer.tar"
+NEWER_ARTIFACT="$ROOT/release-newer.tar.gz"
+NEWER_ARTIFACT_SHA256="$(sha256sum "$NEWER_ARTIFACT" | awk '{print $1}')"
+
+approve_release "$((CI_RUN_ID + 10))" "$NEWER_SHA" "$NEWER_ARTIFACT_SHA256" >/dev/null
+run_deploy "$NEWER_ARTIFACT" "$NEWER_SHA" "$((CI_RUN_ID + 10))" "$NEWER_ARTIFACT_SHA256"
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEWER_SHA" ]]
+[[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit v2" ]]
+[[ "$(<"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md")" == "published plan v2" ]]
+SECOND_HANDLE="$(rg -l '^STATE=deployed$' "$OPS/backups/retail-deploy"/*/release.env | xargs -r -n1 dirname | tail -1)"
+[[ -n "$SECOND_HANDLE" && "$SECOND_HANDLE" != "$HANDLE" ]]
+
+run_deploy rollback "$SECOND_HANDLE"
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
+[[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
+[[ "$(<"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md")" == "published plan" ]]
+
 run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
-[[ "$(sha256sum "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" | awk '{print $1}')" == "$ORIGINAL_AUDIT_SHA" ]]
-[[ "$(sha256sum "$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md" | awk '{print $1}')" == "$ORIGINAL_PLAN_SHA" ]]
+[[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
+[[ ! -e "$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md" ]]
 grep -q '^STATE=rolled_back$' "$HANDLE/release.env"
+git --git-dir="$REMOTE" update-ref refs/heads/main "$NEW_SHA"
 
 set +e
 run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
@@ -153,7 +174,7 @@ set -e
 [[ "$FAIL_RC" -ne 0 ]]
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
-[[ "$(sha256sum "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" | awk '{print $1}')" == "$ORIGINAL_AUDIT_SHA" ]]
+[[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq 1 ]]
 
 mkdir -p "$ROOT/tampered"

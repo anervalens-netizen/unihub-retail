@@ -62,11 +62,11 @@ Before changing production, the entrypoint copies the runner-owned artifact to
 a root-only temporary directory, rejects unsafe archive members, and compares
 all source files (excluding only the separately tested root `dist/`) to the exact
 `origin/main` commit. It permits only a fast-forward from the current production
-SHA, preserves the two known pre-release documents by exact SHA-256, requires a
-fresh verified backup generation, stops web/worker, switches the tested frontend,
-runs the one-shot migration unit, and checks local liveness/readiness. Failure
-after the switch automatically restores the old Git SHA, frontend and preserved
-documents. Manual rollback is root-only; the `unihub-deploy` service identity is
+SHA, requires a completely clean production worktree and a fresh verified backup
+generation, stops web/worker, switches the tested frontend, runs the one-shot
+migration unit, and checks local liveness/readiness. Failure after the switch
+automatically restores the old Git SHA and frontend. Manual rollback is root-only;
+the `unihub-deploy` service identity is
 explicitly refused that mode.
 
 The sandbox covers missing approval, invalid approval identity, duplicates,

@@ -2494,8 +2494,9 @@ un audit verde la un moment dat nu garantează viitorul.
    permisiunile și conținutul lui trebuie revizuite înaintea rolloutului aprobat.
 8. **Serviciile, health-ul local/public și starea systemd au fost verificate, dar
    nu s-a făcut o analiză exhaustivă GlitchTip/Prometheus pe perioade lungi.**
-9. **Documentele locale inițiale au fost copiate într-un worktree separat cu
-   SHA-256 identic.** Exemplarele necomise din checkout-ul live nu au fost editate.
+9. **Documentele locale inițiale au fost reconciliate în worktree-ul separat.**
+   Exemplarele vechi necomise din checkout-ul live au fost eliminate explicit de
+   proprietar înainte de rollout; deployul cere acum un worktree complet curat.
 10. **Redesignul „Ajustări” a fost mapat de la `aba3fa0` la `d08add1`, revizuit și
     trecut prin typecheck/build/unit/Playwright mobil, desktop și accessibility.**
     Aceasta validează implementarea curentă, nu înlocuiește acceptanța post-deploy.
