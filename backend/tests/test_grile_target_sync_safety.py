@@ -11,8 +11,10 @@ from unittest.mock import AsyncMock
 import asyncpg
 import pytest
 
+import db.connection as db_connection
 import services.grile as grile_service
 import services.grile_agent_targets as target_service
+import services.jobs as jobs
 import repositories.grile_agent_target_sync as sync_repository
 import worker
 from db.connection import close_db_pool, get_pool
@@ -246,6 +248,62 @@ pytestmark_db = pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="Requires the explicitly isolated PostgreSQL test database",
 )
+
+
+@pytest.mark.asyncio
+@pytestmark_db
+async def test_enqueue_error_does_not_fail_operation_claimed_by_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = await get_pool()
+    month = "2098-05"
+    repo = GrileAgentTargetSyncRepository(pool)
+
+    class AcceptedThenDisconnectedQueue:
+        async def enqueue_job(self, *_args: object, **_kwargs: object) -> None:
+            assert isinstance(_args[1], int)
+            operation_id = _args[1]
+            claimed = await repo.start(operation_id)
+            assert claimed is not None
+            raise ConnectionError("synthetic response loss after publish")
+
+    try:
+        monkeypatch.setattr(
+            db_connection,
+            "get_pool",
+            AsyncMock(return_value=pool),
+        )
+        monkeypatch.setattr(
+            jobs,
+            "get_arq_pool",
+            AsyncMock(return_value=AcceptedThenDisconnectedQueue()),
+        )
+
+        with pytest.raises(ConnectionError, match="response loss"):
+            await jobs.enqueue_grile_target_sync(
+                month=month,
+                mode="dry_run",
+                requested_by_sub="stable-synthetic-subject",
+            )
+
+        async with pool.acquire() as conn:
+            operation = await conn.fetchrow(
+                """
+                SELECT id, status
+                FROM grile_agent_target_sync_runs
+                WHERE run_month = $1
+                """,
+                month,
+            )
+        assert operation is not None
+        assert operation["status"] == "running"
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM grile_agent_target_sync_runs WHERE run_month = $1",
+                month,
+            )
+        await close_db_pool()
 
 
 @pytest.mark.asyncio

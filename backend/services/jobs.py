@@ -298,7 +298,10 @@ async def enqueue_grile_target_sync(
         if job is None:
             raise RuntimeError("Failed to enqueue Grile target sync job")
     except Exception:
-        await repo.fail(operation_id, "Jobul nu a putut fi adaugat in coada")
+        # A publish can be accepted by Valkey even when the client raises.  If
+        # the worker already claimed the operation, leave it running so its
+        # transactional finish/fail path remains authoritative.
+        await repo.fail_queued(operation_id, "Jobul nu a putut fi adaugat in coada")
         raise
     return GrileTargetSyncEnqueueResult(
         status="enqueued",

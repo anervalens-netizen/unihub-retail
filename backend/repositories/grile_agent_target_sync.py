@@ -186,6 +186,24 @@ class GrileAgentTargetSyncRepository:
             )
         return row is not None
 
+    async def fail_queued(self, operation_id: int, error_message: str) -> bool:
+        """Fail only a reservation that the worker has not claimed yet."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE grile_agent_target_sync_runs
+                SET status = 'failed',
+                    error_message = $2,
+                    heartbeat_at = now(),
+                    finished_at = now()
+                WHERE id = $1 AND status = 'queued'
+                RETURNING id
+                """,
+                operation_id,
+                error_message,
+            )
+        return row is not None
+
     async def get(self, operation_id: int) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
