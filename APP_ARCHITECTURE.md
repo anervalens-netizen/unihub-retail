@@ -132,7 +132,8 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   Subtabul si endpointurile `/api/store-pnl/*` sunt disponibile exclusiv
   grupului OIDC dedicat P&L, peste accesul general Management; ascunderea din
   frontend este dublata de sesiunea BFF si verificarea autoritativa OIDC in backend.
-- Raportare vizite citita din SQLite shared.
+- Raportarea vizitelor are cutover controlat intre SQLite si tabela FieldOps
+  `fieldops_visits`; dual-read-ul compara agregat sursele fara payload in loguri.
 - Agenti -> Grile include verificare read-only si inchidere de luna; actiunile
   privilegiate raman protejate individual in backend.
   Operatiile lunare ruleaza exclusiv in worker, sunt rezervate in DB inainte de
@@ -587,18 +588,24 @@ Separarea dintre draftul de calcul si `store_targets` previne modificarea target
 oficiale in timpul simularilor si pastreaza contextul necesar pentru audit sau
 extinderea formulei.
 
-### SQLite shared
+### Vizite FieldOps
 
 - `data/visits/visits.db`
-- Retail citeste raportarea vizitelor; FieldOps este noul flux operational pentru vizite.
+- Autoritatea V2 este PostgreSQL `fieldops_visits`, detinuta de migrarile
+  FieldOps. SQLite ramane temporar sursa implicita si rollback read-only pana la
+  gate-ul coordonat FieldOps/Retail.
 - In Retail, filtrarea si gruparea din meniul Vizite folosesc mapping-ul curent
   `stores.site_code -> firma/regional/asm`, nu valorile istorice salvate in
-  randurile SQLite. Vizitele FieldOps pastreaza codul magazinului in
-  `visits.magazin`.
-- `visits_snapshot` este o proiectie completa a agregatelor SQLite. Sync-ul
+  vizita. Vizitele FieldOps pastreaza codul magazinului in `magazin`.
+- `RETAIL_VISITS_READ_SOURCE=sqlite|postgres` controleaza raspunsul, iar
+  `RETAIL_VISITS_SHADOW_COMPARE_ENABLED=true` compara raportul, arborele,
+  detaliul, snapshot-ul Manageri si componenta CRM.
+- `visits_snapshot` este o proiectie completa a agregatelor sursei active. Sync-ul
   inlocuieste proiectia intr-o singura tranzactie: randurile disparute din
   sursa nu raman stale, iar o eroare de insert pastreaza snapshotul anterior
   prin rollback.
+- Bytes-ii fotografiilor raman temporar pe filesystem; PostgreSQL detine
+  metadatele normalizate in `fieldops_visit_photos`.
 
 ## Integrari
 

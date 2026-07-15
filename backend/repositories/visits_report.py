@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -88,7 +89,23 @@ class VisitsReportRepository:
             row = con.execute("SELECT * FROM visits WHERE id = ?", [visit_id]).fetchone()
         finally:
             con.close()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        result = dict(row)
+        # Historical compatibility-only column, not consumed by the API and
+        # intentionally absent from the V2 PostgreSQL authority.
+        result.pop("tl", None)
+        for field in (
+            "curatenie",
+            "imagine",
+            "uniforma",
+            "afise",
+            "produse_promo",
+            "avizat",
+            "avize",
+        ):
+            result[field] = bool(result.get(field))
+        return result
 
     def get_photo_filenames(self, visit_id: str) -> list[str]:
         folder = self.images_dir / visit_id
@@ -159,7 +176,7 @@ class VisitsReportRepository:
 
     def _aggregate_report_rows(
         self,
-        raw_rows: list[sqlite3.Row],
+        raw_rows: list[Mapping[str, Any]],
         store_metadata: dict[str, dict[str, str]],
     ) -> list[dict[str, Any]]:
         grouped: dict[tuple[str, str | None, str | None, str | None], dict[str, Any]] = {}

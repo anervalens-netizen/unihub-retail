@@ -6,7 +6,15 @@ from pathlib import Path
 import pytest
 from dotenv import dotenv_values
 
-from config import ConfigError, get_visits_db_path, get_visits_images_dir, validate_required_env_vars, _is_production
+from config import (
+    ConfigError,
+    _is_production,
+    get_visits_db_path,
+    get_visits_images_dir,
+    get_visits_read_source,
+    validate_required_env_vars,
+    visits_shadow_compare_enabled,
+)
 from session_auth import load_session_settings
 
 
@@ -180,6 +188,36 @@ def test_config_requires_visits_db_in_production(monkeypatch: pytest.MonkeyPatch
     _set_privileged_groups(monkeypatch)
     with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
         validate_required_env_vars()
+
+
+def test_visit_source_flags_are_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RETAIL_VISITS_READ_SOURCE", " POSTGRES ")
+    monkeypatch.setenv("RETAIL_VISITS_SHADOW_COMPARE_ENABLED", "YeS")
+    assert get_visits_read_source() == "postgres"
+    assert visits_shadow_compare_enabled() is True
+
+
+def test_config_rejects_unknown_visit_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.setenv("RETAIL_VISITS_READ_SOURCE", "mysql")
+    with pytest.raises(ConfigError, match="RETAIL_VISITS_READ_SOURCE"):
+        validate_required_env_vars()
+
+
+def test_postgres_primary_without_shadow_does_not_require_sqlite_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("RETAIL_VISITS_READ_SOURCE", "postgres")
+    monkeypatch.setenv("RETAIL_VISITS_SHADOW_COMPARE_ENABLED", "false")
+    monkeypatch.delenv("VISITS_DB_PATH", raising=False)
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "x" * 48)
+    monkeypatch.setenv("HUB_INTERNAL_SECRET", "h" * 32)
+    _set_privileged_groups(monkeypatch)
+    _set_oidc_settings(monkeypatch)
+    validate_required_env_vars()
 
 
 def test_config_accumulates_all_errors(monkeypatch: pytest.MonkeyPatch) -> None:

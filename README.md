@@ -213,8 +213,8 @@ Tab dedicat rolurilor `admin` si `management`, cu sub-taburi operationale:
 subtaburile sunt afisate in bara interna a ecranului, la fel ca in Agenti si
 Focus; sidebar-ul contine numai intrarea principala Management.
 
-- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari) +
-  SQLite (vizite) + factor de forecast din scoring-ul CRM intern; cardurile
+- **Manageri** — performanta managerilor combinata din PostgreSQL (vanzari si
+  proiectia vizitelor) + factor de forecast din scoring-ul CRM intern; cardurile
   expandate includ scorurile magazinelor alocate. Router-e: `/api/hr`, `/api/crm`
 - **Calculator Target** — un document de target per luna, calcul automat, ajustare finala pe locatie, analiza pe manager si export Excel. Router: `/api/target-calculator`
 - **Salarii** — overview, evolutie, raport salarii versus vanzari si istoric pe
@@ -603,9 +603,11 @@ VIEW-uri disponibile in `schema_v2.sql`:
 - `v_platforma_raw_sales` — tranzactii brute cu campuri aliasate pentru compatibilitate
 - `v_platforma_store_targets` — targete magazine cu detalii firma/asm/regional
 
-**Vizite**: Retail este sursa de adevar pentru fisierul SQLite partajat:
-`/opt/Mobiup/unihub-retail/data/visits/visits.db`, configurat prin
-`VISITS_DB_PATH`.
+**Vizite**: autoritatea V2 este tabela FieldOps `fieldops_visits`. Cutover-ul
+Retail este controlat prin `RETAIL_VISITS_READ_SOURCE`; SQLite-ul configurat
+prin `VISITS_DB_PATH` ramane temporar primary/shadow pentru validare si este
+eliminat numai dupa backup si restore test. Fotografiile raman momentan in
+`VISITS_IMAGES_DIR`.
 
 ## Backup
 
