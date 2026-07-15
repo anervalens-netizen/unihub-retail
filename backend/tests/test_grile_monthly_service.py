@@ -1438,6 +1438,75 @@ def test_archive_zip_and_directory_promotion_fail_closed(
     assert (destination / "new").exists()
 
 
+def test_archive_directory_rollback_fallbacks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    original_replace = grile.os.replace
+    original_rmtree = grile.shutil.rmtree
+
+    def paths(case: str) -> tuple[Path, Path]:
+        destination = tmp_path / "archive" / case
+        destination.mkdir(parents=True)
+        (destination / "old").write_text("previous")
+        staged = tmp_path / f"staged-{case}"
+        staged.mkdir()
+        (staged / "new").write_text("unverified")
+        return staged, destination
+
+    def fail_verification() -> None:
+        raise grile.MonthlyIntegrityError("artifact_hash_mismatch", "verification failed")
+
+    staged, destination = paths("move-fallback")
+
+    def fail_move_back(source: Path | str, target: Path | str) -> None:
+        if Path(source) == destination and Path(target) == staged:
+            raise OSError("move back failed")
+        original_replace(source, target)
+
+    monkeypatch.setattr(grile.os, "replace", fail_move_back)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(staged, destination, verify=fail_verification)
+    assert exc_info.value.code == "artifact_hash_mismatch"
+    assert (destination / "old").exists()
+    assert not (destination / "new").exists()
+
+    monkeypatch.setattr(grile.os, "replace", original_replace)
+    staged, destination = paths("remove-failure")
+
+    def fail_move_and_remove(source: Path | str, target: Path | str) -> None:
+        if Path(source) == destination and Path(target) == staged:
+            raise OSError("move back failed")
+        original_replace(source, target)
+
+    def fail_remove(path: Path | str, *args: Any, **kwargs: Any) -> None:
+        if Path(path) == destination:
+            raise OSError("remove failed")
+        original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(grile.os, "replace", fail_move_and_remove)
+    monkeypatch.setattr(grile.shutil, "rmtree", fail_remove)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(staged, destination, verify=fail_verification)
+    assert exc_info.value.code == "archive_promotion_rollback_failed"
+
+    monkeypatch.setattr(grile.os, "replace", original_replace)
+    monkeypatch.setattr(grile.shutil, "rmtree", original_rmtree)
+    staged, destination = paths("restore-failure")
+
+    def fail_revision_restore(source: Path | str, target: Path | str) -> None:
+        if Path(source).parent == tmp_path / ".revisions" and Path(target) == destination:
+            raise OSError("revision restore failed")
+        original_replace(source, target)
+
+    monkeypatch.setattr(grile.os, "replace", fail_revision_restore)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(staged, destination, verify=fail_verification)
+    assert exc_info.value.code == "archive_promotion_rollback_failed"
+    assert not destination.exists()
+
+
 @pytest.mark.asyncio
 async def test_archive_requires_full_verified_finalization(
     tmp_path: Path,
