@@ -4,7 +4,7 @@ import os
 from hashlib import sha256
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
@@ -42,6 +42,14 @@ class GrileMonthlyEnqueueResult:
     operation_id: int
     job: Job | None = None
     job_id: str | None = None
+    operation: dict | None = None
+
+
+@dataclass
+class GrileTargetSyncEnqueueResult:
+    status: str
+    operation_id: int
+    job: Job | None = None
     operation: dict | None = None
 
 
@@ -113,7 +121,7 @@ async def enqueue_grile_check(
     month: str,
     source: str = "manual",
     source_snapshot_id: int | None = None,
-    triggered_by_email: str | None = None,
+    triggered_by_sub: str | None = None,
 ) -> GrileEnqueueResult:
     from db.connection import get_pool
     from repositories.grile import GrileRepository
@@ -124,7 +132,7 @@ async def enqueue_grile_check(
         run_month=month,
         source=source,
         source_snapshot_id=source_snapshot_id,
-        triggered_by_email=triggered_by_email,
+        triggered_by_sub=triggered_by_sub,
     )
     if run_id is None:
         active = await repo.get_running_run(month)
@@ -143,7 +151,7 @@ async def enqueue_grile_check(
             month,
             source,
             source_snapshot_id,
-            triggered_by_email,
+            triggered_by_sub,
             int(run_id),
             get_request_id(),
         )
@@ -246,6 +254,72 @@ async def enqueue_grile_monthly(
         job=job,
         job_id=job.job_id,
     )
+
+
+async def enqueue_grile_target_sync(
+    *,
+    month: str,
+    mode: Literal["dry_run", "sync"],
+    requested_by_sub: str,
+) -> GrileTargetSyncEnqueueResult:
+    from db.connection import get_pool
+    from repositories.grile_agent_target_sync import (
+        GrileAgentTargetSyncRepository,
+    )
+
+    if mode not in {"dry_run", "sync"}:
+        raise ValueError("invalid Grile target sync mode")
+    db_pool = await get_pool()
+    repo = GrileAgentTargetSyncRepository(db_pool)
+    reservation_status, operation = await repo.reserve(
+        month=month,
+        mode=mode,
+        requested_by_sub=requested_by_sub,
+    )
+    operation_id = int(operation["id"])
+    if reservation_status != "enqueued":
+        return GrileTargetSyncEnqueueResult(
+            status=reservation_status,
+            operation_id=operation_id,
+            operation=operation,
+        )
+
+    job_id = f"grile-agent-targets:{operation_id}"
+    if not await repo.attach_job(operation_id, job_id):
+        raise RuntimeError("Grile target sync operation is no longer queued")
+    try:
+        pool = await get_arq_pool()
+        job = await pool.enqueue_job(
+            "grile_agent_targets_background",
+            operation_id,
+            get_request_id(),
+            _job_id=job_id,
+        )
+        if job is None:
+            raise RuntimeError("Failed to enqueue Grile target sync job")
+    except Exception:
+        # A publish can be accepted by Valkey even when the client raises.  If
+        # the worker already claimed the operation, leave it running so its
+        # transactional finish/fail path remains authoritative.
+        await repo.fail_queued(operation_id, "Jobul nu a putut fi adaugat in coada")
+        raise
+    return GrileTargetSyncEnqueueResult(
+        status="enqueued",
+        operation_id=operation_id,
+        job=job,
+    )
+
+
+async def get_grile_target_sync_operation(
+    operation_id: int,
+) -> dict | None:
+    from db.connection import get_pool
+    from repositories.grile_agent_target_sync import (
+        GrileAgentTargetSyncRepository,
+    )
+
+    db_pool = await get_pool()
+    return await GrileAgentTargetSyncRepository(db_pool).get(operation_id)
 
 
 async def get_job_status(job_id: str) -> JobResult:

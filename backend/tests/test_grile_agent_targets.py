@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from services.grile_agent_targets import (
     build_resolved_rows,
     extract_agent_targets,
@@ -35,6 +37,28 @@ def test_extract_agent_targets_marks_missing_target_for_fallback() -> None:
         value_ranges=[
             _range("Popescu Ana"),
             {"values": []},
+            _range(""),
+            {"values": []},
+        ],
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].status == "missing_agent_target"
+    assert candidates[0].target_value is None
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-1", Decimal("NaN")])
+def test_extract_agent_targets_rejects_non_finite_or_negative_targets(
+    value: object,
+) -> None:
+    candidates = extract_agent_targets(
+        month="2098-01",
+        site_code="SYNTHETIC-SITE",
+        manager="Synthetic manager",
+        source_store_key="synthetic/store",
+        value_ranges=[
+            _range("Synthetic Alpha"),
+            _range(value),
             _range(""),
             {"values": []},
         ],
