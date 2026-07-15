@@ -103,11 +103,15 @@ def predict_amount(
     if category == "c3" and target_salary > 0:
         salary_ratios = ratio_history(history, salary_history, target, causal=causal)
         if salary_ratios:
-            return median(ratio for _, ratio in salary_ratios) * target_salary
+            median_ratio = median(ratio for _, ratio in salary_ratios)
+            if median_ratio is not None:
+                return median_ratio * target_salary
     if category in VARIABLE_CODES or category == "c3":
         sales_ratios = ratio_history(history, sales_history, target, causal=causal)
         if sales_ratios and target_sales > 0:
-            return median(ratio for _, ratio in sales_ratios) * target_sales
+            median_ratio = median(ratio for _, ratio in sales_ratios)
+            if median_ratio is not None:
+                return median_ratio * target_sales
     if category in FIXED_CODES:
         same_month = [amount for period, amount in nearest if period.month == target.month]
         return median(same_month) if same_month else median(amount for _, amount in nearest[:3])
@@ -244,20 +248,25 @@ def build_estimates(
         for category in sorted(VALID_CODES):
             key = (company, site_code, category)
             store_values = store_history.get(key, [])
+            estimate_amount: float | None
             if category == "c3" and target_salary > 0:
                 ratio = choose_ratio(store_salary_ratios.get(key, []), company_salary_ratios.get((company, category), []), target, causal=causal)
-                amount = ratio * target_salary if ratio is not None else None
+                estimate_amount = ratio * target_salary if ratio is not None else None
             elif category in VARIABLE_CODES or category == "c3":
                 ratio = choose_ratio(store_sales_ratios.get(key, []), company_sales_ratios.get((company, category), []), target, causal=causal)
-                amount = ratio * target_sales if ratio is not None else None
+                estimate_amount = ratio * target_sales if ratio is not None else None
             else:
                 values = relevant_history(store_values, target, causal=causal)
                 fallback = relevant_history(company_values.get((company, category), []), target, causal=causal)
                 chosen = values if len(values) >= 2 else fallback
                 same_month = [value for period, value in chosen if period.month == target.month]
-                amount = median(same_month) if same_month else median(value for _, value in chosen[:3])
-            if amount is not None:
-                estimated_amounts[category] = amount
+                estimate_amount = (
+                    median(same_month)
+                    if same_month
+                    else median(value for _, value in chosen[:3])
+                )
+            if estimate_amount is not None:
+                estimated_amounts[category] = estimate_amount
 
         # For a completely missing P&L store-month, the estimated P&L revenue
         # must equal the Retail sale without TVA. Retain the observed revenue
