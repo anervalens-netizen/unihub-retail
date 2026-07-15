@@ -171,6 +171,13 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
         if bool((invalid | (numeric.abs() > 99_999_999.99)).any()):
             raise ValueError(f"Coloana {column} conține valori monetare invalide.")
 
+    # Rows without an assigned ASM are deliberately excluded from Retail
+    # imports (TR locations / unallocated agents).  Do not make an ignored row
+    # fail identifier validation, but keep numeric and duplicate validation on
+    # the complete source file above.
+    importable_rows = df[
+        ~df["ASM"].fillna("").astype(str).str.strip().isin(["", "-"])
+    ]
     required_identifiers = (
         "SiteCode",
         "ItemCode",
@@ -184,7 +191,7 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
     invalid_required = [
         column
         for column in required_identifiers
-        if df[column]
+        if importable_rows[column]
         .map(lambda value: bool(pd.isna(value)) or not str(value).strip())
         .any()
     ]
@@ -198,9 +205,7 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
         raise ValueError("Fișierul conține rânduri duplicate.")
 
     metadata_columns = ["Locatie", "Firma", "Regional", "ASM"]
-    valid_structure = df[
-        ~df["ASM"].fillna("").astype(str).str.strip().isin(["", "-"])
-    ]
+    valid_structure = importable_rows
     conflicting_sites = 0
     if not valid_structure.empty:
         grouped = valid_structure.groupby("SiteCode", dropna=False)[metadata_columns]
@@ -364,7 +369,7 @@ async def upsert_stores(conn: asyncpg.Connection, df: pd.DataFrame, import_month
         INSERT INTO stores (
             site_code, locatie, firma, regional, asm, first_seen_month, last_seen_month, is_active
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (site_code) DO UPDATE
         SET locatie = CASE WHEN $8 THEN EXCLUDED.locatie ELSE stores.locatie END,
             firma = CASE WHEN $8 THEN EXCLUDED.firma ELSE stores.firma END,

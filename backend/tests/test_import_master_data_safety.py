@@ -149,6 +149,32 @@ async def test_inactive_store_is_not_reactivated_by_reappearance() -> None:
         await close_db_pool()
 
 
+async def test_historical_import_inserts_new_store_inactive() -> None:
+    pool = await get_pool()
+    site_code = "P0HISTORICAL-01"
+    marker = "synthetic-p0-historical-latest.xlsx"
+    try:
+        async with pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO import_snapshots (import_month, filename, status)
+                VALUES ('9999-12', $1, 'completed')
+                """,
+                marker,
+            )
+
+            await upsert_stores(conn, sales_frame([site_code]), "2098-03")
+
+            assert await conn.fetchval(
+                "SELECT is_active FROM stores WHERE site_code = $1", site_code
+            ) is False
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
+            await conn.execute("DELETE FROM import_snapshots WHERE filename = $1", marker)
+        await close_db_pool()
+
+
 async def test_explicit_activity_change_is_atomic_and_audited_by_subject() -> None:
     pool = await get_pool()
     site_code = "P0ACTIVITY-01"

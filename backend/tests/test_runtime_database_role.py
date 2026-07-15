@@ -37,6 +37,16 @@ def test_runtime_salary_grants_exclude_private_columns() -> None:
     ).read_text(encoding="utf-8")
     assert "REVOKE ALL ON SCHEMA salary_private" in source
     assert "schema_create_denied" in source
+    assert "ALTER DEFAULT PRIVILEGES IN SCHEMA public" in source
+
+
+def test_import_activity_migration_grants_established_runtime_role() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "db/migrations/026_import_master_data_safety.sql"
+    ).read_text(encoding="utf-8")
+    assert "ON TABLE store_activity_events TO unihub_runtime" in source
+    assert "ON SEQUENCE store_activity_events_id_seq TO unihub_runtime" in source
 
 
 @pytest.mark.anyio

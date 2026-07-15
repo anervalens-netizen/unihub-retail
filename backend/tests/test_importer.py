@@ -120,6 +120,24 @@ def test_load_sales_dataframe_rejects_missing_required_identifier() -> None:
         load_sales_dataframe(sales_workbook([sales_row(Agent=None)]))
 
 
+def test_load_sales_dataframe_ignores_missing_identifier_on_excluded_row() -> None:
+    frame = load_sales_dataframe(
+        sales_workbook(
+            [
+                sales_row(),
+                sales_row(
+                    SiteCode="TR-IGNORED",
+                    ASM="-",
+                    Agent=None,
+                    Nr=None,
+                ),
+            ]
+        )
+    )
+
+    assert list(frame["SiteCode"]) == ["SITE01", "TR-IGNORED"]
+
+
 def test_load_sales_dataframe_rejects_conflicting_store_metadata() -> None:
     with pytest.raises(ValueError, match="contradictorii"):
         load_sales_dataframe(

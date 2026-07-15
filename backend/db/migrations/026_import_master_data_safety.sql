@@ -14,3 +14,17 @@ CREATE TABLE IF NOT EXISTS store_activity_events (
 
 CREATE INDEX IF NOT EXISTS idx_store_activity_events_site_created
     ON store_activity_events (site_code, created_at DESC);
+
+-- Production migrations run as the owner while web/worker use the established
+-- least-privilege role.  Grant the new objects in the same migration so the
+-- explicit activity endpoint is usable immediately after rollout.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unihub_runtime') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE
+            ON TABLE store_activity_events TO unihub_runtime;
+        GRANT USAGE, SELECT, UPDATE
+            ON SEQUENCE store_activity_events_id_seq TO unihub_runtime;
+    END IF;
+END
+$$;
