@@ -78,3 +78,16 @@ ALTER TABLE grile_monthly_reset_items
     CHECK (backup_sha256 IS NULL OR backup_sha256 ~ '^[0-9a-f]{64}$') NOT VALID,
     ADD CONSTRAINT ck_grile_reset_rollback_status
     CHECK (rollback_status IS NULL OR rollback_status IN ('restored', 'failed')) NOT VALID;
+
+-- The migration owner creates the manifest objects, while backend and worker
+-- connections use the established least-privilege runtime role.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unihub_runtime') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE
+            ON TABLE grile_monthly_manifests TO unihub_runtime;
+        GRANT USAGE, SELECT, UPDATE
+            ON SEQUENCE grile_monthly_manifests_id_seq TO unihub_runtime;
+    END IF;
+END
+$$;
