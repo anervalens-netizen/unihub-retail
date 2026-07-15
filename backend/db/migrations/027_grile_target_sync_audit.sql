@@ -28,3 +28,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_grile_agent_target_sync_month_active
 
 CREATE INDEX IF NOT EXISTS idx_grile_agent_target_sync_month_created
     ON grile_agent_target_sync_runs (run_month, created_at DESC);
+
+-- Migrations run as the owner while API and worker connections use the
+-- least-privilege runtime role. Keep the new audit lifecycle usable without
+-- broadening privileges on unrelated objects.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unihub_runtime') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE
+            ON TABLE grile_agent_target_sync_runs TO unihub_runtime;
+        GRANT USAGE, SELECT, UPDATE
+            ON SEQUENCE grile_agent_target_sync_runs_id_seq TO unihub_runtime;
+    END IF;
+END
+$$;

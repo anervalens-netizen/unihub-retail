@@ -49,6 +49,18 @@ def test_import_activity_migration_grants_established_runtime_role() -> None:
     assert "ON SEQUENCE store_activity_events_id_seq TO unihub_runtime" in source
 
 
+def test_grile_sync_audit_migration_grants_established_runtime_role() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "db/migrations/027_grile_target_sync_audit.sql"
+    ).read_text(encoding="utf-8")
+    assert "ON TABLE grile_agent_target_sync_runs TO unihub_runtime" in source
+    assert (
+        "ON SEQUENCE grile_agent_target_sync_runs_id_seq TO unihub_runtime"
+        in source
+    )
+
+
 @pytest.mark.anyio
 @pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
