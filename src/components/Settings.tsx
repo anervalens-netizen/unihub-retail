@@ -266,6 +266,13 @@ export function Settings({
       if (response.rows_filtered > 0) {
         parts.push(`${response.rows_filtered} rânduri non-ASM filtrate`);
       }
+      const coverage = response.coverage_report;
+      if (coverage.active_store_coverage_pct != null) {
+        parts.push(`coverage magazine active ${coverage.active_store_coverage_pct}%`);
+      }
+      if ((coverage.missing_active_store_count ?? 0) > 0) {
+        parts.push(`${coverage.missing_active_store_count} magazine active absente, fără schimbare de stare`);
+      }
       if (response.is_month_final) {
         parts.push('Luna a fost marcată ca FINALĂ');
       } else {
@@ -574,6 +581,12 @@ export function Settings({
                     {entry.is_month_final ? '✓ Final' : 'Intermediar'} ·{' '}
                     {entry.created_at.slice(0, 16).replace('T', ' ')}
                   </div>
+                  {entry.coverage_report?.active_store_coverage_pct != null && (
+                    <div className="mt-1 text-slate-500">
+                      Coverage magazine active {entry.coverage_report.active_store_coverage_pct}% ·{' '}
+                      {entry.coverage_report.missing_active_store_count ?? 0} absente · 0 schimbări de stare
+                    </div>
+                  )}
                 </div>
               ))}
               {history.length === 0 && (

@@ -495,7 +495,22 @@ export interface ImportHistoryEntry {
   rows_imported: number | null;
   status: string;
   error_message: string | null;
+  coverage_report?: ImportCoverageReport | null;
   created_at: string;
+}
+
+export interface ImportCoverageReport {
+  incoming_store_count?: number;
+  company_count?: number;
+  active_store_count_before?: number;
+  prior_snapshot_store_count?: number;
+  active_store_coverage_pct?: number | null;
+  prior_snapshot_coverage_pct?: number | null;
+  missing_active_store_count?: number;
+  missing_prior_store_count?: number;
+  new_store_count?: number;
+  metadata_change_count?: number;
+  store_activity_writes?: number;
 }
 
 export interface ImportResponse {
@@ -508,6 +523,7 @@ export interface ImportResponse {
   snapshot_id: number;
   filename: string;
   is_month_final: boolean;
+  coverage_report: ImportCoverageReport;
 }
 
 export interface ImportJobStatus {

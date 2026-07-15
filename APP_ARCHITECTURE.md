@@ -170,7 +170,11 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   continutului deduplica retry-urile aflate deja in coada, iar DB permite un
   singur snapshot `processing` per luna. Lease-urile mai vechi de o ora sunt
   inchise ca `failed`, fara stergerea istoricului de audit; restartul workerului
-  reconciliaza imediat lease-urile intrerupte.
+  reconciliaza imediat lease-urile intrerupte. Inainte de inlocuirea
+  snapshotului, validatorul respinge valori numerice invalide, identificatori
+  lipsa, duplicate si metadate contradictorii, apoi persista in
+  `import_snapshots.coverage_report` coverage-ul si diff-ul agregat fata de
+  master data activa si snapshotul anterior.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
   builder Excel ghidat prin `Dataset`, `Perioada si scope`, `Coloane` si
   `Preview si export`, controlat server-side, cu doua moduri: `Tabel detaliat` pentru
@@ -309,16 +313,18 @@ Familii de tabele:
 | AI Forecast | `ai_forecast_runs`, `ai_forecast_store_month`, `ai_forecast_store_day` |
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_salary_links`, `agent_targets`, `store_pnl_monthly` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
-| Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
+| Operare | `import_snapshots`, `store_activity_events`, `visits_snapshot`, `error_logs` |
 
 `stores` este master data curenta pentru apartenenta magazinelor. In Retail
 exista un singur layer activ de management; coloanele `regional` si `asm` sunt
 pastrate pentru compatibilitate cu rapoartele, dar pentru magazinele active din
 ultima luna ele trebuie sa indice acelasi manager. Importul celei mai noi luni
-actualizeaza structura curenta si marcheaza inactive magazinele care nu mai
-apar. Importurile istorice actualizeaza doar intervalul
-`first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent
-sau sa reactiveze magazine inchise.
+actualizeaza structura curenta numai pentru magazinele prezente, dar nu modifica
+niciodata `stores.is_active` pentru un magazin existent: nici absenta din fisier,
+nici reaparitia nu schimba starea. Activarea sau inchiderea se face separat,
+admin-only, cu subject OIDC, motiv si eveniment persistent in
+`store_activity_events`. Importurile istorice actualizeaza doar intervalul
+`first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent.
 
 P&L-ul financiar lunar pe magazin este pastrat in `store_pnl_monthly` la
 granularitatea companie, luna, cod istoric de locatie si categorie contabila.

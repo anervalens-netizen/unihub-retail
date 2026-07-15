@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
-from pydantic import BaseModel, ConfigDict
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas.ai_forecast import (
     AiForecastDailyPoint,
@@ -137,6 +137,7 @@ class ImportHistoryEntry(BaseModel):
     rows_imported: NonNegativeInt | None
     status: ImportSnapshotStatus
     error_message: str | None
+    coverage_report: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
@@ -150,6 +151,7 @@ class ImportResponse(BaseModel):
     snapshot_id: NonNegativeInt
     filename: str
     is_month_final: bool
+    coverage_report: dict[str, Any] = Field(default_factory=dict)
 
 
 class PromoActualImportResponse(BaseModel):
@@ -166,6 +168,29 @@ class ImportJobStatus(BaseModel):
     status: ImportJobState
     result: ImportResponse | None = None
     error: str | None = None
+
+
+class StoreActivityChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_active: bool
+    expected_is_active: bool
+    reason: str = Field(min_length=10, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 10:
+            raise ValueError("reason must contain at least 10 non-space characters")
+        return normalized
+
+
+class StoreActivityChangeResponse(BaseModel):
+    site_code: str
+    previous_is_active: bool
+    is_active: bool
+    event_id: int
 
 
 class VisitReportRow(BaseModel):
