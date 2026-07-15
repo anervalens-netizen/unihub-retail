@@ -701,6 +701,12 @@ npm run dev
 npm run dev:backend
 ```
 
+Pachetele private `@unihub/*` folosite de Retail sunt vendorizate la versiunile
+și hash-urile din `package-lock.json`. Un checkout curat nu contactează
+Verdaccio și nu are nevoie de token. Înainte de `npm ci`, CI verifică tarball-urile
+cu `node scripts/verify_vendored_npm_packages.mjs`; procedura și boundary-ul de
+runner sunt în `docs/engineering/pr-runner-isolation.md`.
+
 ## Testare
 
 Comenzi importante:
