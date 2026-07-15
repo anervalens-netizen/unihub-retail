@@ -25,6 +25,7 @@ from services.grile_agent_targets import (
     AgentTargetSyncResult,
     AgentTargetSyncBlockedError,
     AgentTargetsState,
+    apply_agent_target_sync_on_connection,
     candidate_agent_codes,
     read_agent_targets_state,
     require_applicable_agent_target_sync,
@@ -239,6 +240,11 @@ async def test_apply_is_blocked_when_an_enabled_sheet_has_no_agent_candidates(
         "_load_managed_targets",
         AsyncMock(return_value={}),
     )
+    monkeypatch.setattr(
+        target_service,
+        "_load_unmanaged_target_keys",
+        AsyncMock(return_value=set()),
+    )
     result = await sync_agent_targets_from_grile(pool, month="2098-12")
     with pytest.raises(AgentTargetSyncBlockedError, match="coverage incomplet"):
         require_applicable_agent_target_sync(result)
@@ -429,6 +435,125 @@ async def test_dry_run_preserves_hash_and_privileged_sync_applies_atomically(
                 "DELETE FROM grile_agent_target_sync_runs WHERE run_month = $1",
                 month,
             )
+            await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytestmark_db
+async def test_sync_blocks_non_grile_target_conflict_without_overwrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = await get_pool()
+    month = "2098-10"
+    site_code = "SYNTHETIC-UNMANAGED-TARGET"
+    agent_code = sorted(candidate_agent_codes("Synthetic Alpha"))[0]
+    candidate = AgentTargetCandidate(
+        import_month=month,
+        site_code=site_code,
+        source_store_key="synthetic/store",
+        manager="Synthetic manager",
+        slot=1,
+        source_agent_name="Synthetic Alpha",
+        target_value=Decimal("200.00"),
+    )
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO stores (
+                    site_code, locatie, firma, regional, asm,
+                    is_active, first_seen_month, last_seen_month
+                )
+                VALUES ($1, 'Synthetic store', 'Synthetic company',
+                        'Synthetic region', 'Synthetic manager', true, $2, $2)
+                """,
+                site_code,
+                month,
+            )
+        monkeypatch.setattr(
+            target_service,
+            "_load_enabled_sheets",
+            AsyncMock(
+                return_value=(
+                    [
+                        {
+                            "site_code": site_code,
+                            "sheet_id": "synthetic-sheet",
+                            "registry_key": "synthetic/store",
+                            "manager": "Synthetic manager",
+                        }
+                    ],
+                    {},
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            target_service,
+            "_read_candidates",
+            AsyncMock(return_value=([candidate], {site_code}, [])),
+        )
+        monkeypatch.setattr(
+            target_service,
+            "_load_retail_agents",
+            AsyncMock(return_value={site_code: {agent_code}}),
+        )
+
+        dry_run = await sync_agent_targets_from_grile(
+            pool,
+            month=month,
+            enabled_managers=("*",),
+            disabled_managers=(),
+        )
+        assert dry_run.diff["unmanaged_conflict_count"] == 0
+        require_applicable_agent_target_sync(dry_run)
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO agent_targets (
+                    import_month, site_code, agent, target_value, source_file
+                )
+                VALUES ($1, $2, $3, 100, 'manual-override')
+                """,
+                month,
+                site_code,
+                agent_code,
+            )
+
+        async with pool.acquire() as conn, conn.transaction():
+            with pytest.raises(
+                AgentTargetSyncBlockedError,
+                match="administrate din alta sursa",
+            ):
+                await apply_agent_target_sync_on_connection(conn, dry_run)
+
+        refreshed_dry_run = await sync_agent_targets_from_grile(
+            pool,
+            month=month,
+            enabled_managers=("*",),
+            disabled_managers=(),
+        )
+        assert refreshed_dry_run.diff["unmanaged_conflict_count"] == 1
+        with pytest.raises(AgentTargetSyncBlockedError, match="blocata"):
+            require_applicable_agent_target_sync(refreshed_dry_run)
+
+        async with pool.acquire() as conn:
+            stored = await conn.fetchrow(
+                """
+                SELECT target_value, source_file
+                FROM agent_targets
+                WHERE import_month = $1 AND site_code = $2 AND agent = $3
+                """,
+                month,
+                site_code,
+                agent_code,
+            )
+        assert Decimal(stored["target_value"]) == Decimal("100.00")
+        assert stored["source_file"] == "manual-override"
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM agent_targets WHERE import_month = $1", month)
             await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
         await close_db_pool()
 

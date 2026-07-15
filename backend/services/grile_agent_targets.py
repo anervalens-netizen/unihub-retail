@@ -343,9 +343,15 @@ async def sync_agent_targets_from_grile(
         month=month,
         site_codes=sorted(read_site_codes),
     )
+    unmanaged = await _load_unmanaged_target_keys(
+        pool,
+        month=month,
+        site_codes=sorted(read_site_codes),
+    )
     diff = _build_target_diff(current, resolved)
     diff["empty_site_count"] = empty_site_count
     diff["duplicate_target_count"] = duplicate_target_count
+    diff["unmanaged_conflict_count"] = len(set(resolved_keys) & unmanaged)
 
     return AgentTargetSyncResult(
         month=month,
@@ -410,6 +416,7 @@ def require_applicable_agent_target_sync(result: AgentTargetSyncResult) -> None:
         or not result.read_site_codes
         or result.diff["empty_site_count"]
         or result.diff["duplicate_target_count"]
+        or result.diff.get("unmanaged_conflict_count", 0)
     ):
         raise AgentTargetSyncBlockedError(
             "Sincronizarea targetelor este blocata de coverage incomplet sau erori nerezolvate."
@@ -440,6 +447,32 @@ async def _load_managed_targets(
         (str(row["site_code"]), str(row["agent"])): Decimal(row["target_value"])
         for row in rows
     }
+
+
+async def _load_unmanaged_target_keys(
+    pool: asyncpg.Pool,
+    *,
+    month: str,
+    site_codes: list[str],
+) -> set[tuple[str, str]]:
+    if not site_codes:
+        return set()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT site_code, agent
+            FROM agent_targets
+            WHERE import_month = $1
+              AND site_code = ANY($2::text[])
+              AND NOT (
+                COALESCE(source_file, '') LIKE 'grile%'
+                OR COALESCE(source_file, '') LIKE 'retail-grile%'
+              )
+            """,
+            month,
+            site_codes,
+        )
+    return {(str(row["site_code"]), str(row["agent"])) for row in rows}
 
 
 def _build_target_diff(
@@ -618,6 +651,29 @@ async def apply_agent_target_sync_on_connection(
 ) -> None:
     """Apply one validated diff inside a caller-owned audit transaction."""
     require_applicable_agent_target_sync(result)
+    if result.resolved:
+        conflicts = await conn.fetch(
+            """
+            SELECT existing.site_code, existing.agent
+            FROM agent_targets existing
+            JOIN unnest($2::text[], $3::text[]) AS proposed(site_code, agent)
+              ON proposed.site_code = existing.site_code
+             AND proposed.agent = existing.agent
+            WHERE existing.import_month = $1
+              AND NOT (
+                COALESCE(existing.source_file, '') LIKE 'grile%'
+                OR COALESCE(existing.source_file, '') LIKE 'retail-grile%'
+              )
+            FOR UPDATE OF existing
+            """,
+            result.month,
+            [row.site_code for row in result.resolved],
+            [row.agent for row in result.resolved],
+        )
+        if conflicts:
+            raise AgentTargetSyncBlockedError(
+                "Sincronizarea targetelor este blocata de targete administrate din alta sursa."
+            )
     await conn.execute(
         """
         DELETE FROM agent_targets
@@ -656,6 +712,8 @@ async def apply_agent_target_sync_on_connection(
             manager = EXCLUDED.manager,
             match_method = EXCLUDED.match_method,
             updated_at = now()
+        WHERE agent_targets.source_file LIKE 'grile%'
+           OR agent_targets.source_file LIKE 'retail-grile%'
         """,
         [
             (
@@ -672,3 +730,31 @@ async def apply_agent_target_sync_on_connection(
             for row in result.resolved
         ],
     )
+    applied_rows = await conn.fetch(
+        """
+        SELECT existing.site_code, existing.agent, existing.target_value
+        FROM agent_targets existing
+        JOIN unnest($2::text[], $3::text[]) AS proposed(site_code, agent)
+          ON proposed.site_code = existing.site_code
+         AND proposed.agent = existing.agent
+        WHERE existing.import_month = $1
+          AND (
+            existing.source_file LIKE 'grile%'
+            OR existing.source_file LIKE 'retail-grile%'
+          )
+        """,
+        result.month,
+        [row.site_code for row in result.resolved],
+        [row.agent for row in result.resolved],
+    )
+    applied = {
+        (str(row["site_code"]), str(row["agent"])): Decimal(row["target_value"])
+        for row in applied_rows
+    }
+    proposed = {
+        (row.site_code, row.agent): row.target_value for row in result.resolved
+    }
+    if applied != proposed:
+        raise AgentTargetSyncBlockedError(
+            "Sincronizarea targetelor nu a putut aplica exact setul verificat."
+        )
