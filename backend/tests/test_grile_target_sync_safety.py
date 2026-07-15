@@ -738,7 +738,7 @@ async def test_sync_rolls_back_targets_when_audit_cannot_complete(
 
 @pytest.mark.asyncio
 @pytestmark_db
-async def test_sync_reservation_is_concurrent_and_persists_subject() -> None:
+async def test_dry_run_and_sync_reservations_do_not_block_each_other() -> None:
     pool = await get_pool()
     month = "2098-07"
     repo = GrileAgentTargetSyncRepository(pool)
@@ -756,17 +756,62 @@ async def test_sync_reservation_is_concurrent_and_persists_subject() -> None:
             ),
         )
 
+        assert [result[0] for result in results] == ["enqueued", "enqueued"]
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT mode, requested_by_sub, status
+                FROM grile_agent_target_sync_runs
+                WHERE run_month = $1
+                ORDER BY mode
+                """,
+                month,
+            )
+        assert [(row["mode"], row["requested_by_sub"], row["status"]) for row in rows] == [
+            ("dry_run", "synthetic-subject-one", "queued"),
+            ("sync", "synthetic-subject-two", "queued"),
+        ]
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM grile_agent_target_sync_runs WHERE run_month = $1",
+                month,
+            )
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytestmark_db
+async def test_same_mode_sync_reservation_remains_singleflight() -> None:
+    pool = await get_pool()
+    month = "2098-08"
+    repo = GrileAgentTargetSyncRepository(pool)
+    try:
+        results = await asyncio.gather(
+            repo.reserve(
+                month=month,
+                mode="sync",
+                requested_by_sub="synthetic-subject-one",
+            ),
+            repo.reserve(
+                month=month,
+                mode="sync",
+                requested_by_sub="synthetic-subject-two",
+            ),
+        )
+
         assert sorted(result[0] for result in results) == ["already_running", "enqueued"]
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT requested_by_sub, status
+                SELECT mode, requested_by_sub, status
                 FROM grile_agent_target_sync_runs
                 WHERE run_month = $1
                 """,
                 month,
             )
         assert len(rows) == 1
+        assert rows[0]["mode"] == "sync"
         assert rows[0]["requested_by_sub"] in {
             "synthetic-subject-one",
             "synthetic-subject-two",

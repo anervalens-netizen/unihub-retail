@@ -22,8 +22,10 @@ CREATE TABLE IF NOT EXISTS grile_agent_target_sync_runs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_grile_agent_target_sync_month_active
-    ON grile_agent_target_sync_runs (run_month)
+DROP INDEX IF EXISTS uq_grile_agent_target_sync_month_active;
+
+CREATE UNIQUE INDEX uq_grile_agent_target_sync_month_active
+    ON grile_agent_target_sync_runs (run_month, mode)
     WHERE status IN ('queued', 'running');
 
 CREATE INDEX IF NOT EXISTS idx_grile_agent_target_sync_month_created

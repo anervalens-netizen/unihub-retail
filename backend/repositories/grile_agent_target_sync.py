@@ -58,7 +58,7 @@ class GrileAgentTargetSyncRepository:
                         run_month, mode, requested_by_sub, heartbeat_at
                     )
                     VALUES ($1, $2, $3, now())
-                    ON CONFLICT (run_month)
+                    ON CONFLICT (run_month, mode)
                         WHERE status IN ('queued', 'running')
                     DO NOTHING
                     RETURNING {_COLUMNS}
@@ -75,11 +75,14 @@ class GrileAgentTargetSyncRepository:
                     f"""
                     SELECT {_COLUMNS}
                     FROM grile_agent_target_sync_runs
-                    WHERE run_month = $1 AND status IN ('queued', 'running')
+                    WHERE run_month = $1
+                      AND mode = $2
+                      AND status IN ('queued', 'running')
                     ORDER BY created_at DESC
                     LIMIT 1
                     """,
                     month,
+                    mode,
                 )
         payload = to_dict(active)
         if payload is None:
