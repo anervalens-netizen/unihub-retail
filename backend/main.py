@@ -124,7 +124,13 @@ async def lifespan(_: FastAPI):
                             await close_oidc_runtime()
 
 
-app = FastAPI(title="UniHub API", lifespan=lifespan)
+app = FastAPI(
+    title="UniHub API",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -178,9 +184,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path.startswith("/assets/"):
             response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        elif path.startswith(("/api/", "/salarii", "/auth/session")):
+            response.headers["Cache-Control"] = "private, no-store, max-age=0"
+            response.headers["CDN-Cache-Control"] = "no-store"
+            response.headers["Surrogate-Control"] = "no-store"
         elif (
-            path.startswith("/api/")
-            or path == "/"
+            path == "/"
             or path.endswith(".html")
             or path in ("/sw.js", "/registerSW.js", "/manifest.webmanifest")
         ):
@@ -271,6 +280,32 @@ async def metrics() -> Response:
 _dist = pathlib.Path(__file__).parent.parent / "dist"
 _NO_CACHE = "no-cache, no-store, must-revalidate"
 _IMMUTABLE = "public, max-age=31536000, immutable"
+_SERVER_NAMESPACES = {
+    "api",
+    "auth",
+    "docs",
+    "health",
+    "livez",
+    "metrics",
+    "openapi.json",
+    "readyz",
+    "redoc",
+    "salarii",
+}
+
+
+def spa_fallback_allowed(path: str, scope: dict) -> bool:
+    method = str(scope.get("method", "GET")).upper()
+    if method not in {"GET", "HEAD"}:
+        return False
+    first_segment = path.lstrip("/").split("/", 1)[0]
+    if first_segment in _SERVER_NAMESPACES or first_segment == "assets":
+        return False
+    headers = {
+        key.decode("latin-1").lower(): value.decode("latin-1")
+        for key, value in scope.get("headers", [])
+    }
+    return "text/html" in headers.get("accept", "").lower()
 
 if _dist.exists():
     class SPAStaticFiles(StaticFiles):
@@ -278,7 +313,7 @@ if _dist.exists():
             try:
                 resp = await super().get_response(path, scope)
             except StarletteHTTPException as ex:
-                if ex.status_code == 404:
+                if ex.status_code == 404 and spa_fallback_allowed(path, scope):
                     resp = FileResponse(_dist / "index.html")
                     resp.headers["Cache-Control"] = _NO_CACHE
                     resp.headers["CDN-Cache-Control"] = "no-store"
