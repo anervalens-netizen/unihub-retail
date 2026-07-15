@@ -3,6 +3,7 @@ import { RefreshCw, X } from 'lucide-react';
 import { fetchSalaryAgentHistory } from '../api/salarii';
 import type { SalaryAgentHistory } from '../api/salarii';
 import { SalaryAgentBarChart } from './SalaryAgentBarChart';
+import { TableHeaderCell } from './common/TableHeader';
 
 interface Props {
   personId: string;
@@ -127,10 +128,10 @@ export function SalaryDrawer({ personId, fullName, isOpen, onClose }: Props) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-800">
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Luna</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Companie</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Locatie</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">Salariu</th>
+                        <TableHeaderCell>Luna</TableHeaderCell>
+                        <TableHeaderCell>Companie</TableHeaderCell>
+                        <TableHeaderCell>Locație</TableHeaderCell>
+                        <TableHeaderCell align="right">Salariu</TableHeaderCell>
                       </tr>
                     </thead>
                     <tbody>

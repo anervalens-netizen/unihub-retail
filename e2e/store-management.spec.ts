@@ -47,7 +47,7 @@ test.describe('E2E: Management & Settings', () => {
     await expect(page.getByRole('heading', { name: 'Overview echipe manageri' })).toBeVisible();
     await expect(page.getByText('Magazine active')).toBeVisible();
     await expect(page.getByText('Agenți activi').first()).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Mihai Condorateanu' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Mihai Condorateanu/ })).toBeVisible();
   });
 
   test('shows the global filter entry on desktop for Salarii', async ({ page, context }) => {
@@ -72,6 +72,45 @@ test.describe('E2E: Management & Settings', () => {
     await page.getByRole('tab', { name: 'Salarii' }).click();
 
     await expect(page.getByRole('button', { name: 'Filtre' })).toBeVisible();
+  });
+
+  test('P&L remains usable on mobile browsers without Array.at', async ({ page, context }) => {
+    await context.addInitScript(() => {
+      Reflect.deleteProperty(Array.prototype, 'at');
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockApiRoute(context, 'GET', /\/api\/store-pnl\/permissions$/, { can_view: true });
+    await mockApiRoute(context, 'GET', /\/api\/store-pnl\/months$/, {
+      months: [
+        { month: '2026-01', has_actual: true, has_estimated: false },
+        { month: '2026-07', has_actual: false, has_estimated: true },
+      ],
+    });
+    await mockApiRoute(context, 'GET', /\/api\/store-pnl\/stores/, { stores: [] });
+    await mockApiRoute(context, 'GET', /\/api\/store-pnl\/regions/, { regions: [] });
+    await mockApiRoute(context, 'GET', /\/api\/store-pnl\/annual/, { annual: [] });
+    await mockApiRoute(context, 'GET', /\/api\/store-pnl\/overview/, {
+      start_month: '2026-01',
+      end_month: '2026-07',
+      company: null,
+      site_code: null,
+      site_company: null,
+      regional: null,
+      summary: { revenue: 100000, cogs: 30000, gross_margin: 70000, operating_costs: 50000, ebitda: 20000, depreciation: 5000, ebit: 15000 },
+      monthly: [
+        { month: '2026-01', is_estimated: false, revenue: 100000, cogs: 30000, gross_margin: 70000, operating_costs: 50000, ebitda: 20000, depreciation: 5000, ebit: 15000 },
+      ],
+      categories: { v1: 100000, c1: -30000 },
+      stores: [],
+      reconciliation: [],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Management' }).first().click();
+    await page.getByRole('tab', { name: 'P&L' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Profit & Loss' })).toBeVisible();
+    await expect(page.getByText('Evoluție lunară')).toBeVisible();
   });
 
   test('navigates to Setari tab and shows import section', async ({ page }) => {

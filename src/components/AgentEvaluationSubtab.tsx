@@ -11,6 +11,7 @@ import {
 } from '../api/agents';
 import { ExportTableButton } from './ExportTableButton';
 import { formatMonthLabel } from '../lib/dates';
+import { SortableTableHeader } from './common/TableHeader';
 
 function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
@@ -427,19 +428,7 @@ function SortHeader({
 }) {
   const active = currentKey === sortKey;
   return (
-    <th className={`px-2 py-2 ${align === 'right' ? 'text-right' : ''}`}>
-      <button
-        onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''} w-full hover:text-slate-700 dark:hover:text-slate-200`}
-      >
-        <span>{label}</span>
-        {active ? (
-          direction === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
-        ) : (
-          <span className="w-[11px]" />
-        )}
-      </button>
-    </th>
+    <SortableTableHeader label={label} active={active} direction={direction} onClick={() => onSort(sortKey)} align={align} />
   );
 }
 
@@ -460,19 +449,7 @@ function V2SortHeader({
 }) {
   const active = currentKey === sortKey;
   return (
-    <th className={`px-2 py-2 ${align === 'right' ? 'text-right' : ''}`}>
-      <button
-        onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''} w-full hover:text-slate-700 dark:hover:text-slate-200`}
-      >
-        <span>{label}</span>
-        {active ? (
-          direction === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
-        ) : (
-          <span className="w-[11px]" />
-        )}
-      </button>
-    </th>
+    <SortableTableHeader label={label} active={active} direction={direction} onClick={() => onSort(sortKey)} align={align} />
   );
 }
 

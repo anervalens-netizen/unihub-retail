@@ -434,7 +434,10 @@ function aggregateSummary(responses: DashboardAllResponse[], label: string): Das
     daily_average: workingDays > 0 ? round2(totalSales / workingDays) : null,
     medie_produs: totalQuantity > 0 ? round2(totalSales / totalQuantity) : null,
     is_month_final: summaries.every((item) => item.is_month_final),
-    last_sale_date: summaries.map((item) => item.last_sale_date).filter(Boolean).sort().at(-1) ?? null,
+    last_sale_date: (() => {
+      const dates = summaries.map((item) => item.last_sale_date).filter(Boolean).sort();
+      return dates[dates.length - 1] ?? null;
+    })(),
     imported_day_of_month: null,
     days_in_month: summaries.reduce((sum, item) => sum + n(item.days_in_month), 0) || null,
     cartele_qty: summaries.reduce((sum, item) => sum + n(item.cartele_qty), 0),

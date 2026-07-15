@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
@@ -20,6 +20,7 @@ import { formatMonthLabel } from '../lib/dates';
 import { cn } from '../lib/utils';
 import { AsmSalaryGrila } from './AsmSalaryGrila';
 import { FirmaBadge } from './FirmaBadge';
+import { SortableTableHeader, TableHeaderCell } from './common/TableHeader';
 
 const TODAY_MONTH = new Date().toISOString().slice(0, 7);
 const SALARY_GRILA_MANAGERS = new Set(['Mihai Condorateanu']);
@@ -84,7 +85,13 @@ function healthInfo(row: ManagerOverview): { label: string; detail: string; tone
       tone: 'amber',
     };
   }
-  return { label: 'Stabilă', detail: 'Portofoliul este acoperit, fără deficit net de agenți.', tone: 'emerald' };
+  return {
+    label: 'Structură stabilă',
+    detail: row.visits_available
+      ? 'Portofoliul este acoperit, fără deficit net de agenți.'
+      : 'Structura este acoperită; raportarea Vizite nu este disponibilă pentru această lună.',
+    tone: 'emerald',
+  };
 }
 
 function SummaryCard({
@@ -171,13 +178,13 @@ function StorePortfolioTable({ row }: { row: ManagerOverview }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
       <table className="min-w-[680px] w-full text-xs">
-        <thead className="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           <tr>
-            <th className="px-3 py-2.5 text-left">Magazin</th>
-            <th className="px-3 py-2.5 text-left">Firmă</th>
-            <th className="px-3 py-2.5 text-center">Agenți activi</th>
-            <th className="px-3 py-2.5 text-center">Luna precedentă</th>
-            <th className="px-3 py-2.5 text-center">Schimbare</th>
+            <TableHeaderCell>Magazin</TableHeaderCell>
+            <TableHeaderCell>Firmă</TableHeaderCell>
+            <TableHeaderCell align="center">Agenți activi</TableHeaderCell>
+            <TableHeaderCell align="center">Luna precedentă</TableHeaderCell>
+            <TableHeaderCell align="center">Schimbare</TableHeaderCell>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-900">
@@ -189,16 +196,16 @@ function StorePortfolioTable({ row }: { row: ManagerOverview }) {
                 : 'text-slate-500 dark:text-slate-400';
             return (
               <tr key={store.site_code} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                <td className="px-3 py-2">
+                <td className="px-2.5 py-2">
                   <div className="font-semibold text-slate-700 dark:text-slate-200">{store.locatie}</div>
                   <div className="text-[10px] text-slate-500 dark:text-slate-400">{store.site_code}</div>
                 </td>
-                <td className="px-3 py-2"><FirmaBadge firma={store.firma} /></td>
-                <td className="px-3 py-2 text-center font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                <td className="px-2.5 py-2"><FirmaBadge firma={store.firma} /></td>
+                <td className="px-2.5 py-2 text-center font-semibold tabular-nums text-slate-700 dark:text-slate-200">
                   {store.active_agents}
                 </td>
-                <td className="px-3 py-2 text-center tabular-nums text-slate-500">{store.previous_active_agents}</td>
-                <td className={cn('px-3 py-2 text-center font-bold tabular-nums', deltaTone)}>
+                <td className="px-2.5 py-2 text-center tabular-nums text-slate-500">{store.previous_active_agents}</td>
+                <td className={cn('px-2.5 py-2 text-center font-bold tabular-nums', deltaTone)}>
                   {store.agent_delta > 0 ? '+' : ''}{store.agent_delta}
                 </td>
               </tr>
@@ -218,7 +225,7 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
   const regionalLabel = row.regional && row.regional !== row.manager ? row.regional : null;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-800/40">
+    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 lg:hidden dark:border-slate-700 dark:bg-slate-800/40">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -254,26 +261,26 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
       </button>
 
       <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2">
           <PortfolioStat icon={<Store className="h-3.5 w-3.5" />} label="Magazine" value={NUMBER.format(row.active_stores)} hint={`${staffedStores} cu agenți raportați`} />
           <PortfolioStat icon={<Users className="h-3.5 w-3.5" />} label="Agenți activi" value={NUMBER.format(row.active_agents)} hint={`${row.agents_per_store.toLocaleString('ro-RO')} / magazin`} />
           <PortfolioStat
             icon={<UserPlus className="h-3.5 w-3.5" />}
-            label="Intrări în portofoliu"
-            value={`+${row.agents_added}`}
-            hint="față de luna precedentă"
-            valueClassName="text-emerald-600 dark:text-emerald-400"
+            label="Flux net"
+            value={`${row.agent_delta > 0 ? '+' : ''}${row.agent_delta}`}
+            hint={`${row.agents_added} intrări · ${row.agents_left} ieșiri`}
+            valueClassName={row.agent_delta < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}
           />
           <PortfolioStat
             icon={<UserMinus className="h-3.5 w-3.5" />}
-            label="Ieșiri din portofoliu"
-            value={`-${row.agents_left}`}
-            hint={`flux net ${row.agent_delta > 0 ? '+' : ''}${row.agent_delta}`}
-            valueClassName={row.agents_left > 0 ? 'text-rose-600 dark:text-rose-400' : undefined}
+            label="Acoperire magazine"
+            value={staffingCoverage === null ? '—' : `${Math.round(staffingCoverage)}%`}
+            hint={`${staffedStores}/${row.active_stores} cu agenți`}
+            valueClassName={staffingCoverage !== null && staffingCoverage < 100 ? 'text-amber-600 dark:text-amber-400' : undefined}
           />
         </div>
 
-        <div className="mt-3 grid gap-x-5 gap-y-3 rounded-xl bg-white px-3 py-3 md:grid-cols-2 xl:grid-cols-4 dark:bg-slate-900/60">
+        {open && <div className="mt-3 grid gap-x-5 gap-y-3 rounded-xl bg-white px-3 py-3 sm:grid-cols-2 dark:bg-slate-900/60">
           <HealthMetric
             icon={<Users className="h-3.5 w-3.5" />}
             label="Acoperire cu agenți"
@@ -302,7 +309,7 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
             display={row.checklist_score === null ? 'Fără date' : `${row.checklist_score}%`}
             tone={metricTone(row.checklist_score, 95, 85)}
           />
-        </div>
+        </div>}
 
         <div className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
           {health.tone === 'emerald'
@@ -330,6 +337,113 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
         </div>
       )}
     </article>
+  );
+}
+
+type ManagerSortKey = 'manager' | 'active_stores' | 'active_agents' | 'agent_delta' | 'staffing' | 'visits' | 'checklist' | 'health';
+
+function managerSortValue(row: ManagerOverview, key: ManagerSortKey): string | number {
+  const staffedStores = row.active_stores - row.stores_without_agents;
+  if (key === 'manager') return row.manager.toLocaleLowerCase('ro-RO');
+  if (key === 'staffing') return row.active_stores > 0 ? staffedStores / row.active_stores * 100 : -1;
+  if (key === 'visits') return row.visit_coverage_pct ?? -1;
+  if (key === 'checklist') return row.checklist_score ?? -1;
+  if (key === 'health') return ({ rose: 0, amber: 1, slate: 2, emerald: 3 } as const)[healthInfo(row).tone];
+  return row[key];
+}
+
+function ManagerDesktopTable({ rows, month }: { rows: ManagerOverview[]; month: string }) {
+  const [expandedManager, setExpandedManager] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<ManagerSortKey>('manager');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const sortedRows = useMemo(() => [...rows].sort((left, right) => {
+    const leftValue = managerSortValue(left, sortKey);
+    const rightValue = managerSortValue(right, sortKey);
+    const result = typeof leftValue === 'string'
+      ? leftValue.localeCompare(String(rightValue), 'ro-RO')
+      : Number(leftValue) - Number(rightValue);
+    return sortDirection === 'asc' ? result : -result;
+  }), [rows, sortDirection, sortKey]);
+  const handleSort = (key: ManagerSortKey) => {
+    setSortDirection((direction) => sortKey === key ? (direction === 'asc' ? 'desc' : 'asc') : key === 'manager' ? 'asc' : 'desc');
+    setSortKey(key);
+  };
+
+  const header = (label: string, key: ManagerSortKey, align: 'left' | 'right' | 'center' = 'left') => (
+    <SortableTableHeader
+      label={label}
+      active={sortKey === key}
+      direction={sortDirection}
+      onClick={() => handleSort(key)}
+      align={align}
+    />
+  );
+
+  return (
+    <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white lg:block dark:border-slate-700 dark:bg-slate-900">
+      <div className="max-h-[68vh] overflow-auto">
+        <table className="w-full min-w-[960px] border-collapse text-[13px]">
+          <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800">
+            <tr>
+              {header('Manager', 'manager')}
+              {header('Magazine', 'active_stores', 'right')}
+              {header('Agenți', 'active_agents', 'right')}
+              {header('Flux net', 'agent_delta', 'right')}
+              {header('Acoperire echipă', 'staffing', 'right')}
+              {header('Vizite', 'visits', 'right')}
+              {header('Checklist', 'checklist', 'right')}
+              {header('Stare', 'health')}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRows.map((row) => {
+              const expanded = expandedManager === row.manager;
+              const staffedStores = row.active_stores - row.stores_without_agents;
+              const staffingCoverage = row.active_stores > 0 ? staffedStores / row.active_stores * 100 : null;
+              const health = healthInfo(row);
+              return (
+                <Fragment key={row.manager}>
+                  <tr className="border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40">
+                    <td className="px-2.5 py-2">
+                      <button type="button" onClick={() => setExpandedManager(expanded ? null : row.manager)} className="flex w-full items-center gap-2 text-left font-bold text-slate-800 hover:text-indigo-600 dark:text-slate-100 dark:hover:text-indigo-300" aria-expanded={expanded}>
+                        {expanded ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
+                        <span>{row.manager}</span>
+                        {SALARY_GRILA_MANAGERS.has(row.manager) && <WalletCards className="h-3.5 w-3.5 shrink-0 text-indigo-500" aria-label="Grilă salariu disponibilă" />}
+                      </button>
+                    </td>
+                    <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{NUMBER.format(row.active_stores)}</td>
+                    <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{NUMBER.format(row.active_agents)}</td>
+                    <td className={cn('px-2.5 py-2 text-right font-bold tabular-nums', row.agent_delta < 0 ? 'text-rose-600' : row.agent_delta > 0 ? 'text-emerald-600' : 'text-slate-500')}>
+                      {row.agent_delta > 0 ? '+' : ''}{row.agent_delta}
+                    </td>
+                    <td className="px-2.5 py-2 text-right">
+                      <div className="font-semibold tabular-nums">{staffingCoverage === null ? '—' : `${Math.round(staffingCoverage)}%`}</div>
+                      <div className="text-[10px] text-slate-400">{staffedStores}/{row.active_stores} magazine</div>
+                    </td>
+                    <td className="px-2.5 py-2 text-right">
+                      {row.visits_available ? <><div className="font-semibold tabular-nums">{row.visit_coverage_pct}%</div><div className="text-[10px] text-slate-400">{row.visited_stores}/{row.active_stores}</div></> : <span className="text-xs font-semibold text-slate-400">Fără raportare</span>}
+                    </td>
+                    <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{row.checklist_score === null ? '—' : `${row.checklist_score}%`}</td>
+                    <td className="px-2.5 py-2"><span className={cn('inline-flex rounded-full px-2 py-1 text-xs font-semibold', TONE[health.tone].badge)}>{health.label}</span></td>
+                  </tr>
+                  {expanded && (
+                    <tr className="border-t border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/30">
+                      <td colSpan={8} className="p-3">
+                        <div className="space-y-3">
+                          <p className="text-xs text-slate-500">{health.detail} {row.agents_added} intrări și {row.agents_left} ieșiri față de luna precedentă.</p>
+                          {SALARY_GRILA_MANAGERS.has(row.manager) && <AsmSalaryGrila asm={row.manager} defaultMonth={month} />}
+                          <StorePortfolioTable row={row} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -413,6 +527,7 @@ export function ASMSubtab({ currentMonth }: { currentMonth?: string }) {
       <div className="space-y-3">
         {query.data?.map((row) => <ManagerCard key={row.manager} row={row} month={month} />)}
       </div>
+      {query.data && query.data.length > 0 && <ManagerDesktopTable rows={query.data} month={month} />}
     </div>
   );
 }

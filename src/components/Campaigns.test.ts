@@ -139,10 +139,12 @@ describe('Campaigns', () => {
     const html = renderCampaigns('incentive');
 
     expect(html).toContain('Incentive test');
+    expect(html).toContain('realizat acum');
+    expect(html).toContain('potențial calculat');
+    expect(html).toContain('diferență disponibilă');
     expect(html).toContain('unități vândute');
-    expect(html).toContain('unități eligibile după promo');
+    expect(html).toContain('rămân eligibile după excluderea promoțiilor');
     expect(html).toContain('unități în magazine calificate');
-    expect(html).toContain('incentive calculat acum');
     expect(html).toContain('2 mecanisme în luna selectată');
     expect(html).toContain('Mecanism initial');
     expect(html).toContain('Mecanism actualizat');

@@ -15,6 +15,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
 import {getApiErrorMessage} from '../api/client';
 import { SegmentedTabs } from './common/SegmentedTabs';
+import { TableHeaderCell } from './common/TableHeader';
 
 interface SettingsProps {
   theme: string;
@@ -820,9 +821,7 @@ export function Settings({
                   <thead className="bg-slate-50 dark:bg-slate-800">
                     <tr>
                       {preview.columns.map((column) => (
-                        <th key={column.key} className="whitespace-nowrap px-3 py-2 text-left text-[10px] font-bold uppercase text-slate-500">
-                          {column.label}
-                        </th>
+                        <TableHeaderCell key={column.key} className="whitespace-nowrap">{column.label}</TableHeaderCell>
                       ))}
                     </tr>
                   </thead>

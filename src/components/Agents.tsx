@@ -463,7 +463,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
 
   const churnAnalysis = useMemo(() => {
     const nonBaseline = chartData.filter((p) => !p.is_baseline);
-    const currentPoint = chartData.find((p) => p.month === currentMonth) ?? chartData.at(-1);
+    const currentPoint = chartData.find((p) => p.month === currentMonth) ?? chartData[chartData.length - 1];
     const currentPrevActive = currentPoint && !currentPoint.is_baseline
       ? Math.max(0, currentPoint.active - currentPoint.net_growth)
       : 0;

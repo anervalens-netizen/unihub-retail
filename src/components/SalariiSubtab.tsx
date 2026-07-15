@@ -25,6 +25,7 @@ import { formatMonthSpanLabel } from '../lib/dates';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { cn } from '../lib/utils';
 import { SegmentedTabs } from './common/SegmentedTabs';
+import { TableHeaderCell } from './common/TableHeader';
 
 type SortDir = 'asc' | 'desc';
 interface SortState<K extends string> { key: K; dir: SortDir }
@@ -287,7 +288,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         Media lunară include doar valorile de cel puțin 2.000 RON. Totalurile, istoricul și numărul de agenți rămân complete.
       </p>
       {/* ===== Card 1: Statistici Salarii ===== */}
-      <div className={cn('glass rounded-3xl p-4', salaryView !== 'overview' && 'hidden')}>
+      <div className={cn('glass rounded-3xl p-3 sm:p-4', salaryView !== 'overview' && 'hidden')}>
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">Statistici Salarii</h3>
           {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
@@ -476,7 +477,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       </div>
 
       {/* ===== Card 3: Trend (Evolutie Salarii vs Vanzari) ===== */}
-      <div className={cn('glass rounded-3xl p-4', salaryView !== 'overview' && 'hidden')}>
+      <div className={cn('glass rounded-3xl p-3 sm:p-4', salaryView !== 'overview' && 'hidden')}>
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">Evolutie Salarii vs Vanzari</h3>
           <div className="flex items-center gap-2">
@@ -503,19 +504,8 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
           </div>
         </div>
-        <div className="space-y-2 lg:hidden">
-          {sortedTrend.map((item) => {
-            const ratio = getSalarySalesRatio(item.total_salary, item.total_sales);
-            return (
-              <article key={`${item.month}-mobile`} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                <div className="flex items-center justify-between"><p className="text-sm font-bold">{item.month}</p><span className="rounded-xl bg-slate-100 px-2 py-1 text-sm font-black dark:bg-slate-800">{ratio.toFixed(1)}%</span></div>
-                <div className="mt-3 grid grid-cols-3 gap-2"><div><p className="text-[10px] text-slate-400">Salarii</p><p className="text-xs font-bold">{formatCompactCurrency(item.total_salary)}</p></div><div><p className="text-[10px] text-slate-400">Medie</p><p className="text-xs font-bold">{formatCurrency(item.avg_salary)}</p></div><div><p className="text-[10px] text-slate-400">Vânzări</p><p className="text-xs font-bold">{formatCompactCurrency(item.total_sales)}</p></div></div>
-              </article>
-            );
-          })}
-        </div>
-        <div className="hidden overflow-x-auto lg:block">
-          <table className="w-full min-w-[760px] table-fixed text-sm">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+          <table className="w-full min-w-[620px] table-fixed text-xs sm:text-sm">
             <colgroup>
               <col style={{ width: '15%' }} />
               <col style={{ width: '11%' }} />
@@ -527,7 +517,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-700">
                 <SortableHeader label="Luna" active={trendSort.key === 'month'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'month'))} className="px-2 py-2 text-left text-xs" />
-                <th className="px-2 py-2 text-right text-xs font-bold">Agenți</th>
+                <TableHeaderCell align="right">Agenți</TableHeaderCell>
                 <SortableHeader label="Salarii" active={trendSort.key === 'total_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
                 <SortableHeader label="Medie / agent" title="Salariul mediu per agent în luna respectivă" active={trendSort.key === 'avg_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'avg_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
                 <SortableHeader label="Vânzări" active={trendSort.key === 'total_sales'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_sales'))} className="px-2 py-2 text-right text-xs" align="right" />
@@ -649,14 +639,14 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               <col style={{ width: '15%' }} />
               <col style={{ width: '15%' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-800">
+            <thead className="sticky top-0 z-10 bg-slate-100 text-slate-500 dark:bg-slate-800">
               <tr>
-                <th className="px-4 py-2 text-left">Nume agent</th>
-                <th className="px-2 py-2 text-left">Firmă</th>
-                <th className="px-2 py-2 text-left">Locație curentă</th>
-                <th className="px-2 py-2 text-right">Luni</th>
-                <th className="px-2 py-2 text-right">Medie / lună</th>
-                <th className="px-4 py-2 text-right">Total</th>
+                <TableHeaderCell className="px-4">Nume agent</TableHeaderCell>
+                <TableHeaderCell>Firmă</TableHeaderCell>
+                <TableHeaderCell>Locație curentă</TableHeaderCell>
+                <TableHeaderCell align="right">Luni</TableHeaderCell>
+                <TableHeaderCell align="right">Medie / lună</TableHeaderCell>
+                <TableHeaderCell align="right" className="px-4">Total</TableHeaderCell>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -674,19 +664,19 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                   className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
                   title="Deschide istoricul agentului"
                 >
-                  <td className="px-4 py-3 font-semibold text-slate-800 dark:text-white">{agent.full_name}</td>
-                  <td className={`px-2 py-3 text-xs font-bold ${COMPANY_COLORS[agent.company_name] ?? 'text-slate-500'}`}>
+                  <td className="px-4 py-2 font-semibold text-slate-800 dark:text-white">{agent.full_name}</td>
+                  <td className={`px-2 py-2 text-xs font-bold ${COMPANY_COLORS[agent.company_name] ?? 'text-slate-500'}`}>
                     {agent.company_name}
                   </td>
-                  <td className="px-2 py-3 text-slate-500">{agent.locatie ?? '—'}</td>
-                  <td className="px-2 py-3 text-right tabular-nums text-slate-500">{formatCurrency(agent.month_count)}</td>
+                  <td className="px-2 py-2 text-slate-500">{agent.locatie ?? '—'}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-500">{formatCurrency(agent.month_count)}</td>
                   <td
-                    className="px-2 py-3 text-right font-mono text-slate-600 dark:text-slate-300"
+                    className="px-2 py-2 text-right font-mono text-slate-600 dark:text-slate-300"
                     title={`${agent.avg_month_count} din ${agent.month_count} luni au salariul de cel puțin 2.000 RON`}
                   >
                     {formatCurrency(agent.avg_salary)} RON
                   </td>
-                  <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-800 dark:text-white">
+                  <td className="px-4 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-white">
                     {formatCurrency(agent.total_salary)} RON
                   </td>
                 </tr>

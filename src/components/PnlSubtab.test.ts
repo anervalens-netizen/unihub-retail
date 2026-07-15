@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultPnlRange, pnlStoreOptionValue } from "./PnlSubtab";
+import { defaultPnlRange, monthLabel, pnlStoreOptionValue } from "./PnlSubtab";
 
 describe("defaultPnlRange", () => {
   it("selects the available year-to-date months from the current year", () => {
@@ -26,6 +26,17 @@ describe("defaultPnlRange", () => {
       start: "",
       end: "",
     });
+  });
+});
+
+describe("monthLabel", () => {
+  it("keeps the initial empty range render-safe", () => {
+    expect(monthLabel("")).toBe("—");
+    expect(monthLabel("invalid")).toBe("—");
+  });
+
+  it("formats valid months", () => {
+    expect(monthLabel("2026-07")).not.toBe("—");
   });
 });
 

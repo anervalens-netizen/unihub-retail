@@ -272,7 +272,7 @@ function DesktopTableHeader() {
     <div
       className={cn(
         DESKTOP_ROW,
-        'sticky top-2 z-10 items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-xs font-bold uppercase tracking-[0.06em] text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
+        'sticky top-2 z-10 items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-[0.04em] text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
       )}
     >
       <span>Magazin / structură</span>

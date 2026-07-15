@@ -29,6 +29,7 @@ import {
   type PnlMonthlyPoint,
   type PnlStoreOption,
 } from "../api/storePnl";
+import { TableHeaderCell } from "./common/TableHeader";
 
 const CATEGORY_LABELS: Record<string, string> = {
   v1: "Venituri cartele",
@@ -55,7 +56,8 @@ const compactMoney = new Intl.NumberFormat("ro-RO", {
   maximumFractionDigits: 1,
 });
 
-function monthLabel(value: string): string {
+export function monthLabel(value: string): string {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return "—";
   return new Intl.DateTimeFormat("ro-RO", {
     month: "short",
     year: "2-digit",
@@ -70,12 +72,12 @@ export function defaultPnlRange(
   const currentYear = String(now.getFullYear());
   let selected = available.filter((month) => month.startsWith(`${currentYear}-`));
   if (!selected.length && available.length) {
-    const latestYear = available.at(-1)?.slice(0, 4);
+    const latestYear = available[available.length - 1]?.slice(0, 4);
     selected = available.filter((month) => month.startsWith(`${latestYear}-`));
   }
   return {
     start: selected[0] ?? "",
-    end: selected.at(-1) ?? "",
+    end: selected[selected.length - 1] ?? "",
   };
 }
 
@@ -183,8 +185,8 @@ export function PnlSubtab() {
   const monthlyVariance = useMemo(() => {
     if (!data || data.monthly.length < 2) return null;
     const points = [...data.monthly].sort((left, right) => left.month.localeCompare(right.month));
-    const current = points.at(-1);
-    const previous = points.at(-2);
+    const current = points[points.length - 1];
+    const previous = points[points.length - 2];
     if (!current || !previous) return null;
     const pct = (value: number, base: number) => base === 0 ? null : ((value - base) / Math.abs(base)) * 100;
     return {
@@ -626,14 +628,34 @@ export function PnlSubtab() {
                   className="w-44 rounded-xl border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
                 />
               </div>
-              <div className="max-h-[580px] overflow-auto">
+              <div className="space-y-2 p-3 lg:hidden">
+                {filteredStores.map((store) => (
+                  <article key={`${store.company}-${store.source_site_code}:mobile`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">{store.location}</p>
+                        <p className="truncate text-[11px] text-slate-500">{store.company} · {store.site_code}</p>
+                      </div>
+                      <div className={`shrink-0 text-right text-sm font-black tabular-nums ${store.ebit < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {money.format(store.ebit)}
+                        <p className="text-[10px] font-medium text-slate-400">EBIT</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div><p className="text-[10px] text-slate-400">Venituri</p><p className="font-bold tabular-nums">{money.format(store.revenue)}</p></div>
+                      <div className="text-right"><p className="text-[10px] text-slate-400">EBITDA</p><p className={store.ebitda < 0 ? "font-bold text-rose-600" : "font-bold"}>{money.format(store.ebitda)}</p></div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="hidden max-h-[580px] overflow-auto lg:block">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-500 dark:bg-slate-800">
                     <tr>
-                      <th className="px-3 py-2 text-left">Magazin</th>
-                      <th className="px-3 py-2 text-right">Venituri</th>
-                      <th className="px-3 py-2 text-right">EBITDA</th>
-                      <th className="px-3 py-2 text-right">EBIT</th>
+                      <TableHeaderCell>Magazin</TableHeaderCell>
+                      <TableHeaderCell align="right">Venituri</TableHeaderCell>
+                      <TableHeaderCell align="right">EBITDA</TableHeaderCell>
+                      <TableHeaderCell align="right">EBIT</TableHeaderCell>
                     </tr>
                   </thead>
                   <tbody>

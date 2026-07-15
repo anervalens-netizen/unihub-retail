@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Wallet, TrendingUp } from 'lucide-react';
 import { fetchAsmSalary, type AsmSalaryBreakdown } from '../api/hr';
 import { formatMonthLabel } from '../lib/dates';
+import { TableHeaderCell } from './common/TableHeader';
 
 const TODAY_MONTH = new Date().toISOString().slice(0, 7);
 
@@ -168,12 +169,12 @@ export function AsmSalaryGrila({ asm, defaultMonth }: Props) {
               <table className="w-full text-xs">
                 <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500">
                   <tr>
-                    <th className="text-left font-medium px-2 py-1.5">Locație</th>
-                    <th className="text-left font-medium px-2 py-1.5">Firmă</th>
-                    <th className="text-right font-medium px-2 py-1.5">Target</th>
-                    <th className="text-right font-medium px-2 py-1.5">{isForecast ? 'Vânzări prog.' : 'Vânzări'}</th>
-                    <th className="text-right font-medium px-2 py-1.5">% Target</th>
-                    <th className="text-right font-medium px-2 py-1.5">Comision</th>
+                    <TableHeaderCell>Locație</TableHeaderCell>
+                    <TableHeaderCell>Firmă</TableHeaderCell>
+                    <TableHeaderCell align="right">Target</TableHeaderCell>
+                    <TableHeaderCell align="right">{isForecast ? 'Vânzări prog.' : 'Vânzări'}</TableHeaderCell>
+                    <TableHeaderCell align="right">% Target</TableHeaderCell>
+                    <TableHeaderCell align="right">Comision</TableHeaderCell>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

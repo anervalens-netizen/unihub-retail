@@ -48,6 +48,7 @@ import type {
 } from '../api/types';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { formatCurrency, formatInt, formatPercent } from '../lib/formatters';
+import { SortableTableHeader, TableHeaderCell } from './common/TableHeader';
 import { queryKeys } from '../lib/queryKeys';
 import type { ExportColumn } from '../lib/tableExport';
 import { useSortable, type SortDirection } from '../lib/useSortable';
@@ -1131,6 +1132,9 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
   const [detailsOpen, setDetailsOpen] = useState(false);
   const tiers: IncentiveCategory[] = promoData?.incentive_categories ?? [];
   const periods = promoData?.incentive_periods ?? [];
+  const availableDifference = promoData
+    ? Math.max(0, promoData.incentive_potential - promoData.incentive_value)
+    : null;
 
   return (
     <div className="glass rounded-4xl border border-indigo-100 p-4 dark:border-indigo-900/30">
@@ -1156,11 +1160,17 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-200 py-3 sm:grid-cols-4 dark:border-slate-700">
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_sold_qty) : '-'}</div><div className="text-[11px] text-slate-500">unități vândute</div></div>
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] text-slate-500">unități eligibile după promo</div></div>
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] text-slate-500">unități în magazine calificate</div></div>
-        <div><div className="text-2xl font-black text-indigo-600">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] text-slate-500">incentive calculat acum</div></div>
+        <div><div className="text-2xl font-black text-indigo-600 dark:text-indigo-300">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">realizat acum</div></div>
+        <div><div className="text-2xl font-black text-emerald-600 dark:text-emerald-300">{promoData ? formatCurrency(promoData.incentive_potential) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">potențial calculat</div></div>
+        <div><div className="text-2xl font-black text-amber-600 dark:text-amber-300">{availableDifference === null ? '-' : formatCurrency(availableDifference)}</div><div className="text-[11px] font-semibold text-slate-500">diferență disponibilă</div></div>
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități în magazine calificate</div></div>
       </div>
+
+      {promoData && (
+        <p className="mt-2 text-xs leading-relaxed text-slate-500">
+          Din {formatInt(promoData.incentive_sold_qty)} unități vândute, {formatInt(promoData.incentive_qty)} rămân eligibile după excluderea promoțiilor.
+        </p>
+      )}
 
       {periods.length > 0 && (
         <div className="mt-3">
@@ -1467,14 +1477,13 @@ function ContestView({ contest }: { contest: ContestResponse }) {
               <thead>
                 <tr>
                   {['#', 'Agent', 'Focus', 'Promo', '>150', 'Total', 'Premiu'].map((label, index) => (
-                    <th
+                    <TableHeaderCell
                       key={label}
-                      className={`sticky top-0 z-10 bg-indigo-50/80 px-2 py-2 text-[9px] font-bold uppercase tracking-wide text-slate-500 backdrop-blur-sm dark:bg-indigo-950/60 ${
-                        index >= 2 && index <= 5 ? 'text-right' : 'text-left'
-                      }`}
+                      align={index >= 2 && index <= 5 ? 'right' : 'left'}
+                      className="sticky top-0 z-10 bg-indigo-50/90 backdrop-blur-sm dark:bg-indigo-950/70"
                     >
                       {label}
-                    </th>
+                    </TableHeaderCell>
                   ))}
                 </tr>
               </thead>
@@ -1650,7 +1659,7 @@ function SortableTable<T extends Record<string, unknown>>({
 
   return (
     <div>
-      <div className="mb-2 flex justify-end">
+      <div className="mb-1 flex justify-end">
         <ExportTableButton<T>
           filename={exportFilename}
           sheetName={exportSheetName}
@@ -1676,20 +1685,25 @@ function SortableTable<T extends Record<string, unknown>>({
         <thead>
           <tr>
             {columns.map((col) => (
-              <th
-                key={String(col.key)}
-                onClick={() => handleSort(col.key)}
-                className={`sticky top-0 z-10 bg-indigo-50/80 px-2 py-2 text-[9px] font-bold uppercase tracking-wide text-slate-500 backdrop-blur-sm dark:bg-indigo-950/60 ${
-                  col.align === 'right' ? 'text-right' : 'text-left'
-                } ${col.sortable !== false && col.key !== 'rank' ? 'cursor-pointer select-none hover:text-indigo-600' : ''}`}
-              >
-                {col.label}
-                {col.sortable !== false && col.key !== 'rank' && (
-                  <span className="ml-1 inline-block w-2 text-center">
-                    {sortKey === col.key ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
-                  </span>
-                )}
-              </th>
+              col.sortable !== false && col.key !== 'rank' ? (
+                <SortableTableHeader
+                  key={String(col.key)}
+                  label={col.label}
+                  active={sortKey === col.key}
+                  direction={sortDir}
+                  onClick={() => handleSort(col.key)}
+                  align={col.align ?? 'left'}
+                  className="sticky top-0 z-10 bg-indigo-50/90 backdrop-blur-sm dark:bg-indigo-950/70"
+                />
+              ) : (
+                <TableHeaderCell
+                  key={String(col.key)}
+                  align={col.align ?? 'left'}
+                  className="sticky top-0 z-10 bg-indigo-50/90 backdrop-blur-sm dark:bg-indigo-950/70"
+                >
+                  {col.label}
+                </TableHeaderCell>
+              )
             ))}
           </tr>
         </thead>

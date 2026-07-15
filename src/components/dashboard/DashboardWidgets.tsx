@@ -1,10 +1,11 @@
 import React from 'react';
-import { AlertCircle, ArrowUpDown, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import type { AgentStat, AsmStat, PeriodComparisonPoint, RegionalStat, StoreStat } from '../../api/types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../../lib/filterValues';
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
 import type { AppFilters } from '../MainLayout';
+import { SortableTableHeader } from '../common/TableHeader';
 
 type SortDirection = 'asc' | 'desc';
 type StoreSortKey =
@@ -426,23 +427,16 @@ export function SortableHeader({
   title?: string;
   align?: 'left' | 'right';
 }) {
-  const hasCustomSpacing = /\b[pxy]-/.test(className);
-  const alignmentClass = align === 'right'
-    ? 'justify-end text-right'
-    : 'justify-start text-left';
-
   return (
-    <th className={`font-bold ${hasCustomSpacing ? '' : 'px-3 py-3'} ${className}`} title={title}>
-      <button
-        type="button"
-        onClick={onClick}
-        title={title}
-        className={`flex w-full max-w-full items-center gap-0.5 leading-[1.05] transition hover:text-slate-700 dark:hover:text-slate-200 ${alignmentClass}`}
-      >
-        <span className="min-w-0 whitespace-normal break-words">{label}</span>
-        {active ? direction === 'asc' ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" /> : <ArrowUpDown size={11} className="shrink-0" />}
-      </button>
-    </th>
+    <SortableTableHeader
+      label={label}
+      active={active}
+      direction={direction}
+      onClick={onClick}
+      className={className}
+      title={title}
+      align={align}
+    />
   );
 }
 

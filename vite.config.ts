@@ -1,13 +1,16 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import {loadEnv} from 'vite';
 import {defineConfig} from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 
 import {PWA_NAVIGATION_DENYLIST} from './src/lib/pwaNavigation';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
   const backendTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000';
+  const frontendErrorDsn = env.VITE_GLITCHTIP_DSN || env.SENTRY_DSN || '';
   const manualChunks = (id: string) => {
     if (!id.includes('node_modules')) {
       return undefined;
@@ -82,6 +85,9 @@ export default defineConfig(() => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    define: {
+      'import.meta.env.VITE_GLITCHTIP_DSN': JSON.stringify(frontendErrorDsn),
     },
     build: {
       modulePreload: {
