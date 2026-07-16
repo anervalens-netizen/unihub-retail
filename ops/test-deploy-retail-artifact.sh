@@ -333,4 +333,90 @@ grep -q '^state=rejected$' "$REJECTED_APPROVAL"
 grep -q '^rejected_at_epoch=4000$' "$REJECTED_APPROVAL"
 grep -q '^rejection_reason=not_currently_valid_at_claim$' "$REJECTED_APPROVAL"
 
+mkdir -p "$BUILDER/backend/db/migrations"
+printf '%s\n' \
+  '{' \
+  '  "version": 1,' \
+  '  "baseline": {' \
+  '    "file": "schema_v2.sql",' \
+  '    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",' \
+  '    "incorporated_through": "001_test.sql"' \
+  '  },' \
+  '  "migrations": {' \
+  '    "001_test.sql": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' \
+  '  }' \
+  '}' >"$BUILDER/backend/db/migrations/manifest.json"
+git -C "$BUILDER" add backend/db/migrations/manifest.json
+git -C "$BUILDER" commit --quiet -m migrated
+MIGRATED_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
+git -C "$BUILDER" push --quiet origin main
+git -C "$BUILDER" archive --format=tar "$MIGRATED_SHA" >"$ROOT/release-migrated.tar"
+tar -rf "$ROOT/release-migrated.tar" -C "$BUILDER" dist
+gzip -n "$ROOT/release-migrated.tar"
+MIGRATED_ARTIFACT="$ROOT/release-migrated.tar.gz"
+MIGRATED_ARTIFACT_SHA256="$(sha256sum "$MIGRATED_ARTIFACT" | awk '{print $1}')"
+MIGRATED_RUN_ID="$((CI_RUN_ID + 20))"
+approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
+rm -f "$ROOT/.health-failure-consumed"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_FAIL_PHASE=health \
+  bash "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
+  >"$ROOT/migrated-initial-failure.log" 2>&1
+MIGRATED_INITIAL_RC=$?
+set -e
+[[ "$MIGRATED_INITIAL_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
+MIGRATED_HANDLE="$(
+  for manifest in "$OPS/backups/retail-deploy"/*/release.env; do
+    if grep -q "^NEW_SHA=$MIGRATED_SHA$" "$manifest" && grep -q '^STATE=recovery_required$' "$manifest"; then
+      dirname "$manifest"
+    fi
+  done
+)"
+[[ -n "$MIGRATED_HANDLE" ]]
+grep -q 'requires a fresh one-time approval for forward recovery' "$ROOT/migrated-initial-failure.log"
+
+printf 'main advanced after failed deploy\n' >"$BUILDER/docs/after-failed-deploy.txt"
+git -C "$BUILDER" add docs/after-failed-deploy.txt
+git -C "$BUILDER" commit --quiet -m advanced-after-failure
+ADVANCED_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
+git -C "$BUILDER" push --quiet origin main
+[[ "$ADVANCED_SHA" != "$MIGRATED_SHA" ]]
+
+approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
+rm -f "$ROOT/.health-failure-consumed"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_FAIL_PHASE=health \
+  bash "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
+  >"$ROOT/migrated-recovery-failure.log" 2>&1
+MIGRATED_RECOVERY_RC=$?
+set -e
+[[ "$MIGRATED_RECOVERY_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
+grep -q '^STATE=recovery_required$' "$MIGRATED_HANDLE/release.env"
+[[ "$(find "$MIGRATED_HANDLE" -maxdepth 1 -type f -name 'approval.failed.*.env' | wc -l)" -eq 1 ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${MIGRATED_RUN_ID}-${MIGRATED_SHA}-${MIGRATED_ARTIFACT_SHA256}-*.failed" | wc -l)" -eq 2 ]]
+grep -q 'release remains recovery_required and requires a fresh one-time approval' "$ROOT/migrated-recovery-failure.log"
+
+approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
+run_deploy "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256"
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
+grep -q '^STATE=deployed$' "$MIGRATED_HANDLE/release.env"
+[[ "$(find "$MIGRATED_HANDLE" -maxdepth 1 -type f -name 'approval.failed.*.env' | wc -l)" -eq 2 ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${MIGRATED_RUN_ID}-${MIGRATED_SHA}-${MIGRATED_ARTIFACT_SHA256}-*.consumed" | wc -l)" -eq 1 ]]
+
+set +e
+run_deploy rollback "$MIGRATED_HANDLE" >"$ROOT/incompatible-rollback.log" 2>&1
+INCOMPATIBLE_ROLLBACK_RC=$?
+set -e
+[[ "$INCOMPATIBLE_ROLLBACK_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
+[[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]
+grep -q '^STATE=deployed$' "$MIGRATED_HANDLE/release.env"
+grep -q 'rollback target has a different migration manifest' "$ROOT/incompatible-rollback.log"
+
 printf 'deploy and rollback sandbox tests: PASS\n'

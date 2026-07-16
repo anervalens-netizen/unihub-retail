@@ -203,6 +203,75 @@ fetch_and_verify_commit() {
   git_service merge-base --is-ancestor "$current_sha" "$expected_sha" || die "deployment is not a fast-forward"
 }
 
+assert_rollback_migration_compatible() {
+  local current_sha="$1"
+  local target_sha="$2"
+  local work_dir current_manifest target_manifest current_present=0 target_present=0
+
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-rollback-manifest.XXXXXX")"
+  current_manifest="$work_dir/current.json"
+  target_manifest="$work_dir/target.json"
+  if git_service show "$current_sha:backend/db/migrations/manifest.json" \
+    >"$current_manifest" 2>/dev/null; then
+    current_present=1
+  fi
+  if git_service show "$target_sha:backend/db/migrations/manifest.json" \
+    >"$target_manifest" 2>/dev/null; then
+    target_present=1
+  fi
+
+  if [[ "$current_present" == "0" && "$target_present" == "0" ]]; then
+    rm -rf -- "$work_dir"
+    return 0
+  fi
+  if [[ "$current_present" != "1" || "$target_present" != "1" ]]; then
+    rm -rf -- "$work_dir"
+    die "rollback target has a different migration manifest; use a schema-compatible target or reviewed roll-forward"
+  fi
+
+  if ! python3 - "$current_manifest" "$target_manifest" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def load(path: str) -> dict[str, object]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    baseline = payload.get("baseline")
+    migrations = payload.get("migrations")
+    if (
+        payload.get("version") != 1
+        or not isinstance(baseline, dict)
+        or not isinstance(migrations, dict)
+        or not migrations
+        or any(
+            not isinstance(name, str)
+            or not isinstance(checksum, str)
+            or re.fullmatch(r"[0-9a-f]{64}", checksum) is None
+            for name, checksum in migrations.items()
+        )
+    ):
+        raise ValueError("invalid migration manifest")
+    return payload
+
+
+try:
+    current = load(sys.argv[1])
+    target = load(sys.argv[2])
+except (OSError, ValueError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"invalid rollback migration manifest: {exc}") from exc
+
+if current != target:
+    raise SystemExit("rollback migration manifest differs from the deployed release")
+PY
+  then
+    rm -rf -- "$work_dir"
+    die "rollback target has a different migration manifest; use a schema-compatible target or reviewed roll-forward"
+  fi
+  rm -rf -- "$work_dir"
+}
+
 copy_and_verify_artifact() {
   local source_archive="$1"
   local expected_sha="$2"
@@ -415,6 +484,128 @@ verify_completed_deploy_record() {
   [[ "$active_records" -eq 1 ]] || die "exactly one deployed audit record is required for reverification"
 }
 
+find_retryable_forward_handle() {
+  local ci_run_id="$1"
+  local source_sha="$2"
+  local artifact_sha256="$3"
+  local prefix="${ci_run_id}-${source_sha}-${artifact_sha256}"
+
+  shopt -s nullglob
+  local -a matches=("$APPROVAL_ROOT/${prefix}-"*.failed)
+  shopt -u nullglob
+  [[ "${#matches[@]}" -ge 1 ]] || return 1
+
+  local record approval_id backup_handle canonical_handle release_manifest approval_link
+  declare -A retryable_handles=()
+  for record in "${matches[@]}"; do
+    [[ -f "$record" && ! -L "$record" ]] || die "failed approval record is invalid"
+    if [[ "$TEST_MODE" != "1" ]]; then
+      [[ "$(stat -c '%u:%g:%a' "$record")" == "0:0:600" ]] \
+        || die "failed approval record must be root:root mode 0600"
+    fi
+    [[ "$(read_approval_value "$record" state)" == "failed" ]] || die "failed approval state is invalid"
+    [[ "$(read_approval_value "$record" ci_run_id)" == "$ci_run_id" ]] || die "failed approval CI run mismatch"
+    [[ "$(read_approval_value "$record" source_sha)" == "$source_sha" ]] || die "failed approval source SHA mismatch"
+    [[ "$(read_approval_value "$record" artifact_sha256)" == "$artifact_sha256" ]] || die "failed approval artifact mismatch"
+    approval_id="$(read_approval_value "$record" approval_id)"
+    [[ "$approval_id" == "$(basename "${record%.failed}")" ]] || die "failed approval ID mismatch"
+
+    backup_handle="$(read_approval_value "$record" backup_handle)"
+    [[ -d "$backup_handle" && ! -L "$backup_handle" ]] || die "failed deploy backup handle is invalid"
+    canonical_handle="$(realpath -e -- "$backup_handle")"
+    [[ "$(dirname "$canonical_handle")" == "$BACKUP_ROOT" ]] || die "failed deploy backup handle is outside the backup root"
+    [[ "$(basename "$canonical_handle")" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}-to-[0-9a-f]{12}-[0-9a-f]{16}$ ]] \
+      || die "failed deploy backup handle name is invalid"
+    release_manifest="$canonical_handle/release.env"
+    approval_link="$canonical_handle/approval.env"
+    [[ -f "$release_manifest" && -f "$approval_link" ]] || die "failed deploy audit link is missing"
+    [[ "$(read_approval_value "$release_manifest" NEW_SHA)" == "$source_sha" ]] || die "failed deploy manifest SHA mismatch"
+    [[ "$(read_approval_value "$approval_link" ci_run_id)" == "$ci_run_id" ]] || die "failed deploy linked CI run mismatch"
+    [[ "$(read_approval_value "$approval_link" source_sha)" == "$source_sha" ]] || die "failed deploy linked SHA mismatch"
+    [[ "$(read_approval_value "$approval_link" artifact_sha256)" == "$artifact_sha256" ]] || die "failed deploy linked artifact mismatch"
+    if [[ "$(read_approval_value "$release_manifest" STATE)" == "recovery_required" \
+      && "$(read_approval_value "$approval_link" approval_id)" == "$approval_id" ]]; then
+      retryable_handles["$canonical_handle"]=1
+    fi
+  done
+
+  [[ "${#retryable_handles[@]}" -ne 0 ]] || return 1
+  [[ "${#retryable_handles[@]}" -eq 1 ]] || die "exactly one recovery-required deploy record is required"
+  printf '%s\n' "${!retryable_handles[@]}"
+}
+
+recover_forward_release() {
+  local source_archive="$1"
+  local expected_sha="$2"
+  local ci_run_id="$3"
+  local expected_artifact_sha256="$4"
+  local backup_dir="$5"
+  local manifest="$backup_dir/release.env"
+  local old_sha state work_dir artifact_tree next_dist failed_dist prior_link prior_approval_id
+
+  old_sha="$(read_manifest_value "$manifest" OLD_SHA)"
+  state="$(read_manifest_value "$manifest" STATE)"
+  validate_sha "$old_sha"
+  [[ "$(read_manifest_value "$manifest" NEW_SHA)" == "$expected_sha" ]] || die "recovery manifest SHA mismatch"
+  [[ "$state" == "recovery_required" ]] || die "deploy record is not recovery-required"
+
+  local approval_claimed=0
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-forward-recovery.XXXXXX")"
+  on_recovery_error() {
+    local rc=$?
+    trap - EXIT ERR
+    start_runtime || true
+    log "forward recovery failed; release remains recovery_required and requires a fresh one-time approval"
+    if [[ "$approval_claimed" == "1" && -n "$APPROVAL_CLAIM" ]]; then
+      finalize_approval failed "$backup_dir" || true
+    fi
+    rm -rf -- "$work_dir"
+    exit "$rc"
+  }
+  trap on_recovery_error ERR
+  trap on_recovery_error EXIT
+
+  approval_claimed=1
+  claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
+  artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+  next_dist="$backup_dir/dist.recovery.next"
+  rm -rf -- "$next_dist"
+  mkdir -p "$next_dist"
+  cp -a "$artifact_tree/dist/." "$next_dist/"
+  set_service_ownership "$next_dist"
+  [[ -f "$next_dist/index.html" && ! -L "$next_dist/index.html" && -s "$next_dist/index.html" ]] \
+    || die "recovery frontend is invalid"
+
+  prior_link="$backup_dir/approval.env"
+  prior_approval_id="$(read_approval_value "$prior_link" approval_id)"
+  [[ ! -e "$backup_dir/approval.failed.${prior_approval_id}.env" ]] || die "archived failed approval link already exists"
+  mv -- "$prior_link" "$backup_dir/approval.failed.${prior_approval_id}.env"
+  write_approval_link "$backup_dir" "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
+
+  stop_runtime
+  if ! diff -qr -- "$LIVE_ROOT/dist" "$next_dist" >/dev/null; then
+    failed_dist="$backup_dir/dist.recovery.failed.$(date -u +%Y%m%dT%H%M%SZ)"
+    mv -- "$LIVE_ROOT/dist" "$failed_dist"
+    mv -- "$next_dist" "$LIVE_ROOT/dist"
+    set_service_ownership "$LIVE_ROOT/dist"
+  else
+    rm -rf -- "$next_dist"
+  fi
+  run_migrations
+  start_runtime
+  verify_local_health
+  verify_public_release
+  [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "recovered Git SHA mismatch"
+
+  write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"
+  finalize_approval consumed "$backup_dir"
+  approval_claimed=0
+  trap - EXIT ERR
+  rm -rf -- "$work_dir"
+  log "recovery deployment verified with a fresh one-time approval: $expected_sha"
+  log "rollback handle: $backup_dir"
+}
+
 run_verified_backup() {
   local started_at="$1"
   if [[ "$TEST_MODE" == "1" ]]; then
@@ -585,6 +776,13 @@ rollback_from_backup() {
   local backup_dir="$1"
   local expected_current_sha="$2"
   local old_sha="$3"
+  local migrations_may_have_applied="${4:-1}"
+
+  [[ "$migrations_may_have_applied" == "0" || "$migrations_may_have_applied" == "1" ]] \
+    || die "invalid rollback migration boundary state"
+  if [[ "$migrations_may_have_applied" == "1" ]]; then
+    assert_rollback_migration_compatible "$expected_current_sha" "$old_sha"
+  fi
 
   log "rolling back code from $expected_current_sha to $old_sha"
   stop_runtime || true
@@ -606,10 +804,23 @@ deploy_release() {
   validate_sha256 "$expected_artifact_sha256"
   assert_live_checkout
   assert_worktree_safe
-  fetch_and_verify_commit "$expected_sha"
 
   local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce
   old_sha="$(git_service rev-parse HEAD)"
+  if [[ "$old_sha" == "$expected_sha" ]]; then
+    local recovery_handle=""
+    if recovery_handle="$(find_retryable_forward_handle "$ci_run_id" "$expected_sha" "$expected_artifact_sha256")"; then
+      git_service fetch --quiet --prune origin main
+      git_service merge-base --is-ancestor "$expected_sha" origin/main \
+        || die "recovery SHA is no longer an ancestor of current origin/main"
+      recover_forward_release \
+        "$source_archive" "$expected_sha" "$ci_run_id" \
+        "$expected_artifact_sha256" "$recovery_handle"
+      return 0
+    fi
+  fi
+
+  fetch_and_verify_commit "$expected_sha"
   if [[ "$old_sha" == "$expected_sha" ]]; then
     verify_completed_deploy_record "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-reverify.XXXXXX")"
@@ -633,13 +844,19 @@ deploy_release() {
   local runtime_touched=0
   local rollback_needed=0
   local approval_claimed=0
+  local migrations_may_have_applied=0
   on_deploy_error() {
     local rc=$?
     trap - EXIT ERR
     if [[ "$rollback_needed" == "1" ]]; then
       log "deployment failed after switch; starting automatic rollback"
-      if ! (rollback_from_backup "$backup_dir" "$expected_sha" "$old_sha"); then
+      if ! (rollback_from_backup "$backup_dir" "$expected_sha" "$old_sha" "$migrations_may_have_applied"); then
         log "ERROR: automatic rollback did not restore healthy runtime" >&2
+        if [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]]; then
+          write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "recovery_required"
+          start_runtime || true
+          log "deployment remains on the expected SHA and requires a fresh one-time approval for forward recovery"
+        fi
       fi
     else
       if [[ "$runtime_touched" == "1" ]]; then
@@ -679,6 +896,7 @@ deploy_release() {
   switch_dist "$next_dist" "$backup_dir"
   git_service merge --ff-only "$expected_sha"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "switched"
+  migrations_may_have_applied=1
   run_migrations
   start_runtime
   verify_local_health
@@ -714,7 +932,7 @@ manual_rollback() {
   assert_live_checkout
   [[ "$(git_service rev-parse HEAD)" == "$new_sha" ]] || die "current SHA does not match rollback manifest"
   assert_worktree_safe
-  rollback_from_backup "$backup_dir" "$new_sha" "$old_sha"
+  rollback_from_backup "$backup_dir" "$new_sha" "$old_sha" 1
 }
 
 validate_release() {
