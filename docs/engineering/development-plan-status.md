@@ -110,11 +110,12 @@ Playwright/accessibility, then produced the verified artifact for
 `6dafc72899dcf9e500e675d68973aec21e495880`.
 
 This is not yet a released/deployed claim. Before tagging `v2.0.1`, the exact
-final documentation merge SHA must pass CI, receive enforced environment approval,
+final documentation merge SHA must pass CI, receive enforced production approval,
 run migrations and deploy from the verified artifact, pass local/public acceptance
-and demonstrate rollback. The deploy workflow intentionally cannot start while
-required environment reviewers are unavailable; manual deployment is not a valid
-substitute.
+and demonstrate rollback. Because GitHub required reviewers are unavailable for
+this private repository, the equivalent gate is a root-only, interactive,
+one-time host approval bound to CI run/SHA/artifact hash. Manual deployment is
+not a valid substitute.
 
 ## Release versioning
 

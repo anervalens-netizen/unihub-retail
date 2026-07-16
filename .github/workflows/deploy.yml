@@ -64,13 +64,33 @@ jobs:
           test "$(tr -d '\n' < SOURCE_SHA)" = "$EXPECTED_SHA"
           test -f "retail-release-${EXPECTED_SHA}.tar.gz"
 
+      - name: Verify public proxy hardening gate
+        run: |
+          set -euo pipefail
+          for path in /metrics /docs /redoc /openapi.json; do
+            status="$(curl --silent --show-error --output /dev/null \
+              --write-out '%{http_code}' --max-time 10 \
+              "https://retail.unihub.ro${path}")"
+            if [[ "$status" != "404" ]]; then
+              echo "::error::Public route ${path} returned ${status}, expected 404; deploy is blocked."
+              exit 1
+            fi
+          done
+
       - name: Deploy through root-owned entrypoint
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
           test -x /opt/Mobiup/ops/scripts/deploy-retail-artifact.sh
+          cd verified-release
+          artifact="retail-release-${EXPECTED_SHA}.tar.gz"
+          artifact_sha256="$(awk -v file="$artifact" '$2 == file {print $1}' SHA256SUMS)"
+          [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]]
           sudo --non-interactive \
             /opt/Mobiup/ops/scripts/deploy-retail-artifact.sh \
-            "$PWD/verified-release/retail-release-${EXPECTED_SHA}.tar.gz" \
-            "$EXPECTED_SHA"
+            "$PWD/$artifact" \
+            "$EXPECTED_SHA" \
+            "$CI_RUN_ID" \
+            "$artifact_sha256"

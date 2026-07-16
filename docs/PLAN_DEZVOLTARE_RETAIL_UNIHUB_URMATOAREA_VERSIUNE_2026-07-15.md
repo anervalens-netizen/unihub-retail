@@ -268,8 +268,12 @@ Nu există niciun path în care `reset` rulează doar pentru că un fișier exis
 **Stare:** calea de pull request este închisă în PR #95. Toate check-urile rulează
 GitHub-hosted, pachetele `@unihub/*` sunt vendored cu integritate verificată, iar
 testul controlat blochează accesul la producție, Tailscale și peer-ul TimesFM.
-Separarea deployului există în workflow, dar environment approval nu poate fi
-impus pe planul privat curent; deployul rămâne intenționat blocat.
+Separarea deployului există în workflow. Deoarece required reviewers GitHub nu
+sunt disponibili pentru repository-ul privat pe planul curent, approval-ul este
+host-enforced: root-only, interactiv, one-time, valabil 30 de minute și legat de
+CI run ID, SHA-ul exact din `main` și SHA-256-ul artefactului. Runnerul și
+variabila de activare rămân fail-closed până la merge, instalare și verificarea
+sudo policy-ului exact.
 
 ### Acțiuni imediate
 
@@ -277,7 +281,8 @@ impus pe planul privat curent; deployul rămâne intenționat blocat.
 - mută PR checks pe GitHub-hosted sau runner efemer;
 - verifică și rotește toate secretele/credencialele accesibile vechiului runner;
 - verifică Docker socket, mount-uri, SSH keys și rețeaua internă;
-- separă deploymentul într-un GitHub Environment cu aprobare;
+- separă deploymentul pe runnerul dedicat și impune approval-ul host-side
+  one-time pentru run/SHA/hash înainte de entrypoint;
 - pin-uiește actions și imaginile la SHA/digest.
 
 ### Topologie țintă
