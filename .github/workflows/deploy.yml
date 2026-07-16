@@ -71,13 +71,10 @@ jobs:
             status="$(curl --silent --show-error --output /dev/null \
               --write-out '%{http_code}' --max-time 10 \
               "https://retail.unihub.ro${path}")"
-            case "$status" in
-              401|403|404) ;;
-              *)
-                echo "::error::Public route ${path} returned ${status}; deploy is blocked."
-                exit 1
-                ;;
-            esac
+            if [[ "$status" != "404" ]]; then
+              echo "::error::Public route ${path} returned ${status}, expected 404; deploy is blocked."
+              exit 1
+            fi
           done
 
       - name: Deploy through root-owned entrypoint

@@ -299,7 +299,17 @@ claim_approval() {
     || die "approval timestamps are invalid"
   [[ "$state" == "approved" ]] || die "approval is not active"
   [[ "$approved_at" -le "$now" && "$now" -lt "$expires_at" ]] || {
-    mv -- "$APPROVAL_CLAIM" "${APPROVAL_CLAIM%.claimed.*}.rejected"
+    local rejected_file="${APPROVAL_CLAIM%.claimed.*}.rejected"
+    local rejected_tmp="${APPROVAL_CLAIM}.rejecting"
+    {
+      sed '/^state=/d' "$APPROVAL_CLAIM"
+      printf 'state=rejected\n'
+      printf 'rejected_at_epoch=%s\n' "$now"
+      printf 'rejection_reason=not_currently_valid_at_claim\n'
+    } >"$rejected_tmp"
+    chmod 0600 "$rejected_tmp"
+    mv -- "$rejected_tmp" "$rejected_file"
+    rm -f -- "$APPROVAL_CLAIM"
     APPROVAL_CLAIM=""
     die "approval is not currently valid"
   }
@@ -555,10 +565,7 @@ verify_public_release() {
       status="$(curl --silent --show-error --output /dev/null \
         --write-out '%{http_code}' --max-time 10 \
         "https://retail.unihub.ro${path}")" || return 1
-      case "$status" in
-        401|403|404) ;;
-        *) return 1 ;;
-      esac
+      [[ "$status" == "404" ]] || return 1
     done
   }
 

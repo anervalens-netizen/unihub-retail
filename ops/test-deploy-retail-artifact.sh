@@ -328,5 +328,9 @@ set -e
 [[ "$EXPIRED_APPROVAL_RC" -ne 0 ]]
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.rejected' | wc -l)" -eq 1 ]]
+REJECTED_APPROVAL="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.rejected' -print -quit)"
+grep -q '^state=rejected$' "$REJECTED_APPROVAL"
+grep -q '^rejected_at_epoch=4000$' "$REJECTED_APPROVAL"
+grep -q '^rejection_reason=not_currently_valid_at_claim$' "$REJECTED_APPROVAL"
 
 printf 'deploy and rollback sandbox tests: PASS\n'
