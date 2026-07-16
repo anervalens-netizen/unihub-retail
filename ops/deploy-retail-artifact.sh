@@ -442,7 +442,10 @@ read_manifest_value() {
 
 prepare_tested_dist() {
   local artifact_tree="$1"
-  local next_dist="$LIVE_ROOT/.dist.deploy.$$"
+  local backup_dir="$2"
+  local next_dist="$backup_dir/dist.next"
+  [[ "$(stat -c %d "$backup_dir")" == "$(stat -c %d "$LIVE_ROOT")" ]] \
+    || die "frontend staging and live checkout must share a filesystem"
   rm -rf -- "$next_dist"
   mkdir -p "$next_dist"
   cp -a "$artifact_tree/dist/." "$next_dist/"
@@ -609,7 +612,7 @@ deploy_release() {
   backup_started="$(date +%s)"
   run_verified_backup "$backup_started"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "backed_up"
-  next_dist="$(prepare_tested_dist "$artifact_tree")"
+  next_dist="$(prepare_tested_dist "$artifact_tree" "$backup_dir")"
   backup_current_dist "$backup_dir"
   rollback_needed=1
 
