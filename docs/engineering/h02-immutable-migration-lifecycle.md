@@ -68,3 +68,8 @@ an older manifest fail-closed, without downtime. Use a reviewed forward
 correction whenever possible. A destructive database rollback requires
 restoring the verified pre-release backup and coordinating all consumers of the
 Retail database plus any writes made after that backup.
+
+When the new manifest may already be applied and rollback is incompatible, the
+deploy audit state is `recovery_required`. The same verified artifact may be
+recovered only with a fresh exact one-time approval; the migration runner is
+idempotent and both failed and successful approval links remain in the handle.

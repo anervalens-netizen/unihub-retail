@@ -53,3 +53,9 @@ with missing, added or changed migrations is refused without touching the live
 checkout or frontend. Recover such a release by reviewed roll-forward; restore
 the database backup only in a coordinated maintenance operation that also
 accounts for every consumer and any writes after the backup.
+
+If a post-migration health check fails and the prior manifest is incompatible,
+the audit handle becomes `recovery_required` while the failed approval remains
+immutable. A retry needs a fresh one-time approval for the same CI run, source
+SHA and artifact digest; it reruns migrations idempotently, verifies health and
+archives the first approval link before recording the recovery as deployed.

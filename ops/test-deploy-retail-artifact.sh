@@ -357,15 +357,33 @@ MIGRATED_ARTIFACT="$ROOT/release-migrated.tar.gz"
 MIGRATED_ARTIFACT_SHA256="$(sha256sum "$MIGRATED_ARTIFACT" | awk '{print $1}')"
 MIGRATED_RUN_ID="$((CI_RUN_ID + 20))"
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
-run_deploy "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_FAIL_PHASE=health \
+  bash "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
+  >"$ROOT/migrated-initial-failure.log" 2>&1
+MIGRATED_INITIAL_RC=$?
+set -e
+[[ "$MIGRATED_INITIAL_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
 MIGRATED_HANDLE="$(
   for manifest in "$OPS/backups/retail-deploy"/*/release.env; do
-    if grep -q "^NEW_SHA=$MIGRATED_SHA$" "$manifest" && grep -q '^STATE=deployed$' "$manifest"; then
+    if grep -q "^NEW_SHA=$MIGRATED_SHA$" "$manifest" && grep -q '^STATE=recovery_required$' "$manifest"; then
       dirname "$manifest"
     fi
   done
 )"
 [[ -n "$MIGRATED_HANDLE" ]]
+grep -q 'requires a fresh one-time approval for forward recovery' "$ROOT/migrated-initial-failure.log"
+
+approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
+run_deploy "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256"
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
+grep -q '^STATE=deployed$' "$MIGRATED_HANDLE/release.env"
+[[ "$(find "$MIGRATED_HANDLE" -maxdepth 1 -type f -name 'approval.failed.*.env' | wc -l)" -eq 1 ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${MIGRATED_RUN_ID}-${MIGRATED_SHA}-${MIGRATED_ARTIFACT_SHA256}-*.consumed" | wc -l)" -eq 1 ]]
+
 set +e
 run_deploy rollback "$MIGRATED_HANDLE" >"$ROOT/incompatible-rollback.log" 2>&1
 INCOMPATIBLE_ROLLBACK_RC=$?
