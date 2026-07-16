@@ -256,6 +256,20 @@ SYMLINK_RC=$?
 set -e
 [[ "$SYMLINK_RC" -ne 0 ]]
 
+mkdir -p "$ROOT/directory-index"
+tar -xzf "$ARTIFACT" -C "$ROOT/directory-index"
+rm "$ROOT/directory-index/dist/index.html"
+mkdir "$ROOT/directory-index/dist/index.html"
+tar -czf "$ROOT/directory-index.tar.gz" -C "$ROOT/directory-index" .
+DIRECTORY_INDEX_SHA256="$(sha256sum "$ROOT/directory-index.tar.gz" | awk '{print $1}')"
+approve_release "$CI_RUN_ID" "$NEW_SHA" "$DIRECTORY_INDEX_SHA256" >/dev/null
+set +e
+run_deploy "$ROOT/directory-index.tar.gz" "$NEW_SHA" "$CI_RUN_ID" "$DIRECTORY_INDEX_SHA256" >/dev/null 2>&1
+DIRECTORY_INDEX_RC=$?
+set -e
+[[ "$DIRECTORY_INDEX_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+
 truncate -s 268435457 "$ROOT/oversize.tar.gz"
 OVERSIZE_APPROVED_SHA256="$(printf 'f%.0s' {1..64})"
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$OVERSIZE_APPROVED_SHA256" >/dev/null

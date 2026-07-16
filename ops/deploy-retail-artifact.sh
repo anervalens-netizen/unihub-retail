@@ -218,7 +218,8 @@ copy_and_verify_artifact() {
   mv -- "$artifact_tree/dist" "$tested_dist"
   diff -qr "$git_tree" "$artifact_tree" >/dev/null || die "artifact source differs from the approved Git commit"
   mv -- "$tested_dist" "$artifact_tree/dist"
-  [[ -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
+  [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
+    && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
   printf '%s\n' "$artifact_tree"
 }
 
@@ -446,21 +447,25 @@ prepare_tested_dist() {
   mkdir -p "$next_dist"
   cp -a "$artifact_tree/dist/." "$next_dist/"
   set_service_ownership "$next_dist"
-  [[ -s "$next_dist/index.html" ]] || die "staged frontend is invalid"
+  [[ -f "$next_dist/index.html" && ! -L "$next_dist/index.html" && -s "$next_dist/index.html" ]] \
+    || die "staged frontend is invalid"
   printf '%s\n' "$next_dist"
 }
 
 switch_dist() {
   local next_dist="$1"
   [[ -d "$LIVE_ROOT/dist" ]] || die "current frontend directory is missing"
-  [[ -s "$next_dist/index.html" ]] || die "staged frontend is invalid"
+  [[ -f "$next_dist/index.html" && ! -L "$next_dist/index.html" && -s "$next_dist/index.html" ]] \
+    || die "staged frontend is invalid"
   mv -- "$LIVE_ROOT/dist" "$2/dist.pre-switch"
   mv -- "$next_dist" "$LIVE_ROOT/dist"
 }
 
 backup_current_dist() {
   local backup_dir="$1"
-  [[ -d "$LIVE_ROOT/dist" && -s "$LIVE_ROOT/dist/index.html" ]] || die "current frontend is invalid"
+  [[ -d "$LIVE_ROOT/dist" && -f "$LIVE_ROOT/dist/index.html" \
+    && ! -L "$LIVE_ROOT/dist/index.html" && -s "$LIVE_ROOT/dist/index.html" ]] \
+    || die "current frontend is invalid"
   cp -a -- "$LIVE_ROOT/dist" "$backup_dir/dist"
   diff -qr "$LIVE_ROOT/dist" "$backup_dir/dist" >/dev/null || die "frontend backup verification failed"
 }
@@ -498,7 +503,8 @@ verify_local_health() {
       : >"$TEST_ROOT/.health-failure-consumed"
       return 1
     fi
-    [[ -s "$LIVE_ROOT/dist/index.html" ]]
+    [[ -f "$LIVE_ROOT/dist/index.html" && ! -L "$LIVE_ROOT/dist/index.html" \
+      && -s "$LIVE_ROOT/dist/index.html" ]]
     return
   fi
 
@@ -549,7 +555,8 @@ deploy_release() {
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-reverify.XXXXXX")"
     trap 'rm -rf -- "$work_dir"' RETURN
     artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
-    [[ -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
+    [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
+      && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
     diff -qr -- "$LIVE_ROOT/dist" "$artifact_tree/dist" >/dev/null \
       || die "live frontend differs from the tested release artifact"
     verify_local_health
@@ -661,7 +668,8 @@ validate_release() {
   artifact_sha256="$(sha256sum "$source_archive" | awk '{print $1}')"
   validate_sha256 "$artifact_sha256"
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$artifact_sha256" "$work_dir")"
-  [[ -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
+  [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
+    && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
   log "artifact matches approved source and contains a tested frontend: $expected_sha"
 }
 
