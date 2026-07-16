@@ -378,6 +378,13 @@ MIGRATED_HANDLE="$(
 [[ -n "$MIGRATED_HANDLE" ]]
 grep -q 'requires a fresh one-time approval for forward recovery' "$ROOT/migrated-initial-failure.log"
 
+printf 'main advanced after failed deploy\n' >"$BUILDER/docs/after-failed-deploy.txt"
+git -C "$BUILDER" add docs/after-failed-deploy.txt
+git -C "$BUILDER" commit --quiet -m advanced-after-failure
+ADVANCED_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
+git -C "$BUILDER" push --quiet origin main
+[[ "$ADVANCED_SHA" != "$MIGRATED_SHA" ]]
+
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
 rm -f "$ROOT/.health-failure-consumed"
 set +e

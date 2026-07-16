@@ -804,18 +804,24 @@ deploy_release() {
   validate_sha256 "$expected_artifact_sha256"
   assert_live_checkout
   assert_worktree_safe
-  fetch_and_verify_commit "$expected_sha"
 
   local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce
   old_sha="$(git_service rev-parse HEAD)"
   if [[ "$old_sha" == "$expected_sha" ]]; then
     local recovery_handle=""
     if recovery_handle="$(find_retryable_forward_handle "$ci_run_id" "$expected_sha" "$expected_artifact_sha256")"; then
+      git_service fetch --quiet --prune origin main
+      git_service merge-base --is-ancestor "$expected_sha" origin/main \
+        || die "recovery SHA is no longer an ancestor of current origin/main"
       recover_forward_release \
         "$source_archive" "$expected_sha" "$ci_run_id" \
         "$expected_artifact_sha256" "$recovery_handle"
       return 0
     fi
+  fi
+
+  fetch_and_verify_commit "$expected_sha"
+  if [[ "$old_sha" == "$expected_sha" ]]; then
     verify_completed_deploy_record "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-reverify.XXXXXX")"
     trap 'rm -rf -- "$work_dir"' RETURN
