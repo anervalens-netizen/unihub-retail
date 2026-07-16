@@ -5,7 +5,7 @@ secret JWT local de validat.
 
 Check-uri:
 - DATABASE_URL prezent, format minimal valid
-- VISITS_DB_PATH fișier existent (doar în producție)
+- VISITS_DB_PATH existent cat timp SQLite este primary sau shadow
 """
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ from session_auth import session_config_errors
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_VISITS_DB_PATH = _REPO_ROOT / "data" / "visits" / "visits.db"
 DEFAULT_VISITS_IMAGES_DIR = _REPO_ROOT / "data" / "visits" / "images"
+VISITS_READ_SOURCE_ENV = "RETAIL_VISITS_READ_SOURCE"
+VISITS_SHADOW_COMPARE_ENV = "RETAIL_VISITS_SHADOW_COMPARE_ENABLED"
 
 
 class ConfigError(RuntimeError):
@@ -37,6 +39,20 @@ def get_visits_db_path() -> Path:
 
 def get_visits_images_dir() -> Path:
     return Path(os.getenv("VISITS_IMAGES_DIR", str(DEFAULT_VISITS_IMAGES_DIR))).expanduser()
+
+
+def get_visits_read_source() -> str:
+    value = os.getenv(VISITS_READ_SOURCE_ENV, "sqlite").strip().lower()
+    return value if value in {"sqlite", "postgres"} else "sqlite"
+
+
+def visits_shadow_compare_enabled() -> bool:
+    return os.getenv(VISITS_SHADOW_COMPARE_ENV, "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def validate_required_env_vars() -> None:
@@ -58,8 +74,17 @@ def validate_required_env_vars() -> None:
             "trebuie să înceapă cu postgresql:// sau postgres://"
         )
 
-    # VISITS_DB_PATH — strict doar în producție
-    if _is_production():
+    read_source_raw = os.getenv(VISITS_READ_SOURCE_ENV, "sqlite").strip().lower()
+    if read_source_raw not in {"sqlite", "postgres"}:
+        errors.append(
+            f"{VISITS_READ_SOURCE_ENV} trebuie sa fie sqlite sau postgres"
+        )
+
+    # SQLite is required only while it is primary or an enabled shadow.
+    needs_visits_sqlite = (
+        get_visits_read_source() == "sqlite" or visits_shadow_compare_enabled()
+    )
+    if _is_production() and needs_visits_sqlite:
         visits_path_raw = os.getenv("VISITS_DB_PATH", "").strip()
         if not visits_path_raw:
             errors.append("VISITS_DB_PATH nesetat (obligatoriu în producție)")

@@ -1,7 +1,7 @@
-"""Sync visits aggregates from SQLite into the visits_snapshot PG table.
+"""Sync visit aggregates into the Retail HR projection.
 
-Sursa de adevăr rămâne SQLite. PG-ul e o proiecție cacheată pentru queries
-async native în hr.py, fără run_in_executor per request.
+Sursa este selectata prin flagul de cutover. `visits_snapshot` ramane o
+proiectie cacheata pentru queries async native in hr.py.
 
 Apelat:
   - La boot în lifespan (main.py), după verificarea read-only a migrations
@@ -15,7 +15,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from config import get_visits_db_path
+from config import (
+    get_visits_db_path,
+    get_visits_read_source,
+    visits_shadow_compare_enabled,
+)
+from services.visits_shadow import compare_visit_result, record_visit_shadow_error
 
 logger = logging.getLogger(__name__)
 
@@ -57,44 +62,89 @@ def _read_sqlite_aggregates(sqlite_path: Path) -> list[dict[str, Any]]:
         con.close()
 
 
+async def _read_postgres_aggregates(conn: Any) -> list[dict[str, Any]]:
+    records = await conn.fetch(
+        """
+        SELECT
+            asm,
+            to_char(data_raport, 'YYYY-MM') AS month,
+            COUNT(*)::INT AS total_visits,
+            ROUND(AVG(completion_pct)::NUMERIC, 1)::FLOAT AS avg_completion,
+            ROUND(AVG(durata_vizita_ore)::NUMERIC, 2)::FLOAT AS avg_duration,
+            COUNT(DISTINCT magazin)::INT AS distinct_stores,
+            ROUND(AVG(
+                (curatenie::INT + imagine::INT + uniforma::INT
+                 + afise::INT + produse_promo::INT) * 20.0
+            )::NUMERIC, 1)::FLOAT AS checklist_score,
+            ROUND(
+                COUNT(*) FILTER (WHERE status = 'approved') * 100.0 / COUNT(*),
+                1
+            )::FLOAT AS approved_pct
+        FROM fieldops_visits
+        WHERE asm IS NOT NULL AND asm <> ''
+        GROUP BY asm, to_char(data_raport, 'YYYY-MM')
+        ORDER BY asm, month
+        """
+    )
+    return [dict(record) for record in records]
+
+
+def _sorted_aggregates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(rows, key=lambda row: (row.get("asm") or "", row.get("month") or ""))
+
+
 async def sync_visits_snapshot(
     conn: Any,
     sqlite_path: Path | None = None,
 ) -> int:
-    """Upsert vizite agregate din SQLite în visits_snapshot PG.
+    """Replace `visits_snapshot` from the configured visit authority.
 
     Returns:
         Numărul de rânduri inserate/actualizate.
     """
     path = sqlite_path or get_visits_db_path()
-    loop = asyncio.get_running_loop()
-    rows = await loop.run_in_executor(None, _read_sqlite_aggregates, path)
 
-    if not rows:
-        return 0
+    async def sqlite_reader() -> list[dict[str, Any]]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _read_sqlite_aggregates, path)
+
+    async def postgres_reader() -> list[dict[str, Any]]:
+        return await _read_postgres_aggregates(conn)
+
+    source = get_visits_read_source()
+    primary_reader = postgres_reader if source == "postgres" else sqlite_reader
+    shadow_reader = sqlite_reader if source == "postgres" else postgres_reader
+    rows = _sorted_aggregates(await primary_reader())
+    if visits_shadow_compare_enabled():
+        try:
+            shadow_rows = _sorted_aggregates(await shadow_reader())
+            compare_visit_result("snapshot", rows, shadow_rows)
+        except Exception:
+            record_visit_shadow_error("snapshot")
 
     async with conn.transaction():
         await conn.execute("DELETE FROM visits_snapshot")
-        await conn.executemany(
-            """
-            INSERT INTO visits_snapshot
-                (asm, month, total_visits, avg_completion, avg_duration,
-                 distinct_stores, checklist_score, approved_pct, synced_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
-            """,
-            [
-                (
-                    r["asm"],
-                    r["month"],
-                    int(r["total_visits"] or 0),
-                    r["avg_completion"],
-                    r["avg_duration"],
-                    int(r["distinct_stores"] or 0),
-                    r["checklist_score"],
-                    r["approved_pct"],
-                )
-                for r in rows
-            ],
-        )
+        if rows:
+            await conn.executemany(
+                """
+                INSERT INTO visits_snapshot
+                    (asm, month, total_visits, avg_completion, avg_duration,
+                     distinct_stores, checklist_score, approved_pct, synced_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+                """,
+                [
+                    (
+                        r["asm"],
+                        r["month"],
+                        int(r["total_visits"] or 0),
+                        r["avg_completion"],
+                        r["avg_duration"],
+                        int(r["distinct_stores"] or 0),
+                        r["checklist_score"],
+                        r["approved_pct"],
+                    )
+                    for r in rows
+                ],
+            )
     logger.info("visits_snapshot synced: %d rows", len(rows))
     return len(rows)
