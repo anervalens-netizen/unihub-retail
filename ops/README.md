@@ -45,3 +45,11 @@ interactive login credentials, permission to run the approval creator, or
 permission to invoke manual rollback. Set
 `PRODUCTION_DEPLOY_APPROVALS_ENFORCED=true` only after the root-owned approval
 store, exact sudo policy and dedicated runner are verified.
+
+Manual and post-migration automatic rollback are allowed only when the target
+commit has the exact same immutable migration manifest as the deployed commit.
+The entrypoint performs this check before stopping either service. A target
+with missing, added or changed migrations is refused without touching the live
+checkout or frontend. Recover such a release by reviewed roll-forward; restore
+the database backup only in a coordinated maintenance operation that also
+accounts for every consumer and any writes after the backup.

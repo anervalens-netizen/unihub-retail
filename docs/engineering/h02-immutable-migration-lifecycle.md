@@ -61,6 +61,10 @@ runtime `DATABASE_URL` and never gain migration privileges.
 ## Rollback
 
 Application rollback does not delete migration rows or reverse committed DDL.
-Use a reviewed forward correction whenever possible. A destructive database
-rollback requires restoring the verified pre-release backup and coordinating
-all consumers of the Retail database.
+Before stopping the runtime, the privileged entrypoint requires the rollback
+target and deployed commit to have identical immutable migration manifests.
+This permits code-only rollback across a schema-compatible release and refuses
+an older manifest fail-closed, without downtime. Use a reviewed forward
+correction whenever possible. A destructive database rollback requires
+restoring the verified pre-release backup and coordinating all consumers of the
+Retail database plus any writes made after that backup.

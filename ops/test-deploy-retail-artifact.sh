@@ -333,4 +333,47 @@ grep -q '^state=rejected$' "$REJECTED_APPROVAL"
 grep -q '^rejected_at_epoch=4000$' "$REJECTED_APPROVAL"
 grep -q '^rejection_reason=not_currently_valid_at_claim$' "$REJECTED_APPROVAL"
 
+mkdir -p "$BUILDER/backend/db/migrations"
+printf '%s\n' \
+  '{' \
+  '  "version": 1,' \
+  '  "baseline": {' \
+  '    "file": "schema_v2.sql",' \
+  '    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",' \
+  '    "incorporated_through": "001_test.sql"' \
+  '  },' \
+  '  "migrations": {' \
+  '    "001_test.sql": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' \
+  '  }' \
+  '}' >"$BUILDER/backend/db/migrations/manifest.json"
+git -C "$BUILDER" add backend/db/migrations/manifest.json
+git -C "$BUILDER" commit --quiet -m migrated
+MIGRATED_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
+git -C "$BUILDER" push --quiet origin main
+git -C "$BUILDER" archive --format=tar "$MIGRATED_SHA" >"$ROOT/release-migrated.tar"
+tar -rf "$ROOT/release-migrated.tar" -C "$BUILDER" dist
+gzip -n "$ROOT/release-migrated.tar"
+MIGRATED_ARTIFACT="$ROOT/release-migrated.tar.gz"
+MIGRATED_ARTIFACT_SHA256="$(sha256sum "$MIGRATED_ARTIFACT" | awk '{print $1}')"
+MIGRATED_RUN_ID="$((CI_RUN_ID + 20))"
+approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
+run_deploy "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256"
+MIGRATED_HANDLE="$(
+  for manifest in "$OPS/backups/retail-deploy"/*/release.env; do
+    if grep -q "^NEW_SHA=$MIGRATED_SHA$" "$manifest" && grep -q '^STATE=deployed$' "$manifest"; then
+      dirname "$manifest"
+    fi
+  done
+)"
+[[ -n "$MIGRATED_HANDLE" ]]
+set +e
+run_deploy rollback "$MIGRATED_HANDLE" >"$ROOT/incompatible-rollback.log" 2>&1
+INCOMPATIBLE_ROLLBACK_RC=$?
+set -e
+[[ "$INCOMPATIBLE_ROLLBACK_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
+[[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]
+grep -q '^STATE=deployed$' "$MIGRATED_HANDLE/release.env"
+grep -q 'rollback target has a different migration manifest' "$ROOT/incompatible-rollback.log"
+
 printf 'deploy and rollback sandbox tests: PASS\n'

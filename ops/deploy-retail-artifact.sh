@@ -203,6 +203,75 @@ fetch_and_verify_commit() {
   git_service merge-base --is-ancestor "$current_sha" "$expected_sha" || die "deployment is not a fast-forward"
 }
 
+assert_rollback_migration_compatible() {
+  local current_sha="$1"
+  local target_sha="$2"
+  local work_dir current_manifest target_manifest current_present=0 target_present=0
+
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-rollback-manifest.XXXXXX")"
+  current_manifest="$work_dir/current.json"
+  target_manifest="$work_dir/target.json"
+  if git_service show "$current_sha:backend/db/migrations/manifest.json" \
+    >"$current_manifest" 2>/dev/null; then
+    current_present=1
+  fi
+  if git_service show "$target_sha:backend/db/migrations/manifest.json" \
+    >"$target_manifest" 2>/dev/null; then
+    target_present=1
+  fi
+
+  if [[ "$current_present" == "0" && "$target_present" == "0" ]]; then
+    rm -rf -- "$work_dir"
+    return 0
+  fi
+  if [[ "$current_present" != "1" || "$target_present" != "1" ]]; then
+    rm -rf -- "$work_dir"
+    die "rollback target has a different migration manifest; use a schema-compatible target or reviewed roll-forward"
+  fi
+
+  if ! python3 - "$current_manifest" "$target_manifest" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def load(path: str) -> dict[str, object]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    baseline = payload.get("baseline")
+    migrations = payload.get("migrations")
+    if (
+        payload.get("version") != 1
+        or not isinstance(baseline, dict)
+        or not isinstance(migrations, dict)
+        or not migrations
+        or any(
+            not isinstance(name, str)
+            or not isinstance(checksum, str)
+            or re.fullmatch(r"[0-9a-f]{64}", checksum) is None
+            for name, checksum in migrations.items()
+        )
+    ):
+        raise ValueError("invalid migration manifest")
+    return payload
+
+
+try:
+    current = load(sys.argv[1])
+    target = load(sys.argv[2])
+except (OSError, ValueError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"invalid rollback migration manifest: {exc}") from exc
+
+if current != target:
+    raise SystemExit("rollback migration manifest differs from the deployed release")
+PY
+  then
+    rm -rf -- "$work_dir"
+    die "rollback target has a different migration manifest; use a schema-compatible target or reviewed roll-forward"
+  fi
+  rm -rf -- "$work_dir"
+}
+
 copy_and_verify_artifact() {
   local source_archive="$1"
   local expected_sha="$2"
@@ -585,6 +654,13 @@ rollback_from_backup() {
   local backup_dir="$1"
   local expected_current_sha="$2"
   local old_sha="$3"
+  local migrations_may_have_applied="${4:-1}"
+
+  [[ "$migrations_may_have_applied" == "0" || "$migrations_may_have_applied" == "1" ]] \
+    || die "invalid rollback migration boundary state"
+  if [[ "$migrations_may_have_applied" == "1" ]]; then
+    assert_rollback_migration_compatible "$expected_current_sha" "$old_sha"
+  fi
 
   log "rolling back code from $expected_current_sha to $old_sha"
   stop_runtime || true
@@ -633,12 +709,13 @@ deploy_release() {
   local runtime_touched=0
   local rollback_needed=0
   local approval_claimed=0
+  local migrations_may_have_applied=0
   on_deploy_error() {
     local rc=$?
     trap - EXIT ERR
     if [[ "$rollback_needed" == "1" ]]; then
       log "deployment failed after switch; starting automatic rollback"
-      if ! (rollback_from_backup "$backup_dir" "$expected_sha" "$old_sha"); then
+      if ! (rollback_from_backup "$backup_dir" "$expected_sha" "$old_sha" "$migrations_may_have_applied"); then
         log "ERROR: automatic rollback did not restore healthy runtime" >&2
       fi
     else
@@ -679,6 +756,7 @@ deploy_release() {
   switch_dist "$next_dist" "$backup_dir"
   git_service merge --ff-only "$expected_sha"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "switched"
+  migrations_may_have_applied=1
   run_migrations
   start_runtime
   verify_local_health
@@ -714,7 +792,7 @@ manual_rollback() {
   assert_live_checkout
   [[ "$(git_service rev-parse HEAD)" == "$new_sha" ]] || die "current SHA does not match rollback manifest"
   assert_worktree_safe
-  rollback_from_backup "$backup_dir" "$new_sha" "$old_sha"
+  rollback_from_backup "$backup_dir" "$new_sha" "$old_sha" 1
 }
 
 validate_release() {
