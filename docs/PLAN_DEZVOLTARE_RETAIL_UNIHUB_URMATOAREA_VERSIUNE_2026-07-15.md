@@ -1,21 +1,23 @@
 # PLAN DE DEZVOLTARE — UniHub Retail, următoarea versiune
 
 **Data:** 2026-07-15
-**Bază de cod reconciliată:** `6dafc72899dcf9e500e675d68973aec21e495880`
-**Versiune live înainte de rollout:** `d08add17147d9f24b23642dbb1a0084708ff9307`
+**Bază de cod reconciliată și verificată live:** `964f6da07ad9e4382070866275509f3be2b399a1`
+**Baseline live anterior programului:** `d08add17147d9f24b23642dbb1a0084708ff9307`
 **Scop:** remediere verificabilă, fără big-bang rewrite și fără funcționalități noi înainte de închiderea P0
 
 ## Stare de execuție la reconciliere
 
 | Pachet | Stare | Dovadă / pas rămas |
 |---|---|---|
-| PR-00 / WP0.4 | **Cod PR izolat** | PR #95, merge `a055b85`; runner persistent oprit/eliminat; deployul rămâne fail-closed până există required environment reviewers. |
-| WP0.1 | **Implementat și testat** | PR #96, merge `9b5d17c`, migrarea 026; rollout DB restant. |
-| WP0.2 | **Implementat și testat** | PR #97, merge `96b9a0d`, migrarea 027; rollout DB restant. |
-| WP0.3 | **Implementat și testat** | PR #98, merge `0a984a1`, migrarea 028; rollout DB/worker restant. |
-| WP0.5 + suprafață HTTP/sesiune | **Implementat și testat** | PR #99, merge `05387f9`; Caddy public și rollout restante. |
+| PR-00 / WP0.4 | **Închis și activ** | PR #95, merge `a055b85`; runnerul persistent de producție este oprit/eliminat, PR-urile rulează GitHub-hosted, iar deployul folosește runner dedicat plus approval one-time host-side. |
+| WP0.1 | **Închis și activ** | PR #96, merge `9b5d17c`, migrarea 026 aplicată și reconciliere DB read-only. |
+| WP0.2 | **Închis și activ** | PR #97, merge `96b9a0d`, migrarea 027 aplicată; check-ul și sync-ul au căi separate. |
+| WP0.3 | **Închis și activ** | PR #98, merge `0a984a1`, migrarea 028 aplicată; backendul și workerul sunt sănătoase. |
+| WP0.5 + suprafață HTTP/sesiune | **Închis și activ** | PR #99, merge `05387f9`; rutele publice diagnostice răspund 404, iar health-ul intern este verde. |
 | Dovezi P0 import/runner | **Întărite și testate** | PR #101, merge `6dafc72`; conflictul/duplicatul păstrează snapshotul PostgreSQL existent, iar proba TimesFM respinge orice răspuns HTTP direct. |
-| Documentație/release | **În lucru** | Audit și plan reconciliate în worktree separat; urmează PR, CI final, deploy, rollback, tag și GitHub Release. |
+| Deploy/rollback | **Demonstrat** | PR #102 și #104; CI `29489378316`, deploy `29489754125`, rollback compatibil verificat și redeploy `29489997636`. |
+| Ajustare card Incentive | **Închisă și activă** | PR #103 / `ddc9eed`; cardul afișează cele patru valori business și păstrează cele două mecanisme dedesubt. |
+| Documentație/release | **Ultimul gate** | PR #105 reconciliază auditul, planul, release notes și elimină arhivele/planurile redundante din `HEAD`; urmează CI-ul final, tagul și GitHub Release. |
 
 Cele trei magazine prezente în iunie și absente în iulie au fost verificate
 read-only: toate sunt inactive. Nu se reactivează automat; statutul lor rămâne o
@@ -40,8 +42,8 @@ Adăugarea de funcționalități înainte de P0 mărește suprafața care va tre
 
 ### `v2.0.1` — hotfix de integritate și securitate
 
-Stare: codul hotfix este integrat; release-ul rămâne condiționat de gate-urile
-operaționale și de aprobarea environment.
+Stare: codul hotfix este integrat și verificat live; au rămas publicarea dovezii
+finale, tagul și GitHub Release.
 
 Include obligatoriu:
 
@@ -773,12 +775,16 @@ PR-uri să execute cod:
 4. **PR #98:** finalizare/arhivare/reset salarial fail-closed — integrat `0a984a1`.
 5. **PR #99:** no-store, suprafață HTTP, Target Calculator atomic și session refresh — integrat `05387f9`.
 6. **PR #101:** dovezi PostgreSQL import și proba directă de izolare TimesFM — integrat `6dafc72`.
-7. **PR documentație/release:** audit, plan, README și release notes — în lucru.
+7. **PR #102:** boundary de deploy separat și approval one-time — integrat `19a61ac`.
+8. **PR #103:** semantica finală a cardului Incentive — integrat `ddc9eed`.
+9. **PR #104:** rollback fail-closed și recovery auditabil — integrat `964f6da`.
+10. **PR #105:** dovada finală de rollout, documentația canonică, baseline-urile
+    regenerate și curățenia repository-ului — ultimul gate înainte de tag.
 
 Backlogul P1/P2 rămâne împărțit în PR-uri logice pentru import staging/spool,
 outbox și queue split, campaign finance, export jobs, organizational scope/DB
 roles, dashboard batch, visits pagination/sync, dialog mobil accesibil și
-deploy/rollback automat după rezolvarea protecției environment.
+evoluția mecanismului de approval dacă planul GitHub va oferi required reviewers.
 
 Fiecare PR trebuie să fie reversibil și să nu combine refactor structural cu schimbare de business, exceptând unde contractul actual este chiar defectul.
 
