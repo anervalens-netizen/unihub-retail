@@ -1132,9 +1132,6 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
   const [detailsOpen, setDetailsOpen] = useState(false);
   const tiers: IncentiveCategory[] = promoData?.incentive_categories ?? [];
   const periods = promoData?.incentive_periods ?? [];
-  const availableDifference = promoData
-    ? Math.max(0, promoData.incentive_potential - promoData.incentive_value)
-    : null;
 
   return (
     <div className="glass rounded-4xl border border-indigo-100 p-4 dark:border-indigo-900/30">
@@ -1160,17 +1157,11 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-200 py-3 sm:grid-cols-4 dark:border-slate-700">
-        <div><div className="text-2xl font-black text-indigo-600 dark:text-indigo-300">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">realizat acum</div></div>
-        <div><div className="text-2xl font-black text-emerald-600 dark:text-emerald-300">{promoData ? formatCurrency(promoData.incentive_potential) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">potențial calculat</div></div>
-        <div><div className="text-2xl font-black text-amber-600 dark:text-amber-300">{availableDifference === null ? '-' : formatCurrency(availableDifference)}</div><div className="text-[11px] font-semibold text-slate-500">diferență disponibilă</div></div>
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități în magazine calificate</div></div>
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_sold_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități vândute</div></div>
+        <div><div className="text-2xl font-black text-emerald-600 dark:text-emerald-300">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități eligibile după promo</div></div>
+        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități în magazinele calificate</div></div>
+        <div><div className="text-2xl font-black text-indigo-600 dark:text-indigo-300">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">incentive calculat acum</div></div>
       </div>
-
-      {promoData && (
-        <p className="mt-2 text-xs leading-relaxed text-slate-500">
-          Din {formatInt(promoData.incentive_sold_qty)} unități vândute, {formatInt(promoData.incentive_qty)} rămân eligibile după excluderea promoțiilor.
-        </p>
-      )}
 
       {periods.length > 0 && (
         <div className="mt-3">

@@ -135,16 +135,16 @@ describe('Campaigns', () => {
     expect(html).toContain('12');
   });
 
-  it('renders incentive quantity and potential without reusing promo bonuri', () => {
+  it('renders the four operational incentive values and both monthly mechanisms', () => {
     const html = renderCampaigns('incentive');
 
     expect(html).toContain('Incentive test');
-    expect(html).toContain('realizat acum');
-    expect(html).toContain('potențial calculat');
-    expect(html).toContain('diferență disponibilă');
     expect(html).toContain('unități vândute');
-    expect(html).toContain('rămân eligibile după excluderea promoțiilor');
-    expect(html).toContain('unități în magazine calificate');
+    expect(html).toContain('unități eligibile după promo');
+    expect(html).toContain('unități în magazinele calificate');
+    expect(html).toContain('incentive calculat acum');
+    expect(html).not.toContain('potențial calculat');
+    expect(html).not.toContain('diferență disponibilă');
     expect(html).toContain('2 mecanisme în luna selectată');
     expect(html).toContain('Mecanism initial');
     expect(html).toContain('Mecanism actualizat');
