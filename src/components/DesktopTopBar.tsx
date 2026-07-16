@@ -26,7 +26,10 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
     (v) => v !== ALL_FIRMS && v !== ALL_SCOPE && v !== ALL_STORES
   ).length;
 
-  const showFilter = showFilterButton && FILTER_TABS.has(activeTab);
+  const showFilter = showFilterButton && (
+    FILTER_TABS.has(activeTab)
+    || (activeTab === 'management' && mgmtSubTab === 'salarii')
+  );
 
   return (
     <div className="hidden lg:flex items-center justify-between h-14 px-6 shrink-0 border-b border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-md sticky top-0 z-30">

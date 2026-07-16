@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from openpyxl import Workbook
 
 import services.grile_monthly as grile
 from services.grile_monthly import ExtractedAgentRow, StoreEntry
@@ -56,6 +57,8 @@ def extracted(*, status: str = "OK", error: str = "") -> ExtractedAgentRow:
         status=status,
         error=error,
         sheet_id="sheet-1",
+        site_code="SITE01",
+        error_code="" if status == "OK" else (error or "test_error"),
     )
 
 
@@ -156,11 +159,48 @@ def test_retry_api_retries_transient_and_wraps_terminal_errors(
     assert grile.retry_api(flaky, label="read", attempts=4, base_delay=0.5) == "ok"
     assert sleeps == [0.5, 1.0]
 
-    with pytest.raises(RuntimeError, match="read: status 400"):
+    with pytest.raises(grile.MonthlyIntegrityError, match="read failed") as exc_info:
         grile.retry_api(
             lambda: (_ for _ in ()).throw(ApiError(400)),
             label="read",
         )
+    assert exc_info.value.code == "google_request_failed"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [(429, "google_rate_limited"), (503, "google_unavailable")],
+)
+def test_retry_api_exhausts_google_429_and_503_without_coercion(
+    status: int,
+    expected_code: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ApiError(Exception):
+        def __init__(self) -> None:
+            self.resp = SimpleNamespace(status=status)
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(grile.time, "sleep", sleeps.append)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile.retry_api(
+            lambda: (_ for _ in ()).throw(ApiError()),
+            label="Google",
+            attempts=3,
+            base_delay=0.1,
+        )
+    assert exc_info.value.code == expected_code
+    assert sleeps == [0.1, 0.2]
+
+
+def test_retry_api_timeout_is_fail_closed() -> None:
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile.retry_api(
+            lambda: (_ for _ in ()).throw(TimeoutError()),
+            label="Google",
+            attempts=1,
+        )
+    assert exc_info.value.code == "google_timeout"
 
 
 @pytest.mark.asyncio
@@ -213,14 +253,13 @@ def test_operation_serialization_and_number_helpers() -> None:
     assert grile.scalar([]) == ""
     assert grile.scalar([[]]) == ""
     assert grile.scalar([[7]]) == 7
-    assert grile.to_number(None) == 0
     assert grile.to_number(12) == 12
     assert grile.to_number("1.234,50") == 1234.5
-    assert grile.to_number("invalid") == 0
-    assert grile.to_number(object()) == 0
-    assert grile.sum_scalars(
-        [{"values": [["1,5"]]}, {"values": [[2]]}, {"values": []}]
-    ) == 3.5
+    for invalid in (None, "", "invalid", object(), float("nan"), float("inf"), -1, True):
+        with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+            grile.to_number(invalid)
+        assert exc_info.value.code == "invalid_numeric_value"
+    assert grile.sum_scalars([{"values": [["1,5"]]}, {"values": [[2]]}]) == 3.5
 
 
 @pytest.mark.asyncio
@@ -336,20 +375,10 @@ def make_sheets_value_service(value_ranges: list[dict[str, Any]] | Exception):
 
 def test_extract_store_rows_reads_two_slots_and_returns_error_row() -> None:
     values: list[dict[str, Any]] = []
-    for agent in ("Agent 1", ""):
-        raw = [
-            agent,
-            2600,
-            10,
-            20,
-            30,
-            40,
-            50,
-            25,
-            150,
-            480,
-            176,
-        ]
+    for raw in (
+        ["Agent 1", 2600, 10, 20, 30, 40, 50, 25, 150, 480, 176],
+        ["", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ):
         values.extend({"values": [[value]]} if value != "" else {"values": []} for value in raw)
 
     rows = grile.extract_store_rows(make_sheets_value_service(values), entry())
@@ -363,11 +392,46 @@ def test_extract_store_rows_reads_two_slots_and_returns_error_row() -> None:
         entry(),
     )
     assert error_rows[0].status == "ERROR"
-    assert "Google failed" in error_rows[0].error
+    assert error_rows[0].error_code == "google_request_failed"
+
+    missing_agent_values: list[dict[str, Any]] = [
+        {"values": []},
+        *({"values": [[1]]} for _ in range(10)),
+        *({"values": []} for _ in range(11)),
+    ]
+    missing_agent = grile.extract_store_rows(
+        make_sheets_value_service(list(missing_agent_values)),
+        entry(),
+    )
+    assert missing_agent[0].error_code == "missing_or_invalid_agent"
+
+
+def test_finalization_coverage_rejects_unexpected_store_and_conflicts() -> None:
+    expected = [entry()]
+    unexpected = ExtractedAgentRow(
+        **{
+            **extracted().__dict__,
+            "site_code": "SITE99",
+            "sheet_id": "unexpected-sheet",
+        }
+    )
+    counts = grile._validate_finalization_coverage(expected, [unexpected])
+    assert counts[:4] == (1, 0, 0, 0)
+    assert "unexpected_store" in counts[4]
+    assert "store_not_processed" in counts[4]
+
+    conflicting = ExtractedAgentRow(
+        **{
+            **extracted().__dict__,
+            "store": "Conflicting Store",
+        }
+    )
+    counts = grile._validate_finalization_coverage(expected, [conflicting])
+    assert "contradictory_store_metadata" in counts[4]
 
 
 @pytest.mark.asyncio
-async def test_finalize_month_builds_output_with_errors(
+async def test_finalize_month_rejects_errors_without_official_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -375,21 +439,17 @@ async def test_finalize_month_builds_output_with_errors(
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
+    monkeypatch.setattr(grile, "_validate_source_workbook", lambda _path: None)
     monkeypatch.setattr(
         grile,
         "extract_store_rows",
         MagicMock(side_effect=[[extracted()], [extracted(status="ERROR", error="bad")]]),
     )
 
-    output = await grile.finalize_month(
-        MagicMock(),
-        "Iunie 2026",
-        only="test",
-        delay=0,
-    )
-
-    assert output.exists()
-    assert "TEST test" in output.name
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.finalize_month(MagicMock(), "Iunie 2026", only="test", delay=0)
+    assert exc_info.value.code == "finalization_incomplete"
+    assert not grile.resolve_output_path("Iunie 2026", "test", tmp_path).exists()
 
 
 @pytest.mark.asyncio
@@ -397,7 +457,7 @@ async def test_finalize_month_sleeps_only_between_entries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    entries = [entry(), entry(store="Store 2", sheet_id="sheet-2")]
+    entries = [entry(), entry(store="Store 2", sheet_id="sheet-2", site_code="SITE02")]
     sleeps: list[float] = []
 
     async def sleep(delay: float) -> None:
@@ -406,12 +466,47 @@ async def test_finalize_month_sleeps_only_between_entries(
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
-    monkeypatch.setattr(grile, "extract_store_rows", MagicMock(return_value=[extracted()]))
+    monkeypatch.setattr(grile, "_validate_source_workbook", lambda _path: None)
+    monkeypatch.setattr(
+        grile,
+        "extract_store_rows",
+        MagicMock(side_effect=[[extracted()], [ExtractedAgentRow(**{**extracted().__dict__, "site_code": "SITE02", "store": "Store 2", "sheet_id": "sheet-2"})]]),
+    )
     monkeypatch.setattr(grile.asyncio, "sleep", sleep)
 
     await grile.finalize_month(MagicMock(), "Iunie 2026", delay=0.25)
 
     assert sleeps == [0.25]
+
+
+@pytest.mark.asyncio
+async def test_partial_workbook_never_replaces_official_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    official = grile.build_final_export_path(tmp_path, "Iunie 2026")
+    official.write_bytes(b"previous-official")
+    previous_hash = grile.file_sha256(official)
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
+    monkeypatch.setattr(grile, "extract_store_rows", MagicMock(return_value=[extracted()]))
+
+    def build_partial(_rows: Any, output_path: Path, _metadata: Any) -> None:
+        workbook = Workbook()
+        workbook.active.title = "Grila"
+        workbook.save(output_path)
+
+    monkeypatch.setattr(grile, "build_workbook", build_partial)
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.finalize_month(
+            MagicMock(),
+            "Iunie 2026",
+            delay=0,
+            month_key="2026-06",
+        )
+    assert exc_info.value.code == "workbook_structure_invalid"
+    assert grile.file_sha256(official) == previous_hash
 
 
 def test_export_sheet_xlsx_success_empty_and_error(
@@ -437,13 +532,13 @@ def test_export_sheet_xlsx_success_empty_and_error(
     assert result["bytes"] == 4
 
     drive.files.return_value.export_media.return_value = b""
-    empty = grile.export_sheet_xlsx(drive, entry(), tmp_path / "empty.xlsx")
-    assert empty["status"] == "ERROR"
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile.export_sheet_xlsx(drive, entry(), tmp_path / "empty.xlsx")
+    assert exc_info.value.code == "empty_source_backup"
 
     drive.files.return_value.export_media.side_effect = RuntimeError("denied")
-    failed = grile.export_sheet_xlsx(drive, entry(), tmp_path / "failed.xlsx")
-    assert failed["status"] == "ERROR"
-    assert failed["xlsx_path"] == ""
+    with pytest.raises(RuntimeError, match="denied"):
+        grile.export_sheet_xlsx(drive, entry(), tmp_path / "failed.xlsx")
 
 
 def test_archive_and_manager_zips_preserve_relative_paths(tmp_path: Path) -> None:
@@ -488,6 +583,68 @@ def test_archive_and_manager_zips_preserve_relative_paths(tmp_path: Path) -> Non
     assert summary["error_count"] == 1
 
 
+def test_source_workbook_must_be_complete_and_readable(tmp_path: Path) -> None:
+    invalid = tmp_path / "invalid.xlsx"
+    invalid.write_bytes(b"not-an-xlsx")
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_source_workbook(invalid)
+    assert exc_info.value.code == "source_workbook_invalid"
+
+    partial = tmp_path / "partial.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "Grila"
+    workbook.save(partial)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_source_workbook(partial)
+    assert exc_info.value.code == "source_workbook_partial"
+
+    complete = tmp_path / "complete.xlsx"
+    workbook.create_sheet("Pontaj")
+    workbook.save(complete)
+    grile._validate_source_workbook(complete)
+
+
+def patch_verified_final_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    output_dir: Path,
+    *,
+    stores: int,
+    agents: int,
+    registry: list[StoreEntry] | None = None,
+) -> dict[str, Any]:
+    final_path = grile.build_final_export_path(output_dir, "Iunie 2026")
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    final_path.write_bytes(b"verified-final")
+    source_entries = registry or [
+        entry(
+            store=f"Store {index}",
+            site_code=f"SITE{index:02d}",
+            sheet_id=f"sheet-{index}",
+        )
+        for index in range(1, stores + 1)
+    ]
+    manifest = grile._with_source_registry(
+        grile.base_manifest(
+            month="2026-06",
+            operation="finalize",
+            requested_by_sub="test-subject",
+            expected_stores=stores,
+            expected_agents=agents,
+            processed_stores=stores,
+            processed_agents=agents,
+            control_totals={"salary_components": "1.00"},
+            artifacts=[grile.relative_artifact(final_path, root=output_dir, kind="final_workbook")],
+        ),
+        source_entries,
+    )
+    monkeypatch.setattr(
+        grile,
+        "fetch_latest_monthly_manifest",
+        AsyncMock(return_value={"manifest": manifest, "status": "verified"}),
+    )
+    return manifest
+
+
 @pytest.mark.asyncio
 async def test_archive_month_writes_valid_manifest(
     tmp_path: Path,
@@ -504,8 +661,12 @@ async def test_archive_month_writes_valid_manifest(
         ),
     ]
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    patch_verified_final_manifest(
+        monkeypatch, tmp_path, stores=2, agents=3, registry=entries
+    )
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
+    monkeypatch.setattr(grile, "_validate_source_workbook", lambda _path: None)
 
     def export(_drive: object, item: StoreEntry, output_path: Path) -> dict[str, Any]:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -528,12 +689,16 @@ async def test_archive_month_writes_valid_manifest(
         MagicMock(),
         "Iunie 2026",
         delay=0,
+        month_key="2026-06",
     )
 
     manifest = json.loads(manifest_path.read_text())
-    assert manifest["exported_count"] == 2
-    assert Path(manifest["zip_path"]).exists()
-    assert len(manifest["manager_zip_paths"]) == 2
+    assert manifest["status"] == "verified"
+    assert manifest["expected"] == {"agents": 3, "stores": 2}
+    assert manifest["processed"] == manifest["expected"]
+    assert manifest["error_count"] == 0
+    grile.validate_verified_manifest(manifest, operation="archive")
+    grile.verify_artifacts(manifest, root=tmp_path)
 
 
 @pytest.mark.asyncio
@@ -542,6 +707,7 @@ async def test_archive_month_rejects_incomplete_export(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    patch_verified_final_manifest(monkeypatch, tmp_path, stores=1, agents=1)
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
     monkeypatch.setattr(
@@ -556,8 +722,9 @@ async def test_archive_month_rejects_incomplete_export(
         },
     )
 
-    with pytest.raises(RuntimeError, match="Archive is incomplete"):
-        await grile.archive_month(MagicMock(), "Iunie 2026", delay=0)
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.archive_month(MagicMock(), "Iunie 2026", delay=0, month_key="2026-06")
+    assert exc_info.value.code == "archive_incomplete"
 
 
 @pytest.mark.asyncio
@@ -565,15 +732,19 @@ async def test_archive_month_sleeps_only_between_entries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    entries = [entry(), entry(store="Store 2", sheet_id="sheet-2")]
+    entries = [entry(), entry(store="Store 2", sheet_id="sheet-2", site_code="SITE02")]
     sleeps: list[float] = []
 
     async def sleep(delay: float) -> None:
         sleeps.append(delay)
 
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    patch_verified_final_manifest(
+        monkeypatch, tmp_path, stores=2, agents=2, registry=entries
+    )
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=entries))
     monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
+    monkeypatch.setattr(grile, "_validate_source_workbook", lambda _path: None)
 
     def export(_drive: object, item: StoreEntry, output_path: Path) -> dict[str, Any]:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -593,51 +764,14 @@ async def test_archive_month_sleeps_only_between_entries(
     monkeypatch.setattr(grile, "export_sheet_xlsx", export)
     monkeypatch.setattr(grile.asyncio, "sleep", sleep)
 
-    await grile.archive_month(MagicMock(), "Iunie 2026", delay=0.25)
+    await grile.archive_month(
+        MagicMock(),
+        "Iunie 2026",
+        delay=0.25,
+        month_key="2026-06",
+    )
 
     assert sleeps == [0.25]
-
-
-def test_archive_preconditions(tmp_path: Path) -> None:
-    missing_export = tmp_path / "missing.xlsx"
-    with pytest.raises(RuntimeError, match="Final export does not exist"):
-        grile.assert_final_export_exists(missing_export, force=False)
-    grile.assert_final_export_exists(missing_export, force=True)
-
-    with pytest.raises(RuntimeError, match="Archive manifest does not exist"):
-        grile.assert_archive_complete(
-            tmp_path,
-            "Iunie 2026",
-            expected_count=1,
-            force=False,
-        )
-    grile.assert_archive_complete(
-        tmp_path,
-        "Iunie 2026",
-        expected_count=1,
-        force=True,
-    )
-
-    manifest_path = grile.build_archive_manifest_path(tmp_path, "Iunie 2026")
-    manifest_path.parent.mkdir(parents=True)
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "registry_count": 0,
-                "exported_count": 0,
-                "error_count": 1,
-                "stores": [],
-                "zip_path": "",
-            }
-        )
-    )
-    with pytest.raises(RuntimeError, match="Archive is incomplete"):
-        grile.assert_archive_complete(
-            tmp_path,
-            "Iunie 2026",
-            expected_count=1,
-            force=False,
-        )
 
 
 def test_reset_store_dry_run_success_and_error() -> None:
@@ -656,7 +790,142 @@ def test_reset_store_dry_run_success_and_error() -> None:
     request.execute.side_effect = RuntimeError("clear failed")
     result = grile.reset_store(service, entry(), dry_run=False)
     assert result["status"] == "ERROR"
-    assert "clear failed" in result["error"]
+    assert result["error"] == "google_request_failed"
+
+
+class StatefulResetService:
+    def __init__(self) -> None:
+        self.state = {
+            item: [[index + 1]]
+            for index, item in enumerate(grile.RESET_RANGES)
+        }
+        self.clear_calls = 0
+        self.restore_calls = 0
+
+    def spreadsheets(self) -> "StatefulResetService":
+        return self
+
+    def values(self) -> "StatefulResetService":
+        return self
+
+    def batchGet(self, **_kwargs: Any) -> SimpleNamespace:  # noqa: N802
+        return SimpleNamespace(
+            execute=lambda: {
+                "valueRanges": [
+                    {"range": item, "majorDimension": "ROWS", "values": self.state[item]}
+                    for item in grile.RESET_RANGES
+                ]
+            }
+        )
+
+    def batchClear(self, **_kwargs: Any) -> SimpleNamespace:  # noqa: N802
+        def execute() -> dict[str, Any]:
+            self.clear_calls += 1
+            self.state = {item: [] for item in grile.RESET_RANGES}
+            return {}
+
+        return SimpleNamespace(execute=execute)
+
+    def batchUpdate(self, *, body: dict[str, Any], **_kwargs: Any) -> SimpleNamespace:  # noqa: N802
+        def execute() -> dict[str, Any]:
+            self.restore_calls += 1
+            for item in body["data"]:
+                self.state[item["range"]] = item["values"]
+            return {}
+
+        return SimpleNamespace(execute=execute)
+
+
+def patch_archive_prerequisite(
+    monkeypatch: pytest.MonkeyPatch,
+    output_dir: Path,
+    *,
+    approved: bool,
+) -> dict[str, Any]:
+    source = output_dir / "archive" / "Iunie 2026" / "Mobiup" / "Store.xlsx"
+    archive = output_dir / "archive" / "Iunie 2026" / "archive.zip"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"source")
+    archive.write_bytes(b"archive")
+    source_artifact = grile.relative_artifact(source, root=output_dir, kind="source_workbook")
+    source_artifact.update({"site_code": "SITE01", "sheet_id": "sheet-1"})
+    manifest = grile.base_manifest(
+        month="2026-06",
+        operation="archive",
+        requested_by_sub="request-subject",
+        expected_stores=1,
+        expected_agents=1,
+        processed_stores=1,
+        processed_agents=1,
+        control_totals={"salary_components": "1.00"},
+        artifacts=[
+            source_artifact,
+            grile.relative_artifact(archive, root=output_dir, kind="archive_zip"),
+        ],
+        source_backups=[source_artifact],
+    )
+    status = "verified"
+    if approved:
+        manifest["status"] = "approved"
+        manifest["approved_by_sub"] = "approval-subject"
+        manifest["approved_at"] = grile.utc_now()
+        manifest = grile.finalize_manifest(manifest)
+        status = "approved"
+    record = {"id": 31, "status": status, "manifest": manifest}
+    monkeypatch.setattr(grile, "fetch_latest_monthly_manifest", AsyncMock(return_value=record))
+    monkeypatch.setattr(grile, "fetch_monthly_manifest", AsyncMock(return_value=record))
+    return record
+
+
+@pytest.mark.asyncio
+async def test_manifest_approval_reverifies_hash_and_persists_subject(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    record = patch_archive_prerequisite(monkeypatch, tmp_path, approved=False)
+    record.update(
+        {
+            "operation": "archive",
+            "manifest_sha256": record["manifest"]["manifest_sha256"],
+            "closing_month": "2026-06",
+            "error_count": 0,
+        }
+    )
+    approved_record = {
+        **record,
+        "status": "approved",
+        "approved_by_sub": "stable-approval-subject",
+    }
+    persist = AsyncMock(return_value=approved_record)
+    monkeypatch.setattr(grile, "persist_monthly_manifest_approval", persist)
+
+    payload = await grile.approve_monthly_manifest(
+        MagicMock(),
+        manifest_id=31,
+        approved_by_sub="stable-approval-subject",
+    )
+
+    assert payload["approved"] is True
+    assert "approved_by_sub" not in payload
+    persist.assert_awaited_once()
+    assert persist.await_args is not None
+    assert persist.await_args.kwargs["approved_by_sub"] == "stable-approval-subject"
+
+    source_path = grile.resolve_artifact_path(
+        tmp_path,
+        record["manifest"]["source_backups"][0]["path"],
+    )
+    source_path.write_bytes(b"tampered")
+    persist.reset_mock()
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        await grile.approve_monthly_manifest(
+            MagicMock(),
+            manifest_id=31,
+            approved_by_sub="stable-approval-subject",
+        )
+    assert exc_info.value.code in {"artifact_size_mismatch", "artifact_hash_mismatch"}
+    persist.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -666,19 +935,95 @@ async def test_reset_month_dry_run_writes_report(
 ) -> None:
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=False)
+    service = StatefulResetService()
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
 
     report_path = await grile.reset_month(
         MagicMock(),
         "Iunie 2026",
         "Iulie 2026",
         dry_run=True,
-        force=True,
         operation_id=7,
+        closing_month_key="2026-06",
+        next_month_key="2026-07",
     )
 
     report = json.loads(report_path.read_text())
-    assert report["operation_id"] == 7
-    assert report["stores"][0]["status"] == "DRY_RUN"
+    assert report["dry_run"] is True
+    assert report["processed_store_count"] == 1
+    assert service.clear_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_reset_preflight_timeout_has_zero_destructive_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
+    monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
+    monkeypatch.setattr(
+        grile,
+        "_read_reset_snapshot",
+        MagicMock(side_effect=grile.MonthlyIntegrityError("google_timeout", "timeout")),
+    )
+    clear = MagicMock()
+    monkeypatch.setattr(grile, "reset_store", clear)
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.reset_month(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            dry_run=False,
+            operation_id=12,
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            approved_manifest_id=31,
+        )
+    assert exc_info.value.code == "google_timeout"
+    assert service.clear_calls == 0
+    clear.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reset_live_success_requires_backup_and_verifies_every_clear(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
+    monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
+    finish = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "finish_reset_item", finish)
+
+    report_path = await grile.reset_month(
+        MagicMock(),
+        "Iunie 2026",
+        "Iulie 2026",
+        dry_run=False,
+        operation_id=13,
+        closing_month_key="2026-06",
+        next_month_key="2026-07",
+        approved_manifest_id=31,
+    )
+
+    assert report_path == grile.build_reset_report_path(tmp_path, "Iulie 2026")
+    assert service.clear_calls == 1
+    assert all(values == [] for values in service.state.values())
+    finish.assert_awaited_once()
+    assert finish.await_args is not None
+    assert finish.await_args.kwargs["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -688,13 +1033,16 @@ async def test_reset_month_live_failure_marks_checkpoint(
 ) -> None:
     monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
     monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
-    monkeypatch.setattr(grile, "build_google_services", lambda: (object(), object()))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    original_state = dict(service.state)
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
     monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
-    monkeypatch.setattr(grile, "get_previous_completed_reset_item", AsyncMock(return_value=None))
     monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
-    finish = AsyncMock(return_value=True)
-    monkeypatch.setattr(grile, "finish_reset_item", finish)
+    monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
+    rollback = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "record_reset_item_rollback", rollback)
     monkeypatch.setattr(
         grile,
         "reset_store",
@@ -704,26 +1052,29 @@ async def test_reset_month_live_failure_marks_checkpoint(
             "site_code": "SITE01",
             "sheet_id": "sheet-1",
             "status": "ERROR",
-            "error": "Google failure",
+            "error": "google_unavailable",
             "ranges": [],
         },
     )
 
-    with pytest.raises(RuntimeError, match="1 errors"):
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
         await grile.reset_month(
             MagicMock(),
             "Iunie 2026",
             "Iulie 2026",
             dry_run=False,
-            force=True,
             operation_id=7,
             closing_month_key="2026-06",
             next_month_key="2026-07",
+            approved_manifest_id=31,
         )
 
-    finish_call = finish.await_args
-    assert finish_call is not None
-    assert finish_call.kwargs["status"] == "error"
+    assert exc_info.value.code == "rolled_back"
+    assert service.state == original_state
+    assert service.restore_calls == 1
+    rollback.assert_awaited_once()
+    assert rollback.await_args is not None
+    assert rollback.await_args.kwargs["restored"] is True
 
 
 @pytest.mark.asyncio
@@ -737,22 +1088,45 @@ async def test_run_monthly_op_dispatches_and_finishes(
     monkeypatch.setattr(
         grile,
         "start_monthly_operation",
-        AsyncMock(return_value=grile.MonthlyOperationStartResult("started", 9)),
+        AsyncMock(
+            return_value=grile.MonthlyOperationStartResult(
+                "started",
+                9,
+                operation={
+                    "op": op,
+                    "closing_month": "2026-06",
+                    "only_filter": None,
+                    "dry_run": True,
+                    "requested_by_sub": "test-subject",
+                    "approved_manifest_id": None,
+                },
+            )
+        ),
     )
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
-    monkeypatch.setattr(grile, "finalize_month", AsyncMock())
-    monkeypatch.setattr(grile, "archive_month", AsyncMock())
-    monkeypatch.setattr(grile, "reset_month", AsyncMock())
-    finish = AsyncMock()
+    execution = grile.MonthlyExecution(Path("unused"), {"status": "verified"})
+    monkeypatch.setattr(grile, "_finalize_month_execution", AsyncMock(return_value=execution))
+    monkeypatch.setattr(grile, "_archive_month_execution", AsyncMock(return_value=execution))
+    monkeypatch.setattr(grile, "_reset_month_execution", AsyncMock(return_value=execution))
+    monkeypatch.setattr(
+        grile,
+        "persist_manifest_result",
+        AsyncMock(
+            return_value={
+                "id": 1,
+                "operation_id": 9,
+                "closing_month": "2026-06",
+                "operation": op,
+                "status": "verified",
+                "manifest": {},
+                "error_count": 0,
+            }
+        ),
+    )
+    finish = AsyncMock(return_value=True)
     monkeypatch.setattr(grile, "finish_monthly_operation", finish)
 
-    result = await grile.run_monthly_op(
-        op=op,
-        month="2026-06",
-        only="Store",
-        dry_run=True,
-        operation_id=9,
-    )
+    result = await grile.run_monthly_op(operation_id=9)
 
     assert result["status"] == "success"
     assert result["operation_id"] == 9
@@ -769,13 +1143,13 @@ async def test_run_monthly_op_captures_failure_and_validates_op(
     monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=object()))
     monkeypatch.setattr(
         grile,
-        "finalize_month",
+        "_finalize_month_execution",
         AsyncMock(side_effect=RuntimeError("finalize failed")),
     )
     result = await grile.run_monthly_op(op="finalize", month="2026-06")
     assert result["status"] == "failed"
     assert result["exit_code"] == -1
-    assert "finalize failed" in result["output"]
+    assert result["output"] == "Operation failed: monthly_operation_failed"
 
 
 @pytest.mark.asyncio
@@ -806,3 +1180,1065 @@ async def test_fetch_download_final_archive_missing_and_invalid(
         await grile.fetch_download("archive", "2026-06")
     with pytest.raises(ValueError, match="Tip download necunoscut"):
         await grile.fetch_download("invalid", "2026-06")
+
+
+@pytest.mark.asyncio
+async def test_repository_delegates_and_invalid_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = object()
+    with pytest.raises(ValueError, match="Operatie necunoscuta"):
+        await grile.reserve_monthly_operation(
+            pool,
+            op="invalid",
+            month="2026-06",
+            only=None,
+            dry_run=False,
+            requested_by_sub="subject-1",
+        )
+
+    reservation = object()
+    reserve = AsyncMock(return_value=reservation)
+    finish = AsyncMock(return_value=True)
+    get_manifest = AsyncMock(return_value={"id": 1})
+    latest_manifest = AsyncMock(return_value={"id": 2})
+    backup = AsyncMock(return_value=True)
+    rollback = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "persist_monthly_operation_reservation", reserve)
+    monkeypatch.setattr(grile, "persist_monthly_operation_result", finish)
+    monkeypatch.setattr(grile, "fetch_monthly_manifest", get_manifest)
+    monkeypatch.setattr(grile, "fetch_latest_monthly_manifest", latest_manifest)
+    monkeypatch.setattr(grile, "persist_reset_item_backup", backup)
+    monkeypatch.setattr(grile, "persist_reset_item_rollback", rollback)
+
+    assert await grile.reserve_monthly_operation(
+        pool,
+        op="finalize",
+        month="2026-06",
+        only=None,
+        dry_run=False,
+        requested_by_sub="subject-1",
+    ) is reservation
+    assert await grile.finish_monthly_operation(pool, 1, result={"ok": True}) is True
+    assert await grile.get_monthly_manifest(pool, 1) == {"id": 1}
+    assert await grile.get_latest_monthly_manifest(pool, month="2026-06") == {"id": 2}
+    assert latest_manifest.await_args is not None
+    assert latest_manifest.await_args.kwargs["statuses"] == grile.MANIFEST_ATTEMPT_STATUSES
+    assert await grile.record_reset_item_backup(
+        pool,
+        operation_id=1,
+        site_code="SITE01",
+        backup_path="backup.json",
+        backup_sha256="a" * 64,
+    ) is True
+    assert await grile.record_reset_item_rollback(
+        pool,
+        operation_id=1,
+        site_code="SITE01",
+        restored=True,
+    ) is True
+
+
+def test_extract_store_rows_rejects_incomplete_invalid_empty_and_duplicate() -> None:
+    incomplete = grile.extract_store_rows(make_sheets_value_service([]), entry())
+    assert incomplete[0].error_code == "google_response_incomplete"
+
+    invalid_values: list[dict[str, Any]] = []
+    for raw in (["Agent 1", "invalid", 10, 20, 30, 40, 50, 25, 150, 480, 176], [""] * 11):
+        invalid_values.extend(
+            {"values": [[value]]} if value != "" else {"values": []}
+            for value in raw
+        )
+    invalid = grile.extract_store_rows(make_sheets_value_service(invalid_values), entry())
+    assert invalid[0].error_code == "invalid_numeric_value"
+
+    empty_values: list[dict[str, Any]] = [{"values": []} for _ in range(22)]
+    empty = grile.extract_store_rows(make_sheets_value_service(empty_values), entry())
+    assert empty[0].error_code == "store_has_no_agent"
+
+    duplicate_values: list[dict[str, Any]] = []
+    for _slot in range(2):
+        duplicate_values.extend(
+            {"values": [[value]]}
+            for value in ["Agent 1", 2600, 10, 20, 30, 40, 50, 25, 150, 480, 176]
+        )
+    duplicate = grile.extract_store_rows(
+        make_sheets_value_service(duplicate_values),
+        entry(),
+    )
+    assert [row.error_code for row in duplicate] == ["", "duplicate_agent"]
+
+
+def test_workbook_and_coverage_defensive_validation(tmp_path: Path) -> None:
+    output = tmp_path / "with-error-row.xlsx"
+    grile.build_workbook(
+        [extracted(), extracted(status="ERROR", error="invalid_numeric_value")],
+        output,
+        {},
+    )
+    assert output.exists()
+
+    duplicate_entry = entry(store="Duplicate", sheet_id="sheet-2")
+    duplicate_agent = ExtractedAgentRow(**{**extracted().__dict__, "slot": 2})
+    coverage = grile._validate_finalization_coverage(
+        [entry(), duplicate_entry],
+        [extracted(), duplicate_agent],
+    )
+    assert "duplicate_registry_entry" in coverage[4]
+    assert "duplicate_agent" in coverage[4]
+
+    coverage_mismatch = tmp_path / "coverage-mismatch.xlsx"
+    grile.build_workbook([extracted()], coverage_mismatch, {})
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_final_workbook(coverage_mismatch, expected_agents=2)
+    assert exc_info.value.code == "workbook_coverage_incomplete"
+
+    audit_invalid = tmp_path / "audit-invalid.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "Mobiup"
+    workbook.active.append(grile.HEADERS)
+    workbook.active.append([1])
+    workbook.create_sheet("Mobicell").append(grile.HEADERS)
+    workbook.create_sheet("Audit").append(grile.AUDIT_HEADERS)
+    workbook["Audit"].append([None] * 11 + ["ERROR"])
+    workbook.save(audit_invalid)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_final_workbook(audit_invalid, expected_agents=1)
+    assert exc_info.value.code == "workbook_audit_invalid"
+
+    unreadable = tmp_path / "unreadable.xlsx"
+    unreadable.write_bytes(b"invalid")
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_final_workbook(unreadable, expected_agents=0)
+    assert exc_info.value.code == "workbook_invalid"
+
+
+def test_staging_and_atomic_file_promotion_restore_previous(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    stale = tmp_path / ".staging" / "finalize-1"
+    stale.mkdir(parents=True)
+    (stale / "stale").write_text("old")
+    assert grile._staging_dir("finalize", 1) == stale
+    assert not (stale / "stale").exists()
+
+    destination = tmp_path / "official.xlsx"
+    destination.write_bytes(b"previous")
+    staged = tmp_path / "staged.xlsx"
+    staged.write_bytes(b"replacement")
+    grile._promote_file(staged, destination)
+    assert destination.read_bytes() == b"replacement"
+
+    staged_same_revision = tmp_path / "staged-again.xlsx"
+    staged_same_revision.write_bytes(b"new")
+    previous_revision = tmp_path / ".revisions" / (
+        f"{destination.name}.{grile.file_sha256(destination)[:16]}"
+    )
+    previous_revision.parent.mkdir(parents=True, exist_ok=True)
+    previous_revision.write_bytes(b"already-revisioned")
+    grile._promote_file(staged_same_revision, destination)
+    assert destination.read_bytes() == b"new"
+
+    staged_failure = tmp_path / "staged-failure.xlsx"
+    staged_failure.write_bytes(b"failure")
+    original_replace = grile.os.replace
+
+    def fail_staged(source: Path | str, target: Path | str) -> None:
+        if Path(source) == staged_failure:
+            raise OSError("promotion failed")
+        original_replace(source, target)
+
+    monkeypatch.setattr(grile.os, "replace", fail_staged)
+    with pytest.raises(OSError, match="promotion failed"):
+        grile._promote_file(staged_failure, destination)
+    assert destination.read_bytes() == b"new"
+
+
+def test_archive_zip_and_directory_promotion_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    empty_zip = tmp_path / "empty.zip"
+    with zipfile.ZipFile(empty_zip, "w"):
+        pass
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_archive_zip(empty_zip, expected_files=1)
+    assert exc_info.value.code == "archive_coverage_incomplete"
+
+    invalid_zip = tmp_path / "invalid.zip"
+    invalid_zip.write_bytes(b"invalid")
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_archive_zip(invalid_zip, expected_files=1)
+    assert exc_info.value.code == "archive_invalid"
+
+    class CorruptArchive:
+        def __enter__(self) -> "CorruptArchive":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def infolist(self) -> list[SimpleNamespace]:
+            return [SimpleNamespace(is_dir=lambda: False, filename="one.xlsx")]
+
+        def testzip(self) -> str:
+            return "one.xlsx"
+
+    monkeypatch.setattr(grile.zipfile, "ZipFile", lambda *_args, **_kwargs: CorruptArchive())
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._validate_archive_zip(tmp_path / "corrupt.zip", expected_files=1)
+    assert exc_info.value.code == "archive_corrupt"
+
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    destination = tmp_path / "archive" / "Iunie-2026"
+    destination.mkdir(parents=True)
+    (destination / "old").write_text("previous")
+    staged = tmp_path / "staged-archive"
+    staged.mkdir()
+    (staged / "new").write_text("replacement")
+    grile._promote_directory(staged, destination)
+    assert (destination / "new").exists()
+
+    staged_unverified = tmp_path / "staged-archive-unverified"
+    staged_unverified.mkdir()
+    (staged_unverified / "unverified").write_text("unverified")
+
+    def fail_verification() -> None:
+        raise grile.MonthlyIntegrityError(
+            "artifact_hash_mismatch",
+            "verification failed",
+        )
+
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(
+            staged_unverified,
+            destination,
+            verify=fail_verification,
+        )
+    assert exc_info.value.code == "artifact_hash_mismatch"
+    assert (destination / "new").exists()
+    assert not (destination / "unverified").exists()
+    assert (staged_unverified / "unverified").exists()
+
+    staged_failure = tmp_path / "staged-archive-failure"
+    staged_failure.mkdir()
+    (staged_failure / "bad").write_text("failure")
+    original_replace = grile.os.replace
+
+    def fail_staged(source: Path | str, target: Path | str) -> None:
+        if Path(source) == staged_failure:
+            raise OSError("directory promotion failed")
+        original_replace(source, target)
+
+    monkeypatch.setattr(grile.os, "replace", fail_staged)
+    with pytest.raises(OSError, match="directory promotion failed"):
+        grile._promote_directory(staged_failure, destination)
+    assert (destination / "new").exists()
+
+
+def test_archive_directory_rollback_fallbacks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    original_replace = grile.os.replace
+    original_rmtree = grile.shutil.rmtree
+
+    def paths(case: str) -> tuple[Path, Path]:
+        destination = tmp_path / "archive" / case
+        destination.mkdir(parents=True)
+        (destination / "old").write_text("previous")
+        staged = tmp_path / f"staged-{case}"
+        staged.mkdir()
+        (staged / "new").write_text("unverified")
+        return staged, destination
+
+    def fail_verification() -> None:
+        raise grile.MonthlyIntegrityError("artifact_hash_mismatch", "verification failed")
+
+    staged, destination = paths("move-fallback")
+
+    def fail_move_back(source: Path | str, target: Path | str) -> None:
+        if Path(source) == destination and Path(target) == staged:
+            raise OSError("move back failed")
+        original_replace(source, target)
+
+    monkeypatch.setattr(grile.os, "replace", fail_move_back)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(staged, destination, verify=fail_verification)
+    assert exc_info.value.code == "artifact_hash_mismatch"
+    assert (destination / "old").exists()
+    assert not (destination / "new").exists()
+
+    monkeypatch.setattr(grile.os, "replace", original_replace)
+    staged, destination = paths("remove-failure")
+
+    def fail_move_and_remove(source: Path | str, target: Path | str) -> None:
+        if Path(source) == destination and Path(target) == staged:
+            raise OSError("move back failed")
+        original_replace(source, target)
+
+    def fail_remove(path: Path | str, *args: Any, **kwargs: Any) -> None:
+        if Path(path) == destination:
+            raise OSError("remove failed")
+        original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(grile.os, "replace", fail_move_and_remove)
+    monkeypatch.setattr(grile.shutil, "rmtree", fail_remove)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(staged, destination, verify=fail_verification)
+    assert exc_info.value.code == "archive_promotion_rollback_failed"
+
+    monkeypatch.setattr(grile.os, "replace", original_replace)
+    monkeypatch.setattr(grile.shutil, "rmtree", original_rmtree)
+    staged, destination = paths("restore-failure")
+
+    def fail_revision_restore(source: Path | str, target: Path | str) -> None:
+        if Path(source).parent == tmp_path / ".revisions" and Path(target) == destination:
+            raise OSError("revision restore failed")
+        original_replace(source, target)
+
+    monkeypatch.setattr(grile.os, "replace", fail_revision_restore)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._promote_directory(staged, destination, verify=fail_verification)
+    assert exc_info.value.code == "archive_promotion_rollback_failed"
+    assert not destination.exists()
+
+
+@pytest.mark.asyncio
+async def test_archive_requires_full_verified_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._archive_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            month_key="2026-06",
+            requested_by_sub="subject-1",
+            operation_id=1,
+            only="one-store",
+        )
+    assert exc_info.value.code == "partial_archive_forbidden"
+
+    monkeypatch.setattr(grile, "fetch_latest_monthly_manifest", AsyncMock(return_value=None))
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._archive_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            month_key="2026-06",
+            requested_by_sub="subject-1",
+            operation_id=1,
+        )
+    assert exc_info.value.code == "verified_finalization_missing"
+
+    latest_attempt = AsyncMock(
+        return_value={"id": 2, "status": "failed", "manifest": {}}
+    )
+    monkeypatch.setattr(grile, "fetch_latest_monthly_manifest", latest_attempt)
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._archive_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            month_key="2026-06",
+            requested_by_sub="subject-1",
+            operation_id=2,
+        )
+    assert exc_info.value.code == "verified_finalization_missing"
+    assert latest_attempt.await_args is not None
+    assert "failed" in latest_attempt.await_args.kwargs["statuses"]
+
+    patch_verified_final_manifest(monkeypatch, tmp_path, stores=1, agents=1)
+    duplicate = [entry(), entry(store="Duplicate")]
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=duplicate))
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._archive_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            month_key="2026-06",
+            requested_by_sub="subject-1",
+            operation_id=1,
+        )
+    assert exc_info.value.code == "registry_changed_or_duplicate_after_finalization"
+
+
+@pytest.mark.asyncio
+async def test_archive_rejects_same_count_registry_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finalized_entries = [
+        entry(),
+        entry(store="Store 2", site_code="SITE02", sheet_id="sheet-2"),
+    ]
+    current_entries = [
+        entry(),
+        entry(store="Store 3", site_code="SITE03", sheet_id="sheet-3"),
+    ]
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    patch_verified_final_manifest(
+        monkeypatch,
+        tmp_path,
+        stores=2,
+        agents=2,
+        registry=finalized_entries,
+    )
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=current_entries))
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._archive_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            month_key="2026-06",
+            requested_by_sub="subject-1",
+            operation_id=1,
+        )
+
+    assert exc_info.value.code == "registry_changed_or_duplicate_after_finalization"
+
+
+@pytest.mark.asyncio
+async def test_manifest_approval_rejects_missing_wrong_state_and_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    fetch = AsyncMock(return_value=None)
+    monkeypatch.setattr(grile, "fetch_monthly_manifest", fetch)
+    with pytest.raises(FileNotFoundError):
+        await grile.approve_monthly_manifest(
+            MagicMock(), manifest_id=1, approved_by_sub="subject-1"
+        )
+
+    fetch.return_value = {"operation": "finalize", "status": "verified", "manifest": {}}
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        await grile.approve_monthly_manifest(
+            MagicMock(), manifest_id=1, approved_by_sub="subject-1"
+        )
+    assert exc_info.value.code == "manifest_not_approvable"
+
+    fetch.return_value = {"operation": "archive", "status": "verified", "manifest": None}
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        await grile.approve_monthly_manifest(
+            MagicMock(), manifest_id=1, approved_by_sub="subject-1"
+        )
+    assert exc_info.value.code == "manifest_invalid"
+
+    record = patch_archive_prerequisite(monkeypatch, tmp_path, approved=False)
+    record.update(
+        {
+            "operation": "archive",
+            "manifest_sha256": record["manifest"]["manifest_sha256"],
+            "closing_month": "2026-06",
+        }
+    )
+    fetch = AsyncMock(side_effect=[record, {**record, "status": "approved"}])
+    monkeypatch.setattr(grile, "fetch_monthly_manifest", fetch)
+    monkeypatch.setattr(
+        grile,
+        "persist_monthly_manifest_approval",
+        AsyncMock(return_value=None),
+    )
+    replay = await grile.approve_monthly_manifest(
+        MagicMock(), manifest_id=1, approved_by_sub="subject-1"
+    )
+    assert replay["approved"] is False
+
+    fetch = AsyncMock(side_effect=[record, record])
+    monkeypatch.setattr(grile, "fetch_monthly_manifest", fetch)
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        await grile.approve_monthly_manifest(
+            MagicMock(), manifest_id=1, approved_by_sub="subject-1"
+        )
+    assert exc_info.value.code == "manifest_approval_race"
+
+
+def test_reset_snapshot_restore_and_verification_guards() -> None:
+    service = StatefulResetService()
+    incomplete = MagicMock()
+    incomplete.spreadsheets.return_value.values.return_value.batchGet.return_value.execute.return_value = {
+        "valueRanges": []
+    }
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._read_reset_snapshot(incomplete, entry())
+    assert exc_info.value.code == "backup_response_incomplete"
+
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._restore_reset_snapshot(service, entry(), {})
+    assert exc_info.value.code == "backup_invalid"
+
+    original = grile._read_reset_snapshot(service, entry())
+    service.state[grile.RESET_RANGES[0]] = [[999]]
+    service.batchUpdate = lambda **_kwargs: SimpleNamespace(execute=lambda: {})  # type: ignore[method-assign]
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._restore_reset_snapshot(service, entry(), original)
+    assert exc_info.value.code == "rollback_verification_failed"
+
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._verify_reset_cleared(service, entry())
+    assert exc_info.value.code == "reset_verification_failed"
+
+
+@pytest.mark.asyncio
+async def test_reset_rejects_missing_approval_partial_and_registry_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._reset_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            requested_by_sub="subject-1",
+            operation_id=None,
+            approved_manifest_id=None,
+            dry_run=False,
+        )
+    assert exc_info.value.code == "approved_manifest_required"
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._reset_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            requested_by_sub="subject-1",
+            operation_id=1,
+            approved_manifest_id=31,
+            only="one-store",
+            dry_run=False,
+        )
+    assert exc_info.value.code == "partial_live_reset_forbidden"
+
+    monkeypatch.setattr(grile, "fetch_latest_monthly_manifest", AsyncMock(return_value=None))
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._reset_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            requested_by_sub="subject-1",
+            operation_id=1,
+            approved_manifest_id=None,
+            dry_run=True,
+        )
+    assert exc_info.value.code == "verified_archive_required"
+
+    approved = patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    monkeypatch.setattr(
+        grile,
+        "fetch_latest_monthly_manifest",
+        AsyncMock(return_value={"id": 32, "status": "failed", "manifest": {}}),
+    )
+    monkeypatch.setattr(
+        grile,
+        "fetch_monthly_manifest",
+        AsyncMock(return_value=approved),
+    )
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._reset_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            requested_by_sub="subject-1",
+            operation_id=1,
+            approved_manifest_id=31,
+            dry_run=False,
+        )
+    assert exc_info.value.code == "verified_archive_required"
+
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=False)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[]))
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile._reset_month_execution(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            requested_by_sub="subject-1",
+            operation_id=1,
+            approved_manifest_id=None,
+            dry_run=True,
+        )
+    assert exc_info.value.code == "registry_or_archive_coverage_changed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        ("backup", "backup_checkpoint_failed"),
+        ("claim", "rolled_back"),
+        ("finish", "rolled_back"),
+    ],
+)
+async def test_live_reset_checkpoint_failures_are_fail_closed(
+    failure: str,
+    expected_code: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
+    monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    monkeypatch.setattr(
+        grile,
+        "record_reset_item_backup",
+        AsyncMock(return_value=failure != "backup"),
+    )
+    monkeypatch.setattr(
+        grile,
+        "mark_reset_item_running",
+        AsyncMock(return_value=failure != "claim"),
+    )
+    monkeypatch.setattr(
+        grile,
+        "finish_reset_item",
+        AsyncMock(return_value=failure != "finish"),
+    )
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=True))
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.reset_month(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            dry_run=False,
+            operation_id=13,
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            approved_manifest_id=31,
+        )
+    assert exc_info.value.code == expected_code
+    if failure == "backup":
+        assert service.clear_calls == 0
+    else:
+        assert service.state[grile.RESET_RANGES[0]] == [[1]]
+
+
+@pytest.mark.asyncio
+async def test_live_reset_rollback_failure_is_uncertain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
+    monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "finish_reset_item", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        grile,
+        "_restore_reset_snapshot",
+        MagicMock(side_effect=RuntimeError("restore failed")),
+    )
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=False))
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.reset_month(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            dry_run=False,
+            operation_id=13,
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            approved_manifest_id=31,
+        )
+    assert exc_info.value.code == "uncertain"
+
+
+@pytest.mark.asyncio
+async def test_live_reset_output_failure_restores_all_google_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    original_state = dict(service.state)
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
+    monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "finish_reset_item", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        grile,
+        "_promote_file",
+        MagicMock(side_effect=OSError("report promotion failed")),
+    )
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.reset_month(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            dry_run=False,
+            operation_id=13,
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            approved_manifest_id=31,
+        )
+    assert exc_info.value.code == "rolled_back"
+    assert service.state == original_state
+    assert service.restore_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_run_monthly_op_persisted_state_guards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=object()))
+    start = AsyncMock()
+    monkeypatch.setattr(grile, "start_monthly_operation", start)
+
+    start.return_value = grile.MonthlyOperationStartResult(
+        "already_completed",
+        1,
+        result={"status": "success"},
+    )
+    replay = await grile.run_monthly_op(operation_id=1)
+    assert replay["idempotent_replay"] is True
+
+    start.return_value = grile.MonthlyOperationStartResult(
+        "already_failed",
+        2,
+        operation={"op": "archive", "closing_month": "2026-06", "dry_run": False},
+    )
+    failed = await grile.run_monthly_op(operation_id=2)
+    assert failed["status"] == "failed"
+    assert failed["operation_status"] == "failed"
+
+    start.return_value = grile.MonthlyOperationStartResult("started", 3, operation=None)
+    with pytest.raises(RuntimeError, match="no persisted state"):
+        await grile.run_monthly_op(operation_id=3)
+
+    base_operation = {
+        "op": "finalize",
+        "closing_month": "2026-06",
+        "only_filter": None,
+        "dry_run": False,
+        "requested_by_sub": "subject-1",
+        "approved_manifest_id": None,
+    }
+    start.return_value = grile.MonthlyOperationStartResult(
+        "started", 4, operation={**base_operation, "requested_by_sub": ""}
+    )
+    with pytest.raises(RuntimeError, match="no OIDC subject"):
+        await grile.run_monthly_op(operation_id=4)
+
+    start.return_value = grile.MonthlyOperationStartResult(
+        "started", 5, operation={**base_operation, "op": "invalid"}
+    )
+    with pytest.raises(ValueError, match="Operatie necunoscuta"):
+        await grile.run_monthly_op(operation_id=5)
+
+    start.return_value = grile.MonthlyOperationStartResult(
+        "started", 6, operation={**base_operation, "closing_month": None}
+    )
+    with pytest.raises(ValueError, match="month is required"):
+        await grile.run_monthly_op(operation_id=6)
+
+
+@pytest.mark.asyncio
+async def test_run_monthly_op_rejects_partial_official_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        grile,
+        "start_monthly_operation",
+        AsyncMock(
+            return_value=grile.MonthlyOperationStartResult(
+                "started",
+                7,
+                operation={
+                    "op": "finalize",
+                    "closing_month": "2026-06",
+                    "only_filter": "one-store",
+                    "dry_run": False,
+                    "requested_by_sub": "subject-1",
+                    "approved_manifest_id": None,
+                },
+            )
+        ),
+    )
+    persist = AsyncMock(return_value={"id": 1})
+    finish = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "persist_manifest_result", persist)
+    monkeypatch.setattr(grile, "finish_monthly_operation", finish)
+
+    result = await grile.run_monthly_op(operation_id=7)
+
+    assert result["status"] == "failed"
+    assert result["output"].endswith("partial_official_operation_forbidden")
+    persist.assert_awaited_once()
+    finish.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("manifest_failure", [True, False])
+async def test_run_monthly_op_persists_structured_failures(
+    manifest_failure: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        grile,
+        "start_monthly_operation",
+        AsyncMock(
+            return_value=grile.MonthlyOperationStartResult(
+                "started",
+                8,
+                operation={
+                    "op": "finalize",
+                    "closing_month": "2026-06",
+                    "only_filter": None,
+                    "dry_run": False,
+                    "requested_by_sub": "subject-1",
+                    "approved_manifest_id": None,
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    failed_manifest = grile.base_manifest(
+        month="2026-06",
+        operation="finalize",
+        requested_by_sub="subject-1",
+        expected_stores=0,
+        expected_agents=0,
+        processed_stores=0,
+        processed_agents=0,
+        control_totals={},
+        artifacts=[],
+        errors=["finalization_incomplete"],
+        status="failed",
+    )
+    failure: Exception
+    if manifest_failure:
+        failure = grile.MonthlyManifestError(
+            "finalization_incomplete", "failed", failed_manifest
+        )
+    else:
+        failure = RuntimeError("unexpected failure")
+    monkeypatch.setattr(
+        grile,
+        "_finalize_month_execution",
+        AsyncMock(side_effect=failure),
+    )
+    persist = AsyncMock(return_value={"id": 1, "manifest": failed_manifest})
+    monkeypatch.setattr(grile, "persist_manifest_result", persist)
+    monkeypatch.setattr(grile, "finish_monthly_operation", AsyncMock(return_value=True))
+
+    result = await grile.run_monthly_op(operation_id=8)
+
+    assert result["status"] == "failed"
+    assert result["exit_code"] == -1
+    persist.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_monthly_op_consumes_approved_manifest_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        grile,
+        "start_monthly_operation",
+        AsyncMock(
+            return_value=grile.MonthlyOperationStartResult(
+                "started",
+                9,
+                operation={
+                    "op": "reset",
+                    "closing_month": "2026-06",
+                    "only_filter": None,
+                    "dry_run": False,
+                    "requested_by_sub": "subject-1",
+                    "approved_manifest_id": 31,
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    execution = grile.MonthlyExecution(Path("report.json"), {"status": "verified"})
+    monkeypatch.setattr(grile, "_reset_month_execution", AsyncMock(return_value=execution))
+    monkeypatch.setattr(
+        grile,
+        "persist_manifest_result",
+        AsyncMock(return_value={"id": 2, "status": "verified", "manifest": {}}),
+    )
+    approved_manifest = {"status": "approved", "manifest_sha256": "b" * 64}
+    monkeypatch.setattr(
+        grile,
+        "fetch_monthly_manifest",
+        AsyncMock(
+            return_value={
+                "manifest": approved_manifest,
+                "manifest_sha256": approved_manifest["manifest_sha256"],
+            }
+        ),
+    )
+    consume = AsyncMock(
+        return_value={
+            "id": 41,
+            "operation_id": 9,
+            "closing_month": "2026-06",
+            "operation": "reset",
+            "status": "verified",
+            "manifest": execution.manifest,
+            "error_count": 0,
+        }
+    )
+    monkeypatch.setattr(grile, "persist_reset_success", consume)
+
+    result = await grile.run_monthly_op(operation_id=9)
+
+    assert result["status"] == "success"
+    consume.assert_awaited_once()
+    assert consume.await_args is not None
+    assert consume.await_args.kwargs["reset_manifest"] == execution.manifest
+    consumed = consume.await_args.kwargs["consumed_manifest"]
+    assert consumed["status"] == "consumed"
+
+
+@pytest.mark.asyncio
+async def test_run_monthly_op_commit_failure_rolls_back_google_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        grile,
+        "start_monthly_operation",
+        AsyncMock(
+            return_value=grile.MonthlyOperationStartResult(
+                "started",
+                9,
+                operation={
+                    "op": "reset",
+                    "closing_month": "2026-06",
+                    "only_filter": None,
+                    "dry_run": False,
+                    "requested_by_sub": "subject-1",
+                    "approved_manifest_id": 31,
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    rollback_manifest = grile.base_manifest(
+        month="2026-06",
+        operation="reset",
+        requested_by_sub="subject-1",
+        expected_stores=1,
+        expected_agents=1,
+        processed_stores=0,
+        processed_agents=0,
+        control_totals={},
+        artifacts=[],
+        errors=["reset_commit_failed", "rollback_verified"],
+        status="rolled_back",
+    )
+    rollback = AsyncMock(return_value=rollback_manifest)
+    execution = grile.MonthlyExecution(
+        Path("report.json"),
+        {"status": "verified"},
+        rollback=rollback,
+    )
+    monkeypatch.setattr(grile, "_reset_month_execution", AsyncMock(return_value=execution))
+    approved_manifest = {"status": "approved", "manifest_sha256": "b" * 64}
+    monkeypatch.setattr(
+        grile,
+        "fetch_monthly_manifest",
+        AsyncMock(
+            return_value={
+                "manifest": approved_manifest,
+                "manifest_sha256": approved_manifest["manifest_sha256"],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        grile,
+        "persist_reset_success",
+        AsyncMock(side_effect=RuntimeError("commit failed")),
+    )
+    monkeypatch.setattr(
+        grile,
+        "persist_manifest_result",
+        AsyncMock(
+            return_value={
+                "id": 41,
+                "operation_id": 9,
+                "closing_month": "2026-06",
+                "operation": "reset",
+                "status": "rolled_back",
+                "manifest": rollback_manifest,
+                "error_count": 2,
+            }
+        ),
+    )
+    monkeypatch.setattr(grile, "finish_monthly_operation", AsyncMock(return_value=True))
+
+    result = await grile.run_monthly_op(operation_id=9)
+
+    rollback.assert_awaited_once()
+    assert result["status"] == "failed"
+    assert result["output"].endswith("rolled_back")
+
+
+@pytest.mark.asyncio
+async def test_run_monthly_op_reports_lost_completion_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("db.connection.get_pool", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        grile,
+        "start_monthly_operation",
+        AsyncMock(
+            return_value=grile.MonthlyOperationStartResult(
+                "started",
+                10,
+                operation={
+                    "op": "finalize",
+                    "closing_month": "2026-06",
+                    "only_filter": None,
+                    "dry_run": False,
+                    "requested_by_sub": "subject-1",
+                    "approved_manifest_id": None,
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    execution = grile.MonthlyExecution(Path("final.xlsx"), {"status": "verified"})
+    monkeypatch.setattr(grile, "_finalize_month_execution", AsyncMock(return_value=execution))
+    monkeypatch.setattr(grile, "persist_manifest_result", AsyncMock(return_value=None))
+    monkeypatch.setattr(grile, "finish_monthly_operation", AsyncMock(return_value=False))
+
+    result = await grile.run_monthly_op(operation_id=10)
+
+    assert result["status"] == "failed"
+    assert result["output"].endswith("operation_lease_lost")

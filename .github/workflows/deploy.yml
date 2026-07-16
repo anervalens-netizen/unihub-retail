@@ -1,0 +1,96 @@
+name: Deploy verified Retail artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main CI run ID that produced the artifact
+        required: true
+        type: string
+      source_sha:
+        description: Exact 40-character main source SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: production-retail-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.PRODUCTION_DEPLOY_APPROVALS_ENFORCED == 'true'
+    environment: production
+    runs-on: [self-hosted, unihub-deploy]
+    timeout-minutes: 30
+    steps:
+      - name: Validate approved CI source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          run_json="$(gh api "repos/$REPOSITORY/actions/runs/$CI_RUN_ID")"
+          test "$(jq -r .name <<<"$run_json")" = "CI"
+          test "$(jq -r .event <<<"$run_json")" = "push"
+          test "$(jq -r .head_branch <<<"$run_json")" = "main"
+          test "$(jq -r .head_sha <<<"$run_json")" = "$EXPECTED_SHA"
+          test "$(jq -r .status <<<"$run_json")" = "completed"
+          test "$(jq -r .conclusion <<<"$run_json")" = "success"
+
+      - name: Download exact release artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: retail-release-${{ inputs.source_sha }}
+          path: verified-release
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
+
+      - name: Verify artifact manifest
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          cd verified-release
+          sha256sum --check SHA256SUMS
+          test "$(tr -d '\n' < SOURCE_SHA)" = "$EXPECTED_SHA"
+          test -f "retail-release-${EXPECTED_SHA}.tar.gz"
+
+      - name: Verify public proxy hardening gate
+        run: |
+          set -euo pipefail
+          for path in /metrics /docs /redoc /openapi.json; do
+            status="$(curl --silent --show-error --output /dev/null \
+              --write-out '%{http_code}' --max-time 10 \
+              "https://retail.unihub.ro${path}")"
+            if [[ "$status" != "404" ]]; then
+              echo "::error::Public route ${path} returned ${status}, expected 404; deploy is blocked."
+              exit 1
+            fi
+          done
+
+      - name: Deploy through root-owned entrypoint
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          test -x /opt/Mobiup/ops/scripts/deploy-retail-artifact.sh
+          cd verified-release
+          artifact="retail-release-${EXPECTED_SHA}.tar.gz"
+          artifact_sha256="$(awk -v file="$artifact" '$2 == file {print $1}' SHA256SUMS)"
+          [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]]
+          sudo --non-interactive \
+            /opt/Mobiup/ops/scripts/deploy-retail-artifact.sh \
+            "$PWD/$artifact" \
+            "$EXPECTED_SHA" \
+            "$CI_RUN_ID" \
+            "$artifact_sha256"

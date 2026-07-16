@@ -105,6 +105,16 @@ function isWeekendDate(value: string) {
   return day === 0 || day === 6;
 }
 
+function formatGeneratedAt(value: string | undefined): string {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('ro-RO', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
 function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
   return points.map((point) => {
     const hasActual = point.actual_sales > 0 || point.cumulative_actual > 0;
@@ -256,9 +266,10 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
               {statusText}
             </p>
           </div>
-          <div className="rounded-2xl bg-slate-100 px-3 py-2 text-right text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            <div>{run.model_mode}</div>
-            <div className="text-slate-400">sursa {summary.source_month}</div>
+          <div className="grid w-full grid-cols-2 gap-2 rounded-2xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300 sm:w-auto sm:grid-cols-3">
+            <div><span className="block text-slate-400">Model</span>{run.model_mode}</div>
+            <div><span className="block text-slate-400">Sursă</span>{summary.source_month}</div>
+            <div><span className="block text-slate-400">Generat</span>{formatGeneratedAt(run.generated_at)}</div>
           </div>
         </div>
 
@@ -419,7 +430,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onHorizonChange('current_month')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 horizonMode === 'current_month'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -430,7 +441,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onHorizonChange('rolling_12m')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 horizonMode === 'rolling_12m'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -443,7 +454,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onMetricChange('sales_value')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 metric === 'sales_value'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -454,7 +465,7 @@ function ForecastModeControls({
             <button
               type="button"
               onClick={() => onMetricChange('units')}
-              className={`rounded-xl px-3 py-1.5 transition-colors ${
+              className={`min-h-11 rounded-xl px-3 py-2 transition-colors lg:min-h-0 lg:py-1.5 ${
                 metric === 'units'
                   ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950 dark:text-indigo-300'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
@@ -533,9 +544,10 @@ function RollingForecastView({ currentMonth, filters, metric }: ForecastViewProp
               Prognoza lunara pentru urmatoarele 12 luni, salvata offline pe magazine active si agregata pe structura curenta.
             </p>
           </div>
-          <div className="rounded-2xl bg-slate-100 px-3 py-2 text-right text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            <div>{modelRun?.model_mode ?? 'xreg + timesfm'}</div>
-            <div className="text-slate-400">sursa {summary.source_month}</div>
+          <div className="grid w-full grid-cols-2 gap-2 rounded-2xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300 sm:w-auto sm:grid-cols-3">
+            <div><span className="block text-slate-400">Model</span>{modelRun?.model_mode ?? 'xreg + timesfm'}</div>
+            <div><span className="block text-slate-400">Sursă</span>{summary.source_month}</div>
+            <div><span className="block text-slate-400">Generat</span>{formatGeneratedAt(modelRun?.generated_at)}</div>
           </div>
         </div>
 
@@ -706,7 +718,21 @@ function RollingManagerTable({ rows, metric }: { rows: AiForecastRollingManagerR
           ]}
         />
       </div>
-      <div className="overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
+      <div className="space-y-2 lg:hidden">
+        {sortedRows.map((row) => (
+          <article key={`${row.manager}:mobile`} className="rounded-2xl border border-slate-200/70 bg-white/70 p-3 dark:border-slate-700/70 dark:bg-slate-900/30">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><p className="truncate text-sm font-bold">{row.manager}</p><p className="text-[11px] text-slate-500">{formatInt(row.store_count)} magazine</p></div>
+              <div className={`shrink-0 text-right text-sm font-black tabular-nums ${deltaTone(row.delta_sales)}`}>{formatSignedAmount(row.delta_sales, metric)}<p className="text-[10px] font-medium text-slate-400">{formatPercent(row.delta_pct)}</p></div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div><p className="text-[10px] text-slate-400">Forecast</p><p className="font-bold tabular-nums">{formatMetricValue(row.forecast_sales, metric)}</p></div>
+              <div className="text-right"><p className="text-[10px] text-slate-400">Realizat</p><p className="font-bold tabular-nums">{formatMetricValue(row.actual_sales, metric)}</p></div>
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="hidden overflow-auto rounded-2xl border border-slate-200/70 lg:block dark:border-slate-700/70">
         <table className="w-full min-w-[680px] text-sm">
           <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
             <tr>
@@ -754,7 +780,22 @@ function RollingStoreTable({ rows, metric }: { rows: AiForecastRollingStoreRow[]
   };
 
   return (
-    <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
+    <>
+      <div className="max-h-[520px] space-y-2 overflow-auto lg:hidden">
+        {sortedRows.map((row) => (
+          <article key={`${row.site_code}:mobile`} className="rounded-2xl border border-slate-200/70 bg-white/70 p-3 dark:border-slate-700/70 dark:bg-slate-900/30">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><p className="flex min-w-0 items-center text-sm font-bold"><FirmaBadge firma={row.firma} /><span className="truncate">{row.locatie}</span></p><p className="truncate text-[11px] text-slate-500">{row.asm}</p></div>
+              <div className={`shrink-0 text-right text-sm font-black tabular-nums ${deltaTone(row.delta_sales)}`}>{formatSignedAmount(row.delta_sales, metric)}<p className="text-[10px] font-medium text-slate-400">{formatPercent(row.delta_pct)}</p></div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div><p className="text-[10px] text-slate-400">Forecast</p><p className="font-bold tabular-nums">{formatMetricValue(row.forecast_sales, metric)}</p></div>
+              <div className="text-right"><p className="text-[10px] text-slate-400">Realizat</p><p className="font-bold tabular-nums">{formatMetricValue(row.actual_sales, metric)}</p></div>
+            </div>
+          </article>
+        ))}
+      </div>
+    <div className="hidden max-h-[520px] overflow-auto rounded-2xl border border-slate-200/70 lg:block dark:border-slate-700/70">
       <table className="w-full min-w-[780px] text-sm">
         <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
           <tr>
@@ -787,6 +828,7 @@ function RollingStoreTable({ rows, metric }: { rows: AiForecastRollingStoreRow[]
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 
@@ -917,7 +959,22 @@ function ForecastManagerTable({
           ]}
         />
       </div>
-      <div className="overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
+      <div className="space-y-2 lg:hidden">
+        {sortedRows.map((row) => (
+          <button type="button" key={`${row.manager}:mobile`} onClick={() => onSelect(row)} className="w-full rounded-2xl border border-slate-200/70 bg-white/70 p-3 text-left dark:border-slate-700/70 dark:bg-slate-900/30">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><p className="truncate text-sm font-bold text-indigo-600 dark:text-indigo-400">{row.manager}</p><p className="text-[11px] text-slate-500">{formatInt(row.store_count)} magazine</p></div>
+              <div className={`shrink-0 text-right text-sm font-black tabular-nums ${deltaTone(row.delta_sales)}`}>{formatSignedAmount(row.delta_sales, metric)}<p className="text-[10px] font-medium text-slate-400">{formatPercent(row.delta_pct)}</p></div>
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <div><p className="text-[10px] text-slate-400">Forecast</p><p className="font-bold tabular-nums">{formatMetricValue(row.forecast_sales, metric)}</p></div>
+              <div className="text-center"><p className="text-[10px] text-slate-400">Așteptat</p><p className="font-bold tabular-nums">{formatMetricValue(row.expected_sales_to_date, metric)}</p></div>
+              <div className="text-right"><p className="text-[10px] text-slate-400">Realizat</p><p className="font-bold tabular-nums">{formatMetricValue(row.actual_sales, metric)}</p></div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div className="hidden overflow-auto rounded-2xl border border-slate-200/70 lg:block dark:border-slate-700/70">
         <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
             <tr>
@@ -983,7 +1040,23 @@ function ForecastStoreTable({
   };
 
   return (
-    <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
+    <>
+      <div className="max-h-[520px] space-y-2 overflow-auto lg:hidden">
+        {sortedRows.map((row) => (
+          <button type="button" key={`${row.site_code}:mobile`} onClick={() => onSelect(row)} className="w-full rounded-2xl border border-slate-200/70 bg-white/70 p-3 text-left dark:border-slate-700/70 dark:bg-slate-900/30">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><p className="flex min-w-0 items-center text-sm font-bold text-indigo-600 dark:text-indigo-400"><FirmaBadge firma={row.firma} /><span className="truncate">{row.locatie}</span></p><p className="truncate text-[11px] text-slate-500">{row.asm}</p></div>
+              <div className={`shrink-0 text-right text-sm font-black tabular-nums ${deltaTone(row.delta_sales)}`}>{formatSignedAmount(row.delta_sales, metric)}<p className="text-[10px] font-medium text-slate-400">{formatPercent(row.delta_pct)}</p></div>
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <div><p className="text-[10px] text-slate-400">Forecast</p><p className="font-bold tabular-nums">{formatMetricValue(row.forecast_sales, metric)}</p></div>
+              <div className="text-center"><p className="text-[10px] text-slate-400">Așteptat</p><p className="font-bold tabular-nums">{formatMetricValue(row.expected_sales_to_date, metric)}</p></div>
+              <div className="text-right"><p className="text-[10px] text-slate-400">Realizat</p><p className="font-bold tabular-nums">{formatMetricValue(row.actual_sales, metric)}</p></div>
+            </div>
+          </button>
+        ))}
+      </div>
+    <div className="hidden max-h-[520px] overflow-auto rounded-2xl border border-slate-200/70 lg:block dark:border-slate-700/70">
       <table className="w-full min-w-[900px] text-sm">
         <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/95">
           <tr>
@@ -1026,6 +1099,7 @@ function ForecastStoreTable({
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 

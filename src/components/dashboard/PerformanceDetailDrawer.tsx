@@ -15,6 +15,7 @@ import type { PerformanceDetailLevel, PerformanceDetailResponse } from '../../ap
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
 import { SalaryAgentBarChart } from '../SalaryAgentBarChart';
 import { SideDrawer } from '../common/SideDrawer';
+import { TableHeaderCell } from '../common/TableHeader';
 import { LoadingCard } from './DashboardWidgets';
 
 export type PerformanceSelection = {
@@ -310,10 +311,10 @@ export function PerformanceDetailDrawer({
                   <table className="min-w-full text-xs">
                     <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
                       <tr>
-                        <th className="px-2 py-2 text-left">Nume</th>
-                        <th className="px-2 py-2 text-right">Vanzari</th>
-                        <th className="px-2 py-2 text-right">%</th>
-                        <th className="px-2 py-2 text-right">Rank</th>
+                        <TableHeaderCell>Nume</TableHeaderCell>
+                        <TableHeaderCell align="right">Vânzări</TableHeaderCell>
+                        <TableHeaderCell align="right">%</TableHeaderCell>
+                        <TableHeaderCell align="right">Loc</TableHeaderCell>
                       </tr>
                     </thead>
                     <tbody>

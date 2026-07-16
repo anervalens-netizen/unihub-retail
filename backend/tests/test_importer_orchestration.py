@@ -113,10 +113,15 @@ async def test_import_sales_dataframe_completes_filtered_snapshot(
     insert = AsyncMock(return_value=2)
     rebuild_month = AsyncMock()
     rebuild_lifecycle = AsyncMock()
+    coverage = {"incoming_store_count": 2, "store_activity_writes": 0}
+    build_coverage = AsyncMock(return_value=coverage)
+    record_coverage = AsyncMock()
     monkeypatch.setattr(importer, "reserve_snapshot", reserve)
     monkeypatch.setattr(importer, "upsert_stores", upsert)
     monkeypatch.setattr(importer, "replace_month_snapshot", replace)
     monkeypatch.setattr(importer, "insert_transactions", insert)
+    monkeypatch.setattr(importer, "build_import_coverage_report", build_coverage)
+    monkeypatch.setattr(importer, "record_coverage_report", record_coverage)
     monkeypatch.setattr(importer, "rebuild_reporting_month", rebuild_month)
     monkeypatch.setattr(
         importer,
@@ -139,6 +144,7 @@ async def test_import_sales_dataframe_completes_filtered_snapshot(
     assert result.agent_count == 2
     assert result.snapshot_id == 42
     assert result.is_month_final is True
+    assert result.coverage_report == coverage
     reserve.assert_awaited_once_with(
         conn,
         import_month="2099-07",
@@ -151,6 +157,8 @@ async def test_import_sales_dataframe_completes_filtered_snapshot(
     assert list(inserted_frame["SiteCode"]) == ["SITE01", "SITE02"]
     rebuild_month.assert_awaited_once_with(conn, "2099-07")
     rebuild_lifecycle.assert_awaited_once_with(conn)
+    build_coverage.assert_awaited_once()
+    record_coverage.assert_awaited_once_with(conn, 42, coverage)
     completed_call = conn.execute.await_args
     assert completed_call is not None
     assert "status = 'completed'" in completed_call.args[0]
@@ -165,6 +173,12 @@ async def test_import_sales_dataframe_records_truncated_failure(
     long_error = "x" * 600
     monkeypatch.setattr(importer, "reserve_snapshot", AsyncMock(return_value=77))
     monkeypatch.setattr(importer, "upsert_stores", AsyncMock())
+    monkeypatch.setattr(
+        importer,
+        "build_import_coverage_report",
+        AsyncMock(return_value={"store_activity_writes": 0}),
+    )
+    monkeypatch.setattr(importer, "record_coverage_report", AsyncMock())
     monkeypatch.setattr(
         importer,
         "replace_month_snapshot",

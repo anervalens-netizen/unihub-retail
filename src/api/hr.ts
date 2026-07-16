@@ -45,6 +45,43 @@ export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmH
   return data;
 }
 
+export interface ManagerStoreOverview {
+  site_code: string;
+  locatie: string;
+  firma: string;
+  active_agents: number;
+  previous_active_agents: number;
+  agent_delta: number;
+}
+
+export interface ManagerOverview {
+  manager: string;
+  regional: string;
+  month: string;
+  reporting_available: boolean;
+  active_stores: number;
+  active_agents: number;
+  previous_active_agents: number;
+  agent_delta: number;
+  agents_added: number;
+  agents_left: number;
+  stores_without_agents: number;
+  agents_per_store: number;
+  visits_available: boolean;
+  total_visits: number;
+  visited_stores: number;
+  visit_coverage_pct: number | null;
+  avg_visit_completion: number | null;
+  checklist_score: number | null;
+  approved_pct: number | null;
+  stores: ManagerStoreOverview[];
+}
+
+export async function fetchManagerOverview(month: string): Promise<ManagerOverview[]> {
+  const { data } = await client.get<ManagerOverview[]>('/api/hr/manager-overview', { params: { month } });
+  return data;
+}
+
 export interface AsmSalaryIsland {
   site_code: string;
   locatie: string;

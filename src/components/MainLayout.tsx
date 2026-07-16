@@ -142,6 +142,14 @@ export function MainLayout({
     setFilters(defaultAppFilters());
   };
 
+  const activeFilterCount = [filters.firma, filters.rm, filters.asm, filters.magazin, filters.agent].filter(
+    (value) => value !== ALL_FIRMS && value !== ALL_SCOPE && value !== ALL_STORES
+  ).length;
+  const hasMobileFilters = showFilterButton && (
+    (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents')
+    || (activeTab === 'management' && mgmtSubTab === 'salarii')
+  );
+
   return (
     <div className="flex h-dvh overflow-hidden bg-transparent">
       <DesktopSidebar
@@ -193,14 +201,14 @@ export function MainLayout({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 24, stiffness: 180 }}
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-4xl bg-white p-4 shadow-2xl dark:bg-slate-900"
+              className="mobile-filter-sheet fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88dvh] max-w-lg overflow-y-auto rounded-t-4xl bg-white p-4 shadow-2xl dark:bg-slate-900"
             >
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-bold">Filtre active</h3>
                 <button
                   onClick={() => setIsFilterOpen(false)}
                   aria-label="Inchide"
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"
                 >
                   <X size={16} />
                 </button>
@@ -310,7 +318,7 @@ export function MainLayout({
         )}
       </AnimatePresence>
 
-      <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 mx-auto max-w-6xl p-3">
+      <div className="mobile-bottom-nav lg:hidden fixed inset-x-0 bottom-0 z-30 mx-auto max-w-6xl px-3 pt-2">
         <div className="glass flex items-center justify-around rounded-2xl p-1.5">
           {ALL_TABS.filter((tab) => canAccessManagement || tab.id !== 'management').map((tab) => {
             const Icon = tab.icon;
@@ -320,7 +328,7 @@ export function MainLayout({
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  'relative flex h-12 w-14 flex-col items-center justify-center rounded-xl transition-all',
+                  'relative flex min-h-12 min-w-14 flex-1 flex-col items-center justify-center rounded-xl transition-all',
                   isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'
                 )}
               >
@@ -338,25 +346,29 @@ export function MainLayout({
                     </span>
                   )}
                 </div>
-                <span className="relative z-10 text-[9px] font-semibold">{tab.label}</span>
+                <span className="relative z-10 text-[10px] font-semibold">{tab.label}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {showFilterButton && (
-        (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents')
-        || (activeTab === 'management' && mgmtSubTab === 'salarii')
-      ) && (
+      {hasMobileFilters && (
         <button
+          type="button"
           onClick={() => setIsFilterOpen(true)}
-          aria-label="Filtre"
-          className="lg:hidden fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-indigo-200/50 bg-indigo-500/18 text-indigo-700 shadow-lg shadow-indigo-500/10 backdrop-blur-xl transition hover:bg-indigo-500/24 dark:border-indigo-400/20 dark:bg-indigo-400/14 dark:text-indigo-200 dark:hover:bg-indigo-400/20"
+          aria-label={activeFilterCount > 0 ? `Filtre, ${activeFilterCount} active` : 'Filtre'}
+          className="mobile-floating-filter lg:hidden fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-white/70 text-indigo-600 shadow-md shadow-slate-900/10 backdrop-blur-xl transition hover:bg-white/90 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-indigo-300 dark:hover:bg-slate-900/90"
         >
-          <Filter size={18} />
+          <Filter size={17} />
+          {activeFilterCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-black text-white ring-2 ring-white dark:ring-slate-950">
+              {activeFilterCount > 9 ? '9+' : activeFilterCount}
+            </span>
+          )}
         </button>
       )}
+
     </div>
   );
 }

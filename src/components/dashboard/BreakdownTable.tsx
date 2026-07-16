@@ -27,10 +27,9 @@ interface BreakdownTableProps<Row, SortKey extends string> {
   exportColumns: ExportColumn<Row>[];
 }
 
-const TABLE_MAX_HEIGHT_CLASS = 'max-h-[26rem]';
-const TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-[10.5px]';
-const HEADER_CLASS = 'px-1.5 py-1.5 align-bottom whitespace-normal text-[10px] leading-[1.05]';
-const DEFAULT_CELL_CLASS = 'px-1.5 py-1 whitespace-nowrap align-middle leading-tight text-right tabular-nums';
+const TABLE_CLASS = 'w-max min-w-full table-auto border-collapse text-xs lg:text-[13px]';
+const HEADER_CLASS = 'px-2 py-1.5 align-bottom whitespace-normal text-[11px] leading-tight lg:text-xs';
+const DEFAULT_CELL_CLASS = 'px-2 py-1.5 whitespace-nowrap align-middle leading-tight text-right tabular-nums';
 
 export function BreakdownTable<Row, SortKey extends string>({
   title,
@@ -47,8 +46,8 @@ export function BreakdownTable<Row, SortKey extends string>({
   exportColumns,
 }: BreakdownTableProps<Row, SortKey>) {
   return (
-    <div className="glass rounded-3xl p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="glass rounded-3xl p-3">
+      <div className="mb-2 flex min-h-10 items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             {icon}
@@ -63,10 +62,10 @@ export function BreakdownTable<Row, SortKey extends string>({
           columns={exportColumns}
         />
       </div>
-      <div className={`overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70 ${TABLE_MAX_HEIGHT_CLASS}`}>
+      <div className="compact-data-table max-h-[26rem] overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
         <table className={TABLE_CLASS}>
           <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
-            <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+            <tr className="h-12 text-left text-[11px] uppercase tracking-wide text-slate-500">
               {columns.map((column) => (
                 <SortableHeader
                   key={column.key}
@@ -83,7 +82,7 @@ export function BreakdownTable<Row, SortKey extends string>({
             {rows.map((row, index) => (
               <tr
                 key={rowKey(row)}
-                className={index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}
+                className={`h-7 ${index % 2 === 0 ? 'bg-white/70 dark:bg-slate-900/20' : 'bg-slate-50/70 dark:bg-slate-900/40'}`}
               >
                 {columns.map((column) => (
                   <td

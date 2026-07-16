@@ -195,6 +195,14 @@ def test_every_import_route_uses_the_import_admin_dependency() -> None:
     for route in import_routes:
         assert require_import_admin in _dependency_calls(route)
 
+    store_activity_routes = [
+        route
+        for route in _api_route_contexts(app)
+        if _route_path(route) == "/api/stores/{site_code}/activity"
+    ]
+    assert store_activity_routes
+    assert require_import_admin in _dependency_calls(store_activity_routes[0])
+
 
 def test_sensitive_management_routes_use_role_dependencies() -> None:
     from main import app

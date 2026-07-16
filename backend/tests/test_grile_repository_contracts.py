@@ -8,6 +8,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1] / "repositories"
 PERSISTED_GRILE_TABLES = (
     "grile_monthly_operations",
     "grile_monthly_reset_items",
+    "grile_monthly_manifests",
     "grile_runs",
     "grile_store_status",
 )

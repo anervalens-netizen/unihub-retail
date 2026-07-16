@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
@@ -127,6 +128,12 @@ async def test_import_history_maps_repository_rows() -> None:
                 "rows_imported": 2,
                 "status": "completed",
                 "error_message": None,
+                "coverage_report": json.dumps(
+                    {
+                        "stores_present_count": 1,
+                        "stores_missing_count": 0,
+                    }
+                ),
                 "created_at": now,
             }
         ]
@@ -137,6 +144,10 @@ async def test_import_history_maps_repository_rows() -> None:
     assert len(result) == 1
     assert result[0].id == 12
     assert result[0].status == "completed"
+    assert result[0].coverage_report == {
+        "stores_present_count": 1,
+        "stores_missing_count": 0,
+    }
 
 
 @pytest.mark.asyncio
@@ -157,6 +168,7 @@ async def test_grile_check_after_import_is_best_effort(
         month="2099-07",
         source="auto",
         source_snapshot_id=12,
+        triggered_by_sub="system:sales-import",
     )
 
     enqueue.side_effect = RuntimeError("Valkey unavailable")

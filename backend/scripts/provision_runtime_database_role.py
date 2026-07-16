@@ -65,6 +65,18 @@ async def provision(owner_url: str, runtime_url: str) -> dict[str, bool]:
         await owner.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {quoted_role}")
         await owner.execute(f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {quoted_role}")
         await owner.execute(f"GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {quoted_role}")
+        await owner.execute(
+            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+            f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {quoted_role}"
+        )
+        await owner.execute(
+            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+            f"GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {quoted_role}"
+        )
+        await owner.execute(
+            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+            f"GRANT EXECUTE ON FUNCTIONS TO {quoted_role}"
+        )
         await owner.execute(f"GRANT TRUNCATE ON premium_glass_item_models TO {quoted_role}")
         for table in ("salary_records", "agent_salary_links", "schema_meta", "schema_migrations"):
             await owner.execute(f"REVOKE ALL ON TABLE {table} FROM {quoted_role}")

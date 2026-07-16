@@ -64,6 +64,9 @@ describe('BreakdownTable', () => {
     const tableBody = html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] ?? '';
     expect(tableBody.match(/<tr/g)).toHaveLength(2);
     expect(html).toContain('title="Export Excel"');
+    expect(html).toContain('compact-data-table');
+    expect(html).toContain('max-h-[26rem]');
+    expect(html).not.toContain('style="height:');
     expect(html).not.toContain('disabled=""');
   });
 

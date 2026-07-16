@@ -23,6 +23,9 @@ import { ExportTableButton } from './ExportTableButton';
 import { SortableHeader } from './dashboard/DashboardWidgets';
 import { formatMonthSpanLabel } from '../lib/dates';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
+import { cn } from '../lib/utils';
+import { SegmentedTabs } from './common/SegmentedTabs';
+import { TableHeaderCell } from './common/TableHeader';
 
 type SortDir = 'asc' | 'desc';
 interface SortState<K extends string> { key: K; dir: SortDir }
@@ -117,6 +120,7 @@ interface SalariiSubtabProps {
 }
 
 export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
+  const [salaryView, setSalaryView] = useState<'overview' | 'stores' | 'agents'>('overview');
   const [overview, setOverview] = useState<SalariiOverview | null>(null);
   const [evolution, setEvolution] = useState<SalaryEvolutionPoint[]>([]);
   const [agents, setAgents] = useState<SalaryAgentSummary[]>([]);
@@ -269,8 +273,22 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
   return (
     <div className="space-y-4 px-4 py-4">
+      <SegmentedTabs<'overview' | 'stores' | 'agents'>
+        ariaLabel="Vizualizare salarii"
+        className="glass"
+        options={[
+          { value: 'overview', label: 'Overview' },
+          { value: 'stores', label: 'Magazine' },
+          { value: 'agents', label: 'Agenți' },
+        ]}
+        value={salaryView}
+        onChange={setSalaryView}
+      />
+      <p className="rounded-2xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-300">
+        Media lunară include doar valorile de cel puțin 2.000 RON. Totalurile, istoricul și numărul de agenți rămân complete.
+      </p>
       {/* ===== Card 1: Statistici Salarii ===== */}
-      <div className="glass rounded-3xl p-4">
+      <div className={cn('glass rounded-3xl p-3 sm:p-4', salaryView !== 'overview' && 'hidden')}>
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">Statistici Salarii</h3>
           {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
@@ -325,7 +343,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       </div>
 
       {/* ===== Card 2: Salarii vs Vanzari (unificat) ===== */}
-      <div className="glass rounded-3xl p-4">
+      <div className={cn('glass rounded-3xl p-4', salaryView !== 'stores' && 'hidden')}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">
             Salarii vs Vânzări
@@ -374,7 +392,23 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             )}
           </div>
         </div>
-        <div className="max-h-72 overflow-auto">
+        <div className="space-y-2 lg:hidden">
+          {sortedSummary.map((item) => (
+            <article key={`${item.locatie ?? item.site_code}-${item.company_name}-mobile`} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><p className="truncate text-sm font-bold">{item.locatie ?? item.site_code}</p><p className={`text-xs font-bold ${COMPANY_COLORS[item.company_name] ?? 'text-slate-500'}`}>{item.company_name} · {item.agent_count} agenți</p></div>
+                <span className="rounded-xl bg-indigo-50 px-2 py-1 text-sm font-black text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">{item.ratio.toFixed(1)}%</span>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div><p className="text-[10px] text-slate-400">Salarii</p><p className="text-xs font-bold">{formatCompactCurrency(item.total_salary)} RON</p></div>
+                <div><p className="text-[10px] text-slate-400">Medie</p><p className="text-xs font-bold">{formatCurrency(item.avg_salary)} RON</p></div>
+                <div><p className="text-[10px] text-slate-400">Vânzări</p><p className="text-xs font-bold">{formatCompactCurrency(item.total_sales)} RON</p></div>
+              </div>
+            </article>
+          ))}
+          {sortedSummary.length === 0 && !loadingCards && <p className="py-6 text-center text-xs text-slate-400">Fără date</p>}
+        </div>
+        <div className="hidden max-h-72 overflow-auto lg:block">
           <table className="w-full min-w-[860px] table-fixed text-sm">
             <colgroup>
               <col style={{ width: '23%' }} />
@@ -443,7 +477,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       </div>
 
       {/* ===== Card 3: Trend (Evolutie Salarii vs Vanzari) ===== */}
-      <div className="glass rounded-3xl p-4">
+      <div className={cn('glass rounded-3xl p-3 sm:p-4', salaryView !== 'overview' && 'hidden')}>
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">Evolutie Salarii vs Vanzari</h3>
           <div className="flex items-center gap-2">
@@ -470,8 +504,8 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] table-fixed text-sm">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+          <table className="w-full min-w-[620px] table-fixed text-xs sm:text-sm">
             <colgroup>
               <col style={{ width: '15%' }} />
               <col style={{ width: '11%' }} />
@@ -483,7 +517,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-700">
                 <SortableHeader label="Luna" active={trendSort.key === 'month'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'month'))} className="px-2 py-2 text-left text-xs" />
-                <th className="px-2 py-2 text-right text-xs font-bold">Agenți</th>
+                <TableHeaderCell align="right">Agenți</TableHeaderCell>
                 <SortableHeader label="Salarii" active={trendSort.key === 'total_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
                 <SortableHeader label="Medie / agent" title="Salariul mediu per agent în luna respectivă" active={trendSort.key === 'avg_salary'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'avg_salary'))} className="px-2 py-2 text-right text-xs" align="right" />
                 <SortableHeader label="Vânzări" active={trendSort.key === 'total_sales'} direction={trendSort.dir} onClick={() => setTrendSort(s => toggleSort(s, 'total_sales'))} className="px-2 py-2 text-right text-xs" align="right" />
@@ -529,13 +563,13 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       </div>
 
       {/* ===== Card 4: Evolutie Salarii Lunar (Area Chart) ===== */}
-      <div className="glass rounded-3xl p-4">
+      <div className={cn('glass rounded-3xl p-4', salaryView !== 'overview' && 'hidden')}>
         <h3 className="mb-3 text-sm font-bold text-slate-600 dark:text-slate-300">Evolutie Salarii Lunara</h3>
         <SalaryAreaChart data={evolution} />
       </div>
 
       {/* ===== Card 5: Agenti (unificat) ===== */}
-      <div className="glass rounded-3xl overflow-hidden">
+      <div className={cn('glass overflow-hidden rounded-3xl', salaryView !== 'agents' && 'hidden')}>
         {/* Card Header */}
         <div className="bg-slate-50 px-4 py-3 dark:bg-slate-800/50">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -570,7 +604,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                   placeholder="Cauta..."
                   value={search}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  className="w-32 rounded-lg border border-slate-200 bg-white/80 py-1.5 pl-7 pr-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+                  className="h-11 w-40 rounded-lg border border-slate-200 bg-white/80 py-2 pl-7 pr-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 lg:h-auto lg:w-32 lg:py-1.5"
                 />
               </div>
               {search && (
@@ -586,7 +620,16 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         </div>
 
         {/* Table */}
-        <div className="max-h-72 overflow-auto">
+        <div className="space-y-2 p-3 lg:hidden">
+          {agents?.map((agent) => (
+            <button key={`${agent.person_id}-mobile`} type="button" onClick={() => setDrawer({ personId: agent.person_id, fullName: agent.full_name })} className="min-h-20 w-full rounded-2xl border border-slate-200 bg-white p-3 text-left dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-bold">{agent.full_name}</p><p className="truncate text-xs text-slate-500">{agent.company_name} · {agent.locatie ?? 'Fără locație'}</p></div><p className="shrink-0 text-sm font-black text-indigo-600 dark:text-indigo-300">{formatCurrency(agent.total_salary)} RON</p></div>
+              <p className="mt-2 text-xs text-slate-500">{agent.month_count} luni · medie eligibilă {formatCurrency(agent.avg_salary)} RON</p>
+            </button>
+          ))}
+          {(!agents || agents.length === 0) && !loading && <p className="py-8 text-center text-sm text-slate-400">Nu s-au găsit agenți</p>}
+        </div>
+        <div className="hidden max-h-72 overflow-auto lg:block">
           <table className="w-full min-w-[820px] table-fixed text-sm">
             <colgroup>
               <col style={{ width: '25%' }} />
@@ -596,14 +639,14 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               <col style={{ width: '15%' }} />
               <col style={{ width: '15%' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-800">
+            <thead className="sticky top-0 z-10 bg-slate-100 text-slate-500 dark:bg-slate-800">
               <tr>
-                <th className="px-4 py-2 text-left">Nume agent</th>
-                <th className="px-2 py-2 text-left">Firmă</th>
-                <th className="px-2 py-2 text-left">Locație curentă</th>
-                <th className="px-2 py-2 text-right">Luni</th>
-                <th className="px-2 py-2 text-right">Medie / lună</th>
-                <th className="px-4 py-2 text-right">Total</th>
+                <TableHeaderCell className="px-4">Nume agent</TableHeaderCell>
+                <TableHeaderCell>Firmă</TableHeaderCell>
+                <TableHeaderCell>Locație curentă</TableHeaderCell>
+                <TableHeaderCell align="right">Luni</TableHeaderCell>
+                <TableHeaderCell align="right">Medie / lună</TableHeaderCell>
+                <TableHeaderCell align="right" className="px-4">Total</TableHeaderCell>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -621,19 +664,19 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                   className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
                   title="Deschide istoricul agentului"
                 >
-                  <td className="px-4 py-3 font-semibold text-slate-800 dark:text-white">{agent.full_name}</td>
-                  <td className={`px-2 py-3 text-xs font-bold ${COMPANY_COLORS[agent.company_name] ?? 'text-slate-500'}`}>
+                  <td className="px-4 py-2 font-semibold text-slate-800 dark:text-white">{agent.full_name}</td>
+                  <td className={`px-2 py-2 text-xs font-bold ${COMPANY_COLORS[agent.company_name] ?? 'text-slate-500'}`}>
                     {agent.company_name}
                   </td>
-                  <td className="px-2 py-3 text-slate-500">{agent.locatie ?? '—'}</td>
-                  <td className="px-2 py-3 text-right tabular-nums text-slate-500">{formatCurrency(agent.month_count)}</td>
+                  <td className="px-2 py-2 text-slate-500">{agent.locatie ?? '—'}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-500">{formatCurrency(agent.month_count)}</td>
                   <td
-                    className="px-2 py-3 text-right font-mono text-slate-600 dark:text-slate-300"
+                    className="px-2 py-2 text-right font-mono text-slate-600 dark:text-slate-300"
                     title={`${agent.avg_month_count} din ${agent.month_count} luni au salariul de cel puțin 2.000 RON`}
                   >
                     {formatCurrency(agent.avg_salary)} RON
                   </td>
-                  <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-800 dark:text-white">
+                  <td className="px-4 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-white">
                     {formatCurrency(agent.total_salary)} RON
                   </td>
                 </tr>
@@ -659,14 +702,14 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               <button
                 onClick={() => { const p = page - 1; setPage(p); loadAgents(p * PAGE_SIZE); }}
                 disabled={page === 0}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 lg:min-h-0 lg:py-1.5"
               >
                 Inapoi
               </button>
               <button
                 onClick={() => { const p = page + 1; setPage(p); loadAgents(p * PAGE_SIZE); }}
                 disabled={!hasMore}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 disabled:opacity-40 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 lg:min-h-0 lg:py-1.5"
               >
                 Inainte
               </button>

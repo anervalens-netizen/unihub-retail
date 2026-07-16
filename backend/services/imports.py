@@ -36,7 +36,10 @@ async def trigger_grile_check_after_import(import_month: str, snapshot_id: int |
     """
     try:
         result = await enqueue_grile_check(
-            month=import_month, source="auto", source_snapshot_id=snapshot_id
+            month=import_month,
+            source="auto",
+            source_snapshot_id=snapshot_id,
+            triggered_by_sub="system:sales-import",
         )
         logger.info(
             "grile check %s (auto) for %s snapshot=%s run=%s",
@@ -234,4 +237,11 @@ class ImportsService:
 
     async def get_import_history(self) -> list[ImportHistoryEntry]:
         rows = await self.repo.get_import_history()
-        return [ImportHistoryEntry(**dict(row)) for row in rows]
+        history: list[ImportHistoryEntry] = []
+        for row in rows:
+            payload = dict(row)
+            report = payload.get("coverage_report")
+            if isinstance(report, str):
+                payload["coverage_report"] = json.loads(report)
+            history.append(ImportHistoryEntry(**payload))
+        return history

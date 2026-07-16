@@ -29,6 +29,7 @@ import {
   type PnlMonthlyPoint,
   type PnlStoreOption,
 } from "../api/storePnl";
+import { TableHeaderCell } from "./common/TableHeader";
 
 const CATEGORY_LABELS: Record<string, string> = {
   v1: "Venituri cartele",
@@ -55,7 +56,8 @@ const compactMoney = new Intl.NumberFormat("ro-RO", {
   maximumFractionDigits: 1,
 });
 
-function monthLabel(value: string): string {
+export function monthLabel(value: string): string {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return "—";
   return new Intl.DateTimeFormat("ro-RO", {
     month: "short",
     year: "2-digit",
@@ -70,12 +72,12 @@ export function defaultPnlRange(
   const currentYear = String(now.getFullYear());
   let selected = available.filter((month) => month.startsWith(`${currentYear}-`));
   if (!selected.length && available.length) {
-    const latestYear = available.at(-1)?.slice(0, 4);
+    const latestYear = available[available.length - 1]?.slice(0, 4);
     selected = available.filter((month) => month.startsWith(`${latestYear}-`));
   }
   return {
     start: selected[0] ?? "",
-    end: selected.at(-1) ?? "",
+    end: selected[selected.length - 1] ?? "",
   };
 }
 
@@ -180,6 +182,27 @@ export function PnlSubtab() {
     queryFn: () => getPnlAnnual(company, siteCode, siteCompany, regional),
   });
   const data = overviewQuery.data;
+  const monthlyVariance = useMemo(() => {
+    if (!data || data.monthly.length < 2) return null;
+    const points = [...data.monthly].sort((left, right) => left.month.localeCompare(right.month));
+    const current = points[points.length - 1];
+    const previous = points[points.length - 2];
+    if (!current || !previous) return null;
+    const pct = (value: number, base: number) => base === 0 ? null : ((value - base) / Math.abs(base)) * 100;
+    return {
+      currentMonth: current.month,
+      previousMonth: previous.month,
+      revenuePct: pct(current.revenue, previous.revenue),
+      ebitdaPct: pct(current.ebitda, previous.ebitda),
+      ebitPct: pct(current.ebit, previous.ebit),
+    };
+  }, [data]);
+  const reconciliationWarnings = useMemo(() => (
+    data?.reconciliation.filter((item) => (
+      item.retail_sales_net !== 0
+      && Math.abs(item.difference_to_net / item.retail_sales_net) >= 0.05
+    )) ?? []
+  ), [data]);
   const filteredStores = useMemo(() => {
     const needle = storeSearch.trim().toLocaleLowerCase("ro-RO");
     if (!needle) return data?.stores ?? [];
@@ -308,6 +331,11 @@ export function PnlSubtab() {
         </div>
       </div>
 
+      <div className="sticky top-2 z-20 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 lg:hidden">
+        <div className="min-w-0"><p className="font-bold text-slate-800 dark:text-slate-100">{monthLabel(startMonth)} – {monthLabel(endMonth)}</p><p className="truncate text-slate-500">{selectedStore?.location ?? (regional || company || 'Toată rețeaua')}</p></div>
+        <span className="shrink-0 rounded-xl bg-indigo-50 px-2 py-1 font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">P&amp;L</span>
+      </div>
+
       {data?.monthly.some((point) => point.is_estimated) && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
           <AlertTriangle size={17} className="mt-0.5 shrink-0" />
@@ -315,6 +343,18 @@ export function PnlSubtab() {
             Intervalul conține luni estimate. Acestea sunt marcate distinct în
             grafic și în tabel.
           </span>
+        </div>
+      )}
+
+      {reconciliationWarnings.length > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <div>
+            <strong>Reconciliere de verificat</strong>
+            <p className="mt-1 text-xs">
+              {reconciliationWarnings.map((item) => `${monthLabel(item.month)}: diferență ${money.format(item.difference_to_net)}`).join(' · ')}
+            </p>
+          </div>
         </div>
       )}
 
@@ -363,12 +403,35 @@ export function PnlSubtab() {
                 Vânzări Retail fără TVA: {money.format(data.reconciliation[0].retail_sales_net)} · Venit P&amp;L / vânzări nete: {data.reconciliation[0].pnl_to_net_sales_pct?.toFixed(1)}%
               </div>
             )}
+            {monthlyVariance && (
+              <div className="grid grid-cols-3 gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs dark:border-slate-700 dark:bg-slate-800/50">
+                {[
+                  ['Venituri', monthlyVariance.revenuePct],
+                  ['EBITDA', monthlyVariance.ebitdaPct],
+                  ['EBIT', monthlyVariance.ebitPct],
+                ].map(([label, rawValue]) => {
+                  const value = rawValue as number | null;
+                  return (
+                    <div key={label as string}>
+                      <span className="text-slate-500">{label as string} vs {monthLabel(monthlyVariance.previousMonth)}</span>
+                      <strong className={`ml-2 tabular-nums ${value === null ? 'text-slate-400' : value >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {value === null ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(1)}%`}
+                      </strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <h3 className="mb-4 font-semibold text-slate-900 dark:text-white">
-              Evoluție lunară
-            </h3>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-semibold text-slate-900 dark:text-white">Evoluție lunară</h3>
+              <div className="flex items-center gap-3 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-indigo-600" /> Date efective</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Date estimate</span>
+              </div>
+            </div>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data.monthly}>
@@ -565,14 +628,34 @@ export function PnlSubtab() {
                   className="w-44 rounded-xl border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
                 />
               </div>
-              <div className="max-h-[580px] overflow-auto">
+              <div className="space-y-2 p-3 lg:hidden">
+                {filteredStores.map((store) => (
+                  <article key={`${store.company}-${store.source_site_code}:mobile`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">{store.location}</p>
+                        <p className="truncate text-[11px] text-slate-500">{store.company} · {store.site_code}</p>
+                      </div>
+                      <div className={`shrink-0 text-right text-sm font-black tabular-nums ${store.ebit < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {money.format(store.ebit)}
+                        <p className="text-[10px] font-medium text-slate-400">EBIT</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div><p className="text-[10px] text-slate-400">Venituri</p><p className="font-bold tabular-nums">{money.format(store.revenue)}</p></div>
+                      <div className="text-right"><p className="text-[10px] text-slate-400">EBITDA</p><p className={store.ebitda < 0 ? "font-bold text-rose-600" : "font-bold"}>{money.format(store.ebitda)}</p></div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="hidden max-h-[580px] overflow-auto lg:block">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-500 dark:bg-slate-800">
                     <tr>
-                      <th className="px-3 py-2 text-left">Magazin</th>
-                      <th className="px-3 py-2 text-right">Venituri</th>
-                      <th className="px-3 py-2 text-right">EBITDA</th>
-                      <th className="px-3 py-2 text-right">EBIT</th>
+                      <TableHeaderCell>Magazin</TableHeaderCell>
+                      <TableHeaderCell align="right">Venituri</TableHeaderCell>
+                      <TableHeaderCell align="right">EBITDA</TableHeaderCell>
+                      <TableHeaderCell align="right">EBIT</TableHeaderCell>
                     </tr>
                   </thead>
                   <tbody>

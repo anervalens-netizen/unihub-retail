@@ -13,27 +13,75 @@ permissions:
   contents: read
 
 jobs:
+  runner-isolation:
+    name: runner-isolation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prove PR runner isolation
+        env:
+          EXPECTED_RUNNER_ENVIRONMENT: github-hosted
+          BLOCKED_TIMESFM_PEER: 100.74.73.114
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = "$EXPECTED_RUNNER_ENVIRONMENT"
+          test "$RUNNER_NAME" != "unihub-server-runner"
+          test ! -e /opt/Mobiup/unihub-retail/.env
+          test ! -e /opt/Mobiup/ops/runners/retail
+          test ! -e /storage/backups
+          test ! -e /run/tailscale/tailscaled.sock
+          if ip link show tailscale0 >/dev/null 2>&1; then
+            echo "Unexpected Tailscale interface on PR runner" >&2
+            exit 1
+          fi
+          # Any HTTP response, including 401/403/404, proves that the private
+          # peer is reachable. Bypass proxies and intentionally do not use
+          # --fail, which would misclassify HTTP error responses as isolation.
+          if curl --silent --show-error --noproxy '*' \
+            --connect-timeout 2 --max-time 4 \
+            "http://$BLOCKED_TIMESFM_PEER:8000/" >/dev/null 2>&1; then
+            echo "PR runner unexpectedly reached the private TimesFM peer" >&2
+            exit 1
+          fi
+          if test -S /var/run/docker.sock; then
+            docker_name="$(docker info --format '{{.Name}}' 2>/dev/null || true)"
+            test "$docker_name" != "unihub-server"
+            test "$docker_name" != "unihub-server-runner"
+          fi
+
   backend-check:
-    runs-on: [self-hosted, unihub-server]
+    name: backend-check
+    needs: runner-isolation
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Prepare Python environment
         run: |
-          python3 -m venv venv
-          venv/bin/pip install --disable-pip-version-check --quiet -r requirements.txt -r requirements-dev.txt
+          python -m venv venv
+          venv/bin/pip install --disable-pip-version-check --quiet \
+            -r requirements.txt -r requirements-dev.txt
 
       - name: Runtime dependency smoke
         run: |
           runtime_root="$(mktemp -d)"
           trap 'rm -rf "$runtime_root"' EXIT
           runtime_venv="$runtime_root/venv"
-          python3 -m venv "$runtime_venv"
-          "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet -r requirements.txt
+          python -m venv "$runtime_venv"
+          "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet \
+            -r requirements.txt
           "$runtime_venv/bin/pip" check
           "$runtime_venv/bin/python" -c "import auth; import main; import worker"
 
@@ -66,7 +114,8 @@ jobs:
       - name: Python typecheck
         run: |
           set +e
-          venv/bin/mypy . --ignore-missing-imports --explicit-package-bases > mypy-report.txt 2>&1
+          venv/bin/mypy . --ignore-missing-imports --explicit-package-bases \
+            > mypy-report.txt 2>&1
           status=$?
           cat mypy-report.txt
           exit $status
@@ -77,20 +126,54 @@ jobs:
 
       - name: Operational configuration validation
         working-directory: .
+        env:
+          PROMETHEUS_VERSION: 3.11.3
+          PROMETHEUS_SHA256: 9479af67673316278958cda1f39b88a09f8921084e039c65acca060d0447bb38  # pragma: allowlist secret
         run: |
-          systemd-analyze verify \
+          systemd_root="$(mktemp -d)"
+          prom_root="$(mktemp -d)"
+          trap 'rm -rf "$systemd_root" "$prom_root"' EXIT
+          mkdir -p \
+            "$systemd_root/usr/lib/systemd" \
+            "$systemd_root/etc/systemd/system" \
+            "$systemd_root/usr/bin" \
+            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin"
+          cp -a /usr/lib/systemd/system "$systemd_root/usr/lib/systemd/"
+          cp \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-backend.service" \
             "$GITHUB_WORKSPACE/unihub-worker.service" \
-            "$GITHUB_WORKSPACE/ops/systemd/unihub-retail-migrate.service"
-          docker run --rm \
-            --entrypoint /bin/promtool \
-            -v "$GITHUB_WORKSPACE/ops/observability/retail-slo-rules.yml:/rules.yml:ro" \
-            prom/prometheus:v3.11.3 \
-            check rules /rules.yml
+            "$GITHUB_WORKSPACE/ops/systemd/unihub-retail-migrate.service" \
+            "$systemd_root/etc/systemd/system/"
+          printf '[Service]\nType=oneshot\nExecStart=/usr/bin/true\n' \
+            > "$systemd_root/etc/systemd/system/docker.service"
+          cp "$systemd_root/etc/systemd/system/docker.service" \
+            "$systemd_root/etc/systemd/system/mobiup-dwh-postgres.service"
+          touch \
+            "$systemd_root/opt/Mobiup/unihub-retail/.env" \
+            "$systemd_root/opt/Mobiup/unihub-retail/.env.worker" \
+            "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations"
+          cp /usr/bin/true "$systemd_root/usr/bin/true"
+          cp /usr/bin/true \
+            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python"
+          cp /usr/bin/true \
+            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python3"
+          systemd-analyze verify --root="$systemd_root" \
+            "$systemd_root/etc/systemd/system/unihub-backend.service" \
+            "$systemd_root/etc/systemd/system/unihub-worker.service" \
+            "$systemd_root/etc/systemd/system/unihub-retail-migrate.service"
+          archive="$prom_root/prometheus.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
+            --output "$archive"
+          echo "$PROMETHEUS_SHA256  $archive" | sha256sum --check -
+          tar --extract --gzip --file "$archive" --directory "$prom_root" \
+            --strip-components=1
+          "$prom_root/promtool" check rules \
+            "$GITHUB_WORKSPACE/ops/observability/retail-slo-rules.yml"
 
       - name: Upload mypy diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: mypy-report
           path: backend/mypy-report.txt
@@ -124,8 +207,8 @@ jobs:
             > backend-test-report.txt 2>&1
           status=$?
           if [ "$status" -eq 0 ]; then
-            venv/bin/python scripts/check_critical_coverage.py critical-coverage.json \
-              >> backend-test-report.txt 2>&1
+            venv/bin/python scripts/check_critical_coverage.py \
+              critical-coverage.json >> backend-test-report.txt 2>&1
             status=$?
           fi
           cat backend-test-report.txt
@@ -133,7 +216,7 @@ jobs:
 
       - name: Upload backend test diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: backend-test-report
           path: |
@@ -143,14 +226,20 @@ jobs:
           retention-days: 3
 
   frontend-check:
+    name: frontend-check
     needs: backend-check
-    runs-on: [self-hosted, unihub-server]
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: .
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Verify vendored private packages
+        run: node scripts/verify_vendored_npm_packages.mjs
 
       - name: Install frontend dependencies
         run: npm ci --include=dev
@@ -174,14 +263,14 @@ jobs:
         run: npm run build
 
       - name: Install Playwright browser
-        run: npx playwright install chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Browser and accessibility tests
         run: npm run test:e2e
 
       - name: Upload Playwright diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: playwright-report
           path: |
@@ -190,16 +279,37 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
-      - name: Upload source maps to GlitchTip
-        if: success()
-        env:
-          SENTRY_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
-          SENTRY_URL: https://errors.unihub.ro
-          SENTRY_ORG: unihub
-          SENTRY_PROJECT: retail
+      - name: Package tested main release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          if [ -n "$SENTRY_DSN" ]; then
-            npx @sentry/cli sourcemaps upload ./dist 2>/dev/null || echo "Source maps upload skipped"
-          else
-            echo "No SENTRY_DSN set, skipping source maps upload"
-          fi
+          set -euo pipefail
+          release_root="$(mktemp -d)"
+          trap 'rm -rf "$release_root"' EXIT
+          mkdir -p "$release_root/source"
+          git archive --format=tar HEAD | tar --extract --file=- \
+            --directory "$release_root/source"
+          cp -a dist "$release_root/source/dist"
+          printf '%s\n' "$GITHUB_SHA" > "$release_root/SOURCE_SHA"
+          tar --create --gzip \
+            --file "$release_root/retail-release-${GITHUB_SHA}.tar.gz" \
+            --directory "$release_root/source" .
+          (
+            cd "$release_root"
+            sha256sum SOURCE_SHA "retail-release-${GITHUB_SHA}.tar.gz" \
+              > SHA256SUMS
+          )
+          mkdir -p release-artifact
+          cp "$release_root/SOURCE_SHA" \
+            "$release_root/SHA256SUMS" \
+            "$release_root/retail-release-${GITHUB_SHA}.tar.gz" \
+            release-artifact/
+
+      - name: Upload tested main release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: retail-release-${{ github.sha }}
+          path: release-artifact/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

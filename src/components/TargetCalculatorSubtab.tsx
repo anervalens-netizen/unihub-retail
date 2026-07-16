@@ -188,11 +188,12 @@ function recalculateVisibleScenario(scenario: TargetScenario, rows: TargetScenar
   };
 }
 
-function SummaryCard({ label, value, detail, emphasis }: {
+function SummaryCard({ label, value, detail, emphasis, grouped = false }: {
   label: string;
   value: string;
   detail?: string;
   emphasis?: 'good' | 'warning' | 'attention';
+  grouped?: boolean;
 }) {
   const color = emphasis === 'good'
     ? 'text-emerald-600 dark:text-emerald-400'
@@ -201,13 +202,15 @@ function SummaryCard({ label, value, detail, emphasis }: {
       : emphasis === 'attention'
         ? 'text-amber-700 dark:text-amber-300'
       : 'text-slate-900 dark:text-slate-100';
-  const surface = emphasis === 'attention'
+  const surface = grouped
+    ? 'min-w-0 p-3'
+    : emphasis === 'attention'
     ? 'rounded-2xl border border-amber-300 bg-amber-50/80 p-4 min-w-0 dark:border-amber-700 dark:bg-amber-950/20'
     : 'glass rounded-2xl p-4 min-w-0';
   return (
     <div className={surface}>
       <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={`mt-1 text-xl font-bold tabular-nums ${color}`}>{value}</p>
+      <p className={`mt-1 break-words font-bold tabular-nums ${grouped ? 'text-base sm:text-lg xl:text-xl' : 'text-xl'} ${color}`}>{value}</p>
       {detail && <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{detail}</p>}
     </div>
   );
@@ -436,6 +439,47 @@ function KpiRow({ label, value }: { label: string; value: string }) {
       <span className="text-slate-500">{label}</span>
       <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">{value}</span>
     </div>
+  );
+}
+
+function TargetWorkflow({ step }: { step: 1 | 2 | 3 | 4 }) {
+  const steps = [
+    { number: 1, label: 'Configurare' },
+    { number: 2, label: 'Verificare propunere' },
+    { number: 3, label: 'Ajustări manageri' },
+    { number: 4, label: 'Finalizare' },
+  ] as const;
+  return (
+    <nav aria-label="Flux Calculator Target" className="glass rounded-2xl p-3">
+      <div className="lg:hidden">
+        <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500"><span>Pasul {step} din 4</span><span>{steps[step - 1].label}</span></div>
+        <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${step * 25}%` }} /></div>
+      </div>
+      <ol className="hidden grid-cols-2 gap-2 lg:grid lg:grid-cols-4">
+        {steps.map((item) => {
+          const complete = item.number < step;
+          const active = item.number === step;
+          return (
+            <li
+              key={item.number}
+              aria-current={active ? 'step' : undefined}
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
+                active
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : complete
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
+              }`}
+            >
+              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${active ? 'bg-white/20' : 'bg-white dark:bg-slate-900'}`}>
+                {complete ? '✓' : item.number}
+              </span>
+              {item.label}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
@@ -874,10 +918,19 @@ export function TargetCalculatorSubtab() {
     return <div className="p-6 text-sm text-slate-500">Se incarca calculatorul de target...</div>;
   }
 
+  const workflowStep: 1 | 2 | 3 | 4 = !scenario
+    ? 1
+    : scenario.status === 'finalized'
+      ? 4
+      : scenario.manual_adjustments_count === 0 && scenario.pending_final_count === scenario.store_count
+        ? 2
+        : 3;
+
   return (
     <div className="p-4 lg:p-6 space-y-4">
+      <TargetWorkflow step={workflowStep} />
       {context?.can_finalize && (
-        <div className="glass rounded-2xl p-4 space-y-4">
+        <div className="glass space-y-3 rounded-2xl p-3 sm:p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -898,8 +951,8 @@ export function TargetCalculatorSubtab() {
             </button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <label className="space-y-1 text-xs text-slate-500">
+          <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-5">
+            <label className="col-span-2 space-y-1 text-xs text-slate-500 sm:col-span-1">
               Luna target
               <input className={`w-full ${inputCls}`} type="month" value={targetMonth} onChange={(event) => setTargetMonth(event.target.value)} />
             </label>
@@ -911,7 +964,7 @@ export function TargetCalculatorSubtab() {
               Prag minim (RON)
               <input className={`w-full ${inputCls}`} type="number" min="0" value={minFloor} onChange={(event) => setMinFloor(event.target.value)} />
             </label>
-            <div className="space-y-1 text-xs text-slate-500">
+            <div className="col-span-2 space-y-1 text-xs text-slate-500 sm:col-span-1">
               Sezonalitate
               <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-800">
                 <button
@@ -938,7 +991,7 @@ export function TargetCalculatorSubtab() {
                 </button>
               </div>
             </div>
-            <div className="flex items-end">
+            <div className="col-span-2 flex items-end sm:col-span-1">
               <button
                 onClick={handleCalculate}
                 disabled={busy}
@@ -998,9 +1051,9 @@ export function TargetCalculatorSubtab() {
         </div>
       )}
 
-      {scenario && <div className="flex flex-wrap items-center gap-3">
+      {scenario && <div className="sticky top-2 z-20 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95">
         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-          Target {monthLabel(scenario.target_month)}
+          Target {monthLabel(scenario.target_month)} · revizia {scenario.revision}
         </span>
         {scenario && (
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -1014,7 +1067,12 @@ export function TargetCalculatorSubtab() {
                 ? 'Se salveaza automat...'
                 : dirty
                   ? 'Modificari in curs...'
-                  : 'Salvat in baza de date'}
+                  : 'Salvat în baza de date'}
+          </span>
+        )}
+        {scenario.status === 'draft' && (
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            {scenario.pending_final_count} locații de completat · {formatCurrency(scenario.remaining_difference)} rămas de distribuit
           </span>
         )}
       </div>}
@@ -1027,10 +1085,11 @@ export function TargetCalculatorSubtab() {
             </div>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard label="Target total" value={formatCurrency(scenario.total_target)} detail={monthLabel(scenario.target_month)} />
-            <SummaryCard label="Calculat" value={formatCurrency(scenario.proposed_total)} detail={`${scenario.store_count} magazine active · ${activeSeasonalityLabel}`} />
+          <div className="glass grid grid-cols-2 divide-x divide-y divide-slate-200 overflow-hidden rounded-2xl sm:grid-cols-4 sm:divide-y-0 dark:divide-slate-700">
+            <SummaryCard grouped label="Target total" value={formatCurrency(scenario.total_target)} detail={monthLabel(scenario.target_month)} />
+            <SummaryCard grouped label="Calculat" value={formatCurrency(scenario.proposed_total)} detail={`${scenario.store_count} magazine active · ${activeSeasonalityLabel}`} />
             <SummaryCard
+              grouped
               label="Final manager"
               value={formatCurrency(scenario.final_total)}
               detail={scenario.status === 'draft'
@@ -1039,6 +1098,7 @@ export function TargetCalculatorSubtab() {
               emphasis="attention"
             />
             <SummaryCard
+              grouped
               label="Ramas de distribuit"
               value={formatCurrency(scenario.remaining_difference)}
               detail="trebuie sa fie 0 la finalizare"
@@ -1448,7 +1508,7 @@ export function TargetCalculatorSubtab() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-[1240px] w-full text-[11px]">
+              <table className="min-w-[1240px] w-full text-xs">
                 <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
                   <tr>
                     <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold align-bottom">Locatie</th>

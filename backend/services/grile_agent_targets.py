@@ -8,12 +8,15 @@ fallback-ul existent: target locatie / agenti activi.
 from __future__ import annotations
 
 import asyncio
+from hashlib import sha256
+import json
 import os
 import re
 import threading
 import time
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
@@ -86,6 +89,8 @@ class AgentTargetSyncResult:
     resolved: list[AgentTargetRow]
     unresolved: list[dict[str, Any]]
     skipped_managers: dict[str, int]
+    diff: dict[str, Any]
+    read_site_codes: tuple[str, ...]
 
     @property
     def resolved_count(self) -> int:
@@ -99,14 +104,25 @@ class AgentTargetSyncResult:
         return {
             "month": self.month,
             "apply": self.apply,
-            "enabled_managers": list(self.enabled_managers),
-            "disabled_managers": list(self.disabled_managers),
+            "enabled_manager_count": len(self.enabled_managers),
+            "disabled_manager_count": len(self.disabled_managers),
             "sites_considered": self.sites_considered,
             "sites_read": self.sites_read,
             "resolved_count": self.resolved_count,
             "unresolved_count": self.unresolved_count,
-            "skipped_managers": self.skipped_managers,
+            "skipped_site_count": sum(self.skipped_managers.values()),
+            "diff": self.diff,
         }
+
+
+@dataclass(frozen=True)
+class AgentTargetsState:
+    sha256: str
+    row_count: int
+
+
+class AgentTargetSyncBlockedError(RuntimeError):
+    pass
 
 
 FetchAgentRanges = Callable[[str], list[dict[str, Any]]]
@@ -173,18 +189,22 @@ def _cell(values: list, r: int, c: int = 0) -> Any:
 def _to_decimal(value: Any) -> Decimal | None:
     if value is None or value == "":
         return None
-    if isinstance(value, Decimal):
-        return value.quantize(Decimal("0.01"))
-    text = str(value).strip()
-    if not text:
-        return None
-    text = text.replace(" ", "").replace("%", "")
-    if "," in text and "." in text:
-        text = text.replace(".", "").replace(",", ".")
-    elif "," in text:
-        text = text.replace(",", ".")
     try:
-        return Decimal(text).quantize(Decimal("0.01"))
+        if isinstance(value, Decimal):
+            decimal_value = value
+        else:
+            text = str(value).strip()
+            if not text:
+                return None
+            text = text.replace(" ", "").replace("%", "")
+            if "," in text and "." in text:
+                text = text.replace(".", "").replace(",", ".")
+            elif "," in text:
+                text = text.replace(",", ".")
+            decimal_value = Decimal(text)
+        if not decimal_value.is_finite() or decimal_value < 0:
+            return None
+        return decimal_value.quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         return None
 
@@ -293,12 +313,12 @@ async def sync_agent_targets_from_grile(
     pool: asyncpg.Pool,
     *,
     month: str,
-    apply: bool = True,
     enabled_managers: tuple[str, ...] | None = None,
     disabled_managers: tuple[str, ...] | None = None,
     concurrency: int = DEFAULT_CONCURRENCY,
     fetcher: FetchAgentRanges | None = None,
 ) -> AgentTargetSyncResult:
+    """Build a read-only target diff; applying is a separate audited operation."""
     enabled_managers = enabled_managers or configured_enabled_managers()
     disabled_managers = disabled_managers or configured_disabled_managers()
     sheets, skipped = await _load_enabled_sheets(
@@ -315,18 +335,28 @@ async def sync_agent_targets_from_grile(
     retail_agents = await _load_retail_agents(pool, month, sorted(read_site_codes))
     resolved, unresolved = build_resolved_rows(candidates, retail_agents)
     unresolved.extend(read_errors)
-
-    if apply and read_site_codes:
-        await _replace_agent_targets(
-            pool,
-            month=month,
-            read_site_codes=sorted(read_site_codes),
-            rows=resolved,
-        )
+    candidate_site_codes = {candidate.site_code for candidate in candidates}
+    empty_site_count = len(read_site_codes - candidate_site_codes)
+    resolved_keys = [(row.site_code, row.agent) for row in resolved]
+    duplicate_target_count = len(resolved_keys) - len(set(resolved_keys))
+    current = await _load_managed_targets(
+        pool,
+        month=month,
+        site_codes=sorted(read_site_codes),
+    )
+    unmanaged = await _load_unmanaged_target_keys(
+        pool,
+        month=month,
+        site_codes=sorted(read_site_codes),
+    )
+    diff = _build_target_diff(current, resolved)
+    diff["empty_site_count"] = empty_site_count
+    diff["duplicate_target_count"] = duplicate_target_count
+    diff["unmanaged_conflict_count"] = len(set(resolved_keys) & unmanaged)
 
     return AgentTargetSyncResult(
         month=month,
-        apply=apply,
+        apply=False,
         enabled_managers=enabled_managers,
         disabled_managers=disabled_managers,
         sites_considered=len(sheets),
@@ -334,7 +364,156 @@ async def sync_agent_targets_from_grile(
         resolved=resolved,
         unresolved=unresolved,
         skipped_managers=skipped,
+        diff=diff,
+        read_site_codes=tuple(sorted(read_site_codes)),
     )
+
+
+async def read_agent_targets_state(
+    pool: asyncpg.Pool,
+    month: str,
+) -> AgentTargetsState:
+    async with pool.acquire() as conn:
+        return await read_agent_targets_state_on_connection(conn, month)
+
+
+async def read_agent_targets_state_on_connection(
+    conn: asyncpg.Connection,
+    month: str,
+) -> AgentTargetsState:
+    rows = await conn.fetch(
+        """
+        SELECT site_code, agent, target_value, source_agent_name,
+               source_store_key, source_file, manager, match_method,
+               created_at, updated_at
+        FROM agent_targets
+        WHERE import_month = $1
+        ORDER BY site_code, agent
+        """,
+        month,
+    )
+    payload = [
+        [
+            str(row["site_code"]),
+            str(row["agent"]),
+            format(Decimal(row["target_value"]), "f"),
+            str(row["source_agent_name"] or ""),
+            str(row["source_store_key"] or ""),
+            str(row["source_file"] or ""),
+            str(row["manager"] or ""),
+            str(row["match_method"] or ""),
+            _canonical_state_timestamp(row["created_at"]),
+            _canonical_state_timestamp(row["updated_at"]),
+        ]
+        for row in rows
+    ]
+    digest = sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return AgentTargetsState(sha256=digest, row_count=len(payload))
+
+
+def _canonical_state_timestamp(value: datetime) -> str:
+    """Serialize PostgreSQL write markers deterministically for state hashes."""
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+
+def require_applicable_agent_target_sync(result: AgentTargetSyncResult) -> None:
+    if (
+        result.sites_read != result.sites_considered
+        or result.unresolved
+        or not result.read_site_codes
+        or result.diff["empty_site_count"]
+        or result.diff["duplicate_target_count"]
+        or result.diff.get("unmanaged_conflict_count", 0)
+    ):
+        raise AgentTargetSyncBlockedError(
+            "Sincronizarea targetelor este blocata de coverage incomplet sau erori nerezolvate."
+        )
+
+
+async def _load_managed_targets(
+    pool: asyncpg.Pool,
+    *,
+    month: str,
+    site_codes: list[str],
+) -> dict[tuple[str, str], Decimal]:
+    if not site_codes:
+        return {}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT site_code, agent, target_value
+            FROM agent_targets
+            WHERE import_month = $1
+              AND site_code = ANY($2::text[])
+              AND (source_file LIKE 'grile%' OR source_file LIKE 'retail-grile%')
+            """,
+            month,
+            site_codes,
+        )
+    return {
+        (str(row["site_code"]), str(row["agent"])): Decimal(row["target_value"])
+        for row in rows
+    }
+
+
+async def _load_unmanaged_target_keys(
+    pool: asyncpg.Pool,
+    *,
+    month: str,
+    site_codes: list[str],
+) -> set[tuple[str, str]]:
+    if not site_codes:
+        return set()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT site_code, agent
+            FROM agent_targets
+            WHERE import_month = $1
+              AND site_code = ANY($2::text[])
+              AND NOT (
+                COALESCE(source_file, '') LIKE 'grile%'
+                OR COALESCE(source_file, '') LIKE 'retail-grile%'
+              )
+            """,
+            month,
+            site_codes,
+        )
+    return {(str(row["site_code"]), str(row["agent"])) for row in rows}
+
+
+def _build_target_diff(
+    current: dict[tuple[str, str], Decimal],
+    proposed_rows: list[AgentTargetRow],
+) -> dict[str, Any]:
+    proposed = {
+        (row.site_code, row.agent): row.target_value for row in proposed_rows
+    }
+    current_keys = set(current)
+    proposed_keys = set(proposed)
+    inserted = proposed_keys - current_keys
+    deleted = current_keys - proposed_keys
+    shared = current_keys & proposed_keys
+    updated = {key for key in shared if current[key] != proposed[key]}
+    unchanged = shared - updated
+    canonical = [
+        [site_code, agent, format(proposed[(site_code, agent)], "f")]
+        for site_code, agent in sorted(proposed)
+    ]
+    proposed_sha256 = sha256(
+        json.dumps(canonical, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return {
+        "current_count": len(current),
+        "proposed_count": len(proposed),
+        "insert_count": len(inserted),
+        "update_count": len(updated),
+        "delete_count": len(deleted),
+        "unchanged_count": len(unchanged),
+        "proposed_sha256": proposed_sha256,
+    }
 
 
 async def _load_enabled_sheets(
@@ -475,66 +654,116 @@ async def _load_retail_agents(
     return result
 
 
-async def _replace_agent_targets(
-    pool: asyncpg.Pool,
-    *,
-    month: str,
-    read_site_codes: list[str],
-    rows: list[AgentTargetRow],
+async def apply_agent_target_sync_on_connection(
+    conn: asyncpg.Connection,
+    result: AgentTargetSyncResult,
 ) -> None:
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                """
-                DELETE FROM agent_targets
-                WHERE import_month = $1
-                  AND site_code = ANY($2::TEXT[])
-                  AND (
-                    source_file LIKE 'grile%'
-                    OR source_file LIKE 'retail-grile%'
-                  )
-                """,
-                month,
-                read_site_codes,
+    """Apply one validated diff inside a caller-owned audit transaction."""
+    require_applicable_agent_target_sync(result)
+    if result.resolved:
+        conflicts = await conn.fetch(
+            """
+            SELECT existing.site_code, existing.agent
+            FROM agent_targets existing
+            JOIN unnest($2::text[], $3::text[]) AS proposed(site_code, agent)
+              ON proposed.site_code = existing.site_code
+             AND proposed.agent = existing.agent
+            WHERE existing.import_month = $1
+              AND NOT (
+                COALESCE(existing.source_file, '') LIKE 'grile%'
+                OR COALESCE(existing.source_file, '') LIKE 'retail-grile%'
+              )
+            FOR UPDATE OF existing
+            """,
+            result.month,
+            [row.site_code for row in result.resolved],
+            [row.agent for row in result.resolved],
+        )
+        if conflicts:
+            raise AgentTargetSyncBlockedError(
+                "Sincronizarea targetelor este blocata de targete administrate din alta sursa."
             )
-            if not rows:
-                return
-            await conn.executemany(
-                """
-                INSERT INTO agent_targets (
-                    import_month,
-                    site_code,
-                    agent,
-                    target_value,
-                    source_agent_name,
-                    source_store_key,
-                    source_file,
-                    manager,
-                    match_method,
-                    updated_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-                ON CONFLICT (import_month, site_code, agent) DO UPDATE
-                SET target_value = EXCLUDED.target_value,
-                    source_agent_name = EXCLUDED.source_agent_name,
-                    source_store_key = EXCLUDED.source_store_key,
-                    source_file = EXCLUDED.source_file,
-                    manager = EXCLUDED.manager,
-                    match_method = EXCLUDED.match_method,
-                    updated_at = now()
-                """,
-                [
-                    (
-                        row.import_month,
-                        row.site_code,
-                        row.agent,
-                        row.target_value,
-                        row.source_agent_name,
-                        row.source_store_key,
-                        SOURCE_FILE,
-                        row.manager,
-                        row.match_method,
-                    )
-                    for row in rows
-                ],
+    await conn.execute(
+        """
+        DELETE FROM agent_targets
+        WHERE import_month = $1
+          AND site_code = ANY($2::TEXT[])
+          AND (
+            source_file LIKE 'grile%'
+            OR source_file LIKE 'retail-grile%'
+          )
+        """,
+        result.month,
+        list(result.read_site_codes),
+    )
+    if not result.resolved:
+        return
+    await conn.executemany(
+        """
+        INSERT INTO agent_targets (
+            import_month,
+            site_code,
+            agent,
+            target_value,
+            source_agent_name,
+            source_store_key,
+            source_file,
+            manager,
+            match_method,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+        ON CONFLICT (import_month, site_code, agent) DO UPDATE
+        SET target_value = EXCLUDED.target_value,
+            source_agent_name = EXCLUDED.source_agent_name,
+            source_store_key = EXCLUDED.source_store_key,
+            source_file = EXCLUDED.source_file,
+            manager = EXCLUDED.manager,
+            match_method = EXCLUDED.match_method,
+            updated_at = now()
+        WHERE agent_targets.source_file LIKE 'grile%'
+           OR agent_targets.source_file LIKE 'retail-grile%'
+        """,
+        [
+            (
+                row.import_month,
+                row.site_code,
+                row.agent,
+                row.target_value,
+                row.source_agent_name,
+                row.source_store_key,
+                SOURCE_FILE,
+                row.manager,
+                row.match_method,
             )
+            for row in result.resolved
+        ],
+    )
+    applied_rows = await conn.fetch(
+        """
+        SELECT existing.site_code, existing.agent, existing.target_value
+        FROM agent_targets existing
+        JOIN unnest($2::text[], $3::text[]) AS proposed(site_code, agent)
+          ON proposed.site_code = existing.site_code
+         AND proposed.agent = existing.agent
+        WHERE existing.import_month = $1
+          AND (
+            existing.source_file LIKE 'grile%'
+            OR existing.source_file LIKE 'retail-grile%'
+          )
+        """,
+        result.month,
+        [row.site_code for row in result.resolved],
+        [row.agent for row in result.resolved],
+    )
+    applied = {
+        (str(row["site_code"]), str(row["agent"])): Decimal(row["target_value"])
+        for row in applied_rows
+    }
+    proposed = {
+        (row.site_code, row.agent): row.target_value for row in result.resolved
+    }
+    if applied != proposed:
+        raise AgentTargetSyncBlockedError(
+            "Sincronizarea targetelor nu a putut aplica exact setul verificat."
+        )

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MapPin } from 'lucide-react';
 import { getPerformanceDetail } from '../api/dashboard';
 import type {
   AgentStat,
@@ -39,6 +38,7 @@ import {
 import type { BreakdownColumn } from './dashboard/BreakdownTable';
 import { CurrentDashboard } from './dashboard/CurrentDashboard';
 import { HistoryDashboard } from './dashboard/HistoryDashboard';
+import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 
 const HISTORY_START_YEAR = 2018;
 
@@ -51,6 +51,11 @@ interface DashboardProps {
 }
 
 type DashboardSection = 'current' | 'history' | 'visits';
+const DASHBOARD_SECTIONS: SegmentedTabOption<DashboardSection>[] = [
+  { value: 'current', label: 'Luna în curs' },
+  { value: 'history', label: 'Istoric' },
+  { value: 'visits', label: 'Vizite' },
+];
 type StoreSortKey =
   | 'locatie'
   | 'site_code'
@@ -429,7 +434,10 @@ function aggregateSummary(responses: DashboardAllResponse[], label: string): Das
     daily_average: workingDays > 0 ? round2(totalSales / workingDays) : null,
     medie_produs: totalQuantity > 0 ? round2(totalSales / totalQuantity) : null,
     is_month_final: summaries.every((item) => item.is_month_final),
-    last_sale_date: summaries.map((item) => item.last_sale_date).filter(Boolean).sort().at(-1) ?? null,
+    last_sale_date: (() => {
+      const dates = summaries.map((item) => item.last_sale_date).filter(Boolean).sort();
+      return dates[dates.length - 1] ?? null;
+    })(),
     imported_day_of_month: null,
     days_in_month: summaries.reduce((sum, item) => sum + n(item.days_in_month), 0) || null,
     cartele_qty: summaries.reduce((sum, item) => sum + n(item.cartele_qty), 0),
@@ -956,6 +964,15 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     historyMonthDropdownRef.current?.removeAttribute('open');
   }, [currentMonth, draftSelectedHistoryMonths]);
 
+  const handleApplyHistoryPreset = useCallback((count: number) => {
+    const selected = sortMonthsAsc(months.slice(0, count));
+    if (selected.length === 0) return;
+    setDraftHistoryMonths(selected);
+    setHistoryMonths(selected);
+    setHistoryMonth(selected[selected.length - 1] ?? currentMonth);
+    historyMonthDropdownRef.current?.removeAttribute('open');
+  }, [currentMonth, months]);
+
   const handleHistoryDropdownToggle = useCallback(() => {
     const isOpen = Boolean(historyMonthDropdownRef.current?.open);
     setHistoryMonthDropdownOpen(isOpen);
@@ -1161,39 +1178,13 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         </p>
       </div>
 
-      <div className="glass flex rounded-2xl p-1">
-        <button
-          onClick={() => setActiveSection('current')}
-          className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            activeSection === 'current'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-              : 'text-slate-500'
-          }`}
-        >
-          Luna in curs
-        </button>
-        <button
-          onClick={() => setActiveSection('history')}
-          className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            activeSection === 'history'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-              : 'text-slate-500'
-          }`}
-        >
-          Istoric
-        </button>
-        <button
-          onClick={() => setActiveSection('visits')}
-          className={`flex-1 flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-            activeSection === 'visits'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
-              : 'text-slate-500'
-          }`}
-        >
-          <MapPin size={11} />
-          Vizite
-        </button>
-      </div>
+      <SegmentedTabs<DashboardSection>
+        ariaLabel="Secțiuni Sales Hub"
+        className="glass"
+        options={DASHBOARD_SECTIONS}
+        value={activeSection}
+        onChange={setActiveSection}
+      />
 
       {activeSection === 'visits' ? (
         <VisiteSubtab currentMonth={currentMonth} />
@@ -1265,6 +1256,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           draftSelectedMonths={draftSelectedHistoryMonths}
           onToggleMonth={handleToggleHistoryMonth}
           onApplyMonths={handleApplyHistoryMonths}
+          onApplyPreset={handleApplyHistoryPreset}
           historyStatusLabel={historyStatusLabel}
           historyReceiptBucketChartData={historyReceiptBucketChartData}
           historyFocusSubcategoryChartData={historyFocusSubcategoryChartData}

@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   MapPin,
+  Search,
   X,
   XCircle,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
   type VisitSummaryItem,
 } from '../api/visitsReport';
 import { client } from '../api/client';
+import { getFilterOptions } from '../api/filters';
 import { FirmaBadge } from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
@@ -522,6 +524,8 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
   const [error, setError] = useState<string | null>(null);
   const [openVisitId, setOpenVisitId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
+  const [teamLeaderSearch, setTeamLeaderSearch] = useState('');
+  const [activeStoreCount, setActiveStoreCount] = useState(0);
 
   // extract sorted months from tree data
   const availableMonths = useMemo(() => {
@@ -547,6 +551,15 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
   }, [selectedMonth]);
 
   useEffect(() => {
+    getFilterOptions(selectedMonth)
+      .then((options) => {
+        const siteCodes = new Set(options.magazine.map((store) => store.site_code));
+        setActiveStoreCount(siteCodes.size);
+      })
+      .catch(() => setActiveStoreCount(0));
+  }, [selectedMonth]);
+
+  useEffect(() => {
     setLoadingTree(true);
     getVisitsTree(ALL_FILTERS)
       .then((r) => setGroups(r.team_leaders))
@@ -556,17 +569,19 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
 
   // filter tree client-side to selected month
   const filteredGroups = useMemo(() => {
+    const needle = teamLeaderSearch.trim().toLocaleLowerCase('ro-RO');
     return groups
       .map((g) => ({
         ...g,
         months: g.months.filter((m) => m.month === selectedMonth),
       }))
       .filter((g) => g.months.length > 0)
+      .filter((g) => !needle || g.team_leader.toLocaleLowerCase('ro-RO').includes(needle))
       .map((g) => ({
         ...g,
         nr_vizite: g.months.reduce((s, m) => s + m.nr_vizite, 0),
       }));
-  }, [groups, selectedMonth]);
+  }, [groups, selectedMonth, teamLeaderSearch]);
 
   if (loadingTree && loadingSummary) {
     return (
@@ -600,14 +615,32 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
           return { ...acc, [key]: vals.reduce((a, b) => a + b, 0) / vals.length };
         }, {} as Record<string, number>)
       : {};
+  const missingStores = activeStoreCount > 0
+    ? Math.max(0, activeStoreCount - (summary?.magazine_unice ?? 0))
+    : null;
+  const visitCoverage = activeStoreCount > 0
+    ? ((summary?.magazine_unice ?? 0) / activeStoreCount) * 100
+    : null;
 
   return (
     <div className="space-y-4 px-4">
-      {/* Month picker */}
-      <MonthPicker months={availableMonths} selected={selectedMonth} onChange={setSelectedMonth} />
+      {/* Month picker + local search */}
+      <div className="grid gap-2 md:grid-cols-[220px_1fr]">
+        <MonthPicker months={availableMonths} selected={selectedMonth} onChange={setSelectedMonth} />
+        <label className="glass flex items-center gap-2 rounded-2xl px-3 py-2 text-sm">
+          <Search size={15} className="text-slate-400" />
+          <input
+            value={teamLeaderSearch}
+            onChange={(event) => setTeamLeaderSearch(event.target.value)}
+            placeholder="Caută Team Leader"
+            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-slate-400"
+          />
+          <span className="text-xs text-slate-400">filtru local</span>
+        </label>
+      </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <div className="glass rounded-2xl p-3 text-center">
           <div className="text-2xl font-black text-indigo-600">
             {loadingSummary ? '—' : (summary?.total_vizite ?? 0)}
@@ -621,7 +654,7 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
             {loadingSummary ? '—' : (summary?.magazine_unice ?? 0)}
           </div>
           <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Magazine
+            Magazine vizitate
           </div>
         </div>
         <div className="glass rounded-2xl p-3 text-center">
@@ -639,6 +672,15 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
           </div>
           <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Completare
+          </div>
+        </div>
+        <div className="glass rounded-2xl p-3 text-center">
+          <div className={cn('text-2xl font-black', missingStores === 0 ? 'text-emerald-600' : 'text-amber-600')}>
+            {loadingSummary ? '—' : visitCoverage === null ? '—' : `${visitCoverage.toFixed(0)}%`}
+          </div>
+          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Acoperire rețea</div>
+          <div className="mt-1 text-xs text-slate-500">
+            {missingStores === null ? 'univers indisponibil' : `${missingStores} magazine fără vizită`}
           </div>
         </div>
       </div>

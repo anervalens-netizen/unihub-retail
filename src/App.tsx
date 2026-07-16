@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { getAvailableMonths } from './api/filters';
 import { defaultAppFilters } from './lib/filterValues';
@@ -298,12 +299,18 @@ export default function App() {
           <Agents currentMonth={currentMonth} months={months} filters={agentsFilters} />
         )}
         {activeTab === 'management' && (
-          <Management
-            activeSubTab={mgmtSubTab}
-            setActiveSubTab={setMgmtSubTab}
-            hasPnlAccess={hasPnlAccess}
-            salaryFilters={agentsFilters}
-          />
+          <ErrorBoundary
+            title="Secțiunea Management nu a putut fi afișată"
+            description="Datele din celelalte secțiuni sunt în siguranță. Reîncearcă încărcarea ecranului Management."
+          >
+            <Management
+              activeSubTab={mgmtSubTab}
+              setActiveSubTab={setMgmtSubTab}
+              hasPnlAccess={hasPnlAccess}
+              currentMonth={currentMonth}
+              salaryFilters={agentsFilters}
+            />
+          </ErrorBoundary>
         )}
         {activeTab === 'settings' && (
           <Settings

@@ -26,7 +26,12 @@ def test_repository_ignore_rules_are_path_specific() -> None:
     assert "*.json" not in lines
 
 
-def test_authoritative_docs_remain_tracked() -> None:
+def test_repository_keeps_only_authoritative_documentation() -> None:
     paths = tracked_paths()
     assert any(path.startswith("docs/Campanii-promo/") for path in paths)
-    assert any(path.startswith("docs/archive/") for path in paths)
+    assert not any(path.startswith("docs/archive/") for path in paths)
+    assert "APP_ARCHITECTURE.md" in paths
+    assert "docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" in paths
+    assert "docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md" in paths
+    assert "docs/RUNBOOK-campanii-promo-incentive-concursuri.md" in paths
+    assert "docs/grile-integration-plan.md" in paths

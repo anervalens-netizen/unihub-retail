@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from hashlib import sha256
 from io import BytesIO
+import json
+import math
 from pathlib import Path
 import re
 from typing import Any
@@ -47,6 +50,7 @@ class ImportResult:
     snapshot_id: int
     filename: str
     is_month_final: bool
+    coverage_report: dict[str, Any]
 
 
 class ImportAlreadyRunningError(RuntimeError):
@@ -77,21 +81,65 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
 
 def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     if isinstance(source, bytes):
+        header_content: str | BytesIO = BytesIO(source)
         content: str | BytesIO = BytesIO(source)
     else:
-        content = str(source)
+        header_content = content = str(source)
+
+    # pandas mangles duplicate labels before exposing ``df.columns`` (for
+    # example ``SiteCode`` / ``SiteCode.1``).  Inspect the raw first row so a
+    # contradictory workbook cannot bypass the duplicate-header gate.
+    raw_header = pd.read_excel(header_content, header=None, nrows=1, engine=None)
+    raw_columns = [
+        "" if pd.isna(value) else str(value).strip()
+        for value in raw_header.iloc[0].tolist()
+    ]
+    duplicate_headers = sorted(
+        {
+            column
+            for column in raw_columns
+            if column and raw_columns.count(column) > 1
+        }
+    )
+    if duplicate_headers:
+        raise ValueError("Fișierul conține antete duplicate.")
 
     df = pd.read_excel(content, engine=None)
-    df = df.rename(columns=lambda value: str(value).strip())
+    normalized_columns = [str(value).strip() for value in df.columns]
+    df.columns = normalized_columns
     missing = [column for column in SALES_COLUMNS if column not in df.columns]
     if missing:
         raise ValueError(f"Lipsesc coloane obligatorii: {', '.join(missing)}")
 
     df = df[SALES_COLUMNS].copy()
-    df["Data"] = pd.to_datetime(df["Data"], format="%d.%m.%Y", errors="raise").dt.date
-    df["Cantitate"] = pd.to_numeric(df["Cantitate"], errors="raise").astype(int)
-    df["Pret"] = pd.to_numeric(df["Pret"], errors="coerce").fillna(0)
-    df["Valoare"] = pd.to_numeric(df["Valoare"], errors="coerce").fillna(0)
+    try:
+        df["Data"] = pd.to_datetime(
+            df["Data"], format="%d.%m.%Y", errors="raise"
+        ).dt.date
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Coloana Data conține valori invalide.") from exc
+
+    quantity = pd.to_numeric(df["Cantitate"], errors="coerce")
+    invalid_quantity = quantity.isna() | ~quantity.map(
+        lambda value: math.isfinite(float(value))
+    )
+    fractional_quantity = ~quantity.map(
+        lambda value: bool(pd.isna(value)) or float(value).is_integer()
+    )
+    out_of_range_quantity = quantity.abs() > 2_147_483_647
+    if bool((invalid_quantity | fractional_quantity | out_of_range_quantity).any()):
+        raise ValueError("Coloana Cantitate conține valori invalide.")
+    df["Cantitate"] = quantity.astype("int64")
+
+    for column in ("Pret", "Valoare"):
+        numeric = pd.to_numeric(df[column], errors="coerce")
+        invalid = numeric.isna() | ~numeric.map(
+            lambda value: math.isfinite(float(value))
+        )
+        out_of_range = numeric.abs() > 99_999_999.99
+        if bool((invalid | out_of_range).any()):
+            raise ValueError(f"Coloana {column} conține valori monetare invalide.")
+        df[column] = numeric
     df["Nr"] = df["Nr"].fillna("").map(lambda value: str(value).strip())
     for column in ["SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "ASM", "Regional", "Agent"]:
         df[column] = df[column].fillna("").map(lambda value: str(value).strip())
@@ -102,7 +150,165 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
 
     df["is_cartela"] = df["Categorie"].isna() | (df["Categorie"].astype(str).str.strip() == "")
     df["is_return"] = df["Cantitate"] < 0
+    validate_sales_dataframe(df)
     return df
+
+
+def validate_sales_dataframe(df: pd.DataFrame) -> None:
+    """Reject ambiguous or lossy input before reserving or mutating a snapshot."""
+    missing_columns = [column for column in SALES_COLUMNS if column not in df.columns]
+    if missing_columns:
+        raise ValueError(f"Lipsesc coloane obligatorii: {', '.join(missing_columns)}")
+
+    if df["Data"].isna().any():
+        raise ValueError("Coloana Data conține valori invalide.")
+    quantity = pd.to_numeric(df["Cantitate"], errors="coerce")
+    invalid_quantity = quantity.isna() | ~quantity.map(
+        lambda value: math.isfinite(float(value))
+    )
+    fractional_quantity = ~quantity.map(
+        lambda value: bool(pd.isna(value)) or float(value).is_integer()
+    )
+    if bool(
+        (
+            invalid_quantity
+            | fractional_quantity
+            | (quantity.abs() > 2_147_483_647)
+        ).any()
+    ):
+        raise ValueError("Coloana Cantitate conține valori invalide.")
+    for column in ("Pret", "Valoare"):
+        numeric = pd.to_numeric(df[column], errors="coerce")
+        invalid = numeric.isna() | ~numeric.map(
+            lambda value: math.isfinite(float(value))
+        )
+        if bool((invalid | (numeric.abs() > 99_999_999.99)).any()):
+            raise ValueError(f"Coloana {column} conține valori monetare invalide.")
+
+    # Rows without an assigned ASM are deliberately excluded from Retail
+    # imports (TR locations / unallocated agents).  Do not make an ignored row
+    # fail identifier validation, but keep numeric and duplicate validation on
+    # the complete source file above.
+    importable_rows = df[
+        ~df["ASM"].fillna("").astype(str).str.strip().isin(["", "-"])
+    ]
+    required_identifiers = (
+        "SiteCode",
+        "ItemCode",
+        "ItemName",
+        "Locatie",
+        "Firma",
+        "Regional",
+        "Nr",
+        "Agent",
+    )
+    invalid_required = [
+        column
+        for column in required_identifiers
+        if importable_rows[column]
+        .map(lambda value: bool(pd.isna(value)) or not str(value).strip())
+        .any()
+    ]
+    if invalid_required:
+        raise ValueError(
+            "Fișierul conține identificatori obligatorii lipsă: "
+            + ", ".join(invalid_required)
+        )
+
+    if df.duplicated(subset=SALES_COLUMNS, keep=False).any():
+        raise ValueError("Fișierul conține rânduri duplicate.")
+
+    metadata_columns = ["Locatie", "Firma", "Regional", "ASM"]
+    valid_structure = importable_rows
+    conflicting_sites = 0
+    if not valid_structure.empty:
+        grouped = valid_structure.groupby("SiteCode", dropna=False)[metadata_columns]
+        conflicting_sites = int((grouped.nunique(dropna=False) > 1).any(axis=1).sum())
+    if conflicting_sites:
+        raise ValueError(
+            f"Fișierul conține metadate contradictorii pentru {conflicting_sites} magazine."
+        )
+
+
+def _site_set_digest(site_codes: set[str]) -> str:
+    payload = "\n".join(sorted(site_codes)).encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+async def build_import_coverage_report(
+    conn: asyncpg.Connection,
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    incoming = {str(value) for value in df["SiteCode"].unique()}
+    active_rows = await conn.fetch(
+        "SELECT site_code, locatie, firma, regional, asm FROM stores WHERE is_active = true"
+    )
+    all_rows = await conn.fetch(
+        "SELECT site_code, locatie, firma, regional, asm FROM stores"
+    )
+    prior_rows = await conn.fetch(
+        """
+        SELECT DISTINCT st.site_code
+        FROM sales_transactions st
+        WHERE st.snapshot_id = (
+            SELECT id
+            FROM import_snapshots
+            WHERE status = 'completed'
+            ORDER BY import_month DESC, created_at DESC
+            LIMIT 1
+        )
+        """
+    )
+    active = {str(row["site_code"]) for row in active_rows}
+    existing = {str(row["site_code"]) for row in all_rows}
+    prior = {str(row["site_code"]) for row in prior_rows}
+    missing_active = active - incoming
+    missing_prior = prior - incoming
+    new_sites = incoming - existing
+
+    existing_metadata = {
+        str(row["site_code"]): (
+            row["locatie"],
+            row["firma"],
+            row["regional"],
+            row["asm"],
+        )
+        for row in all_rows
+    }
+    incoming_metadata = {
+        str(row.SiteCode): (row.Locatie, row.Firma, row.Regional, row.ASM)
+        for row in df[["SiteCode", "Locatie", "Firma", "Regional", "ASM"]]
+        .drop_duplicates(subset=["SiteCode"])
+        .itertuples(index=False)
+    }
+    metadata_changes = sum(
+        existing_metadata[site_code] != metadata
+        for site_code, metadata in incoming_metadata.items()
+        if site_code in existing_metadata
+    )
+
+    def coverage(numerator: int, denominator: int) -> float | None:
+        if denominator == 0:
+            return None
+        return round(numerator / denominator * 100, 2)
+
+    return {
+        "incoming_store_count": len(incoming),
+        "company_count": int(df["Firma"].nunique()),
+        "active_store_count_before": len(active),
+        "prior_snapshot_store_count": len(prior),
+        "active_store_coverage_pct": coverage(len(incoming & active), len(active)),
+        "prior_snapshot_coverage_pct": coverage(len(incoming & prior), len(prior)),
+        "missing_active_store_count": len(missing_active),
+        "missing_prior_store_count": len(missing_prior),
+        "new_store_count": len(new_sites),
+        "metadata_change_count": metadata_changes,
+        "incoming_set_sha256": _site_set_digest(incoming),
+        "missing_active_set_sha256": _site_set_digest(missing_active),
+        "missing_prior_set_sha256": _site_set_digest(missing_prior),
+        "new_store_set_sha256": _site_set_digest(new_sites),
+        "store_activity_writes": 0,
+    }
 
 
 def normalize_firma(value: str) -> str:
@@ -179,29 +385,34 @@ async def upsert_stores(conn: asyncpg.Connection, df: pd.DataFrame, import_month
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (site_code) DO UPDATE
-        SET locatie = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.locatie ELSE stores.locatie END,
-            firma = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.firma ELSE stores.firma END,
-            regional = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.regional ELSE stores.regional END,
-            asm = CASE WHEN EXCLUDED.is_active THEN EXCLUDED.asm ELSE stores.asm END,
-            is_active = CASE WHEN EXCLUDED.is_active THEN true ELSE stores.is_active END,
+        SET locatie = CASE WHEN $8 THEN EXCLUDED.locatie ELSE stores.locatie END,
+            firma = CASE WHEN $8 THEN EXCLUDED.firma ELSE stores.firma END,
+            regional = CASE WHEN $8 THEN EXCLUDED.regional ELSE stores.regional END,
+            asm = CASE WHEN $8 THEN EXCLUDED.asm ELSE stores.asm END,
+            is_active = stores.is_active,
             first_seen_month = LEAST(stores.first_seen_month, EXCLUDED.first_seen_month),
             last_seen_month = GREATEST(stores.last_seen_month, EXCLUDED.last_seen_month),
             updated_at = now()
         """,
         records,
     )
-    if updates_current_structure:
-        current_site_codes = [record[0] for record in records]
-        await conn.execute(
-            """
-            UPDATE stores
-            SET is_active = false,
-                updated_at = now()
-            WHERE is_active = true
-              AND NOT (site_code = ANY($1::TEXT[]))
-            """,
-            current_site_codes,
-        )
+
+
+async def record_coverage_report(
+    conn: asyncpg.Connection,
+    snapshot_id: int,
+    coverage_report: dict[str, Any],
+) -> None:
+    await conn.execute(
+        """
+        UPDATE import_snapshots
+        SET coverage_report = $2::jsonb,
+            heartbeat_at = now()
+        WHERE id = $1 AND status = 'processing'
+        """,
+        snapshot_id,
+        json.dumps(coverage_report, ensure_ascii=False),
+    )
 
 
 async def replace_month_snapshot(conn: asyncpg.Connection, import_month: str) -> None:
@@ -372,6 +583,7 @@ async def import_sales_dataframe(
     df: pd.DataFrame,
     filename: str,
 ) -> ImportResult:
+    validate_sales_dataframe(df)
     rows_in_file_total = len(df)
 
     # Filter out non-ASM rows (TR locations, unallocated agents)
@@ -389,6 +601,8 @@ async def import_sales_dataframe(
         rows_in_file=rows_in_file_total,
     )
     try:
+        coverage_report = await build_import_coverage_report(conn, df)
+        await record_coverage_report(conn, snapshot_id, coverage_report)
         async with conn.transaction():
             await upsert_stores(conn, df, import_month)
             await replace_month_snapshot(conn, import_month)
@@ -436,6 +650,7 @@ async def import_sales_dataframe(
         snapshot_id=snapshot_id,
         filename=filename,
         is_month_final=month_final,
+        coverage_report=coverage_report,
     )
 
 

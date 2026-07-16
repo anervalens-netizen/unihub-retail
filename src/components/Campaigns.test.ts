@@ -55,7 +55,10 @@ function makePromoData(): CampaignsPromotionsResponse {
     incentive_qualified_agents_half: 2,
     incentive_product_count: 5,
     incentive_categories: [],
-    incentive_periods: [],
+    incentive_periods: [
+      { label: 'Mecanism initial', start_date: '2026-07-01', end_date: '2026-07-09', product_count: 967, reward_values: [5, 10, 25], qty: 10, potential: 250, value: 200 },
+      { label: 'Mecanism actualizat', start_date: '2026-07-10', end_date: '2026-07-31', product_count: 201, reward_values: [5, 10, 15, 30], qty: 8, potential: 350, value: 250 },
+    ],
     incentive_category_breakdown: [],
     has_active_promotion: true,
     top_stores: [
@@ -127,18 +130,26 @@ describe('Campaigns', () => {
     const html = renderCampaigns('promo');
 
     expect(html).toContain('Promo test');
-    expect(html).toContain('unitati promo efective / bonuri calificate');
-    expect(html).toContain('Produse reduse');
+    expect(html).toContain('bonuri calificate');
+    expect(html).toContain('Unități promo efective');
     expect(html).toContain('12');
   });
 
-  it('renders incentive quantity and potential without reusing promo bonuri', () => {
+  it('renders the four operational incentive values and both monthly mechanisms', () => {
     const html = renderCampaigns('incentive');
 
     expect(html).toContain('Incentive test');
-    expect(html).toContain('unitati vandute');
-    expect(html).toContain('unitati eligibile dupa promo');
+    expect(html).toContain('unități vândute');
+    expect(html).toContain('unități eligibile după promo');
+    expect(html).toContain('unități în magazinele calificate');
     expect(html).toContain('incentive calculat acum');
+    expect(html).not.toContain('potențial calculat');
+    expect(html).not.toContain('diferență disponibilă');
+    expect(html).toContain('2 mecanisme în luna selectată');
+    expect(html).toContain('Mecanism initial');
+    expect(html).toContain('Mecanism actualizat');
+    expect(html).toContain('967 produse');
+    expect(html).toContain('201 produse');
     expect(html).not.toContain('potential la calificare 100%');
     expect(html).toContain('18');
     expect(html).toContain('25');

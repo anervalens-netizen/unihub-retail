@@ -14,7 +14,6 @@ export interface GrileRun {
   problem_count: number;
   error_count: number;
   duration_ms: number | null;
-  triggered_by_email: string | null;
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -109,7 +108,24 @@ export interface GrileMonthlyResult {
   output: string;
   exit_code: number | null;
   dry_run?: boolean | null;
-  triggered_by_email?: string | null;
+  manifest?: GrileMonthlyManifest | null;
+}
+
+export interface GrileMonthlyManifest {
+  id: number;
+  operation_id: number;
+  month: string;
+  operation: GrileMonthlyOp;
+  status: 'building' | 'failed' | 'verified' | 'approved' | 'consumed' | 'rolled_back' | 'uncertain';
+  expected: { stores?: number; agents?: number };
+  processed: { stores?: number; agents?: number };
+  error_count: number;
+  manifest_sha256: string | null;
+  approved: boolean;
+  created_at: string | null;
+  verified_at: string | null;
+  approved_at: string | null;
+  consumed_at: string | null;
 }
 
 export interface GrileMonthlyEnqueue {
@@ -141,9 +157,24 @@ export async function runGrileMonthly(body: {
   month: string;
   only?: string | null;
   dry_run?: boolean;
+  approved_manifest_id?: number | null;
 }): Promise<GrileMonthlyEnqueue> {
   const { data } = await client.post<GrileMonthlyEnqueue>('/api/grile/monthly/run', body);
   return data;
+}
+
+export async function getGrileMonthlyManifest(month: string): Promise<GrileMonthlyManifest | null> {
+  const { data } = await client.get<{ manifest: GrileMonthlyManifest | null }>(
+    `/api/grile/monthly/manifests/${month}`,
+  );
+  return data.manifest;
+}
+
+export async function approveGrileMonthlyManifest(manifestId: number): Promise<GrileMonthlyManifest> {
+  const { data } = await client.post<{ manifest: GrileMonthlyManifest }>(
+    `/api/grile/monthly/manifests/${manifestId}/approve`,
+  );
+  return data.manifest;
 }
 
 export async function getGrileMonthlyJob(jobId: string): Promise<GrileMonthlyJob> {

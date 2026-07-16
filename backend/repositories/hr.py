@@ -135,6 +135,153 @@ class HrRepository:
                 regional,
             )
 
+    async def get_manager_overview_rows(self, month: str) -> list[asyncpg.Record]:
+        """Returnează sumarul de structură și flux al echipei pentru fiecare manager.
+
+        Portofoliul pornește din magazinele active curente, nu din magazinele
+        care au deja vânzări în luna cerută. Agenții sunt deduplicați la nivel
+        de manager, iar intrările/ieșirile compară aceeași structură curentă cu
+        luna precedentă.
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                WITH active_stores AS (
+                    SELECT DISTINCT
+                        site_code,
+                        locatie,
+                        firma,
+                        regional,
+                        asm
+                    FROM stores
+                    WHERE is_active = TRUE
+                      AND locatie NOT ILIKE 'TR %'
+                      AND NULLIF(BTRIM(asm), '') IS NOT NULL
+                ),
+                current_agents AS (
+                    SELECT DISTINCT s.asm, ram.agent
+                    FROM active_stores s
+                    JOIN reporting_agent_month ram ON ram.site_code = s.site_code
+                    WHERE ram.import_month = $1
+                      AND ram.agent IS NOT NULL
+                      AND ram.agent <> '-'
+                ),
+                previous_agents AS (
+                    SELECT DISTINCT s.asm, ram.agent
+                    FROM active_stores s
+                    JOIN reporting_agent_month ram ON ram.site_code = s.site_code
+                    WHERE ram.import_month = to_char(($1 || '-01')::date - INTERVAL '1 month', 'YYYY-MM')
+                      AND ram.agent IS NOT NULL
+                      AND ram.agent <> '-'
+                ),
+                current_store_agents AS (
+                    SELECT s.site_code, COUNT(DISTINCT ram.agent)::INT AS agent_count
+                    FROM active_stores s
+                    LEFT JOIN reporting_agent_month ram
+                      ON ram.site_code = s.site_code
+                     AND ram.import_month = $1
+                     AND ram.agent IS NOT NULL
+                     AND ram.agent <> '-'
+                    GROUP BY s.site_code
+                )
+                SELECT
+                    s.asm,
+                    MIN(s.regional) AS regional,
+                    EXISTS (
+                        SELECT 1 FROM reporting_agent_month ram
+                        WHERE ram.import_month = $1
+                    ) AS reporting_available,
+                    COUNT(DISTINCT s.site_code)::INT AS active_stores,
+                    (SELECT COUNT(*)::INT FROM current_agents ca WHERE ca.asm = s.asm) AS active_agents,
+                    (SELECT COUNT(*)::INT FROM previous_agents pa WHERE pa.asm = s.asm) AS previous_active_agents,
+                    (
+                        SELECT COUNT(*)::INT
+                        FROM current_agents ca
+                        WHERE ca.asm = s.asm
+                          AND NOT EXISTS (
+                              SELECT 1 FROM previous_agents pa
+                              WHERE pa.asm = ca.asm AND pa.agent = ca.agent
+                          )
+                    ) AS agents_added,
+                    (
+                        SELECT COUNT(*)::INT
+                        FROM previous_agents pa
+                        WHERE pa.asm = s.asm
+                          AND NOT EXISTS (
+                              SELECT 1 FROM current_agents ca
+                              WHERE ca.asm = pa.asm AND ca.agent = pa.agent
+                          )
+                    ) AS agents_left,
+                    COUNT(*) FILTER (WHERE COALESCE(csa.agent_count, 0) = 0)::INT AS stores_without_agents
+                FROM active_stores s
+                LEFT JOIN current_store_agents csa ON csa.site_code = s.site_code
+                GROUP BY s.asm
+                ORDER BY s.asm
+                """,
+                month,
+            )
+
+    async def get_manager_store_overview_rows(self, month: str) -> list[asyncpg.Record]:
+        """Returnează acoperirea cu agenți per magazin pentru overview-ul Manageri."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                WITH active_stores AS (
+                    SELECT DISTINCT
+                        site_code,
+                        locatie,
+                        firma,
+                        regional,
+                        asm
+                    FROM stores
+                    WHERE is_active = TRUE
+                      AND locatie NOT ILIKE 'TR %'
+                      AND NULLIF(BTRIM(asm), '') IS NOT NULL
+                ),
+                current_agents AS (
+                    SELECT
+                        s.site_code,
+                        COUNT(DISTINCT ram.agent)::INT AS agent_count
+                    FROM active_stores s
+                    LEFT JOIN reporting_agent_month ram
+                      ON ram.site_code = s.site_code
+                     AND ram.import_month = $1
+                     AND ram.agent IS NOT NULL
+                     AND ram.agent <> '-'
+                    GROUP BY s.site_code
+                ),
+                previous_agents AS (
+                    SELECT
+                        s.site_code,
+                        COUNT(DISTINCT ram.agent)::INT AS agent_count
+                    FROM active_stores s
+                    LEFT JOIN reporting_agent_month ram
+                      ON ram.site_code = s.site_code
+                     AND ram.import_month = to_char(($1 || '-01')::date - INTERVAL '1 month', 'YYYY-MM')
+                     AND ram.agent IS NOT NULL
+                     AND ram.agent <> '-'
+                    GROUP BY s.site_code
+                )
+                SELECT
+                    s.asm,
+                    s.site_code,
+                    s.locatie,
+                    s.firma,
+                    COALESCE(ca.agent_count, 0)::INT AS active_agents,
+                    COALESCE(pa.agent_count, 0)::INT AS previous_active_agents
+                FROM active_stores s
+                LEFT JOIN current_agents ca ON ca.site_code = s.site_code
+                LEFT JOIN previous_agents pa ON pa.site_code = s.site_code
+                ORDER BY
+                    s.asm,
+                    (COALESCE(ca.agent_count, 0) = 0) DESC,
+                    (COALESCE(ca.agent_count, 0) - COALESCE(pa.agent_count, 0)) ASC,
+                    s.locatie,
+                    s.firma
+                """,
+                month,
+            )
+
     async def get_visits_snapshot(self, month: str) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(

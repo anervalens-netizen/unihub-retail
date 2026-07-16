@@ -75,7 +75,7 @@ function relTime(iso: string | null): string {
 
 // Template coloane desktop. Display-ul (hidden/grid) e separat ca sa nu intre in
 // conflict cu `hidden` la breakpoint (ordinea claselor nu decide display in Tailwind).
-const GRID_COLS = 'grid-cols-[minmax(170px,1.5fr)_96px_84px_1.2fr_1.2fr_120px] gap-2';
+const GRID_COLS = 'grid-cols-[minmax(240px,1.7fr)_96px_76px_1fr_1fr_112px] gap-2';
 const DESKTOP_ROW = `hidden lg:grid ${GRID_COLS}`;
 
 // ── Celula diferenta (target/vanzari): OK badge sau breakdown ca app veche ─────
@@ -231,7 +231,12 @@ function StoreRow({ s }: { s: GrileStore }) {
       </div>
 
       {/* ── Desktop: grid dens ── */}
-      <div className={cn(DESKTOP_ROW, 'items-center px-3 py-1.5 text-sm')}>
+      <div
+        className={cn(
+          DESKTOP_ROW,
+          'items-center px-4 py-2 text-sm transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/30',
+        )}
+      >
         <div className="flex items-center gap-1 truncate">
           <FirmaBadge firma={s.firma} />
           {nameEl}
@@ -261,23 +266,34 @@ function StoreRow({ s }: { s: GrileStore }) {
   );
 }
 
-// ── Etichetele de coloana (cell 2-6), refolosite in headerele de grup ASM/TL ──
-const CAP = 'text-[10px] font-semibold uppercase tracking-wide text-slate-400';
-function ColCaptions() {
+// ── Antet desktop unic: mai lizibil si aliniat cu toate randurile ─────────────
+function DesktopTableHeader() {
   return (
-    <>
-      <span className={cn(CAP, 'text-center')}>Completare</span>
-      <span className={cn(CAP, 'text-center')}>Editat</span>
-      <span className={CAP}>Target</span>
-      <span className={CAP}>Realizat</span>
-      <span className={CAP}>Status</span>
-    </>
+    <div
+      className={cn(
+        DESKTOP_ROW,
+        'sticky top-2 z-10 items-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-[0.04em] text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
+      )}
+    >
+      <span>Magazin / structură</span>
+      <span className="text-center">Completare</span>
+      <span className="text-center">Editat</span>
+      <span>Target</span>
+      <span>Realizat</span>
+      <span>Status</span>
+    </div>
   );
 }
 
 // ── Grup Team Leader (pliabil ca managerul; fara bara cand nu exista TL) ──────
 function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
-  const [open, setOpen] = useState(true);
+  const storageKey = `unihub_grile_tl_${tl.name ?? 'fara-tl'}`;
+  const [open, setOpen] = useState(() => localStorage.getItem(storageKey) !== 'closed');
+  const toggleOpen = () => setOpen((value) => {
+    const next = !value;
+    localStorage.setItem(storageKey, next ? 'open' : 'closed');
+    return next;
+  });
 
   const stores = tl.firms.flatMap((f) =>
     f.stores.map((s) => <StoreRow key={s.site_code} s={s} />),
@@ -289,21 +305,12 @@ function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
   return (
     <div>
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full bg-slate-100/60 px-3 py-1 text-left dark:bg-slate-800/40"
+        onClick={toggleOpen}
+        className="w-full border-y border-slate-200/70 bg-slate-100/70 px-4 py-1.5 text-left transition-colors hover:bg-slate-200/60 dark:border-slate-700/70 dark:bg-slate-800/50 dark:hover:bg-slate-800"
       >
-        {/* Mobil: chevron + nume TL */}
-        <div className="flex items-center gap-1 text-xs font-medium text-slate-500 lg:hidden dark:text-slate-400">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           Team Leader · {tl.name}
-        </div>
-        {/* Desktop: chevron + nume TL in col1 + captions in col2-6 */}
-        <div className={cn(DESKTOP_ROW, 'items-center')}>
-          <span className="flex items-center gap-1 truncate text-xs font-medium text-slate-500 dark:text-slate-400">
-            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            Team Leader · {tl.name}
-          </span>
-          <ColCaptions />
         </div>
       </button>
       {open && <div>{stores}</div>}
@@ -313,7 +320,13 @@ function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
 
 // ── Grup manager (ASM) ────────────────────────────────────────────────────────
 function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) {
-  const [open, setOpen] = useState(true);
+  const storageKey = `unihub_grile_manager_${m.name}`;
+  const [open, setOpen] = useState(() => localStorage.getItem(storageKey) !== 'closed');
+  const toggleOpen = () => setOpen((value) => {
+    const next = !value;
+    localStorage.setItem(storageKey, next ? 'open' : 'closed');
+    return next;
+  });
 
   const filteredTLs = useMemo(() => {
     return m.team_leaders
@@ -329,10 +342,10 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
   if (filteredTLs.length === 0) return null;
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+    <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full bg-slate-50 px-3 py-2 text-left dark:bg-slate-800/60"
+        onClick={toggleOpen}
+        className="w-full bg-slate-50 px-3 py-2 text-left transition-colors hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800"
       >
         {/* Mobil: nume + sumar pe doua capete */}
         <div className="flex items-center justify-between gap-2 lg:hidden">
@@ -347,21 +360,26 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
             {m.avg_completion !== null && <span className="text-slate-500">{m.avg_completion}%</span>}
           </div>
         </div>
-        {/* Desktop: grid aliniat — nume+sumar in col1, captions in col2-6 */}
-        <div className={cn(DESKTOP_ROW, 'items-center')}>
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              <span className="font-semibold text-slate-800 dark:text-slate-100">{m.name}</span>
-              <span className="text-xs text-slate-400">{m.store_count} mag.</span>
-            </div>
-            <div className="flex items-center gap-2 pl-6 text-[10px]">
-              <span className="text-emerald-600 dark:text-emerald-400">{m.ok} OK</span>
-              <span className="text-rose-600 dark:text-rose-400">{m.problems} probl.</span>
-              {m.avg_completion !== null && <span className="text-slate-400">compl. {m.avg_completion}%</span>}
-            </div>
+        {/* Desktop: managerul si sumarul folosesc toata latimea barei de grup. */}
+        <div className="hidden items-center justify-between gap-4 lg:flex">
+          <div className="flex min-w-0 items-center gap-2">
+            {open ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+            <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{m.name}</span>
+            <span className="flex-shrink-0 text-xs text-slate-500 dark:text-slate-400">{m.store_count} magazine</span>
           </div>
-          <ColCaptions />
+          <div className="flex flex-shrink-0 items-center gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              {m.ok} OK
+            </span>
+            <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+              {m.problems} probleme
+            </span>
+            {m.avg_completion !== null && (
+              <span className="rounded-full bg-slate-200 px-2.5 py-1 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                Completare {m.avg_completion}%
+              </span>
+            )}
+          </div>
         </div>
       </button>
       {open && (
@@ -465,7 +483,6 @@ export function GrileSubtab() {
                 <Clock className="h-3.5 w-3.5" />
                 {run.source === 'auto' ? 'automat după import' : 'manual'} ·{' '}
                 {relTime(run.finished_at ?? run.started_at)}
-                {run.triggered_by_email ? ` · ${run.triggered_by_email}` : ''}
               </div>
             </>
           ) : (
@@ -498,7 +515,13 @@ export function GrileSubtab() {
       </div>
 
       {/* ── Filtre locale (independente de filtrul global) ── */}
-      <div className="flex flex-wrap gap-1.5">
+      <label className="block lg:hidden">
+        <span className="mb-1 block text-xs font-bold text-slate-500">Stare grilă</span>
+        <select value={filter} onChange={(event) => setFilter(event.target.value as StatusFilter)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+          {FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+        </select>
+      </label>
+      <div className="hidden flex-wrap gap-1.5 lg:flex">
         {FILTERS.map((f) => (
           <button
             key={f.id}
@@ -515,10 +538,9 @@ export function GrileSubtab() {
         ))}
       </div>
 
-      {/* Capul de tabel nu mai e global: captions sunt integrate in fiecare bara ASM + TL */}
-
       {/* ── Arbore ── */}
-      <div>
+      <div className="space-y-2">
+        <DesktopTableHeader />
         {isLoading && <div className="p-8 text-center text-slate-400">Se încarcă…</div>}
         {isError && <div className="p-8 text-center text-rose-500">Eroare la încărcare.</div>}
         {!isLoading && data && data.managers.length === 0 && (

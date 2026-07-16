@@ -31,6 +31,7 @@ def _clear_oidc_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TARGET_CALCULATOR_FINALIZER_GROUPS", "target-role")
     monkeypatch.setenv("GRILE_FINALIZER_GROUPS", "grile-role")
+    monkeypatch.setenv("GRILE_TARGET_SYNC_GROUPS", "grile-sync-role")
     monkeypatch.setenv("STORE_PNL_ACCESS_GROUPS", "pnl-role")
     monkeypatch.delenv("TARGET_CALCULATOR_FINALIZER_EMAILS", raising=False)
     monkeypatch.delenv("GRILE_FINALIZER_EMAILS", raising=False)

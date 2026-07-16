@@ -29,9 +29,11 @@ curl -fsS http://127.0.0.1:9898/health
 
 Run validation sequentially; typecheck can race with a Vite build while `dist/` is regenerated.
 
-Private `@unihub/*` packages use local Verdaccio. Keep the real token only in
-the ignored `.npmrc`; copy `.npmrc.example` and provide `VERDACCIO_TOKEN` when
-provisioning a new checkout. Never commit `.npmrc`.
+Private `@unihub/*` packages are pinned as integrity-checked tarballs under
+`vendor/npm/`, so clean checkouts and PR CI require no registry secret or
+internal network. Local Verdaccio remains only the controlled source used when
+publishing a new shared-package version. Never commit `.npmrc` or a Verdaccio
+token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes.
 
 ## Architecture rules
 

@@ -1,17 +1,17 @@
 {
   "errors": [],
-  "generated_at": "2026-07-14T08:21:28Z",
+  "generated_at": "2026-07-16T10:35:36Z",
   "metrics": {
     "_totals": {
-      "CONFIDENCE.HIGH": 19,
-      "CONFIDENCE.LOW": 94,
+      "CONFIDENCE.HIGH": 18,
+      "CONFIDENCE.LOW": 105,
       "CONFIDENCE.MEDIUM": 15,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 17,
-      "SEVERITY.MEDIUM": 111,
+      "SEVERITY.MEDIUM": 121,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 33574,
+      "loc": 37119,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -141,7 +141,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 267,
+      "loc": 300,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -154,7 +154,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 242,
+      "loc": 261,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -206,7 +206,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 76,
+      "loc": 78,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -379,16 +379,29 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "backend/repositories/grile_agent_target_sync.py": {
+      "CONFIDENCE.HIGH": 1,
+      "CONFIDENCE.LOW": 4,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 1,
+      "SEVERITY.MEDIUM": 4,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 198,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "backend/repositories/grile_monthly_operations.py": {
       "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 6,
+      "CONFIDENCE.LOW": 13,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 6,
+      "SEVERITY.MEDIUM": 13,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 398,
+      "loc": 793,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -401,7 +414,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 1,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 233,
+      "loc": 377,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -440,7 +453,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 156,
+      "loc": 239,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -453,7 +466,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 15,
+      "loc": 61,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -466,7 +479,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 2,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 533,
+      "loc": 535,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -648,7 +661,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 137,
+      "loc": 291,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -674,7 +687,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 80,
+      "loc": 87,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -713,7 +726,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 84,
+      "loc": 95,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -726,7 +739,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 29,
+      "loc": 55,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -947,7 +960,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 194,
+      "loc": 332,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1012,7 +1025,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 92,
+      "loc": 70,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1077,7 +1090,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 221,
+      "loc": 382,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1103,7 +1116,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 168,
+      "loc": 170,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1129,7 +1142,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 102,
+      "loc": 114,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1182,32 +1195,6 @@
       "SEVERITY.MEDIUM": 2,
       "SEVERITY.UNDEFINED": 0,
       "loc": 729,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "backend/scripts/run_ai_forecast_xreg_v2_experiment.py": {
-      "CONFIDENCE.HIGH": 3,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 2,
-      "SEVERITY.MEDIUM": 1,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 135,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "backend/scripts/run_ai_forecast_xreg_v3_experiment.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 30,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1532,7 +1519,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 380,
+      "loc": 379,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1545,7 +1532,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 473,
+      "loc": 685,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1563,15 +1550,28 @@
       "skipped_tests": 0
     },
     "backend/services/grile_monthly.py": {
-      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.HIGH": 3,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 2,
+      "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 1006,
+      "loc": 2228,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "backend/services/grile_monthly_integrity.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 243,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1623,7 +1623,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 121,
+      "loc": 171,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1636,7 +1636,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 467,
+      "loc": 657,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1649,7 +1649,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 216,
+      "loc": 226,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1675,7 +1675,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 229,
+      "loc": 288,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1805,7 +1805,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 130,
+      "loc": 163,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1818,7 +1818,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 22,
+      "loc": 61,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1883,7 +1883,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 329,
+      "loc": 440,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1896,7 +1896,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 142,
+      "loc": 273,
       "nosec": 0,
       "skipped_tests": 0
     }
@@ -2125,26 +2125,6 @@
       "line_number": 364,
       "line_range": [
         364
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
-      "test_id": "B310",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "32     )\n33     with urllib.request.urlopen(request, timeout=timeout) as response:\n34         return response.read().decode(\"utf-8\")\n",
-      "col_offset": 9,
-      "end_col_offset": 57,
-      "filename": "backend/scripts/run_ai_forecast_xreg_v2_experiment.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 22,
-        "link": "https://cwe.mitre.org/data/definitions/22.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 33,
-      "line_range": [
-        33
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",

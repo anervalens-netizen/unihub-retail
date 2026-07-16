@@ -9,8 +9,8 @@ updates:
     # Keep the dependency queue reviewable: one grouped minor/patch PR plus
     # at most two separate updates (typically majors) at the same time.
     open-pull-requests-limit: 3
-    # Private @unihub packages are served by the host-only Verdaccio registry
-    # and are upgraded through the shared-packages release workflow.
+    # Private @unihub packages are vendored as integrity-checked tarballs and
+    # are upgraded only through the reviewed shared-package release workflow.
     ignore:
       - dependency-name: "@unihub/*"
       # Keep compiler/runtime types aligned with the deployed Node 22 toolchain.

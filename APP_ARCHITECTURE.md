@@ -76,7 +76,13 @@ flowchart LR
 
 Navigatia principala ramane plata: sidebar-ul contine doar meniurile principale.
 Subtaburile Management sunt randate in interiorul ecranului Management, cu
-acelasi model de interactiune folosit de celelalte ecrane cu subsectiuni.
+acelasi `SegmentedTabs` accesibil folosit de Hub, Focus, Agenti si Setari.
+Pe desktop, textul functional foarte mic este ridicat la minimum 12 px, iar
+scrollbar-urile pentru tabele si selectoare raman vizibile.
+Pe mobil, `SegmentedTabs` are snap si indiciu de overflow; shell-ul pastreaza
+filtrul global ca actiune flotanta discreta, coordoneaza barele sticky cu navigarea de jos si foloseste
+`safe-area-inset-bottom`. Ecranele cu tabele late pastreaza tabelul pe desktop
+si expun carduri sau sectiuni progresive la viewport mobil.
 
 Contractele publice backend sunt separate pe domenii in `backend/schemas/`
 (`dashboard`, `agents`, `campaigns`, `premium_glass`, `contests`, `ai_forecast`
@@ -121,11 +127,14 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   configurabile prin variabilele `RATE_LIMIT_*`; uploadul de vanzari ramane
   limitat separat prin `MAX_SALES_UPLOAD_BYTES`.
 - Management cu subtab-uri pentru Manageri, Calculator Target, Salarii si P&L.
-  Scorurile CRM raman un read model intern consumat de Manageri; endpointurile
-  istorice Tasks/concedii/alerte CRM nu sunt expuse ca subtab-uri V2.
+  Manageri foloseste `/api/hr/manager-overview` pentru structura operationala,
+  acoperirea cu agenti, fluxul fata de luna precedenta si indicatorii Vizite;
+  evaluarea de vanzari si scorurile CRM nu mai sunt duplicate in acest ecran.
+  Endpointurile istorice Tasks/concedii/alerte CRM nu sunt expuse ca subtab-uri V2.
 - Management -> `P&L` prezinta sumar financiar, evolutii lunare si anuale,
   structura pe categorii si performanta pe magazine, cu lunile estimate marcate
-  explicit. Scope-ul implicit este anul calendaristic curent, iar filtrele de
+  explicit, variatie fata de luna precedenta si avertismente de reconciliere
+  scoase inaintea detaliilor. Scope-ul implicit este anul calendaristic curent, iar filtrele de
   companie si magazin sunt aplicate in repository tuturor agregatelor. La fel
   ca in restul raportarii istorice, selectarea magazinului domina compania,
   pentru a pastra lunile dinaintea unei mutari intre entitati.
@@ -162,9 +171,14 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   continutului deduplica retry-urile aflate deja in coada, iar DB permite un
   singur snapshot `processing` per luna. Lease-urile mai vechi de o ora sunt
   inchise ca `failed`, fara stergerea istoricului de audit; restartul workerului
-  reconciliaza imediat lease-urile intrerupte.
+  reconciliaza imediat lease-urile intrerupte. Inainte de inlocuirea
+  snapshotului, validatorul respinge valori numerice invalide, identificatori
+  lipsa, duplicate si metadate contradictorii, apoi persista in
+  `import_snapshots.coverage_report` coverage-ul si diff-ul agregat fata de
+  master data activa si snapshotul anterior.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
-  builder Excel controlat server-side cu doua moduri: `Tabel detaliat` pentru
+  builder Excel ghidat prin `Dataset`, `Perioada si scope`, `Coloane` si
+  `Preview si export`, controlat server-side, cu doua moduri: `Tabel detaliat` pentru
   Agenti, Magazine, RM, ASM si `Incentive pe produs` cu filtre pe
   luni/agent/magazin/firma/RM/ASM,
   coloane bifabile, evolutii lunare/zilnice, preview si download `.xlsx`;
@@ -190,7 +204,12 @@ dar nu este preincarcat din `index.html`; se descarca la primul ecran cu
 grafice. TanStack Query are default `staleTime=60s` si `gcTime=10min`, iar
 polling-ul pentru operatii Grile ramane explicit per-query.
 Aplicatia este invelita la radacina in `ErrorBoundary`; fallback-ul nu expune
-stack trace in UI si trimite erorile catre GlitchTip/Sentry.
+stack trace in UI si trimite erorile catre GlitchTip/Sentry. Ecranul Management
+are si un boundary local, iar erorile de preload ale chunk-urilor lazy declanseaza
+o singura reincarcare controlata pentru a recupera un PWA ramas pe un manifest vechi.
+Tabelele operationale folosesc antetul comun `common/TableHeader.tsx`: eticheta
+ramane lizibila, iar indicatorul de sortare este afisat sub text; tabelele foarte
+late din P&L si AI Forecast sunt inlocuite cu carduri sintetice pe mobil.
 PWA precache exclude logo-urile mari nefolosite in UI (`logo-horizontal`,
 `logo-inverted`, `logo-mark`); sidebar-ul foloseste `favicon-64.png`, iar
 imaginile autentificate din Vizite folosesc lazy loading.
@@ -295,16 +314,18 @@ Familii de tabele:
 | AI Forecast | `ai_forecast_runs`, `ai_forecast_store_month`, `ai_forecast_store_day` |
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_salary_links`, `agent_targets`, `store_pnl_monthly` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
-| Operare | `import_snapshots`, `visits_snapshot`, `error_logs` |
+| Operare | `import_snapshots`, `store_activity_events`, `visits_snapshot`, `error_logs` |
 
 `stores` este master data curenta pentru apartenenta magazinelor. In Retail
 exista un singur layer activ de management; coloanele `regional` si `asm` sunt
 pastrate pentru compatibilitate cu rapoartele, dar pentru magazinele active din
 ultima luna ele trebuie sa indice acelasi manager. Importul celei mai noi luni
-actualizeaza structura curenta si marcheaza inactive magazinele care nu mai
-apar. Importurile istorice actualizeaza doar intervalul
-`first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent
-sau sa reactiveze magazine inchise.
+actualizeaza structura curenta numai pentru magazinele prezente, dar nu modifica
+niciodata `stores.is_active` pentru un magazin existent: nici absenta din fisier,
+nici reaparitia nu schimba starea. Activarea sau inchiderea se face separat,
+admin-only, cu subject OIDC, motiv si eveniment persistent in
+`store_activity_events`. Importurile istorice actualizeaza doar intervalul
+`first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent.
 
 P&L-ul financiar lunar pe magazin este pastrat in `store_pnl_monthly` la
 granularitatea companie, luna, cod istoric de locatie si categorie contabila.
@@ -439,11 +460,13 @@ Helperul este folosit de:
 - punctajul de concurs pentru bonurile promo.
 
 In interfata Focus, fiecare promotie are tabele separate pentru Magazine si
-Agenti, calculate din rezultatul promotiei selectate. Incentive afiseaza toate
-randurile disponibile de agenti si magazine, plus `Incentive potential`:
-valoarea care s-ar plati la realizare 100% a targetului, inainte de
-multiplicatorul curent. Sumarul Incentive separa mecanismele active in aceeasi
-luna si include distributia pe subcategorii. Tabelele din toate subsectiunile Focus, inclusiv
+Agenti, calculate din rezultatul promotiei selectate. Cardul Incentive separa
+unitatile vandute, unitatile eligibile dupa promo, unitatile din magazinele
+calificate si incentive-ul calculat acum; mecanismele active raman afisate
+separat dedesubt. `Incentive potential` ramane numai in tabelele detaliate si
+exporturi, etichetat explicit ca simulare la realizare 100%. Sumarul separa
+mecanismele active in aceeasi luna si include distributia pe subcategorii.
+Tabelele din toate subsectiunile Focus, inclusiv
 Concurs si Folii premium, pot fi exportate in Excel. Exporturile Focus pe
 randuri de magazine sau agenti includ explicit `Firma` si `Magazin` cand
 payload-ul are acele metadate.
@@ -534,17 +557,23 @@ per `site_code` si din `store_targets`, cu apartenenta ASM curenta
 ### Targete agent
 
 Tabela `agent_targets` este un override optional pentru targetele reale per
-agent. Sync-ul curent este legat de verificarea zilnica Grile si citeste
-read-only celulele `D2/D8` si `D16/D22` din Google Sheets, numai pentru
-managerii activati prin `GRILE_AGENT_TARGET_ENABLED_MANAGERS`. Implicit sunt
-activati Andrei Stancu, Adrian Badea, Mihai Condorateanu si Elena Minca.
+agent. Verificarea zilnica Grile citeste celulele `D2/D8` si `D16/D22` din
+Google Sheets numai ca dry-run/diff si demonstreaza prin hash inainte/dupa ca
+`agent_targets` ramane identic. `POST /api/grile/agent-targets/diff` este un
+job read-only disponibil utilizatorilor autentificati. Scrierea este separata
+in `POST /api/grile/agent-targets/sync`, ruleaza exclusiv in worker si necesita
+grupul dedicat `GRILE_TARGET_SYNC_GROUPS`, CSRF pentru sesiunea browser, rate
+limit si audit persistent cu subject OIDC in
+`grile_agent_target_sync_runs`. Apply este fail-closed daca orice sheet activ
+nu a fost citit sau exista un target/agent nerezolvat. Workerul ia luna si
+modul exclusiv din operatia rezervata in DB; schimbarea `agent_targets` si
+finalizarea auditului se comit in aceeasi tranzactie. Scriptul CLI istoric este
+doar read-only si nu mai ofera `--apply`.
 
-Managerii exclusi prin `GRILE_AGENT_TARGET_DISABLED_MANAGERS` (implicit
-Bogdan Radu si Bogdana Costan) nu primesc override-uri si raman pe fallback-ul
-istoric. Cand targetul agentului lipseste din grila sau numele nu se poate
-mapa sigur la codul de agent Retail, randul din `agent_targets` nu se scrie
-sau este scos pentru magazinul citit, deci tabelul Hub revine la
-`store_targets.target_value / numar agenti activi`.
+Managerii exclusi prin `GRILE_AGENT_TARGET_DISABLED_MANAGERS` nu primesc
+override-uri si raman pe fallback-ul istoric. Cand targetul agentului lipseste
+din grila sau identitatea nu se poate mapa sigur la codul Retail, dry-run-ul
+raporteaza blockerul fara sa modifice DB; sync-ul privilegiat este refuzat.
 
 Nu exista validare ca suma targetelor celor doi agenti trebuie sa fie egala cu
 targetul magazinului. Diferentele sunt acceptate deoarece pot exista agenti,
@@ -564,6 +593,17 @@ controlat al range-urilor editabile. Output-urile sunt generate in
 `backend/outputs/grile`. Verificarile async rezerva atomic un singur run
 `queued/running` per luna inainte de enqueue; workerul actualizeaza heartbeat-ul,
 iar o rezervare abandonata poate fi inlocuita dupa doua ore.
+
+Operatiunile lunare sunt fail-closed si folosesc manifestele persistente din
+`grile_monthly_manifests`. Finalizarea valideaza strict valorile si coverage-ul
+magazinelor/agentilor inainte de promovarea atomica a workbookului. Arhiva
+necesita manifestul finalizarii si copii complete, verificate SHA-256, ale
+surselor. Resetul live accepta numai un manifest de arhiva verificat si aprobat
+prin subject OIDC; inaintea oricarui clear salveaza snapshoturi recuperabile.
+Reset manifest + finalizare operatie + consumare aprobare se comit intr-o
+singura tranzactie DB, iar orice esec ulterior clear-ului declanseaza
+restaurarea si verificarea snapshoturilor. Contractul complet este documentat
+in `docs/engineering/h11-grile-monthly-idempotency.md`.
 
 ### Calculator Target
 
@@ -591,7 +631,9 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    evidentiaza, iar finalizarea este blocata cat timp exista randuri goale.
    Rezumatul pe manager afiseaza cresterea propunerii fata de forecastul lunii
    curente si cresterea sezoniera observata anul trecut intre luna baza si
-   luna tinta.
+   luna tinta. Salvarea batch este atomica: toate codurile de locatie sunt
+   validate sub lockul scenariului inaintea primului update; un singur cod
+   invalid lasa toate valorile si `revision` neschimbate.
 5. Tabelul de lucru permite filtru multi-select pe locatie. Click pe numele
    locatiei deschide un drawer cu 16 luni de istoric. Graficul din drawer
    comuta intre vanzari versus target, Bon2Acc si Focus/Acc; KPI-ul
@@ -633,6 +675,14 @@ extinderea formulei.
 - Hub consuma KPI-uri Retail prin API intern.
 - Prometheus si Grafana pentru metrics.
 - GlitchTip pentru erori.
+- In configuratia activa `v2.0.1`, `/metrics` este consumat numai pe calea interna
+  Prometheus; proxy-ul Retail raspunde 404 public pentru `/metrics`, `/docs`,
+  `/redoc` si `/openapi.json`, iar
+  FastAPI nu publica UI/schema OpenAPI. Fallback-ul SPA se aplica numai
+  navigarilor GET/HEAD care accepta HTML si niciodata namespace-urilor
+  API/auth/server sau assetelor lipsa. Raspunsurile `/api/*`, `/salarii/*` si
+  `/auth/session*`, inclusiv P&L, fotografii si exporturi, folosesc
+  `private, no-store` si dezactiveaza cache-urile CDN.
 
 ## Teste si calitate
 

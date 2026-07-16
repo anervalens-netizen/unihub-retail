@@ -21,6 +21,7 @@ Authorization moves to dedicated OIDC group claims:
 ```text
 TARGET_CALCULATOR_FINALIZER_GROUPS=unihub-target-finalizer
 GRILE_FINALIZER_GROUPS=unihub-grile-admin
+GRILE_TARGET_SYNC_GROUPS=unihub-grile-target-sync
 STORE_PNL_ACCESS_GROUPS=unihub-pnl-owner
 ```
 
@@ -110,6 +111,7 @@ non-secret errors when:
 
 - `TARGET_CALCULATOR_FINALIZER_GROUPS` is missing/empty;
 - `GRILE_FINALIZER_GROUPS` is missing/empty;
+- `GRILE_TARGET_SYNC_GROUPS` is missing/empty;
 - a group item resembles an email address;
 - a group contains control characters or exceeds a reasonable length;
 - deprecated `TARGET_CALCULATOR_FINALIZER_EMAILS` or
@@ -200,8 +202,14 @@ Authentik group assignment or service environment and restart the backend.
 
 ## Forward fix and deployment status
 
-H-08 did not change the database schema or persisted job actor. Production
-reconciliation (2026-07-13): the two dedicated groups were provisioned in
+The Grile target synchronization follow-up stores the immutable OIDC subject,
+not email, in `grile_agent_target_sync_runs`; its dedicated group is distinct
+from the monthly-finalization group. The browser route requires the existing
+session CSRF boundary and the Grile job rate limit. Only the worker may apply a
+DB-reserved `sync` operation, and target writes commit atomically with the
+persistent audit result; the legacy CLI is dry-run only. It remains fail-closed
+until that new group is provisioned and configured. The earlier production reconciliation
+(2026-07-13) covered the two original dedicated groups in
 Authentik, emitted in the OIDC group claim and configured through
 `TARGET_CALCULATOR_FINALIZER_GROUPS` and `GRILE_FINALIZER_GROUPS`; the
 group-only code is active in `unihub-backend.service`. Controlled permission
