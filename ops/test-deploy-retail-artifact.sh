@@ -91,6 +91,13 @@ set -e
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ ! -d "$OPS/backups/retail-deploy" ]]
 
+EXPIRED_RUN_ID="$((CI_RUN_ID + 100))"
+approve_release "$EXPIRED_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" 100 >/dev/null
+approve_release "$EXPIRED_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" 2000 >/dev/null
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${EXPIRED_RUN_ID}-*.rejected" | wc -l)" -eq 1 ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${EXPIRED_RUN_ID}-*.approved" | wc -l)" -eq 1 ]]
+find "$ROOT/approval-store" -maxdepth 1 -type f -name "${EXPIRED_RUN_ID}-*" -delete
+
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
 set +e
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null 2>&1
@@ -201,6 +208,20 @@ set -e
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
 [[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq 1 ]]
+
+approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
+FAILED_BEFORE_PUBLIC_HEALTH="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_FAIL_PHASE=public_health \
+  bash "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+PUBLIC_HEALTH_RC=$?
+set -e
+[[ "$PUBLIC_HEALTH_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+[[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$((FAILED_BEFORE_PUBLIC_HEALTH + 1))" ]]
 
 mkdir -p "$ROOT/tampered"
 tar -xzf "$ARTIFACT" -C "$ROOT/tampered"

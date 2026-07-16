@@ -97,35 +97,3 @@ jobs:
             "$EXPECTED_SHA" \
             "$CI_RUN_ID" \
             "$artifact_sha256"
-
-      - name: Verify public health and hardened routes
-        run: |
-          set -euo pipefail
-          probe_release() {
-            curl --silent --show-error --fail --max-time 10 \
-              https://retail.unihub.ro/health >/dev/null || return 1
-            curl --silent --show-error --fail --max-time 10 \
-              https://retail.unihub.ro/readyz >/dev/null || return 1
-
-            local path status
-            for path in /metrics /docs /redoc /openapi.json /api/__release_missing__; do
-              status="$(curl --silent --show-error --output /dev/null \
-                --write-out '%{http_code}' --max-time 10 \
-                "https://retail.unihub.ro${path}")" || return 1
-              case "$status" in
-                401|403|404) ;;
-                *) return 1 ;;
-              esac
-            done
-          }
-
-          for attempt in 1 2 3 4 5 6; do
-            if probe_release; then
-              exit 0
-            fi
-            if [[ "$attempt" -lt 6 ]]; then
-              sleep 5
-            fi
-          done
-          echo "::error::Public health or hardening probes did not converge."
-          exit 1

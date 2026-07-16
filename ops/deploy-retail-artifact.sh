@@ -524,6 +524,45 @@ verify_local_health() {
   return 1
 }
 
+verify_public_release() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    if [[ "$TEST_FAIL_PHASE" == "public_health" && ! -e "$TEST_ROOT/.public-health-failure-consumed" ]]; then
+      : >"$TEST_ROOT/.public-health-failure-consumed"
+      return 1
+    fi
+    return 0
+  fi
+
+  probe_public_release() {
+    curl --silent --show-error --fail --max-time 10 \
+      https://retail.unihub.ro/health >/dev/null || return 1
+    curl --silent --show-error --fail --max-time 10 \
+      https://retail.unihub.ro/readyz >/dev/null || return 1
+
+    local path status
+    for path in /metrics /docs /redoc /openapi.json /api/__release_missing__; do
+      status="$(curl --silent --show-error --output /dev/null \
+        --write-out '%{http_code}' --max-time 10 \
+        "https://retail.unihub.ro${path}")" || return 1
+      case "$status" in
+        401|403|404) ;;
+        *) return 1 ;;
+      esac
+    done
+  }
+
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    if probe_public_release; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 6 ]]; then
+      sleep 5
+    fi
+  done
+  return 1
+}
+
 rollback_from_backup() {
   local backup_dir="$1"
   local expected_current_sha="$2"
@@ -563,6 +602,7 @@ deploy_release() {
     diff -qr -- "$LIVE_ROOT/dist" "$artifact_tree/dist" >/dev/null \
       || die "live frontend differs from the tested release artifact"
     verify_local_health
+    verify_public_release
     log "existing deployment reverified without mutation: $expected_sha"
     return 0
   fi
@@ -624,6 +664,7 @@ deploy_release() {
   run_migrations
   start_runtime
   verify_local_health
+  verify_public_release
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "deployed Git SHA mismatch"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"
   finalize_approval consumed "$backup_dir"

@@ -81,12 +81,32 @@ flock -n 9 || die "another approval operation is active"
 
 PREFIX="${CI_RUN_ID}-${SOURCE_SHA}-${ARTIFACT_SHA256}"
 shopt -s nullglob
-ACTIVE=(
-  "$APPROVAL_ROOT/${PREFIX}-"*.approved
-  "$APPROVAL_ROOT/${PREFIX}-"*.claimed.*
-)
+APPROVED=("$APPROVAL_ROOT/${PREFIX}-"*.approved)
+CLAIMED=("$APPROVAL_ROOT/${PREFIX}-"*.claimed.*)
 shopt -u nullglob
-[[ "${#ACTIVE[@]}" -eq 0 ]] || die "an unconsumed approval already exists for this release"
+[[ "${#CLAIMED[@]}" -eq 0 ]] || die "an approval is currently claimed for this release"
+
+ACTIVE_APPROVED=0
+for approval_file in "${APPROVED[@]}"; do
+  expires_at="$(sed -n 's/^expires_at_epoch=//p' "$approval_file")"
+  state="$(sed -n 's/^state=//p' "$approval_file")"
+  if [[ "$expires_at" =~ ^[0-9]{1,12}$ && "$state" == "approved" && "$expires_at" -le "$NOW" ]]; then
+    rejected_file="${approval_file%.approved}.rejected"
+    rejected_tmp="${approval_file}.rejecting.$$"
+    {
+      sed '/^state=/d' "$approval_file"
+      printf 'state=rejected\n'
+      printf 'rejected_at_epoch=%s\n' "$NOW"
+      printf 'rejection_reason=expired_before_claim\n'
+    } >"$rejected_tmp"
+    chmod 0600 "$rejected_tmp"
+    mv -- "$rejected_tmp" "$rejected_file"
+    rm -f -- "$approval_file"
+  else
+    ACTIVE_APPROVED=$((ACTIVE_APPROVED + 1))
+  fi
+done
+[[ "$ACTIVE_APPROVED" -eq 0 ]] || die "an unconsumed approval already exists for this release"
 
 EXPIRES_AT="$((NOW + TTL_SECONDS))"
 RANDOM_SUFFIX="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
