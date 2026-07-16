@@ -86,6 +86,11 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
   work. Finalization requires all manager values and zero remaining allocation.
 - Promo qualifying receipts and incentive quantity are distinct metrics; do not reuse one field for both meanings.
 - Visits are grouped by the visit author's Team Leader snapshot, not the store ASM. Enrich store hierarchy from current `stores`.
+- PostgreSQL `fieldops_visits` is the only production visit source. Production
+  config must reject SQLite and shadow comparison; the SQLite file is archive only.
+- Retail reads visits from FieldOps-owned PostgreSQL `fieldops_visits` with
+  SELECT-only access. SQLite is a retained pre-cutover archive, never a runtime
+  fallback; photo bytes remain on the protected filesystem.
 
 ## Deployment
 

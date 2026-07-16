@@ -182,12 +182,14 @@ def test_visits_paths_use_env_with_repo_defaults(monkeypatch: pytest.MonkeyPatch
     assert get_visits_images_dir() == images_path
 
 
-def test_config_requires_visits_db_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_rejects_sqlite_visits_source_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
     monkeypatch.setenv("UNIHUB_ENV", "production")
-    monkeypatch.setenv("VISITS_DB_PATH", "/nonexistent/path.db")
+    monkeypatch.setenv("RETAIL_VISITS_READ_SOURCE", "sqlite")
     _set_privileged_groups(monkeypatch)
-    with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
+    with pytest.raises(ConfigError, match="trebuie sa fie postgres dupa cutover"):
         validate_required_env_vars()
 
 
@@ -196,6 +198,11 @@ def test_visit_source_flags_are_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("RETAIL_VISITS_SHADOW_COMPARE_ENABLED", "YeS")
     assert get_visits_read_source() == "postgres"
     assert visits_shadow_compare_enabled() is True
+
+
+def test_visit_source_defaults_to_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RETAIL_VISITS_READ_SOURCE", raising=False)
+    assert get_visits_read_source() == "postgres"
 
 
 def test_config_rejects_unknown_visit_source(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -221,30 +228,20 @@ def test_postgres_primary_without_shadow_does_not_require_sqlite_in_production(
     validate_required_env_vars()
 
 
+def test_production_rejects_visits_shadow_compare(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("RETAIL_VISITS_READ_SOURCE", "postgres")
+    monkeypatch.setenv("RETAIL_VISITS_SHADOW_COMPARE_ENABLED", "true")
+    _set_privileged_groups(monkeypatch)
+    with pytest.raises(ConfigError, match="trebuie sa fie false dupa cutover"):
+        validate_required_env_vars()
+
+
 def test_config_accumulates_all_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(ConfigError) as exc_info:
         validate_required_env_vars()
     assert "DATABASE_URL" in str(exc_info.value)
-
-
-def test_config_rejects_empty_visits_db_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
-    monkeypatch.setenv("UNIHUB_ENV", "production")
-    monkeypatch.setenv("VISITS_DB_PATH", "   ")
-    _set_privileged_groups(monkeypatch)
-    with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
-        validate_required_env_vars()
-
-
-def test_config_rejects_directory_as_visits_db_in_production(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h/d")
-    monkeypatch.setenv("UNIHUB_ENV", "production")
-    dir_path = tmp_path / "a_directory"
-    dir_path.mkdir()
-    monkeypatch.setenv("VISITS_DB_PATH", str(dir_path))
-    _set_privileged_groups(monkeypatch)
-    with pytest.raises(ConfigError, match="VISITS_DB_PATH"):
-        validate_required_env_vars()

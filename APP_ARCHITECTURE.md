@@ -56,7 +56,7 @@ flowchart LR
   U[Browser] --> FE[React SPA]
   FE --> API[FastAPI]
   API --> PG[(PostgreSQL unihub)]
-  API --> V[(SQLite visits.db)]
+  API --> F[(Visit photo filesystem)]
   API --> Q[(Valkey)]
   W[arq worker] --> Q
   W --> PG
@@ -651,21 +651,25 @@ extinderea formulei.
 
 ### Vizite FieldOps
 
-- `data/visits/visits.db`
-- Autoritatea V2 este PostgreSQL `fieldops_visits`, detinuta de migrarile
-  FieldOps. SQLite ramane temporar sursa implicita si rollback read-only pana la
-  gate-ul coordonat FieldOps/Retail.
+- Autoritatea activa este PostgreSQL `fieldops_visits`, detinuta de migrarile
+  FieldOps. Retail are acces `SELECT` si foloseste
+  `RETAIL_VISITS_READ_SOURCE=postgres`.
+- Cutover-ul coordonat a fost finalizat pe 2026-07-16 dupa backup pre/post,
+  doua comparatii consecutive identice si validarea report/tree/detail,
+  snapshot Manageri si CRM. SQLite este arhiva pre-cutover, nu fallback.
 - In Retail, filtrarea si gruparea din meniul Vizite folosesc mapping-ul curent
   `stores.site_code -> firma/regional/asm`, nu valorile istorice salvate in
   vizita. Vizitele FieldOps pastreaza codul magazinului in `magazin`.
-- `RETAIL_VISITS_READ_SOURCE=sqlite|postgres` controleaza raspunsul, iar
-  `RETAIL_VISITS_SHADOW_COMPARE_ENABLED=true` compara raportul, arborele,
-  detaliul, snapshot-ul Manageri si componenta CRM.
+- `RETAIL_VISITS_SHADOW_COMPARE_ENABLED=false` este starea normala dupa
+  cutover. Shadow se foloseste numai intr-o fereastra de migrare controlata;
+  compararea permanenta cu arhiva statica ar produce diferente asteptate.
+- Configuratia de productie refuza pornirea daca sursa este SQLite sau shadow
+  compare este activ; valoarea implicita a sursei este PostgreSQL.
 - `visits_snapshot` este o proiectie completa a agregatelor sursei active. Sync-ul
   inlocuieste proiectia intr-o singura tranzactie: randurile disparute din
   sursa nu raman stale, iar o eroare de insert pastreaza snapshotul anterior
   prin rollback.
-- Bytes-ii fotografiilor raman temporar pe filesystem; PostgreSQL detine
+- Bytes-ii fotografiilor raman pe filesystem; PostgreSQL detine
   metadatele normalizate in `fieldops_visit_photos`.
 
 ## Integrari

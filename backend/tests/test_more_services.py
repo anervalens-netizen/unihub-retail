@@ -86,11 +86,12 @@ async def test_stores_get_active():
 
 
 @pytest.mark.anyio
-async def test_crm_service_scores():
+async def test_crm_service_scores(monkeypatch: pytest.MonkeyPatch):
     from services.crm import CrmService
     from repositories.crm import CrmRepository
     from db.connection import get_pool
 
+    monkeypatch.setattr("services.crm.get_visits_read_source", lambda: "sqlite")
     pool = await get_pool()
     repo = CrmRepository(pool)
     svc = CrmService(repo, pool)

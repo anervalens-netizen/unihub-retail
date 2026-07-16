@@ -5,7 +5,7 @@ secret JWT local de validat.
 
 Check-uri:
 - DATABASE_URL prezent, format minimal valid
-- VISITS_DB_PATH existent cat timp SQLite este primary sau shadow
+- in productie, vizitele sunt citite numai din PostgreSQL, fara shadow SQLite
 """
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ def get_visits_images_dir() -> Path:
 
 
 def get_visits_read_source() -> str:
-    value = os.getenv(VISITS_READ_SOURCE_ENV, "sqlite").strip().lower()
-    return value if value in {"sqlite", "postgres"} else "sqlite"
+    value = os.getenv(VISITS_READ_SOURCE_ENV, "postgres").strip().lower()
+    return value if value in {"sqlite", "postgres"} else "postgres"
 
 
 def visits_shadow_compare_enabled() -> bool:
@@ -74,24 +74,19 @@ def validate_required_env_vars() -> None:
             "trebuie să înceapă cu postgresql:// sau postgres://"
         )
 
-    read_source_raw = os.getenv(VISITS_READ_SOURCE_ENV, "sqlite").strip().lower()
+    read_source_raw = os.getenv(VISITS_READ_SOURCE_ENV, "postgres").strip().lower()
     if read_source_raw not in {"sqlite", "postgres"}:
         errors.append(
             f"{VISITS_READ_SOURCE_ENV} trebuie sa fie sqlite sau postgres"
         )
-
-    # SQLite is required only while it is primary or an enabled shadow.
-    needs_visits_sqlite = (
-        get_visits_read_source() == "sqlite" or visits_shadow_compare_enabled()
-    )
-    if _is_production() and needs_visits_sqlite:
-        visits_path_raw = os.getenv("VISITS_DB_PATH", "").strip()
-        if not visits_path_raw:
-            errors.append("VISITS_DB_PATH nesetat (obligatoriu în producție)")
-        elif not get_visits_db_path().is_file():
+    if _is_production():
+        if read_source_raw != "postgres":
             errors.append(
-                f"VISITS_DB_PATH={visits_path_raw} nu există sau nu e fișier "
-                "(obligatoriu în producție; Vizite + Management depind de el)"
+                f"{VISITS_READ_SOURCE_ENV} trebuie sa fie postgres dupa cutover"
+            )
+        if visits_shadow_compare_enabled():
+            errors.append(
+                f"{VISITS_SHADOW_COMPARE_ENV} trebuie sa fie false dupa cutover"
             )
 
     errors.extend(privileged_access_config_errors(_is_production()))

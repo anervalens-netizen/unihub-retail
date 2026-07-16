@@ -56,8 +56,15 @@ class TestVisitsReportImport:
         assert VisitsReportService is not None
 
     @pytest.mark.asyncio
-    async def test_undated_visit_is_returned_in_explicit_bucket(self):
+    async def test_undated_visit_is_returned_in_explicit_bucket(self, monkeypatch):
         from services.visits_report import VisitsReportService
+        import services.visits_report as visits_report_module
+
+        monkeypatch.setattr(
+            visits_report_module,
+            "get_visits_read_source",
+            lambda: "sqlite",
+        )
 
         repo = MagicMock()
         repo.db_exists.return_value = True

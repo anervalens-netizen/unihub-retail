@@ -5,6 +5,11 @@
 **Baseline live anterior programului:** `d08add17147d9f24b23642dbb1a0084708ff9307`
 **Scop:** remediere verificabilă, fără big-bang rewrite și fără funcționalități noi înainte de închiderea P0
 
+> Actualizare 2026-07-16: migrarea vizitelor a fost inchisa. Retail citeste
+> PostgreSQL `fieldops_visits`, FieldOps citeste/scrie aceeasi autoritate, iar
+> SQLite este numai arhiva pre-cutover. Punctele istorice despre un viitor sync
+> SQLite -> PostgreSQL nu mai reprezinta backlog activ.
+
 ## Stare de execuție la reconciliere
 
 | Pachet | Stare | Dovadă / pas rămas |
@@ -561,14 +566,15 @@ Răspuns:
 
 ### Schimbări
 
+- finalizat 2026-07-16: autoritate unica PostgreSQL si eliminarea dual-source
+  din runtime;
 - interval obligatoriu și cursor;
 - query pe range de dată indexabil;
 - endpoint sumar separat;
 - atașamente cu ID opac și relație DB;
 - row-level scope;
-- sync incremental SQLite -> PostgreSQL;
+- refresh incremental al proiectiei `visits_snapshot` din PostgreSQL;
 - metrică `visits_snapshot_lag_seconds`;
-- eventual elimină dual-source-ul dacă PostgreSQL poate deveni sursă unică.
 
 ### Criteriu
 
