@@ -45,7 +45,7 @@ else
   OPS_ROOT="/opt/Mobiup/ops"
   SERVICE_USER="andrei"
   SERVICE_GROUP="andrei"
-  LOCK_FILE="/run/lock/unihub-retail-deploy.lock"
+  LOCK_FILE="/run/lock/unihub-retail-deploy/deploy.lock"
 fi
 
 BACKUP_ROOT="$OPS_ROOT/backups/retail-deploy"
@@ -63,8 +63,19 @@ if [[ "$TEST_MODE" != "1" && "${SUDO_USER:-}" == "unihub-deploy" ]]; then
     || die "deploy runner may invoke only the four-argument production deployment"
 fi
 
-mkdir -p "$(dirname "$LOCK_FILE")"
+if [[ "$TEST_MODE" != "1" && "$READ_ONLY_MODE" == "0" ]]; then
+  install -d -m 0700 -o root -g root "$(dirname "$LOCK_FILE")"
+  [[ "$(stat -c '%u:%g:%a' "$(dirname "$LOCK_FILE")")" == "0:0:700" ]] \
+    || die "deploy lock directory must be root:root mode 0700"
+else
+  mkdir -p "$(dirname "$LOCK_FILE")"
+fi
 exec 9>"$LOCK_FILE"
+if [[ "$TEST_MODE" != "1" && "$READ_ONLY_MODE" == "0" ]]; then
+  chmod 0600 "$LOCK_FILE"
+  [[ "$(stat -c '%u:%g:%a' "$LOCK_FILE")" == "0:0:600" ]] \
+    || die "deploy lock file must be root:root mode 0600"
+fi
 flock -n 9 || die "another Retail deployment is active"
 
 run_as_service_user() {
