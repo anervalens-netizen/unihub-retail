@@ -11,7 +11,8 @@ def anyio_backend():
 
 
 @pytest.mark.anyio
-async def test_calculate_scores_returns_list():
+async def test_calculate_scores_returns_list(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("services.crm.get_visits_read_source", lambda: "sqlite")
     pool = await get_pool()
     repo = CrmRepository(pool)
     svc = CrmService(repo, pool)

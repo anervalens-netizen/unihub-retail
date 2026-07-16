@@ -10,6 +10,12 @@
 **Regulă de interpretare:** matricea de mai jos este starea curentă; descrierile
 inițiale rămân păstrate ca istoric al riscului identificat pe `aba3fa0`.
 
+> Actualizare 2026-07-16: PR #94 a adaugat citirea PostgreSQL, iar cutover-ul
+> coordonat FieldOps/Retail a fost finalizat si verificat live. Retail citeste
+> `fieldops_visits`; FieldOps citeste si scrie PostgreSQL. SQLite este arhiva
+> pre-cutover. Aceasta actualizare prevaleaza peste descrierile istorice SQLite
+> pastrate mai jos pentru trasabilitatea auditului.
+
 ## Verdict executiv
 
 Cele patru riscuri critice inițiale sunt închise în codul `v2.0.1`:
@@ -113,7 +119,7 @@ reziduale și nu sunt prezentate drept remediate.
 | M-24 | **Deschis** | Limitele pentru liste/dimensiuni/luni din `backend/routers/exports.py` nu au fost uniformizate. |
 | M-25 | **Deschis** | `backend/services/exports.py` și `backend/services/campaigns.py` importă în continuare helperi privați Dashboard. |
 | M-26 | **Deschis** | `backend/routers/visits_report.py::visits_tree` nu impune încă interval/cursor obligatoriu. |
-| M-27 | **Deschis** | Query-ul lunar SQLite din `backend/repositories/visits_report.py` păstrează transformarea funcțională a datei. |
+| M-27 | **Închis și verificat live** | Retail folosește repository-ul PostgreSQL `fieldops_visits`; rapoartele lunare martie-iulie, arborele, detaliile, snapshotul și CRM au fost comparate cu arhiva SQLite înainte de cutover. |
 | M-28 | **Deschis** | Scope-ul read general din `backend/main.py`/`backend/permissions.py` rămâne tenant-wide pentru modulele non-management. |
 | M-29 | **Deschis** | `backend/routers/visits_report.py` validează path-ul fotografiei, dar nu leagă încă fișierul de vizită și scope organizațional. |
 | M-30 | **Deschis** | `backend/scripts/provision_runtime_database_role.py` păstrează granturile generale; migrările 026-028 adaugă numai granturile necesare noilor tabele. |
@@ -121,7 +127,7 @@ reziduale și nu sunt prezentate drept remediate.
 | M-32 | **Reformulat; guvernanță deschisă** | `100.74.73.114` este peer Tailscale: traficul overlay este criptat chiar dacă aplicația folosește HTTP intern. Riscul rămas în `backend/scripts/run_ai_forecast_xreg.py` este guvernanța peer-ului, autorizarea, minimizarea payloadului, rotația cheii și contractul procesatorului, nu transport plaintext pe internet. |
 | M-33 | **Închis în cod** | PR #99; `backend/session_auth.py` folosește owner timeout 55s sub lease tokenizat 60s, wait bounded, compare-delete pentru lock/sesiune și 503 pe incertitudine; `backend/tests/test_session_auth.py`. |
 | M-34 | **Deschis** | `backend/main.py::lifespan` și health-ul păstrează dependența de ARQ la startup. |
-| M-35 | **Deschis** | `backend/services/visits_sync.py` rămâne sincronizat la startup, fără refresh incremental durabil. |
+| M-35 | **Parțial închis** | `backend/services/visits_sync.py` reconstruiește tranzacțional proiecția din autoritatea PostgreSQL la startup; un refresh incremental separat rămâne o optimizare, nu o contradicție între surse. |
 | M-36 | **Deschis** | Validarea lunilor/filtrelor rămâne distribuită între routerele Dashboard, Agents, CRM, Visits și Salarii. |
 | M-37 | **Închis în cod** | `backend/repositories/target_calculator.py::update_final_targets` verifică întregul set înainte de `executemany`; testul PostgreSQL `test_postgres_invalid_site_code_rolls_back_entire_target_batch`. |
 | M-38 | **Deschis** | `src/components/dashboard/useDashboardData.ts` păstrează fan-out-ul istoric multi-lună. |
@@ -1122,6 +1128,9 @@ iar răspunsul să fie paginat.
 **Categorie:** Performanță query
 **Locație exactă:** `backend/repositories/visits_report.py:119-121`
 
+**Status curent (2026-07-16): închis.** Runtime-ul Retail foloseste repository-ul
+PostgreSQL `fieldops_visits`; textul urmator descrie constatarea istorica.
+
 **Ce este greșit**
 
 Query-ul folosește `strftime('%Y-%m', data_raport) = ?`, aplicând o funcție pe
@@ -1364,14 +1373,15 @@ contractului trebuie să funcționeze, iar mutațiile async să răspundă 503.
 
 **Ce este greșit**
 
-Snapshotul PostgreSQL este reconstruit la boot. Comentariul indică eliminarea unui
-endpoint admin, iar în codul inspectat nu există scheduler sau refresh incremental.
-Rapoartele HR/management citesc snapshotul.
+Proiectia `visits_snapshot` este reconstruita tranzactional la boot din
+autoritatea PostgreSQL. Nu exista inca scheduler sau refresh incremental.
+Rapoartele HR/management citesc proiectia.
 
 **Impact concret**
 
-Vizitele noi nu intră în scoruri și management până la următorul restart. Datele pot
-părea actuale în ecranul Vizite (SQLite) și vechi în scoruri (PostgreSQL).
+Vizitele noi pot intra in scoruri si management abia la urmatorul refresh al
+proiectiei. Ecranul Vizite si sursa proiectiei nu se mai contrazic intre baze,
+dar proiectia poate ramane in urma autoritatii PostgreSQL.
 
 **Fix recomandat**
 

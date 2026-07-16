@@ -34,6 +34,7 @@ def _row(asm: str | None, month: str, total_visits: int = 3) -> dict:
 async def test_visits_snapshot_replace_removes_stale_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(visits_sync, "get_visits_read_source", lambda: "sqlite")
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
@@ -71,6 +72,7 @@ async def test_visits_snapshot_replace_removes_stale_rows(
 async def test_visits_snapshot_failure_rolls_back_previous_projection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(visits_sync, "get_visits_read_source", lambda: "sqlite")
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
