@@ -3,16 +3,16 @@
 **Data auditului:** 2026-07-15
 **Repository:** `anervalens-netizen/unihub-retail`
 **Branch auditat:** `main`
-**Commit de cod reconciliat:** `6dafc72899dcf9e500e675d68973aec21e495880`
-**Commit live înainte de rollout:** `d08add17147d9f24b23642dbb1a0084708ff9307`
-**Tip evaluare:** re-audit complet urmat de reconciliere pe candidatul `v2.0.1`
+**Commit de cod reconciliat și verificat live:** `964f6da07ad9e4382070866275509f3be2b399a1`
+**Baseline live anterior programului:** `d08add17147d9f24b23642dbb1a0084708ff9307`
+**Tip evaluare:** re-audit complet urmat de reconciliere și rollout `v2.0.1`
 **Constatări inițiale:** **4 Critice, 57 Majore, 15 Minore — 76 total**
 **Regulă de interpretare:** matricea de mai jos este starea curentă; descrierile
 inițiale rămân păstrate ca istoric al riscului identificat pe `aba3fa0`.
 
 ## Verdict executiv
 
-Cele patru riscuri critice inițiale sunt închise în codul candidatului `v2.0.1`:
+Cele patru riscuri critice inițiale sunt închise în codul `v2.0.1`:
 importul nu mai deduce starea magazinelor din absență, verificarea Grile este
 read-only, închiderea salarială este fail-closed, iar codul de pull request rulează
 pe GitHub-hosted runners fără acces la hostul de producție. Patch-urile izolate
@@ -25,14 +25,13 @@ fără validare de acoperire, separarea side effect-urilor și manifest de
 integritate**. P0 corectează aceste căi pentru import, Grile și salarii; matricea
 păstrează deschise domeniile în care același principiu nu este încă aplicat complet.
 
-**Recomandare de release:** candidatul poate continua către rollout numai după
-publicarea documentației, un CI verde pe SHA-ul final `main`, backup și verificarea
-migrațiilor, environment approval, deploy din artefactul verificat, acceptanță și
-rollback demonstrat. Planul GitHub al repository-ului privat nu permite required
-reviewers; controlul echivalent este implementat host-side ca approval root-only,
-interactiv, one-time și legat de CI run/SHA/hash. Workflow-ul rămâne fail-closed
-până la instalarea și verificarea acestui boundary. Nu se autorizează ocolirea
-lui prin deploy manual.
+**Recomandare de release:** gate-urile operaționale pentru `v2.0.1` au fost
+îndeplinite pe 2026-07-16: CI `main` verde, backup verificat, migrații 026-028,
+approval one-time, artefact verificat, deploy, health local/public și rollback
+compatibil demonstrat urmat de redeploy. Planul GitHub al repository-ului privat
+nu permite required reviewers; controlul echivalent activ este host-side,
+root-only, interactiv, one-time și legat de CI run/SHA/hash. Deployul manual care
+ocolește acest boundary rămâne neacceptat.
 
 ## Metodă și independență
 
@@ -57,8 +56,9 @@ GitHub, PR-urile și logurile CI. Testele grele au fost executate secvențial lo
 apoi pe merge-ref și pe `main`. Pe stiva finală de cod, suita locală a avut 1.250
 teste trecute și 9 skip, coverage total 99%, `services/grile_monthly.py` 98,23%,
 `services/importer.py` 95,98% și Target Calculator 100%. Runurile GitHub relevante
-sunt păstrate în dovada de release; Bandit a trecut cu baseline-ul real de **17**
-constatări Medium, nu 111.
+sunt păstrate în dovada de release. După eliminarea a două wrapper-e experimentale
+nefolosite, Bandit a trecut cu baseline-ul real de **16** constatări Medium; înainte
+de curățenie erau 17, nu 111.
 
 ## Definiția severităților
 
@@ -68,20 +68,20 @@ constatări Medium, nu 111.
 
 ---
 
-# Matrice de reconciliere pe `6dafc72`
+# Matrice de reconciliere pe `964f6da`
 
-`Închis în cod` înseamnă că implementarea și testele sunt prezente pe candidatul
-de release, nu că rolloutul a avut deja loc. `Parțial` și `Deschis` rămân riscuri
+`Închis în cod` înseamnă că implementarea și testele sunt prezente în release;
+`Închis și activ` confirmă și rolloutul. `Parțial` și `Deschis` rămân riscuri
 reziduale și nu sunt prezentate drept remediate.
 
 ## Critice
 
 | ID | Stare | Dovadă curentă exactă |
 |---|---|---|
-| C-01 | **Închis în cod** | PR #96 / `9b5d17c`, cu dovada PostgreSQL completată în PR #101 / `6dafc72`; `backend/services/importer.py::{load_sales_dataframe,build_import_coverage_report,upsert_stores}`, `backend/repositories/stores.py::StoresRepository.change_activity`, migrarea 026 și `backend/tests/test_import_master_data_safety.py`. |
-| C-02 | **Închis în cod** | PR #97 / `96b9a0d`; `backend/routers/grile.py`, joburile separate din `backend/worker.py`, `backend/services/grile_agent_targets.py`, migrarea 027 și testele `test_grile_target_sync_api.py`, `test_grile_target_sync_safety.py`, `test_grile_run_reservations.py`. |
-| C-03 | **Închis în cod** | PR #98 / `0a984a1`; `backend/services/grile_monthly.py`, `backend/services/grile_monthly_integrity.py`, migrarea 028 și suitele `test_grile_monthly_fail_closed_api.py`, `test_grile_monthly_operations.py`, `test_grile_monthly_service.py`. |
-| C-04 | **Închis pentru codul de PR** | PR #95 / `a055b85`, cu proba de rețea întărită în PR #101 / `6dafc72`; toate joburile PR folosesc `ubuntu-24.04`, iar `runner-isolation` respinge orice răspuns HTTP direct de la peer-ul TimesFM, inclusiv 401/403/404, fără proxy. Pachetele private sunt vendored și verificate; runnerul persistent a fost oprit și scos din repository, inventarul GitHub având zero runneri înregistrați. |
+| C-01 | **Închis și activ** | PR #96 / `9b5d17c`, cu dovada PostgreSQL completată în PR #101 / `6dafc72`; `backend/services/importer.py::{load_sales_dataframe,build_import_coverage_report,upsert_stores}`, `backend/repositories/stores.py::StoresRepository.change_activity`, migrarea 026 și `backend/tests/test_import_master_data_safety.py`. |
+| C-02 | **Închis și activ** | PR #97 / `96b9a0d`; `backend/routers/grile.py`, joburile separate din `backend/worker.py`, `backend/services/grile_agent_targets.py`, migrarea 027 și testele `test_grile_target_sync_api.py`, `test_grile_target_sync_safety.py`, `test_grile_run_reservations.py`. |
+| C-03 | **Închis și activ** | PR #98 / `0a984a1`; `backend/services/grile_monthly.py`, `backend/services/grile_monthly_integrity.py`, migrarea 028 și suitele `test_grile_monthly_fail_closed_api.py`, `test_grile_monthly_operations.py`, `test_grile_monthly_service.py`. |
+| C-04 | **Închis și activ** | PR #95 / `a055b85`, cu proba de rețea întărită în PR #101 / `6dafc72`; toate joburile PR folosesc `ubuntu-24.04`, iar `runner-isolation` respinge orice răspuns HTTP direct de la peer-ul TimesFM, inclusiv 401/403/404, fără proxy. Pachetele private sunt vendored și verificate; vechiul runner persistent de PR a fost eliminat, iar singurul runner self-hosted rămas este `unihub-retail-deploy`, dedicat deployului și fără acces PR. |
 
 ## Majore
 
@@ -117,7 +117,7 @@ reziduale și nu sunt prezentate drept remediate.
 | M-28 | **Deschis** | Scope-ul read general din `backend/main.py`/`backend/permissions.py` rămâne tenant-wide pentru modulele non-management. |
 | M-29 | **Deschis** | `backend/routers/visits_report.py` validează path-ul fotografiei, dar nu leagă încă fișierul de vizită și scope organizațional. |
 | M-30 | **Deschis** | `backend/scripts/provision_runtime_database_role.py` păstrează granturile generale; migrările 026-028 adaugă numai granturile necesare noilor tabele. |
-| M-31 | **Implementat în aplicație; rollout proxy restant** | `/metrics` rămâne intenționat pentru scrape intern în `backend/main.py`; Caddy trebuie să returneze public 404 la rollout. Testul public și reload-ul Caddy sunt gate de deploy, nu sunt încă bifate. |
+| M-31 | **Închis și verificat live** | `/metrics` rămâne intenționat pentru scrape intern în `backend/main.py`; stansa Retail din proxy răspunde public 404 pentru `/metrics`, `/docs`, `/redoc` și `/openapi.json`, iar health-ul intern rămâne verde. Nu au fost modificate Caddy global, Authentik, DNS, Astra sau Dell. |
 | M-32 | **Reformulat; guvernanță deschisă** | `100.74.73.114` este peer Tailscale: traficul overlay este criptat chiar dacă aplicația folosește HTTP intern. Riscul rămas în `backend/scripts/run_ai_forecast_xreg.py` este guvernanța peer-ului, autorizarea, minimizarea payloadului, rotația cheii și contractul procesatorului, nu transport plaintext pe internet. |
 | M-33 | **Închis în cod** | PR #99; `backend/session_auth.py` folosește owner timeout 55s sub lease tokenizat 60s, wait bounded, compare-delete pentru lock/sesiune și 503 pe incertitudine; `backend/tests/test_session_auth.py`. |
 | M-34 | **Deschis** | `backend/main.py::lifespan` și health-ul păstrează dependența de ARQ la startup. |
@@ -138,11 +138,11 @@ reziduale și nu sunt prezentate drept remediate.
 | M-49 | **Închis** | `e2e/mobile-responsive.spec.ts` rulează explicit la 390x844; gate-ul CI rulează Playwright secvențial și accessibility smoke. |
 | M-50 | **Deschis** | `e2e/helpers.ts` mock-uiește încă API-ul; acceptanța full-stack rămâne separată de E2E-ul frontend. |
 | M-51 | **Deschis** | `tsconfig.strict.json` rămâne selectiv și politica ESLint permite încă warnings configurate. |
-| M-52 | **Corectat factual; risc rezidual deschis** | `.bandit-baseline.json` conține **17** rezultate Medium. CI impune praguri critice pe 16 module, dar coverage-ul nu este încă global pentru tot backendul/frontendul. |
+| M-52 | **Corectat factual; risc rezidual deschis** | `.bandit-baseline.json` conține **16** rezultate Medium după eliminarea wrapper-elor experimentale nefolosite (17 înainte de curățenie, nu 111). CI impune praguri critice pe 16 module, dar coverage-ul nu este încă global pentru tot backendul/frontendul. |
 | M-53 | **Deschis** | Unitățile systemd rulează încă sub utilizatorul uman configurat; izolarea runnerului nu schimbă identitatea serviciilor. |
 | M-54 | **Deschis** | Backendul/workerul rămân single-host/single-process conform unităților systemd. |
 | M-55 | **Deschis** | `backend/requirements.txt` nu este un lock cu hash-uri complet reproductibil. |
-| M-56 | **Remediere implementată, rollout pending** | `.github/workflows/deploy.yml` verifică runul `main`, SHA-ul și hashurile artefactului. `ops/approve-retail-release.sh` creează approval root-only, interactiv, valabil 30 de minute și legat de run/SHA/hash; `ops/deploy-retail-artifact.sh` îl consumă atomic înainte de orice mutație și refuză lipsa, expirarea, reutilizarea, duplicatele și mismatch-ul. Runnerul dedicat și variabila rămân fail-closed până la merge și instalarea boundary-ului revizuit. |
+| M-56 | **Închis și verificat live** | `.github/workflows/deploy.yml` verifică runul `main`, SHA-ul și hashurile artefactului. `ops/approve-retail-release.sh` creează approval root-only, interactiv, valabil 30 de minute și legat de run/SHA/hash; `ops/deploy-retail-artifact.sh` îl consumă atomic și refuză lipsa, expirarea, reutilizarea, duplicatele și mismatch-ul. Runnerul dedicat a executat deployurile `29489754125` și `29489997636`; rollbackul compatibil a fost demonstrat între ele, iar rollbackul către un manifest istoric incompatibil este refuzat înainte de oprirea serviciilor. |
 | M-57 | **Deschis** | `backend/services/grile_monthly.py`, exports și componentele mari frontend rămân monoliți, deși integritatea salarială a fost extrasă în `grile_monthly_integrity.py`. |
 
 ## Minore
@@ -1836,7 +1836,7 @@ Criteriu final: `tsc --strict` pe tot frontendul și ESLint cu zero warnings.
 
 ---
 
-### M-52 — Coverage-ul este selectiv, iar baseline-ul Bandit păstrează 17 constatări Medium
+### M-52 — Coverage-ul este selectiv, iar baseline-ul Bandit păstrează 16 constatări Medium
 **Severitate:** Major
 **Categorie:** Calitate / securitate statică
 **Locație exactă:** `backend/critical_coverage_thresholds.json:3-20`, `.github/workflows/ci.yml:102-134`, `.bandit-baseline.json`
@@ -1844,9 +1844,10 @@ Criteriu final: `tsc --strict` pe tot frontendul și ESLint cu zero warnings.
 **Ce este greșit**
 
 Coverage-ul CI instrumentează o listă explicită de module, nu întreg backendul, iar
-frontendul nu are prag de coverage. Bandit rulează cu baseline care conține **17**
-constatări Medium; valoarea 111 din versiunea inițială a raportului a fost o eroare
-de numărare. Gate-ul detectează regresii față de inventarul real.
+frontendul nu are prag de coverage. Bandit rulează cu baseline care conține **16**
+constatări Medium după eliminarea a două wrapper-e experimentale nefolosite; erau
+17 înainte de curățenie. Valoarea 111 din versiunea inițială a raportului a fost o
+eroare de numărare. Gate-ul detectează regresii față de inventarul real.
 
 **Impact concret**
 
@@ -2476,30 +2477,28 @@ un audit verde la un moment dat nu garantează viitorul.
    inactive și nu au fost reactivate. Orice schimbare de statut cere decizie business.
 2. **Nu s-a executat `EXPLAIN ANALYZE` pe producție și nu s-a făcut load test la
    10× volum.** Finding-urile de scalare rămân deschise până la măsurare dedicată.
-3. **Caddy și suprafața publică au fost inspectate, dar nu modificate înainte de
-   rollout.** `/metrics` rămâne public pe versiunea live `d08add1`; blocarea publică
-   și păstrarea scrape-ului intern sunt criterii obligatorii de deploy.
-4. **GitHub, runnerii și logurile CI au fost inspectate.** Runnerul de producție a
-   fost oprit și eliminat, însă planul privat curent nu oferă required environment
-   reviewers. Workflow-ul de deploy rămâne fail-closed; acest control nu a fost
-   substituit prin disciplină manuală.
+3. **Suprafața publică Retail este închisă, dar proxy-ul global nu a fost extins în
+   scope.** Au fost verificate public 404 pentru `/metrics`, `/docs`, `/redoc` și
+   `/openapi.json`; modificarea a rămas strict în stansa Retail.
+4. **Planul privat curent nu oferă required environment reviewers.** Workflow-ul
+   de deploy rămâne fail-closed prin approval-ul local root-only, interactiv,
+   one-time și legat de run/SHA/hash; aceasta este limita explicită a platformei,
+   nu o aprobare implicită sau o disciplină informală.
 5. **Granturile efective Google Drive/Sheets nu au fost inventariate.** Codul,
    scope-urile, manifestele și efectele au fost auditate, dar separarea identităților
    Google rămâne finding deschis.
 6. **Peer-ul TimesFM a fost confirmat ca peer Tailscale, nu ca destinație publică.**
    Nu au fost auditate ACL-ul complet, retenția și contractul procesatorului.
-7. **Entry point-ul root-owned de deploy nu este încă provisionat.** Workflow-ul
-   verifică `/opt/Mobiup/ops/scripts/deploy-retail-artifact.sh` și eșuează închis
-   dacă lipsește; fișierul nu există în starea pre-rollout inspectată. Provisionarea,
-   permisiunile și conținutul lui trebuie revizuite înaintea rolloutului aprobat.
-8. **Serviciile, health-ul local/public și starea systemd au fost verificate, dar
+7. **Serviciile, health-ul local/public și starea systemd au fost verificate, dar
    nu s-a făcut o analiză exhaustivă GlitchTip/Prometheus pe perioade lungi.**
-9. **Documentele locale inițiale au fost reconciliate în worktree-ul separat.**
+8. **Documentele locale inițiale au fost reconciliate în worktree-ul separat.**
    Exemplarele vechi necomise din checkout-ul live au fost eliminate explicit de
-   proprietar înainte de rollout; deployul cere acum un worktree complet curat.
-10. **Redesignul „Ajustări” a fost mapat de la `aba3fa0` la `d08add1`, revizuit și
+   proprietar înainte de rollout. Arhivele și planurile închise redundante au fost
+   eliminate din `HEAD`, rămân recuperabile din Git, iar un test de igienă previne
+   reintroducerea `docs/archive/`; deployul cere un worktree complet curat.
+9. **Redesignul „Ajustări” a fost mapat de la `aba3fa0` la `d08add1`, revizuit și
     trecut prin typecheck/build/unit/Playwright mobil, desktop și accessibility.**
-    Aceasta validează implementarea curentă, nu înlocuiește acceptanța post-deploy.
+    Acceptanța post-deploy a reconfirmat health-ul și bundle-ul frontend verificat.
 
 Aceste limite păstrează explicit riscurile reziduale; nicio intrare `Deschis` sau
 `Parțial` din matrice nu trebuie interpretată drept închisă prin absența unui defect
@@ -2507,15 +2506,13 @@ observat în testele actuale.
 
 ---
 
-# Ordinea obligatorie rămasă
+# Ordinea rămasă după rollout
 
-1. publică această reconciliere și release notes prin PR;
-2. obține CI verde pe SHA-ul final `main` și păstrează artefactul verificat;
-3. rezolvă blocajul de required environment reviewers fără ocolirea gate-ului;
-4. execută backup, migrațiile 026-028, deployul controlat și verificarea publică;
-5. demonstrează rollbackul, apoi publică tagul și GitHub Release `v2.0.1`;
-6. continuă finding-urile `Deschis` în pachetele P1/P2, în ordinea planului.
+1. publică această dovadă finală prin PR și confirmă CI verde pe SHA-ul final `main`;
+2. redeployează artefactul final dacă SHA-ul se schimbă numai prin documentație;
+3. publică tagul și GitHub Release `v2.0.1` fără a muta `v2.0.0`;
+4. continuă finding-urile `Deschis` în pachetele P1/P2, în ordinea planului.
 
-**Concluzie:** P0 este închis în cod și în CI, iar redesignul dintre `aba3fa0` și
-`d08add1` este validat. Release-ul nu este încă declarat livrat: aprobarea de mediu,
-rolloutul, verificarea publică și rollbackul rămân gate-uri obligatorii.
+**Concluzie:** P0 este închis în cod, CI și producție, iar redesignul dintre
+`aba3fa0` și `d08add1` este validat. Rolloutul, verificarea publică și rollbackul
+au fost demonstrate; rămân numai publicarea evidenței finale și a release-ului.

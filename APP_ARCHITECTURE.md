@@ -459,11 +459,13 @@ Helperul este folosit de:
 - punctajul de concurs pentru bonurile promo.
 
 In interfata Focus, fiecare promotie are tabele separate pentru Magazine si
-Agenti, calculate din rezultatul promotiei selectate. Incentive afiseaza toate
-randurile disponibile de agenti si magazine, plus `Incentive potential`:
-valoarea care s-ar plati la realizare 100% a targetului, inainte de
-multiplicatorul curent. Sumarul Incentive separa mecanismele active in aceeasi
-luna si include distributia pe subcategorii. Tabelele din toate subsectiunile Focus, inclusiv
+Agenti, calculate din rezultatul promotiei selectate. Cardul Incentive separa
+unitatile vandute, unitatile eligibile dupa promo, unitatile din magazinele
+calificate si incentive-ul calculat acum; mecanismele active raman afisate
+separat dedesubt. `Incentive potential` ramane numai in tabelele detaliate si
+exporturi, etichetat explicit ca simulare la realizare 100%. Sumarul separa
+mecanismele active in aceeasi luna si include distributia pe subcategorii.
+Tabelele din toate subsectiunile Focus, inclusiv
 Concurs si Folii premium, pot fi exportate in Excel. Exporturile Focus pe
 randuri de magazine sau agenti includ explicit `Firma` si `Magazin` cand
 payload-ul are acele metadate.
@@ -666,8 +668,8 @@ extinderea formulei.
 - Hub consuma KPI-uri Retail prin API intern.
 - Prometheus si Grafana pentru metrics.
 - GlitchTip pentru erori.
-- In configuratia tinta `v2.0.1`, `/metrics` este consumat numai pe calea interna
-  Prometheus; Caddy trebuie sa raspunda 404 public pentru `/metrics`, `/docs`,
+- In configuratia activa `v2.0.1`, `/metrics` este consumat numai pe calea interna
+  Prometheus; proxy-ul Retail raspunde 404 public pentru `/metrics`, `/docs`,
   `/redoc` si `/openapi.json`, iar
   FastAPI nu publica UI/schema OpenAPI. Fallback-ul SPA se aplica numai
   navigarilor GET/HEAD care accepta HTML si niciodata namespace-urilor

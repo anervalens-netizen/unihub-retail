@@ -70,13 +70,15 @@ the `unihub-deploy` service identity is
 explicitly refused that mode.
 
 The sandbox covers missing approval, invalid approval identity, duplicates,
-single consumption, exact read-only reverification of an already deployed release,
-expiry, digest mismatch, success, manual rollback, injected health failure with
-automatic rollback, source tampering, path traversal, archive symlinks and an
-unexpected dirty worktree. Workflow-level public probes retry transient failures;
-a rerun can reverify the exact consumed approval, CI run, SHA and artifact without
-performing another deployment. The exact final CI artifact must also pass the
-entrypoint's read-only `validate` mode before approval.
+single consumption, exact read-only reverification of an already deployed
+release, expiry, digest mismatch, success, manual rollback, injected health
+failure, source tampering, path traversal, archive symlinks and an unexpected
+dirty worktree. It also proves repeated forward-recovery attempts, preservation
+of every approval link and recovery after `origin/main` advances, provided the
+live SHA remains its ancestor. Workflow-level public probes retry transient
+failures; a rerun can reverify the exact consumed approval, CI run, SHA and
+artifact without another deployment. The exact final CI artifact must also pass
+the entrypoint's read-only `validate` mode before approval.
 
 ## Controlled isolation evidence
 
@@ -85,11 +87,11 @@ both backend and frontend jobs. Its assertions intentionally refer only to
 infrastructure identity and reachability; they never inspect or print secrets.
 
 The old `unihub-server` Retail runner is stopped and removed from the repository
-runner inventory. It must not be reused for deployment. Register a separate OS
-identity only with the dedicated `unihub-deploy` label after the root approval
-boundary and exact sudo policy are installed, and never add that label to a
-pull-request workflow. That identity must have no Docker group, production
-secret read access, interactive credentials or general sudo.
+runner inventory. It must not be reused for deployment. The registered
+`unihub-retail-deploy` runner uses the separate `unihub-deploy` OS identity and
+must never appear in a pull-request workflow. That identity has no Docker group,
+production secret read access, interactive credentials or general sudo; only
+the reviewed deploy command is permitted.
 
 ## Rollback
 

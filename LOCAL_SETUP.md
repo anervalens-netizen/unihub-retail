@@ -11,7 +11,7 @@
 
 ## Cerinte
 
-- Node.js 20+
+- Node.js 22
 - Python 3.12+ sau 3.14
 - Docker pentru testele backend izolate
 - PostgreSQL local numai daca rulezi aplicatia cu date persistente de
@@ -42,8 +42,18 @@ La startup, backend-ul:
 1. valideaza configuratia;
 2. initializeaza pool-ul asyncpg;
 3. verifica hash-ul `backend/db/schema_v2.sql`;
-4. aplica migrarile neexecutate;
-5. porneste integrarile runtime.
+4. verifica read-only manifestul si migrațiile aplicate;
+5. refuza pornirea dacă există drift sau migrații neaplicate;
+6. pornește integrările runtime.
+
+Pe o bază locală nouă, rulează explicit migrațiile înainte de backend:
+
+```bash
+backend/venv/bin/python backend/scripts/run_migrations.py
+```
+
+În producție migrațiile rulează exclusiv prin unitatea one-shot documentată;
+backendul și workerul nu aplică DDL sau backfill.
 
 ## Dependinte
 

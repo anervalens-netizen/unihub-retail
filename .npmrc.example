@@ -1,2 +1,0 @@
-# Retail installs the pinned @unihub packages from vendor/npm.
-# No Verdaccio token is required for a clean checkout or CI.
