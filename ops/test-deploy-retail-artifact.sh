@@ -357,6 +357,7 @@ MIGRATED_ARTIFACT="$ROOT/release-migrated.tar.gz"
 MIGRATED_ARTIFACT_SHA256="$(sha256sum "$MIGRATED_ARTIFACT" | awk '{print $1}')"
 MIGRATED_RUN_ID="$((CI_RUN_ID + 20))"
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
+rm -f "$ROOT/.health-failure-consumed"
 set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
@@ -378,10 +379,27 @@ MIGRATED_HANDLE="$(
 grep -q 'requires a fresh one-time approval for forward recovery' "$ROOT/migrated-initial-failure.log"
 
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
+rm -f "$ROOT/.health-failure-consumed"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_FAIL_PHASE=health \
+  bash "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
+  >"$ROOT/migrated-recovery-failure.log" 2>&1
+MIGRATED_RECOVERY_RC=$?
+set -e
+[[ "$MIGRATED_RECOVERY_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
+grep -q '^STATE=recovery_required$' "$MIGRATED_HANDLE/release.env"
+[[ "$(find "$MIGRATED_HANDLE" -maxdepth 1 -type f -name 'approval.failed.*.env' | wc -l)" -eq 1 ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${MIGRATED_RUN_ID}-${MIGRATED_SHA}-${MIGRATED_ARTIFACT_SHA256}-*.failed" | wc -l)" -eq 2 ]]
+grep -q 'release remains recovery_required and requires a fresh one-time approval' "$ROOT/migrated-recovery-failure.log"
+
+approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
 run_deploy "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$MIGRATED_SHA" ]]
 grep -q '^STATE=deployed$' "$MIGRATED_HANDLE/release.env"
-[[ "$(find "$MIGRATED_HANDLE" -maxdepth 1 -type f -name 'approval.failed.*.env' | wc -l)" -eq 1 ]]
+[[ "$(find "$MIGRATED_HANDLE" -maxdepth 1 -type f -name 'approval.failed.*.env' | wc -l)" -eq 2 ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${MIGRATED_RUN_ID}-${MIGRATED_SHA}-${MIGRATED_ARTIFACT_SHA256}-*.consumed" | wc -l)" -eq 1 ]]
 
 set +e

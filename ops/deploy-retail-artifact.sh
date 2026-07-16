@@ -520,8 +520,11 @@ find_retryable_forward_handle() {
     approval_link="$canonical_handle/approval.env"
     [[ -f "$release_manifest" && -f "$approval_link" ]] || die "failed deploy audit link is missing"
     [[ "$(read_approval_value "$release_manifest" NEW_SHA)" == "$source_sha" ]] || die "failed deploy manifest SHA mismatch"
-    [[ "$(read_approval_value "$approval_link" approval_id)" == "$approval_id" ]] || die "failed deploy approval link mismatch"
-    if [[ "$(read_approval_value "$release_manifest" STATE)" == "recovery_required" ]]; then
+    [[ "$(read_approval_value "$approval_link" ci_run_id)" == "$ci_run_id" ]] || die "failed deploy linked CI run mismatch"
+    [[ "$(read_approval_value "$approval_link" source_sha)" == "$source_sha" ]] || die "failed deploy linked SHA mismatch"
+    [[ "$(read_approval_value "$approval_link" artifact_sha256)" == "$artifact_sha256" ]] || die "failed deploy linked artifact mismatch"
+    if [[ "$(read_approval_value "$release_manifest" STATE)" == "recovery_required" \
+      && "$(read_approval_value "$approval_link" approval_id)" == "$approval_id" ]]; then
       retryable_handles["$canonical_handle"]=1
     fi
   done
@@ -552,6 +555,7 @@ recover_forward_release() {
     local rc=$?
     trap - EXIT ERR
     start_runtime || true
+    log "forward recovery failed; release remains recovery_required and requires a fresh one-time approval"
     if [[ "$approval_claimed" == "1" && -n "$APPROVAL_CLAIM" ]]; then
       finalize_approval failed "$backup_dir" || true
     fi
@@ -572,6 +576,12 @@ recover_forward_release() {
   [[ -f "$next_dist/index.html" && ! -L "$next_dist/index.html" && -s "$next_dist/index.html" ]] \
     || die "recovery frontend is invalid"
 
+  prior_link="$backup_dir/approval.env"
+  prior_approval_id="$(read_approval_value "$prior_link" approval_id)"
+  [[ ! -e "$backup_dir/approval.failed.${prior_approval_id}.env" ]] || die "archived failed approval link already exists"
+  mv -- "$prior_link" "$backup_dir/approval.failed.${prior_approval_id}.env"
+  write_approval_link "$backup_dir" "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
+
   stop_runtime
   if ! diff -qr -- "$LIVE_ROOT/dist" "$next_dist" >/dev/null; then
     failed_dist="$backup_dir/dist.recovery.failed.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -587,11 +597,6 @@ recover_forward_release() {
   verify_public_release
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "recovered Git SHA mismatch"
 
-  prior_link="$backup_dir/approval.env"
-  prior_approval_id="$(read_approval_value "$prior_link" approval_id)"
-  [[ ! -e "$backup_dir/approval.failed.${prior_approval_id}.env" ]] || die "archived failed approval link already exists"
-  mv -- "$prior_link" "$backup_dir/approval.failed.${prior_approval_id}.env"
-  write_approval_link "$backup_dir" "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"
   finalize_approval consumed "$backup_dir"
   approval_claimed=0
