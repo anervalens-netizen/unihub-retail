@@ -358,11 +358,11 @@ export function MainLayout({
           type="button"
           onClick={() => setIsFilterOpen(true)}
           aria-label={activeFilterCount > 0 ? `Filtre, ${activeFilterCount} active` : 'Filtre'}
-          className="mobile-floating-filter lg:hidden fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-white/70 text-indigo-600 shadow-md shadow-slate-900/10 backdrop-blur-xl transition hover:bg-white/90 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-indigo-300 dark:hover:bg-slate-900/90"
+          className="mobile-floating-filter lg:hidden fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border-2 border-white/95 bg-indigo-600 text-white shadow-[0_8px_22px_rgba(49,46,129,0.38),0_2px_6px_rgba(15,23,42,0.28)] transition hover:bg-indigo-700 active:translate-y-px active:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 dark:border-slate-950/80 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:active:bg-indigo-400 dark:focus-visible:ring-indigo-300 dark:focus-visible:ring-offset-slate-950"
         >
           <Filter size={17} />
           {activeFilterCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-black text-white ring-2 ring-white dark:ring-slate-950">
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-slate-950 ring-2 ring-white dark:bg-amber-300 dark:ring-slate-950">
               {activeFilterCount > 9 ? '9+' : activeFilterCount}
             </span>
           )}
