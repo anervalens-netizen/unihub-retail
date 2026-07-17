@@ -11,6 +11,8 @@ salarii, P&L, raportarea vizitelor și interfața activă Grile.
 
 - reguli de lucru și verificare: [`AGENTS.md`](AGENTS.md);
 - arhitectură și contracte de business: [`APP_ARCHITECTURE.md`](APP_ARCHITECTURE.md);
+- regula canonică pentru multiplicitatea rândurilor de vânzare:
+  [`docs/adr/004-sales-row-multiplicity.md`](docs/adr/004-sales-row-multiplicity.md);
 - instalare locală: [`LOCAL_SETUP.md`](LOCAL_SETUP.md);
 - audit tehnic și riscuri rămase:
   [`docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md`](docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md);
@@ -100,13 +102,19 @@ registry sau rețeaua internă.
 
 Fluxul standard al importului de vânzări:
 
-1. validează antete, identificatori, valori numerice, duplicate și metadate;
+1. validează antete, identificatori, valori numerice și metadate;
 2. rezervă în PostgreSQL un singur snapshot `processing` pentru lună;
 3. persistă coverage/diff agregat înainte de promovare;
 4. actualizează metadatele numai pentru magazinele prezente, fără scriere de
    activitate;
 5. înlocuiește snapshotul și reconstruiește `reporting_*` în aceeași operație;
 6. marchează snapshotul `completed` sau `failed`, fără stare parțială.
+
+Rândurile identice în coloanele disponibile nu sunt o cheie de unicitate:
+exportul nu are ID stabil de linie, iar mai multe bucăți identice de pe același
+bon pot apărea separat. Importul păstrează multiplicitatea; idempotency este
+asigurată la nivel de fișier/coadă și prin înlocuirea atomică a snapshotului
+lunar. Contractul complet este în ADR-004.
 
 Configurațiile runtime din `data/`, fișierele Google și `.env*` sunt
 neversionate și incluse în backupul operațional. Nu le copia în teste, loguri

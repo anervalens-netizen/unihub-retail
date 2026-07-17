@@ -149,7 +149,9 @@ Adaugă:
 - sumele și cantitățile reconciliate cu fișierul;
 - `SiteCode` are o singură combinație de metadate;
 - numărul bonului este valid;
-- duplicatele sunt detectate;
+- antetele duplicate sunt respinse, dar multiplicitatea rândurilor de vânzare
+  identice se păstrează conform ADR-004; coloanele actuale nu definesc o
+  identitate unică de linie;
 - fișierul parțial nu poate promova master data;
 - nicio activare/dezactivare implicită.
 
@@ -159,7 +161,7 @@ Adaugă:
 - fișier cu 10% magazine lipsă;
 - fișier pentru o singură firmă;
 - conflict ASM pe același `SiteCode`;
-- duplicate;
+- antete duplicate respinse și rânduri identice păstrate ca fapte separate;
 - valori monetare invalide;
 - bonuri fără ID;
 - retry identic;

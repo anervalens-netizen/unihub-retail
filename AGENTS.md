@@ -69,6 +69,10 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 
 ## Business invariants
 
+- Sales rows have no stable source-line identity. Identical visible values can
+  represent separate units on the same receipt, so imports must preserve row
+  multiplicity and must not reject or deduplicate rows by the current Excel
+  columns. See `docs/adr/004-sales-row-multiplicity.md`.
 - Salary averages exclude agent-month values below 2,000 RON only from averages, not from totals/history.
 - `total_salary` already includes meal vouchers.
 - Agent target allocation uses store target / store selling days * agent selling days.

@@ -187,8 +187,8 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
 
     # Rows without an assigned ASM are deliberately excluded from Retail
     # imports (TR locations / unallocated agents).  Do not make an ignored row
-    # fail identifier validation, but keep numeric and duplicate validation on
-    # the complete source file above.
+    # fail identifier validation, but keep numeric validation on the complete
+    # source file above.
     importable_rows = df[
         ~df["ASM"].fillna("").astype(str).str.strip().isin(["", "-"])
     ]
@@ -215,8 +215,10 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
             + ", ".join(invalid_required)
         )
 
-    if df.duplicated(subset=SALES_COLUMNS, keep=False).any():
-        raise ValueError("Fișierul conține rânduri duplicate.")
+    # The source export has no stable line identifier.  Equal values across the
+    # visible columns can represent separate units sold on the same receipt, so
+    # row equality is not a valid business key.  Preserve multiplicity and never
+    # reject or drop these rows.  See docs/adr/004-sales-row-multiplicity.md.
 
     metadata_columns = ["Locatie", "Firma", "Regional", "ASM"]
     valid_structure = importable_rows
