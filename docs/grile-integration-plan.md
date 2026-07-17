@@ -98,3 +98,13 @@ artefact CI și approval one-time rămâne disponibilă pentru operații cu risc
 mare; cererea explicită din conversație autorizează agentul să o ducă până la
 capăt. Înaintea unei migrări sau operații destructive se verifică backupul și
 rollbackul. Nu se folosesc date live pentru testare.
+
+## Evidență rollout UX 2026-07-17
+
+- grilele permanente și modelul oficial au fost actualizate in-place prin
+  commitul `grile-salarii@5c5e3ed789bf5df6ea920f4191253202c2b5f546`;
+- contractul Retail `B32:G46` / `B32:F46` a fost introdus prin
+  `unihub-retail@0b85fc3d47084e0845ea3a3dd759fbe9131e7a2b`;
+- CI Grile Salarii `29569631485` și CI Retail `29569636906` au trecut;
+- verificarea locală Retail a trecut `1267` teste backend izolate, `228` teste
+  frontend, typecheck, mypy, lint, build și probele publice `/readyz` și `/`.
