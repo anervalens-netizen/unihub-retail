@@ -21,6 +21,8 @@ def test_reset_ranges_clear_manual_pontaj_without_total_column():
 
     assert "Pontaj!C8:AG31" in RESET_RANGES
     assert "Pontaj!AH" not in joined
+    assert "Grila!B32:F46" in RESET_RANGES
+    assert "Grila!B32:F37" not in RESET_RANGES
     assert "Grila!G10" not in joined
     assert "Grila!G24" not in joined
 

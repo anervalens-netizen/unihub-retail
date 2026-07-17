@@ -110,7 +110,7 @@ RESET_RANGES = [
     "Grila!Q5:S36",
     "Grila!U5:U36",
     "Grila!V5:X36",
-    "Grila!B32:F37",
+    "Grila!B32:F46",
     "Grila!F12:F14",
     "Grila!F26:F28",
     "Pontaj!C8:AG31",

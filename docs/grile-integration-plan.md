@@ -33,6 +33,11 @@ Scope-urile clientului de verificare sunt strict read-only:
 - `spreadsheets.readonly` pentru valorile grilei;
 - `drive.metadata.readonly` pentru metadatele necesare monitorizării.
 
+Contractul UX activ din `2026-07-17` are `15` rânduri în tabelul
+`Suplimentar`. Verificarea citește `Grila!B32:G46` și include toate datele din
+`D32:D46` în acoperirea zilelor. Acest interval trebuie să rămână sincronizat
+cu modelul și grilele permanente din `/opt/Mobiup/grile-salarii`.
+
 ## Targete agent: diff și sincronizare
 
 Citirea targetelor agent este separată în două operații:
@@ -65,6 +70,10 @@ Resetul live acceptă numai cel mai nou manifest de arhivă verificat și aproba
 Un checkpoint `uncertain` blochează retry-ul automat până la reconcilierea
 manuală. La eșec, valorile sunt restaurate și verificate; zero efecte destructive
 neconfirmate este condiție de succes.
+
+Resetul curent golește `Grila!B32:F46`, nu vechiul interval `B32:F37`, astfel
+încât niciunul dintre cele 15 rânduri suplimentare nu poate trece accidental în
+luna următoare. Coloana `G32:G46` rămâne formulă și nu este ștearsă.
 
 ## Date și identitate
 

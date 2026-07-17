@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from services.grile_sheets import analyze_grila
+from services.grile_sheets import GRILA_RANGES, analyze_grila
 
 
 def _ranges(
@@ -11,7 +11,7 @@ def _ranges(
     sales: float = 250,
     agent1_days: dict[int, float] | None = None,
     agent2_days: dict[int, float] | None = None,
-    supl_days: list[int] | None = None,
+    supl_days: list[int | None] | None = None,
 ) -> list[dict[str, list[list[object]]]]:
     agent1_days = agent1_days or {}
     agent2_days = agent2_days or {}
@@ -19,7 +19,7 @@ def _ranges(
     a1: list[list[object]] = [[agent1_days[d]] if d in agent1_days else [] for d in range(1, 32)]
     a2: list[list[object]] = [[agent2_days[d]] if d in agent2_days else [] for d in range(1, 32)]
     supl: list[list[object]] = [[None, None, d] for d in supl_days]
-    supl.extend([] for _ in range(6 - len(supl)))
+    supl.extend([] for _ in range(15 - len(supl)))
     return [
         {"values": [[target]]},
         {"values": [[sales]]},
@@ -57,3 +57,18 @@ def test_analyze_grila_first_day_has_no_elapsed_days() -> None:
     assert reading.days_elapsed == 0
     assert reading.missing_days == []
     assert reading.completion_pct is None
+
+
+def test_grila_ranges_include_all_fifteen_suplimentar_rows() -> None:
+    assert "Grila!B32:G46" in GRILA_RANGES
+    assert "Grila!B32:G37" not in GRILA_RANGES
+
+
+def test_analyze_grila_counts_suplimentar_day_from_last_extended_row() -> None:
+    reading = analyze_grila(
+        _ranges(supl_days=[None] * 14 + [2]),
+        as_of=datetime(2026, 6, 3, 12, 0),
+    )
+
+    assert reading.missing_days == [1]
+    assert reading.completion_pct == 50.0

@@ -30,7 +30,7 @@ GRILA_RANGES = [
     "Grila!L5",        # 1: realizat magazin (L5)
     "Grila!P5:P35",    # 2: vanzari zilnice Agent 1 (31 zile)
     "Grila!U5:U35",    # 3: vanzari zilnice Agent 2
-    "Grila!B32:G37",   # 4: sectiunea Suplimentar (D=data, E=target, F=realizat)
+    "Grila!B32:G46",   # 4: sectiunea Suplimentar (15 randuri; D=data, E=target, F=realizat)
 ]
 
 
@@ -128,7 +128,7 @@ def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None 
 
     Model completare ("acoperire zi", portat din monitor_grile.py): o zi e
     acoperita daca P[zi] sau U[zi] are valoare, sau ziua apare in sectiunea
-    Suplimentar (D32:D37). % = zile acoperite / zilele complete din luna curenta.
+    Suplimentar (D32:D46). % = zile acoperite / zilele complete din luna curenta.
     Ziua curenta nu se cere, pentru ca grilele se completeaza abia seara dupa program.
     """
     vals = [vr.get("values", []) for vr in value_ranges]
@@ -140,7 +140,7 @@ def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None 
 
     days_from_supl: set[int] = set()
     if len(vals) > 4:
-        for i in range(6):
+        for i in range(15):
             d = _parse_day(_cell(vals[4], i, 2))  # col D = data
             if d:
                 days_from_supl.add(d)

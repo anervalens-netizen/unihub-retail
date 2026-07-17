@@ -52,6 +52,10 @@ clear is read back. Any Google, checkpoint or output failure restores all
 touched sheets and verifies the restored snapshot; a failed verification is
 persisted as `uncertain` and blocks automatic retry.
 
+The active editable `Suplimentar` input range is `Grila!B32:F46`. Reset
+snapshots, clear payloads and readback verification must cover all 15 rows;
+`G32:G46` remains formula-only and outside the clear payload.
+
 The verified reset manifest, successful operation transition and consumption
 of the approved archive manifest commit in one PostgreSQL transaction. If that
 transaction fails, Google values are restored from the snapshots and the

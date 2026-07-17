@@ -154,6 +154,9 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   `fieldops_visits`; dual-read-ul compara agregat sursele fara payload in loguri.
 - Agenti -> Grile include verificare read-only si inchidere de luna; actiunile
   privilegiate raman protejate individual in backend.
+  Verificarea citeste toate cele 15 randuri `Suplimentar` din
+  `Grila!B32:G46`, iar resetul lunar curata numai intrarile `B32:F46`, lasand
+  formulele `G32:G46` intacte.
   Operatiile lunare ruleaza exclusiv in worker, sunt rezervate in DB inainte de
   enqueue si permit o singura operatie activa pe luna inchisa. Resetul live are
   checkpoint persistent per magazin; magazinele deja confirmate sunt sarite la
