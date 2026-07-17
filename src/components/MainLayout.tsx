@@ -219,7 +219,7 @@ export function MainLayout({
                   }
                 />
                 <FilterSelect
-                  label="RM"
+                  label="Manager"
                   value={filters.rm}
                   values={[
                     { label: ALL_SCOPE, value: ALL_SCOPE },
