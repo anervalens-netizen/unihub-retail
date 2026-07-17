@@ -1,5 +1,10 @@
 # PR runner isolation and release artifact boundary
 
+> Scope update 2026-07-17: this document defines the security boundary whenever
+> PR CI or the formal artifact path is used. It no longer requires those paths
+> for every ordinary change. The default chat-authorized local-first delivery
+> and the no-repeat-approval rule are defined by ADR-005.
+
 ## Decision
 
 Pull-request code runs only on GitHub-hosted runners. The production host and
@@ -25,14 +30,14 @@ Updating one requires a separately reviewed shared-package release, an exact
 version change, updated lock integrity, consumer tests, and replacement of only
 the corresponding tarball. Never copy a Verdaccio token into GitHub Actions.
 
-## Build and deploy separation
+## Formal build and deploy separation
 
 On a successful push to `main`, the tested frontend job creates one immutable
 release bundle from `git archive` plus the tested `dist/` output. CI writes the
 source SHA and SHA-256 manifest next to the bundle and uploads them as a GitHub
 artifact. Pull requests never create deployable release artifacts.
 
-The deploy workflow:
+When the formal artifact path is selected, the deploy workflow:
 
 1. accepts only a successful `CI` push run for `main`;
 2. downloads that run's exact release artifact without checking out source;
@@ -44,7 +49,7 @@ The deploy workflow:
 
 GitHub required reviewers are available for private repositories only with
 GitHub Enterprise, which is not part of the current plan. The production gate
-therefore uses a host-enforced human approval rather than pretending that an
+therefore uses a host-enforced approval rather than pretending that an
 unprotected GitHub environment is sufficient. `approve-retail-release.sh`
 creates a root-only, 30-minute, one-time record bound to the exact successful CI
 run, `main` source SHA and artifact SHA-256. The deploy entrypoint must claim the
@@ -93,12 +98,13 @@ must never appear in a pull-request workflow. That identity has no Docker group,
 production secret read access, interactive credentials or general sudo; only
 the reviewed deploy command is permitted.
 
-## Rollback
+## Rollback for the formal path
 
 Reverting package vendoring or restoring the self-hosted PR labels reopens the
 critical finding and is not an acceptable production rollback. If hosted CI is
-unavailable, stop merges and deployments until it recovers. Existing releases
-remain runnable because runtime does not fetch npm packages.
+unavailable, stop the PR/artifact path until it recovers; ADR-005 permits a
+locally verified ordinary change to continue and be synchronized later.
+Existing releases remain runnable because runtime does not fetch npm packages.
 
 Application rollback uses the root entrypoint's verified backup handle. The
 three v2.0.1 migrations are additive, so code rollback keeps the expanded schema;

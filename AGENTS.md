@@ -98,6 +98,15 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 
 ## Deployment
 
+- Cererea explicită din conversația operațională autorizează implementarea,
+  verificarea, commitul, sincronizarea, deployul și verificarea live pentru
+  scopul cerut. Nu cere operatorului comenzi în terminal sau aprobări repetate.
+- Calea implicită este local-first: verificări proporționale, commit direct pe
+  `main`, push fără a aștepta CI, deploy controlat și verificare live. PR-ul și
+  artefactul formal sunt opționale și se folosesc proporțional cu riscul.
+- Push-ul direct în `main` este acceptat pentru schimbări obișnuite verificate.
+  Dacă este deschis un PR, du-l fără o nouă confirmare prin CI, merge, deploy și
+  verificare live. Vezi `docs/adr/005-chat-authorized-delivery.md`.
 - Frontend changes are not live until `npm run build`.
 - Backend changes require `unihub-backend.service` restart.
 - Worker/job changes also require `unihub-worker.service` restart.

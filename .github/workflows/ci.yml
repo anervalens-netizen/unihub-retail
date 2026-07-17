@@ -227,7 +227,7 @@ jobs:
 
   frontend-check:
     name: frontend-check
-    needs: backend-check
+    needs: runner-isolation
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:

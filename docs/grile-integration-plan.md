@@ -74,7 +74,8 @@ neconfirmate este condiție de succes.
 - auditul de autorizare persistă OIDC `sub`, nu emailul;
 - logurile nu includ nume de agenți, salarii, identificatori personali sau date
   comerciale;
-- verificările live sunt read-only în afara unui rollout și approval explicit.
+- verificările live sunt read-only în afara unui rollout autorizat explicit în
+  conversația operațională.
 
 ## Operare și verificare
 
@@ -83,6 +84,8 @@ secvențial testele API, worker, autorizare, efect DB, fail-closed și retry din
 suitele `backend/tests/test_grile_*`, urmate de gate-urile complete din
 `AGENTS.md`.
 
-Deployul folosește numai artefactul verificat din CI și approval-ul local
-one-time legat de run/SHA/hash. Înaintea unei migrări sau operații destructive
-se verifică backupul și rollbackul. Nu se folosesc date live pentru testare.
+Deployul urmează calea proporțională cu riscul din ADR-005. Calea formală cu
+artefact CI și approval one-time rămâne disponibilă pentru operații cu risc
+mare; cererea explicită din conversație autorizează agentul să o ducă până la
+capăt. Înaintea unei migrări sau operații destructive se verifică backupul și
+rollbackul. Nu se folosesc date live pentru testare.

@@ -128,8 +128,8 @@ oficial al concursului. Răspunsul backend este autoritativ.
    plata;
 5. rulează testele backend și frontend relevante;
 6. verifică exporturile și cele patru valori ale cardului;
-7. publică prin PR și artefactul CI; pentru backend/worker urmează deployul
-   controlat documentat în `ops/README.md`;
+7. livrează prin calea proporțională cu riscul din ADR-005; dacă se deschide PR,
+   agentul îl duce prin CI, merge, deploy și verificare fără o aprobare repetată;
 8. verifică live fără a afișa date comerciale în output.
 
 ## Verificări minime

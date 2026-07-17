@@ -143,16 +143,18 @@ izolare a runnerului PR.
 
 ## Deploy
 
-Push direct în `main` nu este flux acceptat. Release-ul folosește:
+Fluxul implicit este autorizat de cererea explicită din conversația
+operațională: implementare, verificări locale proporționale, commit direct pe
+`main`, push fără a aștepta CI, deploy și verificare live. Push-ul direct este
+acceptat pentru schimbări obișnuite; operatorul nu trebuie să repete aprobarea
+în terminal. Dacă agentul deschide un PR, îl duce fără o nouă confirmare prin
+CI, merge, deploy și verificare.
 
-1. PR revizuit și CI verde;
-2. artefactul imutabil produs de CI-ul `main`;
-3. approval local one-time legat de run/SHA/hash;
-4. runnerul dedicat `unihub-retail-deploy` și entrypointul root-owned;
-5. backup verificat, migrații one-shot, health local/public;
-6. rollback numai către un manifest de migrații compatibil.
-
-Procedura și limitele sunt în `ops/README.md` și
+Pentru release-uri formale și schimbări cu risc mare rămâne disponibilă calea cu
+PR, artefact CI imutabil, backup, migrații controlate, health local/public și
+rollback compatibil. Alegerea căii este proporțională cu riscul. Decizia
+canonică este [`ADR-005`](docs/adr/005-chat-authorized-delivery.md); mecanismul
+formal este documentat în `ops/README.md` și
 `docs/engineering/pr-runner-isolation.md`.
 
 ## Documentație specializată

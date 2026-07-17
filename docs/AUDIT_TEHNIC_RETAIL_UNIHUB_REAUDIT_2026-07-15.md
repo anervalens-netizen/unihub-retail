@@ -22,6 +22,13 @@ inițiale rămân păstrate ca istoric al riscului identificat pe `aba3fa0`.
 > nu un control valid de unicitate. ADR-004 este decizia canonică și prevalează
 > peste recomandarea istorică M-13 păstrată mai jos pentru trasabilitate.
 
+> Actualizare operațională 2026-07-17: mecanismul PR + artefact + approval
+> one-time demonstrat la `v2.0.1` rămâne disponibil, dar nu mai este obligatoriu
+> pentru orice schimbare. ADR-005 introduce calea implicită local-first,
+> autorizată prin conversația operațională, cu verificări proporționale, deploy
+> și verificare live. Evidența M-56 de mai jos dovedește mecanismul formal; nu
+> supersedează alegerea operațională ulterioară din ADR-005.
+
 ## Verdict executiv
 
 Cele patru riscuri critice inițiale sunt închise în codul `v2.0.1`:
@@ -37,13 +44,13 @@ fără validare de acoperire, separarea side effect-urilor și manifest de
 integritate**. P0 corectează aceste căi pentru import, Grile și salarii; matricea
 păstrează deschise domeniile în care același principiu nu este încă aplicat complet.
 
-**Recomandare de release:** gate-urile operaționale pentru `v2.0.1` au fost
+**Dovadă de release v2.0.1:** gate-urile operaționale pentru `v2.0.1` au fost
 îndeplinite pe 2026-07-16: CI `main` verde, backup verificat, migrații 026-028,
 approval one-time, artefact verificat, deploy, health local/public și rollback
 compatibil demonstrat urmat de redeploy. Planul GitHub al repository-ului privat
 nu permite required reviewers; controlul echivalent activ este host-side,
-root-only, interactiv, one-time și legat de CI run/SHA/hash. Deployul manual care
-ocolește acest boundary rămâne neacceptat.
+root-only, interactiv, one-time și legat de CI run/SHA/hash. Această concluzie
+istorică descrie release-ul auditat; livrările ulterioare urmează ADR-005.
 
 ## Metodă și independență
 

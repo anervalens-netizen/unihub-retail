@@ -1,5 +1,14 @@
 # Retail privileged deployment source
 
+## Rolul acestei căi
+
+Acesta este mecanismul formal, cu artefact imutabil, păstrat pentru release-uri
+etichetate și schimbări cu risc mare. Nu mai este calea obligatorie pentru orice
+modificare. Calea rapidă autorizată prin conversația operațională este definită
+în `../docs/adr/005-chat-authorized-delivery.md` și poate folosi checkoutul local,
+buildul, restartul serviciilor afectate și verificarea live fără un PR sau un
+approval separat.
+
 `deploy-retail-artifact.sh` and `approve-retail-release.sh` are the reviewed
 sources for the root-owned production boundary. CI must never install them.
 Provisioning is a separate privileged operation that copies the reviewed files
@@ -20,29 +29,32 @@ ops/deploy-retail-artifact.sh validate <artifact.tar.gz> <40-char-main-sha>
 ```
 
 GitHub required reviewers are not available for this private repository without
-GitHub Enterprise. The replacement is not an unapproved manual deployment: the
-human creates a root-owned, 30-minute, one-time approval for the exact successful
-CI run ID, `main` SHA and artifact SHA-256. The deploy entrypoint atomically
-claims that approval before any application mutation and records it as consumed
-or failed. A consumed, failed, expired, mismatched or duplicate approval cannot
-authorize another attempt.
+GitHub Enterprise. When this formal path is selected, the administrative
+session creates a root-owned, 30-minute, one-time approval for the exact
+successful CI run ID, `main` SHA and artifact SHA-256. The deploy entrypoint
+atomically claims that approval before any application mutation and records it
+as consumed or failed. A consumed, failed, expired, mismatched or duplicate
+approval cannot authorize another attempt.
 
-After the final CI artifact is verified, the human approver runs interactively:
+After the final CI artifact is verified, the operator or execution agent acting
+under the active chat authorization runs interactively:
 
 ```bash
 sudo /opt/Mobiup/ops/scripts/approve-retail-release.sh \
   <ci-run-id> <40-char-main-sha> <64-char-artifact-sha256>
 ```
 
-The prompt requires the literal `APPROVE_RETAIL_PRODUCTION`. Never place this
-command in Actions, a script run by the deploy identity, or an unattended
+The prompt requires the literal `APPROVE_RETAIL_PRODUCTION`. The execution agent
+may complete this gate without asking the operator to run the command. Never
+place it in Actions, a script run by the deploy identity, or an unattended
 scheduler.
 
-Production invocation is allowed only through the workflow and the dedicated
-`unihub-deploy` OS identity. Install `unihub-deploy.sudoers` only after validating
-it with `visudo -cf`. Do not grant that identity general sudo, Docker access,
-interactive login credentials, permission to run the approval creator, or
-permission to invoke manual rollback. Set
+Invocation of this formal artifact entrypoint is allowed only through the
+workflow and the dedicated `unihub-deploy` OS identity. This restriction does
+not prohibit the ADR-005 local-first path. Install `unihub-deploy.sudoers` only
+after validating it with `visudo -cf`. Do not grant that identity general sudo,
+Docker access, interactive login credentials, permission to run the approval
+creator, or permission to invoke manual rollback. Set
 `PRODUCTION_DEPLOY_APPROVALS_ENFORCED=true` only after the root-owned approval
 store, exact sudo policy and dedicated runner are verified.
 
