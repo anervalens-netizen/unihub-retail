@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping
 
 import asyncpg
 import pandas as pd
@@ -682,7 +682,9 @@ def reconcile_erp_report(
         )
 
     has_difference_metric = any(metric.status == "difference" for metric in metrics)
-    overall_status = "differences" if issues or has_difference_metric or not cutoff_matches else "ok"
+    overall_status: Literal["ok", "differences"] = (
+        "differences" if issues or has_difference_metric or not cutoff_matches else "ok"
+    )
     issue_count = len(issues)
     returned_issues = issues[:MAX_RETURNED_ISSUES]
     return ErpReconciliationResponse(
