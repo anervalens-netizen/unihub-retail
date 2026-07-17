@@ -143,7 +143,6 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
   const filterCompany = globalFilters?.firma !== ALL_FIRMS ? globalFilters?.firma : undefined;
   const filterRegional = globalFilters?.rm !== ALL_SCOPE ? globalFilters?.rm : undefined;
-  const filterAsm = globalFilters?.asm !== ALL_SCOPE ? globalFilters?.asm : undefined;
   const filterSiteCode = globalFilters?.magazin !== ALL_STORES ? globalFilters?.magazin : undefined;
 
   useEffect(() => {
@@ -154,15 +153,15 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const loadOverview = useCallback(async () => {
     try {
       const [ov, ev] = await Promise.all([
-        fetchSalariiOverview({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm }),
-        fetchSalaryEvolution({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm }),
+        fetchSalariiOverview({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional }),
+        fetchSalaryEvolution({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional }),
       ]);
       setOverview(ov);
       setEvolution(ev);
     } catch (e) {
       console.error('Failed to load overview:', e);
     }
-  }, [filterCompany, filterSiteCode, filterRegional, filterAsm]);
+  }, [filterCompany, filterSiteCode, filterRegional]);
 
   const loadSummary = useCallback(async () => {
     setLoadingCards(true);
@@ -172,7 +171,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       if (selectedSummaryMonth && /^\d{4}-\d{2}$/.test(selectedSummaryMonth)) {
         [year, month] = selectedSummaryMonth.split('-').map(Number);
       }
-      const data = await fetchSalarySummary({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm, year, month });
+      const data = await fetchSalarySummary({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, year, month });
       setSummary(data.items || []);
       setSummaryMonth(data.month);
     } catch (e) {
@@ -180,19 +179,19 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     } finally {
       setLoadingCards(false);
     }
-  }, [filterCompany, filterSiteCode, filterRegional, filterAsm, selectedSummaryMonth]);
+  }, [filterCompany, filterSiteCode, filterRegional, selectedSummaryMonth]);
 
   const loadTrend = useCallback(async () => {
     setLoadingCards(true);
     try {
-      const data = await fetchSalaryTrend({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional, asm: filterAsm });
+      const data = await fetchSalaryTrend({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional });
       setTrend(data || []);
     } catch (e) {
       console.error('Failed to load trend:', e);
     } finally {
       setLoadingCards(false);
     }
-  }, [filterCompany, filterSiteCode, filterRegional, filterAsm]);
+  }, [filterCompany, filterSiteCode, filterRegional]);
 
   const loadAgents = useCallback(
     async (offset = 0) => {
@@ -203,7 +202,6 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
           company_name: filterCompany,
           site_code: filterSiteCode,
           regional: filterRegional,
-          asm: filterAsm,
           limit: PAGE_SIZE,
           offset,
         });
@@ -215,7 +213,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         setLoading(false);
       }
     },
-    [debouncedSearch, filterCompany, filterSiteCode, filterRegional, filterAsm]
+    [debouncedSearch, filterCompany, filterSiteCode, filterRegional]
   );
 
   useEffect(() => { loadOverview(); }, [loadOverview]);

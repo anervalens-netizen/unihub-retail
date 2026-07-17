@@ -12,7 +12,6 @@ import { DesktopTopBar } from './DesktopTopBar';
 export interface AppFilters {
   firma: string;
   rm: string;
-  asm: string;
   magazin: string;
   agent: string;
 }
@@ -98,17 +97,6 @@ export function MainLayout({
     ).sort();
   }, [filterOptions, filters.firma]);
 
-  const filteredAsms = useMemo(() => {
-    return Array.from(
-      new Set(
-        filterOptions.magazine
-          .filter((item) => filters.firma === ALL_FIRMS || item.firma === filters.firma)
-          .filter((item) => filters.rm === ALL_SCOPE || item.regional === filters.rm)
-          .map((item) => item.asm)
-      )
-    ).sort();
-  }, [filterOptions, filters.firma, filters.rm]);
-
   const selectedStores = useMemo(
     () => selectedValues(filters.magazin, ALL_STORES),
     [filters.magazin]
@@ -118,16 +106,14 @@ export function MainLayout({
     return filterOptions.magazine
       .filter((item) => (filters.firma === ALL_FIRMS || item.firma === filters.firma))
       .filter((item) => (filters.rm === ALL_SCOPE || item.regional === filters.rm))
-      .filter((item) => (filters.asm === ALL_SCOPE || item.asm === filters.asm))
       .sort((a, b) => a.locatie.localeCompare(b.locatie));
-  }, [filterOptions, filters.firma, filters.rm, filters.asm]);
+  }, [filterOptions, filters.firma, filters.rm]);
 
   const filteredAgents = useMemo(() => {
     const uniqueAgents = new Map<string, (typeof filterOptions.agenti)[number]>();
     filterOptions.agenti
       .filter((item) => (filters.firma === ALL_FIRMS || item.firma === filters.firma))
       .filter((item) => (filters.rm === ALL_SCOPE || item.regional === filters.rm))
-      .filter((item) => (filters.asm === ALL_SCOPE || item.asm === filters.asm))
       .filter((item) => (selectedStores.length === 0 || selectedStores.includes(item.site_code)))
       .forEach((item) => {
         uniqueAgents.set(item.agent, item);
@@ -136,13 +122,13 @@ export function MainLayout({
     return Array.from(uniqueAgents.values())
       .map((item) => item.agent)
       .sort((a, b) => a.localeCompare(b));
-  }, [filterOptions, filters.firma, filters.rm, filters.asm, selectedStores]);
+  }, [filterOptions, filters.firma, filters.rm, selectedStores]);
 
   const resetFilters = () => {
     setFilters(defaultAppFilters());
   };
 
-  const activeFilterCount = [filters.firma, filters.rm, filters.asm, filters.magazin, filters.agent].filter(
+  const activeFilterCount = [filters.firma, filters.rm, filters.magazin, filters.agent].filter(
     (value) => value !== ALL_FIRMS && value !== ALL_SCOPE && value !== ALL_STORES
   ).length;
   const hasMobileFilters = showFilterButton && (
@@ -227,14 +213,13 @@ export function MainLayout({
                       ...filters,
                       firma: value,
                       rm: ALL_SCOPE,
-                      asm: ALL_SCOPE,
                       magazin: ALL_STORES,
                       agent: ALL_SCOPE,
                     })
                   }
                 />
                 <FilterSelect
-                  label="Regional"
+                  label="RM"
                   value={filters.rm}
                   values={[
                     { label: ALL_SCOPE, value: ALL_SCOPE },
@@ -244,23 +229,6 @@ export function MainLayout({
                     setFilters({
                       ...filters,
                       rm: value,
-                      asm: ALL_SCOPE,
-                      magazin: ALL_STORES,
-                      agent: ALL_SCOPE,
-                    })
-                  }
-                />
-                <FilterSelect
-                  label="ASM"
-                  value={filters.asm}
-                  values={[
-                    { label: ALL_SCOPE, value: ALL_SCOPE },
-                    ...filteredAsms.map((item) => ({ label: item, value: item })),
-                  ]}
-                  onChange={(value) =>
-                    setFilters({
-                      ...filters,
-                      asm: value,
                       magazin: ALL_STORES,
                       agent: ALL_SCOPE,
                     })

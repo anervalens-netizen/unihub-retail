@@ -53,12 +53,11 @@ interface VisiteSubtabProps {
   currentMonth: string;
 }
 
-// Vizite ignoră filtrul global (firma/RM/ASM/magazin) — gruparea e pe team leader,
+// Vizite ignoră filtrul global (firma/RM/magazin) — gruparea e pe team leader,
 // filtrele celorlalte taburi nu se aplică aici. Mereu se cere setul complet.
 const ALL_FILTERS: AppFilters = {
   firma: ALL_FIRMS,
   rm: ALL_SCOPE,
-  asm: ALL_SCOPE,
   magazin: ALL_STORES,
   agent: ALL_SCOPE,
 };

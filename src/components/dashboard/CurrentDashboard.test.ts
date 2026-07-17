@@ -33,7 +33,7 @@ describe('CurrentDashboard', () => {
     const html = renderToStaticMarkup(
       createElement(CurrentDashboard, {
         currentMonth: '2026-07',
-        filters: { firma: 'all', rm: 'all', asm: 'all', magazin: 'all', agent: 'all' },
+        filters: { firma: 'all', rm: 'all', magazin: 'all', agent: 'all' },
         mode: 'overview',
         onModeChange: vi.fn(),
         statusLabel: 'Luna in curs este in actualizare.',

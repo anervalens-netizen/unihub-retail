@@ -101,7 +101,6 @@ function buildParams(filters: AppFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.firma !== ALL_FIRMS) params.set('firma', filters.firma);
   if (filters.rm !== ALL_SCOPE) params.set('rm', filters.rm);
-  if (filters.asm !== ALL_SCOPE) params.set('asm', filters.asm);
   if (filters.magazin !== ALL_STORES) params.set('magazin', filters.magazin);
   return params;
 }

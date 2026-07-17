@@ -114,7 +114,6 @@ function makeFilters(overrides: Partial<AppFilters> = {}): AppFilters {
   return {
     firma: ALL_FIRMS,
     rm: ALL_SCOPE,
-    asm: ALL_SCOPE,
     magazin: ALL_STORES,
     agent: ALL_SCOPE,
     ...overrides,

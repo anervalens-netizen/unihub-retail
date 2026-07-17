@@ -3,7 +3,7 @@ import { MainLayout, type AppFilters } from './components/MainLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { getAvailableMonths } from './api/filters';
-import { defaultAppFilters } from './lib/filterValues';
+import { defaultAppFilters, normalizeAppFilters } from './lib/filterValues';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 import { sanitizeActiveTab } from './lib/navigationAccess';
 import {
@@ -63,7 +63,7 @@ function loadSavedFilters(key: string): AppFilters {
   const saved = localStorage.getItem(key);
   if (!saved) return defaultAppFilters();
   try {
-    return { ...defaultAppFilters(), ...JSON.parse(saved) };
+    return normalizeAppFilters(JSON.parse(saved));
   } catch {
     return defaultAppFilters();
   }

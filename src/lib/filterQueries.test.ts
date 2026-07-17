@@ -7,7 +7,6 @@ function makeFilters(overrides: Partial<AppFilters> = {}): AppFilters {
   return {
     firma: ALL_FIRMS,
     rm: ALL_SCOPE,
-    asm: ALL_SCOPE,
     magazin: ALL_STORES,
     agent: ALL_SCOPE,
     ...overrides,
@@ -31,9 +30,10 @@ describe('buildScopedMonthQuery', () => {
     expect(q.regional).toBe('Elena Popescu');
   });
 
-  it('includes asm when set', () => {
-    const q = buildScopedMonthQuery('2026-05', makeFilters({ asm: 'Mihai Condorateanu' }));
-    expect(q.asm).toBe('Mihai Condorateanu');
+  it('ignores a legacy asm value', () => {
+    const filters = { ...makeFilters(), asm: 'Mihai Condorateanu' };
+    const q = buildScopedMonthQuery('2026-05', filters);
+    expect(q.asm).toBeUndefined();
   });
 
   it('includes site_code when magazin is set', () => {
@@ -50,13 +50,12 @@ describe('buildScopedMonthQuery', () => {
     const q = buildScopedMonthQuery('2026-05', makeFilters({
       firma: 'Mobiup',
       rm: 'Maria',
-      asm: 'Mihai',
       magazin: 'STORE01',
       agent: 'Agent1',
     }));
     expect(q.firma).toBe('Mobiup');
     expect(q.regional).toBe('Maria');
-    expect(q.asm).toBe('Mihai');
+    expect(q.asm).toBeUndefined();
     expect(q.site_code).toBe('STORE01');
     expect(q.agent).toBe('Agent1');
     expect(q.month).toBe('2026-05');

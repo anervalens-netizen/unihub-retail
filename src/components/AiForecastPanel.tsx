@@ -192,7 +192,6 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
       month: scoped.month,
       firma: scoped.firma,
       regional: scoped.regional,
-      asm: scoped.asm,
       site_code: scoped.site_code,
       metric,
     };
@@ -214,7 +213,7 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
       if (!detailSelection) throw new Error('Nu exista selectie.');
       return getAiForecastCurrent({
         ...query,
-        asm: detailSelection.type === 'manager' ? detailSelection.id : query.asm,
+        asm: detailSelection.type === 'manager' ? detailSelection.id : undefined,
         site_code: detailSelection.type === 'store' ? detailSelection.id : undefined,
       });
     },
@@ -491,7 +490,6 @@ function RollingForecastView({ currentMonth, filters, metric }: ForecastViewProp
       month: scoped.month,
       firma: scoped.firma,
       regional: scoped.regional,
-      asm: scoped.asm,
       site_code: scoped.site_code,
       metric,
     };
