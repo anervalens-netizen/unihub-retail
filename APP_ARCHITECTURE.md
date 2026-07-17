@@ -80,9 +80,11 @@ acelasi `SegmentedTabs` accesibil folosit de Hub, Focus, Agenti si Setari.
 Pe desktop, textul functional foarte mic este ridicat la minimum 12 px, iar
 scrollbar-urile pentru tabele si selectoare raman vizibile.
 Pe mobil, `SegmentedTabs` are snap si indiciu de overflow; shell-ul pastreaza
-filtrul global ca actiune flotanta discreta, coordoneaza barele sticky cu navigarea de jos si foloseste
-`safe-area-inset-bottom`. Ecranele cu tabele late pastreaza tabelul pe desktop
-si expun carduri sau sectiuni progresive la viewport mobil.
+filtrul global ca actiune flotanta de 44 px, cu accent solid, contur si umbra
+vizibile peste cardurile deschise. Indicatorul portocaliu arata numarul
+filtrelor active. Shell-ul coordoneaza barele sticky cu navigarea de jos si
+foloseste `safe-area-inset-bottom`. Ecranele cu tabele late pastreaza tabelul
+pe desktop si expun carduri sau sectiuni progresive la viewport mobil.
 
 Contractele publice backend sunt separate pe domenii in `backend/schemas/`
 (`dashboard`, `agents`, `campaigns`, `premium_glass`, `contests`, `ai_forecast`
@@ -102,7 +104,10 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   la nivel de retea, manager si magazin. Pentru `12 luni` afiseaza prognoza
   lunara agregata pe retea, RM si magazin. Modelul TimesFM/XReg nu ruleaza in
   requesturile Hub; rezultatele sunt importate in tabelele `ai_forecast_*`.
-- Filtre globale firma / regional / magazin / agent.
+- Filtre globale `Firma / Manager / Magazin / Agent`. Eticheta `Manager` din
+  selector foloseste parametrul existent `regional`; filtrul global nu expune
+  ASM. Campurile si coloanele separate `regional`/RM si `asm` raman in surse,
+  contracte si rapoarte acolo unde sunt necesare.
 - Campanii promo, incentive si concursuri config-driven.
 - Analiza agentilor, lifecycle, salarii.
 - Salarii are RBAC backend: acces pentru `unihub-manager`, `unihub-admin`,
@@ -213,7 +218,9 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
 Filtrele principale sunt gestionate in `App.tsx` si persistate in
 `localStorage` separat pe zone: Hub, Focus si Agenti. Hub si Focus pot porni
 cu aceleasi valori initiale, dar fiecare isi pastreaza ultima selectie dupa
-refresh.
+refresh. `normalizeAppFilters` pastreaza doar Firma, Manager (`rm`), Magazin si
+Agent, astfel incat o selectie ASM salvata de o versiune veche nu poate ramane
+activa invizibil dupa upgrade.
 
 Frontend-ul foloseste lazy-loading pe ecranele principale (`Hub`, `Focus`,
 `Agenti`, `Management`, `Setari`). Recharts este izolat in chunk-ul `charts`,

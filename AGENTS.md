@@ -41,6 +41,9 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 - Use `reporting_*` tables/views for reporting. Raw `sales_transactions` is allowed only for explicitly documented cases such as cartela quantity.
 - Retail excludes `Cartele` and locations matching `TR %` from normal retail KPIs.
 - When `site_code` is selected it dominates historical scope; do not also constrain by current company/RM/ASM.
+- The global filter UI exposes Firma / Manager / Magazin / Agent. `Manager` is
+  the UI label for `regional`; do not re-add an ASM selector. Keep the separate
+  `regional` and `asm` source fields and report columns.
 - Use canonical scoped-parameter builders. Do not leave unused asyncpg parameters.
 - Every application DB connection sets PostgreSQL statement, lock, and idle
   transaction timeouts. Change them through the documented `DB_*_TIMEOUT_MS`
