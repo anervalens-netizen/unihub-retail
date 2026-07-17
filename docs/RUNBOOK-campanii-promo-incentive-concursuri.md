@@ -106,6 +106,12 @@ regula este completă și rezultatul nu devine financiar fail-open. Orice
 inconsistență trebuie raportată fără a expune bonuri, agenți sau valori
 comerciale în log.
 
+Verificarea read-only a raportului detaliat ERP din `Setări -> Importuri` nu
+înlocuiește importul POS și nu certifică Promo/Incentive. Ea limitează calculele
+Retail la 1-cutoff-ul din `ZileTrecute` și poate reconcilia totalurile Focus
+prezente în raport; valorile Promo/Incentive rămân informative deoarece fișierul
+agregat nu conține coduri de produs, identitatea bonului și unități promo.
+
 ## Concursuri
 
 Concursurile sunt config-driven și scoped server-side. Configurația definește:

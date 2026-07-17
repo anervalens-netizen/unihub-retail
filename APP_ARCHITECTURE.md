@@ -72,7 +72,7 @@ flowchart LR
 | Focus | Incentive, Promo, Concurs, Folii premium, produse focus |
 | Agenti | overview agenti, stabilitate, miscari, Grile, analiza si evaluare |
 | Management | `Manageri`, `Calculator Target`, `Salarii`, `P&L` |
-| Setari | importuri vanzari, exporturi configurabile, setari aplicatie si erori |
+| Setari | importuri vanzari, verificare ERP read-only, exporturi configurabile, setari aplicatie si erori |
 
 Navigatia principala ramane plata: sidebar-ul contine doar meniurile principale.
 Subtaburile Management sunt randate in interiorul ecranului Management, cu
@@ -160,6 +160,15 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   retry, iar checkpointurile incerte blocheaza reluarea automata pana la
   verificare manuala.
 - Import vanzari si refresh reporting agregat.
+- Setari -> Importuri permite verificarea ocazionala, read-only, a raportului
+  detaliat ERP `.xls`/`.xlsx`. Cutoff-ul este citit din `ZileTrecute`, iar
+  toate valorile comparabile sunt recalculate strict pentru intervalul
+  1-cutoff, chiar daca snapshotul lunar Retail contine deja zile ulterioare.
+  Verificarea compara acoperirea magazinelor si agentilor, targetul, vanzarile,
+  cantitatile, bonurile si categoriile Focus, fara sa pastreze fisierul si fara
+  sa modifice snapshotul. Valorile Promo/Incentive sunt afisate separat ca
+  informatie Retail: raportul agregat nu contine codurile, identitatea bonului
+  si unitatile promo necesare unei reconcilieri independente.
 - Setari -> Importuri permite si incarcarea raportului POS de promo al firmei:
   administratorul selecteaza luna si data cutoff, iar aplicatia valideaza foaia
   `AccesoriPromoLunar` (SiteCode, Cod, Promo Luna Curenta), pastreaza fisierul

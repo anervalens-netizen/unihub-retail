@@ -224,6 +224,7 @@ async def _load_dashboard_campaign_context(
     agent: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
+    cutoff_date: date | None = None,
 ) -> DashboardCampaignContext:
     """Load and calculate campaign data once for all dashboard projections."""
     config, config_error = load_special_cards_config()
@@ -234,6 +235,26 @@ async def _load_dashboard_campaign_context(
     if promotion_error is None:
         promotion_error = promotion_list_error
     incentive_campaign = await get_incentive_campaign(conn, month)
+
+    if cutoff_date is not None:
+        selected_key = (
+            promotion_definition.get("key")
+            if promotion_definition is not None
+            else None
+        )
+        promotion_definitions = [
+            {**definition, "end_date": min(definition["end_date"], cutoff_date)}
+            for definition in promotion_definitions
+            if definition["start_date"] <= cutoff_date
+        ]
+        promotion_definition = next(
+            (
+                definition
+                for definition in promotion_definitions
+                if definition.get("key") == selected_key
+            ),
+            None,
+        )
 
     promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]] = []
     promo_excluded_units: dict[tuple[str, str, str], int] = {}
@@ -277,10 +298,14 @@ async def _get_store_incentive_multipliers(
     site_code: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
+    cutoff_date: date | None = None,
 ) -> tuple[dict[str, float], dict[str, float | None]]:
     """Returns (multipliers, achievements) keyed by site_code."""
+    base_params: list[Any] = [month]
+    if cutoff_date is not None:
+        base_params.append(cutoff_date)
     params, positions = build_scoped_params(
-        [month],
+        base_params,
         firma=firma,
         regional=regional,
         asm=asm,
@@ -295,10 +320,31 @@ async def _get_store_incentive_multipliers(
         month_alias="ram.import_month",
         month_position=1,
     )
-    clauses = ["ram.import_month = $1"] + query_clauses
+    clauses = ["ram.import_month = $1"]
+    if cutoff_date is not None:
+        clauses.append("ram.sale_date <= $2")
+    clauses.extend(query_clauses)
 
-    meta_row = await conn.fetchrow(
-        """
+    if cutoff_date is not None:
+        meta_row = await conn.fetchrow(
+            """
+            SELECT
+                false AS is_final,
+                EXTRACT(DAY FROM MAX(sale_date))::INT AS last_sale_day,
+                EXTRACT(DAY FROM (
+                    date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
+                    + INTERVAL '1 month - 1 day'
+                ))::INT AS days_in_month
+            FROM reporting_item_day
+            WHERE import_month = $1
+              AND sale_date <= $2
+            """,
+            month,
+            cutoff_date,
+        )
+    else:
+        meta_row = await conn.fetchrow(
+            """
         SELECT
             COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
             EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
@@ -313,9 +359,9 @@ async def _get_store_incentive_multipliers(
             WHERE import_month = $1
         ) rid ON true
         WHERE snap.import_month = $1
-        """,
-        month,
-    )
+            """,
+            month,
+        )
     if meta_row and not meta_row["is_final"] and meta_row["last_sale_day"]:
         last_day = int(meta_row["last_sale_day"])
         days_in_month = int(meta_row["days_in_month"] or last_day)
@@ -323,13 +369,14 @@ async def _get_store_incentive_multipliers(
     else:
         forecast_factor = 1.0
 
+    source_table = "reporting_agent_day" if cutoff_date is not None else "reporting_agent_month"
     rows = await conn.fetch(
         f"""
         SELECT
             ram.site_code,
             COALESCE(SUM(ram.total_sales), 0) AS store_sales,
             COALESCE(MAX(st.target_value), 0) AS target
-        FROM reporting_agent_month ram
+        FROM {source_table} ram
         {_scope_join(current_scope, "ram")}
         LEFT JOIN store_targets st
             ON st.site_code = ram.site_code AND st.import_month = $1
@@ -1716,6 +1763,7 @@ async def _fetch_promo_incentive_summary(
     current_scope: bool = False,
     include_closed_stores: bool = False,
     campaign_context: DashboardCampaignContext | None = None,
+    cutoff_date: date | None = None,
 ) -> PromoIncentiveSummary:
     if campaign_context is None:
         campaign_context = await _load_dashboard_campaign_context(
@@ -1728,6 +1776,7 @@ async def _fetch_promo_incentive_summary(
             agent,
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
+            cutoff_date=cutoff_date,
         )
     promotion_definition = campaign_context.promotion_definition
     promotion_error = campaign_context.promotion_error
@@ -1800,6 +1849,15 @@ async def _fetch_promo_incentive_summary(
 
     if incentive_campaign is not None:
         campaign_periods = incentive_campaign.get("periods") or []
+        if cutoff_date is not None:
+            campaign_periods = [
+                {
+                    **period,
+                    "valid_to": min(period["valid_to"], cutoff_date),
+                }
+                for period in campaign_periods
+                if period["valid_from"] <= cutoff_date
+            ]
         incentive_codes = incentive_campaign.get("item_codes") or list(
             incentive_campaign.get("reward_map", {}).keys()
         )
@@ -1808,6 +1866,8 @@ async def _fetch_promo_incentive_summary(
             month_start = date(year, month_number, 1)
             month_end = date(year + (month_number == 12), 1 if month_number == 12 else month_number + 1, 1) - timedelta(days=1)
             campaign_periods = [{"valid_from": month_start, "valid_to": month_end}]
+            if cutoff_date is not None:
+                campaign_periods[0]["valid_to"] = min(month_end, cutoff_date)
         if incentive_codes:
             period_excluded_si: dict[tuple[str, str, str, str], int] = {}
             if len(campaign_periods) <= 1:
@@ -1845,8 +1905,11 @@ async def _fetch_promo_incentive_summary(
                             key = (period["valid_from"].isoformat(), period["valid_to"].isoformat(), sc, code)
                             period_excluded_si[key] = period_excluded_si.get(key, 0) + units
 
+            incentive_base_params: list[Any] = [month]
+            if cutoff_date is not None:
+                incentive_base_params.append(cutoff_date)
             incentive_params, incentive_positions = build_scoped_params(
-                [month],
+                incentive_base_params,
                 firma=firma,
                 regional=regional,
                 asm=asm,
@@ -1856,6 +1919,8 @@ async def _fetch_promo_incentive_summary(
             incentive_clauses = [
                 "agg.import_month = $1",
             ]
+            if cutoff_date is not None:
+                incentive_clauses.append("agg.sale_date <= $2")
             incentive_query_clauses = _scope_clauses(
                 incentive_positions,
                 current_scope=current_scope,
@@ -1888,6 +1953,7 @@ async def _fetch_promo_incentive_summary(
                 site_code,
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
+                cutoff_date=cutoff_date,
             )
             def eligible_qty(row: Any) -> int:
                 row_valid_from = row.get("valid_from") or campaign_periods[0]["valid_from"]
@@ -1924,40 +1990,52 @@ async def _fetch_promo_incentive_summary(
             incentive_qualified_agents = 0
             incentive_qualified_agents_full = 0
             incentive_qualified_agents_half = 0
+            qualified_agent_source = (
+                "reporting_agent_day" if cutoff_date is not None else "reporting_agent_month"
+            )
+            qualified_agent_cutoff = "AND sale_date <= $3" if cutoff_date is not None else ""
+            qualified_agent_params = (
+                lambda codes: [month, codes, cutoff_date]
+                if cutoff_date is not None
+                else [month, codes]
+            )
             if qualified_full_store_codes:
                 full_row = await conn.fetchrow(
-                    """
+                    f"""
                     SELECT COUNT(DISTINCT agent) AS cnt
-                    FROM reporting_agent_month
+                    FROM {qualified_agent_source}
                     WHERE import_month = $1
                       AND site_code = ANY($2)
                       AND agent IS NOT NULL AND agent != '-'
+                      {qualified_agent_cutoff}
                     """,
-                    month, qualified_full_store_codes,
+                    *qualified_agent_params(qualified_full_store_codes),
                 )
                 incentive_qualified_agents_full = int(full_row["cnt"] or 0) if full_row else 0
             if qualified_half_store_codes:
                 half_row = await conn.fetchrow(
-                    """
+                    f"""
                     SELECT COUNT(DISTINCT agent) AS cnt
-                    FROM reporting_agent_month
+                    FROM {qualified_agent_source}
                     WHERE import_month = $1
                       AND site_code = ANY($2)
                       AND agent IS NOT NULL AND agent != '-'
+                      {qualified_agent_cutoff}
                     """,
-                    month, qualified_half_store_codes,
+                    *qualified_agent_params(qualified_half_store_codes),
                 )
                 incentive_qualified_agents_half = int(half_row["cnt"] or 0) if half_row else 0
             if qualified_store_codes:
                 aq_row = await conn.fetchrow(
-                    """
+                    f"""
                     SELECT COUNT(DISTINCT agent) AS cnt
-                    FROM reporting_agent_month
+                    FROM {qualified_agent_source}
                     WHERE import_month = $1
                       AND site_code = ANY($2)
                       AND agent IS NOT NULL AND agent != '-'
+                      {qualified_agent_cutoff}
                     """,
-                    month, qualified_store_codes,
+                    *qualified_agent_params(qualified_store_codes),
                 )
                 incentive_qualified_agents = int(aq_row["cnt"] or 0) if aq_row else 0
 

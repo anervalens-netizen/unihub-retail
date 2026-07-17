@@ -110,6 +110,13 @@ Fluxul standard al importului de vânzări:
 5. înlocuiește snapshotul și reconstruiește `reporting_*` în aceeași operație;
 6. marchează snapshotul `completed` sau `failed`, fără stare parțială.
 
+În `Setări -> Importuri`, raportul detaliat ERP poate fi încărcat și pentru o
+verificare ocazională care nu importă și nu persistă fișierul. Aplicația citește
+cutoff-ul din raport și compară Retail strict de la ziua 1 până la acea dată;
+un raport 1–16 rămâne comparat cu 1–16 chiar dacă snapshotul curent conține deja
+ziua 17. Promo și Incentive sunt afișate informativ, dar nu sunt declarate
+reconciliate deoarece raportul agregat nu include granularitatea necesară.
+
 Rândurile identice în coloanele disponibile nu sunt o cheie de unicitate:
 exportul nu are ID stabil de linie, iar mai multe bucăți identice de pe același
 bon pot apărea separat. Importul păstrează multiplicitatea; idempotency este

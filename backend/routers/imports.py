@@ -6,8 +6,11 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from db.connection import get_pool
 from models import ImportHistoryEntry, ImportJobStatus, ImportResponse, PromoActualImportResponse
+from repositories.erp_reconciliation import ErpReconciliationRepository
 from repositories.imports import ImportsRepository
 from rate_limits import SALES_IMPORT_UPLOAD_LIMIT, rate_limit
+from schemas.erp_reconciliation import ErpReconciliationResponse
+from services.erp_reconciliation import ErpReconciliationService
 from services.imports import ImportsService
 
 router = APIRouter(prefix="/api/import", tags=["imports"])
@@ -16,6 +19,11 @@ async def get_imports_service() -> ImportsService:
     pool = await get_pool()
     repo = ImportsRepository(pool)
     return ImportsService(repo, pool)
+
+
+async def get_erp_reconciliation_service() -> ErpReconciliationService:
+    pool = await get_pool()
+    return ErpReconciliationService(ErpReconciliationRepository(pool), pool)
 
 
 @router.post("/sales", response_model=ImportJobStatus)
@@ -40,6 +48,16 @@ async def upload_promo_actuals_file(
         import_month=import_month,
         cutoff_date=cutoff_date,
     )
+
+
+@router.post("/erp-reconciliation", response_model=ErpReconciliationResponse)
+async def reconcile_erp_report_file(
+    import_month: str = Form(...),
+    file: UploadFile = File(...),
+    _rate_limit: None = Depends(rate_limit(SALES_IMPORT_UPLOAD_LIMIT)),
+    svc: ErpReconciliationService = Depends(get_erp_reconciliation_service),
+) -> ErpReconciliationResponse:
+    return await svc.reconcile(file=file, import_month=import_month)
 
 
 @router.get("/jobs/{job_id}", response_model=ImportJobStatus)
