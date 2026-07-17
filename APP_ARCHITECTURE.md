@@ -173,9 +173,14 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   inchise ca `failed`, fara stergerea istoricului de audit; restartul workerului
   reconciliaza imediat lease-urile intrerupte. Inainte de inlocuirea
   snapshotului, validatorul respinge valori numerice invalide, identificatori
-  lipsa, duplicate si metadate contradictorii, apoi persista in
+  lipsa, antete duplicate si metadate contradictorii, apoi persista in
   `import_snapshots.coverage_report` coverage-ul si diff-ul agregat fata de
-  master data activa si snapshotul anterior.
+  master data activa si snapshotul anterior. Rândurile de vânzare identice în
+  coloanele vizibile își păstrează multiplicitatea: sursa nu oferă o identitate
+  stabilă de linie, iar două rânduri egale pot reprezenta două unități de pe
+  același bon. Idempotency se aplică fișierului și snapshotului lunar, nu
+  faptelor interne; contractul canonic este în
+  `docs/adr/004-sales-row-multiplicity.md`.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
   builder Excel ghidat prin `Dataset`, `Perioada si scope`, `Coloane` si
   `Preview si export`, controlat server-side, cu doua moduri: `Tabel detaliat` pentru

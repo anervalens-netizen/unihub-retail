@@ -16,6 +16,12 @@ inițiale rămân păstrate ca istoric al riscului identificat pe `aba3fa0`.
 > pre-cutover. Aceasta actualizare prevaleaza peste descrierile istorice SQLite
 > pastrate mai jos pentru trasabilitatea auditului.
 
+> Corecție 2026-07-17 pentru M-13: exportul de vânzări nu conține un ID unic de
+> linie, iar rândurile egale pot reprezenta unități distincte vândute pe același
+> bon. Respingerea introdusă pe egalitatea coloanelor vizibile a fost o regresie,
+> nu un control valid de unicitate. ADR-004 este decizia canonică și prevalează
+> peste recomandarea istorică M-13 păstrată mai jos pentru trasabilitate.
+
 ## Verdict executiv
 
 Cele patru riscuri critice inițiale sunt închise în codul `v2.0.1`:
@@ -105,9 +111,9 @@ reziduale și nu sunt prezentate drept remediate.
 | M-10 | **Deschis** | `backend/services/imports.py` limitează uploadul comprimat, dar nu are încă buget complet pentru membri ZIP/decompresie/celule. |
 | M-11 | **Închis în cod** | `load_sales_dataframe` respinge valori monetare/cantități nefinite, fracționare sau out-of-range; `test_load_sales_dataframe_rejects_invalid_numeric_values`. |
 | M-12 | **Închis în cod** | Identificatorii obligatorii, inclusiv bonul pentru rândurile incluse, sunt validați strict în `load_sales_dataframe`; `test_load_sales_dataframe_rejects_missing_required_identifier`. |
-| M-13 | **Închis în cod** | Duplicatele de header și de rând sunt respinse înainte de staging; `test_load_sales_dataframe_rejects_duplicate_rows` și `test_load_sales_dataframe_rejects_duplicate_raw_excel_headers`. |
+| M-13 | **Reclasificat și închis prin ADR-004** | Antetele duplicate sunt respinse, dar rândurile identice își păstrează multiplicitatea deoarece sursa nu oferă identitate unică de linie; `test_load_sales_dataframe_preserves_identical_sales_rows`, `test_identical_rows_are_preserved_as_separate_sales_facts` și `docs/adr/004-sales-row-multiplicity.md`. |
 | M-14 | **Închis în cod** | Metadatele multiple pentru același `SiteCode` produc eroare în `load_sales_dataframe`; `test_load_sales_dataframe_rejects_conflicting_store_metadata`. |
-| M-15 | **Închis în cod pentru aceeași lună** | Lease-ul PostgreSQL și retry-ul concurent sunt verificate în `backend/tests/test_import_reservations.py`; fișierul complet, 90%, o singură firmă, conflictele și duplicatele sunt acoperite în `test_import_master_data_safety.py`; migrarea 026 păstrează auditul coverage. |
+| M-15 | **Închis în cod pentru aceeași lună** | Lease-ul PostgreSQL și retry-ul concurent sunt verificate în `backend/tests/test_import_reservations.py`; fișierul complet, 90%, o singură firmă, conflictele și multiplicitatea rândurilor identice sunt acoperite în `test_import_master_data_safety.py`; migrarea 026 păstrează auditul coverage. |
 | M-16 | **Deschis** | Payloadul de import Excel circulă încă prin mecanismul existent din `backend/services/jobs.py` și `backend/worker.py`; spool/object storage rămâne P1. |
 | M-17 | **Deschis** | `backend/worker.py::WorkerSettings.max_jobs` rămâne 1; serializarea protejează resursele, dar este un bottleneck. |
 | M-18 | **Deschis** | Pașii derivați din `backend/worker.py::process_sales_import_job` nu au încă outbox/retry durabil complet. |
@@ -716,33 +722,39 @@ niciodată agregat.
 
 ---
 
-### M-13 — Rândurile duplicate de vânzări sunt importate și numărate de două ori
+### M-13 — Egalitatea rândurilor a fost confundată cu identitatea vânzării
 **Severitate:** Major
 **Categorie:** Corectitudine / idempotency
 **Locație exactă:** `backend/db/schema_v2.sql:102-120`, `backend/services/importer.py:261-373`
 
-**Ce este greșit**
+**Constatarea inițială și corecția din 2026-07-17**
 
-`sales_transactions` are doar cheia surrogate `id`. Importerul copiază fiecare rând
-din DataFrame în tabel, fără hash de rând, cheie de business sau raport de
-duplicate. Înlocuirea lunii protejează retry-ul fișierului, nu duplicatele interne
-din același fișier.
+Constatarea inițială a presupus că egalitatea coloanelor vizibile definește o
+linie unică și a recomandat respingerea sau deduplicarea. Sursa nu furnizează
+însă un ID de linie, serial sau poziție de bon. Mai multe unități identice pot
+apărea ca rânduri complet egale, astfel încât un hash construit din coloanele
+actuale nu este o cheie de business.
 
 **Impact concret**
 
-Un export care conține dubluri dublează vânzarea, cantitatea și KPI-urile. După
-rebuild, toate rapoartele devin consecvent greșite.
+Respingerea sau deduplicarea acestor rânduri poate elimina vânzări reale și
+subraporta cantitatea, valoarea și KPI-urile. Reconcilierea snapshoturilor
+cumulative din 2026-07-17 a confirmat că multiplicitățile identice sunt stabile
+în contractul sursă.
 
-**Fix recomandat**
+**Decizie acceptată**
 
-Definește contractul de unicitate al rândului sursă și persistă un `source_row_hash`
-sau un identificator de tranzacție. Detectează duplicate exacte și conflicte,
-raportează-le și blochează importul peste un prag aprobat.
+ADR-004 cere păstrarea fiecărui rând importabil ca fapt separat. Antetele
+duplicate și metadatele contradictorii rămân erori. Retry-ul este deduplicat
+prin hashul fișierului în coadă, iar luna este înlocuită atomic; niciunul dintre
+aceste controale nu reduce multiplicitatea internă.
 
 **Verificare obligatorie**
 
-Teste cu duplicate exacte și duplicate cu valoare diferită. Primul trebuie
-deduplicat/respins explicit; al doilea trebuie tratat drept conflict.
+Testele trebuie să demonstreze că două rânduri identice sunt parsate și
+persistate separat, cu suma corectă a cantității și valorii. O regulă de
+unicitate la nivel de linie poate fi introdusă numai după ce sursa furnizează un
+identificator stabil și ADR-004 este supersedat explicit.
 
 ---
 

@@ -3,11 +3,13 @@ from __future__ import annotations
 import os
 from datetime import date
 from io import BytesIO
+from unittest.mock import AsyncMock
 
 import asyncpg
 import pandas as pd
 import pytest
 
+import services.importer as importer
 from db.connection import close_db_pool, get_pool
 from repositories.stores import StoresRepository
 from services.importer import (
@@ -287,31 +289,55 @@ async def test_conflicting_store_metadata_is_rejected_before_any_database_write(
         await close_db_pool()
 
 
-async def test_duplicate_rows_are_rejected_before_any_database_write() -> None:
+async def test_identical_rows_are_preserved_as_separate_sales_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     pool = await get_pool()
-    site_code = "P0DUPLICATE-01"
-    filename = "synthetic-p0-duplicate.xlsx"
+    site_code = "P0MULTIPLICITY-01"
+    filename = "synthetic-p0-multiplicity.xlsx"
     row = sales_frame([site_code])
+    row["Data"] = date(2098, 4, 2)
     frame = pd.concat([row, row], ignore_index=True)
+    monkeypatch.setattr(importer, "rebuild_reporting_month", AsyncMock())
+    monkeypatch.setattr(
+        importer,
+        "rebuild_agent_lifecycle_reporting",
+        AsyncMock(),
+    )
     try:
         async with pool.acquire() as conn:
-            await seed_stores(conn, [site_code])
-            await assert_rejected_workbook_has_no_database_effects(
-                conn,
-                frame,
-                filename=filename,
-                site_code=site_code,
-                error_pattern="duplicate",
+            await conn.execute(
+                "DELETE FROM import_snapshots WHERE import_month = '2098-04'"
             )
+            await seed_stores(conn, [site_code])
+            result = await import_sales_file(
+                conn, sales_workbook(frame), filename
+            )
+            stored = await conn.fetchrow(
+                """
+                SELECT COUNT(*) AS row_count,
+                       SUM(quantity) AS total_quantity,
+                       SUM(total_value) AS total_value
+                FROM sales_transactions
+                WHERE snapshot_id = $1
+                """,
+                result.snapshot_id,
+            )
+
+        assert result.rows_in_file == 2
+        assert result.rows_imported == 2
+        assert stored is not None
+        assert stored["row_count"] == 2
+        assert stored["total_quantity"] == 2
+        assert stored["total_value"] == 20
     finally:
         async with pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM sales_transactions WHERE site_code = $1", site_code
             )
             await conn.execute(
-                "DELETE FROM import_snapshots WHERE filename IN ($1, $2)",
+                "DELETE FROM import_snapshots WHERE filename = $1",
                 filename,
-                f"existing-{filename}",
             )
             await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
         await close_db_pool()

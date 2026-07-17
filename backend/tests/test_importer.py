@@ -108,11 +108,14 @@ def test_load_sales_dataframe_rejects_invalid_numeric_values(
         load_sales_dataframe(content)
 
 
-def test_load_sales_dataframe_rejects_duplicate_rows() -> None:
+def test_load_sales_dataframe_preserves_identical_sales_rows() -> None:
     row = sales_row()
 
-    with pytest.raises(ValueError, match="duplicate"):
-        load_sales_dataframe(sales_workbook([row, row]))
+    frame = load_sales_dataframe(sales_workbook([row, row]))
+
+    assert len(frame) == 2
+    assert frame.loc[0, SALES_COLUMNS].equals(frame.loc[1, SALES_COLUMNS])
+    assert frame["Cantitate"].sum() == 4
 
 
 def test_load_sales_dataframe_rejects_duplicate_raw_excel_headers() -> None:
