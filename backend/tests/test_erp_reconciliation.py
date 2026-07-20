@@ -11,6 +11,7 @@ from schemas.campaigns import PromoIncentiveSummary
 from services.erp_reconciliation import (
     AGENT_REQUIRED_COLUMNS,
     COMMON_METRIC_COLUMNS,
+    STORE_AGENT_DERIVED_METRIC_COLUMNS,
     STORE_REQUIRED_COLUMNS,
     ErpReportValidationError,
     parse_erp_report,
@@ -18,12 +19,26 @@ from services.erp_reconciliation import (
 )
 
 
-def workbook_bytes(*, agent_bon2: int = 2, days_elapsed: int = 16) -> bytes:
+def workbook_bytes(
+    *,
+    agent_bon2: int = 2,
+    days_elapsed: int = 16,
+    include_store_derived_metrics: bool = False,
+    store_focus_quantity: int = 3,
+) -> bytes:
     workbook = Workbook()
     workbook.remove(workbook.active)
     stores = workbook.create_sheet("Locatii")
-    stores.append([None] * len(STORE_REQUIRED_COLUMNS))
-    stores.append(list(STORE_REQUIRED_COLUMNS))
+    store_columns = (
+        *STORE_REQUIRED_COLUMNS,
+        *(
+            STORE_AGENT_DERIVED_METRIC_COLUMNS
+            if include_store_derived_metrics
+            else ()
+        ),
+    )
+    stores.append([None] * len(store_columns))
+    stores.append(list(store_columns))
     store_values = {
         "Firma": "MobiUp",
         "CodLocatie": "S1",
@@ -33,7 +48,7 @@ def workbook_bytes(*, agent_bon2: int = 2, days_elapsed: int = 16) -> bytes:
         "AccQttyRealizat": 10,
         "NrBonuri": 4,
         "NrBon2Acc": agent_bon2,
-        "AccFocusQtty": 3,
+        "AccFocusQtty": store_focus_quantity,
         "Audio": 1,
         "Battery": 1,
         "Suporti": 1,
@@ -46,14 +61,14 @@ def workbook_bytes(*, agent_bon2: int = 2, days_elapsed: int = 16) -> bytes:
         "ZileTrecute": days_elapsed,
         "ZileRamase": 31 - days_elapsed,
     }
-    stores.append([store_values[column] for column in STORE_REQUIRED_COLUMNS])
+    stores.append([store_values[column] for column in store_columns])
     stores.append(
         [
             "MobiUp" if column == "Firma" else
             "TR1" if column == "CodLocatie" else
             "TR Test" if column == "Locatie" else
             0
-            for column in STORE_REQUIRED_COLUMNS
+            for column in store_columns
         ]
     )
 
@@ -66,6 +81,7 @@ def workbook_bytes(*, agent_bon2: int = 2, days_elapsed: int = 16) -> bytes:
         "Locatie": "MAGAZIN TEST",
         "Agent": "AGENT1",
         **{column: store_values[column] for column in COMMON_METRIC_COLUMNS},
+        "AccFocusQtty": 3,
     }
     agents.append([agent_values[column] for column in AGENT_REQUIRED_COLUMNS])
     output = BytesIO()
@@ -132,11 +148,27 @@ def test_parse_erp_report_uses_detail_sheets_and_excludes_tr() -> None:
     assert list(parsed.stores) == [("S1",)]
     assert list(parsed.agents) == [("S1", "AGENT1")]
     assert parsed.stores[("S1",)]["AccValRealizat"] == Decimal("500")
+    assert parsed.stores[("S1",)]["AccFocusQtty"] == Decimal("3")
+    assert parsed.stores[("S1",)]["FoliiQtty"] == Decimal("4")
 
 
 def test_parse_erp_report_rejects_month_day_mismatch() -> None:
     with pytest.raises(ErpReportValidationError, match="luna 2026-06 are 30"):
         parse_erp_report(workbook_bytes(), "2026-06")
+
+
+def test_parse_erp_report_validates_optional_store_metrics_when_present() -> None:
+    with pytest.raises(
+        ErpReportValidationError,
+        match="Foile Locatii si Agenti nu au acelasi total pentru AccFocusQtty",
+    ):
+        parse_erp_report(
+            workbook_bytes(
+                include_store_derived_metrics=True,
+                store_focus_quantity=4,
+            ),
+            "2026-07",
+        )
 
 
 def test_reconciliation_explains_returns_without_failing() -> None:

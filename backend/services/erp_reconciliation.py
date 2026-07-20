@@ -35,11 +35,13 @@ MAX_RETURNED_ISSUES = 500
 
 STORE_IDENTITY_COLUMNS = ("Firma", "CodLocatie", "Locatie")
 AGENT_IDENTITY_COLUMNS = (*STORE_IDENTITY_COLUMNS, "Agent")
-COMMON_METRIC_COLUMNS = (
+STORE_BASE_METRIC_COLUMNS = (
     "AccValRealizat",
     "AccQttyRealizat",
     "NrBonuri",
     "NrBon2Acc",
+)
+STORE_AGENT_DERIVED_METRIC_COLUMNS = (
     "AccFocusQtty",
     "Audio",
     "Battery",
@@ -50,10 +52,14 @@ COMMON_METRIC_COLUMNS = (
     "Still&Protectie",
     "Incarcare&Transfer",
 )
+COMMON_METRIC_COLUMNS = (
+    *STORE_BASE_METRIC_COLUMNS,
+    *STORE_AGENT_DERIVED_METRIC_COLUMNS,
+)
 STORE_REQUIRED_COLUMNS = (
     *STORE_IDENTITY_COLUMNS,
     "AccValTarget",
-    *COMMON_METRIC_COLUMNS,
+    *STORE_BASE_METRIC_COLUMNS,
     "ZileLuna",
     "ZileTrecute",
     "ZileRamase",
@@ -194,12 +200,26 @@ def parse_erp_report(content: bytes, import_month: str) -> ParsedErpReport:
             "Raportul ERP nu poate fi citit ca fisier Excel"
         ) from exc
 
+    store_headers = {
+        _cell_text(value)
+        for value in raw_stores.iloc[1].tolist()
+        if _cell_text(value)
+    }
+    available_store_derived_metrics = tuple(
+        metric
+        for metric in STORE_AGENT_DERIVED_METRIC_COLUMNS
+        if metric in store_headers
+    )
     store_rows = _parse_sheet(
         raw_stores,
         sheet="Locatii",
         identity_columns=STORE_IDENTITY_COLUMNS,
         required_columns=STORE_REQUIRED_COLUMNS,
-        metric_columns=("AccValTarget", *COMMON_METRIC_COLUMNS),
+        metric_columns=(
+            "AccValTarget",
+            *STORE_BASE_METRIC_COLUMNS,
+            *available_store_derived_metrics,
+        ),
         key_columns=("CodLocatie",),
     )
     agent_rows = _parse_sheet(
@@ -210,6 +230,26 @@ def parse_erp_report(content: bytes, import_month: str) -> ParsedErpReport:
         metric_columns=COMMON_METRIC_COLUMNS,
         key_columns=("CodLocatie", "Agent"),
     )
+
+    missing_store_derived_metrics = tuple(
+        metric
+        for metric in STORE_AGENT_DERIVED_METRIC_COLUMNS
+        if metric not in available_store_derived_metrics
+    )
+    if missing_store_derived_metrics:
+        agent_metrics_by_store: dict[str, dict[str, Decimal]] = {}
+        for agent_row in agent_rows.values():
+            site_code = agent_row["CodLocatie"]
+            totals = agent_metrics_by_store.setdefault(
+                site_code,
+                {metric: Decimal(0) for metric in missing_store_derived_metrics},
+            )
+            for metric in missing_store_derived_metrics:
+                totals[metric] += agent_row[metric]
+        for (site_code,), store_row in store_rows.items():
+            totals = agent_metrics_by_store.get(site_code, {})
+            for metric in missing_store_derived_metrics:
+                store_row[metric] = totals.get(metric, Decimal(0))
 
     expected_days = calendar.monthrange(month_start.year, month_start.month)[1]
     day_values = {

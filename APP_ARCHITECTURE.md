@@ -174,7 +174,9 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   1-cutoff, chiar daca snapshotul lunar Retail contine deja zile ulterioare.
   Verificarea compara acoperirea magazinelor si agentilor, targetul, vanzarile,
   cantitatile, bonurile si categoriile Focus, fara sa pastreze fisierul si fara
-  sa modifice snapshotul. Valorile Promo/Incentive sunt afisate separat ca
+  sa modifice snapshotul. Daca foaia `Locatii` expune doar procentele Focus,
+  valorile absolute lipsa sunt agregate din foaia `Agenti` dupa `CodLocatie`.
+  Valorile Promo/Incentive sunt afisate separat ca
   informatie Retail: raportul agregat nu contine codurile, identitatea bonului
   si unitatile promo necesare unei reconcilieri independente.
 - Setari -> Importuri permite si incarcarea raportului POS de promo al firmei:
