@@ -112,6 +112,14 @@ Retail la 1-cutoff-ul din `ZileTrecute` și poate reconcilia totalurile Focus
 prezente în raport; valorile Promo/Incentive rămân informative deoarece fișierul
 agregat nu conține coduri de produs, identitatea bonului și unități promo.
 
+Raportul trebuie să conțină foile `Locatii` și `Agenti`. Unele versiuni ERP
+expun în `Locatii` numai procentele Focus; în acest caz Retail agregă valorile
+absolute `AccFocusQtty`, `Audio`, `Battery`, `Suporti`, `FoliiQtty`,
+`Folii Sticla`, `Folii TPU`, `Still&Protectie` și `Incarcare&Transfer` din
+`Agenti`, grupat după `CodLocatie`. Coloanele absolute prezente în `Locatii`
+rămân autoritative pentru validare și trebuie să aibă același total cu
+`Agenti`; o diferență oprește verificarea ca raport inconsistent.
+
 ## Concursuri
 
 Concursurile sunt config-driven și scoped server-side. Configurația definește:

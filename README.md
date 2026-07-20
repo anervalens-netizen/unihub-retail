@@ -114,7 +114,10 @@ Fluxul standard al importului de vânzări:
 verificare ocazională care nu importă și nu persistă fișierul. Aplicația citește
 cutoff-ul din raport și compară Retail strict de la ziua 1 până la acea dată;
 un raport 1–16 rămâne comparat cu 1–16 chiar dacă snapshotul curent conține deja
-ziua 17. Promo și Incentive sunt afișate informativ, dar nu sunt declarate
+ziua 17. În variantele ERP în care `Locatii` conține numai procentele Focus,
+valorile absolute lipsă sunt însumate din `Agenti` după `CodLocatie`. Dacă
+valorile absolute există în ambele foi, totalurile lor trebuie să coincidă.
+Promo și Incentive sunt afișate informativ, dar nu sunt declarate
 reconciliate deoarece raportul agregat nu include granularitatea necesară.
 
 Rândurile identice în coloanele disponibile nu sunt o cheie de unicitate:
