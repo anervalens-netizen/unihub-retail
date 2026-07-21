@@ -71,7 +71,7 @@ async def test_import_snapshot_reservation_is_atomic_and_recovers_stale() -> Non
             )
             statuses = await conn.fetch(
                 """
-                SELECT id, status
+                SELECT id, status, finished_at
                 FROM import_snapshots
                 WHERE import_month = $1
                 ORDER BY id
@@ -80,6 +80,8 @@ async def test_import_snapshot_reservation_is_atomic_and_recovers_stale() -> Non
             )
         assert replacement_id is not None
         assert [row["status"] for row in statuses] == ["failed", "processing"]
+        assert statuses[0]["finished_at"] is not None
+        assert statuses[1]["finished_at"] is None
     finally:
         async with pool.acquire() as conn:
             await conn.execute(
@@ -117,7 +119,7 @@ async def test_worker_restart_reconciliation_allows_immediate_retry() -> None:
             )
             rows = await conn.fetch(
                 """
-                SELECT id, status, error_message
+                SELECT id, status, error_message, finished_at
                 FROM import_snapshots
                 WHERE import_month = $1
                 ORDER BY id
@@ -128,6 +130,8 @@ async def test_worker_restart_reconciliation_allows_immediate_retry() -> None:
         assert replacement_id != interrupted_id
         assert [row["status"] for row in rows] == ["failed", "processing"]
         assert "restartul workerului" in rows[0]["error_message"]
+        assert rows[0]["finished_at"] is not None
+        assert rows[1]["finished_at"] is None
     finally:
         async with pool.acquire() as conn:
             await conn.execute(

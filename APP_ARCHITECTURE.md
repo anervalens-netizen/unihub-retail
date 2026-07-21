@@ -51,6 +51,10 @@ Pool-ul PostgreSQL seteaza server-side `statement_timeout=120s`,
 `lock_timeout=10s` si `idle_in_transaction_session_timeout=60s` implicit.
 Valorile sunt configurabile prin `.env`; `command_timeout` asyncpg este aliniat
 cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
+Fan-out-ul Dashboard are si un buget global per proces, configurabil prin
+`DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY` (implicit 6 si limitat automat la
+`DB_POOL_MAX_SIZE - 2`). Astfel raman conexiuni pentru readiness si requesturi
+operationale chiar cand ruleaza simultan mai multe batch-uri istorice.
 
 Schema PostgreSQL este administrata exclusiv prin runnerul one-shot
 `unihub-retail-migrate.service`. Baseline-ul `schema_v2.sql` este inghetat,
@@ -210,6 +214,10 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   același bon. Idempotency se aplică fișierului și snapshotului lunar, nu
   faptelor interne; contractul canonic este în
   `docs/adr/004-sales-row-multiplicity.md`.
+  Auditul snapshotului pastreaza separat `created_at` si `finished_at`; durata
+  este afisata numai pentru importurile noi care au ambele capete reale, fara
+  backfill care ar fabrica durate pentru istoricul vechi. COPY-ul tranzactiilor
+  consuma lazy randurile DataFrame-ului, fara o a doua lista completa in memorie.
 - Exporturi si rapoarte pentru management. `Setari -> Exporturi` include un
   builder Excel ghidat prin `Dataset`, `Perioada si scope`, `Coloane` si
   `Preview si export`, controlat server-side, cu doua moduri: `Tabel detaliat` pentru
@@ -226,6 +234,12 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   zilnic genereaza workbook cu foi separate `General`, `ASM`, `Magazine` si
   `Agenti`, aliniaza valorile pe ziua lunii, adauga delta intre doua luni
   selectate si pune graficul line doar pe foaia `General`.
+  Metricile oficiale Promo/Incentive nu sunt disponibile in modul zilnic:
+  actualul POS corectiv este cumulativ la cutoff si nu poate fi repartizat pe
+  zile fara a inventa date. `site_code` domina firma/RM/ASM in scope istoric,
+  iar randurile lunare fara atribuire de agent nu sunt amestecate in exportul
+  pe agent. Query-ul de itemi activeaza CTE-urile campaniei numai cand coloanele
+  cerute au nevoie de ele.
 
 Filtrele principale sunt gestionate in `App.tsx` si persistate in
 `localStorage` separat pe zone: Hub, Focus si Agenti. Hub si Focus pot porni
@@ -238,7 +252,10 @@ Frontend-ul foloseste lazy-loading pe ecranele principale (`Hub`, `Focus`,
 `Agenti`, `Management`, `Setari`). Recharts este izolat in chunk-ul `charts`,
 dar nu este preincarcat din `index.html`; se descarca la primul ecran cu
 grafice. TanStack Query are default `staleTime=60s` si `gcTime=10min`, iar
-polling-ul pentru operatii Grile ramane explicit per-query.
+polling-ul pentru operatii Grile ramane explicit per-query. Query-urile grele
+propaga `AbortSignal` pana la `fetch`, astfel incat schimbarea filtrelor sau
+demontarea ecranului opreste requesturile devenite inutile. Vizite este chunk
+lazy separat si nu porneste in paralel cu payload-ul curent complet din Hub.
 Aplicatia este invelita la radacina in `ErrorBoundary`; fallback-ul nu expune
 stack trace in UI si trimite erorile catre GlitchTip/Sentry. Ecranul Management
 are si un boundary local, iar erorile de preload ale chunk-urilor lazy declanseaza
@@ -248,7 +265,9 @@ ramane lizibila, iar indicatorul de sortare este afisat sub text; tabelele foart
 late din P&L si AI Forecast sunt inlocuite cu carduri sintetice pe mobil.
 PWA precache exclude logo-urile mari nefolosite in UI (`logo-horizontal`,
 `logo-inverted`, `logo-mark`); sidebar-ul foloseste `favicon-64.png`, iar
-imaginile autentificate din Vizite folosesc lazy loading.
+imaginile autentificate din Vizite folosesc lazy loading. Assetele Vite cu hash
+folosesc runtime `CacheFirst`; raspunsurile API autentificate nu intra in acest
+cache.
 Calitatea frontend are doua praguri: `npm run lint` ruleaza ESLint flat config
 cu React Hooks si TypeScript rules, iar `npm run typecheck:strict` aplica
 strict TypeScript pe subseturi curate. `npm run typecheck` ramane pragul
@@ -327,8 +346,11 @@ dedicata pentru includerea lor. In subtabul Istoric, utilizatorul poate bifa
 mai multe luni; dashboard-ul combina raspunsurile lunare existente si
 recalculeaza totaluri, procente, mixuri, tabele si exporturi pentru selectia
 agregata. Selectia este limitata la 12 luni si foloseste un singur request
-`POST /api/dashboard/all-batch`; serverul proceseaza cel mult doua luni
-concomitent, in ordinea ceruta.
+`POST /api/dashboard/history-details-batch`; proiectia nu calculeaza familiile
+promo, speciale, premium si daily-last-year pe care view-ul nu le afiseaza.
+Serverul proceseaza cel mult doua luni concomitent, in ordinea ceruta.
+Endpointul complet `/api/dashboard/all-batch` ramane disponibil pentru
+consumatorii care cer explicit toate componentele.
 
 Cardul Hub `Comparatie perioade` foloseste o cohorta like-for-like: magazinele
 cu vanzari Retail in luna analizata sunt considerate deschise pentru acel card,
@@ -487,6 +509,12 @@ operationale din `data/`, care sunt gitignored pe server:
   activa, deci ingestul zilnic poate continua fara sa suprascrie corectia.
 - `data/contests.json` — concursuri config-driven, cu perioada, scope,
   reguli de punctaj si premii.
+
+Evaluatorul comun `services/promotion_evaluation.py` clasifica sursa POS
+corectiva drept `complete`, `partial` sau `invalid`. Promo partial ramane
+informativ, dar o sursa configurata invalida nu este convertita in zero, iar
+orice promotie activa incompleta blocheaza fail-closed valoarea oficiala
+Incentive si exporturile dependente.
 
 Pentru campaniile iunie 2026, regulile promo comune sunt in
 `services/promo_copurchase.py`. Helperul acopera:
@@ -705,6 +733,10 @@ extinderea formulei.
 - In Retail, filtrarea si gruparea din meniul Vizite folosesc mapping-ul curent
   `stores.site_code -> firma/regional/asm`, nu valorile istorice salvate in
   vizita. Vizitele FieldOps pastreaza codul magazinului in `magazin`.
+- Arborele Vizite este incarcat numai pentru luna selectata in raport, iar
+  predicatul PostgreSQL foloseste limite de data indexabile, nu conversie
+  `to_char` pe coloana. Gruparea ramane dupa snapshotul Team Leader al
+  autorului; ierarhia curenta a magazinului este doar imbogatire de scope.
 - `RETAIL_VISITS_SHADOW_COMPARE_ENABLED=false` este starea normala dupa
   cutover. Shadow se foloseste numai intr-o fereastra de migrare controlata;
   compararea permanenta cu arhiva statica ar produce diferente asteptate.

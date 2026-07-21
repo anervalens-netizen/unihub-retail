@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -152,10 +153,13 @@ async def test_postgres_repository_applies_month_and_store_scope(
     )
 
     assert result["total"] == 1
-    sql, month, codes = connection.fetch.await_args.args
+    sql, month_start, month_end, codes = connection.fetch.await_args.args
     assert "FROM fieldops_visits" in sql
-    assert "magazin = ANY($2::text[])" in sql
-    assert month == "2026-07"
+    assert "to_char" not in sql
+    assert "data_raport >= $1" in sql
+    assert "magazin = ANY($3::text[])" in sql
+    assert month_start == date(2026, 7, 1)
+    assert month_end == date(2026, 8, 1)
     assert codes == ["S1", "S2"]
 
 

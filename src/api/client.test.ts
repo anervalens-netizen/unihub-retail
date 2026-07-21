@@ -8,7 +8,7 @@ import {
 } from './client';
 
 const mockFetch = vi.fn();
-type FetchCall = [string, { method: string; headers: Record<string, string>; body?: BodyInit | string }];
+type FetchCall = [string, { method: string; headers: Record<string, string>; body?: BodyInit | string; signal?: AbortSignal }];
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -94,6 +94,16 @@ describe('client.get', () => {
     const [, opts] = fetchCall();
     expect(opts.headers.Authorization).toBeUndefined();
     expect((opts as RequestInit).credentials).toBe('same-origin');
+  });
+
+  it('forwards an AbortSignal to fetch', async () => {
+    mockFetch.mockResolvedValueOnce(okResponse({}));
+    const controller = new AbortController();
+
+    await client.get('/api/data', { signal: controller.signal });
+
+    const [, opts] = fetchCall();
+    expect(opts.signal).toBe(controller.signal);
   });
 
   it('preserves an explicit integration Authorization header', async () => {

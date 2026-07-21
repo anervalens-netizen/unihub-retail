@@ -139,6 +139,8 @@ class ImportHistoryEntry(BaseModel):
     error_message: str | None
     coverage_report: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    finished_at: datetime | None = None
+    duration_seconds: float | None = Field(default=None, ge=0)
 
 
 class ImportResponse(BaseModel):

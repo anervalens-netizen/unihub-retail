@@ -72,9 +72,10 @@ export interface GrileOverview {
   managers: GrileManager[];
 }
 
-export async function getGrileOverview(month?: string): Promise<GrileOverview> {
+export async function getGrileOverview(month?: string, signal?: AbortSignal): Promise<GrileOverview> {
   const { data } = await client.get<GrileOverview>('/api/grile/overview', {
     params: month ? { month } : {},
+    signal,
   });
   return data;
 }
@@ -147,8 +148,8 @@ export interface GrileMonthlyJob {
   error: string | null;
 }
 
-export async function getGrileMonthlyPermissions(): Promise<{ can_run: boolean }> {
-  const { data } = await client.get<{ can_run: boolean }>('/api/grile/monthly/permissions');
+export async function getGrileMonthlyPermissions(signal?: AbortSignal): Promise<{ can_run: boolean }> {
+  const { data } = await client.get<{ can_run: boolean }>('/api/grile/monthly/permissions', { signal });
   return data;
 }
 
@@ -163,9 +164,10 @@ export async function runGrileMonthly(body: {
   return data;
 }
 
-export async function getGrileMonthlyManifest(month: string): Promise<GrileMonthlyManifest | null> {
+export async function getGrileMonthlyManifest(month: string, signal?: AbortSignal): Promise<GrileMonthlyManifest | null> {
   const { data } = await client.get<{ manifest: GrileMonthlyManifest | null }>(
     `/api/grile/monthly/manifests/${month}`,
+    { signal },
   );
   return data.manifest;
 }
@@ -177,8 +179,8 @@ export async function approveGrileMonthlyManifest(manifestId: number): Promise<G
   return data.manifest;
 }
 
-export async function getGrileMonthlyJob(jobId: string): Promise<GrileMonthlyJob> {
-  const { data } = await client.get<GrileMonthlyJob>(`/api/grile/monthly/job/${jobId}`);
+export async function getGrileMonthlyJob(jobId: string, signal?: AbortSignal): Promise<GrileMonthlyJob> {
+  const { data } = await client.get<GrileMonthlyJob>(`/api/grile/monthly/job/${jobId}`, { signal });
   return data;
 }
 

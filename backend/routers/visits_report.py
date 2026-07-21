@@ -35,13 +35,14 @@ async def get_visits_report(
 
 @router.get("/tree", response_model=VisitTreeResponse)
 async def get_visits_tree(
+    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     firma: str | None = None,
     rm: str | None = None,
     asm: str | None = None,
     magazin: str | None = None,
     svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitTreeResponse:
-    return await svc.get_visits_tree(firma, rm, asm, magazin)
+    return await svc.get_visits_tree(firma, rm, asm, magazin, month)
 
 
 @router.get("/visit/{visit_id}", response_model=VisitDetail)

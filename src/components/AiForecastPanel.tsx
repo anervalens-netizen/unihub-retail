@@ -199,7 +199,7 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
 
   const forecastQuery = useQuery({
     queryKey: queryKeys.aiForecast.current(currentMonth, query),
-    queryFn: () => getAiForecastCurrent(query),
+    queryFn: ({ signal }) => getAiForecastCurrent(query, signal),
     staleTime: 60_000,
   });
 
@@ -209,13 +209,13 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
       detail_type: detailSelection?.type ?? null,
       detail_id: detailSelection?.id ?? null,
     }),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!detailSelection) throw new Error('Nu exista selectie.');
       return getAiForecastCurrent({
         ...query,
         asm: detailSelection.type === 'manager' ? detailSelection.id : undefined,
         site_code: detailSelection.type === 'store' ? detailSelection.id : undefined,
-      });
+      }, signal);
     },
     enabled: detailSelection !== null,
     staleTime: 60_000,
@@ -497,7 +497,7 @@ function RollingForecastView({ currentMonth, filters, metric }: ForecastViewProp
 
   const rollingQuery = useQuery({
     queryKey: queryKeys.aiForecast.rolling12(currentMonth, query),
-    queryFn: () => getAiForecastRolling12(query),
+    queryFn: ({ signal }) => getAiForecastRolling12(query, signal),
     staleTime: 60_000,
   });
 

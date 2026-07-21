@@ -22,7 +22,6 @@ from services.dashboard.utils import (
 )
 from services.dashboard_specials import (
     incentive_multiplier,
-    load_promotion_rule_products,
     load_special_cards_config,
     parse_promotion_definitions,
     parse_promotion_definition,
@@ -30,14 +29,12 @@ from services.dashboard_specials import (
 from services.filters import build_scoped_params, scoped_clauses
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import (
-    PromoActualsError,
     PromoCoPurchaseResult,
-    compute_promo_actuals_from_report,
-    compute_promo_copurchase,
-    compute_promo_same_model_pair,
-    compute_promo_trigger_discounted,
-    merge_promo_results,
-    promo_actuals_cutoff_date,
+)
+from services.promotion_evaluation import (
+    PromotionEvaluation,
+    PromotionEvaluationStatus,
+    evaluate_promotion,
 )
 from services.receipt_identity import canonical_receipt_identity_sql
 
@@ -53,6 +50,8 @@ class DashboardCampaignContext:
     incentive_campaign: dict[str, Any] | None
     promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]]
     promo_excluded_units: dict[tuple[str, str, str], int]
+    promotion_status: PromotionEvaluationStatus = PromotionEvaluationStatus.COMPLETE
+    promotion_warnings: tuple[str, ...] = ()
 
     @property
     def selected_promotion_result(self) -> PromoCoPurchaseResult | None:
@@ -111,99 +110,11 @@ async def _compute_dashboard_promotion_result(
     agent: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
-) -> PromoCoPurchaseResult | None:
-    products, error = load_promotion_rule_products(definition)
-    if error is not None or products is None:
-        return None
-
-    rule_type = definition.get("rule_type") or "selected_item_copurchase"
-    if rule_type == "same_model_screen_camera":
-        promotion_item_codes = list(products["discounted_codes"])
-    elif rule_type == "trigger_discounted":
-        promotion_item_codes = list(products["discounted_codes"])
-    else:
-        promotion_item_codes = list(products["item_codes"])
-
-    try:
-        actual_result = await compute_promo_actuals_from_report(
-            conn,
-            month=month,
-            definition=definition,
-            item_codes=promotion_item_codes,
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-            current_scope=current_scope,
-            include_closed_stores=include_closed_stores,
-        )
-    except PromoActualsError:
-        return PromoCoPurchaseResult()
-    if actual_result is not None:
-        cutoff_date = promo_actuals_cutoff_date(definition)
-        if cutoff_date is None:
-            return actual_result
-        tail_start = max(definition["start_date"], cutoff_date + timedelta(days=1))
-        if tail_start > definition["end_date"]:
-            return actual_result
-        tail_result = await _compute_dashboard_promotion_result(
-            conn,
-            month=month,
-            definition={
-                **definition,
-                "start_date": tail_start,
-                "actuals_source_file": None,
-                "actuals_file": None,
-            },
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-            current_scope=current_scope,
-            include_closed_stores=include_closed_stores,
-        )
-        return merge_promo_results(actual_result, tail_result)
-
-    if rule_type == "same_model_screen_camera":
-        return await compute_promo_same_model_pair(
-            conn,
-            month=month,
-            start_date=definition["start_date"],
-            end_date=definition["end_date"],
-            screen_code_models=products["trigger_code_models"],
-            camera_code_models=products["discounted_code_models"],
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-            current_scope=current_scope,
-            include_closed_stores=include_closed_stores,
-        )
-    if rule_type == "trigger_discounted":
-        return await compute_promo_trigger_discounted(
-            conn,
-            month=month,
-            start_date=definition["start_date"],
-            end_date=definition["end_date"],
-            trigger_codes=products["trigger_codes"],
-            discounted_codes=products["discounted_codes"],
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-            current_scope=current_scope,
-            include_closed_stores=include_closed_stores,
-        )
-    return await compute_promo_copurchase(
+) -> PromotionEvaluation:
+    return await evaluate_promotion(
         conn,
         month=month,
-        start_date=definition["start_date"],
-        end_date=definition["end_date"],
-        item_codes=promotion_item_codes,
+        definition=definition,
         firma=firma,
         regional=regional,
         asm=asm,
@@ -258,9 +169,15 @@ async def _load_dashboard_campaign_context(
 
     promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]] = []
     promo_excluded_units: dict[tuple[str, str, str], int] = {}
+    promotion_status = (
+        PromotionEvaluationStatus.INVALID
+        if promotion_error is not None
+        else PromotionEvaluationStatus.COMPLETE
+    )
+    promotion_warnings: list[str] = []
     if promotion_definitions and promotion_error is None:
         for definition in promotion_definitions:
-            promo_result = await _compute_dashboard_promotion_result(
+            evaluation = await _compute_dashboard_promotion_result(
                 conn,
                 month=month,
                 definition=definition,
@@ -272,6 +189,16 @@ async def _load_dashboard_campaign_context(
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
             )
+            if evaluation.status is PromotionEvaluationStatus.INVALID:
+                promotion_status = PromotionEvaluationStatus.INVALID
+            elif (
+                evaluation.status is PromotionEvaluationStatus.PARTIAL
+                and promotion_status is PromotionEvaluationStatus.COMPLETE
+            ):
+                promotion_status = PromotionEvaluationStatus.PARTIAL
+            if evaluation.warning:
+                promotion_warnings.append(evaluation.warning)
+            promo_result = evaluation.result
             if promo_result is None:
                 continue
             promotion_results.append((definition, promo_result))
@@ -286,6 +213,8 @@ async def _load_dashboard_campaign_context(
         incentive_campaign=incentive_campaign,
         promotion_results=promotion_results,
         promo_excluded_units=promo_excluded_units,
+        promotion_status=promotion_status,
+        promotion_warnings=tuple(dict.fromkeys(promotion_warnings)),
     )
 
 
@@ -1780,13 +1709,28 @@ async def _fetch_promo_incentive_summary(
     promotion_definition = campaign_context.promotion_definition
     promotion_error = campaign_context.promotion_error
     incentive_campaign = campaign_context.incentive_campaign
+    calculation_status = (
+        "invalid"
+        if incentive_campaign is not None
+        and campaign_context.promotion_status is not PromotionEvaluationStatus.COMPLETE
+        else "complete"
+    )
+    calculation_warnings = list(campaign_context.promotion_warnings)
+    if calculation_status == "invalid" and not calculation_warnings:
+        calculation_warnings.append(
+            "Excluderile promo nu pot fi validate complet pentru calculul Incentive."
+        )
 
     promo_qty = 0
     promo_sales: Decimal = Decimal("0")
     incentive_sold_qty = 0
-    incentive_qty = 0
-    incentive_value: Decimal = Decimal("0")
-    incentive_qualified_qty = 0
+    incentive_qty: int | None = 0 if calculation_status == "complete" else None
+    incentive_value: Decimal | None = (
+        Decimal("0") if calculation_status == "complete" else None
+    )
+    incentive_qualified_qty: int | None = (
+        0 if calculation_status == "complete" else None
+    )
     incentive_qualified_stores = 0
     incentive_qualified_stores_full = 0
     incentive_qualified_stores_half = 0
@@ -1882,7 +1826,7 @@ async def _fetch_promo_incentive_summary(
                         range_end = min(period["valid_to"], definition["end_date"])
                         if range_start > range_end:
                             continue
-                        result = await _compute_dashboard_promotion_result(
+                        evaluation = await _compute_dashboard_promotion_result(
                             conn,
                             month=month,
                             definition={
@@ -1898,7 +1842,17 @@ async def _fetch_promo_incentive_summary(
                             current_scope=current_scope,
                             include_closed_stores=include_closed_stores,
                         )
-                        if result is None:
+                        if not evaluation.is_complete:
+                            calculation_status = "invalid"
+                            calculation_warnings.append(
+                                evaluation.warning
+                                or "Excluderile promo nu pot fi alocate complet pe perioade."
+                            )
+                            incentive_qty = None
+                            incentive_value = None
+                            incentive_qualified_qty = None
+                        result = evaluation.result
+                        if not evaluation.is_complete or result is None:
                             continue
                         for (sc, _ag, code), units in result.excluded_units.items():
                             key = (period["valid_from"].isoformat(), period["valid_to"].isoformat(), sc, code)
@@ -1964,15 +1918,16 @@ async def _fetch_promo_incentive_summary(
                 return max(0, int(row["qty"]) - excluded)
 
             incentive_sold_qty = sum(int(row["qty"] or 0) for row in item_rows)
-            incentive_qty = sum(eligible_qty(row) for row in item_rows)
-            incentive_value = Decimal(str(
-                sum(
-                    eligible_qty(r)
-                    * float(r.get("reward_value") or incentive_campaign.get("reward_map", {}).get(r["item_code"], 0))
-                    * store_multipliers.get(r["site_code"], 0)
-                    for r in item_rows
-                )
-            ))
+            if calculation_status == "complete":
+                incentive_qty = sum(eligible_qty(row) for row in item_rows)
+                incentive_value = Decimal(str(
+                    sum(
+                        eligible_qty(r)
+                        * float(r.get("reward_value") or incentive_campaign.get("reward_map", {}).get(r["item_code"], 0))
+                        * store_multipliers.get(r["site_code"], 0)
+                        for r in item_rows
+                    )
+                ))
 
             qualified_store_codes = [sc for sc, v in achievements.items() if v is not None and v >= 0.9]
             qualified_store_set = set(qualified_store_codes)
@@ -1981,11 +1936,12 @@ async def _fetch_promo_incentive_summary(
             incentive_qualified_stores = len(qualified_store_codes)
             incentive_qualified_stores_full = len(qualified_full_store_codes)
             incentive_qualified_stores_half = len(qualified_half_store_codes)
-            incentive_qualified_qty = sum(
-                eligible_qty(r)
-                for r in item_rows
-                if r["site_code"] in qualified_store_set
-            )
+            if calculation_status == "complete":
+                incentive_qualified_qty = sum(
+                    eligible_qty(r)
+                    for r in item_rows
+                    if r["site_code"] in qualified_store_set
+                )
             incentive_qualified_agents = 0
             incentive_qualified_agents_full = 0
             incentive_qualified_agents_half = 0
@@ -2053,6 +2009,8 @@ async def _fetch_promo_incentive_summary(
         incentive_qualified_agents=incentive_qualified_agents,
         incentive_qualified_agents_full=incentive_qualified_agents_full,
         incentive_qualified_agents_half=incentive_qualified_agents_half,
+        calculation_status=calculation_status,
+        calculation_warnings=list(dict.fromkeys(calculation_warnings)),
     )
 
 

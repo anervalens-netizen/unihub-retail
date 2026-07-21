@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
+import weakref
 from decimal import Decimal
 from collections.abc import Awaitable
 from typing import Any, Literal, cast
@@ -54,6 +56,7 @@ from services.dashboard.queries import (
 from services.dashboard.specials_data import _get_special_cards_data
 from services.dashboard.metrics import (
     observe_dashboard_component,
+    record_dashboard_component_global_queue,
     record_dashboard_component_queue,
 )
 from services.dashboard.utils import _expand_current_manager_scope
@@ -69,7 +72,25 @@ _RO_MONTHS = {
 AGENT_FORECAST_WORKING_DAYS = Decimal("15")
 PERFORMANCE_COMPONENT_WEIGHT = Decimal("20")
 DASHBOARD_COMPONENT_CONCURRENCY = 4
+_DB_POOL_MAX_SIZE = max(1, int(os.getenv("DB_POOL_MAX_SIZE", "10")))
+DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY = min(
+    max(1, int(os.getenv("DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY", "6"))),
+    max(1, _DB_POOL_MAX_SIZE - 2),
+)
 _MONEY = Decimal("0.01")
+_dashboard_global_slots: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop, asyncio.Semaphore
+] = weakref.WeakKeyDictionary()
+
+
+def _get_dashboard_global_slots() -> asyncio.Semaphore:
+    """Return an event-loop-local instance of the process-wide work budget."""
+    loop = asyncio.get_running_loop()
+    slots = _dashboard_global_slots.get(loop)
+    if slots is None:
+        slots = asyncio.Semaphore(DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY)
+        _dashboard_global_slots[loop] = slots
+    return slots
 
 
 async def _gather_named(
@@ -81,6 +102,7 @@ async def _gather_named(
         raise ValueError("max_concurrency must be positive")
 
     semaphore = asyncio.Semaphore(max_concurrency)
+    global_slots = _get_dashboard_global_slots()
 
     async def run_component(name: str, component: Awaitable[Any]) -> Any:
         queued_at = time.perf_counter()
@@ -89,12 +111,30 @@ async def _gather_named(
                 name,
                 time.perf_counter() - queued_at,
             )
-            return await component
+            global_queued_at = time.perf_counter()
+            async with global_slots:
+                record_dashboard_component_global_queue(
+                    name,
+                    time.perf_counter() - global_queued_at,
+                )
+                return await component
 
     names = tuple(components)
-    values = await asyncio.gather(
-        *(run_component(name, components[name]) for name in names)
-    )
+    tasks = {
+        name: asyncio.create_task(
+            run_component(name, components[name]),
+            name=f"dashboard:{name}",
+        )
+        for name in names
+    }
+    try:
+        values = await asyncio.gather(*(tasks[name] for name in names))
+    except BaseException:
+        for task in tasks.values():
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
+        raise
     return dict(zip(names, values, strict=True))
 
 
@@ -834,6 +874,8 @@ class DashboardService:
         agent: str | None,
         current_scope: bool = False,
         include_closed_stores: bool = False,
+        *,
+        _history_projection: bool = False,
     ) -> DashboardAllResponse:
         async def load_campaign_context():
             async with self.pool.acquire() as conn:
@@ -849,12 +891,16 @@ class DashboardService:
                     include_closed_stores=include_closed_stores,
                 )
 
-        campaign_context_task = asyncio.create_task(
-            observe_dashboard_component(
-                "campaign_context",
-                load_campaign_context(),
+        campaign_context_task: asyncio.Task[Any] | None = None
+        promo_incentive_task: asyncio.Task[Any] | None = None
+        if not _history_projection:
+            campaign_context_task = asyncio.create_task(
+                observe_dashboard_component(
+                    "campaign_context",
+                    load_campaign_context(),
+                ),
+                name="dashboard:campaign_context",
             )
-        )
 
         async def get_agents_data() -> list[AgentStats]:
             async with self.pool.acquire() as conn:
@@ -884,10 +930,6 @@ class DashboardService:
                     current_scope=current_scope,
                     include_closed_stores=include_closed_stores,
                 )
-                stats = [StoreStats(**dict(row)) for row in rows]
-                # convert back to dict for the enrich function since it expects list[dict]
-                # wait, _enrich_store_stats_with_campaign returns list[dict] and takes list[dict]
-                # let's look at the type signature of StoreStats, we should return list[StoreStats]
                 enriched_dicts = await _enrich_store_stats_with_campaign(
                     conn,
                     [dict(row) for row in rows],
@@ -1003,6 +1045,7 @@ class DashboardService:
                 )
 
         async def get_promo_incentive_data() -> PromoIncentiveSummary:
+            assert campaign_context_task is not None
             campaign_context = await campaign_context_task
             async with self.pool.acquire() as conn:
                 return await _fetch_promo_incentive_summary(
@@ -1018,14 +1061,18 @@ class DashboardService:
                     campaign_context=campaign_context,
                 )
 
-        promo_incentive_task = asyncio.create_task(
-            observe_dashboard_component(
-                "promo_incentive",
-                get_promo_incentive_data(),
+        if not _history_projection:
+            promo_incentive_task = asyncio.create_task(
+                observe_dashboard_component(
+                    "promo_incentive",
+                    get_promo_incentive_data(),
+                ),
+                name="dashboard:promo_incentive",
             )
-        )
 
         async def get_special_cards_data() -> list[DashboardSpecialCard]:
+            assert campaign_context_task is not None
+            assert promo_incentive_task is not None
             campaign_context = await campaign_context_task
             return await _get_special_cards_data(
                 month,
@@ -1082,9 +1129,8 @@ class DashboardService:
                 )
             return [AsmStats(**r) for r in rows]
 
-        component_results = await _gather_named(
-            DASHBOARD_COMPONENT_CONCURRENCY,
-            summary=observe_dashboard_component(
+        components: dict[str, Awaitable[Any]] = {
+            "summary": observe_dashboard_component(
                 "summary",
                 self.get_summary(
                     month,
@@ -1097,29 +1143,46 @@ class DashboardService:
                     include_closed_stores=include_closed_stores,
                 ),
             ),
-            agents=observe_dashboard_component("agents", get_agents_data()),
-            stores=observe_dashboard_component("stores", get_stores_data()),
-            daily=observe_dashboard_component("daily", get_daily_data()),
-            period_comparison=observe_dashboard_component(
+            "agents": observe_dashboard_component("agents", get_agents_data()),
+            "stores": observe_dashboard_component("stores", get_stores_data()),
+            "daily": observe_dashboard_component("daily", get_daily_data()),
+            "period_comparison": observe_dashboard_component(
                 "period_comparison", get_period_comparison_data()
             ),
-            category_mix=observe_dashboard_component("category_mix", get_category_mix_data()),
-            receipt_bucket_mix=observe_dashboard_component(
+            "category_mix": observe_dashboard_component("category_mix", get_category_mix_data()),
+            "receipt_bucket_mix": observe_dashboard_component(
                 "receipt_bucket_mix", get_receipt_bucket_mix_data()
             ),
-            focus_subcategory_mix=observe_dashboard_component(
+            "focus_subcategory_mix": observe_dashboard_component(
                 "focus_subcategory_mix", get_focus_subcategory_mix_data()
             ),
-            brand_mix=observe_dashboard_component("brand_mix", get_brand_mix_data()),
-            promo_incentive=promo_incentive_task,
-            regionals=observe_dashboard_component("regionals", get_regional_data()),
-            asms=observe_dashboard_component("asms", get_asm_data()),
-            special_cards=observe_dashboard_component("special_cards", get_special_cards_data()),
-            premium_glass=observe_dashboard_component("premium_glass", get_premium_glass_data()),
-            daily_last_year=observe_dashboard_component(
-                "daily_last_year", get_daily_last_year_data()
-            ),
-        )
+            "brand_mix": observe_dashboard_component("brand_mix", get_brand_mix_data()),
+            "regionals": observe_dashboard_component("regionals", get_regional_data()),
+            "asms": observe_dashboard_component("asms", get_asm_data()),
+        }
+        if not _history_projection:
+            assert promo_incentive_task is not None
+            components.update(
+                promo_incentive=promo_incentive_task,
+                special_cards=observe_dashboard_component(
+                    "special_cards", get_special_cards_data()
+                ),
+                premium_glass=observe_dashboard_component(
+                    "premium_glass", get_premium_glass_data()
+                ),
+                daily_last_year=observe_dashboard_component(
+                    "daily_last_year", get_daily_last_year_data()
+                ),
+            )
+        try:
+            component_results = await _gather_named(
+                DASHBOARD_COMPONENT_CONCURRENCY,
+                **components,
+            )
+        finally:
+            if campaign_context_task is not None and not campaign_context_task.done():
+                campaign_context_task.cancel()
+                await asyncio.gather(campaign_context_task, return_exceptions=True)
         summary = cast(DashboardSummary, component_results["summary"])
         agents_stats = cast(list[AgentStats], component_results["agents"])
         stores_stats = cast(list[StoreStats], component_results["stores"])
@@ -1136,21 +1199,26 @@ class DashboardService:
             list[CategoryMixItem], component_results["focus_subcategory_mix"]
         )
         brand_mix = cast(list[BrandMixItem], component_results["brand_mix"])
-        promo_incentive = cast(
-            PromoIncentiveSummary, component_results["promo_incentive"]
-        )
         regional_stats = cast(list[RegionalStats], component_results["regionals"])
         asm_stats = cast(list[AsmStats], component_results["asms"])
-        special_cards = cast(
-            list[DashboardSpecialCard], component_results["special_cards"]
-        )
-        premium_glass = cast(
-            PremiumGlassAnalysis, component_results["premium_glass"]
-        )
-        daily_last_year = cast(
-            list[DailySalesPoint], component_results["daily_last_year"]
-        )
-        special_cards = [*special_cards, build_premium_glass_card(premium_glass)]
+        promo_incentive = PromoIncentiveSummary()
+        special_cards: list[DashboardSpecialCard] = []
+        premium_glass: PremiumGlassAnalysis | None = None
+        daily_last_year: list[DailySalesPoint] = []
+        if not _history_projection:
+            promo_incentive = cast(
+                PromoIncentiveSummary, component_results["promo_incentive"]
+            )
+            special_cards = cast(
+                list[DashboardSpecialCard], component_results["special_cards"]
+            )
+            premium_glass = cast(
+                PremiumGlassAnalysis, component_results["premium_glass"]
+            )
+            daily_last_year = cast(
+                list[DailySalesPoint], component_results["daily_last_year"]
+            )
+            special_cards = [*special_cards, build_premium_glass_card(premium_glass)]
 
         return DashboardAllResponse(
             summary=summary,
@@ -1179,6 +1247,23 @@ class DashboardService:
         async def load(query: DashboardAllQuery) -> DashboardAllResponse:
             async with semaphore:
                 return await self.get_dashboard_all(**query.model_dump())
+
+        results = await asyncio.gather(*(load(query) for query in queries))
+        return DashboardAllBatchResponse(results=list(results))
+
+    async def get_dashboard_history_details_batch(
+        self,
+        queries: list[DashboardAllQuery],
+    ) -> DashboardAllBatchResponse:
+        """Load only the components consumed by the multi-month History UI."""
+        semaphore = asyncio.Semaphore(2)
+
+        async def load(query: DashboardAllQuery) -> DashboardAllResponse:
+            async with semaphore:
+                return await self.get_dashboard_all(
+                    **query.model_dump(),
+                    _history_projection=True,
+                )
 
         results = await asyncio.gather(*(load(query) for query in queries))
         return DashboardAllBatchResponse(results=list(results))

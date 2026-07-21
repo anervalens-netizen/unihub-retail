@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -23,21 +22,15 @@ from schemas.campaigns import (
 from repositories.campaigns import CampaignsRepository
 from services.dashboard.queries import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
 from services.dashboard_specials import (
-    load_promotion_rule_products,
     load_special_cards_config,
     parse_promotion_definitions,
     parse_promotion_definition,
 )
 from services.incentive_db import get_incentive_campaign
-from services.promo_copurchase import (
-    PromoActualsError,
-    PromoCoPurchaseResult,
-    compute_promo_actuals_from_report,
-    compute_promo_copurchase,
-    compute_promo_same_model_pair,
-    compute_promo_trigger_discounted,
-    merge_promo_results,
-    promo_actuals_cutoff_date,
+from services.promotion_evaluation import (
+    PromotionEvaluation,
+    PromotionEvaluationStatus,
+    evaluate_promotion,
 )
 
 
@@ -68,114 +61,16 @@ async def _compute_promotion_result(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
-) -> tuple[PromoCoPurchaseResult | None, list[str], str, str | None]:
-    products, products_error = load_promotion_rule_products(definition)
-    if products_error is not None or products is None:
-        return None, [], definition.get("rule_type") or "selected_item_copurchase", products_error
-
-    rule_type = definition.get("rule_type") or "selected_item_copurchase"
-    if rule_type == "same_model_screen_camera":
-        promotion_item_codes = list(products["discounted_codes"])
-    elif rule_type == "trigger_discounted":
-        promotion_item_codes = list(products["discounted_codes"])
-    else:
-        promotion_item_codes = list(products["item_codes"])
-
-    try:
-        actual_result = await compute_promo_actuals_from_report(
-            conn,
-            month=month,
-            definition=definition,
-            item_codes=promotion_item_codes,
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-        )
-    except PromoActualsError as exc:
-        return None, promotion_item_codes, rule_type, str(exc)
-    if actual_result is not None:
-        cutoff_date = promo_actuals_cutoff_date(definition)
-        if cutoff_date is None:
-            return actual_result, promotion_item_codes, rule_type, None
-        tail_start = max(definition["start_date"], cutoff_date + timedelta(days=1))
-        if tail_start > definition["end_date"]:
-            return actual_result, promotion_item_codes, rule_type, None
-        tail_definition = {
-            **definition,
-            "start_date": tail_start,
-            "actuals_source_file": None,
-            "actuals_file": None,
-        }
-        tail_result, _tail_codes, _tail_rule, tail_error = await _compute_promotion_result(
-            conn,
-            month=month,
-            definition=tail_definition,
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-        )
-        if tail_error is not None:
-            return actual_result, promotion_item_codes, rule_type, None
-        return merge_promo_results(actual_result, tail_result), promotion_item_codes, rule_type, None
-
-    if rule_type == "same_model_screen_camera":
-        return (
-            await compute_promo_same_model_pair(
-                conn,
-                month=month,
-                start_date=definition["start_date"],
-                end_date=definition["end_date"],
-                screen_code_models=products["trigger_code_models"],
-                camera_code_models=products["discounted_code_models"],
-                firma=firma,
-                regional=regional,
-                asm=asm,
-                site_code=site_code,
-                agent=agent,
-            ),
-            promotion_item_codes,
-            rule_type,
-            None,
-        )
-    if rule_type == "trigger_discounted":
-        return (
-            await compute_promo_trigger_discounted(
-                conn,
-                month=month,
-                start_date=definition["start_date"],
-                end_date=definition["end_date"],
-                trigger_codes=products["trigger_codes"],
-                discounted_codes=products["discounted_codes"],
-                firma=firma,
-                regional=regional,
-                asm=asm,
-                site_code=site_code,
-                agent=agent,
-            ),
-            promotion_item_codes,
-            rule_type,
-            None,
-        )
-    return (
-        await compute_promo_copurchase(
-            conn,
-            month=month,
-            start_date=definition["start_date"],
-            end_date=definition["end_date"],
-            item_codes=promotion_item_codes,
-            firma=firma,
-            regional=regional,
-            asm=asm,
-            site_code=site_code,
-            agent=agent,
-        ),
-        promotion_item_codes,
-        rule_type,
-        None,
+) -> PromotionEvaluation:
+    return await evaluate_promotion(
+        conn,
+        month=month,
+        definition=definition,
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
     )
 
 
@@ -292,6 +187,22 @@ class CampaignsService:
             incentive_campaign = await get_incentive_campaign(conn, month) if include_incentive else None
             incentive_title = incentive_campaign["title"] if incentive_campaign else ""
             incentive_description = incentive_campaign["description"] if incentive_campaign else ""
+            calculation_warnings: list[str] = []
+            promo_calculation_status = (
+                "invalid"
+                if promotion_error is not None
+                else "complete"
+                if promotion_definition is not None
+                else "not_configured"
+            )
+            incentive_calculation_status = (
+                "complete" if incentive_campaign is not None else "not_configured"
+            )
+            if incentive_campaign is not None and promotion_list_error is not None:
+                incentive_calculation_status = "invalid"
+                calculation_warnings.append(
+                    "Incentive indisponibil: lista promotiilor active nu poate fi validata."
+                )
 
             if include_incentive:
                 summary = await _fetch_promo_incentive_summary(
@@ -307,7 +218,11 @@ class CampaignsService:
                 promo_impact = float(summary.promo_impact)
                 incentive_sold_qty = summary.incentive_sold_qty
                 incentive_qty = summary.incentive_qty
-                incentive_value = float(summary.incentive_value)
+                incentive_value = (
+                    float(summary.incentive_value)
+                    if summary.incentive_value is not None
+                    else None
+                )
                 incentive_qualified_qty = summary.incentive_qualified_qty
                 incentive_qualified_stores = summary.incentive_qualified_stores
                 incentive_qualified_stores_full = summary.incentive_qualified_stores_full
@@ -315,6 +230,9 @@ class CampaignsService:
                 incentive_qualified_agents = summary.incentive_qualified_agents
                 incentive_qualified_agents_full = summary.incentive_qualified_agents_full
                 incentive_qualified_agents_half = summary.incentive_qualified_agents_half
+                if summary.calculation_status == "invalid":
+                    incentive_calculation_status = "invalid"
+                    calculation_warnings.extend(summary.calculation_warnings)
             else:
                 promo_qty = 0
                 promo_impact = 0.0
@@ -354,21 +272,28 @@ class CampaignsService:
             incentive_excluded_ag: dict[tuple[str, str, str], int] = {}
             if has_active_promotion:
                 assert promotion_definition is not None
-                promo_cp, promotion_item_codes, promotion_rule_type, products_error = (
-                    await _compute_promotion_result(
-                        conn,
-                        month=month,
-                        definition=promotion_definition,
-                        firma=firma,
-                        regional=regional,
-                        asm=asm,
-                        site_code=site_code,
-                        agent=agent,
-                    )
+                evaluation = await _compute_promotion_result(
+                    conn,
+                    month=month,
+                    definition=promotion_definition,
+                    firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
                 )
-                if products_error is not None:
+                promo_cp = evaluation.result
+                promotion_item_codes = evaluation.item_codes
+                promotion_rule_type = evaluation.rule_type
+                promo_calculation_status = evaluation.status.value
+                if not evaluation.is_complete:
+                    if evaluation.warning:
+                        calculation_warnings.append(evaluation.warning)
+                    if include_incentive and incentive_campaign is not None:
+                        incentive_calculation_status = "invalid"
+                if evaluation.status is PromotionEvaluationStatus.INVALID:
                     has_active_promotion = False
-                    promotion_error = products_error
+                    promotion_error = evaluation.warning
                 if promo_cp is None:
                     promo_cp = None
                 else:
@@ -392,19 +317,24 @@ class CampaignsService:
                     for extra_definition in promotion_definitions:
                         if extra_definition.get("key") == selected_key:
                             continue
-                        extra_cp, _extra_item_codes, _extra_rule_type, extra_error = (
-                            await _compute_promotion_result(
-                                conn,
-                                month=month,
-                                definition=extra_definition,
-                                firma=firma,
-                                regional=regional,
-                                asm=asm,
-                                site_code=site_code,
-                                agent=agent,
-                            )
+                        extra_evaluation = await _compute_promotion_result(
+                            conn,
+                            month=month,
+                            definition=extra_definition,
+                            firma=firma,
+                            regional=regional,
+                            asm=asm,
+                            site_code=site_code,
+                            agent=agent,
                         )
-                        if extra_error is not None or extra_cp is None:
+                        if not extra_evaluation.is_complete:
+                            incentive_calculation_status = "invalid"
+                            calculation_warnings.append(
+                                extra_evaluation.warning
+                                or "O promotie activa nu poate fi evaluata complet."
+                            )
+                        extra_cp = extra_evaluation.result
+                        if not extra_evaluation.is_complete or extra_cp is None:
                             continue
                         _merge_excluded_units(incentive_excluded_ag, extra_cp.excluded_units)
 
@@ -492,7 +422,7 @@ class CampaignsService:
             incentive_periods: list[IncentivePeriodStat] = []
             incentive_category_breakdown: list[IncentiveCategoryBreakdown] = []
             incentive_sold_qty = 0
-            incentive_potential = 0.0
+            incentive_potential: float | None = 0.0
             incentive_product_count = 0
 
             if incentive_campaign is not None:
@@ -526,7 +456,7 @@ class CampaignsService:
                             period_end_date = min(period["valid_to"], definition["end_date"])
                             if period_start_date > period_end_date:
                                 continue
-                            period_result, _codes, _rule, period_error = await _compute_promotion_result(
+                            period_evaluation = await _compute_promotion_result(
                                 conn,
                                 month=month,
                                 definition={
@@ -540,7 +470,14 @@ class CampaignsService:
                                 site_code=site_code,
                                 agent=agent,
                             )
-                            if period_error is not None or period_result is None:
+                            if not period_evaluation.is_complete:
+                                incentive_calculation_status = "invalid"
+                                calculation_warnings.append(
+                                    period_evaluation.warning
+                                    or "Excluderile promo nu pot fi alocate complet pe perioade."
+                                )
+                            period_result = period_evaluation.result
+                            if not period_evaluation.is_complete or period_result is None:
                                 continue
                             for (sc, ag, code), units in period_result.excluded_units.items():
                                 agent_exclusion_key = (
@@ -733,6 +670,17 @@ class CampaignsService:
                         reverse=True,
                     )
 
+            if incentive_calculation_status == "invalid":
+                incentive_qty = None
+                incentive_value = None
+                incentive_potential = None
+                incentive_qualified_qty = None
+                top_agents = []
+                incentive_categories = []
+                incentive_periods = []
+                incentive_category_breakdown = []
+                top_stores = []
+
             return {
                 "promotions": promotion_options,
                 "selected_promotion_key": promotion_definition.get("key", "") if promotion_definition else "",
@@ -747,6 +695,9 @@ class CampaignsService:
                 "promo_active_stores": promo_active_stores,
                 "promo_active_agents": promo_active_agents,
                 "has_active_promotion": has_active_promotion,
+                "promo_calculation_status": promo_calculation_status,
+                "incentive_calculation_status": incentive_calculation_status,
+                "calculation_warnings": list(dict.fromkeys(calculation_warnings)),
                 "top_stores": top_stores,
                 "promo_agents": promo_agents,
                 "top_agents": top_agents,

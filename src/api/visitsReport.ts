@@ -107,22 +107,28 @@ function buildParams(filters: AppFilters): URLSearchParams {
 
 export async function getVisitsReport(
   month: string,
-  filters: AppFilters
+  filters: AppFilters,
+  signal?: AbortSignal,
 ): Promise<VisitReportResponse> {
   const params = buildParams(filters);
   params.set('month', month);
-  const response = await client.get<VisitReportResponse>(`/api/visits-report?${params}`);
+  const response = await client.get<VisitReportResponse>(`/api/visits-report?${params}`, { signal });
   return response.data;
 }
 
-export async function getVisitsTree(filters: AppFilters): Promise<VisitTreeResponse> {
+export async function getVisitsTree(
+  month: string,
+  filters: AppFilters,
+  signal?: AbortSignal,
+): Promise<VisitTreeResponse> {
   const params = buildParams(filters);
-  const response = await client.get<VisitTreeResponse>(`/api/visits-report/tree?${params}`);
+  params.set('month', month);
+  const response = await client.get<VisitTreeResponse>(`/api/visits-report/tree?${params}`, { signal });
   return response.data;
 }
 
-export async function getVisitDetail(visitId: string): Promise<VisitDetail> {
-  const response = await client.get<VisitDetail>(`/api/visits-report/visit/${visitId}`);
+export async function getVisitDetail(visitId: string, signal?: AbortSignal): Promise<VisitDetail> {
+  const response = await client.get<VisitDetail>(`/api/visits-report/visit/${visitId}`, { signal });
   return response.data;
 }
 

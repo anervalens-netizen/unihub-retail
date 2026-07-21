@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Camera,
   CheckCircle2,
@@ -25,18 +26,23 @@ import { FirmaBadge } from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { cn } from '../lib/utils';
+import { queryKeys } from '../lib/queryKeys';
 
 // ── AuthImage — fetch cu token, afișează blob URL ─────────────────────────────
 function AuthImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     let url: string | null = null;
-    client.get<Blob>(src, { responseType: 'blob' }).then((r) => {
+    client.get<Blob>(src, { responseType: 'blob', signal: controller.signal }).then((r) => {
       url = URL.createObjectURL(r.data);
       setBlobUrl(url);
-    }).catch(() => setBlobUrl(null));
+    }).catch(() => {
+      if (!controller.signal.aborted) setBlobUrl(null);
+    });
     return () => {
+      controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
   }, [src]);
@@ -51,6 +57,7 @@ function AuthImage({ src, alt, className }: { src: string; alt: string; classNam
 
 interface VisiteSubtabProps {
   currentMonth: string;
+  months: string[];
 }
 
 // Vizite ignoră filtrul global (firma/RM/magazin) — gruparea e pe team leader,
@@ -124,18 +131,18 @@ function VisitDrawer({
   visitId: string;
   onClose: () => void;
 }) {
-  const [detail, setDetail] = useState<VisitDetail | null>(null);
-  const [loading, setLoading] = useState(true);
   const [photoIdx, setPhotoIdx] = useState(0);
   const drawerRef = useRef<HTMLDivElement>(null);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.visits.detail(visitId),
+    queryFn: ({ signal }) => getVisitDetail(visitId, signal),
+    staleTime: 5 * 60 * 1000,
+  });
+  const detail: VisitDetail | null = detailQuery.data ?? null;
+  const loading = detailQuery.isPending;
 
   useEffect(() => {
-    setLoading(true);
-    setDetail(null);
     setPhotoIdx(0);
-    getVisitDetail(visitId)
-      .then(setDetail)
-      .finally(() => setLoading(false));
   }, [visitId]);
 
   // close on outside click
@@ -515,23 +522,15 @@ function MonthPicker({
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
-  const [summary, setSummary] = useState<VisitReportResponse | null>(null);
-  const [groups, setGroups] = useState<TeamLeaderGroup[]>([]);
-  const [loadingSummary, setLoadingSummary] = useState(true);
-  const [loadingTree, setLoadingTree] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function VisiteSubtab({ currentMonth, months }: VisiteSubtabProps) {
   const [openVisitId, setOpenVisitId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
   const [teamLeaderSearch, setTeamLeaderSearch] = useState('');
-  const [activeStoreCount, setActiveStoreCount] = useState(0);
 
-  // extract sorted months from tree data
-  const availableMonths = useMemo(() => {
-    const set = new Set<string>();
-    groups.forEach((g) => g.months.forEach((m) => set.add(m.month)));
-    return Array.from(set).sort().reverse();
-  }, [groups]);
+  const availableMonths = useMemo(
+    () => Array.from(new Set(months)).sort().reverse(),
+    [months],
+  );
 
   // when tree loads, default to the latest month with visits
   useEffect(() => {
@@ -540,31 +539,36 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
     }
   }, [availableMonths, selectedMonth]);
 
-  useEffect(() => {
-    setLoadingSummary(true);
-    setError(null);
-    getVisitsReport(selectedMonth, ALL_FILTERS)
-      .then(setSummary)
-      .catch((e: Error) => setError(e.message || 'Eroare la incarcare'))
-      .finally(() => setLoadingSummary(false));
-  }, [selectedMonth]);
-
-  useEffect(() => {
-    getFilterOptions(selectedMonth)
-      .then((options) => {
-        const siteCodes = new Set(options.magazine.map((store) => store.site_code));
-        setActiveStoreCount(siteCodes.size);
-      })
-      .catch(() => setActiveStoreCount(0));
-  }, [selectedMonth]);
-
-  useEffect(() => {
-    setLoadingTree(true);
-    getVisitsTree(ALL_FILTERS)
-      .then((r) => setGroups(r.team_leaders))
-      .catch(() => setGroups([]))
-      .finally(() => setLoadingTree(false));
-  }, []);
+  const summaryQuery = useQuery({
+    queryKey: queryKeys.visits.report(selectedMonth),
+    queryFn: ({ signal }) => getVisitsReport(selectedMonth, ALL_FILTERS, signal),
+    enabled: Boolean(selectedMonth),
+    staleTime: 5 * 60 * 1000,
+  });
+  const treeQuery = useQuery({
+    queryKey: queryKeys.visits.tree(selectedMonth),
+    queryFn: ({ signal }) => getVisitsTree(selectedMonth, ALL_FILTERS, signal),
+    enabled: Boolean(selectedMonth),
+    staleTime: 5 * 60 * 1000,
+  });
+  const activeStoresQuery = useQuery({
+    queryKey: queryKeys.visits.activeStores(selectedMonth),
+    queryFn: ({ signal }) => getFilterOptions(selectedMonth, signal),
+    enabled: Boolean(selectedMonth),
+    staleTime: 5 * 60 * 1000,
+  });
+  const summary: VisitReportResponse | null = summaryQuery.data ?? null;
+  const groups: TeamLeaderGroup[] = useMemo(
+    () => treeQuery.data?.team_leaders ?? [],
+    [treeQuery.data],
+  );
+  const loadingSummary = summaryQuery.isPending;
+  const loadingTree = treeQuery.isPending;
+  const error = summaryQuery.error ?? treeQuery.error;
+  const activeStoreCount = useMemo(
+    () => new Set(activeStoresQuery.data?.magazine.map((store) => store.site_code) ?? []).size,
+    [activeStoresQuery.data],
+  );
 
   // filter tree client-side to selected month
   const filteredGroups = useMemo(() => {
@@ -593,7 +597,7 @@ export function VisiteSubtab({ currentMonth }: VisiteSubtabProps) {
   if (error) {
     return (
       <div className="mx-4 mt-4 rounded-2xl bg-red-50 p-4 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-        {error}
+        {error.message || 'Eroare la incarcare'}
       </div>
     );
   }

@@ -404,7 +404,7 @@ export function GrileSubtab() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['grile-overview', month],
-    queryFn: () => getGrileOverview(month || undefined),
+    queryFn: ({ signal }) => getGrileOverview(month || undefined, signal),
     refetchInterval: (q) => {
       const run = (q.state.data as Awaited<ReturnType<typeof getGrileOverview>> | undefined)?.run;
       return run && (run.status === 'running' || run.status === 'queued') ? 3000 : false;

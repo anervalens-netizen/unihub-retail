@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,15 +13,17 @@ class PromoIncentiveSummary(BaseModel):
     promo_sales: Decimal = Decimal(0)
     promo_impact: Decimal = Decimal(0)
     incentive_sold_qty: int = 0
-    incentive_qty: int = 0
-    incentive_value: Decimal = Decimal(0)
-    incentive_qualified_qty: int = 0
+    incentive_qty: int | None = 0
+    incentive_value: Decimal | None = Decimal(0)
+    incentive_qualified_qty: int | None = 0
     incentive_qualified_stores: int = 0
     incentive_qualified_stores_full: int = 0
     incentive_qualified_stores_half: int = 0
     incentive_qualified_agents: int = 0
     incentive_qualified_agents_full: int = 0
     incentive_qualified_agents_half: int = 0
+    calculation_status: Literal["complete", "invalid"] = "complete"
+    calculation_warnings: list[str] = Field(default_factory=list)
 
 
 class CampaignOverview(BaseModel):
@@ -173,11 +176,11 @@ class CampaignsPromotionsResponse(BaseModel):
     promo_active_agents: int = 0
     incentive_title: str = ""
     incentive_description: str = ""
-    incentive_qty: int = 0
+    incentive_qty: int | None = 0
     incentive_sold_qty: int = 0
-    incentive_value: float = 0.0
-    incentive_potential: float = 0.0
-    incentive_qualified_qty: int = 0
+    incentive_value: float | None = 0.0
+    incentive_potential: float | None = 0.0
+    incentive_qualified_qty: int | None = 0
     incentive_qualified_stores: int = 0
     incentive_qualified_stores_full: int = 0
     incentive_qualified_stores_half: int = 0
@@ -189,6 +192,9 @@ class CampaignsPromotionsResponse(BaseModel):
     incentive_periods: list[IncentivePeriodStat] = Field(default_factory=list)
     incentive_category_breakdown: list[IncentiveCategoryBreakdown] = Field(default_factory=list)
     has_active_promotion: bool = False
+    promo_calculation_status: Literal["complete", "partial", "invalid", "not_configured"] = "not_configured"
+    incentive_calculation_status: Literal["complete", "invalid", "not_configured"] = "not_configured"
+    calculation_warnings: list[str] = Field(default_factory=list)
     top_stores: list[PromoTopStore] = Field(default_factory=list)
     promo_agents: list[PromoTopAgent] = Field(default_factory=list)
     top_agents: list[IncentiveTopAgent] = Field(default_factory=list)

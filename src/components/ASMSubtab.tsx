@@ -451,7 +451,7 @@ export function ASMSubtab({ currentMonth }: { currentMonth?: string }) {
   const [month, setMonth] = useState(currentMonth || TODAY_MONTH);
   const query = useQuery({
     queryKey: ['manager-overview', month],
-    queryFn: () => fetchManagerOverview(month),
+    queryFn: ({ signal }) => fetchManagerOverview(month, signal),
   });
 
   const summary = useMemo(() => {

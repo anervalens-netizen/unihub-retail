@@ -54,13 +54,18 @@ class VisitsReportRepository:
         self,
         filters: dict[str, str | None],
         *,
+        month: str | None = None,
         store_metadata: dict[str, dict[str, str]] | None = None,
         site_codes: list[str] | None = None,
     ) -> list[dict]:
         if not self.db_path.exists():
             return []
 
-        clauses, params = self._build_clauses(filters, site_codes=site_codes)
+        clauses, params = self._build_clauses(
+            filters,
+            month=month,
+            site_codes=site_codes,
+        )
         where = " AND ".join(clauses)
 
         con = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)

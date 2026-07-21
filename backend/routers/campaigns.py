@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from db.connection import get_pool
 from schemas.campaigns import (
     CampaignSnapshot,
+    CampaignsPromotionsResponse,
     FocusHistoryResponse,
 )
 from repositories.campaigns import CampaignsRepository
@@ -44,7 +45,7 @@ async def get_focus_history(
 ) -> FocusHistoryResponse:
     return await svc.get_focus_history(month, months_back, firma, regional, asm, site_code, agent)
 
-@router.get("/promotions-incentives")
+@router.get("/promotions-incentives", response_model=CampaignsPromotionsResponse)
 async def get_promotions_incentives(
     start_date: str = Query(...),
     end_date: str = Query(...),
@@ -56,7 +57,7 @@ async def get_promotions_incentives(
     promotion_key: str | None = None,
     view: Literal["all", "promo", "incentive"] = "all",
     svc: CampaignsService = Depends(get_campaigns_service),
-):
+) -> CampaignsPromotionsResponse:
     data = await svc.get_promotions_incentives(
         start_date,
         end_date,
@@ -68,4 +69,4 @@ async def get_promotions_incentives(
         promotion_key,
         view,
     )
-    return data
+    return CampaignsPromotionsResponse(**data)

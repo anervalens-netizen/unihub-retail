@@ -87,25 +87,26 @@ export async function getPnlPermissions(): Promise<PnlPermissions> {
   return data;
 }
 
-export async function getPnlMonths(): Promise<PnlMonth[]> {
+export async function getPnlMonths(signal?: AbortSignal): Promise<PnlMonth[]> {
   const { data } = await client.get<{ months: PnlMonth[] }>(
     "/api/store-pnl/months",
+    { signal },
   );
   return data.months;
 }
 
-export async function getPnlStores(company: string, regional = ""): Promise<PnlStoreOption[]> {
+export async function getPnlStores(company: string, regional = "", signal?: AbortSignal): Promise<PnlStoreOption[]> {
   const { data } = await client.get<{ stores: PnlStoreOption[] }>(
     "/api/store-pnl/stores",
-    { params: { company: company || undefined, regional: regional || undefined } },
+    { params: { company: company || undefined, regional: regional || undefined }, signal },
   );
   return data.stores;
 }
 
-export async function getPnlRegions(company: string): Promise<string[]> {
+export async function getPnlRegions(company: string, signal?: AbortSignal): Promise<string[]> {
   const { data } = await client.get<{ regions: string[] }>(
     "/api/store-pnl/regions",
-    { params: { company: company || undefined } },
+    { params: { company: company || undefined }, signal },
   );
   return data.regions;
 }
@@ -115,6 +116,7 @@ export async function getPnlAnnual(
   siteCode: string,
   siteCompany = "",
   regional = "",
+  signal?: AbortSignal,
 ): Promise<PnlAnnualPoint[]> {
   const { data } = await client.get<{ annual: PnlAnnualPoint[] }>(
     "/api/store-pnl/annual",
@@ -125,6 +127,7 @@ export async function getPnlAnnual(
         site_company: siteCompany || undefined,
         regional: regional || undefined,
       },
+      signal,
     },
   );
   return data.annual;
@@ -137,6 +140,7 @@ export async function getPnlOverview(
   siteCode = "",
   siteCompany = "",
   regional = "",
+  signal?: AbortSignal,
 ): Promise<PnlOverview> {
   const { data } = await client.get<PnlOverview>("/api/store-pnl/overview", {
     params: {
@@ -147,6 +151,7 @@ export async function getPnlOverview(
       site_company: siteCompany || undefined,
       regional: regional || undefined,
     },
+    signal,
   });
   return data;
 }

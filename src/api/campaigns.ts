@@ -10,18 +10,21 @@ export interface CampaignQuery {
   agent?: string;
 }
 
-export async function getCampaignSnapshot(query: CampaignQuery): Promise<CampaignSnapshot> {
+export async function getCampaignSnapshot(query: CampaignQuery, signal?: AbortSignal): Promise<CampaignSnapshot> {
   const { data } = await client.get<CampaignSnapshot>('/api/campaigns/overview', {
     params: query,
+    signal,
   });
   return data;
 }
 
 export async function getFocusHistory(
-  query: CampaignQuery & { months_back?: number }
+  query: CampaignQuery & { months_back?: number },
+  signal?: AbortSignal,
 ): Promise<FocusHistoryResponse> {
   const { data } = await client.get<FocusHistoryResponse>('/api/campaigns/history', {
     params: query,
+    signal,
   });
   return data;
 }
@@ -37,7 +40,8 @@ export async function getPromotionsIncentives(
     agent?: string;
     promotion_key?: string;
     view?: 'all' | 'promo' | 'incentive';
-  }
+  },
+  signal?: AbortSignal,
 ): Promise<CampaignsPromotionsResponse> {
   const { data } = await client.get<CampaignsPromotionsResponse>(
     '/api/campaigns/promotions-incentives',
@@ -53,6 +57,7 @@ export async function getPromotionsIncentives(
         ...(filters?.promotion_key && { promotion_key: filters.promotion_key }),
         ...(filters?.view && { view: filters.view }),
       },
+      signal,
     }
   );
   return data;

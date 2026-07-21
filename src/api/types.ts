@@ -191,10 +191,12 @@ export interface PromoIncentiveSummary {
   promo_qty: number;
   promo_sales: number;
   promo_impact: number;
-  incentive_qty: number;
-  incentive_value: number;
+  incentive_qty: number | null;
+  incentive_value: number | null;
   incentive_qualified_stores: number;
   incentive_qualified_agents: number;
+  calculation_status: 'complete' | 'invalid';
+  calculation_warnings: string[];
 }
 
 export interface PremiumGlassSummary {
@@ -497,6 +499,8 @@ export interface ImportHistoryEntry {
   error_message: string | null;
   coverage_report?: ImportCoverageReport | null;
   created_at: string;
+  finished_at: string | null;
+  duration_seconds: number | null;
 }
 
 export interface ImportCoverageReport {
@@ -685,11 +689,11 @@ export interface CampaignsPromotionsResponse {
   promo_active_agents: number;
   incentive_title: string;
   incentive_description: string;
-  incentive_qty: number;
+  incentive_qty: number | null;
   incentive_sold_qty: number;
-  incentive_value: number;
-  incentive_potential: number;
-  incentive_qualified_qty: number;
+  incentive_value: number | null;
+  incentive_potential: number | null;
+  incentive_qualified_qty: number | null;
   incentive_qualified_stores: number;
   incentive_qualified_stores_full: number;
   incentive_qualified_stores_half: number;
@@ -701,6 +705,9 @@ export interface CampaignsPromotionsResponse {
   incentive_periods: IncentivePeriodStat[];
   incentive_category_breakdown: IncentiveCategoryBreakdown[];
   has_active_promotion: boolean;
+  promo_calculation_status: 'complete' | 'partial' | 'invalid' | 'not_configured';
+  incentive_calculation_status: 'complete' | 'invalid' | 'not_configured';
+  calculation_warnings: string[];
   top_stores: PromoTopStore[];
   promo_agents: PromoTopAgent[];
   top_agents: IncentiveTopAgent[];

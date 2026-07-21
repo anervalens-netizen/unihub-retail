@@ -71,7 +71,8 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
             SET status = 'failed',
                 rows_imported = 0,
                 error_message = 'Import intrerupt de restartul workerului; retry permis',
-                heartbeat_at = now()
+                heartbeat_at = now(),
+                finished_at = now()
             WHERE status = 'processing'
             RETURNING id
             """
@@ -434,7 +435,8 @@ async def reserve_snapshot(
             SET status = 'failed',
                 rows_imported = 0,
                 error_message = 'Import processing abandonat si inchis automat',
-                heartbeat_at = now()
+                heartbeat_at = now(),
+                finished_at = now()
             WHERE import_month = $1
               AND status = 'processing'
               AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour'
@@ -470,10 +472,13 @@ def _to_decimal(value: Any) -> Decimal:
 
 
 async def insert_transactions(conn: asyncpg.Connection, df: pd.DataFrame, snapshot_id: int, import_month: str) -> int:
-    records = []
-    for row in df.itertuples(index=False):
-        records.append(
-            (
+    row_count = len(df)
+
+    def records():
+        # asyncpg consumes the iterable synchronously while encoding COPY data.
+        # Keeping this lazy avoids duplicating the entire DataFrame in memory.
+        for row in df.itertuples(index=False):
+            yield (
                 import_month,
                 row.Data,
                 row.SiteCode,
@@ -491,7 +496,6 @@ async def insert_transactions(conn: asyncpg.Connection, df: pd.DataFrame, snapsh
                 bool(row.is_return),
                 snapshot_id,
             )
-        )
 
     await conn.execute(
         """
@@ -517,7 +521,7 @@ async def insert_transactions(conn: asyncpg.Connection, df: pd.DataFrame, snapsh
     )
     await conn.copy_records_to_table(
         "tmp_sales_transactions",
-        records=records,
+        records=records(),
         columns=[
             "import_month",
             "sale_date",
@@ -577,7 +581,7 @@ async def insert_transactions(conn: asyncpg.Connection, df: pd.DataFrame, snapsh
         FROM tmp_sales_transactions
         """,
     )
-    return len(records)
+    return row_count
 
 
 async def import_sales_dataframe(
@@ -620,7 +624,8 @@ async def import_sales_dataframe(
                     rows_imported = $2,
                     is_month_final = $3,
                     error_message = NULL,
-                    heartbeat_at = now()
+                    heartbeat_at = now(),
+                    finished_at = now()
                 WHERE id = $1
                 """,
                 snapshot_id,
@@ -634,7 +639,8 @@ async def import_sales_dataframe(
             SET status = 'failed',
                 rows_imported = 0,
                 error_message = $2,
-                heartbeat_at = now()
+                heartbeat_at = now(),
+                finished_at = now()
             WHERE id = $1
             """,
             snapshot_id,

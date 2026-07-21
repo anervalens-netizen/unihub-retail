@@ -21,6 +21,7 @@ from services.dashboard.queries import (
 )
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import promo_actuals_cutoff_date
+from services.promotion_evaluation import PromotionEvaluationStatus
 from services.dashboard_specials import (
     load_promotion_rule_products,
     load_special_cards_config,
@@ -111,6 +112,15 @@ EVOLUTION_METRICS = {
         "promo_quantity",
     ]
 }
+CAMPAIGN_METRICS = frozenset(
+    {
+        "incentive_sales",
+        "incentive_quantity",
+        "incentive_bonus",
+        "promo_sales",
+        "promo_quantity",
+    }
+)
 DAILY_EVOLUTION_METRICS = {
     key: METRICS[key]
     for key in [
@@ -120,11 +130,6 @@ DAILY_EVOLUTION_METRICS = {
         "avg_receipt_value",
         "proc_bon2acc",
         "prc_focus_acc_qty",
-        "incentive_sales",
-        "incentive_quantity",
-        "incentive_bonus",
-        "promo_sales",
-        "promo_quantity",
     ]
 }
 
@@ -253,9 +258,14 @@ class ExportsService:
             raise ExportValidationError("Prea multe coloane zilnice. Redu lunile sau metricile zilnice.")
 
         filters = self._normalize_filters(request.get("filters") or {})
-        campaign_codes_by_month = self._campaign_codes_by_month(months)
-        campaign_exclusions_by_month = await self._campaign_exclusions_by_month(
-            months, filters, selected_days
+        total_has_campaign_metrics = bool(CAMPAIGN_METRICS.intersection(metrics))
+        monthly_has_campaign_metrics = bool(CAMPAIGN_METRICS.intersection(monthly_metrics))
+        needs_campaign_data = total_has_campaign_metrics or monthly_has_campaign_metrics
+        campaign_codes_by_month = self._campaign_codes_by_month(months) if needs_campaign_data else {}
+        campaign_exclusions_by_month = (
+            await self._campaign_exclusions_by_month(months, filters, selected_days)
+            if needs_campaign_data
+            else {}
         )
 
         total_records = await self.repo.fetch_report_rows(
@@ -266,14 +276,16 @@ class ExportsService:
             campaign_codes_by_month=campaign_codes_by_month,
             campaign_exclusions_by_month=campaign_exclusions_by_month,
             selected_days=selected_days,
+            include_campaign_metrics=total_has_campaign_metrics,
         )
         rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
         for record in total_records:
             row = self._base_row(record, dimensions, metrics)
             rows_by_key[self._row_key(record, dataset)] = row
 
+        period_loaders: dict[str, Any] = {}
         if monthly_metrics:
-            monthly_records = await self.repo.fetch_report_rows(
+            period_loaders["month"] = self.repo.fetch_report_rows(
                 dataset=dataset,
                 months=months,
                 filters=filters,
@@ -282,17 +294,10 @@ class ExportsService:
                 campaign_exclusions_by_month=campaign_exclusions_by_month,
                 selected_days=selected_days,
                 period="month",
+                include_campaign_metrics=monthly_has_campaign_metrics,
             )
-            self._attach_period_metrics(
-                rows_by_key,
-                monthly_records,
-                dataset,
-                monthly_metrics,
-                period_prefix="month",
-            )
-
         if daily_metrics:
-            daily_records = await self.repo.fetch_report_rows(
+            period_loaders["day"] = self.repo.fetch_report_rows(
                 dataset=dataset,
                 months=months,
                 filters=filters,
@@ -301,10 +306,39 @@ class ExportsService:
                 campaign_exclusions_by_month=campaign_exclusions_by_month,
                 selected_days=selected_days,
                 period="day",
+                include_campaign_metrics=False,
             )
+
+        period_records: dict[str, list[Any]] = {}
+        if period_loaders:
+            names = tuple(period_loaders)
+            tasks = {
+                name: asyncio.create_task(period_loaders[name], name=f"export:{name}")
+                for name in names
+            }
+            try:
+                results = await asyncio.gather(*(tasks[name] for name in names))
+            except BaseException:
+                for task in tasks.values():
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks.values(), return_exceptions=True)
+                raise
+            period_records = dict(zip(names, results, strict=True))
+
+        if monthly_metrics:
             self._attach_period_metrics(
                 rows_by_key,
-                daily_records,
+                period_records["month"],
+                dataset,
+                monthly_metrics,
+                period_prefix="month",
+            )
+
+        if daily_metrics:
+            self._attach_period_metrics(
+                rows_by_key,
+                period_records["day"],
                 dataset,
                 daily_metrics,
                 period_prefix="day",
@@ -355,39 +389,40 @@ class ExportsService:
             return ",".join(values) if values else None
 
         rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
-        async with pool.acquire() as conn:
-            for month in months:
+        for month in months:
+            async with pool.acquire() as conn:
                 campaign = await get_incentive_campaign(conn, month)
-                if campaign is None:
-                    continue
-                period_exclusions: dict[tuple[str, str, str], int] = {}
-                periods = campaign.get("periods") or []
-                if len(periods) <= 1:
-                    month_exclusions = await self._campaign_exclusions_by_month(
-                        [month], filters, selected_days
+            if campaign is None:
+                continue
+            period_exclusions: dict[tuple[str, str, str], int] = {}
+            periods = campaign.get("periods") or []
+            if len(periods) <= 1:
+                month_exclusions = await self._campaign_exclusions_by_month(
+                    [month], filters, selected_days
+                )
+                for (site_code_value, _agent, item_code_value), units in month_exclusions.get(month, {}).items():
+                    key = (
+                        periods[0]["valid_from"].isoformat() if periods else "",
+                        site_code_value,
+                        item_code_value,
                     )
-                    for (site_code_value, _agent, item_code_value), units in month_exclusions.get(month, {}).items():
-                        key = (
-                            periods[0]["valid_from"].isoformat() if periods else "",
-                            site_code_value,
-                            item_code_value,
-                        )
+                    period_exclusions[key] = period_exclusions.get(key, 0) + units
+            else:
+                requested_days = set(selected_days or range(1, 32))
+                for period in periods:
+                    period_days = [
+                        day for day in requested_days
+                        if period["valid_from"].day <= day <= period["valid_to"].day
+                    ]
+                    if not period_days:
+                        continue
+                    period_result = await self._campaign_exclusions_by_month(
+                        [month], filters, sorted(period_days)
+                    )
+                    for (site_code_value, _agent, item_code_value), units in period_result.get(month, {}).items():
+                        key = (period["valid_from"].isoformat(), site_code_value, item_code_value)
                         period_exclusions[key] = period_exclusions.get(key, 0) + units
-                else:
-                    requested_days = set(selected_days or range(1, 32))
-                    for period in periods:
-                        period_days = [
-                            day for day in requested_days
-                            if period["valid_from"].day <= day <= period["valid_to"].day
-                        ]
-                        if not period_days:
-                            continue
-                        period_result = await self._campaign_exclusions_by_month(
-                            [month], filters, sorted(period_days)
-                        )
-                        for (site_code_value, _agent, item_code_value), units in period_result.get(month, {}).items():
-                            key = (period["valid_from"].isoformat(), site_code_value, item_code_value)
-                            period_exclusions[key] = period_exclusions.get(key, 0) + units
+            async with pool.acquire() as conn:
                 multipliers, achievements = await _get_store_incentive_multipliers(
                     conn,
                     month,
@@ -398,73 +433,73 @@ class ExportsService:
                     current_scope=True,
                     include_closed_stores=include_closed_stores,
                 )
-                records = await self.repo.fetch_incentive_product_rows(
-                    month=month,
-                    filters=filters,
-                    include_closed_stores=include_closed_stores,
-                    selected_days=selected_days,
+            records = await self.repo.fetch_incentive_product_rows(
+                month=month,
+                filters=filters,
+                include_closed_stores=include_closed_stores,
+                selected_days=selected_days,
+            )
+            for record in records:
+                reward = Decimal(record["reward_value"] or 0)
+                row_key = (
+                    month,
+                    record["category"],
+                    record["subcategory"],
+                    record["item_code"],
+                    record["item_name"],
+                    reward,
                 )
-                for record in records:
-                    reward = Decimal(record["reward_value"] or 0)
-                    row_key = (
-                        month,
-                        record["category"],
-                        record["subcategory"],
+                row = rows_by_key.setdefault(row_key, {
+                    "month": month,
+                    "category": record["category"],
+                    "subcategory": record["subcategory"],
+                    "item_code": record["item_code"],
+                    "item_name": record["item_name"],
+                    "reward_value": reward,
+                    "positive_quantity": 0,
+                    "return_quantity": 0,
+                    "net_quantity": 0,
+                    "promo_excluded_quantity": 0,
+                    "eligible_quantity": 0,
+                    "paid_quantity": 0,
+                    "paid_full_quantity": 0,
+                    "paid_half_quantity": 0,
+                    "unpaid_quantity": 0,
+                    "qualified_ui_quantity": 0,
+                    "potential_value": Decimal(0),
+                    "paid_value": Decimal(0),
+                })
+                net_quantity = int(record["net_quantity"] or 0)
+                # Exclusions cannot reduce a store-product below zero. This
+                # is the same clipping used by Focus for promo incentive.
+                excluded_quantity = min(
+                    max(0, net_quantity),
+                    int(period_exclusions.get((
+                        record.get("valid_from").isoformat() if record.get("valid_from") else "",
+                        record["site_code"],
                         record["item_code"],
-                        record["item_name"],
-                        reward,
-                    )
-                    row = rows_by_key.setdefault(row_key, {
-                        "month": month,
-                        "category": record["category"],
-                        "subcategory": record["subcategory"],
-                        "item_code": record["item_code"],
-                        "item_name": record["item_name"],
-                        "reward_value": reward,
-                        "positive_quantity": 0,
-                        "return_quantity": 0,
-                        "net_quantity": 0,
-                        "promo_excluded_quantity": 0,
-                        "eligible_quantity": 0,
-                        "paid_quantity": 0,
-                        "paid_full_quantity": 0,
-                        "paid_half_quantity": 0,
-                        "unpaid_quantity": 0,
-                        "qualified_ui_quantity": 0,
-                        "potential_value": Decimal(0),
-                        "paid_value": Decimal(0),
-                    })
-                    net_quantity = int(record["net_quantity"] or 0)
-                    # Exclusions cannot reduce a store-product below zero. This
-                    # is the same clipping used by Focus for promo incentive.
-                    excluded_quantity = min(
-                        max(0, net_quantity),
-                        int(period_exclusions.get((
-                            record.get("valid_from").isoformat() if record.get("valid_from") else "",
-                            record["site_code"],
-                            record["item_code"],
-                        ), 0)),
-                    )
-                    eligible_quantity = max(0, net_quantity - excluded_quantity)
-                    multiplier = Decimal(str(multipliers.get(record["site_code"], 0)))
-                    achievement = achievements.get(record["site_code"])
-                    row["positive_quantity"] += int(record["positive_quantity"] or 0)
-                    row["return_quantity"] += int(record["return_quantity"] or 0)
-                    row["net_quantity"] += net_quantity
-                    row["promo_excluded_quantity"] += excluded_quantity
-                    row["eligible_quantity"] += eligible_quantity
-                    row["potential_value"] += eligible_quantity * reward
-                    row["paid_value"] += eligible_quantity * reward * multiplier
-                    if multiplier > 0:
-                        row["paid_quantity"] += eligible_quantity
-                    else:
-                        row["unpaid_quantity"] += eligible_quantity
-                    if multiplier == 1:
-                        row["paid_full_quantity"] += eligible_quantity
-                    elif multiplier > 0:
-                        row["paid_half_quantity"] += eligible_quantity
-                    if achievement is not None and achievement >= 0.9:
-                        row["qualified_ui_quantity"] += eligible_quantity
+                    ), 0)),
+                )
+                eligible_quantity = max(0, net_quantity - excluded_quantity)
+                multiplier = Decimal(str(multipliers.get(record["site_code"], 0)))
+                achievement = achievements.get(record["site_code"])
+                row["positive_quantity"] += int(record["positive_quantity"] or 0)
+                row["return_quantity"] += int(record["return_quantity"] or 0)
+                row["net_quantity"] += net_quantity
+                row["promo_excluded_quantity"] += excluded_quantity
+                row["eligible_quantity"] += eligible_quantity
+                row["potential_value"] += eligible_quantity * reward
+                row["paid_value"] += eligible_quantity * reward * multiplier
+                if multiplier > 0:
+                    row["paid_quantity"] += eligible_quantity
+                else:
+                    row["unpaid_quantity"] += eligible_quantity
+                if multiplier == 1:
+                    row["paid_full_quantity"] += eligible_quantity
+                elif multiplier > 0:
+                    row["paid_half_quantity"] += eligible_quantity
+                if achievement is not None and achievement >= 0.9:
+                    row["qualified_ui_quantity"] += eligible_quantity
 
         rows = [self._public_row(row, columns) for row in rows_by_key.values()]
         rows.sort(key=lambda row: (
@@ -485,13 +520,10 @@ class ExportsService:
                 months=request["months"],
                 filters=filters,
                 include_closed_stores=bool(request.get("include_closed_stores", False)),
-                campaign_codes_by_month=self._campaign_codes_by_month(request["months"]),
-                campaign_exclusions_by_month=await self._campaign_exclusions_by_month(
-                    request["months"],
-                    filters,
-                    selected_days,
-                ),
+                campaign_codes_by_month={},
+                campaign_exclusions_by_month={},
                 selected_days=selected_days,
+                include_campaign_metrics=False,
             )
         return await asyncio.to_thread(
             self._render_table_xlsx,
@@ -563,7 +595,7 @@ class ExportsService:
 
     async def _preview_daily_comparison(self, request: dict[str, Any]) -> dict[str, Any]:
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
-        campaign_codes_by_month = self._campaign_codes_by_month(months)
+        campaign_codes_by_month: dict[str, list[str]] = {}
         preview_level = "general" if "general" in levels else levels[0]
         records = await self.repo.fetch_daily_comparison_rows(
             level=preview_level,
@@ -590,17 +622,24 @@ class ExportsService:
 
     async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
-        campaign_codes_by_month = self._campaign_codes_by_month(months)
+        campaign_codes_by_month: dict[str, list[str]] = {}
+        semaphore = asyncio.Semaphore(2)
+
+        async def load_level(level: str) -> tuple[str, list[Any]]:
+            async with semaphore:
+                records = await self.repo.fetch_daily_comparison_rows(
+                    level=level,
+                    months=months,
+                    filters=filters,
+                    include_closed_stores=include_closed_stores,
+                    campaign_codes_by_month=campaign_codes_by_month,
+                    selected_days=selected_days,
+                )
+                return level, records
+
+        level_records = await asyncio.gather(*(load_level(level) for level in levels))
         tables: list[tuple[str, dict[str, Any]]] = []
-        for level in levels:
-            records = await self.repo.fetch_daily_comparison_rows(
-                level=level,
-                months=months,
-                filters=filters,
-                include_closed_stores=include_closed_stores,
-                campaign_codes_by_month=campaign_codes_by_month,
-                selected_days=selected_days,
-            )
+        for level, records in level_records:
             table = await asyncio.to_thread(
                 self._daily_comparison_table,
                 level=level,
@@ -770,18 +809,24 @@ class ExportsService:
     def _campaign_codes_by_month(self, months: list[str]) -> dict[str, list[str]]:
         config, error = load_special_cards_config()
         if error is not None:
-            return {}
+            raise ExportValidationError(
+                "Export indisponibil: configuratia Promo nu poate fi validata."
+            )
 
         out: dict[str, list[str]] = {}
         for month in months:
             definitions, definitions_error = parse_promotion_definitions(config, month)
             if definitions_error is not None:
-                continue
+                raise ExportValidationError(
+                    f"Export indisponibil pentru {month}: definitiile Promo sunt incomplete."
+                )
             codes: set[str] = set()
             for definition in definitions:
                 products, products_error = load_promotion_rule_products(definition)
                 if products_error is not None or products is None:
-                    continue
+                    raise ExportValidationError(
+                        f"Export indisponibil pentru {month}: produsele Promo nu pot fi validate."
+                    )
                 rule_type = definition.get("rule_type") or "selected_item_copurchase"
                 if rule_type in {"same_model_screen_camera", "trigger_discounted"}:
                     codes.update(str(code) for code in products.get("discounted_codes", []))
@@ -800,6 +845,7 @@ class ExportsService:
         pool = getattr(self.repo, "pool", None)
         if pool is None:
             return {}
+        filters = self._normalize_filters(filters)
 
         def csv_filter(key: str) -> str | None:
             values = [value for value in filters.get(key, []) if value]
@@ -812,7 +858,9 @@ class ExportsService:
                     config, config_error = load_special_cards_config()
                     definitions, definitions_error = parse_promotion_definitions(config, month)
                     if config_error is not None or definitions_error is not None:
-                        continue
+                        raise ExportValidationError(
+                            f"Export indisponibil pentru {month}: configuratia Promo este incompleta."
+                        )
                     month_units: dict[tuple[str, str, str], int] = {}
                     for definition in definitions:
                         selected_dates: list[date] = []
@@ -859,7 +907,7 @@ class ExportsService:
                                 if not use_actuals:
                                     scoped_definition["actuals_source_file"] = None
                                     scoped_definition["actuals_file"] = None
-                            result = await _compute_dashboard_promotion_result(
+                            evaluation = await _compute_dashboard_promotion_result(
                                 conn,
                                 month=month,
                                 definition=scoped_definition,
@@ -869,8 +917,14 @@ class ExportsService:
                                 site_code=csv_filter("site_code"),
                                 agent=csv_filter("agent"),
                             )
-                            if result is None:
-                                continue
+                            if (
+                                evaluation.status is not PromotionEvaluationStatus.COMPLETE
+                                or evaluation.result is None
+                            ):
+                                raise ExportValidationError(
+                                    f"Export indisponibil pentru {month}: excluderile Promo nu pot fi validate complet."
+                                )
+                            result = evaluation.result
                             for key, units in result.excluded_units.items():
                                 month_units[key] = month_units.get(key, 0) + units
                     if month_units:
@@ -885,6 +939,10 @@ class ExportsService:
                     site_code=csv_filter("site_code"),
                     agent=csv_filter("agent"),
                 )
+                if context.promotion_status is not PromotionEvaluationStatus.COMPLETE:
+                    raise ExportValidationError(
+                        f"Export indisponibil pentru {month}: excluderile Promo nu pot fi validate complet."
+                    )
                 if context.promo_excluded_units:
                     out[month] = {
                         (str(site), str(agent), str(item)): int(units)
@@ -1079,6 +1137,11 @@ class ExportsService:
                 normalized[key] = [str(item) for item in value if str(item).strip()]
             elif value:
                 normalized[key] = [str(value)]
+        if normalized.get("site_code"):
+            # Historical reporting must follow the explicitly selected site,
+            # not its current Firma/RM/ASM assignment.
+            for hierarchy_key in ("firma", "regional", "asm"):
+                normalized.pop(hierarchy_key, None)
         return normalized
 
     def _valid_keys(

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getDashboardAll, getDashboardAllBatch, getDashboardHistory, getDashboardHistoryYear } from '../../api/dashboard';
+import { getDashboardAll, getDashboardHistory, getDashboardHistoryDetailsBatch, getDashboardHistoryYear } from '../../api/dashboard';
 import type { DashboardQuery } from '../../api/dashboard';
 import type {
   AgentStat,
@@ -63,6 +63,18 @@ const EMPTY_REGIONAL_STATS: RegionalStat[] = [];
 const EMPTY_STORE_STATS: StoreStat[] = [];
 const EMPTY_YEAR_HISTORY: YearHistoryPoint[] = [];
 
+type NetworkInformation = {
+  effectiveType?: string;
+  saveData?: boolean;
+};
+
+export function shouldPrefetchDashboardHistory(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const connection = (navigator as Navigator & { connection?: NetworkInformation }).connection;
+  if (connection?.saveData) return false;
+  return connection?.effectiveType !== 'slow-2g' && connection?.effectiveType !== '2g';
+}
+
 export function useDashboardData({
   currentMonth,
   filters,
@@ -117,19 +129,20 @@ export function useDashboardData({
 
   const currentQuery = useQuery({
     queryKey: queryKeys.dashboard.current(currentMonth, currentQueryParams),
-    queryFn: () => getDashboardAll(currentQueryParams),
+    queryFn: ({ signal }) => getDashboardAll(currentQueryParams, signal),
+    enabled: activeSection !== 'visits',
     staleTime: DASHBOARD_STALE_MS,
   });
   const historyQuery = useQuery({
     queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
-    queryFn: () => getDashboardHistory(historyQueryParams),
+    queryFn: ({ signal }) => getDashboardHistory(historyQueryParams, signal),
     enabled: activeSection === 'history',
     staleTime: DASHBOARD_STALE_MS,
   });
   const historyDetailQuery = useQuery({
     queryKey: queryKeys.dashboard.historyDetail(selectedHistoryMonths, historyDetailQueryParams),
-    queryFn: async () => aggregateDetails(
-      await getDashboardAllBatch(historyDetailQueries),
+    queryFn: async ({ signal }) => aggregateDetails(
+      await getDashboardHistoryDetailsBatch(historyDetailQueries, signal),
       selectedHistoryMonths,
     ),
     enabled: activeSection === 'history' && selectedHistoryMonths.length > 0,
@@ -137,13 +150,13 @@ export function useDashboardData({
   });
   const currentHistoryQuery = useQuery({
     queryKey: queryKeys.dashboard.currentHistory(currentMonth, currentHistoryQueryParams),
-    queryFn: () => getDashboardHistory(currentHistoryQueryParams),
+    queryFn: ({ signal }) => getDashboardHistory(currentHistoryQueryParams, signal),
     enabled: activeSection === 'history',
     staleTime: DASHBOARD_STALE_MS,
   });
   const yearHistoryQuery = useQuery({
     queryKey: queryKeys.dashboard.yearHistory(historyYearFilter ?? 0, yearHistoryQueryParams ?? { year: 0 }),
-    queryFn: () => getDashboardHistoryYear(yearHistoryQueryParams!),
+    queryFn: ({ signal }) => getDashboardHistoryYear(yearHistoryQueryParams!, signal),
     enabled: activeSection === 'history' && yearHistoryQueryParams !== null,
     staleTime: DASHBOARD_STALE_MS,
   });
@@ -161,10 +174,10 @@ export function useDashboardData({
   }, [historyDetailQuery, historyQuery]);
 
   useEffect(() => {
-    if (!currentQuery.data) return;
+    if (!currentQuery.data || !shouldPrefetchDashboardHistory()) return;
     void queryClient.prefetchQuery({
       queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
-      queryFn: () => getDashboardHistory(historyQueryParams),
+      queryFn: ({ signal }) => getDashboardHistory(historyQueryParams, signal),
       staleTime: DASHBOARD_STALE_MS,
     });
   }, [currentQuery.data, historyMonth, historyQueryParams, queryClient]);

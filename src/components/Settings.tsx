@@ -709,6 +709,11 @@ export function Settings({
                     {entry.rows_imported ?? 0} rânduri · {entry.status} ·{' '}
                     {entry.is_month_final ? '✓ Final' : 'Intermediar'} ·{' '}
                     {entry.created_at.slice(0, 16).replace('T', ' ')}
+                    {entry.duration_seconds != null && (
+                      <> · {entry.duration_seconds < 60
+                        ? `${entry.duration_seconds.toFixed(1)} s`
+                        : `${(entry.duration_seconds / 60).toFixed(1)} min`}</>
+                    )}
                   </div>
                   {entry.coverage_report?.active_store_coverage_pct != null && (
                     <div className="mt-1 text-slate-500">

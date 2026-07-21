@@ -13,9 +13,10 @@ export async function getActiveContest(month: string): Promise<ContestResponse |
   return data ?? null;
 }
 
-export async function getActiveContests(month: string): Promise<ContestResponse[]> {
+export async function getActiveContests(month: string, signal?: AbortSignal): Promise<ContestResponse[]> {
   const { data } = await client.get<ContestResponse[]>('/api/contests/active/all', {
     params: { month },
+    signal,
   });
   return data ?? [];
 }

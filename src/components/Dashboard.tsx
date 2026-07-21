@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getPerformanceDetail, MAX_DASHBOARD_BATCH_MONTHS } from '../api/dashboard';
 import type {
   AgentStat,
@@ -18,7 +18,6 @@ import type {
 import { formatAmount, formatInt, formatPercent } from '../lib/formatters';
 import FirmaBadge from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
-import { VisiteSubtab } from './VisiteSubtab';
 import { useSortable } from '../lib/useSortable';
 import {
   ErrorCard,
@@ -41,6 +40,10 @@ import { HistoryDashboard } from './dashboard/HistoryDashboard';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 
 const HISTORY_START_YEAR = 2018;
+const VisiteSubtab = lazy(async () => {
+  const module = await import('./VisiteSubtab');
+  return { default: module.VisiteSubtab };
+});
 
 interface DashboardProps {
   currentMonth: string;
@@ -1190,7 +1193,9 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
       />
 
       {activeSection === 'visits' ? (
-        <VisiteSubtab currentMonth={currentMonth} />
+        <Suspense fallback={<LoadingCard label="Se incarca modulul Vizite..." />}>
+          <VisiteSubtab currentMonth={currentMonth} months={months} />
+        </Suspense>
       ) : loading ? (
         <LoadingCard label="Se incarca luna in curs..." />
       ) : error || !summary ? (

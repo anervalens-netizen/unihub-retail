@@ -154,6 +154,7 @@ jobs:
             "$systemd_root/opt/Mobiup/unihub-retail/.env.worker" \
             "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations"
           cp /usr/bin/true "$systemd_root/usr/bin/true"
+          cp /usr/bin/timeout "$systemd_root/usr/bin/timeout"
           cp /usr/bin/true \
             "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python"
           cp /usr/bin/true \

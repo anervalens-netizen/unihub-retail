@@ -44,6 +44,13 @@ DASHBOARD_COMPONENT_QUEUE_SECONDS = Histogram(
     buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0),
 )
 
+DASHBOARD_COMPONENT_GLOBAL_QUEUE_SECONDS = Histogram(
+    "dashboard_component_global_queue_seconds",
+    "Time dashboard components wait for the process-wide database work budget.",
+    ("component",),
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0),
+)
+
 
 def _validate_component(component: str) -> None:
     if component not in DASHBOARD_COMPONENT_NAMES:
@@ -53,6 +60,11 @@ def _validate_component(component: str) -> None:
 def record_dashboard_component_queue(component: str, seconds: float) -> None:
     _validate_component(component)
     DASHBOARD_COMPONENT_QUEUE_SECONDS.labels(component).observe(seconds)
+
+
+def record_dashboard_component_global_queue(component: str, seconds: float) -> None:
+    _validate_component(component)
+    DASHBOARD_COMPONENT_GLOBAL_QUEUE_SECONDS.labels(component).observe(seconds)
 
 
 async def observe_dashboard_component(

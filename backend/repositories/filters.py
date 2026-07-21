@@ -22,6 +22,26 @@ class FiltersRepository:
                 month,
             )
 
+    async def get_options_version(self, month: str) -> int:
+        """Return the committed sales snapshot that owns one month's options.
+
+        The import worker and API run in different processes, so a process-local
+        cache clear cannot invalidate the API cache.  Keying cached options by
+        the completed snapshot makes invalidation deterministic without adding
+        another shared cache dependency to this small endpoint.
+        """
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval(
+                """
+                SELECT COALESCE(MAX(id), 0)
+                FROM import_snapshots
+                WHERE import_month = $1
+                  AND status = 'completed'
+                """,
+                month,
+            )
+        return int(value or 0)
+
     async def get_available_months(self) -> list[str]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(

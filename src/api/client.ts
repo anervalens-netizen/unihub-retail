@@ -8,6 +8,7 @@ type RequestOptions = {
   headers?: Record<string, string>;
   params?: QueryParams;
   responseType?: ResponseType;
+  signal?: AbortSignal;
 };
 
 export class ApiError extends Error {
@@ -171,6 +172,7 @@ export const client = {
       method: 'GET',
       credentials: 'same-origin',
       headers: getSessionHeaders({ 'Content-Type': 'application/json', ...options?.headers }),
+      signal: options?.signal,
     });
 
     await handleResponse(response);
@@ -187,6 +189,7 @@ export const client = {
       credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
+      signal: options?.signal,
     });
 
     await handleResponse(response);
@@ -203,6 +206,7 @@ export const client = {
       credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
+      signal: options?.signal,
     });
     await handleResponse(response);
     return { data: await parseResponse<T>(response, options?.responseType) };
@@ -218,6 +222,7 @@ export const client = {
       credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
+      signal: options?.signal,
     });
     await handleResponse(response);
     return { data: await parseResponse<T>(response, options?.responseType) };
@@ -231,6 +236,7 @@ export const client = {
       method: 'DELETE',
       credentials: 'same-origin',
       headers: getSessionHeaders(options?.headers, true),
+      signal: options?.signal,
     });
     await handleResponse(response);
     return { data: await parseResponse<T>(response, options?.responseType) };

@@ -52,4 +52,10 @@ export const queryKeys = {
     imports: () => ['settings', 'imports'] as const,
     exports: (query: QueryKeyParams) => ['settings', 'exports', query] as const,
   },
+  visits: {
+    report: (month: string) => ['visits', 'report', month] as const,
+    tree: (month: string) => ['visits', 'tree', month] as const,
+    detail: (visitId: string) => ['visits', 'detail', visitId] as const,
+    activeStores: (month: string) => ['visits', 'active-stores', month] as const,
+  },
 } as const;

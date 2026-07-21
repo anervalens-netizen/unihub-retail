@@ -1,6 +1,6 @@
 # Plan activ: performanță și operativitate Retail
 
-Stare: **în execuție**. Planul nu folosește estimări calendaristice; fiecare
+Stare: **implementare cod închisă; observație SLO în curs**. Planul nu folosește estimări calendaristice; fiecare
 etapă se închide numai după criteriile măsurabile de acceptare.
 
 ## Stare execuție 2026-07-21
@@ -16,6 +16,25 @@ etapă se închide numai după criteriile măsurabile de acceptare.
 - cache backend suplimentar amânat intenționat: agregatul persistent elimină
   scanarea mare, iar un cache nou nu se justifică înainte de măsurătorile live
   post-deploy și ar adăuga încă o invalidare la import.
+
+## Actualizare 2026-07-22
+
+- cache-ul opțiunilor de filtre este single-flight și versionat prin snapshot;
+- History folosește `/api/dashboard/history-details-batch`, iar bugetul global
+  Dashboard păstrează capacitate DB pentru readiness și alte requesturi;
+- requesturile grele Dashboard, Focus, Agenți, P&L, Grile, AI Forecast și
+  Vizite propagă anularea TanStack până la `fetch`;
+- Vizite este lazy și citește arborele unei singure luni prin interval indexabil;
+- exporturile fără metrici de campanie sar motorul Promo și rulează evoluțiile
+  lunară/zilnică independent, cu concurență maximă 2;
+- PWA folosește `CacheFirst` numai pentru assetele Vite cu hash; API-ul privat
+  rămâne `no-store`;
+- verificări locale: 233 teste frontend, 1291 backend, strict typecheck, lint,
+  build PWA, mypy integral și audit npm verde.
+
+Rezultatele și recomandările rămase sunt în
+`docs/PERFORMANCE_REVIEW_2026-07-22.md`. Țintele pe 7 zile rămân deschise până
+la suficient trafic real post-deploy; ele nu pot fi declarate din teste locale.
 
 ## Baseline verificat
 

@@ -10,6 +10,11 @@ import pytest
 
 import services.exports as exports_module
 from services.exports import ExportValidationError, ExportsService
+from services.promo_copurchase import PromoCoPurchaseResult
+from services.promotion_evaluation import (
+    PromotionEvaluation,
+    PromotionEvaluationStatus,
+)
 
 
 class AcquireContext:
@@ -143,9 +148,6 @@ async def test_incentive_export_handles_missing_campaign_multiple_periods_and_un
         {
             "month": "2026-06",
             "filters": {
-                "firma": ["Mobiup"],
-                "regional": ["RM 1"],
-                "asm": [],
                 "site_code": ["S3", "S4"],
             },
             "include_closed_stores": True,
@@ -222,8 +224,6 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
         _config: dict[str, Any],
         month: str,
     ) -> tuple[list[dict[str, Any]], str | None]:
-        if month == "2026-01":
-            return [], "bad definitions"
         return [outside_definition, active_definition], None
 
     monkeypatch.setattr(exports_module, "parse_promotion_definitions", definitions)
@@ -237,16 +237,21 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
         month: str,
         definition: dict[str, Any],
         **filters: Any,
-    ) -> SimpleNamespace | None:
+    ) -> PromotionEvaluation:
         calls.append({"month": month, "definition": definition, **filters})
-        if definition["start_date"] == date(2026, 2, 4):
-            return None
-        return SimpleNamespace(excluded_units={("S1", "Agent 1", "P1"): 2})
+        return PromotionEvaluation(
+            result=PromoCoPurchaseResult(
+                excluded_units={("S1", "Agent 1", "P1"): 2}
+            ),
+            item_codes=["P1"],
+            rule_type="selected_item_copurchase",
+            status=PromotionEvaluationStatus.COMPLETE,
+        )
 
     monkeypatch.setattr(exports_module, "_compute_dashboard_promotion_result", compute)
 
     result = await service._campaign_exclusions_by_month(
-        ["2026-01", "2026-02"],
+        ["2026-02"],
         {
             "firma": ["Mobiup", ""],
             "regional": ["RM 1"],
@@ -257,7 +262,7 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
         selected_days=[2, 4, 31],
     )
 
-    assert result == {"2026-02": {("S1", "Agent 1", "P1"): 2}}
+    assert result == {"2026-02": {("S1", "Agent 1", "P1"): 4}}
     assert len(calls) == 2
     first = calls[0]
     assert first["definition"]["start_date"] == date(2026, 2, 2)
@@ -269,15 +274,15 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
     assert second["definition"]["end_date"] == date(2026, 2, 4)
     assert second["definition"]["actuals_source_file"] == "promo.xlsx"
     assert second["definition"]["actuals_file"] == "legacy.xlsx"
-    assert first["firma"] == "Mobiup"
-    assert first["regional"] == "RM 1"
-    assert first["asm"] == "ASM 1"
+    assert first["firma"] is None
+    assert first["regional"] is None
+    assert first["asm"] is None
     assert first["site_code"] == "S1"
     assert first["agent"] == "Agent 1"
 
 
 @pytest.mark.asyncio
-async def test_selected_day_campaign_exclusions_skip_config_errors(
+async def test_selected_day_campaign_exclusions_fail_closed_on_config_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = ExportsService(SimpleNamespace(pool=FakePool()))  # type: ignore[arg-type]
@@ -288,11 +293,12 @@ async def test_selected_day_campaign_exclusions_skip_config_errors(
         lambda _config, _month: ([], None),
     )
 
-    assert await service._campaign_exclusions_by_month(
-        ["2026-06"],
-        {},
-        selected_days=[1],
-    ) == {}
+    with pytest.raises(ExportValidationError, match="configuratia Promo"):
+        await service._campaign_exclusions_by_month(
+            ["2026-06"],
+            {},
+            selected_days=[1],
+        )
 
 
 @pytest.mark.asyncio

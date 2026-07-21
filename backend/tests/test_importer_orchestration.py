@@ -162,6 +162,7 @@ async def test_import_sales_dataframe_completes_filtered_snapshot(
     completed_call = conn.execute.await_args
     assert completed_call is not None
     assert "status = 'completed'" in completed_call.args[0]
+    assert "finished_at = now()" in completed_call.args[0]
     assert completed_call.args[1:] == (42, 2, True)
 
 
@@ -196,6 +197,7 @@ async def test_import_sales_dataframe_records_truncated_failure(
     failed_call = conn.execute.await_args
     assert failed_call is not None
     assert "status = 'failed'" in failed_call.args[0]
+    assert "finished_at = now()" in failed_call.args[0]
     assert failed_call.args[1] == 77
     assert failed_call.args[2] == long_error[:500]
 
@@ -232,7 +234,7 @@ async def test_insert_transactions_preserves_bulk_record_contract() -> None:
     copied = conn.copy_records_to_table.await_args
     assert copied is not None
     assert copied.args == ("tmp_sales_transactions",)
-    records = copied.kwargs["records"]
+    records = list(copied.kwargs["records"])
     assert records[0][9:] == (
         2,
         Decimal("10.12"),

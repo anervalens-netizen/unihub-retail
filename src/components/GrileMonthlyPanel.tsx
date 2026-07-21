@@ -45,13 +45,13 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
 
   const perms = useQuery({
     queryKey: ['grile-monthly-perms'],
-    queryFn: getGrileMonthlyPermissions,
+    queryFn: ({ signal }) => getGrileMonthlyPermissions(signal),
     staleTime: 5 * 60_000,
   });
 
   const jobQuery = useQuery({
     queryKey: ['grile-monthly-job', job?.jobId],
-    queryFn: () => getGrileMonthlyJob(job!.jobId),
+    queryFn: ({ signal }) => getGrileMonthlyJob(job!.jobId, signal),
     enabled: !!job,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
@@ -64,7 +64,7 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
     refetch: refetchManifest,
   } = useQuery({
     queryKey: ['grile-monthly-manifest', month],
-    queryFn: () => getGrileMonthlyManifest(month),
+    queryFn: ({ signal }) => getGrileMonthlyManifest(month, signal),
     enabled: !!month && perms.data?.can_run === true,
     staleTime: 10_000,
   });

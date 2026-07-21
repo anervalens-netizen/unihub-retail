@@ -1,8 +1,8 @@
 import { client } from './client';
 import type { FilterOptions } from './types';
 
-export async function getFilterOptions(month: string): Promise<FilterOptions> {
-  const { data } = await client.get<FilterOptions>('/api/filters/options', { params: { month } });
+export async function getFilterOptions(month: string, signal?: AbortSignal): Promise<FilterOptions> {
+  const { data } = await client.get<FilterOptions>('/api/filters/options', { params: { month }, signal });
   return data;
 }
 

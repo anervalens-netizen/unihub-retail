@@ -104,6 +104,7 @@ class ExportsRepository:
         campaign_exclusions_by_month: dict[str, dict[tuple[str, str, str], int]] | None = None,
         selected_days: list[int] | None = None,
         period: str | None = None,
+        include_campaign_metrics: bool = True,
     ) -> list[asyncpg.Record]:
         dataset_fields = {
             "agents": [
@@ -200,6 +201,8 @@ class ExportsRepository:
         excluded_agents_param = len(params) - 2
         excluded_codes_param = len(params) - 1
         excluded_units_param = len(params)
+        params.append(include_campaign_metrics)
+        campaign_metrics_param = len(params)
 
         fields = dataset_fields[dataset]
         field_select = ",\n                ".join(f"{expr} AS {alias}" for alias, expr in fields)
@@ -233,7 +236,12 @@ class ExportsRepository:
             "day": "NULL::TEXT",
         }[period]
         historical_union = ""
-        if dataset != "agents" and period != "day" and not selected_days:
+        if (
+            dataset != "agents"
+            and period != "day"
+            and not selected_days
+            and not filters.get("agent")
+        ):
             historical_union = f"""
                     UNION ALL
                     SELECT
@@ -414,6 +422,7 @@ class ExportsRepository:
                         AND pc.item_code = agg.item_code
                     {campaign_excluded_join}
                     WHERE {" AND ".join(clauses)}
+                      AND ${campaign_metrics_param}::BOOLEAN
                       AND (ip.item_code IS NOT NULL OR pc.item_code IS NOT NULL)
                 ),
                 campaign_product AS (
@@ -559,6 +568,7 @@ class ExportsRepository:
         campaign_codes_by_month: dict[str, list[str]] | None = None,
         campaign_exclusions_by_month: dict[str, dict[tuple[str, str, str], int]] | None = None,
         selected_days: list[int] | None = None,
+        include_campaign_metrics: bool = False,
     ) -> list[asyncpg.Record]:
         params: list[Any] = [months]
         clauses = [
@@ -593,6 +603,8 @@ class ExportsRepository:
         params.extend([promo_months, promo_codes])
         promo_months_param = len(params) - 1
         promo_codes_param = len(params)
+        params.append(include_campaign_metrics)
+        campaign_metrics_param = len(params)
 
         async with self.pool.acquire() as conn:
             return await conn.fetch(
@@ -638,6 +650,7 @@ class ExportsRepository:
                      AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
                     LEFT JOIN promo_codes pc ON pc.import_month = agg.import_month AND pc.item_code = agg.item_code
                     WHERE {" AND ".join(clauses)}
+                      AND ${campaign_metrics_param}::BOOLEAN
                       AND (ip.item_code IS NOT NULL OR pc.item_code IS NOT NULL)
                     GROUP BY agg.import_month, agg.sale_date
                 )
@@ -666,6 +679,7 @@ class ExportsRepository:
         include_closed_stores: bool,
         campaign_codes_by_month: dict[str, list[str]] | None = None,
         selected_days: list[int] | None = None,
+        include_campaign_metrics: bool = False,
     ) -> list[asyncpg.Record]:
         level_fields = {
             "general": [],
@@ -720,6 +734,8 @@ class ExportsRepository:
         params.extend([promo_months, promo_codes])
         promo_months_param = len(params) - 1
         promo_codes_param = len(params)
+        params.append(include_campaign_metrics)
+        campaign_metrics_param = len(params)
 
         fields = level_fields[level]
         field_select = ",\n                    ".join(f"{expr} AS {alias}" for alias, expr in fields)
@@ -780,6 +796,7 @@ class ExportsRepository:
                      AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
                     LEFT JOIN promo_codes pc ON pc.import_month = agg.import_month AND pc.item_code = agg.item_code
                     WHERE {" AND ".join(clauses)}
+                      AND ${campaign_metrics_param}::BOOLEAN
                       AND (ip.item_code IS NOT NULL OR pc.item_code IS NOT NULL)
                     GROUP BY {campaign_group_prefix}agg.import_month, day_of_month
                 )

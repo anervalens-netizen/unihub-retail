@@ -170,6 +170,7 @@ class VisitsReportService:
         rm: str | None,
         asm: str | None,
         magazin: str | None,
+        month: str | None = None,
     ) -> VisitTreeResponse:
         filters = {
             "firma": normalize_filter(firma),
@@ -191,6 +192,7 @@ class VisitsReportService:
                 partial(
                     self.repo.query_tree,
                     filters,
+                    month=month,
                     store_metadata=store_metadata,
                     site_codes=site_codes,
                 ),
@@ -198,6 +200,7 @@ class VisitsReportService:
 
         async def postgres_reader() -> list[dict[str, Any]]:
             return await self.postgres_repo.query_tree(
+                month=month,
                 store_metadata=store_metadata,
                 site_codes=site_codes,
             )

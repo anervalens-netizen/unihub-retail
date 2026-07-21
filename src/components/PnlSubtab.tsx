@@ -127,7 +127,7 @@ export function PnlSubtab() {
   const [storeSearch, setStoreSearch] = useState("");
   const monthsQuery = useQuery({
     queryKey: ["store-pnl-months"],
-    queryFn: getPnlMonths,
+    queryFn: ({ signal }) => getPnlMonths(signal),
     staleTime: 5 * 60_000,
   });
 
@@ -140,12 +140,12 @@ export function PnlSubtab() {
 
   const storesQuery = useQuery({
     queryKey: ["store-pnl-stores", company, regional],
-    queryFn: () => getPnlStores(company, regional),
+    queryFn: ({ signal }) => getPnlStores(company, regional, signal),
     staleTime: 5 * 60_000,
   });
   const regionsQuery = useQuery({
     queryKey: ["store-pnl-regions", company],
-    queryFn: () => getPnlRegions(company),
+    queryFn: ({ signal }) => getPnlRegions(company, signal),
     staleTime: 5 * 60_000,
   });
   const selectedStore = useMemo(
@@ -167,19 +167,20 @@ export function PnlSubtab() {
       siteCode,
       siteCompany,
     ],
-    queryFn: () => getPnlOverview(
+    queryFn: ({ signal }) => getPnlOverview(
       startMonth,
       endMonth,
       company,
       siteCode,
       siteCompany,
       regional,
+      signal,
     ),
     enabled: Boolean(startMonth && endMonth),
   });
   const annualQuery = useQuery({
     queryKey: ["store-pnl-annual", company, regional, siteCode, siteCompany],
-    queryFn: () => getPnlAnnual(company, siteCode, siteCompany, regional),
+    queryFn: ({ signal }) => getPnlAnnual(company, siteCode, siteCompany, regional, signal),
   });
   const data = overviewQuery.data;
   const monthlyVariance = useMemo(() => {

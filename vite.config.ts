@@ -84,7 +84,9 @@ export default defineConfig(({ mode }) => {
           runtimeCaching: [
             {
               urlPattern: ({ request }) => request.destination === 'script' || request.destination === 'style',
-              handler: 'StaleWhileRevalidate',
+              // Vite assets are content-hashed: a cached URL is immutable and
+              // can be served without a validation round-trip.
+              handler: 'CacheFirst',
               options: {
                 cacheName: 'retail-feature-assets',
                 expiration: {

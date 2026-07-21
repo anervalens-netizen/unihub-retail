@@ -665,7 +665,13 @@ def reconcile_erp_report(
     def campaign_value(field: str) -> Decimal | None:
         if campaign_summary is None:
             return None
-        return Decimal(str(getattr(campaign_summary, field)))
+        if (
+            field in {"incentive_qty", "incentive_qualified_qty", "incentive_value"}
+            and campaign_summary.calculation_status != "complete"
+        ):
+            return None
+        value = getattr(campaign_summary, field)
+        return Decimal(str(value)) if value is not None else None
 
     app_only_metrics = [
         ErpReconciliationAppMetric(

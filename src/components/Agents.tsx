@@ -87,12 +87,12 @@ interface AgentDetailsProps {
 function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['agents', 'profile', agent, currentMonth],
-    queryFn: () => fetchAgentProfile(agent, currentMonth),
+    queryFn: ({ signal }) => fetchAgentProfile(agent, currentMonth, signal),
   });
 
   const { data: history, isLoading: historyLoading } = useQuery({
     queryKey: ['agents', 'history', agent],
-    queryFn: () => fetchAgentHistory(agent),
+    queryFn: ({ signal }) => fetchAgentHistory(agent, signal),
   });
 
   const loading = profileLoading || historyLoading;
@@ -388,31 +388,37 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
 
   const { data: overview, isLoading: loadingOverview } = useQuery({
     queryKey: ['agents', 'overview', queryParams],
-    queryFn: () => fetchAgentsOverview(queryParams),
+    queryFn: ({ signal }) => fetchAgentsOverview(queryParams, signal),
   });
 
   const { data: movement } = useQuery({
     queryKey: ['agents', 'movement', queryParams],
-    queryFn: () => fetchAgentsMovement(queryParams),
+    queryFn: ({ signal }) => fetchAgentsMovement(queryParams, signal),
   });
 
   const { data: coverage, isLoading: loadingCoverage } = useQuery({
     queryKey: ['agents', 'coverage', queryParams],
-    queryFn: () => fetchStoreCoverage(queryParams),
+    queryFn: ({ signal }) => fetchStoreCoverage(queryParams, signal),
   });
 
   const listParams = useMemo(() => ({ ...queryParams, search: debouncedSearch || undefined }), [queryParams, debouncedSearch]);
   
   const { data: listResponse, isLoading: loadingList } = useQuery({
     queryKey: ['agents', 'list', listParams],
-    queryFn: () => fetchAgentsList(listParams),
+    queryFn: ({ signal }) => fetchAgentsList(listParams, signal),
   });
   
   const list = useMemo(() => listResponse?.items || [], [listResponse?.items]);
 
   // Fetch filter options for card filters
   useEffect(() => {
-    getFilterOptions(currentMonth).then(setFilterOptions).catch(() => setFilterOptions(null));
+    const controller = new AbortController();
+    getFilterOptions(currentMonth, controller.signal)
+      .then(setFilterOptions)
+      .catch(() => {
+        if (!controller.signal.aborted) setFilterOptions(null);
+      });
+    return () => controller.abort();
   }, [currentMonth]);
 
   const filteredList = useMemo(() => {

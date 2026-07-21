@@ -138,6 +138,24 @@ async def test_dashboard_batch_bounds_month_concurrency_and_preserves_order() ->
     assert [item.summary.month for item in result.results] == [query.month for query in queries]
 
 
+@pytest.mark.asyncio
+async def test_dashboard_history_batch_uses_lightweight_projection() -> None:
+    service = DashboardService(MagicMock(), MagicMock())
+    projections: list[bool] = []
+
+    async def load(month: str, *_args, **kwargs) -> DashboardAllResponse:
+        projections.append(kwargs.get("_history_projection", False))
+        return _empty_dashboard_all(month)
+
+    service.get_dashboard_all = load  # type: ignore[method-assign]
+    queries = [DashboardAllQuery(month="2026-05"), DashboardAllQuery(month="2026-06")]
+
+    result = await service.get_dashboard_history_details_batch(queries)
+
+    assert projections == [True, True]
+    assert [item.summary.month for item in result.results] == ["2026-05", "2026-06"]
+
+
 def test_dashboard_batch_rejects_more_than_twelve_months() -> None:
     with pytest.raises(ValidationError):
         DashboardAllBatchRequest(

@@ -63,6 +63,14 @@ async def get_dashboard_all_batch(
 ) -> DashboardAllBatchResponse:
     return await svc.get_dashboard_all_batch(request.queries)
 
+
+@router.post("/history-details-batch", response_model=DashboardAllBatchResponse)
+async def get_dashboard_history_details_batch(
+    request: DashboardAllBatchRequest,
+    svc: DashboardService = Depends(get_dashboard_service),
+) -> DashboardAllBatchResponse:
+    return await svc.get_dashboard_history_details_batch(request.queries)
+
 @router.get("/daily", response_model=list[DailySalesPoint])
 async def get_daily_sales(
     month: str = Query(...),

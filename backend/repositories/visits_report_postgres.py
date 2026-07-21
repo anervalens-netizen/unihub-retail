@@ -7,6 +7,15 @@ from db.connection import get_pool
 from repositories.visits_report import VisitsReportRepository
 
 
+def _month_bounds(month: str) -> tuple[date, date]:
+    start = date.fromisoformat(f"{month}-01")
+    if start.month == 12:
+        end = date(start.year + 1, 1, 1)
+    else:
+        end = date(start.year, start.month + 1, 1)
+    return start, end
+
+
 def _wire_value(value: Any) -> Any:
     if isinstance(value, (date, datetime, time)):
         return value.isoformat()
@@ -30,8 +39,13 @@ class VisitsReportPostgresRepository:
         store_metadata: dict[str, dict[str, str]],
         site_codes: list[str] | None,
     ) -> dict[str, Any]:
-        clauses = ["status <> 'draft'", "to_char(data_raport, 'YYYY-MM') = $1"]
-        params: list[Any] = [month]
+        month_start, month_end = _month_bounds(month)
+        clauses = [
+            "status <> 'draft'",
+            "data_raport >= $1",
+            "data_raport < $2",
+        ]
+        params: list[Any] = [month_start, month_end]
         if site_codes is not None:
             if not site_codes:
                 clauses.append("FALSE")
@@ -68,11 +82,16 @@ class VisitsReportPostgresRepository:
     async def query_tree(
         self,
         *,
+        month: str | None = None,
         store_metadata: dict[str, dict[str, str]],
         site_codes: list[str] | None,
     ) -> list[dict[str, Any]]:
         clauses = ["status <> 'draft'"]
         params: list[Any] = []
+        if month is not None:
+            month_start, month_end = _month_bounds(month)
+            params.extend([month_start, month_end])
+            clauses.extend(["data_raport >= $1", "data_raport < $2"])
         if site_codes is not None:
             if not site_codes:
                 clauses.append("FALSE")

@@ -218,37 +218,39 @@ export interface AgentEvaluationV2Response {
   rows: AgentEvaluationV2Row[];
 }
 
-export async function fetchAgentsOverview(query: AgentsQuery): Promise<AgentsOverviewResponse> {
-  const { data } = await client.get<AgentsOverviewResponse>('/api/agents/overview', { params: query });
+export async function fetchAgentsOverview(query: AgentsQuery, signal?: AbortSignal): Promise<AgentsOverviewResponse> {
+  const { data } = await client.get<AgentsOverviewResponse>('/api/agents/overview', { params: query, signal });
   return data;
 }
 
-export async function fetchAgentsMovement(query: AgentsQuery): Promise<AgentMovementResponse> {
-  const { data } = await client.get<AgentMovementResponse>('/api/agents/movement', { params: query });
+export async function fetchAgentsMovement(query: AgentsQuery, signal?: AbortSignal): Promise<AgentMovementResponse> {
+  const { data } = await client.get<AgentMovementResponse>('/api/agents/movement', { params: query, signal });
   return data;
 }
 
-export async function fetchAgentsList(query: AgentsQuery): Promise<AgentListResponse> {
-  const { data } = await client.get<AgentListResponse>('/api/agents/list', { params: query });
+export async function fetchAgentsList(query: AgentsQuery, signal?: AbortSignal): Promise<AgentListResponse> {
+  const { data } = await client.get<AgentListResponse>('/api/agents/list', { params: query, signal });
   return data;
 }
 
-export async function fetchAgentProfile(agent: string, selectedMonth: string): Promise<AgentProfileResponse> {
+export async function fetchAgentProfile(agent: string, selectedMonth: string, signal?: AbortSignal): Promise<AgentProfileResponse> {
   const { data } = await client.get<AgentProfileResponse>('/api/agents/profile', { 
-    params: { agent, selected_month: selectedMonth } 
+    params: { agent, selected_month: selectedMonth },
+    signal,
   });
   return data;
 }
 
-export async function fetchAgentHistory(agent: string): Promise<AgentHistoryResponse> {
+export async function fetchAgentHistory(agent: string, signal?: AbortSignal): Promise<AgentHistoryResponse> {
   const { data } = await client.get<AgentHistoryResponse>('/api/agents/history', {
-    params: { agent }
+    params: { agent },
+    signal,
   });
   return data;
 }
 
-export async function fetchStoreCoverage(query: Partial<AgentsQuery>): Promise<StoreCoverageResponse> {
-  const { data } = await client.get<StoreCoverageResponse>('/api/agents/stores-coverage', { params: query });
+export async function fetchStoreCoverage(query: Partial<AgentsQuery>, signal?: AbortSignal): Promise<StoreCoverageResponse> {
+  const { data } = await client.get<StoreCoverageResponse>('/api/agents/stores-coverage', { params: query, signal });
   return data;
 }
 

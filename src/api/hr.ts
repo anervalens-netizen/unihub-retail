@@ -77,8 +77,8 @@ export interface ManagerOverview {
   stores: ManagerStoreOverview[];
 }
 
-export async function fetchManagerOverview(month: string): Promise<ManagerOverview[]> {
-  const { data } = await client.get<ManagerOverview[]>('/api/hr/manager-overview', { params: { month } });
+export async function fetchManagerOverview(month: string, signal?: AbortSignal): Promise<ManagerOverview[]> {
+  const { data } = await client.get<ManagerOverview[]>('/api/hr/manager-overview', { params: { month }, signal });
   return data;
 }
 

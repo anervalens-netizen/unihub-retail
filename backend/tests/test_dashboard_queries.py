@@ -25,6 +25,10 @@ from services.dashboard.queries import (
     _get_store_incentive_multipliers,
 )
 from services.promo_copurchase import PromoCoPurchaseResult
+from services.promotion_evaluation import (
+    PromotionEvaluation,
+    PromotionEvaluationStatus,
+)
 
 
 class FakeRow(dict):
@@ -543,7 +547,12 @@ class TestFetchPromoIncentiveSummary:
     @patch(
         "services.dashboard.queries._compute_dashboard_promotion_result",
         new_callable=AsyncMock,
-        return_value=PromoCoPurchaseResult(),
+        return_value=PromotionEvaluation(
+            result=PromoCoPurchaseResult(),
+            item_codes=[],
+            rule_type="selected_item_copurchase",
+            status=PromotionEvaluationStatus.COMPLETE,
+        ),
     )
     @patch(
         "services.dashboard.queries._get_store_incentive_multipliers",

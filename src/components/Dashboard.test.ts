@@ -106,6 +106,8 @@ function response(month: string, overrides: Partial<DashboardAllResponse>): Dash
       incentive_value: 0,
       incentive_qualified_stores: 0,
       incentive_qualified_agents: 0,
+      calculation_status: 'complete',
+      calculation_warnings: [],
     },
     premium_glass: null,
     ...overrides,

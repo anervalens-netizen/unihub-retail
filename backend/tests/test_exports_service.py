@@ -16,6 +16,7 @@ from services.exports import (
     ExportValidationError,
     ExportsService,
 )
+from services.promotion_evaluation import PromotionEvaluationStatus
 
 
 class FakeRepo:
@@ -111,6 +112,25 @@ async def test_preview_builds_monthly_and_daily_columns_without_db() -> None:
     assert result["rows"][0]["avg_receipt_value"] == 250.0
     assert repo.report_calls[0]["months"] == ["2026-05", "2026-06"]
     assert all(call["selected_days"] == list(range(1, 10)) for call in repo.report_calls)
+    assert all(call["include_campaign_metrics"] is False for call in repo.report_calls)
+
+
+@pytest.mark.asyncio
+async def test_monthly_campaign_metrics_enable_only_campaign_query_path() -> None:
+    repo = FakeRepo()
+    service = ExportsService(repo)  # type: ignore[arg-type]
+    service._campaign_codes_by_month = lambda _months: {"2026-06": ["P1"]}  # type: ignore[method-assign]
+    service._campaign_exclusions_by_month = AsyncMock(return_value={})  # type: ignore[method-assign]
+
+    await service.build_report({
+        "dataset": "stores",
+        "months": ["2026-06"],
+        "metrics": ["total_sales"],
+        "monthly_metrics": ["incentive_quantity"],
+    })
+
+    assert [call["include_campaign_metrics"] for call in repo.report_calls] == [False, True]
+    service._campaign_exclusions_by_month.assert_awaited_once()  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -134,6 +154,27 @@ async def test_preview_rejects_invalid_or_too_wide_requests() -> None:
 
     with pytest.raises(ExportValidationError, match="cel putin o zi"):
         await service.preview({"dataset": "stores", "months": ["2026-06"], "selected_days": []})
+
+    with pytest.raises(ExportValidationError, match="metrici zilnice"):
+        await service.preview({
+            "dataset": "stores",
+            "months": ["2026-06"],
+            "daily_metrics": ["incentive_quantity"],
+        })
+
+
+def test_explicit_site_scope_drops_current_hierarchy_filters() -> None:
+    service = ExportsService(FakeRepo())  # type: ignore[arg-type]
+
+    filters = service._normalize_filters({
+        "firma": ["Firma curenta"],
+        "regional": ["RM curent"],
+        "asm": ["ASM curent"],
+        "site_code": ["S001"],
+        "agent": ["Agent 1"],
+    })
+
+    assert filters == {"site_code": ["S001"], "agent": ["Agent 1"]}
 
 
 @pytest.mark.asyncio
@@ -531,25 +572,18 @@ def test_campaign_codes_by_month_handles_config_and_rule_variants(monkeypatch: p
     service = ExportsService(FakeRepo())  # type: ignore[arg-type]
 
     monkeypatch.setattr(exports_module, "load_special_cards_config", lambda: ({}, "missing config"))
-    assert service._campaign_codes_by_month(["2026-06"]) == {}
+    with pytest.raises(ExportValidationError, match="configuratia Promo"):
+        service._campaign_codes_by_month(["2026-06"])
 
     def parse_definitions(_config: dict[str, Any], month: str) -> tuple[list[dict[str, Any]], str | None]:
-        if month == "2026-05":
-            return [], "invalid month"
         return [
             {"id": "screen", "rule_type": "same_model_screen_camera"},
             {"id": "trigger", "rule_type": "trigger_discounted"},
             {"id": "selected"},
-            {"id": "none"},
-            {"id": "error"},
         ], None
 
     def load_products(definition: dict[str, Any]) -> tuple[dict[str, list[Any]] | None, str | None]:
         definition_id = definition["id"]
-        if definition_id == "none":
-            return None, None
-        if definition_id == "error":
-            return {}, "bad products"
         if definition_id in {"screen", "trigger"}:
             return {"discounted_codes": [f"D-{definition_id}"], "item_codes": ["ignored"]}, None
         return {"item_codes": ["I-selected", 7], "discounted_codes": ["ignored"]}, None
@@ -559,6 +593,7 @@ def test_campaign_codes_by_month_handles_config_and_rule_variants(monkeypatch: p
     monkeypatch.setattr(exports_module, "load_promotion_rule_products", load_products)
 
     assert service._campaign_codes_by_month(["2026-05", "2026-06"]) == {
+        "2026-05": ["7", "D-screen", "D-trigger", "I-selected"],
         "2026-06": ["7", "D-screen", "D-trigger", "I-selected"]
     }
 
@@ -584,7 +619,10 @@ async def test_campaign_exclusions_by_month_reads_pool_context(monkeypatch: pyte
     async def load_context(conn: Any, month: str, **kwargs: Any) -> SimpleNamespace:
         calls.append({"conn": conn, "month": month, **kwargs})
         units = {} if month == "2026-05" else {("S001", "Agent 1", 123): "2"}
-        return SimpleNamespace(promo_excluded_units=units)
+        return SimpleNamespace(
+            promotion_status=PromotionEvaluationStatus.COMPLETE,
+            promo_excluded_units=units,
+        )
 
     monkeypatch.setattr(exports_module, "_load_dashboard_campaign_context", load_context)
 
@@ -604,18 +642,18 @@ async def test_campaign_exclusions_by_month_reads_pool_context(monkeypatch: pyte
         {
             "conn": "conn",
             "month": "2026-05",
-            "firma": "Mobiup",
-            "regional": "RM 1",
-            "asm": "ASM 1",
+            "firma": None,
+            "regional": None,
+            "asm": None,
             "site_code": "S001",
             "agent": "Agent 1",
         },
         {
             "conn": "conn",
             "month": "2026-06",
-            "firma": "Mobiup",
-            "regional": "RM 1",
-            "asm": "ASM 1",
+            "firma": None,
+            "regional": None,
+            "asm": None,
             "site_code": "S001",
             "agent": "Agent 1",
         },

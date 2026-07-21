@@ -156,7 +156,8 @@ async def import_one(
                     rows_imported = $2,
                     is_month_final = $3,
                     error_message = NULL,
-                    heartbeat_at = now()
+                    heartbeat_at = now(),
+                    finished_at = now()
                 WHERE id = $1
                 """,
                 snapshot_id,
@@ -168,7 +169,7 @@ async def import_one(
             """
             UPDATE import_snapshots
             SET status = 'failed', rows_imported = 0, error_message = $2,
-                heartbeat_at = now()
+                heartbeat_at = now(), finished_at = now()
             WHERE id = $1
             """,
             snapshot_id,

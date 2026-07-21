@@ -60,7 +60,10 @@ function makePromoData(): CampaignsPromotionsResponse {
       { label: 'Mecanism actualizat', start_date: '2026-07-10', end_date: '2026-07-31', product_count: 201, reward_values: [5, 10, 15, 30], qty: 8, potential: 350, value: 250 },
     ],
     incentive_category_breakdown: [],
-    has_active_promotion: true,
+  has_active_promotion: true,
+  promo_calculation_status: 'complete',
+  incentive_calculation_status: 'complete',
+  calculation_warnings: [],
     top_stores: [
       {
         store_name: 'Mobiup - Store Test',

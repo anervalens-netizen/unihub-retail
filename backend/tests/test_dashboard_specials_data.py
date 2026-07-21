@@ -89,11 +89,6 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
             new_callable=AsyncMock,
         ) as mock_load_context,
         patch(
-            "services.dashboard.specials_data._get_store_incentive_multipliers",
-            new_callable=AsyncMock,
-            return_value=({"S1": 1.0}, {"S1": 1.0}),
-        ) as mock_store_multipliers,
-        patch(
             "services.dashboard.specials_data._fetch_promo_incentive_summary",
             new_callable=AsyncMock,
         ) as mock_fetch_summary,
@@ -124,9 +119,3 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
     assert "UNION ALL" in sql
     assert "JOIN stores s ON s.site_code = agg.site_code" in sql
     assert "s.is_active = true" in sql
-    multiplier_call = mock_store_multipliers.await_args
-    assert multiplier_call is not None
-    assert multiplier_call.kwargs == {
-        "current_scope": True,
-        "include_closed_stores": False,
-    }

@@ -179,13 +179,13 @@ export function Campaigns({
     enabled: Boolean(promoMonth) && shouldLoadCurrent,
     staleTime: CAMPAIGNS_STALE_MS,
     placeholderData: keepPreviousData,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result: CampaignCurrentCache = {};
       const requests: Promise<void>[] = [];
 
       if (shouldLoadSnapshot) {
         requests.push(
-          getCampaignSnapshot(promoQuery).then((snapshotData) => {
+          getCampaignSnapshot(promoQuery, signal).then((snapshotData) => {
             result.snapshot = snapshotData;
           }),
         );
@@ -197,7 +197,7 @@ export function Campaigns({
             ...promoQuery,
             view: activeSection === 'promo' ? 'promo' : 'incentive',
             ...(selectedPromotionKey && { promotion_key: selectedPromotionKey }),
-          }).then((promoResponse) => {
+          }, signal).then((promoResponse) => {
             result.promoData = promoResponse;
           }),
         );
@@ -210,7 +210,7 @@ export function Campaigns({
             surface: premiumSurfaceMode,
             current_scope: true,
             include_closed_stores: false,
-          }).then((premiumResponse) => {
+          }, signal).then((premiumResponse) => {
             result.premiumGlass = premiumResponse;
           }),
         );
@@ -226,7 +226,7 @@ export function Campaigns({
     enabled: activeSection === 'focus' && Boolean(historyMonth),
     staleTime: CAMPAIGNS_STALE_MS,
     placeholderData: keepPreviousData,
-    queryFn: () => getFocusHistory(historyQueryParams),
+    queryFn: ({ signal }) => getFocusHistory(historyQueryParams, signal),
   });
 
   const contestsQuery = useQuery({
@@ -234,7 +234,7 @@ export function Campaigns({
     enabled: activeSection === 'concurs' && Boolean(promoMonth),
     staleTime: CAMPAIGNS_STALE_MS,
     placeholderData: keepPreviousData,
-    queryFn: () => getActiveContests(promoMonth),
+    queryFn: ({ signal }) => getActiveContests(promoMonth, signal),
   });
 
   const currentData = currentQuery.data ?? {};
@@ -388,6 +388,11 @@ export function Campaigns({
             <EmptyCard message={`Nu exista promotie activa in ${promoMonth}.`} />
           ) : (
             <>
+              {promoData.promo_calculation_status === 'partial' && (
+                <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                  {promoData.calculation_warnings[0] || 'Calcul promo partial; perioada nevalidată nu este folosită pentru Incentive.'}
+                </div>
+              )}
               <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
                 <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
                   <BadgePercent size={16} />
@@ -548,7 +553,13 @@ export function Campaigns({
         <>
           <CampaignMonthBar title="Incentive" icon={Gift} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
 
-          <IncentiveCard promoData={promoData} />
+          {promoData?.incentive_calculation_status === 'invalid' ? (
+            <div role="alert" className="glass rounded-3xl border border-rose-200 bg-rose-50/70 p-4 text-sm font-semibold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+              {promoData.calculation_warnings[0] || 'Calculul Incentive este indisponibil deoarece excluderile Promo nu au putut fi validate complet.'}
+            </div>
+          ) : (
+            <>
+              <IncentiveCard promoData={promoData} />
 
           {promoData && promoData.top_agents.length > 0 && (
             <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
@@ -726,7 +737,9 @@ export function Campaigns({
             </div>
           )}
 
-          <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
+              <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
+            </>
+          )}
         </>
       ) : activeSection === 'premium' ? (
         <>
@@ -1158,9 +1171,9 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-200 py-3 sm:grid-cols-4 dark:border-slate-700">
         <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_sold_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități vândute</div></div>
-        <div><div className="text-2xl font-black text-emerald-600 dark:text-emerald-300">{promoData ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități eligibile după promo</div></div>
-        <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități în magazinele calificate</div></div>
-        <div><div className="text-2xl font-black text-indigo-600 dark:text-indigo-300">{promoData ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">incentive calculat acum</div></div>
+        <div><div className="text-2xl font-black text-emerald-600 dark:text-emerald-300">{promoData?.incentive_qty != null ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități eligibile după promo</div></div>
+        <div><div className="text-2xl font-black">{promoData?.incentive_qualified_qty != null ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități în magazinele calificate</div></div>
+        <div><div className="text-2xl font-black text-indigo-600 dark:text-indigo-300">{promoData?.incentive_value != null ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">incentive calculat acum</div></div>
       </div>
 
       {periods.length > 0 && (
