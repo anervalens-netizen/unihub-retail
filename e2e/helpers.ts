@@ -168,7 +168,7 @@ export async function setupBaseMocks(context: BrowserContext) {
   await mockApiRoute(context, 'GET', /\/api\/filters\/months$/, MOCK_MONTHS);
   await mockApiRoute(context, 'GET', /\/api\/filters\/options/, MOCK_FILTER_OPTIONS);
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/all/, MOCK_DASHBOARD_ALL);
-  await context.route(/\/api\/dashboard\/all-batch$/, async (route) => {
+  await context.route('**/api/dashboard/*-batch', async (route) => {
     if (route.request().method() !== 'POST') {
       return route.fallback();
     }
@@ -188,7 +188,7 @@ export async function setupBaseMocks(context: BrowserContext) {
       body: JSON.stringify({ results }),
     });
   });
-  await mockApiRoute(context, 'GET', /\/api\/dashboard\/history\b/, MOCK_DASHBOARD_HISTORY);
+  await mockApiRoute(context, 'GET', /\/api\/dashboard\/history(?:\?|$)/, MOCK_DASHBOARD_HISTORY);
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/history-year/, MOCK_DASHBOARD_YEAR_HISTORY);
   await mockApiRoute(context, 'GET', /\/api\/stores$/, []);
   await mockApiRoute(context, 'GET', /\/api\/hr\/asm-performance/, []);
