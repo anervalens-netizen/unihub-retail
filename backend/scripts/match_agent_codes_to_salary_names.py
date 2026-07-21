@@ -297,6 +297,10 @@ async def main() -> None:
         action="store_true",
         help="Upsert maparile confirmate si necunoscute in agent_salary_links.",
     )
+    parser.add_argument(
+        "--effective-from-month",
+        help="Luna efectiva YYYY-MM; implicit luna de reporting selectata.",
+    )
     args = parser.parse_args()
 
     (
@@ -440,7 +444,10 @@ async def main() -> None:
         writer.writerows([{key: csv_cell_value(value) for key, value in row.items()} for row in output_rows])
 
     if args.apply_db:
-        await _upsert_agent_salary_links(output_rows)
+        await _upsert_agent_salary_links(
+            output_rows,
+            effective_from_month=args.effective_from_month or latest_reporting,
+        )
 
     summary = Counter(f"{row['status']}:{row['confidence']}" for row in output_rows)
     print(f"reporting_month={latest_reporting}")
@@ -452,7 +459,16 @@ async def main() -> None:
     print(f"output={output_path}")
 
 
-async def _upsert_agent_salary_links(rows: list[dict[str, Any]]) -> None:
+async def _upsert_agent_salary_links(
+    rows: list[dict[str, Any]],
+    *,
+    effective_from_month: str | None = None,
+) -> None:
+    if effective_from_month is not None and not re.fullmatch(
+        r"\d{4}-(0[1-9]|1[0-2])",
+        effective_from_month,
+    ):
+        raise ValueError("effective_from_month must use YYYY-MM")
     payload: list[tuple[Any, ...]] = []
     for row in rows:
         if row["status"] not in {"matched", "unknown"}:
@@ -472,7 +488,7 @@ async def _upsert_agent_salary_links(rows: list[dict[str, Any]]) -> None:
                 match_status,
                 row["match_source"],
                 confidence,
-                "2026-07",
+                effective_from_month,
                 row["note"],
                 person_id,
             )
@@ -498,6 +514,8 @@ async def _upsert_agent_salary_links(rows: list[dict[str, Any]]) -> None:
                 note = EXCLUDED.note,
                 person_id = EXCLUDED.person_id,
                 updated_at = now()
+            WHERE agent_salary_links.match_source <> 'manual'
+               OR EXCLUDED.match_source = 'manual'
                 """,
                 payload,
             )

@@ -6,6 +6,9 @@ Read `APP_ARCHITECTURE.md` for module boundaries and `README.md` for setup.
 For promo, incentive, or contest work, read
 `docs/RUNBOOK-campanii-promo-incentive-concursuri.md`; for salary-grid work,
 read the focused salary documents under `docs/`.
+For the monthly official HR salary import, follow
+`docs/RUNBOOK-import-salarii-HR.md`; always dry-run, reconcile both companies,
+then apply and verify the live salary/read-model paths.
 
 ## Runtime
 

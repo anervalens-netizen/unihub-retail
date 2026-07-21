@@ -85,13 +85,16 @@ async def test_apply_db_persists_person_id_and_clears_it_for_unknown(
                 "matched_name": "",
                 "person_id": "sp1_" + "b" * 64,
             },
-        ]
+        ],
+        effective_from_month="2026-08",
     )
 
     assert connection.executemany.await_args is not None
     sql, payload = connection.executemany.await_args.args
     assert "note, person_id" in sql
     assert "person_id = EXCLUDED.person_id" in sql
+    assert "agent_salary_links.match_source <> 'manual'" in sql
+    assert payload[0][-3] == "2026-08"
     assert payload[0][-1] == "sp1_" + "a" * 64
     assert payload[1][-1] is None
 
@@ -119,6 +122,15 @@ async def test_apply_db_rejects_confirmed_link_without_person_id(
         )
 
     connection.executemany.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_apply_db_rejects_invalid_effective_month() -> None:
+    with pytest.raises(ValueError, match="YYYY-MM"):
+        await matcher._upsert_agent_salary_links(
+            [],
+            effective_from_month="2026-13",
+        )
 
 
 @pytest.mark.skipif(
