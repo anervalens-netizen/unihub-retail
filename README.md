@@ -110,6 +110,10 @@ Fluxul standard al importului de vânzări:
 5. înlocuiește snapshotul și reconstruiește `reporting_*` în aceeași operație;
 6. marchează snapshotul `completed` sau `failed`, fără stare parțială.
 
+Interfața tolerează întreruperile temporare în verificarea jobului. Lipsa unei
+confirmări de rețea este afișată ca stare necunoscută, nu ca import eșuat; doar
+respingerea explicită din API sau eroarea confirmată de worker este eșec.
+
 În `Setări -> Importuri`, raportul detaliat ERP poate fi încărcat și pentru o
 verificare ocazională care nu importă și nu persistă fișierul. Aplicația citește
 cutoff-ul din raport și compară Retail strict de la ziua 1 până la acea dată;

@@ -14,7 +14,8 @@ import { getCachedView, setCachedView } from '../lib/viewCache';
 import { downloadBlob } from '../lib/download';
 import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
-import {getApiErrorMessage} from '../api/client';
+import { ApiError, getApiErrorMessage } from '../api/client';
+import { pollImportJob } from '../lib/importJobPolling';
 import { SegmentedTabs } from './common/SegmentedTabs';
 import { TableHeaderCell } from './common/TableHeader';
 
@@ -27,6 +28,7 @@ interface SettingsProps {
 const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
 const IMPORT_POLL_INTERVAL_MS = 1500;
 const IMPORT_POLL_LIMIT = 1200;
+const IMPORT_POLL_MAX_CONSECUTIVE_ERRORS = 20;
 const CACHE_KEY = 'settings:imports';
 const EMPTY_EXPORT_FILTERS: ExportFilters = {
   firma: [],
@@ -90,7 +92,7 @@ export function Settings({
   const [erpReconciliationResult, setErpReconciliationResult] = useState<ErpReconciliationResponse | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+  const [messageType, setMessageType] = useState<'success' | 'warning' | 'error'>('success');
   const [section, setSection] = useState<SettingsSection>(
     canImportSales ? 'imports' : canUseExports ? 'exports' : 'preferences',
   );
@@ -244,27 +246,52 @@ export function Settings({
 
   const handleUpload = async () => {
     if (!file || !salesReplaceConfirmed) return;
+    let uploadAccepted = false;
     try {
       setUploading(true);
       setMessage('');
       setMessageType('success');
-      let job = await uploadSalesFile(file);
+      const initialJob = await uploadSalesFile(file);
+      uploadAccepted = true;
       setMessage('Fișier încărcat. Importul rulează în worker.');
-      for (let attempt = 0; attempt < IMPORT_POLL_LIMIT; attempt += 1) {
-        if (job.status === 'complete' || job.status === 'not_found') break;
-        await new Promise((resolve) => window.setTimeout(resolve, IMPORT_POLL_INTERVAL_MS));
-        job = await getImportJobStatus(job.job_id);
+      const outcome = await pollImportJob(initialJob, {
+        intervalMs: IMPORT_POLL_INTERVAL_MS,
+        maxAttempts: IMPORT_POLL_LIMIT,
+        maxConsecutiveErrors: IMPORT_POLL_MAX_CONSECUTIVE_ERRORS,
+        getStatus: getImportJobStatus,
+        onConnectionIssue: () => {
+          setMessageType('warning');
+          setMessage('Conexiune întreruptă temporar. Importul continuă în worker; reconectez automat.');
+        },
+        onConnectionRestored: () => {
+          setMessageType('success');
+          setMessage('Conexiune restabilită. Importul rulează în worker.');
+        },
+      });
+      if (outcome.kind === 'unconfirmed') {
+        setMessageType('warning');
+        setMessage(
+          'Fișierul a fost încărcat, dar statusul final nu poate fi confirmat momentan. '
+          + 'Importul poate continua în worker; reîncarcă pagina și verifică istoricul înainte de a retrimite fișierul.',
+        );
+        return;
       }
-      if (job.status !== 'complete') {
-        throw new Error('Import job timeout');
-      }
+      const job = outcome.job;
       if (job.error || !job.result) {
-        throw new Error(job.error || 'Importul nu a returnat un rezultat');
+        if (job.error) throw new Error(job.error);
+        setMessageType('warning');
+        setMessage('Workerul a încheiat jobul, dar rezultatul nu poate fi confirmat. Verifică istoricul importurilor.');
+        return;
       }
       const response = job.result;
-      const historyData = await getImportHistory();
-      setHistory(historyData);
-      setCachedView(CACHE_KEY, { history: historyData });
+      try {
+        const historyData = await getImportHistory();
+        setHistory(historyData);
+        setCachedView(CACHE_KEY, { history: historyData });
+      } catch {
+        // Importul este deja confirmat de worker. Un refresh de istoric esuat
+        // nu trebuie reclasificat drept esec al importului.
+      }
       onImportCompleted(response.import_month);
       const parts = [
         `Import ${response.import_month}: ${response.rows_imported} rânduri importate`,
@@ -288,6 +315,15 @@ export function Settings({
       setFile(null);
       setSalesReplaceConfirmed(false);
     } catch (error) {
+      const isConfirmedRejection = uploadAccepted || (error instanceof ApiError && error.status < 500);
+      if (!isConfirmedRejection) {
+        setMessage(
+          'Conexiunea s-a întrerupt înainte de confirmare. Fișierul poate fi deja în procesare; '
+          + 'reîncarcă pagina și verifică istoricul înainte de a retrimite.',
+        );
+        setMessageType('warning');
+        return;
+      }
       const detail = error instanceof Error ? error.message : '';
       setMessage(
         detail && !detail.startsWith('API error')
@@ -523,6 +559,8 @@ export function Settings({
               <div className={`mt-3 rounded-2xl px-3 py-2 text-xs font-semibold ${
                 messageType === 'error'
                   ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'
+                  : messageType === 'warning'
+                    ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300'
                   : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
               }`}>
                 {message}
