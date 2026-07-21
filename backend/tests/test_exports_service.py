@@ -119,7 +119,7 @@ async def test_preview_builds_monthly_and_daily_columns_without_db() -> None:
 async def test_monthly_campaign_metrics_enable_only_campaign_query_path() -> None:
     repo = FakeRepo()
     service = ExportsService(repo)  # type: ignore[arg-type]
-    service._campaign_codes_by_month = lambda _months: {"2026-06": ["P1"]}  # type: ignore[method-assign]
+    service._campaign_codes_by_month = lambda months: {"2026-06": ["P1"]}  # type: ignore[method-assign]
     service._campaign_exclusions_by_month = AsyncMock(return_value={})  # type: ignore[method-assign]
 
     await service.build_report({

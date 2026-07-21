@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from business_rules import PROMOTION_DISCOUNT_RATE
 from schemas.dashboard import (
@@ -1709,7 +1709,7 @@ async def _fetch_promo_incentive_summary(
     promotion_definition = campaign_context.promotion_definition
     promotion_error = campaign_context.promotion_error
     incentive_campaign = campaign_context.incentive_campaign
-    calculation_status = (
+    calculation_status: Literal["complete", "invalid"] = (
         "invalid"
         if incentive_campaign is not None
         and campaign_context.promotion_status is not PromotionEvaluationStatus.COMPLETE
