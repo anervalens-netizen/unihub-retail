@@ -24,6 +24,9 @@ Runtime probes are separated by contract: `/livez` is process-only, while
 two-second deadline. `/health` remains a compatibility alias for `/readyz`.
 Prometheus excludes these probes from the user-request SLI and uses a dedicated
 public `/readyz` blackbox probe.
+The systemd unit waits up to 90 seconds for the local Valkey listener before
+starting Uvicorn, so a host reboot cannot create avoidable session-backend
+errors while Docker restores the dependency.
 
 Frontend RUM este activ în build-ul live prin integrarea GlitchTip/Sentry
 `browserTracingIntegration`, cu eșantionare 10% pentru navigări/tranzacții și
