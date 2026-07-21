@@ -142,6 +142,7 @@ jobs:
           cp \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-backend.service" \
             "$GITHUB_WORKSPACE/unihub-worker.service" \
+            "$GITHUB_WORKSPACE/ops/systemd/unihub-import-worker.service" \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-retail-migrate.service" \
             "$systemd_root/etc/systemd/system/"
           printf '[Service]\nType=oneshot\nExecStart=/usr/bin/true\n' \
@@ -160,6 +161,7 @@ jobs:
           systemd-analyze verify --root="$systemd_root" \
             "$systemd_root/etc/systemd/system/unihub-backend.service" \
             "$systemd_root/etc/systemd/system/unihub-worker.service" \
+            "$systemd_root/etc/systemd/system/unihub-import-worker.service" \
             "$systemd_root/etc/systemd/system/unihub-retail-migrate.service"
           archive="$prom_root/prometheus.tar.gz"
           curl --fail --silent --show-error --location \

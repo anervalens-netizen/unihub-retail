@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 from hashlib import sha256
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Literal, Optional
+from uuid import uuid4
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
@@ -54,6 +58,76 @@ class GrileTargetSyncEnqueueResult:
 
 
 _VALKEY_SETTINGS: Optional[RedisSettings] = None
+SALES_IMPORT_QUEUE_NAME = "arq:retail:imports"
+DEFAULT_SALES_IMPORT_SPOOL_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
+def get_sales_import_spool_dir() -> Path:
+    configured = os.getenv("SALES_IMPORT_SPOOL_DIR")
+    path = (
+        Path(configured).expanduser()
+        if configured
+        else Path(__file__).resolve().parents[2] / "data" / "import_spool"
+    )
+    return path.resolve()
+
+
+def _stage_sales_import(content: bytes, digest: str) -> Path:
+    spool_dir = get_sales_import_spool_dir()
+    spool_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination = spool_dir / f"{digest}.upload"
+    temporary = spool_dir / f".{digest}.{uuid4().hex}.tmp"
+    try:
+        temporary.write_bytes(content)
+        temporary.chmod(0o600)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination
+
+
+def remove_sales_import_spool_file(path: str | Path) -> None:
+    candidate = Path(path).resolve()
+    spool_dir = get_sales_import_spool_dir()
+    if not candidate.is_relative_to(spool_dir):
+        raise ValueError("Sales import spool path escapes the configured directory")
+    candidate.unlink(missing_ok=True)
+
+
+def read_sales_import_spool_file(path: str, expected_digest: str) -> bytes:
+    candidate = Path(path).resolve()
+    spool_dir = get_sales_import_spool_dir()
+    if not candidate.is_relative_to(spool_dir):
+        raise ValueError("Sales import spool path escapes the configured directory")
+    content = candidate.read_bytes()
+    if sha256(content).hexdigest() != expected_digest:
+        raise ValueError("Sales import spool integrity check failed")
+    return content
+
+
+def cleanup_stale_sales_import_spool_files() -> int:
+    spool_dir = get_sales_import_spool_dir()
+    if not spool_dir.exists():
+        return 0
+    max_age = int(
+        os.getenv(
+            "SALES_IMPORT_SPOOL_MAX_AGE_SECONDS",
+            str(DEFAULT_SALES_IMPORT_SPOOL_MAX_AGE_SECONDS),
+        )
+    )
+    if max_age < 3600:
+        raise ValueError("SALES_IMPORT_SPOOL_MAX_AGE_SECONDS must be at least one hour")
+    cutoff = time.time() - max_age
+    removed = 0
+    for candidate in spool_dir.glob("*.upload"):
+        if candidate.is_file() and candidate.stat().st_mtime < cutoff:
+            candidate.unlink(missing_ok=True)
+            removed += 1
+    for candidate in spool_dir.glob(".*.tmp"):
+        if candidate.is_file() and candidate.stat().st_mtime < cutoff:
+            candidate.unlink(missing_ok=True)
+            removed += 1
+    return removed
 
 
 def get_valkey_settings() -> RedisSettings:
@@ -91,27 +165,53 @@ async def close_arq_pool() -> None:
 
 async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
     pool = await get_arq_pool()
-    job_id = f"sales-import:{sha256(file_content).hexdigest()}"
+    digest = sha256(file_content).hexdigest()
+    job_id = f"sales-import:{digest}"
+    spool_path = await asyncio.to_thread(_stage_sales_import, file_content, digest)
     enqueue_args = (
         "import_sales_background",
-        file_content,
+        str(spool_path),
+        digest,
         filename,
         get_request_id(),
     )
-    job = await pool.enqueue_job(*enqueue_args, _job_id=job_id)
+    try:
+        job = await pool.enqueue_job(
+            *enqueue_args,
+            _job_id=job_id,
+            _queue_name=SALES_IMPORT_QUEUE_NAME,
+        )
+    except Exception:
+        # Publicarea poate fi acceptată de Valkey chiar dacă răspunsul către
+        # client se pierde. Nu șterge spoolul unui job deja vizibil în coadă.
+        existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
+        try:
+            existing_status = await existing.status()
+        except Exception:
+            existing_status = ArqJobStatus.not_found
+        if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
+            return existing
+        await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+        raise
     if job is None:
-        existing = Job(job_id, pool)
+        existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
         existing_status = await existing.status()
         if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
             return existing
         if existing_status == ArqJobStatus.complete:
             info = await existing.result_info()
             if info and info.success:
+                await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
                 return existing
             await pool.delete(result_key_prefix + job_id)
-            job = await pool.enqueue_job(*enqueue_args, _job_id=job_id)
+            job = await pool.enqueue_job(
+                *enqueue_args,
+                _job_id=job_id,
+                _queue_name=SALES_IMPORT_QUEUE_NAME,
+            )
             if job is not None:
                 return job
+        await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
         raise RuntimeError("Failed to enqueue import job")
     return job
 
@@ -322,7 +422,8 @@ async def get_grile_target_sync_operation(
 async def get_job_status(job_id: str) -> JobResult:
     pool = await get_arq_pool()
     try:
-        job = Job(job_id, pool)
+        queue_name = SALES_IMPORT_QUEUE_NAME if job_id.startswith("sales-import:") else None
+        job = Job(job_id, pool, _queue_name=queue_name) if queue_name else Job(job_id, pool)
         status = await job.status()
     except Exception:
         return JobResult(job_id=job_id, status=JobStatus.NOT_FOUND)

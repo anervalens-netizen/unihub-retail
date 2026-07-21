@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 
 import type { AgentStat, DashboardSummary, RegionalStat, StoreStat } from '../../api/types';
+import { MAX_DASHBOARD_BATCH_MONTHS } from '../../api/dashboard';
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
 import {
@@ -337,7 +338,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
             <h3 className="text-sm font-bold">Luni analizate</h3>
             <p className="text-[11px] text-slate-500">Alege un interval rapid sau bifează lunile; rezultatele se agregă automat.</p>
             <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Intervale rapide">
-              {[3, 6, 12, 13].map((count) => (
+              {[3, 6, 12].map((count) => (
                 <button
                   key={count}
                   type="button"
@@ -363,16 +364,17 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
                 <div className="max-h-72 overflow-auto pr-1">
                   {months.map((month) => {
                     const checked = draftSelectedMonths.includes(month);
+                    const disabled = !checked && draftSelectedMonths.length >= MAX_DASHBOARD_BATCH_MONTHS;
                     return (
-                      <label key={month} className={`flex cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors ${checked ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
-                        <input type="checkbox" checked={checked} onChange={() => onToggleMonth(month)} className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                      <label key={month} className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors ${disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'} ${checked ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
+                        <input type="checkbox" checked={checked} disabled={disabled} onChange={() => onToggleMonth(month)} className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
                         <span>{month}</span>
                       </label>
                     );
                   })}
                 </div>
                 <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
-                  <span className="text-[10px] font-semibold text-slate-400">{draftSelectedMonths.length} selectate</span>
+                  <span className="text-[10px] font-semibold text-slate-400">{draftSelectedMonths.length}/{MAX_DASHBOARD_BATCH_MONTHS} selectate</span>
                   <button type="button" onClick={onApplyMonths} className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700">OK</button>
                 </div>
               </div>

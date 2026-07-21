@@ -30,10 +30,6 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: [
-          'favicon-64.png',
-          'apple-touch-icon.png',
-        ],
         manifest: {
           name: 'UniHub Retail',
           short_name: 'UniHub Retail',
@@ -69,7 +65,14 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // Precache only the shell. Feature chunks (notably charts) are
+          // fetched on demand and then retained by the runtime cache.
+          globPatterns: [
+            '**/*.{html,ico,png,svg,woff2}',
+            'assets/index-*.{js,css}',
+            'assets/vendor-*.js',
+            'assets/ui-*.js',
+          ],
           // Server-owned navigations must reach FastAPI. Falling back to the
           // cached SPA for /auth/session/login creates an infinite login loop.
           navigateFallbackDenylist: PWA_NAVIGATION_DENYLIST,
@@ -77,6 +80,19 @@ export default defineConfig(({ mode }) => {
             '**/logo-horizontal.png',
             '**/logo-inverted.png',
             '**/logo-mark.png',
+          ],
+          runtimeCaching: [
+            {
+              urlPattern: ({ request }) => request.destination === 'script' || request.destination === 'style',
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'retail-feature-assets',
+                expiration: {
+                  maxEntries: 60,
+                  maxAgeSeconds: 30 * 24 * 60 * 60,
+                },
+              },
+            },
           ],
         },
       }),

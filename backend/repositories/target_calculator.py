@@ -460,11 +460,10 @@ class TargetCalculatorRepository:
                 cartele AS (
                     SELECT
                         import_month,
-                        COALESCE(SUM(quantity), 0)::INT AS cartele_qty
-                    FROM sales_transactions
+                        COALESCE(SUM(total_quantity), 0)::INT AS cartele_qty
+                    FROM reporting_cartela_day
                     WHERE site_code = $1
                       AND import_month IN (SELECT import_month FROM month_axis)
-                      AND is_cartela = true
                     GROUP BY import_month
                 ),
                 daily_days AS (

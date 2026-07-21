@@ -316,7 +316,9 @@ sub alt manager. Magazinele inchise sunt excluse implicit; UI-ul are optiune
 dedicata pentru includerea lor. In subtabul Istoric, utilizatorul poate bifa
 mai multe luni; dashboard-ul combina raspunsurile lunare existente si
 recalculeaza totaluri, procente, mixuri, tabele si exporturi pentru selectia
-agregata.
+agregata. Selectia este limitata la 12 luni si foloseste un singur request
+`POST /api/dashboard/all-batch`; serverul proceseaza cel mult doua luni
+concomitent, in ordinea ceruta.
 
 Cardul Hub `Comparatie perioade` foloseste o cohorta like-for-like: magazinele
 cu vanzari Retail in luna analizata sunt considerate deschise pentru acel card,
@@ -336,7 +338,7 @@ Familii de tabele:
 | Master data | `stores`, `store_targets`, `focus_products` |
 | Tranzactii | `sales_transactions`, `historical_annual_sales` |
 | Campanii | `incentive_campaigns`, `incentive_products` |
-| Reporting | `reporting_agent_*`, `reporting_item_*`, `reporting_focus_item_month`, `reporting_category_month` |
+| Reporting | `reporting_agent_*`, `reporting_item_*`, `reporting_focus_item_month`, `reporting_category_month`, `reporting_cartela_day` |
 | AI Forecast | `ai_forecast_runs`, `ai_forecast_store_month`, `ai_forecast_store_day` |
 | Management | `tasks`, `leave_requests`, `attendance_records`, `store_scores`, `salary_records`, `agent_salary_links`, `agent_targets`, `store_pnl_monthly` |
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
@@ -352,6 +354,13 @@ nici reaparitia nu schimba starea. Activarea sau inchiderea se face separat,
 admin-only, cu subject OIDC, motiv si eveniment persistent in
 `store_activity_events`. Importurile istorice actualizeaza doar intervalul
 `first_seen_month`/`last_seen_month` si nu au voie sa rescrie managerul curent.
+
+Cartelele sunt excluse din toate agregatele Retail de accesorii. Singura
+cantitate separata `cartele_qty` este citita din `reporting_cartela_day`,
+refacut atomic o data la import la granularitatea luna/zi/magazin/agent.
+Requesturile Dashboard si Target Calculator nu scaneaza `sales_transactions`;
+locatiile `TR %` sunt eliminate chiar la construirea agregatului și filtrul de
+distributie rămâne aplicat și la citire ca gardă suplimentară.
 
 P&L-ul financiar lunar pe magazin este pastrat in `store_pnl_monthly` la
 granularitatea companie, luna, cod istoric de locatie si categorie contabila.

@@ -80,6 +80,13 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
     "HTTP request latency in seconds grouped by method, status class and handler.",
     ("method", "status", "handler"),
 )
+HTTP_SLOW_REQUESTS_TOTAL = Counter(
+    "http_slow_requests_total",
+    "Requests that exceeded the low-volume latency guardrail.",
+    ("method", "status", "handler"),
+)
+SLOW_REQUEST_THRESHOLD_SECONDS = 3.0
+_PROBE_HANDLERS = {"/health", "/readyz", "/livez", "/metrics"}
 
 
 @asynccontextmanager
@@ -143,10 +150,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 route = request.scope.get("route")
                 handler = getattr(route, "path", request.url.path)
                 labels = (request.method, "5xx", handler)
+                duration = time.perf_counter() - started_at
                 HTTP_REQUESTS_TOTAL.labels(*labels).inc()
-                HTTP_REQUEST_DURATION_SECONDS.labels(*labels).observe(
-                    time.perf_counter() - started_at
-                )
+                HTTP_REQUEST_DURATION_SECONDS.labels(*labels).observe(duration)
+                if handler not in _PROBE_HANDLERS and duration >= SLOW_REQUEST_THRESHOLD_SECONDS:
+                    HTTP_SLOW_REQUESTS_TOTAL.labels(*labels).inc()
+                    logger.warning(
+                        "slow request completed with exception",
+                        extra={
+                            "method": request.method,
+                            "path": handler,
+                            "status": "5xx",
+                            "duration_ms": round(duration * 1000, 1),
+                        },
+                    )
             raise
         for name, value in getattr(request.state, "rate_limit_headers", {}).items():
             response.headers[name] = value
@@ -155,8 +172,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             handler = getattr(route, "path", request.url.path)
             status = f"{response.status_code // 100}xx"
             labels = (request.method, status, handler)
+            duration = time.perf_counter() - started_at
             HTTP_REQUESTS_TOTAL.labels(*labels).inc()
-            HTTP_REQUEST_DURATION_SECONDS.labels(*labels).observe(time.perf_counter() - started_at)
+            HTTP_REQUEST_DURATION_SECONDS.labels(*labels).observe(duration)
+            if handler not in _PROBE_HANDLERS and duration >= SLOW_REQUEST_THRESHOLD_SECONDS:
+                HTTP_SLOW_REQUESTS_TOTAL.labels(*labels).inc()
+                logger.warning(
+                    "slow request completed",
+                    extra={
+                        "method": request.method,
+                        "path": handler,
+                        "status": status,
+                        "duration_ms": round(duration * 1000, 1),
+                    },
+                )
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")

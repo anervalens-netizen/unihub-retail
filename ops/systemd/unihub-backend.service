@@ -11,6 +11,10 @@ Type=simple
 User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env
+Environment="SESSION_VALKEY_PORT=6380"
+Environment="SESSION_VALKEY_DATABASE=0"
+Environment="RATE_LIMIT_VALKEY_PORT=6380"
+Environment="RATE_LIMIT_VALKEY_DATABASE=1"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 9898 --workers 1 --no-proxy-headers
 Restart=always
 RestartSec=5
@@ -41,6 +45,12 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
 CapabilityBoundingSet=
 UMask=0077
+CPUWeight=800
+IOWeight=800
+MemoryLow=256M
+MemoryHigh=768M
+MemoryMax=1280M
+MemorySwapMax=128M
 
 [Install]
 WantedBy=multi-user.target

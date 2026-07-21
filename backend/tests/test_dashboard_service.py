@@ -8,7 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from models import AgentStats, DashboardSummary, DailySalesPoint, MonthlyHistoryPoint, PremiumGlassAnalysis, PremiumGlassSummary
+from models import AgentStats, DashboardAllResponse, DashboardSummary, DailySalesPoint, MonthlyHistoryPoint, PremiumGlassAnalysis, PremiumGlassSummary
+from pydantic import ValidationError
+from schemas.dashboard import DashboardAllBatchRequest, DashboardAllQuery
 from services.dashboard.queries import DashboardCampaignContext
 from services.dashboard.metrics import record_dashboard_component_queue
 from services.dashboard_service import DashboardService, _gather_named
@@ -89,6 +91,59 @@ def _empty_campaign_context() -> DashboardCampaignContext:
         promotion_results=[],
         promo_excluded_units={},
     )
+
+
+def _empty_dashboard_all(month: str) -> DashboardAllResponse:
+    return DashboardAllResponse(
+        summary=DashboardSummary(
+            month=month,
+            total_sales=Decimal(0),
+            total_target=Decimal(0),
+            target_progress_pct=None,
+            total_quantity=0,
+            total_receipts=0,
+            proc_bon2acc=None,
+            prc_focus_acc_qty=None,
+            total_stores=0,
+            total_agents=0,
+            working_days=0,
+            daily_average=None,
+        ),
+        agents=[],
+        stores=[],
+        daily=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_dashboard_batch_bounds_month_concurrency_and_preserves_order() -> None:
+    service = DashboardService(MagicMock(), MagicMock())
+    active = 0
+    peak_active = 0
+
+    async def load(month: str, *_args, **_kwargs) -> DashboardAllResponse:
+        nonlocal active, peak_active
+        active += 1
+        peak_active = max(peak_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return _empty_dashboard_all(month)
+
+    service.get_dashboard_all = load  # type: ignore[method-assign]
+    queries = [DashboardAllQuery(month=f"2026-{month:02d}") for month in range(1, 6)]
+
+    result = await service.get_dashboard_all_batch(queries)
+
+    assert peak_active == 2
+    assert [item.summary.month for item in result.results] == [query.month for query in queries]
+
+
+def test_dashboard_batch_rejects_more_than_twelve_months() -> None:
+    with pytest.raises(ValidationError):
+        DashboardAllBatchRequest(
+            queries=[DashboardAllQuery(month=f"2025-{month:02d}") for month in range(1, 13)]
+            + [DashboardAllQuery(month="2026-01")]
+        )
 
 
 @pytest.fixture

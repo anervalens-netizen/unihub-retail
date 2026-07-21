@@ -287,5 +287,24 @@ class DashboardAllResponse(BaseModel):
     daily_last_year: list[DailySalesPoint] = Field(default_factory=list)
 
 
+class DashboardAllQuery(BaseModel):
+    month: MonthStr
+    firma: str | None = None
+    regional: str | None = None
+    asm: str | None = None
+    site_code: str | None = None
+    agent: str | None = None
+    current_scope: bool = False
+    include_closed_stores: bool = False
+
+
+class DashboardAllBatchRequest(BaseModel):
+    queries: list[DashboardAllQuery] = Field(min_length=1, max_length=12)
+
+
+class DashboardAllBatchResponse(BaseModel):
+    results: list[DashboardAllResponse]
+
+
 class DashboardHistoryResponse(BaseModel):
     history: list[MonthlyHistoryPoint]

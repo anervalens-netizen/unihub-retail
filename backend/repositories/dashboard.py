@@ -79,11 +79,10 @@ class DashboardRepository:
                 ),
                 cartele_summary AS (
                     SELECT
-                        COALESCE(SUM(c.quantity), 0)::INT AS cartele_qty
-                    FROM sales_transactions c
+                        COALESCE(SUM(c.total_quantity), 0)::INT AS cartele_qty
+                    FROM reporting_cartela_day c
                     JOIN stores cs ON cs.site_code = c.site_code
                     WHERE c.import_month = $1
-                      AND c.is_cartela = true
                       AND {" AND ".join(cartela_clauses)}
                 )
                 SELECT

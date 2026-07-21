@@ -92,6 +92,19 @@ def test_authenticated_valkey_url_and_invalid_modes(monkeypatch: pytest.MonkeyPa
     assert any("RATE_LIMIT_FAILURE_MODE" in error for error in rate_limit_config_errors(True))
 
 
+def test_rate_limit_can_route_to_separate_valkey_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _valid(monkeypatch)
+    monkeypatch.setenv("RATE_LIMIT_VALKEY_PORT", "6380")
+    monkeypatch.setenv("RATE_LIMIT_VALKEY_DATABASE", "1")
+
+    settings = load_rate_limit_settings()
+
+    assert settings is not None
+    assert settings.valkey_url == "redis://localhost:6380/1"
+
+
 def test_loader_raises_only_generic_error(monkeypatch: pytest.MonkeyPatch) -> None:
     _valid(monkeypatch); value = "unsafe mode value"; monkeypatch.setenv("RATE_LIMIT_CLIENT_IP_HEADER", value)
     with pytest.raises(ValueError) as exc:

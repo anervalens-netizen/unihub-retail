@@ -18,6 +18,8 @@ salarii, P&L, raportarea vizitelor și interfața activă Grile.
   [`docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md`](docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md);
 - plan activ după `v2.0.1`:
   [`docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md`](docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md);
+- plan activ de performanță și operativitate P0-P2:
+  [`docs/PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md`](docs/PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md);
 - deploy privilegiat și rollback: [`ops/README.md`](ops/README.md).
 
 Planurile și rapoartele închise nu sunt duplicate într-o arhivă Markdown din
@@ -31,7 +33,7 @@ HEAD; istoricul lor rămâne disponibil în Git.
 | Backend | FastAPI + asyncpg |
 | Bază de date | PostgreSQL `unihub` |
 | Auth | Authentik OIDC BFF, sesiune criptată în Valkey |
-| Worker | `unihub-worker.service`, ARQ serializat pentru joburi grele |
+| Workeri | `unihub-worker.service` pentru operații și `unihub-import-worker.service` pentru importuri, fiecare serializat |
 | Backend service | `unihub-backend.service` |
 | Migrații | `unihub-retail-migrate.service`, one-shot |
 | URL public | `https://retail.unihub.ro` |
@@ -63,6 +65,8 @@ repository sunt în `APP_ARCHITECTURE.md`.
 - raportarea normală citește tabelele și view-urile `reporting_*`;
 - importurile de vânzări rulează admin-only în worker și înlocuiesc atomic
   snapshotul lunar;
+- uploadul Excel este transferat workerului prin spool local verificat SHA-256,
+  nu ca payload binar în Valkey; coada de import este separată de operații;
 - absența unui magazin din fișier nu modifică `stores.is_active`;
 - activarea/dezactivarea magazinului este o operație separată și auditabilă;
 - Grile check este read-only; sincronizarea targetelor este separată și

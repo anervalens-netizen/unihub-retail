@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getPerformanceDetail } from '../api/dashboard';
+import { getPerformanceDetail, MAX_DASHBOARD_BATCH_MONTHS } from '../api/dashboard';
 import type {
   AgentStat,
   AsmStat,
@@ -951,6 +951,9 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     if (isSelected && draftSelectedHistoryMonths.length === 1) {
       return;
     }
+    if (!isSelected && draftSelectedHistoryMonths.length >= MAX_DASHBOARD_BATCH_MONTHS) {
+      return;
+    }
     const next = isSelected
       ? draftSelectedHistoryMonths.filter((item) => item !== month)
       : [...draftSelectedHistoryMonths, month];
@@ -965,7 +968,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   }, [currentMonth, draftSelectedHistoryMonths]);
 
   const handleApplyHistoryPreset = useCallback((count: number) => {
-    const selected = sortMonthsAsc(months.slice(0, count));
+    const selected = sortMonthsAsc(months.slice(0, Math.min(count, MAX_DASHBOARD_BATCH_MONTHS)));
     if (selected.length === 0) return;
     setDraftHistoryMonths(selected);
     setHistoryMonths(selected);

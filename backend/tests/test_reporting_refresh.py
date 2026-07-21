@@ -65,6 +65,7 @@ async def test_rebuild_reporting_month_applies_destructive_steps_and_scope_guard
         "reporting_item_day",
         "reporting_item_month",
         "reporting_agent_day",
+        "reporting_cartela_day",
     ]:
         assert any(f"DELETE FROM {table} WHERE import_month = $1" in statement for statement in sql)
         assert any(f"ANALYZE {table}" in statement for statement in sql)
@@ -74,6 +75,7 @@ async def test_rebuild_reporting_month_applies_destructive_steps_and_scope_guard
         for statement in sql
         if "FROM sales_transactions st" in statement
         and "premium_glass_item_models" not in statement
+        and "INSERT INTO reporting_cartela_day" not in statement
     ]
     assert insert_statements
     assert all("NOT st.is_cartela" in statement for statement in insert_statements)
@@ -107,6 +109,14 @@ async def test_rebuild_reporting_month_applies_destructive_steps_and_scope_guard
     )
     assert "FILTER (WHERE NOT st.is_return AND st.quantity > 0)::INT AS receipt_count" in item_day_insert
     assert any("TRUNCATE premium_glass_item_models" in statement for statement in sql)
+    cartela_insert = next(
+        statement
+        for statement in sql
+        if "INSERT INTO reporting_cartela_day" in statement
+    )
+    assert "st.is_cartela = true" in cartela_insert
+    assert "s.locatie NOT ILIKE 'TR %'" in cartela_insert
+    assert "GROUP BY st.import_month, st.sale_date, st.site_code, st.agent" in cartela_insert
 
     month_args = [
         args

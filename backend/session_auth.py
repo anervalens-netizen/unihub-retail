@@ -23,6 +23,7 @@ from redis.asyncio import Redis
 
 from auth import AuthClaims, verify_oidc_token
 from rate_limits import AUTH_PROXY_LIMIT, anonymous_rate_limit
+from valkey_url import apply_valkey_endpoint_overrides
 
 
 COOKIE_NAME = "__Host-unihub_session"
@@ -106,8 +107,11 @@ def load_session_settings() -> SessionSettings | None:
         raise ValueError("Session authentication configuration is invalid") from exc
     client_id = os.getenv("OIDC_CLIENT_ID", "")
     public_origin = os.getenv("SESSION_PUBLIC_ORIGIN", "http://localhost:3000").rstrip("/")
-    valkey_url = os.getenv("SESSION_VALKEY_URL") or os.getenv("VALKEY_URL", "")
     try:
+        valkey_url = apply_valkey_endpoint_overrides(
+            os.getenv("SESSION_VALKEY_URL") or os.getenv("VALKEY_URL") or "",
+            "SESSION_VALKEY",
+        )
         ttl = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
         origin = urlsplit(public_origin)
         valkey = urlsplit(valkey_url)

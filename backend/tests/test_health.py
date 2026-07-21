@@ -10,9 +10,11 @@ from prometheus_client import REGISTRY
 
 from main import (
     HTTP_REQUESTS_TOTAL,
+    HTTP_SLOW_REQUESTS_TOTAL,
     SecurityHeadersMiddleware,
     app,
 )
+import main as main_module
 from services import health as health_service
 
 
@@ -150,3 +152,29 @@ async def test_unhandled_5xx_is_counted_for_slo_metrics() -> None:
 
     assert response.status_code == 500
     assert REGISTRY.get_sample_value("http_requests_total", labels) == before + 1
+
+
+@pytest.mark.anyio
+async def test_single_slow_request_is_counted_without_traffic_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_app = FastAPI()
+    test_app.add_middleware(SecurityHeadersMiddleware)
+    monkeypatch.setattr(main_module, "SLOW_REQUEST_THRESHOLD_SECONDS", 0.001)
+
+    @test_app.get("/slow")
+    async def slow() -> dict[str, bool]:
+        await asyncio.sleep(0.01)
+        return {"ok": True}
+
+    labels = {"method": "GET", "status": "2xx", "handler": "/slow"}
+    before = REGISTRY.get_sample_value("http_slow_requests_total", labels) or 0.0
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=test_app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/slow")
+
+    assert response.status_code == 200
+    assert REGISTRY.get_sample_value("http_slow_requests_total", labels) == before + 1
+    assert HTTP_SLOW_REQUESTS_TOTAL is not None

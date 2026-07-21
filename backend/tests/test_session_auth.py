@@ -147,6 +147,29 @@ def test_production_session_settings_fail_closed_without_leaking_values(
             session_auth.load_session_settings()
 
 
+def test_session_settings_can_route_to_non_persistent_valkey(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = {
+        "UNIHUB_ENV": "production",
+        "SESSION_ENCRYPTION_KEY": KEY,
+        "OIDC_CLIENT_ID": "retail",
+        "OIDC_CLIENT_SECRET": "synthetic-client-secret",
+        "OIDC_ISSUER": "https://auth.example.invalid/application/o/unihub-retail/",
+        "SESSION_PUBLIC_ORIGIN": "https://retail.example.invalid",
+        "SESSION_VALKEY_URL": "redis://service:p%40ssword@localhost:6379/7",
+        "SESSION_VALKEY_PORT": "6380",
+        "SESSION_VALKEY_DATABASE": "0",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    settings = session_auth.load_session_settings()
+
+    assert settings is not None
+    assert settings.valkey_url == "redis://service:p%40ssword@localhost:6380/0"
+
+
 def test_generic_browser_auth_proxy_is_removed() -> None:
     content = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
     assert "/auth/proxy/{path:path}" not in content

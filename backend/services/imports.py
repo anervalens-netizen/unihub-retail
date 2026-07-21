@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import hashlib
@@ -122,7 +123,10 @@ class ImportsService:
         if not content:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raportul este gol")
 
-        report_rows, promo_units = self._validate_promo_actuals_report(content)
+        report_rows, promo_units = await asyncio.to_thread(
+            self._validate_promo_actuals_report,
+            content,
+        )
         config_path = get_special_cards_config_path()
         try:
             config = json.loads(config_path.read_text(encoding="utf-8"))

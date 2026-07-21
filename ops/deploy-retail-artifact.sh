@@ -58,6 +58,7 @@ BACKUP_COMMAND="$OPS_ROOT/scripts/backup.sh"
 MIGRATION_SERVICE="unihub-retail-migrate.service"
 BACKEND_SERVICE="unihub-backend.service"
 WORKER_SERVICE="unihub-worker.service"
+IMPORT_WORKER_SERVICE="unihub-import-worker.service"
 if [[ "$TEST_MODE" != "1" && "${SUDO_USER:-}" == "unihub-deploy" ]]; then
   [[ "$READ_ONLY_MODE" == "0" && "$#" -eq 4 && "$1" == /* ]] \
     || die "deploy runner may invoke only the four-argument production deployment"
@@ -697,11 +698,11 @@ restore_dist() {
 }
 
 stop_runtime() {
-  service_action stop "$WORKER_SERVICE" "$BACKEND_SERVICE"
+  service_action stop "$IMPORT_WORKER_SERVICE" "$WORKER_SERVICE" "$BACKEND_SERVICE"
 }
 
 start_runtime() {
-  service_action restart "$BACKEND_SERVICE" "$WORKER_SERVICE"
+  service_action restart "$BACKEND_SERVICE" "$WORKER_SERVICE" "$IMPORT_WORKER_SERVICE"
 }
 
 run_migrations() {
@@ -727,6 +728,7 @@ verify_local_health() {
   for attempt in {1..30}; do
     if systemctl is-active --quiet "$BACKEND_SERVICE" \
       && systemctl is-active --quiet "$WORKER_SERVICE" \
+      && systemctl is-active --quiet "$IMPORT_WORKER_SERVICE" \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/health >/dev/null \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/readyz >/dev/null; then
       return 0

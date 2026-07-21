@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timezone
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -178,7 +179,9 @@ async def test_grile_check_after_import_is_best_effort(
 @pytest.mark.asyncio
 async def test_failed_content_hash_can_be_retried(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
     replacement = SimpleNamespace(job_id="sales-import:replacement")
     pool = MagicMock()
     pool.enqueue_job = AsyncMock(side_effect=[None, replacement])
@@ -194,3 +197,32 @@ async def test_failed_content_hash_can_be_retried(
     assert result is replacement
     pool.delete.assert_awaited_once()
     assert pool.enqueue_job.await_count == 2
+    for call in pool.enqueue_job.await_args_list:
+        assert call.kwargs["_queue_name"] == jobs_service.SALES_IMPORT_QUEUE_NAME
+        assert isinstance(call.args[1], str)
+        assert call.args[2] == jobs_service.sha256(b"same content").hexdigest()
+        assert b"same content" not in call.args
+
+
+@pytest.mark.asyncio
+async def test_sales_import_spools_bytes_outside_valkey_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    queued = SimpleNamespace(job_id="sales-import:queued")
+    pool = MagicMock()
+    pool.enqueue_job = AsyncMock(return_value=queued)
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+
+    result = await jobs_service.enqueue_sales_import(b"excel bytes", "sales.xlsx")
+
+    assert result is queued
+    call = pool.enqueue_job.await_args
+    spool_path = Path(call.args[1])
+    assert spool_path.read_bytes() == b"excel bytes"
+    assert call.args[0] == "import_sales_background"
+    assert call.args[2] == jobs_service.sha256(b"excel bytes").hexdigest()
+    assert call.args[3] == "sales.xlsx"
+    assert call.kwargs["_queue_name"] == jobs_service.SALES_IMPORT_QUEUE_NAME
+    assert b"excel bytes" not in call.args

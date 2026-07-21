@@ -1,3 +1,5 @@
+import * as Sentry from '@sentry/react';
+
 type QueryParamValue = string | number | boolean | null | undefined;
 type QueryParams = object;
 type ResponseType = 'blob' | 'json';
@@ -89,6 +91,10 @@ function getSessionHeaders(existingHeaders: Record<string, string> = {}, csrf = 
 }
 
 async function handleResponse(response: Response): Promise<void> {
+  const requestId = response.headers.get('x-request-id');
+  if (requestId) {
+    Sentry.getActiveSpan()?.setAttribute('server.request_id', requestId);
+  }
   if (response.status === 401 && onUnauthorizedFn && !unauthorizedRedirectStarted) {
     unauthorizedRedirectStarted = true;
     onUnauthorizedFn();

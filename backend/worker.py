@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+from typing import Any
 
 from arq.worker import create_worker
 
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
-from services.jobs import get_valkey_settings
+from services.jobs import (
+    SALES_IMPORT_QUEUE_NAME,
+    cleanup_stale_sales_import_spool_files,
+    get_valkey_settings,
+    read_sales_import_spool_file,
+    remove_sales_import_spool_file,
+)
 
 
 setup_logging()
@@ -15,15 +24,40 @@ logger = logging.getLogger(__name__)
 
 async def import_sales_background(
     ctx: dict,
-    file_content: bytes,
-    filename: str,
+    file_reference: bytes | str,
+    digest_or_filename: str,
+    filename_or_request_id: str | None = None,
     request_id: str | None = None,
 ) -> dict:
     from dataclasses import asdict
     from services.importer import import_sales_file
 
+    spool_path: str | None = None
+    if isinstance(file_reference, bytes):
+        # Compatibilitate pentru joburile publicate înainte de migrarea la
+        # spool: bytes, filename, request_id.
+        legacy_content = file_reference
+        filename = digest_or_filename
+        legacy_request_id = filename_or_request_id
+        if request_id is None:
+            request_id = legacy_request_id
+    else:
+        spool_path = file_reference
+        if not filename_or_request_id:
+            raise ValueError("Sales import filename is missing")
+        filename = filename_or_request_id
+
     token = bind_request_id(request_id) if request_id else None
     try:
+        if isinstance(file_reference, bytes):
+            file_content = legacy_content
+        else:
+            assert spool_path is not None
+            file_content = await asyncio.to_thread(
+                read_sales_import_spool_file,
+                spool_path,
+                digest_or_filename,
+            )
         conn = ctx.get("db_conn")
         if conn is None:
             from db.connection import get_pool
@@ -49,6 +83,8 @@ async def import_sales_background(
         await trigger_grile_check_after_import(result.import_month, result.snapshot_id)
         return asdict(result)
     finally:
+        if spool_path is not None:
+            await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
         if token is not None:
             reset_request_id(token)
 
@@ -58,14 +94,20 @@ async def startup(ctx: dict) -> None:
     from services.importer import reconcile_interrupted_imports
 
     await init_db_pool()
+    worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
+    if worker_role == "imports":
+        removed = await asyncio.to_thread(cleanup_stale_sales_import_spool_files)
+        if removed:
+            logger.info("Removed %d stale sales import spool files", removed)
     pool = await get_pool()
-    interrupted = await reconcile_interrupted_imports(pool)
-    if interrupted:
-        logger.warning(
-            "Closed %d interrupted sales import reservations before retry: %s",
-            len(interrupted),
-            interrupted,
-        )
+    if worker_role == "imports":
+        interrupted = await reconcile_interrupted_imports(pool)
+        if interrupted:
+            logger.warning(
+                "Closed %d interrupted sales import reservations before retry: %s",
+                len(interrupted),
+                interrupted,
+            )
     ctx["db_pool"] = pool
 
 
@@ -288,14 +330,24 @@ def main() -> None:
     from dotenv import find_dotenv, load_dotenv
     load_dotenv(find_dotenv())
 
-    worker_settings = {
-        "redis_settings": get_valkey_settings(),
-        "functions": [
+    worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
+    if worker_role not in {"operations", "imports"}:
+        raise RuntimeError("RETAIL_WORKER_ROLE must be operations or imports")
+    functions = (
+        [import_sales_background]
+        if worker_role == "imports"
+        else [
+            # Păstrat temporar și aici pentru joburile legacy publicate în
+            # coada implicită înainte de separarea cozilor.
             import_sales_background,
             grile_check_background,
             grile_monthly_background,
             grile_agent_targets_background,
-        ],
+        ]
+    )
+    worker_settings: dict[str, Any] = {
+        "redis_settings": get_valkey_settings(),
+        "functions": functions,
         "on_startup": startup,
         "on_shutdown": shutdown,
         "job_completion_wait": 60,
@@ -305,6 +357,8 @@ def main() -> None:
         "health_check_interval": 30,
         "retry_jobs": True,
     }
+    if worker_role == "imports":
+        worker_settings["queue_name"] = SALES_IMPORT_QUEUE_NAME
     worker = create_worker(worker_settings)
     worker.run()
 

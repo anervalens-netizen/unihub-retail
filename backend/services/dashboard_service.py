@@ -11,6 +11,8 @@ from fastapi import HTTPException, status
 
 from schemas.dashboard import (
     DashboardSummary,
+    DashboardAllBatchResponse,
+    DashboardAllQuery,
     DashboardAllResponse,
     DailySalesPoint,
     DashboardSpecialCard,
@@ -1167,3 +1169,16 @@ class DashboardService:
             asms=asm_stats,
             daily_last_year=daily_last_year,
         )
+
+    async def get_dashboard_all_batch(
+        self,
+        queries: list[DashboardAllQuery],
+    ) -> DashboardAllBatchResponse:
+        semaphore = asyncio.Semaphore(2)
+
+        async def load(query: DashboardAllQuery) -> DashboardAllResponse:
+            async with semaphore:
+                return await self.get_dashboard_all(**query.model_dump())
+
+        results = await asyncio.gather(*(load(query) for query in queries))
+        return DashboardAllBatchResponse(results=list(results))

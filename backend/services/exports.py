@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -476,6 +477,37 @@ class ExportsService:
             return await self._build_daily_comparison_xlsx(request)
 
         result = await self.build_report(request)
+        selected_days = self._selected_days(request)
+        daily_rows: list[Any] | None = None
+        if request.get("daily_metrics"):
+            filters = self._normalize_filters(request.get("filters") or {})
+            daily_rows = await self.repo.fetch_daily_evolution_rows(
+                months=request["months"],
+                filters=filters,
+                include_closed_stores=bool(request.get("include_closed_stores", False)),
+                campaign_codes_by_month=self._campaign_codes_by_month(request["months"]),
+                campaign_exclusions_by_month=await self._campaign_exclusions_by_month(
+                    request["months"],
+                    filters,
+                    selected_days,
+                ),
+                selected_days=selected_days,
+            )
+        return await asyncio.to_thread(
+            self._render_table_xlsx,
+            request,
+            result,
+            selected_days,
+            daily_rows,
+        )
+
+    def _render_table_xlsx(
+        self,
+        request: dict[str, Any],
+        result: dict[str, Any],
+        selected_days: list[int] | None,
+        daily_rows: list[Any] | None,
+    ) -> tuple[bytes, str]:
         wb = Workbook()
         ws = wb.active
         ws.title = "Raport"
@@ -505,7 +537,6 @@ class ExportsService:
         append_openpyxl_row(cfg, ["Optiune", "Valoare"])
         append_openpyxl_row(cfg, ["Dataset", DATASETS[request["dataset"]]["label"]])
         append_openpyxl_row(cfg, ["Luni", ", ".join(request["months"])])
-        selected_days = self._selected_days(request)
         append_openpyxl_row(cfg, ["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
         append_openpyxl_row(cfg, ["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
         append_openpyxl_row(cfg, ["Randuri", len(rows)])
@@ -514,19 +545,7 @@ class ExportsService:
         cfg.column_dimensions["A"].width = 24
         cfg.column_dimensions["B"].width = 64
 
-        if request.get("daily_metrics"):
-            daily_rows = await self.repo.fetch_daily_evolution_rows(
-                months=request["months"],
-                filters=self._normalize_filters(request.get("filters") or {}),
-                include_closed_stores=bool(request.get("include_closed_stores", False)),
-                campaign_codes_by_month=self._campaign_codes_by_month(request["months"]),
-                campaign_exclusions_by_month=await self._campaign_exclusions_by_month(
-                    request["months"],
-                    self._normalize_filters(request.get("filters") or {}),
-                    selected_days,
-                ),
-                selected_days=selected_days,
-            )
+        if request.get("daily_metrics") and daily_rows is not None:
             self._add_daily_evolution_sheet(
                 wb,
                 months=sorted(request["months"]),
@@ -572,10 +591,7 @@ class ExportsService:
     async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
         campaign_codes_by_month = self._campaign_codes_by_month(months)
-        wb = Workbook()
-        first_sheet = True
-        total_rows = 0
-
+        tables: list[tuple[str, dict[str, Any]]] = []
         for level in levels:
             records = await self.repo.fetch_daily_comparison_rows(
                 level=level,
@@ -585,13 +601,41 @@ class ExportsService:
                 campaign_codes_by_month=campaign_codes_by_month,
                 selected_days=selected_days,
             )
-            table = self._daily_comparison_table(
+            table = await asyncio.to_thread(
+                self._daily_comparison_table,
                 level=level,
                 months=months,
                 metrics=metrics,
                 records=records,
                 selected_days=selected_days,
             )
+            tables.append((level, table))
+        return await asyncio.to_thread(
+            self._render_daily_comparison_xlsx,
+            request,
+            months,
+            metrics,
+            levels,
+            include_closed_stores,
+            selected_days,
+            tables,
+        )
+
+    def _render_daily_comparison_xlsx(
+        self,
+        request: dict[str, Any],
+        months: list[str],
+        metrics: list[str],
+        levels: list[str],
+        include_closed_stores: bool,
+        selected_days: list[int] | None,
+        tables: list[tuple[str, dict[str, Any]]],
+    ) -> tuple[bytes, str]:
+        wb = Workbook()
+        first_sheet = True
+        total_rows = 0
+
+        for level, table in tables:
             sheet_name = COMPARISON_LEVELS[level]["sheet"]
             ws = wb.active if first_sheet else wb.create_sheet(sheet_name)
             ws.title = sheet_name

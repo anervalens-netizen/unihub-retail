@@ -2,7 +2,7 @@
 
 These tests seed a real isolated PostgreSQL database and assert that:
 - Cartele rows do NOT contaminate Retail KPI totals (total_sales, total_quantity).
-- cartele_qty is populated separately from raw sales_transactions (is_cartela = true).
+- cartele_qty is populated from the import-time reporting_cartela_day aggregate.
 - Cartela cohort respects site_code scope.
 - Forecast math is correct for partial months.
 - Manager-scope OR-expansion applies to the cartela CTE (current_scope + regional).
@@ -21,7 +21,7 @@ import asyncpg
 
 from db.connection import close_db_pool, get_pool
 from repositories.dashboard import DashboardRepository
-from services.reporting_refresh import rebuild_reporting_month
+from services.reporting_refresh import rebuild_reporting_cartela_month, rebuild_reporting_month
 from services.filters import build_scoped_params, scoped_clauses
 
 
@@ -190,6 +190,7 @@ async def _seed_target(conn: asyncpg.Connection, *, site_code: str, target_value
 
 
 async def _cleanup(conn: asyncpg.Connection) -> None:
+    await conn.execute("DELETE FROM reporting_cartela_day WHERE import_month = $1", _TEST_MONTH)
     await conn.execute("DELETE FROM sales_transactions WHERE import_month = $1", _TEST_MONTH)
     await conn.execute("DELETE FROM reporting_agent_day WHERE import_month = $1", _TEST_MONTH)
     await conn.execute("DELETE FROM store_targets WHERE import_month = $1", _TEST_MONTH)
@@ -231,6 +232,7 @@ async def test_cartela_does_not_contaminate_retail_totals() -> None:
         await _seed_target(conn, site_code=_SITE_A, target_value=Decimal("2000.00"))
 
         try:
+            await rebuild_reporting_cartela_month(conn, _TEST_MONTH)
             clauses, cartela_clauses, params = _build_clauses_no_scope(_TEST_MONTH)
             repo = DashboardRepository(pool)
             row = await repo.fetch_summary(clauses, params, cartela_clauses, current_scope=False)
@@ -345,6 +347,7 @@ async def test_cartela_respects_site_code_scope() -> None:
         await _seed_target(conn, site_code=_SITE_B, target_value=Decimal("1000.00"))
 
         try:
+            await rebuild_reporting_cartela_month(conn, _TEST_MONTH)
             params, positions = build_scoped_params(
                 [_TEST_MONTH], firma=None, regional=None, asm=None, site_code=_SITE_A, agent=None
             )
@@ -417,7 +420,6 @@ async def test_manager_scope_or_expansion_applies_to_cartela() -> None:
         await _cleanup(conn)
         await _seed_stores(conn)
         snapshot_id = await _seed_snapshot(conn, is_month_final=True)
-
         await _seed_reporting_day(conn, site_code=_SITE_A, day=1, total_sales=Decimal("1000.00"), total_quantity=5)
         await _seed_reporting_day(conn, site_code=_SITE_B, day=1, total_sales=Decimal("2000.00"), total_quantity=10)
         await _seed_cartela_tx(conn, snapshot_id=snapshot_id, site_code=_SITE_A, quantity=4)
@@ -426,6 +428,7 @@ async def test_manager_scope_or_expansion_applies_to_cartela() -> None:
         await _seed_target(conn, site_code=_SITE_B, target_value=Decimal("1000.00"))
 
         try:
+            await rebuild_reporting_cartela_month(conn, _TEST_MONTH)
             params, positions = build_scoped_params(
                 [_TEST_MONTH], firma=None, regional="Andrei Stancu", asm=None, site_code=None, agent=None
             )
@@ -480,6 +483,8 @@ async def test_tr_percent_locations_excluded_from_retail() -> None:
             _TEST_MONTH,
         )
         snapshot_id = await _seed_snapshot(conn, is_month_final=True)
+        await _seed_cartela_tx(conn, snapshot_id=snapshot_id, site_code=_SITE_A, quantity=3)
+        await _seed_cartela_tx(conn, snapshot_id=snapshot_id, site_code="TR-DEPOT", quantity=90)
         await _seed_reporting_day(conn, site_code=_SITE_A, day=1, total_sales=Decimal("1000.00"), total_quantity=5)
         await _seed_reporting_day(
             conn,
@@ -493,6 +498,7 @@ async def test_tr_percent_locations_excluded_from_retail() -> None:
         await _seed_target(conn, site_code="TR-DEPOT", target_value=Decimal("1000.00"))
 
         try:
+            await rebuild_reporting_cartela_month(conn, _TEST_MONTH)
             clauses, cartela_clauses, params = _build_clauses_no_scope(_TEST_MONTH)
             repo = DashboardRepository(pool)
             row = await repo.fetch_summary(clauses, params, cartela_clauses, current_scope=False)
@@ -503,6 +509,9 @@ async def test_tr_percent_locations_excluded_from_retail() -> None:
             )
             assert row["total_quantity"] == 5, (
                 f"total_quantity should be 5 (TR-DEPOT excluded), got {row['total_quantity']}"
+            )
+            assert row["cartele_qty"] == 3, (
+                f"cartele_qty should exclude 90 TR units, got {row['cartele_qty']}"
             )
         finally:
             await _cleanup(conn)

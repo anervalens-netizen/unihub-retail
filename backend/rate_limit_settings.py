@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from urllib.parse import urlsplit
 
+from valkey_url import apply_valkey_endpoint_overrides
+
 
 HeaderMode = Literal["none", "cloudflare", "x-forwarded-for"]
 
@@ -83,7 +85,13 @@ def _parse(production: bool) -> tuple[RateLimitSettings | None, list[str]]:
     mode_raw = os.getenv("RATE_LIMIT_CLIENT_IP_HEADER")
     secret = os.getenv("RATE_LIMIT_KEY_HMAC_SECRET")
     failure_mode = os.getenv("RATE_LIMIT_FAILURE_MODE")
-    valkey_url = os.getenv("RATE_LIMIT_VALKEY_URL") or os.getenv("VALKEY_URL") or ""
+    try:
+        valkey_url = apply_valkey_endpoint_overrides(
+            os.getenv("RATE_LIMIT_VALKEY_URL") or os.getenv("VALKEY_URL") or "",
+            "RATE_LIMIT_VALKEY",
+        )
+    except ValueError:
+        valkey_url = ""
 
     for name, value in (
         ("TRUSTED_PROXY_CIDRS", raw_cidrs),

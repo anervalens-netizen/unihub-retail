@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getDashboardAll, getDashboardHistory, getDashboardHistoryYear } from '../../api/dashboard';
+import { getDashboardAll, getDashboardAllBatch, getDashboardHistory, getDashboardHistoryYear } from '../../api/dashboard';
 import type { DashboardQuery } from '../../api/dashboard';
 import type {
   AgentStat,
@@ -128,10 +128,10 @@ export function useDashboardData({
   });
   const historyDetailQuery = useQuery({
     queryKey: queryKeys.dashboard.historyDetail(selectedHistoryMonths, historyDetailQueryParams),
-    queryFn: async () => {
-      const responses = await Promise.all(historyDetailQueries.map((query) => getDashboardAll(query)));
-      return aggregateDetails(responses, selectedHistoryMonths);
-    },
+    queryFn: async () => aggregateDetails(
+      await getDashboardAllBatch(historyDetailQueries),
+      selectedHistoryMonths,
+    ),
     enabled: activeSection === 'history' && selectedHistoryMonths.length > 0,
     staleTime: DASHBOARD_STALE_MS,
   });

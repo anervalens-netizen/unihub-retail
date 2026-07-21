@@ -164,6 +164,41 @@ async def refresh_premium_glass_indicators(conn: asyncpg.Connection) -> None:
     await conn.execute("ANALYZE premium_glass_item_models")
 
 
+async def rebuild_reporting_cartela_month(
+    conn: asyncpg.Connection,
+    import_month: str,
+) -> None:
+    await conn.execute(
+        "DELETE FROM reporting_cartela_day WHERE import_month = $1",
+        import_month,
+    )
+    await conn.execute(
+        """
+        INSERT INTO reporting_cartela_day (
+            import_month,
+            sale_date,
+            site_code,
+            agent,
+            total_quantity
+        )
+        SELECT
+            st.import_month,
+            st.sale_date,
+            st.site_code,
+            st.agent,
+            COALESCE(SUM(st.quantity), 0)::INT AS total_quantity
+        FROM sales_transactions st
+        JOIN stores s ON s.site_code = st.site_code
+        WHERE st.import_month = $1
+          AND st.is_cartela = true
+          AND s.locatie NOT ILIKE 'TR %'
+        GROUP BY st.import_month, st.sale_date, st.site_code, st.agent
+        """,
+        import_month,
+    )
+    await conn.execute("ANALYZE reporting_cartela_day")
+
+
 async def rebuild_reporting_month(
     conn: asyncpg.Connection,
     import_month: str,
@@ -193,6 +228,7 @@ async def rebuild_reporting_month(
         "DELETE FROM reporting_agent_day WHERE import_month = $1",
         import_month,
     )
+    await rebuild_reporting_cartela_month(conn, import_month)
 
     await conn.execute(
         """

@@ -8,11 +8,20 @@ import * as Sentry from '@sentry/react';
 
 const sentryDsn = import.meta.env.VITE_GLITCHTIP_DSN;
 if (sentryDsn) {
+  const connection = (
+    navigator as Navigator & {
+      connection?: { effectiveType?: string; saveData?: boolean };
+    }
+  ).connection;
   Sentry.init({
     dsn: sentryDsn,
     environment: import.meta.env.MODE,
+    integrations: [Sentry.browserTracingIntegration()],
     tracesSampleRate: 0.1,
+    tracePropagationTargets: [/^\//, window.location.origin],
   });
+  Sentry.setTag('network.effective_type', connection?.effectiveType ?? 'unknown');
+  Sentry.setTag('network.save_data', String(connection?.saveData ?? false));
 }
 
 installPreloadRecovery();

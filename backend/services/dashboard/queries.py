@@ -1384,7 +1384,6 @@ async def _fetch_period_comparison(
         cartela_clauses = [
             "c.import_month = $1",
             "c.sale_date BETWEEN $2 AND $3",
-            "c.is_cartela = true",
             *cartela_query_clauses,
         ]
         row = await conn.fetchrow(
@@ -1396,8 +1395,8 @@ async def _fetch_period_comparison(
                 WHERE {" AND ".join(clauses)}
             ),
             cartele_summary AS (
-                SELECT COALESCE(SUM(c.quantity), 0)::INT AS cartele_qty
-                FROM sales_transactions c
+                SELECT COALESCE(SUM(c.total_quantity), 0)::INT AS cartele_qty
+                FROM reporting_cartela_day c
                 JOIN stores cs ON cs.site_code = c.site_code
                 WHERE {" AND ".join(cartela_clauses)}
             )

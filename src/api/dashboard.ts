@@ -21,9 +21,19 @@ export interface DashboardQuery {
   surface?: PremiumGlassSurfaceMode;
 }
 
+export const MAX_DASHBOARD_BATCH_MONTHS = 12;
+
 export async function getDashboardAll(query: DashboardQuery): Promise<DashboardAllResponse> {
   const { data } = await client.get<DashboardAllResponse>('/api/dashboard/all', { params: query });
   return data;
+}
+
+export async function getDashboardAllBatch(queries: DashboardQuery[]): Promise<DashboardAllResponse[]> {
+  const { data } = await client.post<{ results: DashboardAllResponse[] }>(
+    '/api/dashboard/all-batch',
+    { queries },
+  );
+  return data.results;
 }
 
 export async function getDashboardHistory(

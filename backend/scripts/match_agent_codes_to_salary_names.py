@@ -485,9 +485,13 @@ async def _upsert_agent_salary_links(
         effective_from_month,
     ):
         raise ValueError("effective_from_month must use YYYY-MM")
-    apply_db_url = os.getenv("MIGRATION_DATABASE_URL")
-    if not apply_db_url and os.getenv("UNIHUB_TEST_DATABASE") == "1":
+    apply_db_url: str | None
+    if os.getenv("UNIHUB_TEST_DATABASE") == "1":
+        # Testele izolate trebuie sa domine orice URL incarcat din
+        # .env.migrations; altfel un test poate ajunge accidental la DB live.
         apply_db_url = get_database_url()
+    else:
+        apply_db_url = os.getenv("MIGRATION_DATABASE_URL")
     if not apply_db_url:
         raise RuntimeError("MIGRATION_DATABASE_URL is required for --apply-db")
     payload: list[tuple[Any, ...]] = []

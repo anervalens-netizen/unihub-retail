@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, Query
 from db.connection import get_pool
 from schemas.dashboard import (
     DailySalesPoint,
+    DashboardAllBatchRequest,
+    DashboardAllBatchResponse,
     DashboardAllResponse,
     DashboardHistoryResponse,
     PerformanceDetailResponse,
@@ -52,6 +54,14 @@ async def get_dashboard_all(
     return await svc.get_dashboard_all(
         month, firma, regional, asm, site_code, agent, current_scope, include_closed_stores
     )
+
+
+@router.post("/all-batch", response_model=DashboardAllBatchResponse)
+async def get_dashboard_all_batch(
+    request: DashboardAllBatchRequest,
+    svc: DashboardService = Depends(get_dashboard_service),
+) -> DashboardAllBatchResponse:
+    return await svc.get_dashboard_all_batch(request.queries)
 
 @router.get("/daily", response_model=list[DailySalesPoint])
 async def get_daily_sales(
