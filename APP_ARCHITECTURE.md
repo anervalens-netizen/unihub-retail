@@ -25,6 +25,13 @@ two-second deadline. `/health` remains a compatibility alias for `/readyz`.
 Prometheus excludes these probes from the user-request SLI and uses a dedicated
 public `/readyz` blackbox probe.
 
+Frontend RUM este activ în build-ul live prin integrarea GlitchTip/Sentry
+`browserTracingIntegration`, cu eșantionare 10% pentru navigări/tranzacții și
+taguri finite pentru tipul conexiunii și `saveData`. Vite folosește
+`VITE_GLITCHTIP_DSN`, cu fallback controlat la `SENTRY_DSN`; raportul zilnic
+central din Command Center verifică inclusiv că DSN-ul RUM este compilat în
+artefact, apoi corelează RUM/GlitchTip cu p95 și erorile Prometheus pe 24h.
+
 API-ul normalizeaza sau genereaza `X-Request-ID`, il returneaza clientului,
 il include in loguri si GlitchTip si il propaga spre fluxurile interne si
 joburile ARQ. Workerul pastreaza acelasi ID pentru jobul derivat de verificare
