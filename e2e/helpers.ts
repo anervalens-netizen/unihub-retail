@@ -165,6 +165,26 @@ export async function setupBaseMocks(context: BrowserContext) {
   await mockApiRoute(context, 'GET', /\/api\/filters\/months$/, MOCK_MONTHS);
   await mockApiRoute(context, 'GET', /\/api\/filters\/options/, MOCK_FILTER_OPTIONS);
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/all/, MOCK_DASHBOARD_ALL);
+  await context.route(/\/api\/dashboard\/all-batch$/, async (route) => {
+    if (route.request().method() !== 'POST') {
+      return route.fallback();
+    }
+    const payload = route.request().postDataJSON() as {
+      queries?: Array<{ month?: string }>;
+    };
+    const results = (payload.queries ?? []).map((query) => ({
+      ...MOCK_DASHBOARD_ALL,
+      summary: {
+        ...MOCK_DASHBOARD_ALL.summary,
+        month: query.month ?? MOCK_DASHBOARD_ALL.summary.month,
+      },
+    }));
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results }),
+    });
+  });
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/history\b/, MOCK_DASHBOARD_HISTORY);
   await mockApiRoute(context, 'GET', /\/api\/dashboard\/history-year/, MOCK_DASHBOARD_YEAR_HISTORY);
   await mockApiRoute(context, 'GET', /\/api\/stores$/, []);
