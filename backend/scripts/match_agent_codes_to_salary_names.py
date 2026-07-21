@@ -17,12 +17,18 @@ from pathlib import Path
 import sys
 from typing import Any, TextIO
 
+import asyncpg
+from dotenv import load_dotenv
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = REPO_ROOT / "backend" / "outputs" / "agent_code_name_matches.csv"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backend.db.connection import close_db_pool, init_db_pool
+load_dotenv(REPO_ROOT / ".env.migrations")
+load_dotenv(REPO_ROOT / ".env")
+
+from backend.db.connection import close_db_pool, get_database_url, init_db_pool
 from backend.services.spreadsheet_safety import csv_cell_value
 
 
@@ -50,14 +56,19 @@ MANUAL_OVERRIDES: dict[tuple[str, str], dict[str, str | None]] = {
         "note": "Confirmat manual 2026-07-04: istoric salarial la AUCHMILI.",
     },
     ("CRFORADEA", "MESESAND"): {
-        "salary_full_name": "Mesesan Cirap Daria",
+        "salary_full_name": "Mesasan Cirap Daria",
         "confidence": "high",
-        "note": "Confirmat manual 2026-07-04: angajat nou, asteptat in salariile din 2026-06.",
+        "note": "Confirmat in salariile HR 2026-06; ortografia oficiala este Mesasan.",
     },
     ("CLUJCFPOL", "OIOAN"): {
         "salary_full_name": "Olariu Ioan",
         "confidence": "high",
         "note": "Confirmat manual 2026-07-04.",
+    },
+    ("CJIULMALL", "OIOAN"): {
+        "salary_full_name": "Olariu Ioan",
+        "confidence": "high",
+        "note": "Confirmat 2026-07-21 din istoricul salarial si mutarea raportata in 2026-07.",
     },
     ("COTROCENI", "URDAF"): {
         "salary_full_name": "URDA FLORENTINA",
@@ -72,7 +83,12 @@ MANUAL_OVERRIDES: dict[tuple[str, str], dict[str, str | None]] = {
     ("TMACUH", "STANESCUS"): {
         "salary_full_name": "Stanescu Silvia",
         "confidence": "high",
-        "note": "Confirmat manual 2026-07-04: angajat nou, asteptat in salariile din 2026-06.",
+        "note": "Confirmat in salariile HR 2026-06.",
+    },
+    ("CRFFEER", "PICIORUSE"): {
+        "salary_full_name": "Piciorus Emanuel",
+        "confidence": "high",
+        "note": "Confirmat 2026-07-21 din istoricul salarial si mutarea raportata in 2026-07.",
     },
     ("DVSHP", "LUCANIUCD"): {
         "salary_full_name": None,
@@ -469,6 +485,11 @@ async def _upsert_agent_salary_links(
         effective_from_month,
     ):
         raise ValueError("effective_from_month must use YYYY-MM")
+    apply_db_url = os.getenv("MIGRATION_DATABASE_URL")
+    if not apply_db_url and os.getenv("UNIHUB_TEST_DATABASE") == "1":
+        apply_db_url = get_database_url()
+    if not apply_db_url:
+        raise RuntimeError("MIGRATION_DATABASE_URL is required for --apply-db")
     payload: list[tuple[Any, ...]] = []
     for row in rows:
         if row["status"] not in {"matched", "unknown"}:
@@ -493,11 +514,13 @@ async def _upsert_agent_salary_links(
                 person_id,
             )
         )
-    pool = await init_db_pool()
+    conn = await asyncpg.connect(
+        apply_db_url,
+        server_settings={"application_name": "unihub-retail-salary-link-import"},
+    )
     try:
-        async with pool.acquire() as conn:
-            await conn.executemany(
-                """
+        await conn.executemany(
+            """
             INSERT INTO agent_salary_links (
                 agent_code, site_code, salary_full_name, salary_cnp,
                 match_status, match_source, confidence, effective_from_month,
@@ -516,11 +539,11 @@ async def _upsert_agent_salary_links(
                 updated_at = now()
             WHERE agent_salary_links.match_source <> 'manual'
                OR EXCLUDED.match_source = 'manual'
-                """,
-                payload,
-            )
+            """,
+            payload,
+        )
     finally:
-        await close_db_pool()
+        await conn.close()
     print(f"upserted_agent_salary_links={len(payload)}")
 
 

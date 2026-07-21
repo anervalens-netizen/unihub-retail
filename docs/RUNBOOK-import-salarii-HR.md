@@ -82,6 +82,8 @@ backend/venv/bin/python backend/scripts/match_agent_codes_to_salary_names.py \
   --apply-db
 ```
 
+`--apply-db` foloseste explicit `MIGRATION_DATABASE_URL` din
+`.env.migrations`; rolul runtime ramane read-only pe datele salariale.
 Matcherul nu suprascrie o legatura manuala cu una automata.
 
 ## 4. Verificare finala

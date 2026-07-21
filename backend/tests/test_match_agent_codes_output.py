@@ -18,25 +18,7 @@ from scripts.match_agent_codes_to_salary_names import (
 class _Connection:
     def __init__(self) -> None:
         self.executemany = AsyncMock()
-
-
-class _Acquire:
-    def __init__(self, connection: _Connection) -> None:
-        self.connection = connection
-
-    async def __aenter__(self) -> _Connection:
-        return self.connection
-
-    async def __aexit__(self, *_args: object) -> None:
-        return None
-
-
-class _Pool:
-    def __init__(self, connection: _Connection) -> None:
-        self.connection = connection
-
-    def acquire(self) -> _Acquire:
-        return _Acquire(self.connection)
+        self.close = AsyncMock()
 
 
 def test_default_output_is_outside_reports_and_under_ignored_outputs() -> None:
@@ -59,8 +41,8 @@ async def test_apply_db_persists_person_id_and_clears_it_for_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = _Connection()
-    monkeypatch.setattr(matcher, "init_db_pool", AsyncMock(return_value=_Pool(connection)))
-    monkeypatch.setattr(matcher, "close_db_pool", AsyncMock())
+    monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://migration.test/db")
+    monkeypatch.setattr(matcher.asyncpg, "connect", AsyncMock(return_value=connection))
     base = {
         "confidence": "high",
         "match_source": "auto",
@@ -97,6 +79,7 @@ async def test_apply_db_persists_person_id_and_clears_it_for_unknown(
     assert payload[0][-3] == "2026-08"
     assert payload[0][-1] == "sp1_" + "a" * 64
     assert payload[1][-1] is None
+    connection.close.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -104,8 +87,9 @@ async def test_apply_db_rejects_confirmed_link_without_person_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = _Connection()
-    monkeypatch.setattr(matcher, "init_db_pool", AsyncMock(return_value=_Pool(connection)))
-    monkeypatch.setattr(matcher, "close_db_pool", AsyncMock())
+    monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://migration.test/db")
+    connect = AsyncMock(return_value=connection)
+    monkeypatch.setattr(matcher.asyncpg, "connect", connect)
 
     with pytest.raises(ValueError, match="missing person_id"):
         await matcher._upsert_agent_salary_links(
@@ -122,6 +106,7 @@ async def test_apply_db_rejects_confirmed_link_without_person_id(
         )
 
     connection.executemany.assert_not_awaited()
+    connect.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -131,6 +116,16 @@ async def test_apply_db_rejects_invalid_effective_month() -> None:
             [],
             effective_from_month="2026-13",
         )
+
+
+@pytest.mark.anyio
+async def test_apply_db_requires_migration_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MIGRATION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("UNIHUB_TEST_DATABASE", raising=False)
+    with pytest.raises(RuntimeError, match="MIGRATION_DATABASE_URL"):
+        await matcher._upsert_agent_salary_links([])
 
 
 @pytest.mark.skipif(
