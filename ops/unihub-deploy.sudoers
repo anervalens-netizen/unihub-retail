@@ -1,5 +1,6 @@
 Defaults:unihub-deploy env_reset, use_pty
 
 Cmnd_Alias UNIHUB_RETAIL_DEPLOY_ARTIFACT = /opt/Mobiup/ops/scripts/deploy-retail-artifact.sh *
+Cmnd_Alias UNIHUB_PRODUCTION_DEPLOY_LOCK = /usr/local/sbin/unihub-deploy-lock acquire *, /usr/local/sbin/unihub-deploy-lock release *
 
-unihub-deploy ALL=(root) NOPASSWD: UNIHUB_RETAIL_DEPLOY_ARTIFACT
+unihub-deploy ALL=(root) NOPASSWD: UNIHUB_RETAIL_DEPLOY_ARTIFACT, UNIHUB_PRODUCTION_DEPLOY_LOCK

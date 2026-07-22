@@ -1,6 +1,6 @@
 # Plan activ: performanță și operativitate Retail
 
-Stare: **implementare cod închisă; observație SLO în curs**. Planul nu folosește estimări calendaristice; fiecare
+Stare: **implementare si deploy inchise; observatie SLO in curs**. Planul nu folosește estimări calendaristice; fiecare
 etapă se închide numai după criteriile măsurabile de acceptare.
 
 ## Stare execuție 2026-07-21
@@ -31,6 +31,11 @@ etapă se închide numai după criteriile măsurabile de acceptare.
   rămâne `no-store`;
 - verificări locale: 233 teste frontend, 1291 backend, strict typecheck, lint,
   build PWA, mypy integral și audit npm verde.
+- deploy formal inchis pe `0e05004` prin runul `29896945061` (attempt 2):
+  backup verificat si sincronizat NAS, migrarea 030 aplicata, toate cele trei
+  servicii active, health/readiness si bundle public confirmate;
+- sudoers-ul runnerului permite strict entrypointul de artefact si
+  `acquire/release` pentru lockul global; configuratia este validata in CI.
 
 Rezultatele și recomandările rămase sunt în
 `docs/PERFORMANCE_REVIEW_2026-07-22.md`. Țintele pe 7 zile rămân deschise până

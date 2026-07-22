@@ -164,6 +164,11 @@ jobs:
             "$systemd_root/etc/systemd/system/unihub-worker.service" \
             "$systemd_root/etc/systemd/system/unihub-import-worker.service" \
             "$systemd_root/etc/systemd/system/unihub-retail-migrate.service"
+          visudo -cf "$GITHUB_WORKSPACE/ops/unihub-deploy.sudoers"
+          grep -Fq "/usr/local/sbin/unihub-deploy-lock acquire *" \
+            "$GITHUB_WORKSPACE/ops/unihub-deploy.sudoers"
+          grep -Fq "/usr/local/sbin/unihub-deploy-lock release *" \
+            "$GITHUB_WORKSPACE/ops/unihub-deploy.sudoers"
           archive="$prom_root/prometheus.tar.gz"
           curl --fail --silent --show-error --location \
             "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \

@@ -33,6 +33,7 @@ randurilor, scope-ul Team Leader pentru Vizite sau excluderile Cartele/TR.
 | Granularitate | campanii zilnice puteau afisa zero/cantitati neconfirmate | campaniile raman oficiale total/lunar, selectia zilnica este respinsa |
 | Vizite | arborele incarca toate lunile si `to_char` impiedica indexul | payload pe luna si interval de date indexabil |
 | PWA | validare de retea inutila pentru chunk-uri cu hash | `CacheFirst` pentru assete; datele API raman in afara cache-ului |
+| Deploy | runnerul formal nu putea lua lockul global si entrypointul instalat omitea workerul de import | sudoers minim pentru `acquire/release`, entrypoint root aliniat la sursa si gate CI |
 
 ## Dovezi
 
@@ -47,6 +48,24 @@ randurilor, scope-ul Team Leader pentru Vizite sau excluderile Cartele/TR.
   64 randuri, 6 buffer hits si 0,091 ms pe standby-ul read-only;
 - chunk Dashboard: 135,75 kB -> 117,75 kB; Vizite este chunk separat de
   aproximativ 19,11 kB; `charts` nu este precached.
+
+## Inchidere productie
+
+- commit aplicatie: `0e05004254f6626390f2a0c51547ac7d3f0cc9e2`;
+- CI final: run `29877961589`, backend/frontend/E2E verde si artefact cu SHA-256
+  `cf012a04c0fcfa4fd436b830680c0b3348e96f4d8ed7a500028411256885eadd`;
+- deploy formal: run `29896945061`, attempt 2, finalizat la
+  `2026-07-22T06:34:13Z`; aprobarea one-time a fost consumata;
+- backup `20260722_093307`: 9 fisiere, 118.010.001 bytes, checksum si sync NAS
+  verificate;
+- migrarea activa este `030_import_snapshot_finished_at.sql`, checksum
+  `04cabecd64b54e0b6f973984d4d9eccc104d0f4a8c235d7677084452c457d67a`;
+- backend, worker Grile si worker import sunt `active/running`; health si
+  readiness locale sunt OK, fara erori de startup;
+- public serveste `assets/index-CPhZifln.js`; `/health` raspunde 200, iar
+  `/metrics`, `/docs`, `/redoc` si `/openapi.json` raman 404;
+- rollback handle:
+  `/opt/Mobiup/ops/backups/retail-deploy/20260722T063307Z-f98af1c6db01-to-0e05004254f6-40b9e57afe6b3584`.
 
 ## Recomandari de refactoring ramase
 

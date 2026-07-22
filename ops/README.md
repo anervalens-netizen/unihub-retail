@@ -52,7 +52,12 @@ scheduler.
 Invocation of this formal artifact entrypoint is allowed only through the
 workflow and the dedicated `unihub-deploy` OS identity. This restriction does
 not prohibit the ADR-005 local-first path. Install `unihub-deploy.sudoers` only
-after validating it with `visudo -cf`. Do not grant that identity general sudo,
+after validating it with `visudo -cf`. Politica permite numai entrypointul de
+artefact si operatiile `acquire`/`release` ale lockului global
+`/usr/local/sbin/unihub-deploy-lock`; scriptul lock root-owned valideaza strict
+tokenul `GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT` si timpii. CI verifica atat sintaxa,
+cat si prezenta ambelor operatii, pentru ca workflow-ul sa nu ajunga la un
+prompt sudo imposibil pe runner. Do not grant that identity general sudo,
 Docker access, interactive login credentials, permission to run the approval
 creator, or permission to invoke manual rollback. Set
 `PRODUCTION_DEPLOY_APPROVALS_ENFORCED=true` only after the root-owned approval
