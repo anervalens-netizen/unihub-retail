@@ -17,7 +17,7 @@ import type {
   StoreStat,
   YearHistoryPoint,
 } from '../../api/types';
-import { buildScopedMonthQuery } from '../../lib/filterQueries';
+import { buildCurrentDashboardQuery, buildScopedMonthQuery } from '../../lib/filterQueries';
 import { queryKeys } from '../../lib/queryKeys';
 import type { AppFilters } from '../MainLayout';
 import { DASHBOARD_STALE_MS } from './dashboardDefaults';
@@ -99,8 +99,8 @@ export function useDashboardData({
     [buildQuery, includeClosedStores],
   );
   const currentQueryParams = useMemo(
-    () => buildQuery(currentMonth),
-    [buildQuery, currentMonth],
+    () => buildCurrentDashboardQuery(currentMonth, filters),
+    [currentMonth, filters],
   );
   const historyQueryParams = useMemo(
     () => ({ ...buildHistoryQuery(historyMonth), months_back: 12 }),

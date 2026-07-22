@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildScopedMonthQuery } from './filterQueries';
+import { buildCurrentDashboardQuery, buildScopedMonthQuery } from './filterQueries';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from './filterValues';
 import type { AppFilters } from '../components/MainLayout';
 
@@ -59,5 +59,16 @@ describe('buildScopedMonthQuery', () => {
     expect(q.site_code).toBe('STORE01');
     expect(q.agent).toBe('Agent1');
     expect(q.month).toBe('2026-05');
+  });
+});
+
+describe('buildCurrentDashboardQuery', () => {
+  it('always uses the active current organization scope', () => {
+    expect(buildCurrentDashboardQuery('2026-07', makeFilters({ rm: 'Bogdana Costan' }))).toEqual({
+      month: '2026-07',
+      regional: 'Bogdana Costan',
+      current_scope: true,
+      include_closed_stores: false,
+    });
   });
 });

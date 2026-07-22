@@ -14,3 +14,14 @@ export function buildScopedMonthQuery(
     agent: filters.agent === ALL_SCOPE ? undefined : filters.agent,
   };
 }
+
+export function buildCurrentDashboardQuery(
+  month: string,
+  filters: AppFilters
+): DashboardQuery {
+  return {
+    ...buildScopedMonthQuery(month, filters),
+    current_scope: true,
+    include_closed_stores: false,
+  };
+}
