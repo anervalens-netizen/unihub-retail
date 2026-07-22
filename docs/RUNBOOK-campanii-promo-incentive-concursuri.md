@@ -131,6 +131,9 @@ absolute `AccFocusQtty`, `Audio`, `Battery`, `Suporti`, `FoliiQtty`,
 `Agenti`, grupat după `CodLocatie`. Coloanele absolute prezente în `Locatii`
 rămân autoritative pentru validare și trebuie să aibă același total cu
 `Agenti`; o diferență oprește verificarea ca raport inconsistent.
+Foaia `Locatii` trebuie să includă antetul și rândurile detaliate de magazine;
+un export care conține numai subtotalul cache-uit este incomplet și este respins
+cu instrucțiunea de regenerare, fără comparație parțială sau modificare de date.
 
 ## Concursuri
 

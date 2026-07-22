@@ -89,6 +89,17 @@ def workbook_bytes(
     return output.getvalue()
 
 
+def workbook_with_summary_only_stores_bytes() -> bytes:
+    workbook = Workbook()
+    stores = workbook.active
+    stores.title = "Locatii"
+    stores.append([None, None, 500])
+    workbook.create_sheet("Agenti")
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
 def reference(*, bon2: int = 2) -> dict:
     return {
         "snapshot": {"id": 1},
@@ -155,6 +166,17 @@ def test_parse_erp_report_uses_detail_sheets_and_excludes_tr() -> None:
 def test_parse_erp_report_rejects_month_day_mismatch() -> None:
     with pytest.raises(ErpReportValidationError, match="luna 2026-06 are 30"):
         parse_erp_report(workbook_bytes(), "2026-06")
+
+
+def test_parse_erp_report_rejects_summary_only_store_sheet_as_validation_error() -> None:
+    with pytest.raises(
+        ErpReportValidationError,
+        match=(
+            "Foaia Locatii nu contine antetul si randurile detaliate. "
+            "Regenereaza raportul ERP cu foaia populata."
+        ),
+    ):
+        parse_erp_report(workbook_with_summary_only_stores_bytes(), "2026-07")
 
 
 def test_parse_erp_report_validates_optional_store_metrics_when_present() -> None:

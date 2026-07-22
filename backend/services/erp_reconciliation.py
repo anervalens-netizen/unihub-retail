@@ -104,7 +104,10 @@ def _cell_decimal(value: Any, *, sheet: str, column: str, row_number: int) -> De
 
 def _header_indexes(raw: pd.DataFrame, sheet: str, required: Iterable[str]) -> dict[str, int]:
     if len(raw.index) < 3:
-        raise ErpReportValidationError(f"Foaia {sheet} nu contine randuri de date")
+        raise ErpReportValidationError(
+            f"Foaia {sheet} nu contine antetul si randurile detaliate. "
+            "Regenereaza raportul ERP cu foaia populata."
+        )
     headers = [_cell_text(value) for value in raw.iloc[1].tolist()]
     populated = [value for value in headers if value]
     duplicates = sorted({value for value in populated if populated.count(value) > 1})
@@ -200,11 +203,9 @@ def parse_erp_report(content: bytes, import_month: str) -> ParsedErpReport:
             "Raportul ERP nu poate fi citit ca fisier Excel"
         ) from exc
 
-    store_headers = {
-        _cell_text(value)
-        for value in raw_stores.iloc[1].tolist()
-        if _cell_text(value)
-    }
+    store_headers = set(
+        _header_indexes(raw_stores, "Locatii", STORE_REQUIRED_COLUMNS)
+    )
     available_store_derived_metrics = tuple(
         metric
         for metric in STORE_AGENT_DERIVED_METRIC_COLUMNS
