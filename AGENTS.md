@@ -10,6 +10,14 @@
 - Extinde investigația numai când ruta simplă este blocată, riscul este ridicat sau verificarea țintită eșuează; explică motivul într-o singură frază.
 - Porțile obligatorii specifice proiectului rămân valabile când schimbarea le activează direct; „proportionate checks” nu înseamnă automat toate verificările disponibile.
 
+## GitHub Actions budget
+
+- Run checks locally first; trusted CI uses the isolated repo-scoped Dell build
+  runner, never the production deploy runner.
+- Markdown and `docs/**` changes must not trigger CI. Push one verified
+  candidate and never rerun historical failures.
+- GitHub-hosted execution follows the global USD 1 per-task ceiling.
+
 Retail is the source of truth for retail sales, targets, campaigns, salaries, visits reporting, and the active Grile UI.
 
 Read `APP_ARCHITECTURE.md` for module boundaries and `README.md` for setup.
