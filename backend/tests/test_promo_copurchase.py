@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pandas as pd
@@ -61,10 +62,10 @@ class TestComputePromoCoPurchase:
         conn = AsyncMock()
         # 1 discounted unit per qualifying bon, grouped by (site, agent, item)
         conn.fetch = AsyncMock(return_value=[
-            FakeRow(site_code="S1", agent="Agent1", item_code="CL1", units=4),
-            FakeRow(site_code="S1", agent="Agent2", item_code="CL2", units=1),
-            FakeRow(site_code="S2", agent="Agent1", item_code="CL1", units=2),
-            FakeRow(site_code="S3", agent="-", item_code="CL1", units=1),
+            FakeRow(site_code="S1", agent="Agent1", item_code="CL1", units=4, gross_value=400),
+            FakeRow(site_code="S1", agent="Agent2", item_code="CL2", units=1, gross_value=50),
+            FakeRow(site_code="S2", agent="Agent1", item_code="CL1", units=2, gross_value=200),
+            FakeRow(site_code="S3", agent="-", item_code="CL1", units=1, gross_value=100),
         ])
         result = await compute_promo_copurchase(
             conn,
@@ -80,6 +81,7 @@ class TestComputePromoCoPurchase:
         assert result.active_agents == 2  # Agent1, Agent2 ('-' excluded)
         assert result.excluded_units[("S1", "Agent1", "CL1")] == 4
         assert result.excluded_by_site_item()[("S1", "CL1")] == 4
+        assert result.discount_value == Decimal("150.00")
 
     @pytest.mark.asyncio
     async def test_site_code_csv_scope_is_not_used_as_item_code_array(self):
@@ -183,8 +185,18 @@ class TestComputePromoActualsFromReport:
         source = tmp_path / "promo_actuals.xlsx"
         pd.DataFrame(
             [
-                {"SiteCode": "S1", "Cod": "CL1", "Promo Luna Curenta": 5},
-                {"SiteCode": "S1", "Cod": "CL2", "Promo Luna Curenta": 99},
+                {
+                    "SiteCode": "S1",
+                    "Cod": "CL1",
+                    "Promo Luna Curenta": 5,
+                    "PromoValoare Luna Curenta": 1000,
+                },
+                {
+                    "SiteCode": "S1",
+                    "Cod": "CL2",
+                    "Promo Luna Curenta": 99,
+                    "PromoValoare Luna Curenta": 9999,
+                },
             ]
         ).to_excel(source, sheet_name="AccesoriPromoLunar", index=False)
 
@@ -223,6 +235,9 @@ class TestComputePromoActualsFromReport:
         assert result.active_agents == 2
         assert result.excluded_units[("S1", "Agent1", "CL1")] == 4
         assert result.excluded_units[("S1", "Agent2", "CL1")] == 1
+        assert result.excluded_discount_values[("S1", "Agent1", "CL1")] == Decimal("160")
+        assert result.excluded_discount_values[("S1", "Agent2", "CL1")] == Decimal("40")
+        assert result.discount_value == Decimal("200")
         sql = conn.fetch.await_args.args[0]
         assert "(s.regional = ANY(string_to_array($7::TEXT, ',')) OR s.asm = ANY(string_to_array($7::TEXT, ',')))" in sql
         assert "s.is_active = true" in sql

@@ -67,11 +67,18 @@ Metricile dedicate sunt:
 
 - `promo_qualifying_bons` — bonuri calificate;
 - `promo_discounted_units` — unități reduse;
+- `promo_discount_value` — valoarea efectivă a reducerii;
 - `promo_active_stores` — magazine cu activitate;
 - `promo_active_agents` — agenți cu activitate.
 
 `promo_qty` din reporting rămâne agregatul operațional simplu și nu este
 sinonim cu bonurile calificate.
+
+Pentru sursa POS, valoarea reducerii folosește `PromoValoare Luna Curenta`
+înmulțită cu rata promoției (implicit 20%). Hub afișează în aceeași coloană
+`Promo` unitățile confirmate și valoarea reducerii, agregate peste toate
+promoțiile active. Totalurile de magazin și RM rămân exacte; distribuția la
+agent urmează aceeași alocare proporțională documentată pentru unitățile POS.
 
 Toate promoțiile active ale lunii contribuie la excluderea unităților reduse
 din Incentive, indiferent de promoția selectată vizual în Focus.

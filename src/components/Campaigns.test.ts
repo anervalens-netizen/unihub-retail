@@ -38,6 +38,7 @@ function makePromoData(): CampaignsPromotionsResponse {
     promo_impact: 20,
     promo_qualifying_bons: 12,
     promo_discounted_units: 7,
+    promo_discount_value: 140,
     promo_active_stores: 3,
     promo_active_agents: 4,
     incentive_title: 'Incentive test',
@@ -135,6 +136,8 @@ describe('Campaigns', () => {
     expect(html).toContain('Promo test');
     expect(html).toContain('bonuri calificate');
     expect(html).toContain('Unități promo efective');
+    expect(html).toContain('Valoare discount');
+    expect(html).toContain('140');
     expect(html).toContain('12');
   });
 

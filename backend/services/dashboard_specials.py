@@ -4,6 +4,7 @@ import calendar
 import json
 import os
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
@@ -13,6 +14,7 @@ from business_rules import (
     INCENTIVE_HALF_ACHIEVEMENT_RATIO,
     INCENTIVE_HALF_MULTIPLIER,
     INCENTIVE_ZERO_MULTIPLIER,
+    PROMOTION_DISCOUNT_RATE,
 )
 from schemas.dashboard import DashboardSpecialCard, DashboardSpecialCardMetric
 from services.phone_models import extract_phone_model_keys
@@ -146,6 +148,13 @@ def _parse_single_promotion(
             "Intrarea `promotions` are o perioada invalida: `end_date` este inainte de `start_date`.",
         )
 
+    try:
+        discount_rate = Decimal(str(raw.get("discount_rate", PROMOTION_DISCOUNT_RATE)))
+    except Exception:
+        return None, "Intrarea `promotions` are un `discount_rate` invalid."
+    if discount_rate < 0 or discount_rate > 1:
+        return None, "Intrarea `promotions` trebuie sa aiba `discount_rate` intre 0 si 1."
+
     return (
         {
             "key": str(raw.get("key") or _promotion_key(raw.get("title") or "promotie-speciala")),
@@ -164,6 +173,7 @@ def _parse_single_promotion(
                 else None
             ),
             "actuals_sheet": str(raw.get("actuals_sheet") or "AccesoriPromoLunar"),
+            "discount_rate": discount_rate,
             "actuals_cutoff_date": (
                 str(raw.get("actuals_cutoff_date"))
                 if raw.get("actuals_cutoff_date")
@@ -549,6 +559,7 @@ def build_promotion_card(
     normalized_stats = stats or {}
     qualifying_bons = int(normalized_stats.get("qualifying_bons") or 0)
     discounted_units = int(normalized_stats.get("discounted_units") or 0)
+    discount_value = Decimal(normalized_stats.get("discount_value") or 0)
     active_stores = int(normalized_stats.get("active_stores") or 0)
     active_agents = int(normalized_stats.get("active_agents") or 0)
     status: Literal["ready", "no_data"] = "ready" if qualifying_bons > 0 else "no_data"
@@ -566,6 +577,9 @@ def build_promotion_card(
         metrics=[
             DashboardSpecialCardMetric(
                 label="Produse reduse", value=format_int(discounted_units)
+            ),
+            DashboardSpecialCardMetric(
+                label="Valoare discount", value=format_currency(discount_value)
             ),
             DashboardSpecialCardMetric(
                 label="Magazine", value=format_int(active_stores)

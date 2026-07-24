@@ -66,6 +66,7 @@ type StoreSortKey =
   | 'total_vanzari'
   | 'proc_realizare_target'
   | 'forecast_target_pct'
+  | 'promo_qty'
   | 'incentive_qty'
   | 'qty_total'
   | 'nr_bonuri'
@@ -73,6 +74,8 @@ type StoreSortKey =
   | 'zile_active'
   | 'medie_zilnica'
   | 'medie_produs'
+  | 'proc_bon2acc'
+  | 'prc_focus_acc_qty'
   | 'return_receipt_count';
 type AgentSortKey =
   | 'locatie'
@@ -111,6 +114,17 @@ const COMPACT_TD_CLASS = 'px-1.5 py-1 whitespace-nowrap align-middle leading-tig
 const COMPACT_NUM_TD_CLASS = `${COMPACT_TD_CLASS} text-right tabular-nums`;
 const COMPACT_TEXT_TD_CLASS = `${COMPACT_TD_CLASS} text-left`;
 
+function PromoMetric({ qty, discount }: { qty: number; discount: number }) {
+  return (
+    <span className="inline-flex flex-col items-end leading-tight">
+      <span className="font-semibold">{formatInt(qty)} buc.</span>
+      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+        {formatAmount(discount)} RON
+      </span>
+    </span>
+  );
+}
+
 const CATEGORY_SHORT: Record<string, string> = {
   'Casti intraauriculare': 'Casti intraaur.',
   'Baterie Externa': 'Baterie Ext.',
@@ -125,10 +139,13 @@ const STORE_COLUMNS: Array<{ key: StoreSortKey; label: string }> = [
   { key: 'total_vanzari', label: 'Vanzari' },
   { key: 'proc_realizare_target', label: 'Procent' },
   { key: 'forecast_target_pct', label: 'Forecast%' },
+  { key: 'promo_qty', label: 'Promo' },
   { key: 'incentive_qty', label: 'Incentive' },
   { key: 'qty_total', label: 'Cantitate' },
   { key: 'medie_produs', label: 'Medie produs' },
   { key: 'nr_bonuri', label: 'Nr bonuri' },
+  { key: 'proc_bon2acc', label: 'ProcBon2Acc' },
+  { key: 'prc_focus_acc_qty', label: 'Focus%' },
   { key: 'return_receipt_count', label: 'Retururi' },
   { key: 'nr_agenti', label: 'Agenti' },
   { key: 'zile_active', label: 'Zile active' },
@@ -145,11 +162,11 @@ const AGENT_COLUMNS: Array<{ key: AgentSortKey; label: string }> = [
   { key: 'acc_qty_realizat', label: 'Cantitate' },
   { key: 'medie_produs', label: 'Medie produs' },
   { key: 'nr_bonuri', label: 'Nr bonuri' },
+  { key: 'proc_bon2acc', label: 'ProcBon2Acc' },
+  { key: 'prc_focus_acc_qty', label: 'Focus%' },
   { key: 'return_receipt_count', label: 'Retururi' },
   { key: 'zile_lucrate', label: 'Zile lucrate' },
   { key: 'medie_zilnica', label: 'Medie zilnica' },
-  { key: 'proc_bon2acc', label: 'ProcBon2Acc' },
-  { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
 
 const REGIONAL_COLUMNS: Array<{ key: RegionalSortKey; label: string }> = [
@@ -167,11 +184,11 @@ const REGIONAL_COLUMNS: Array<{ key: RegionalSortKey; label: string }> = [
   { key: 'prc_focus_acc_qty', label: 'Focus%' },
 ];
 
-const CURRENT_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
+const CURRENT_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'incentive_qty');
 const CURRENT_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty');
-const CURRENT_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty');
+const CURRENT_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'incentive_qty');
 const HIST_REGIONAL_COLUMNS = REGIONAL_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct' && c.key !== 'medie_produs');
-const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct' && c.key !== 'medie_produs');
+const HIST_STORE_COLUMNS = STORE_COLUMNS.filter((c) => c.key !== 'site_code' && c.key !== 'promo_qty' && c.key !== 'incentive_qty' && c.key !== 'forecast_target_pct' && c.key !== 'medie_produs');
 const HIST_AGENT_COLUMNS = AGENT_COLUMNS.filter((c) => c.key !== 'promo_qty' && c.key !== 'incentive_qty' && c.key !== 'medie_produs');
 const STORE_ASC_SORT_KEYS: StoreSortKey[] = ['locatie', 'site_code'];
 const AGENT_ASC_SORT_KEYS: AgentSortKey[] = ['locatie', 'agent'];
@@ -206,6 +223,9 @@ function regionalBreakdownColumns(
       }
       if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_produs') {
         return formatAmount(row[column.key] ?? 0);
+      }
+      if (column.key === 'promo_qty') {
+        return <PromoMetric qty={row.promo_qty} discount={row.promo_discount_value ?? 0} />;
       }
       if (column.key === 'proc_realizare_target' || column.key === 'forecast_target_pct' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
         return formatPercent(row[column.key]);
@@ -254,7 +274,10 @@ function storeBreakdownColumns(
       if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_zilnica' || column.key === 'medie_produs') {
         return formatAmount(row[column.key] ?? 0);
       }
-      if (column.key === 'proc_realizare_target' || column.key === 'forecast_target_pct') {
+      if (column.key === 'promo_qty') {
+        return <PromoMetric qty={row.promo_qty} discount={row.promo_discount_value ?? 0} />;
+      }
+      if (column.key === 'proc_realizare_target' || column.key === 'forecast_target_pct' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
         return formatPercent(row[column.key]);
       }
       return formatInt(row[column.key] ?? 0);
@@ -294,6 +317,9 @@ function agentBreakdownColumns(
       if (column.key === 'locatie') return row.locatie;
       if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_zilnica' || column.key === 'medie_produs') {
         return formatAmount(row[column.key] ?? 0);
+      }
+      if (column.key === 'promo_qty') {
+        return <PromoMetric qty={row.promo_qty} discount={row.promo_discount_value ?? 0} />;
       }
       if (column.key === 'proc_realizare_target' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
         return formatPercent(row[column.key]);
@@ -453,7 +479,7 @@ function aggregateRegionals(rows: RegionalStat[][]): RegionalStat[] {
   for (const group of rows) {
     for (const row of group) {
       const key = row.regional;
-      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, promo_qty: 0, incentive_qty: 0, medie_zilnica: null, medie_produs: null, proc_bon2acc: null, prc_focus_acc_qty: null, return_receipt_count: 0 };
+      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, promo_qty: 0, promo_discount_value: 0, incentive_qty: 0, medie_zilnica: null, medie_produs: null, proc_bon2acc: null, prc_focus_acc_qty: null, return_receipt_count: 0 };
       current.total_vanzari += n(row.total_vanzari);
       current.qty_total += n(row.qty_total);
       current.nr_bonuri += n(row.nr_bonuri);
@@ -461,6 +487,7 @@ function aggregateRegionals(rows: RegionalStat[][]): RegionalStat[] {
       current.zile_active += n(row.zile_active);
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
+      current.promo_discount_value += n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
@@ -492,7 +519,7 @@ function aggregateAsms(rows: AsmStat[][]): AsmStat[] {
   for (const group of rows) {
     for (const row of group) {
       const key = `${row.regional}:${row.asm}`;
-      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, promo_qty: 0, incentive_qty: 0, medie_zilnica: null, medie_produs: null, proc_bon2acc: null, prc_focus_acc_qty: null };
+      const current = map.get(key) ?? { ...row, total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, promo_qty: 0, promo_discount_value: 0, incentive_qty: 0, medie_zilnica: null, medie_produs: null, proc_bon2acc: null, prc_focus_acc_qty: null };
       current.total_vanzari += n(row.total_vanzari);
       current.qty_total += n(row.qty_total);
       current.nr_bonuri += n(row.nr_bonuri);
@@ -500,6 +527,7 @@ function aggregateAsms(rows: AsmStat[][]): AsmStat[] {
       current.zile_active += n(row.zile_active);
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
+      current.promo_discount_value += n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
       currentWeighted.bon2 += (n(row.proc_bon2acc) / 100) * n(row.nr_bonuri);
@@ -525,9 +553,10 @@ function aggregateAsms(rows: AsmStat[][]): AsmStat[] {
 
 function aggregateStores(rows: StoreStat[][]): StoreStat[] {
   const map = new Map<string, StoreStat>();
+  const weighted = new Map<string, { bon2: number; focus: number }>();
   for (const group of rows) {
     for (const row of group) {
-      const current = map.get(row.site_code) ?? { ...row, import_month: '', total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, medie_produs: null, promo_qty: 0, incentive_qty: 0, return_receipt_count: 0 };
+      const current = map.get(row.site_code) ?? { ...row, import_month: '', total_vanzari: 0, qty_total: 0, nr_bonuri: 0, nr_agenti: 0, zile_active: 0, target: 0, proc_realizare_target: null, forecast_target_pct: null, medie_produs: null, promo_qty: 0, promo_discount_value: 0, incentive_qty: 0, return_receipt_count: 0, proc_bon2acc: null, prc_focus_acc_qty: null };
       current.total_vanzari += n(row.total_vanzari);
       current.qty_total = n(current.qty_total) + n(row.qty_total);
       current.nr_bonuri += n(row.nr_bonuri);
@@ -535,19 +564,29 @@ function aggregateStores(rows: StoreStat[][]): StoreStat[] {
       current.zile_active += n(row.zile_active);
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
+      current.promo_discount_value += n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
+      const currentWeighted = weighted.get(row.site_code) ?? { bon2: 0, focus: 0 };
+      currentWeighted.bon2 += (n(row.proc_bon2acc) / 100) * n(row.nr_bonuri);
+      currentWeighted.focus += (n(row.prc_focus_acc_qty) / 100) * n(row.qty_total);
+      weighted.set(row.site_code, currentWeighted);
       map.set(row.site_code, current);
     }
   }
-  return [...map.values()].map((row) => ({
-    ...row,
-    total_vanzari: round2(row.total_vanzari),
-    target: round2(row.target),
-    proc_realizare_target: pct(row.total_vanzari, row.target),
-    forecast_target_pct: null,
-    medie_produs: n(row.qty_total) > 0 ? round2(row.total_vanzari / n(row.qty_total)) : null,
-  }));
+  return [...map.values()].map((row) => {
+    const currentWeighted = weighted.get(row.site_code) ?? { bon2: 0, focus: 0 };
+    return {
+      ...row,
+      total_vanzari: round2(row.total_vanzari),
+      target: round2(row.target),
+      proc_realizare_target: pct(row.total_vanzari, row.target),
+      forecast_target_pct: null,
+      medie_produs: n(row.qty_total) > 0 ? round2(row.total_vanzari / n(row.qty_total)) : null,
+      proc_bon2acc: pct(currentWeighted.bon2, row.nr_bonuri),
+      prc_focus_acc_qty: pct(currentWeighted.focus, n(row.qty_total)),
+    };
+  });
 }
 
 function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
@@ -555,7 +594,7 @@ function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
   for (const group of rows) {
     for (const row of group) {
       const key = `${row.site_code}:${row.agent}`;
-      const current = map.get(key) ?? { ...row, import_month: '', acc_qty_realizat: 0, nr_bonuri: 0, nr_bon2acc: 0, proc_bon2acc: null, total_vanzari: 0, zile_lucrate: 0, medie_zilnica: null, medie_produs: null, acc_focus_qty: 0, prc_focus_acc_qty: null, target: 0, proc_realizare_target: null, promo_qty: 0, incentive_qty: 0, return_receipt_count: 0 };
+      const current = map.get(key) ?? { ...row, import_month: '', acc_qty_realizat: 0, nr_bonuri: 0, nr_bon2acc: 0, proc_bon2acc: null, total_vanzari: 0, zile_lucrate: 0, medie_zilnica: null, medie_produs: null, acc_focus_qty: 0, prc_focus_acc_qty: null, target: 0, proc_realizare_target: null, promo_qty: 0, promo_discount_value: 0, incentive_qty: 0, return_receipt_count: 0 };
       current.acc_qty_realizat += n(row.acc_qty_realizat);
       current.nr_bonuri += n(row.nr_bonuri);
       current.nr_bon2acc += n(row.nr_bon2acc);
@@ -564,6 +603,7 @@ function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
       current.acc_focus_qty += n(row.acc_focus_qty);
       current.target = n(current.target) + n(row.target);
       current.promo_qty += n(row.promo_qty);
+      current.promo_discount_value += n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       map.set(key, current);

@@ -115,6 +115,7 @@ class AgentStats(BaseModel):
     target: Decimal | None = None
     proc_realizare_target: Decimal | None = None
     promo_qty: int = 0
+    promo_discount_value: Decimal = Decimal(0)
     incentive_qty: int = 0
     return_receipt_count: int = 0
 
@@ -138,8 +139,11 @@ class StoreStats(BaseModel):
     forecast_target_pct: Decimal | None = None
     medie_produs: Decimal | None = None
     promo_qty: int = 0
+    promo_discount_value: Decimal = Decimal(0)
     incentive_qty: int = 0
     return_receipt_count: int = 0
+    proc_bon2acc: Decimal | None = None
+    prc_focus_acc_qty: Decimal | None = None
 
 
 class RegionalStats(BaseModel):
@@ -155,6 +159,7 @@ class RegionalStats(BaseModel):
     proc_realizare_target: Decimal | None
     forecast_target_pct: Decimal | None = None
     promo_qty: int = 0
+    promo_discount_value: Decimal = Decimal(0)
     incentive_qty: int = 0
     medie_zilnica: Decimal | None
     medie_produs: Decimal | None = None
@@ -213,6 +218,7 @@ class AsmStats(BaseModel):
     target: Decimal
     proc_realizare_target: Decimal | None
     promo_qty: int = 0
+    promo_discount_value: Decimal = Decimal(0)
     incentive_qty: int = 0
     medie_zilnica: Decimal | None
     medie_produs: Decimal | None = None

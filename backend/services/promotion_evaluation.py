@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
+from business_rules import PROMOTION_DISCOUNT_RATE
 from services.dashboard_specials import load_promotion_rule_products
 from services.promo_copurchase import (
     PromoActualsError,
@@ -59,6 +61,9 @@ async def evaluate_promotion(
     """
     products, products_error = load_promotion_rule_products(definition)
     rule_type = definition.get("rule_type") or "selected_item_copurchase"
+    discount_rate = Decimal(
+        str(definition.get("discount_rate", PROMOTION_DISCOUNT_RATE))
+    )
     if products_error is not None or products is None:
         return PromotionEvaluation(
             result=None,
@@ -86,6 +91,7 @@ async def evaluate_promotion(
             agent=agent,
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
+            discount_rate=discount_rate,
         )
     except PromoActualsError:
         return PromotionEvaluation(
@@ -156,6 +162,7 @@ async def evaluate_promotion(
             conn,
             screen_code_models=products["trigger_code_models"],
             camera_code_models=products["discounted_code_models"],
+            discount_rate=discount_rate,
             **common,
         )
     elif rule_type == "trigger_discounted":
@@ -163,10 +170,16 @@ async def evaluate_promotion(
             conn,
             trigger_codes=products["trigger_codes"],
             discounted_codes=products["discounted_codes"],
+            discount_rate=discount_rate,
             **common,
         )
     else:
-        result = await compute_promo_copurchase(conn, item_codes=item_codes, **common)
+        result = await compute_promo_copurchase(
+            conn,
+            item_codes=item_codes,
+            discount_rate=discount_rate,
+            **common,
+        )
     return PromotionEvaluation(
         result=result,
         item_codes=item_codes,

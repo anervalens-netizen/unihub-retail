@@ -70,6 +70,7 @@ async def _get_special_cards_data(
         promotion_stats = {
             "qualifying_bons": selected_promotion_result.qualifying_bons,
             "discounted_units": selected_promotion_result.discounted_units,
+            "discount_value": selected_promotion_result.discount_value,
             "active_stores": selected_promotion_result.active_stores,
             "active_agents": selected_promotion_result.active_agents,
         }

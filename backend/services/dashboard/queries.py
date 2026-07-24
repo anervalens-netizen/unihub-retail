@@ -1,7 +1,7 @@
 """Heavy lifting for dashboard: stats + mix + period comparison + promo/incentive summary."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
@@ -50,6 +50,9 @@ class DashboardCampaignContext:
     incentive_campaign: dict[str, Any] | None
     promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]]
     promo_excluded_units: dict[tuple[str, str, str], int]
+    promo_discount_values: dict[tuple[str, str, str], Decimal] = field(
+        default_factory=dict
+    )
     promotion_status: PromotionEvaluationStatus = PromotionEvaluationStatus.COMPLETE
     promotion_warnings: tuple[str, ...] = ()
 
@@ -64,6 +67,45 @@ class DashboardCampaignContext:
             if definition.get("key") == selected_key:
                 return result
         return None
+
+
+def apply_current_promo_metrics(
+    rows: list[dict[str, Any]],
+    campaign_context: DashboardCampaignContext,
+    *,
+    level: Literal["agent", "store", "regional"],
+    site_regionals: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Attach official promo units and discount value to dashboard rows."""
+    qty_by_key: dict[Any, int] = {}
+    value_by_key: dict[Any, Decimal] = {}
+
+    for (site, agent_name, item), units in campaign_context.promo_excluded_units.items():
+        if level == "agent":
+            key: Any = (site, agent_name)
+        elif level == "store":
+            key = site
+        else:
+            key = (site_regionals or {}).get(site)
+            if key is None:
+                continue
+        qty_by_key[key] = qty_by_key.get(key, 0) + units
+        value_key = (site, agent_name, item)
+        value_by_key[key] = (
+            value_by_key.get(key, Decimal("0"))
+            + campaign_context.promo_discount_values.get(value_key, Decimal("0"))
+        )
+
+    for row in rows:
+        if level == "agent":
+            row_key: Any = (str(row["site_code"]), str(row["agent"]))
+        elif level == "store":
+            row_key = str(row["site_code"])
+        else:
+            row_key = str(row["regional"])
+        row["promo_qty"] = qty_by_key.get(row_key, 0)
+        row["promo_discount_value"] = value_by_key.get(row_key, Decimal("0"))
+    return rows
 
 
 def _scope_join(current_scope: bool, source_alias: str = "agg") -> str:
@@ -169,6 +211,7 @@ async def _load_dashboard_campaign_context(
 
     promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]] = []
     promo_excluded_units: dict[tuple[str, str, str], int] = {}
+    promo_discount_values: dict[tuple[str, str, str], Decimal] = {}
     promotion_status = (
         PromotionEvaluationStatus.INVALID
         if promotion_error is not None
@@ -204,6 +247,10 @@ async def _load_dashboard_campaign_context(
             promotion_results.append((definition, promo_result))
             for key, units in promo_result.excluded_units.items():
                 promo_excluded_units[key] = promo_excluded_units.get(key, 0) + units
+            for key, value in promo_result.excluded_discount_values.items():
+                promo_discount_values[key] = (
+                    promo_discount_values.get(key, Decimal("0")) + value
+                )
 
     return DashboardCampaignContext(
         config_error=config_error,
@@ -213,6 +260,7 @@ async def _load_dashboard_campaign_context(
         incentive_campaign=incentive_campaign,
         promotion_results=promotion_results,
         promo_excluded_units=promo_excluded_units,
+        promo_discount_values=promo_discount_values,
         promotion_status=promotion_status,
         promotion_warnings=tuple(dict.fromkeys(promotion_warnings)),
     )
@@ -380,7 +428,9 @@ async def _fetch_store_stats_rows(
                 agg.agent,
                 agg.total_sales,
                 agg.total_quantity,
-                agg.receipt_count
+                agg.receipt_count,
+                agg.receipt_2plus_count,
+                agg.focus_quantity
             FROM reporting_agent_day agg
             {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
@@ -450,6 +500,24 @@ async def _fetch_store_stats_rows(
                 THEN ROUND(COALESCE(SUM(fd.total_sales), 0) / SUM(fd.total_quantity), 2)
                 ELSE NULL
             END AS medie_produs,
+            CASE
+                WHEN COALESCE(SUM(fd.receipt_count), 0) > 0
+                THEN ROUND(
+                    COALESCE(SUM(fd.receipt_2plus_count), 0) * 100.0
+                    / SUM(fd.receipt_count),
+                    2
+                )
+                ELSE NULL
+            END AS proc_bon2acc,
+            CASE
+                WHEN COALESCE(SUM(fd.total_quantity), 0) > 0
+                THEN ROUND(
+                    COALESCE(SUM(fd.focus_quantity), 0) * 100.0
+                    / SUM(fd.total_quantity),
+                    2
+                )
+                ELSE NULL
+            END AS prc_focus_acc_qty,
             COALESCE(rs.return_receipt_count, 0)::INT AS return_receipt_count
         FROM filtered_days fd
         CROSS JOIN forecast_meta fm
@@ -1723,6 +1791,7 @@ async def _fetch_promo_incentive_summary(
 
     promo_qty = 0
     promo_sales: Decimal = Decimal("0")
+    promo_impact = Decimal("0")
     incentive_sold_qty = 0
     incentive_qty: int | None = 0 if calculation_status == "complete" else None
     incentive_value: Decimal | None = (
@@ -1741,6 +1810,7 @@ async def _fetch_promo_incentive_summary(
     selected_promotion_result = campaign_context.selected_promotion_result
     if selected_promotion_result is not None:
         promo_qty = selected_promotion_result.discounted_units
+        promo_impact = selected_promotion_result.discount_value
 
     promo_qty_from_corrected_source = promo_qty > 0 or bool(promo_excluded_units)
     if promotion_definition is not None and promotion_error is None:
@@ -1994,7 +2064,8 @@ async def _fetch_promo_incentive_summary(
                 )
                 incentive_qualified_agents = int(aq_row["cnt"] or 0) if aq_row else 0
 
-    promo_impact = promo_sales * PROMOTION_DISCOUNT_RATE
+    if selected_promotion_result is None:
+        promo_impact = promo_sales * PROMOTION_DISCOUNT_RATE
     return PromoIncentiveSummary(
         promo_qty=promo_qty,
         promo_sales=promo_sales,

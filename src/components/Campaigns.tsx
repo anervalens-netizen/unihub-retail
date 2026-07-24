@@ -411,10 +411,14 @@ export function Campaigns({
                   <p className="mt-1 text-xs text-slate-500">Bonurile respectă mecanismul promoției; unitățile efective sunt raportate separat.</p>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div>
                     <div className="text-lg font-black text-amber-600">{formatInt(promoData.promo_discounted_units)}</div>
                     <div className="text-[10px] text-slate-500">Unități promo efective</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-black text-amber-600">{formatCurrency(promoData.promo_discount_value ?? 0)}</div>
+                    <div className="text-[10px] text-slate-500">Valoare discount</div>
                   </div>
                   <div>
                     <div className="text-lg font-black">{formatInt(promoData.promo_active_stores)}</div>

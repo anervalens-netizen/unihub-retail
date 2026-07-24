@@ -172,6 +172,7 @@ class CampaignsPromotionsResponse(BaseModel):
     promo_impact: float = 0.0
     promo_qualifying_bons: int = 0
     promo_discounted_units: int = 0
+    promo_discount_value: Decimal = Decimal(0)
     promo_active_stores: int = 0
     promo_active_agents: int = 0
     incentive_title: str = ""

@@ -262,6 +262,7 @@ class CampaignsService:
             promo_excluded_si: dict[tuple[str, str], int] = {}
             promo_qualifying_bons = 0
             promo_discounted_units = 0
+            promo_discount_value = Decimal("0")
             promo_active_stores = 0
             promo_active_agents = 0
             promo_bonuri_by_store: dict[str, int] = {}
@@ -301,6 +302,7 @@ class CampaignsService:
                     promo_excluded_si = promo_cp.excluded_by_site_item()
                     promo_qualifying_bons = promo_cp.qualifying_bons
                     promo_discounted_units = promo_cp.discounted_units
+                    promo_discount_value = promo_cp.discount_value
                     promo_active_stores = promo_cp.active_stores
                     promo_active_agents = promo_cp.active_agents
                     for (site, _ag, _item), units in promo_excluded_ag.items():
@@ -692,6 +694,7 @@ class CampaignsService:
                 "promo_impact": promo_impact,
                 "promo_qualifying_bons": promo_qualifying_bons,
                 "promo_discounted_units": promo_discounted_units,
+                "promo_discount_value": promo_discount_value,
                 "promo_active_stores": promo_active_stores,
                 "promo_active_agents": promo_active_agents,
                 "has_active_promotion": has_active_promotion,

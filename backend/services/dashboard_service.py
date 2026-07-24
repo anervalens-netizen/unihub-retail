@@ -39,6 +39,7 @@ from schemas.campaigns import PromoIncentiveSummary
 from schemas.premium_glass import PremiumGlassAnalysis
 from repositories.dashboard import DashboardRepository
 from services.dashboard.queries import (
+    apply_current_promo_metrics,
     _enrich_store_stats_with_campaign,
     _fetch_agent_stats_rows,
     _fetch_asm_stats,
@@ -903,6 +904,11 @@ class DashboardService:
             )
 
         async def get_agents_data() -> list[AgentStats]:
+            campaign_context = (
+                await campaign_context_task
+                if campaign_context_task is not None
+                else None
+            )
             async with self.pool.acquire() as conn:
                 rows = await _fetch_agent_stats_rows(
                     conn,
@@ -915,9 +921,21 @@ class DashboardService:
                     current_scope=current_scope,
                     include_closed_stores=include_closed_stores,
                 )
-            return [AgentStats(**dict(row)) for row in rows]
+            row_dicts = [dict(row) for row in rows]
+            if campaign_context is not None:
+                apply_current_promo_metrics(
+                    row_dicts,
+                    campaign_context,
+                    level="agent",
+                )
+            return [AgentStats(**row) for row in row_dicts]
 
         async def get_stores_data() -> list[StoreStats]:
+            campaign_context = (
+                await campaign_context_task
+                if campaign_context_task is not None
+                else None
+            )
             async with self.pool.acquire() as conn:
                 rows = await _fetch_store_stats_rows(
                     conn,
@@ -942,6 +960,12 @@ class DashboardService:
                     current_scope=current_scope,
                     include_closed_stores=include_closed_stores,
                 )
+                if campaign_context is not None:
+                    apply_current_promo_metrics(
+                        enriched_dicts,
+                        campaign_context,
+                        level="store",
+                    )
                 return [StoreStats(**d) for d in enriched_dicts]
 
         async def get_daily_data() -> list[DailySalesPoint]:
@@ -1100,6 +1124,11 @@ class DashboardService:
             )
 
         async def get_regional_data() -> list[RegionalStats]:
+            campaign_context = (
+                await campaign_context_task
+                if campaign_context_task is not None
+                else None
+            )
             async with self.pool.acquire() as conn:
                 rows = await _fetch_regional_stats(
                     conn,
@@ -1112,7 +1141,48 @@ class DashboardService:
                     current_scope=current_scope,
                     include_closed_stores=include_closed_stores,
                 )
-            return [RegionalStats(**r) for r in rows]
+                row_dicts = [dict(row) for row in rows]
+                if campaign_context is not None:
+                    promo_sites = sorted(
+                        {
+                            key[0]
+                            for key in campaign_context.promo_excluded_units
+                        }
+                    )
+                    site_regionals: dict[str, str] = {}
+                    if promo_sites:
+                        if current_scope:
+                            mapping_rows = await conn.fetch(
+                                """
+                                SELECT site_code, regional
+                                FROM stores
+                                WHERE site_code = ANY($1::TEXT[])
+                                """,
+                                promo_sites,
+                            )
+                        else:
+                            mapping_rows = await conn.fetch(
+                                """
+                                SELECT DISTINCT ON (site_code) site_code, regional
+                                FROM reporting_agent_month
+                                WHERE import_month = $1
+                                  AND site_code = ANY($2::TEXT[])
+                                ORDER BY site_code, regional
+                                """,
+                                month,
+                                promo_sites,
+                            )
+                        site_regionals = {
+                            str(row["site_code"]): str(row["regional"])
+                            for row in mapping_rows
+                        }
+                    apply_current_promo_metrics(
+                        row_dicts,
+                        campaign_context,
+                        level="regional",
+                        site_regionals=site_regionals,
+                    )
+            return [RegionalStats(**row) for row in row_dicts]
 
         async def get_asm_data() -> list[AsmStats]:
             async with self.pool.acquire() as conn:

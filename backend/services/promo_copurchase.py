@@ -23,11 +23,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any
 
 import asyncpg
 import pandas as pd
 
+from business_rules import PROMOTION_DISCOUNT_RATE
 from services.dashboard.utils import _expand_current_manager_scope
 from services.filters import build_scoped_params, normalize_filter, scoped_clauses
 from services.product_lists import get_repo_root, normalize_column_name, resolve_path
@@ -43,9 +45,19 @@ _ACTUALS_PROMO_QTY_ALIASES = {
     "cantitate_promo",
     "promo",
 }
+_ACTUALS_PROMO_VALUE_ALIASES = {
+    "promovaloare_luna_curenta",
+    "promo_valoare_luna_curenta",
+    "promo_value",
+    "valoare_promo",
+}
 _promo_actuals_cache: dict[
     tuple[str, float, str],
-    tuple[dict[tuple[str, str], int] | None, str | None],
+    tuple[
+        dict[tuple[str, str], int] | None,
+        dict[tuple[str, str], Decimal] | None,
+        str | None,
+    ],
 ] = {}
 
 
@@ -87,6 +99,10 @@ class PromoCoPurchaseResult:
     # (site_code, agent, item_code) -> nr unitati reduse (= nr bonuri unde acel
     # produs a fost cel redus). Folosit pentru excluderea din incentive.
     excluded_units: dict[tuple[str, str, str], int] = field(default_factory=dict)
+    # Valoarea efectiva a discountului, alocata pe aceleasi chei ca unitatile.
+    excluded_discount_values: dict[tuple[str, str, str], Decimal] = field(
+        default_factory=dict
+    )
 
     def excluded_by_site_item(self) -> dict[tuple[str, str], int]:
         """Agregare pe (site_code, item_code) — pentru cardul Hub si top_stores."""
@@ -94,6 +110,10 @@ class PromoCoPurchaseResult:
         for (site_code, _agent, item_code), units in self.excluded_units.items():
             out[(site_code, item_code)] = out.get((site_code, item_code), 0) + units
         return out
+
+    @property
+    def discount_value(self) -> Decimal:
+        return sum(self.excluded_discount_values.values(), Decimal("0"))
 
 
 def _find_actuals_column(
@@ -129,14 +149,14 @@ def load_promo_actual_units(
     sheet_name = str(definition.get("actuals_sheet") or "AccesoriPromoLunar")
     cache_key = (str(source_path), source_path.stat().st_mtime, sheet_name)
     if cache_key in _promo_actuals_cache:
-        cached_units, cached_error = _promo_actuals_cache[cache_key]
+        cached_units, _cached_values, cached_error = _promo_actuals_cache[cache_key]
     else:
         try:
             df = pd.read_excel(source_path, sheet_name=sheet_name, engine=None)
         except Exception as exc:  # pragma: no cover - depends on external Excel parser
-            result: PromoActualUnitsLoadResult = (None, f"Raportul promo `{source_path.name}` nu a putut fi citit: {exc}")
-            _promo_actuals_cache[cache_key] = result
-            return result
+            error = f"Raportul promo `{source_path.name}` nu a putut fi citit: {exc}"
+            _promo_actuals_cache[cache_key] = (None, None, error)
+            return None, error
 
         normalized_columns = {
             normalize_column_name(column): str(column)
@@ -149,15 +169,22 @@ def load_promo_actual_units(
             _ACTUALS_PROMO_QTY_ALIASES,
         )
         if not site_column or not code_column or not promo_qty_column:
-            result = (
-                None,
-                "Raportul promo trebuie sa contina coloanele SiteCode, Cod si Promo Luna Curenta.",
-            )
-            _promo_actuals_cache[cache_key] = result
-            return result
+            error = "Raportul promo trebuie sa contina coloanele SiteCode, Cod si Promo Luna Curenta."
+            _promo_actuals_cache[cache_key] = (None, None, error)
+            return None, error
 
         raw_units: dict[tuple[str, str], int] = {}
+        raw_values: dict[tuple[str, str], Decimal] = {}
         promo_qty = pd.to_numeric(df[promo_qty_column], errors="coerce").fillna(0)
+        promo_value_column = _find_actuals_column(
+            normalized_columns,
+            _ACTUALS_PROMO_VALUE_ALIASES,
+        )
+        promo_value = (
+            pd.to_numeric(df[promo_value_column], errors="coerce").fillna(0)
+            if promo_value_column
+            else None
+        )
         for idx, qty_value in promo_qty.items():
             qty = int(round(float(qty_value or 0)))
             if qty == 0:
@@ -168,10 +195,16 @@ def load_promo_actual_units(
                 continue
             if not item_code or item_code.lower() == "nan":
                 continue
-            raw_units[(site_code, item_code)] = raw_units.get((site_code, item_code), 0) + qty
-        result = (raw_units, None)
-        _promo_actuals_cache[cache_key] = result
-        cached_units, cached_error = result
+            key = (site_code, item_code)
+            raw_units[key] = raw_units.get(key, 0) + qty
+            if promo_value is not None:
+                value = Decimal(str(float(promo_value.at[idx] or 0))).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+                raw_values[key] = raw_values.get(key, Decimal("0")) + value
+        _promo_actuals_cache[cache_key] = (raw_units, raw_values, None)
+        cached_units, _cached_values, cached_error = _promo_actuals_cache[cache_key]
 
     if cached_units is None or cached_error is not None:
         return cached_units, cached_error
@@ -183,6 +216,29 @@ def load_promo_actual_units(
         (site_code, item_code): units
         for (site_code, item_code), units in cached_units.items()
         if item_code in allowed_codes and units > 0
+    }, None
+
+
+def load_promo_actual_values(
+    definition: dict[str, Any],
+    *,
+    item_codes: list[str],
+) -> tuple[dict[tuple[str, str], Decimal] | None, str | None]:
+    """Load POS full-price value for the confirmed promo units."""
+    units, error = load_promo_actual_units(definition, item_codes=item_codes)
+    if units is None or error is not None:
+        return None, error
+
+    source_file = definition.get("actuals_source_file") or definition.get("actuals_file")
+    source_path = resolve_path(str(source_file), get_repo_root())
+    sheet_name = str(definition.get("actuals_sheet") or "AccesoriPromoLunar")
+    cache_key = (str(source_path), source_path.stat().st_mtime, sheet_name)
+    _cached_units, cached_values, cached_error = _promo_actuals_cache[cache_key]
+    if cached_values is None or cached_error is not None:
+        return cached_values, cached_error
+    return {
+        key: cached_values.get(key, Decimal("0"))
+        for key in units
     }, None
 
 
@@ -206,21 +262,19 @@ def promo_actuals_cutoff_date(definition: dict[str, Any]) -> date | None:
 
 def merge_promo_results(*results: PromoCoPurchaseResult | None) -> PromoCoPurchaseResult:
     excluded_units: dict[tuple[str, str, str], int] = {}
+    excluded_discount_values: dict[tuple[str, str, str], Decimal] = {}
     for result in results:
         if result is None:
             continue
         for key, units in result.excluded_units.items():
             excluded_units[key] = excluded_units.get(key, 0) + units
-    return _result_from_discounted_rows(
-        [
-            {
-                "site_code": site,
-                "agent": agent_name,
-                "item_code": item,
-                "units": units,
-            }
-            for (site, agent_name, item), units in excluded_units.items()
-        ]
+        for key, value in result.excluded_discount_values.items():
+            excluded_discount_values[key] = (
+                excluded_discount_values.get(key, Decimal("0")) + value
+            )
+    return _result_from_metrics(
+        excluded_units,
+        excluded_discount_values,
     )
 
 
@@ -294,6 +348,47 @@ def _allocate_units_to_agents(
     return rows
 
 
+def _allocate_value_to_agents(
+    total_value: Decimal,
+    allocations: list[tuple[str, int]],
+) -> dict[str, Decimal]:
+    """Allocate an exact POS value using the already-determined unit split."""
+    total_units = sum(units for _agent, units in allocations)
+    if total_units <= 0:
+        return {}
+
+    total_cents = int(
+        (total_value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    parts: list[dict[str, Any]] = []
+    assigned_cents = 0
+    for agent_name, units in allocations:
+        exact = Decimal(total_cents * units) / Decimal(total_units)
+        cents = int(exact.to_integral_value(rounding=ROUND_FLOOR))
+        parts.append(
+            {
+                "agent": agent_name,
+                "cents": cents,
+                "remainder": exact - cents,
+            }
+        )
+        assigned_cents += cents
+
+    for part in sorted(
+        parts,
+        key=lambda item: (-item["remainder"], str(item["agent"])),
+    ):
+        if assigned_cents >= total_cents:
+            break
+        part["cents"] += 1
+        assigned_cents += 1
+
+    return {
+        str(part["agent"]): Decimal(int(part["cents"])) / Decimal(100)
+        for part in parts
+    }
+
+
 async def compute_promo_actuals_from_report(
     conn: asyncpg.Connection,
     *,
@@ -307,6 +402,7 @@ async def compute_promo_actuals_from_report(
     agent: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
+    discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
 ) -> PromoCoPurchaseResult | None:
     """Return POS-confirmed promo units from report, or None when not configured.
 
@@ -323,6 +419,13 @@ async def compute_promo_actuals_from_report(
         raise PromoActualsError(error)
     if not actual_units:
         return PromoCoPurchaseResult()
+    actual_values, value_error = load_promo_actual_values(
+        definition,
+        item_codes=item_codes,
+    )
+    if value_error is not None:
+        raise PromoActualsError(value_error)
+    actual_values = actual_values or {}
 
     source_sites: list[str] = []
     source_codes: list[str] = []
@@ -361,7 +464,8 @@ async def compute_promo_actuals_from_report(
         f"""
         WITH actuals AS (
             SELECT site_code, item_code, promo_units
-            FROM UNNEST($2::TEXT[], $3::TEXT[], $4::INT[]) AS t(site_code, item_code, promo_units)
+            FROM UNNEST($2::TEXT[], $3::TEXT[], $4::INT[])
+                AS t(site_code, item_code, promo_units)
         ),
         scoped_actuals AS (
             SELECT a.site_code, a.item_code, a.promo_units
@@ -387,10 +491,12 @@ async def compute_promo_actuals_from_report(
     )
 
     scoped_units: dict[tuple[str, str], int] = {}
+    scoped_values: dict[tuple[str, str], Decimal] = {}
     candidates: dict[tuple[str, str], list[tuple[str, int]]] = {}
     for row in rows:
         key = (str(row["site_code"]), str(row["item_code"]))
         scoped_units[key] = int(row["promo_units"] or 0)
+        scoped_values[key] = actual_values.get(key, Decimal("0"))
         agent_name = row["agent"]
         positive_qty = int(row["positive_qty"] or 0)
         if agent_name and positive_qty > 0:
@@ -398,28 +504,32 @@ async def compute_promo_actuals_from_report(
 
     allowed_agents = _agent_filter_values(agent)
     excluded_units: dict[tuple[str, str, str], int] = {}
+    excluded_discount_values: dict[tuple[str, str, str], Decimal] = {}
     for key, units in scoped_units.items():
         site, item = key
-        for agent_name, allocated_units in _allocate_units_to_agents(
+        allocations = _allocate_units_to_agents(
             units,
             candidates.get(key, []),
-        ):
+        )
+        allocated_values = _allocate_value_to_agents(
+            scoped_values.get(key, Decimal("0")) * discount_rate,
+            allocations,
+        )
+        for agent_name, allocated_units in allocations:
             if allowed_agents is not None and agent_name not in allowed_agents:
                 continue
-            excluded_units[(site, agent_name, item)] = (
-                excluded_units.get((site, agent_name, item), 0) + allocated_units
+            result_key = (site, agent_name, item)
+            excluded_units[result_key] = (
+                excluded_units.get(result_key, 0) + allocated_units
+            )
+            excluded_discount_values[result_key] = (
+                excluded_discount_values.get(result_key, Decimal("0"))
+                + allocated_values.get(agent_name, Decimal("0"))
             )
 
-    return _result_from_discounted_rows(
-        [
-            {
-                "site_code": site,
-                "agent": agent_name,
-                "item_code": item,
-                "units": units,
-            }
-            for (site, agent_name, item), units in excluded_units.items()
-        ]
+    return _result_from_metrics(
+        excluded_units,
+        excluded_discount_values,
     )
 
 
@@ -437,6 +547,7 @@ async def compute_promo_copurchase(
     agent: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
+    discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
 ) -> PromoCoPurchaseResult:
     """Calculeaza bonurile calificate + unitatile reduse pentru promotia co-purchase.
 
@@ -499,7 +610,7 @@ async def compute_promo_copurchase(
         ),
         discounted AS (
             SELECT DISTINCT ON (l.sale_date, l.site_code, l.agent, l.bon_nr)
-                l.site_code, l.agent, l.item_code
+                l.site_code, l.agent, l.item_code, l.unit_price
             FROM lines l
             JOIN qualifying q
               ON q.sale_date = l.sale_date
@@ -511,34 +622,19 @@ async def compute_promo_copurchase(
                 l.sale_date, l.site_code, l.agent, l.bon_nr,
                 l.unit_price ASC, l.item_code ASC, l.id ASC
         )
-        SELECT site_code, agent, item_code, COUNT(*)::INT AS units
+        SELECT
+            site_code,
+            agent,
+            item_code,
+            COUNT(*)::INT AS units,
+            COALESCE(SUM(unit_price), 0) AS gross_value
         FROM discounted
         GROUP BY site_code, agent, item_code
         """,
         *params,
     )
 
-    excluded_units: dict[tuple[str, str, str], int] = {}
-    stores: set[str] = set()
-    agents: set[str] = set()
-    total = 0
-    for row in rows:
-        units = int(row["units"])
-        site_val = row["site_code"]
-        agent_val = row["agent"]
-        excluded_units[(site_val, agent_val, row["item_code"])] = units
-        total += units
-        stores.add(site_val)
-        if agent_val and agent_val != "-":
-            agents.add(agent_val)
-
-    return PromoCoPurchaseResult(
-        qualifying_bons=total,
-        discounted_units=total,
-        active_stores=len(stores),
-        active_agents=len(agents),
-        excluded_units=excluded_units,
-    )
+    return _result_from_discounted_rows(rows, discount_rate=discount_rate)
 
 
 async def compute_promo_trigger_discounted(
@@ -556,6 +652,7 @@ async def compute_promo_trigger_discounted(
     agent: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
+    discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
 ) -> PromoCoPurchaseResult:
     """Calculeaza bonuri cu produs declansator + produs redus pe acelasi bon.
 
@@ -622,7 +719,7 @@ async def compute_promo_trigger_discounted(
         ),
         discounted AS (
             SELECT DISTINCT ON (l.sale_date, l.site_code, l.agent, l.bon_nr)
-                l.site_code, l.agent, l.item_code
+                l.site_code, l.agent, l.item_code, l.unit_price
             FROM lines l
             JOIN qualifying q
               ON q.sale_date = l.sale_date
@@ -634,14 +731,19 @@ async def compute_promo_trigger_discounted(
                 l.sale_date, l.site_code, l.agent, l.bon_nr,
                 l.unit_price ASC, l.item_code ASC, l.id ASC
         )
-        SELECT site_code, agent, item_code, COUNT(*)::INT AS units
+        SELECT
+            site_code,
+            agent,
+            item_code,
+            COUNT(*)::INT AS units,
+            COALESCE(SUM(unit_price), 0) AS gross_value
         FROM discounted
         GROUP BY site_code, agent, item_code
         """,
         *params,
     )
 
-    return _result_from_discounted_rows(rows)
+    return _result_from_discounted_rows(rows, discount_rate=discount_rate)
 
 
 async def compute_promo_same_model_pair(
@@ -659,6 +761,7 @@ async def compute_promo_same_model_pair(
     agent: str | None,
     current_scope: bool = False,
     include_closed_stores: bool = False,
+    discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
 ) -> PromoCoPurchaseResult:
     """Calculeaza bonuri cu folie ecran + folie camera pentru acelasi model.
 
@@ -754,7 +857,7 @@ async def compute_promo_same_model_pair(
         ),
         discounted AS (
             SELECT DISTINCT ON (l.sale_date, l.site_code, l.agent, l.bon_nr)
-                l.site_code, l.agent, l.item_code
+                l.site_code, l.agent, l.item_code, l.unit_price
             FROM lines l
             JOIN camera_models cm ON cm.item_code = l.item_code
             JOIN qualifying q
@@ -768,35 +871,60 @@ async def compute_promo_same_model_pair(
                 l.sale_date, l.site_code, l.agent, l.bon_nr,
                 l.unit_price ASC, l.item_code ASC, l.id ASC
         )
-        SELECT site_code, agent, item_code, COUNT(*)::INT AS units
+        SELECT
+            site_code,
+            agent,
+            item_code,
+            COUNT(*)::INT AS units,
+            COALESCE(SUM(unit_price), 0) AS gross_value
         FROM discounted
         GROUP BY site_code, agent, item_code
         """,
         *params,
     )
 
-    return _result_from_discounted_rows(rows)
+    return _result_from_discounted_rows(rows, discount_rate=discount_rate)
 
 
-def _result_from_discounted_rows(rows: list[Any]) -> PromoCoPurchaseResult:
-    excluded_units: dict[tuple[str, str, str], int] = {}
-    stores: set[str] = set()
-    agents: set[str] = set()
-    total = 0
-    for row in rows:
-        units = int(row["units"])
-        site_val = row["site_code"]
-        agent_val = row["agent"]
-        excluded_units[(site_val, agent_val, row["item_code"])] = units
-        total += units
-        stores.add(site_val)
-        if agent_val and agent_val != "-":
-            agents.add(agent_val)
-
+def _result_from_metrics(
+    excluded_units: dict[tuple[str, str, str], int],
+    excluded_discount_values: dict[tuple[str, str, str], Decimal],
+) -> PromoCoPurchaseResult:
+    stores = {site for site, _agent, _item in excluded_units}
+    agents = {
+        agent
+        for _site, agent, _item in excluded_units
+        if agent and agent != "-"
+    }
+    total = sum(excluded_units.values())
     return PromoCoPurchaseResult(
         qualifying_bons=total,
         discounted_units=total,
         active_stores=len(stores),
         active_agents=len(agents),
         excluded_units=excluded_units,
+        excluded_discount_values=excluded_discount_values,
+    )
+
+
+def _result_from_discounted_rows(
+    rows: list[Any],
+    *,
+    discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
+) -> PromoCoPurchaseResult:
+    excluded_units: dict[tuple[str, str, str], int] = {}
+    excluded_discount_values: dict[tuple[str, str, str], Decimal] = {}
+    for row in rows:
+        units = int(row["units"])
+        key = (str(row["site_code"]), str(row["agent"]), str(row["item_code"]))
+        excluded_units[key] = units
+        gross_value = Decimal(row.get("gross_value") or 0)
+        excluded_discount_values[key] = (gross_value * discount_rate).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+
+    return _result_from_metrics(
+        excluded_units,
+        excluded_discount_values,
     )

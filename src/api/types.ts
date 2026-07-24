@@ -369,6 +369,7 @@ export interface AgentStat {
   target: number | null;
   proc_realizare_target: number | null;
   promo_qty: number;
+  promo_discount_value?: number;
   incentive_qty: number;
   return_receipt_count: number;
 }
@@ -390,8 +391,11 @@ export interface StoreStat {
   forecast_target_pct: number | null;
   medie_produs: number | null;
   promo_qty: number;
+  promo_discount_value?: number;
   incentive_qty: number;
   return_receipt_count: number;
+  proc_bon2acc?: number | null;
+  prc_focus_acc_qty?: number | null;
 }
 
 export interface RegionalStat {
@@ -405,6 +409,7 @@ export interface RegionalStat {
   proc_realizare_target: number | null;
   forecast_target_pct: number | null;
   promo_qty: number;
+  promo_discount_value?: number;
   incentive_qty: number;
   medie_zilnica: number | null;
   medie_produs: number | null;
@@ -463,6 +468,7 @@ export interface AsmStat {
   target: number;
   proc_realizare_target: number | null;
   promo_qty: number;
+  promo_discount_value?: number;
   incentive_qty: number;
   medie_zilnica: number | null;
   medie_produs: number | null;
@@ -685,6 +691,7 @@ export interface CampaignsPromotionsResponse {
   promo_impact: number;
   promo_qualifying_bons: number;
   promo_discounted_units: number;
+  promo_discount_value?: number;
   promo_active_stores: number;
   promo_active_agents: number;
   incentive_title: string;
