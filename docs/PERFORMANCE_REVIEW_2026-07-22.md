@@ -123,3 +123,21 @@ nu se transforma date incomplete in zero.
 
 Prioritatile urmatoare sunt profilarea Agent Evaluation v2 pe scope-urile lente,
 inchiderea SLO-urilor din RUM dupa trafic suficient si reducerea swapului activ.
+
+### Agent Evaluation v2 follow-up
+
+Profilarea scope-ului implicit, agregat din ianuarie 2025, a confirmat ca
+evaluarea foliilor premium citea 333.587 linii din `sales_transactions` si le
+deduplica dupa joinul multi-model. Evaluarea foloseste acum agregatul canonic
+`reporting_item_month.positive_quantity` si view-ul unic per produs
+`v_premium_glass_products`.
+
+- `EXPLAIN ANALYZE`: 922 ms -> 721 ms (-21,8%);
+- A/B intercalat pe productia curenta, n=4: mediana 822 ms -> 740 ms (-9,9%);
+- aceleasi 153 randuri si acelasi hash canonic pentru istoricul complet si
+  pentru ultima luna;
+- frontendul cere doar modul vizibil; nu mai ruleaza implicit si evaluarea
+  legacy de aproximativ 290-310 ms cand utilizatorul vede scorul V2.
+
+Validarea finala: 1.302 teste backend trecute, 234 teste frontend trecute,
+mypy, TypeScript, ESLint, build PWA si verificarea artefactului RUM verzi.

@@ -8,7 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from services.agents import AgentsService, get_prev_month, month_index_expr
-from repositories.agent_evaluation import AGENT_EVALUATION_OPTIONS_QUERY
+from repositories.agent_evaluation import (
+    AGENT_EVALUATION_OPTIONS_QUERY,
+    AGENT_EVALUATION_V2_QUERY,
+)
 from business_rules import AGENT_LIFECYCLE_BASELINE_MONTH
 
 
@@ -43,6 +46,12 @@ def test_agent_evaluation_v2_service_contains_no_sql() -> None:
 def test_agent_evaluation_options_query_interpolates_baseline_month() -> None:
     assert AGENT_LIFECYCLE_BASELINE_MONTH in AGENT_EVALUATION_OPTIONS_QUERY
     assert "{AGENT_LIFECYCLE_BASELINE_MONTH}" not in AGENT_EVALUATION_OPTIONS_QUERY
+
+
+def test_agent_evaluation_v2_uses_reporting_aggregate_for_premium_glass() -> None:
+    assert "FROM reporting_item_month rim" in AGENT_EVALUATION_V2_QUERY
+    assert "rim.positive_quantity" in AGENT_EVALUATION_V2_QUERY
+    assert "FROM sales_transactions" not in AGENT_EVALUATION_V2_QUERY
 
 
 def _legacy_evaluation_row(period: str) -> FakeRow:

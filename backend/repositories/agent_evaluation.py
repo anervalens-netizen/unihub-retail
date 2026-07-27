@@ -267,40 +267,28 @@ agent_history AS (
           BETWEEN sc.max_month_idx - 3 AND sc.max_month_idx - 1
     GROUP BY ram.agent
 ),
-premium_lines AS (
-    SELECT DISTINCT
-        st.id,
+premium_by_agent AS (
+    SELECT
         CASE
             WHEN $1::TEXT IS NULL THEN '{AGENT_LIFECYCLE_BASELINE_MONTH}..curent'
             WHEN POSITION(',' IN $1::TEXT) > 0 THEN 'custom'
-            ELSE st.import_month
+            ELSE rim.import_month
         END AS month,
-        st.agent,
-        pgm.is_premium_glass AS is_premium,
-        st.quantity::INT AS qty
-    FROM sales_transactions st
-    JOIN current_agents ca ON ca.agent = st.agent
-    JOIN premium_glass_item_models pgm ON pgm.item_code = st.item_code
-    WHERE st.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
-      AND ($1::TEXT IS NULL OR st.import_month = ANY(string_to_array($1::TEXT, ',')))
+        rim.agent,
+        COALESCE(SUM(rim.positive_quantity), 0)::INT AS glass_qty,
+        COALESCE(
+            SUM(rim.positive_quantity) FILTER (WHERE pgm.is_premium_glass),
+            0
+        )::INT AS premium_glass_qty
+    FROM reporting_item_month rim
+    JOIN current_agents ca ON ca.agent = rim.agent
+    JOIN v_premium_glass_products pgm ON pgm.item_code = rim.item_code
+    WHERE rim.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
+      AND ($1::TEXT IS NULL OR rim.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
       AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
       AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
-      AND LOWER(TRIM(COALESCE(st.category, ''))) = 'folii sticla'
-      AND st.quantity > 0
-      AND st.agent IS NOT NULL
-      AND TRIM(st.agent) != ''
-      AND st.agent != '-'
-      AND st.agent NOT ILIKE 'TR%'
-),
-premium_by_agent AS (
-    SELECT
-        month,
-        agent,
-        COALESCE(SUM(qty), 0)::INT AS glass_qty,
-        COALESCE(SUM(qty) FILTER (WHERE is_premium), 0)::INT AS premium_glass_qty
-    FROM premium_lines
-    GROUP BY month, agent
+    GROUP BY 1, rim.agent
 )
 SELECT
     pr.*,

@@ -907,16 +907,15 @@ export function AgentEvaluationSubtab() {
         asm: asm || undefined,
         site_code: selectedStores.length ? selectedStores.join(',') : undefined,
       };
-      const [legacyResponse, v2Response] = await Promise.all([
-        fetchAgentEvaluation(params),
-        fetchAgentEvaluationV2(params),
-      ]);
-      setData(legacyResponse);
-      setV2Data(v2Response);
+      if (mode === 'new') {
+        setV2Data(await fetchAgentEvaluationV2(params));
+      } else {
+        setData(await fetchAgentEvaluation(params));
+      }
     } finally {
       setLoading(false);
     }
-  }, [asm, selectedMonths, selectedStores]);
+  }, [asm, mode, selectedMonths, selectedStores]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -990,15 +989,17 @@ export function AgentEvaluationSubtab() {
     return { agents, avgPoints, totalSales, premiumRows };
   }, [rows]);
 
+  const optionData = mode === 'new' ? v2Data : data;
+
   const filterControls = (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5 sm:grid-cols-[160px_86px_150px_minmax(260px,1fr)]">
       <MonthDropdown
-        months={data.months}
+        months={optionData.months}
         selectedMonths={selectedMonths}
         onToggle={toggleMonth}
         onClear={() => setSelectedMonths([])}
       />
-      <FirmSelector options={data.firmas} selected={firma} onChange={setFirma} />
+      <FirmSelector options={optionData.firmas} selected={firma} onChange={setFirma} />
       <select
         value={asm}
         onChange={(e) => {
@@ -1008,13 +1009,13 @@ export function AgentEvaluationSubtab() {
         className="col-span-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 sm:col-span-1"
       >
         <option value="">Manageri</option>
-        {data.asms.map((option) => (
+        {optionData.asms.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
       <div className="col-span-2 sm:col-span-1">
         <StoreDropdown
-          stores={data.stores}
+          stores={optionData.stores}
           selectedStores={selectedStores}
           onToggle={toggleStore}
           onClear={() => setSelectedStores([])}
