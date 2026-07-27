@@ -114,9 +114,12 @@ nu se transforma date incomplete in zero.
   de la 2.806 ms la 2.526 ms (-10,0%), iar raspunsul canonic a ramas identic,
   SHA-256
   `80d677d28870937a50d27bc4c3e43facbfe1622f939d32b0eab35c7ddb98d93b`;
-- auditul npm runtime si `pip-audit` nu raporteaza vulnerabilitati. Updateurile
-  minore disponibile nu sunt amestecate cu aceasta optimizare fara benchmark
-  sau beneficiu operational demonstrat.
+- auditul npm runtime si `pip-audit` nu raporteaza vulnerabilitati. Lockfile-ul
+  foloseste patchurile disponibile pentru `brace-expansion` si `fast-uri`;
+  auditul complet pastreaza doar alerta build-only din lantul
+  `vite-plugin-pwa`/`workbox-build`, fara remediere upstream non-breaking.
+  Updateurile minore disponibile nu sunt amestecate cu aceasta optimizare fara
+  benchmark sau beneficiu operational demonstrat.
 
 Prioritatile urmatoare sunt profilarea Agent Evaluation v2 pe scope-urile lente,
 inchiderea SLO-urilor din RUM dupa trafic suficient si reducerea swapului activ.
