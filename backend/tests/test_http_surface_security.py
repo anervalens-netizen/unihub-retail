@@ -57,6 +57,10 @@ async def test_docs_are_disabled_and_api_responses_are_private_no_store() -> Non
         assert api_response.headers["Cache-Control"] == "private, no-store, max-age=0"
         assert api_response.headers["CDN-Cache-Control"] == "no-store"
         assert api_response.headers["Surrogate-Control"] == "no-store"
+        assert (
+            "connect-src 'self' https://auth.unihub.ro https://errors.unihub.ro"
+            in api_response.headers["Content-Security-Policy"]
+        )
 
         for sensitive_path in (
             "/salarii/overview",

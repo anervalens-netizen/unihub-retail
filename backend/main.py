@@ -203,7 +203,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src-attr 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "font-src 'self' data:; "
-            "connect-src 'self' https://auth.unihub.ro; "
+            "connect-src 'self' https://auth.unihub.ro https://errors.unihub.ro; "
             "object-src 'none'; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "

@@ -39,7 +39,7 @@ jobs:
           [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
           run_json="$(gh api "repos/$REPOSITORY/actions/runs/$CI_RUN_ID")"
           test "$(jq -r .name <<<"$run_json")" = "CI"
-          test "$(jq -r .event <<<"$run_json")" = "push"
+          test "$(jq -r .event <<<"$run_json")" = "workflow_dispatch"
           test "$(jq -r .head_branch <<<"$run_json")" = "main"
           test "$(jq -r .head_sha <<<"$run_json")" = "$EXPECTED_SHA"
           test "$(jq -r .status <<<"$run_json")" = "completed"

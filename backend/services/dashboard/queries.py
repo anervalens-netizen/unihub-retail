@@ -35,6 +35,7 @@ from services.promotion_evaluation import (
     PromotionEvaluation,
     PromotionEvaluationStatus,
     evaluate_promotion,
+    scope_promotion_definition_to_interval,
 )
 from services.receipt_identity import canonical_receipt_identity_sql
 
@@ -55,6 +56,12 @@ class DashboardCampaignContext:
     )
     promotion_status: PromotionEvaluationStatus = PromotionEvaluationStatus.COMPLETE
     promotion_warnings: tuple[str, ...] = ()
+    promotion_evaluations: list[
+        tuple[dict[str, Any], PromotionEvaluation]
+    ] = field(default_factory=list)
+    period_evaluations: dict[
+        tuple[int, date, date], PromotionEvaluation
+    ] = field(default_factory=dict)
 
     @property
     def selected_promotion_result(self) -> PromoCoPurchaseResult | None:
@@ -67,6 +74,26 @@ class DashboardCampaignContext:
             if definition.get("key") == selected_key:
                 return result
         return None
+
+    @property
+    def selected_promotion_evaluation(self) -> PromotionEvaluation | None:
+        selected_key = (
+            self.promotion_definition.get("key")
+            if self.promotion_definition is not None
+            else None
+        )
+        for definition, evaluation in self.promotion_evaluations:
+            if definition.get("key") == selected_key:
+                return evaluation
+        return None
+
+    @staticmethod
+    def period_evaluation_key(
+        definition: dict[str, Any],
+        start_date: date,
+        end_date: date,
+    ) -> tuple[int, date, date]:
+        return id(definition), start_date, end_date
 
 
 def apply_current_promo_metrics(
@@ -210,6 +237,9 @@ async def _load_dashboard_campaign_context(
         )
 
     promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]] = []
+    promotion_evaluations: list[
+        tuple[dict[str, Any], PromotionEvaluation]
+    ] = []
     promo_excluded_units: dict[tuple[str, str, str], int] = {}
     promo_discount_values: dict[tuple[str, str, str], Decimal] = {}
     promotion_status = (
@@ -232,6 +262,7 @@ async def _load_dashboard_campaign_context(
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
             )
+            promotion_evaluations.append((definition, evaluation))
             if evaluation.status is PromotionEvaluationStatus.INVALID:
                 promotion_status = PromotionEvaluationStatus.INVALID
             elif (
@@ -263,6 +294,7 @@ async def _load_dashboard_campaign_context(
         promo_discount_values=promo_discount_values,
         promotion_status=promotion_status,
         promotion_warnings=tuple(dict.fromkeys(promotion_warnings)),
+        promotion_evaluations=promotion_evaluations,
     )
 
 
@@ -1896,22 +1928,34 @@ async def _fetch_promo_incentive_summary(
                         range_end = min(period["valid_to"], definition["end_date"])
                         if range_start > range_end:
                             continue
-                        evaluation = await _compute_dashboard_promotion_result(
-                            conn,
-                            month=month,
-                            definition={
-                                **definition,
-                                "start_date": range_start,
-                                "end_date": range_end,
-                            },
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                            current_scope=current_scope,
-                            include_closed_stores=include_closed_stores,
+                        cache_key = campaign_context.period_evaluation_key(
+                            definition,
+                            range_start,
+                            range_end,
                         )
+                        evaluation = campaign_context.period_evaluations.get(
+                            cache_key
+                        )
+                        if evaluation is None:
+                            evaluation = await _compute_dashboard_promotion_result(
+                                conn,
+                                month=month,
+                                definition=scope_promotion_definition_to_interval(
+                                    definition,
+                                    range_start,
+                                    range_end,
+                                ),
+                                firma=firma,
+                                regional=regional,
+                                asm=asm,
+                                site_code=site_code,
+                                agent=agent,
+                                current_scope=current_scope,
+                                include_closed_stores=include_closed_stores,
+                            )
+                            campaign_context.period_evaluations[cache_key] = (
+                                evaluation
+                            )
                         if not evaluation.is_complete:
                             calculation_status = "invalid"
                             calculation_warnings.append(

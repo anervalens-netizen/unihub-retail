@@ -50,6 +50,101 @@ def service_and_conn(mock_repo):
 
 class TestPromoIncentivesNoConfig:
     @pytest.mark.asyncio
+    async def test_reuses_period_evaluations_calculated_by_summary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        service_and_conn,
+    ) -> None:
+        promotion = {
+            "key": "promo",
+            "title": "Promo",
+            "description": "",
+            "start_date": date(2026, 7, 1),
+            "end_date": date(2026, 7, 31),
+        }
+        periods = [
+            {
+                "valid_from": date(2026, 7, 1),
+                "valid_to": date(2026, 7, 9),
+                "products": [{"item_code": "I1", "reward_value": 5.0}],
+            },
+            {
+                "valid_from": date(2026, 7, 10),
+                "valid_to": date(2026, 7, 31),
+                "products": [{"item_code": "I1", "reward_value": 10.0}],
+            },
+        ]
+        evaluation = PromotionEvaluation(
+            result=PromoCoPurchaseResult(),
+            item_codes=["I1"],
+            rule_type="selected_item_copurchase",
+            status=PromotionEvaluationStatus.COMPLETE,
+        )
+
+        monkeypatch.setattr(
+            "services.campaigns.load_special_cards_config",
+            lambda: ({}, None),
+        )
+        monkeypatch.setattr(
+            "services.campaigns.parse_promotion_definitions",
+            lambda _config, _month: ([promotion], None),
+        )
+        monkeypatch.setattr(
+            "services.campaigns.parse_promotion_definition",
+            lambda _config, _month, promotion_key=None: (promotion, None),
+        )
+        monkeypatch.setattr(
+            "services.campaigns.get_incentive_campaign",
+            AsyncMock(
+                return_value={
+                    "title": "Incentive",
+                    "description": "",
+                    "item_codes": ["I1"],
+                    "periods": periods,
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            "services.campaigns._get_store_incentive_multipliers",
+            AsyncMock(return_value=({}, {})),
+        )
+        compute = AsyncMock(return_value=evaluation)
+        monkeypatch.setattr(
+            "services.campaigns._compute_promotion_result",
+            compute,
+        )
+
+        async def summary_with_cached_periods(**kwargs):
+            context = kwargs["campaign_context"]
+            for period in periods:
+                key = context.period_evaluation_key(
+                    promotion,
+                    period["valid_from"],
+                    period["valid_to"],
+                )
+                context.period_evaluations[key] = evaluation
+            return PromoIncentiveSummary()
+
+        monkeypatch.setattr(
+            "services.campaigns._fetch_promo_incentive_summary",
+            summary_with_cached_periods,
+        )
+        service, _conn = service_and_conn
+
+        await service.get_promotions_incentives(
+            "2026-07-01",
+            "2026-07-31",
+            None,
+            None,
+            None,
+            None,
+            None,
+            view="incentive",
+        )
+
+        assert compute.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_split_mechanisms_do_not_reuse_cumulative_actuals(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -181,9 +276,13 @@ class TestPromoIncentivesNoConfig:
             include_closed_stores=False,
         )
 
-        assert summary.await_args.kwargs["current_scope"] is True
-        assert summary.await_args.kwargs["include_closed_stores"] is False
-        assert multipliers.await_args.kwargs["current_scope"] is True
+        summary_call = summary.await_args
+        multipliers_call = multipliers.await_args
+        assert summary_call is not None
+        assert multipliers_call is not None
+        assert summary_call.kwargs["current_scope"] is True
+        assert summary_call.kwargs["include_closed_stores"] is False
+        assert multipliers_call.kwargs["current_scope"] is True
         mock_repo.fetch_incentive_store_rows.assert_awaited_once()
         assert mock_repo.fetch_incentive_store_rows.await_args.kwargs["current_scope"] is True
         assert mock_repo.fetch_incentive_agent_rows.await_args.kwargs["current_scope"] is True

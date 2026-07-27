@@ -94,3 +94,29 @@ Orice optimizare care atinge SQL-ul business trebuie comparata pe aceeasi luna
 si acelasi scope, cu rezultat canonic identic sau cu schimbarea contractului
 aprobata explicit. Nu se adauga cache fara sursa de versiune/invalidation si
 nu se transforma date incomplete in zero.
+
+## Reaudit 2026-07-27
+
+- frontendul public transfera initial aproximativ 202 KiB Brotli; chunkul
+  `charts` ramane lazy, aproximativ 121 KiB Brotli, iar assetele cu hash au
+  cache `immutable` si sunt servite prin Cloudflare;
+- in ultimele 7 zile, Prometheus a masurat Dashboard p50 467 ms / p95 1,27 s
+  si Promo/Incentive p50 519 ms / p95 2,25 s; ruta Agent Evaluation v2 ramane
+  cea mai lenta, cu p95 8,54 s pe fereastra de 7 zile si 2,28 s pe 24 ore;
+- iowait p95 pe 24 ore este 2,88%, dar swapul a ramas activ; varful iowait de
+  28,9% pe 7 zile include presiunea anterioara remedierilor de host;
+- RUM era prezent in bundle, dar CSP bloca `errors.unihub.ro`; originul este
+  acum permis explicit si acoperit de testul headerului de securitate;
+- Promo/Incentive reevalua aceleasi promotii in sumar si in proiectia
+  detaliata. Contextul request-local reutilizeaza acum evaluarile complete si
+  pe perioade: 9 evaluari devin 3;
+- A/B pe hostul de productie, aceeasi luna si acelasi scope: mediana a scazut
+  de la 2.806 ms la 2.526 ms (-10,0%), iar raspunsul canonic a ramas identic,
+  SHA-256
+  `80d677d28870937a50d27bc4c3e43facbfe1622f939d32b0eab35c7ddb98d93b`;
+- auditul npm runtime si `pip-audit` nu raporteaza vulnerabilitati. Updateurile
+  minore disponibile nu sunt amestecate cu aceasta optimizare fara benchmark
+  sau beneficiu operational demonstrat.
+
+Prioritatile urmatoare sunt profilarea Agent Evaluation v2 pe scope-urile lente,
+inchiderea SLO-urilor din RUM dupa trafic suficient si reducerea swapului activ.

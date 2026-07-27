@@ -20,7 +20,11 @@ from schemas.campaigns import (
     IncentiveTopAgent,
 )
 from repositories.campaigns import CampaignsRepository
-from services.dashboard.queries import _fetch_promo_incentive_summary, _get_store_incentive_multipliers
+from services.dashboard.queries import (
+    DashboardCampaignContext,
+    _fetch_promo_incentive_summary,
+    _get_store_incentive_multipliers,
+)
 from services.dashboard_specials import (
     load_special_cards_config,
     parse_promotion_definitions,
@@ -76,6 +80,99 @@ async def _compute_promotion_result(
         agent=agent,
         current_scope=current_scope,
         include_closed_stores=include_closed_stores,
+    )
+
+
+async def _build_campaign_context(
+    conn: asyncpg.Connection,
+    *,
+    config_error: str | None,
+    promotion_definitions: list[dict[str, Any]],
+    promotion_definition: dict[str, Any] | None,
+    promotion_error: str | None,
+    incentive_campaign: dict[str, Any] | None,
+    month: str,
+    firma: str | None,
+    regional: str | None,
+    asm: str | None,
+    site_code: str | None,
+    agent: str | None,
+    include_incentive: bool,
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> DashboardCampaignContext:
+    definitions_to_evaluate = (
+        list(promotion_definitions)
+        if include_incentive
+        else [promotion_definition] if promotion_definition is not None else []
+    )
+    if promotion_definition is not None:
+        selected_key = promotion_definition.get("key")
+        if not any(
+            definition.get("key") == selected_key
+            for definition in definitions_to_evaluate
+        ):
+            definitions_to_evaluate.insert(0, promotion_definition)
+
+    promotion_results = []
+    promotion_evaluations = []
+    promo_excluded_units: dict[tuple[str, str, str], int] = {}
+    promo_discount_values: dict[tuple[str, str, str], Decimal] = {}
+    promotion_status = (
+        PromotionEvaluationStatus.INVALID
+        if promotion_error is not None
+        else PromotionEvaluationStatus.COMPLETE
+    )
+    promotion_warnings: list[str] = []
+
+    if promotion_error is None:
+        for definition in definitions_to_evaluate:
+            evaluation = await _compute_promotion_result(
+                conn,
+                month=month,
+                definition=definition,
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
+            )
+            promotion_evaluations.append((definition, evaluation))
+            if evaluation.status is PromotionEvaluationStatus.INVALID:
+                promotion_status = PromotionEvaluationStatus.INVALID
+            elif (
+                evaluation.status is PromotionEvaluationStatus.PARTIAL
+                and promotion_status is PromotionEvaluationStatus.COMPLETE
+            ):
+                promotion_status = PromotionEvaluationStatus.PARTIAL
+            if evaluation.warning:
+                promotion_warnings.append(evaluation.warning)
+            if evaluation.result is None:
+                continue
+            promotion_results.append((definition, evaluation.result))
+            _merge_excluded_units(
+                promo_excluded_units,
+                evaluation.result.excluded_units,
+            )
+            for key, value in evaluation.result.excluded_discount_values.items():
+                promo_discount_values[key] = (
+                    promo_discount_values.get(key, Decimal("0")) + value
+                )
+
+    return DashboardCampaignContext(
+        config_error=config_error,
+        promotion_definitions=promotion_definitions,
+        promotion_definition=promotion_definition,
+        promotion_error=promotion_error,
+        incentive_campaign=incentive_campaign,
+        promotion_results=promotion_results,
+        promo_excluded_units=promo_excluded_units,
+        promo_discount_values=promo_discount_values,
+        promotion_status=promotion_status,
+        promotion_warnings=tuple(dict.fromkeys(promotion_warnings)),
+        promotion_evaluations=promotion_evaluations,
     )
 
 
@@ -163,7 +260,7 @@ class CampaignsService:
         end = date_cls.fromisoformat(end_date)
         month = start_date[:7]
 
-        config, _ = load_special_cards_config()
+        config, config_error = load_special_cards_config()
         promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
         promotion_definition, promotion_error = parse_promotion_definition(
             config,
@@ -211,6 +308,33 @@ class CampaignsService:
                     "Incentive indisponibil: lista promotiilor active nu poate fi validata."
                 )
 
+            campaign_context = await _build_campaign_context(
+                conn,
+                config_error=config_error,
+                promotion_definitions=promotion_definitions,
+                promotion_definition=promotion_definition,
+                promotion_error=promotion_error,
+                incentive_campaign=incentive_campaign,
+                month=month,
+                firma=firma,
+                regional=regional,
+                asm=asm,
+                site_code=site_code,
+                agent=agent,
+                include_incentive=include_incentive,
+                current_scope=current_scope,
+                include_closed_stores=include_closed_stores,
+            )
+            if (
+                incentive_campaign is not None
+                and campaign_context.promotion_status
+                is not PromotionEvaluationStatus.COMPLETE
+            ):
+                incentive_calculation_status = "invalid"
+                calculation_warnings.extend(
+                    campaign_context.promotion_warnings
+                )
+
             if include_incentive:
                 summary = await _fetch_promo_incentive_summary(
                     conn=conn,
@@ -222,6 +346,7 @@ class CampaignsService:
                     agent=agent,
                     current_scope=current_scope,
                     include_closed_stores=include_closed_stores,
+                    campaign_context=campaign_context,
                 )
                 promo_qty = summary.promo_qty
                 promo_impact = float(summary.promo_impact)
@@ -286,21 +411,27 @@ class CampaignsService:
             promo_agent_sites: dict[str, dict[str, int]] = {}
             promotion_item_codes: list[str] = []
             promotion_rule_type = "selected_item_copurchase"
-            incentive_excluded_ag: dict[tuple[str, str, str], int] = {}
+            incentive_excluded_ag = (
+                dict(campaign_context.promo_excluded_units)
+                if include_incentive
+                else {}
+            )
             if has_active_promotion:
                 assert promotion_definition is not None
-                evaluation = await _compute_promotion_result(
-                    conn,
-                    month=month,
-                    definition=promotion_definition,
-                    firma=firma,
-                    regional=regional,
-                    asm=asm,
-                    site_code=site_code,
-                    agent=agent,
-                    current_scope=current_scope,
-                    include_closed_stores=include_closed_stores,
-                )
+                evaluation = campaign_context.selected_promotion_evaluation
+                if evaluation is None:
+                    evaluation = await _compute_promotion_result(
+                        conn,
+                        month=month,
+                        definition=promotion_definition,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
+                    )
                 promo_cp = evaluation.result
                 promotion_item_codes = evaluation.item_codes
                 promotion_rule_type = evaluation.rule_type
@@ -329,37 +460,7 @@ class CampaignsService:
                             promo_bonuri_by_agent[_ag] = promo_bonuri_by_agent.get(_ag, 0) + units
                             site_weights = promo_agent_sites.setdefault(_ag, {})
                             site_weights[site] = site_weights.get(site, 0) + units
-                    if include_incentive:
-                        _merge_excluded_units(incentive_excluded_ag, promo_excluded_ag)
-
-                selected_key = promotion_definition.get("key")
                 if include_incentive:
-                    for extra_definition in promotion_definitions:
-                        if extra_definition.get("key") == selected_key:
-                            continue
-                        extra_evaluation = await _compute_promotion_result(
-                            conn,
-                            month=month,
-                            definition=extra_definition,
-                            firma=firma,
-                            regional=regional,
-                            asm=asm,
-                            site_code=site_code,
-                            agent=agent,
-                            current_scope=current_scope,
-                            include_closed_stores=include_closed_stores,
-                        )
-                        if not extra_evaluation.is_complete:
-                            incentive_calculation_status = "invalid"
-                            calculation_warnings.append(
-                                extra_evaluation.warning
-                                or "O promotie activa nu poate fi evaluata complet."
-                            )
-                        extra_cp = extra_evaluation.result
-                        if not extra_evaluation.is_complete or extra_cp is None:
-                            continue
-                        _merge_excluded_units(incentive_excluded_ag, extra_cp.excluded_units)
-
                     incentive_excluded_si = _excluded_by_site_item(incentive_excluded_ag)
                 else:
                     incentive_excluded_si = {}
@@ -482,22 +583,36 @@ class CampaignsService:
                             period_end_date = min(period["valid_to"], definition["end_date"])
                             if period_start_date > period_end_date:
                                 continue
-                            period_evaluation = await _compute_promotion_result(
-                                conn,
-                                month=month,
-                                definition=scope_promotion_definition_to_interval(
-                                    definition,
-                                    period_start_date,
-                                    period_end_date,
-                                ),
-                                firma=firma,
-                                regional=regional,
-                                asm=asm,
-                                site_code=site_code,
-                                agent=agent,
-                                current_scope=current_scope,
-                                include_closed_stores=include_closed_stores,
+                            cache_key = campaign_context.period_evaluation_key(
+                                definition,
+                                period_start_date,
+                                period_end_date,
                             )
+                            period_evaluation = (
+                                campaign_context.period_evaluations.get(
+                                    cache_key
+                                )
+                            )
+                            if period_evaluation is None:
+                                period_evaluation = await _compute_promotion_result(
+                                    conn,
+                                    month=month,
+                                    definition=scope_promotion_definition_to_interval(
+                                        definition,
+                                        period_start_date,
+                                        period_end_date,
+                                    ),
+                                    firma=firma,
+                                    regional=regional,
+                                    asm=asm,
+                                    site_code=site_code,
+                                    agent=agent,
+                                    current_scope=current_scope,
+                                    include_closed_stores=include_closed_stores,
+                                )
+                                campaign_context.period_evaluations[cache_key] = (
+                                    period_evaluation
+                                )
                             if not period_evaluation.is_complete:
                                 incentive_calculation_status = "invalid"
                                 calculation_warnings.append(

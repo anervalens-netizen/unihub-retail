@@ -42,7 +42,7 @@ _PROMOTION_RULE_TYPES = {
 EMPTY_SPECIAL_CARDS_CONFIG: dict[str, Any] = {"promotions": [], "incentives": []}
 
 
-def format_currency(value: float | int) -> str:
+def format_currency(value: Decimal | float | int) -> str:
     rounded = round(float(value))
     grouped = f"{rounded:,}".replace(",", ".")
     return f"{grouped} RON"

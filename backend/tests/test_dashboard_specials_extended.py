@@ -298,7 +298,8 @@ class TestBuildPromotionCard:
         }
         card = build_promotion_card("2026-05", definition, stats)
         assert card.status == "ready"
-        assert len(card.metrics) == 3
+        assert len(card.metrics) == 4
+        assert card.metrics[1].label == "Valoare discount"
         assert card.coverage_note == "Coverage note"
         assert card.highlight_value == "80"
 
