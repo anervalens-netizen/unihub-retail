@@ -90,6 +90,12 @@ aceeași lună. Pentru fiecare vânzare se folosește lista și recompensa activ
 data tranzacției; rezultatele perioadelor se însumează înainte de
 multiplicatorul lunar.
 
+În Focus, luna curentă folosește structura organizațională curentă și exclude
+implicit magazinele închise. La împărțirea unei luni în mai multe mecanisme,
+sursa POS cumulativă nu se fragmentează artificial: o subperioadă care nu
+acoperă integral intervalul raportat folosește regula pe bonuri, identic cu
+exportul pe produs.
+
 O schimbare de mecanism trebuie să specifice:
 
 - perioada fără suprapuneri contradictorii;

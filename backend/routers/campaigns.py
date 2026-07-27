@@ -56,6 +56,8 @@ async def get_promotions_incentives(
     agent: str | None = None,
     promotion_key: str | None = None,
     view: Literal["all", "promo", "incentive"] = "all",
+    current_scope: bool = Query(False),
+    include_closed_stores: bool = Query(False),
     svc: CampaignsService = Depends(get_campaigns_service),
 ) -> CampaignsPromotionsResponse:
     data = await svc.get_promotions_incentives(
@@ -68,5 +70,7 @@ async def get_promotions_incentives(
         agent,
         promotion_key,
         view,
+        current_scope,
+        include_closed_stores,
     )
     return CampaignsPromotionsResponse(**data)

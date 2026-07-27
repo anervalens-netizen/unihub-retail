@@ -50,6 +50,145 @@ def service_and_conn(mock_repo):
 
 class TestPromoIncentivesNoConfig:
     @pytest.mark.asyncio
+    async def test_split_mechanisms_do_not_reuse_cumulative_actuals(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        service_and_conn,
+    ) -> None:
+        promotion = {
+            "key": "promo",
+            "title": "Promo",
+            "description": "",
+            "start_date": date(2026, 7, 1),
+            "end_date": date(2026, 7, 31),
+            "actuals_source_file": "promo.xlsx",
+            "actuals_cutoff_date": "2026-07-24",
+        }
+        periods = [
+            {
+                "valid_from": date(2026, 7, 1),
+                "valid_to": date(2026, 7, 9),
+                "products": [{"item_code": "I1", "reward_value": 5.0}],
+            },
+            {
+                "valid_from": date(2026, 7, 10),
+                "valid_to": date(2026, 7, 31),
+                "products": [{"item_code": "I1", "reward_value": 10.0}],
+            },
+        ]
+        monkeypatch.setattr("services.campaigns.load_special_cards_config", lambda: ({}, None))
+        monkeypatch.setattr(
+            "services.campaigns.parse_promotion_definitions",
+            lambda _config, _month: ([promotion], None),
+        )
+        monkeypatch.setattr(
+            "services.campaigns.parse_promotion_definition",
+            lambda _config, _month, promotion_key=None: (promotion, None),
+        )
+        monkeypatch.setattr(
+            "services.campaigns.get_incentive_campaign",
+            AsyncMock(return_value={
+                "title": "Incentive",
+                "description": "",
+                "reward_map": {"I1": 10.0},
+                "item_codes": ["I1"],
+                "periods": periods,
+            }),
+        )
+        monkeypatch.setattr(
+            "services.campaigns._fetch_promo_incentive_summary",
+            AsyncMock(return_value=PromoIncentiveSummary()),
+        )
+        monkeypatch.setattr(
+            "services.campaigns._get_store_incentive_multipliers",
+            AsyncMock(return_value=({}, {})),
+        )
+        evaluation = PromotionEvaluation(
+            result=PromoCoPurchaseResult(),
+            item_codes=["I1"],
+            rule_type="selected_item_copurchase",
+            status=PromotionEvaluationStatus.COMPLETE,
+        )
+        compute = AsyncMock(return_value=evaluation)
+        monkeypatch.setattr("services.campaigns._compute_promotion_result", compute)
+        service, _conn = service_and_conn
+
+        await service.get_promotions_incentives(
+            "2026-07-01",
+            "2026-07-31",
+            None,
+            None,
+            None,
+            None,
+            None,
+            view="incentive",
+            current_scope=True,
+        )
+
+        assert compute.await_count == 3
+        assert compute.await_args_list[0].kwargs["definition"]["actuals_source_file"] == "promo.xlsx"
+        assert compute.await_args_list[1].kwargs["definition"]["actuals_source_file"] is None
+        assert compute.await_args_list[2].kwargs["definition"]["actuals_source_file"] is None
+        assert all(call.kwargs["current_scope"] is True for call in compute.await_args_list)
+
+    @pytest.mark.asyncio
+    async def test_current_scope_is_forwarded_to_incentive_sources(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        service_and_conn,
+        mock_repo,
+    ) -> None:
+        period = {
+            "valid_from": date(2026, 7, 1),
+            "valid_to": date(2026, 7, 31),
+            "products": [{"item_code": "I1", "reward_value": 5.0}],
+        }
+        monkeypatch.setattr("services.campaigns.load_special_cards_config", lambda: ({}, None))
+        monkeypatch.setattr(
+            "services.campaigns.parse_promotion_definitions",
+            lambda _config, _month: ([], None),
+        )
+        monkeypatch.setattr(
+            "services.campaigns.parse_promotion_definition",
+            lambda _config, _month, promotion_key=None: (None, None),
+        )
+        monkeypatch.setattr(
+            "services.campaigns.get_incentive_campaign",
+            AsyncMock(return_value={
+                "title": "Incentive",
+                "description": "",
+                "reward_map": {"I1": 5.0},
+                "item_codes": ["I1"],
+                "periods": [period],
+            }),
+        )
+        summary = AsyncMock(return_value=PromoIncentiveSummary())
+        multipliers = AsyncMock(return_value=({}, {}))
+        monkeypatch.setattr("services.campaigns._fetch_promo_incentive_summary", summary)
+        monkeypatch.setattr("services.campaigns._get_store_incentive_multipliers", multipliers)
+        service, _conn = service_and_conn
+
+        await service.get_promotions_incentives(
+            "2026-07-01",
+            "2026-07-31",
+            None,
+            None,
+            None,
+            None,
+            None,
+            view="incentive",
+            current_scope=True,
+            include_closed_stores=False,
+        )
+
+        assert summary.await_args.kwargs["current_scope"] is True
+        assert summary.await_args.kwargs["include_closed_stores"] is False
+        assert multipliers.await_args.kwargs["current_scope"] is True
+        mock_repo.fetch_incentive_store_rows.assert_awaited_once()
+        assert mock_repo.fetch_incentive_store_rows.await_args.kwargs["current_scope"] is True
+        assert mock_repo.fetch_incentive_agent_rows.await_args.kwargs["current_scope"] is True
+
+    @pytest.mark.asyncio
     async def test_incentive_is_unavailable_when_any_active_promo_is_invalid(
         self,
         monkeypatch: pytest.MonkeyPatch,

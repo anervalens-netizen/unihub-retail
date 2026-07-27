@@ -1,12 +1,18 @@
 """Unit tests for campaign repository clause building and service helpers."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from repositories.campaigns import build_campaign_clauses, build_campaign_history_clauses
+from repositories.campaigns import (
+    _incentive_scope,
+    _promo_scope,
+    build_campaign_clauses,
+    build_campaign_history_clauses,
+)
 
 
 class FakeRow(dict):
@@ -58,6 +64,50 @@ def test_campaign_history_clauses_site_code_scope_supports_comma_lists():
     assert params == ["2026-06", 12, "CCTCIT,CTAUCH,CTCITYPRK"]
     assert "agg.site_code = ANY(string_to_array($3::TEXT, ','))" in focus_clauses
     assert "tot.site_code = ANY(string_to_array($3::TEXT, ','))" in totals_clauses
+
+
+def test_current_promo_scope_uses_active_store_fields() -> None:
+    clauses, params, store_join = _promo_scope(
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        ["P1"],
+        "2026-07",
+        firma=None,
+        regional="RM 1",
+        asm=None,
+        site_code=None,
+        agent=None,
+        current_scope=True,
+        include_closed_stores=False,
+    )
+
+    assert params == [
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+        ["P1"],
+        "2026-07",
+        "RM 1",
+    ]
+    assert store_join == "JOIN stores s ON s.site_code = agg.site_code"
+    assert "s.regional = ANY(string_to_array($5::TEXT, ','))" in clauses
+    assert "s.is_active = TRUE" in clauses
+
+
+def test_current_incentive_scope_can_include_closed_stores() -> None:
+    clauses, _params, store_join = _incentive_scope(
+        ["I1"],
+        "2026-07",
+        firma=None,
+        regional=None,
+        asm=None,
+        site_code=None,
+        agent=None,
+        current_scope=True,
+        include_closed_stores=True,
+    )
+
+    assert store_join == "JOIN stores s ON s.site_code = agg.site_code"
+    assert "s.is_active = TRUE" not in clauses
 
 
 class TestCampaignsServiceOverview:

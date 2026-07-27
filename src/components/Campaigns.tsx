@@ -160,6 +160,14 @@ export function Campaigns({
   );
 
   const promoQuery = useMemo(() => buildQuery(promoMonth), [buildQuery, promoMonth]);
+  const promoScopeQuery = useMemo(
+    () => ({
+      ...promoQuery,
+      current_scope: promoMonth === latestMonth,
+      include_closed_stores: false,
+    }),
+    [latestMonth, promoMonth, promoQuery],
+  );
   const historyQueryParams = useMemo(
     () => ({ ...buildQuery(historyMonth), months_back: 12 }),
     [buildQuery, historyMonth],
@@ -174,7 +182,7 @@ export function Campaigns({
       activeSection,
       promoMonth,
       selectedPromotionKey,
-      shouldLoadPremiumGlass ? { ...promoQuery, surface: premiumSurfaceMode } : promoQuery,
+      shouldLoadPremiumGlass ? { ...promoScopeQuery, surface: premiumSurfaceMode } : promoScopeQuery,
     ),
     enabled: Boolean(promoMonth) && shouldLoadCurrent,
     staleTime: CAMPAIGNS_STALE_MS,
@@ -194,7 +202,7 @@ export function Campaigns({
       if (shouldLoadPromoData) {
         requests.push(
           getPromotionsIncentives(`${promoMonth}-01`, getMonthEndDate(promoMonth), {
-            ...promoQuery,
+            ...promoScopeQuery,
             view: activeSection === 'promo' ? 'promo' : 'incentive',
             ...(selectedPromotionKey && { promotion_key: selectedPromotionKey }),
           }, signal).then((promoResponse) => {

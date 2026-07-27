@@ -40,6 +40,8 @@ export async function getPromotionsIncentives(
     agent?: string;
     promotion_key?: string;
     view?: 'all' | 'promo' | 'incentive';
+    current_scope?: boolean;
+    include_closed_stores?: boolean;
   },
   signal?: AbortSignal,
 ): Promise<CampaignsPromotionsResponse> {
@@ -56,6 +58,10 @@ export async function getPromotionsIncentives(
         ...(filters?.agent && { agent: filters.agent }),
         ...(filters?.promotion_key && { promotion_key: filters.promotion_key }),
         ...(filters?.view && { view: filters.view }),
+        ...(filters?.current_scope !== undefined && { current_scope: filters.current_scope }),
+        ...(filters?.include_closed_stores !== undefined && {
+          include_closed_stores: filters.include_closed_stores,
+        }),
       },
       signal,
     }

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import services.exports as exports_module
+import services.promotion_evaluation as promotion_evaluation_module
 from services.exports import ExportValidationError, ExportsService
 from services.promo_copurchase import PromoCoPurchaseResult
 from services.promotion_evaluation import (
@@ -227,7 +228,11 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
         return [outside_definition, active_definition], None
 
     monkeypatch.setattr(exports_module, "parse_promotion_definitions", definitions)
-    monkeypatch.setattr(exports_module, "promo_actuals_cutoff_date", lambda _definition: date(2026, 2, 3))
+    monkeypatch.setattr(
+        promotion_evaluation_module,
+        "promo_actuals_cutoff_date",
+        lambda _definition: date(2026, 2, 3),
+    )
 
     calls: list[dict[str, Any]] = []
 

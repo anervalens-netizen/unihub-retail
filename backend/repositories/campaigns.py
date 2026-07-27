@@ -81,7 +81,9 @@ def _promo_scope(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
-) -> tuple[list[str], list[Any]]:
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> tuple[list[str], list[Any], str]:
     params, positions = build_scoped_params(
         [start, end, item_codes, month],
         firma=firma,
@@ -99,11 +101,14 @@ def _promo_scope(
         scoped_clauses(
             positions,
             site_alias="agg",
-            store_alias="agg",
+            store_alias="s" if current_scope else "agg",
             agent_alias="agg",
         )
     )
-    return clauses, params
+    if current_scope and not include_closed_stores:
+        clauses.append("s.is_active = TRUE")
+    store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+    return clauses, params, store_join
 
 
 def _incentive_scope(
@@ -115,7 +120,9 @@ def _incentive_scope(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
-) -> tuple[list[str], list[Any]]:
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> tuple[list[str], list[Any], str]:
     params, positions = build_scoped_params(
         [item_codes, month],
         firma=firma,
@@ -132,11 +139,14 @@ def _incentive_scope(
         scoped_clauses(
             positions,
             site_alias="agg",
-            store_alias="agg",
+            store_alias="s" if current_scope else "agg",
             agent_alias="agg",
         )
     )
-    return clauses, params
+    if current_scope and not include_closed_stores:
+        clauses.append("s.is_active = TRUE")
+    store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+    return clauses, params, store_join
 
 
 class CampaignsRepository:
@@ -322,8 +332,10 @@ class CampaignsRepository:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> asyncpg.Record | None:
-        clauses, params = _promo_scope(
+        clauses, params, store_join = _promo_scope(
             start,
             end,
             item_codes,
@@ -333,12 +345,15 @@ class CampaignsRepository:
             asm=asm,
             site_code=site_code,
             agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 f"""
                 SELECT COALESCE(SUM(agg.net_quantity), 0) AS total_qty
                 FROM reporting_item_day agg
+                {store_join}
                 WHERE {" AND ".join(clauses)}
                 """,
                 *params,
@@ -356,8 +371,10 @@ class CampaignsRepository:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> list[asyncpg.Record]:
-        clauses, params = _promo_scope(
+        clauses, params, store_join = _promo_scope(
             start,
             end,
             item_codes,
@@ -367,17 +384,22 @@ class CampaignsRepository:
             asm=asm,
             site_code=site_code,
             agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
+        location_expr = "s.locatie" if current_scope else "agg.locatie"
+        company_expr = "s.firma" if current_scope else "agg.firma"
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
                 SELECT
                     agg.site_code,
-                    MAX(agg.locatie) AS locatie,
-                    MAX(agg.firma) AS firma,
+                    MAX({location_expr}) AS locatie,
+                    MAX({company_expr}) AS firma,
                     COALESCE(SUM(agg.positive_quantity), 0)::INT AS qty,
                     COALESCE(SUM(agg.net_quantity), 0)::INT AS total_qty
                 FROM reporting_item_day agg
+                {store_join}
                 WHERE {" AND ".join(clauses)}
                 GROUP BY agg.site_code
                 ORDER BY qty DESC
@@ -394,8 +416,10 @@ class CampaignsRepository:
         regional: str | None,
         asm: str | None,
         site_code: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> list[asyncpg.Record]:
-        clauses, params = _incentive_scope(
+        clauses, params, store_join = _incentive_scope(
             item_codes,
             month,
             firma=firma,
@@ -403,7 +427,11 @@ class CampaignsRepository:
             asm=asm,
             site_code=site_code,
             agent=None,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
+        location_expr = "s.locatie" if current_scope else "agg.locatie"
+        company_expr = "s.firma" if current_scope else "agg.firma"
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -415,8 +443,8 @@ class CampaignsRepository:
                     WHERE import_month = $2
                     GROUP BY item_code
                 )
-                SELECT agg.site_code, MAX(agg.locatie) AS locatie,
-                       MAX(agg.firma) AS firma,
+                SELECT agg.site_code, MAX({location_expr}) AS locatie,
+                       MAX({company_expr}) AS firma,
                        agg.item_code,
                        ip.valid_from,
                        ip.valid_to,
@@ -425,6 +453,7 @@ class CampaignsRepository:
                        COALESCE(MAX(ip.subcategory), MAX(categories.subcategory), 'Necategorizat') AS subcategory,
                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
                 FROM reporting_item_day agg
+                {store_join}
                 JOIN incentive_campaigns ic ON ic.month = agg.import_month
                 JOIN incentive_products ip
                   ON ip.campaign_id = ic.id
@@ -447,8 +476,10 @@ class CampaignsRepository:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> list[asyncpg.Record]:
-        clauses, params = _incentive_scope(
+        clauses, params, store_join = _incentive_scope(
             item_codes,
             month,
             firma=firma,
@@ -456,7 +487,11 @@ class CampaignsRepository:
             asm=asm,
             site_code=site_code,
             agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
         )
+        location_expr = "s.locatie" if current_scope else "agg.locatie"
+        company_expr = "s.firma" if current_scope else "agg.firma"
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
@@ -469,8 +504,8 @@ class CampaignsRepository:
                     GROUP BY item_code
                 )
                 SELECT agg.agent, agg.site_code,
-                       MAX(agg.locatie) AS locatie,
-                       MAX(agg.firma) AS firma,
+                       MAX({location_expr}) AS locatie,
+                       MAX({company_expr}) AS firma,
                        agg.item_code,
                        ip.valid_from,
                        ip.valid_to,
@@ -479,6 +514,7 @@ class CampaignsRepository:
                        COALESCE(MAX(ip.subcategory), MAX(categories.subcategory), 'Necategorizat') AS subcategory,
                        COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
                 FROM reporting_item_day agg
+                {store_join}
                 JOIN incentive_campaigns ic ON ic.month = agg.import_month
                 JOIN incentive_products ip
                   ON ip.campaign_id = ic.id

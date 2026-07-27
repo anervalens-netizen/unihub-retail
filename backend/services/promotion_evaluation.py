@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -37,6 +38,41 @@ class PromotionEvaluation:
     @property
     def is_complete(self) -> bool:
         return self.status is PromotionEvaluationStatus.COMPLETE
+
+
+def scope_promotion_definition_to_interval(
+    definition: dict[str, Any],
+    start_date: date,
+    end_date: date,
+) -> dict[str, Any]:
+    """Scope a promotion without misusing cumulative POS actuals.
+
+    POS actuals are authoritative only when the requested interval contains
+    their full reported window. Partial subperiods must fall back to the
+    receipt rule because the cumulative source cannot be split by day.
+    """
+    scoped_definition = {
+        **definition,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    if not (definition.get("actuals_source_file") or definition.get("actuals_file")):
+        return scoped_definition
+
+    cutoff_date = promo_actuals_cutoff_date(definition)
+    use_actuals = (
+        start_date > cutoff_date
+        if cutoff_date is not None
+        else start_date <= definition["start_date"] and end_date >= definition["end_date"]
+    ) or (
+        cutoff_date is not None
+        and start_date <= definition["start_date"]
+        and end_date >= cutoff_date
+    )
+    if not use_actuals:
+        scoped_definition["actuals_source_file"] = None
+        scoped_definition["actuals_file"] = None
+    return scoped_definition
 
 
 async def evaluate_promotion(

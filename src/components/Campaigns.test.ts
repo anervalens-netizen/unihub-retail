@@ -25,6 +25,11 @@ vi.mock('../api/dashboard', () => ({
 const month = '2026-06';
 const filters = defaultAppFilters();
 const scopedQuery = buildScopedMonthQuery(month, filters);
+const currentScopeQuery = {
+  ...scopedQuery,
+  current_scope: true,
+  include_closed_stores: false,
+};
 
 function makePromoData(): CampaignsPromotionsResponse {
   return {
@@ -110,7 +115,7 @@ function renderCampaigns(section: 'promo' | 'incentive') {
     },
   });
   queryClient.setQueryData(
-    queryKeys.campaigns.current(section, month, '', scopedQuery),
+    queryKeys.campaigns.current(section, month, '', currentScopeQuery),
     { promoData: makePromoData() },
   );
 

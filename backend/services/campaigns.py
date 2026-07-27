@@ -31,6 +31,7 @@ from services.promotion_evaluation import (
     PromotionEvaluation,
     PromotionEvaluationStatus,
     evaluate_promotion,
+    scope_promotion_definition_to_interval,
 )
 
 
@@ -61,6 +62,8 @@ async def _compute_promotion_result(
     asm: str | None,
     site_code: str | None,
     agent: str | None,
+    current_scope: bool = False,
+    include_closed_stores: bool = False,
 ) -> PromotionEvaluation:
     return await evaluate_promotion(
         conn,
@@ -71,6 +74,8 @@ async def _compute_promotion_result(
         asm=asm,
         site_code=site_code,
         agent=agent,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
     )
 
 
@@ -149,6 +154,8 @@ class CampaignsService:
         agent: str | None,
         promotion_key: str | None = None,
         view: str = "all",
+        current_scope: bool = False,
+        include_closed_stores: bool = False,
     ) -> dict:
         from datetime import date as date_cls
 
@@ -213,6 +220,8 @@ class CampaignsService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
                 promo_qty = summary.promo_qty
                 promo_impact = float(summary.promo_impact)
@@ -252,7 +261,14 @@ class CampaignsService:
             store_achievements: dict[str, float | None] = {}
             if incentive_campaign is not None:
                 store_multipliers, store_achievements = await _get_store_incentive_multipliers(
-                    conn, month, firma, regional, asm, site_code
+                    conn,
+                    month,
+                    firma,
+                    regional,
+                    asm,
+                    site_code,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
 
             has_active_promotion = promotion_definition is not None and promotion_error is None
@@ -282,6 +298,8 @@ class CampaignsService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
                 promo_cp = evaluation.result
                 promotion_item_codes = evaluation.item_codes
@@ -328,6 +346,8 @@ class CampaignsService:
                             asm=asm,
                             site_code=site_code,
                             agent=agent,
+                            current_scope=current_scope,
+                            include_closed_stores=include_closed_stores,
                         )
                         if not extra_evaluation.is_complete:
                             incentive_calculation_status = "invalid"
@@ -359,6 +379,8 @@ class CampaignsService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
                 if total_row:
                     promo_total_qty = int(total_row["total_qty"] or 0)
@@ -373,6 +395,8 @@ class CampaignsService:
                     asm=asm,
                     site_code=site_code,
                     agent=agent,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
                 )
                 top_stores = [
                     PromoTopStore(
@@ -461,16 +485,18 @@ class CampaignsService:
                             period_evaluation = await _compute_promotion_result(
                                 conn,
                                 month=month,
-                                definition={
-                                    **definition,
-                                    "start_date": period_start_date,
-                                    "end_date": period_end_date,
-                                },
+                                definition=scope_promotion_definition_to_interval(
+                                    definition,
+                                    period_start_date,
+                                    period_end_date,
+                                ),
                                 firma=firma,
                                 regional=regional,
                                 asm=asm,
                                 site_code=site_code,
                                 agent=agent,
+                                current_scope=current_scope,
+                                include_closed_stores=include_closed_stores,
                             )
                             if not period_evaluation.is_complete:
                                 incentive_calculation_status = "invalid"
@@ -504,6 +530,8 @@ class CampaignsService:
                         regional=regional,
                         asm=asm,
                         site_code=site_code,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
                     )
                     store_inc: dict[str, list[Any]] = {}
                     period_totals: dict[tuple[str, str], list[float]] = {}
@@ -614,6 +642,8 @@ class CampaignsService:
                         asm=asm,
                         site_code=site_code,
                         agent=agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
                     )
                     agent_inc: dict[str, float] = {}
                     agent_potential: dict[str, float] = {}

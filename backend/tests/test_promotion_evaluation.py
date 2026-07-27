@@ -10,6 +10,7 @@ from services.promo_copurchase import PromoActualsError, PromoCoPurchaseResult
 from services.promotion_evaluation import (
     PromotionEvaluationStatus,
     evaluate_promotion,
+    scope_promotion_definition_to_interval,
 )
 
 
@@ -21,6 +22,29 @@ def _definition() -> dict[str, object]:
         "actuals_source_file": "promo.xlsx",
         "actuals_cutoff_date": "2026-07-15",
     }
+
+
+def test_partial_period_drops_cumulative_actuals_source() -> None:
+    scoped = scope_promotion_definition_to_interval(
+        _definition(),
+        date(2026, 7, 10),
+        date(2026, 7, 31),
+    )
+
+    assert scoped["start_date"] == date(2026, 7, 10)
+    assert scoped["end_date"] == date(2026, 7, 31)
+    assert scoped["actuals_source_file"] is None
+    assert scoped["actuals_file"] is None
+
+
+def test_interval_covering_actuals_window_keeps_corrected_source() -> None:
+    scoped = scope_promotion_definition_to_interval(
+        _definition(),
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+
+    assert scoped["actuals_source_file"] == "promo.xlsx"
 
 
 @pytest.mark.asyncio

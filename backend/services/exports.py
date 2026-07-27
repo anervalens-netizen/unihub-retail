@@ -20,8 +20,10 @@ from services.dashboard.queries import (
     _load_dashboard_campaign_context,
 )
 from services.incentive_db import get_incentive_campaign
-from services.promo_copurchase import promo_actuals_cutoff_date
-from services.promotion_evaluation import PromotionEvaluationStatus
+from services.promotion_evaluation import (
+    PromotionEvaluationStatus,
+    scope_promotion_definition_to_interval,
+)
 from services.dashboard_specials import (
     load_promotion_rule_products,
     load_special_cards_config,
@@ -884,29 +886,11 @@ class ExportsService:
                                 range_start = range_end = selected_date
                         ranges.append((range_start, range_end))
                         for range_start, range_end in ranges:
-                            scoped_definition = {
-                                **definition,
-                                "start_date": range_start,
-                                "end_date": range_end,
-                            }
-                            # A POS report contains a cumulative actual through its
-                            # cutoff. Use it only when the selected range fully
-                            # contains that reported interval; otherwise the
-                            # report cannot be split reliably by day.
-                            if definition.get("actuals_source_file") or definition.get("actuals_file"):
-                                cutoff_date = promo_actuals_cutoff_date(definition)
-                                use_actuals = (
-                                    range_start > cutoff_date
-                                    if cutoff_date is not None
-                                    else range_start <= definition["start_date"] and range_end >= definition["end_date"]
-                                ) or (
-                                    cutoff_date is not None
-                                    and range_start <= definition["start_date"]
-                                    and range_end >= cutoff_date
-                                )
-                                if not use_actuals:
-                                    scoped_definition["actuals_source_file"] = None
-                                    scoped_definition["actuals_file"] = None
+                            scoped_definition = scope_promotion_definition_to_interval(
+                                definition,
+                                range_start,
+                                range_end,
+                            )
                             evaluation = await _compute_dashboard_promotion_result(
                                 conn,
                                 month=month,
