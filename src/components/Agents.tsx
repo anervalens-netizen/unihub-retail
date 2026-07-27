@@ -965,8 +965,8 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
                 { header: 'Status', value: (row) => row.current_status },
                 { header: 'Nou', value: (row) => row.is_new ? 'Da' : 'Nu' },
                 { header: 'Reactivat', value: (row) => row.is_reactivated ? 'Da' : 'Nu' },
-                { header: 'Vanzari', value: (row) => nf.format(row.total_sales) },
-                { header: 'Cantitate', value: (row) => nfNum.format(row.total_quantity) },
+                { header: 'Vanzari', value: (row) => row.total_sales, format: 'currency' },
+                { header: 'Cantitate', value: (row) => row.total_quantity, format: 'integer' },
               ]}
             />
           </div>

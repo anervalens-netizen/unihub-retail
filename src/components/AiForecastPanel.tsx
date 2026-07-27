@@ -24,7 +24,7 @@ import type {
   AiForecastRollingStoreRow,
   AiForecastStoreRow,
 } from '../api/types';
-import { formatAmount, formatCurrency, formatInt, formatPercent } from '../lib/formatters';
+import { formatAmount, formatInt, formatPercent } from '../lib/formatters';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { queryKeys } from '../lib/queryKeys';
 import type { AppFilters } from './MainLayout';
@@ -79,11 +79,6 @@ function deltaTone(value: number | null | undefined) {
 function formatMetricValue(value: number | null | undefined, metric: AiForecastMetric) {
   if (value === null || value === undefined) return '-';
   return metric === 'units' ? formatInt(Math.round(value)) : formatAmount(value);
-}
-
-function formatMetricExport(value: number | null | undefined, metric: AiForecastMetric) {
-  if (value === null || value === undefined) return '-';
-  return metric === 'units' ? formatInt(Math.round(value)) : formatCurrency(value);
 }
 
 function formatSignedAmount(value: number | null | undefined, metric: AiForecastMetric) {
@@ -378,11 +373,11 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
                 { header: 'Firma', value: (row) => row.firma },
                 { header: 'Magazin', value: (row) => row.locatie },
                 { header: 'ASM', value: (row) => row.asm },
-                { header: 'Forecast', value: (row) => formatMetricExport(row.forecast_sales, metric) },
-                { header: 'Asteptat la zi', value: (row) => formatMetricExport(row.expected_sales_to_date, metric) },
-                { header: 'Realizat', value: (row) => formatMetricExport(row.actual_sales, metric) },
-                { header: 'Delta', value: (row) => formatMetricExport(row.delta_sales, metric) },
-                { header: 'Delta %', value: (row) => formatPercent(row.delta_pct) },
+                { header: 'Forecast', value: (row) => row.forecast_sales, format: metric === 'units' ? 'integer' : 'currency' },
+                { header: 'Asteptat la zi', value: (row) => row.expected_sales_to_date, format: metric === 'units' ? 'integer' : 'currency' },
+                { header: 'Realizat', value: (row) => row.actual_sales, format: metric === 'units' ? 'integer' : 'currency' },
+                { header: 'Delta', value: (row) => row.delta_sales, format: metric === 'units' ? 'integer' : 'currency' },
+                { header: 'Delta %', value: (row) => row.delta_pct, format: 'percentPoints' },
               ]}
             />
           </div>
@@ -615,10 +610,10 @@ function RollingForecastView({ currentMonth, filters, metric }: ForecastViewProp
                 { header: 'Firma', value: (row) => row.firma },
                 { header: 'Magazin', value: (row) => row.locatie },
                 { header: 'ASM', value: (row) => row.asm },
-                { header: 'Forecast', value: (row) => formatMetricExport(row.forecast_sales, metric) },
-                { header: 'Realizat', value: (row) => formatMetricExport(row.actual_sales, metric) },
-                { header: 'Delta', value: (row) => formatMetricExport(row.delta_sales, metric) },
-                { header: 'Delta %', value: (row) => formatPercent(row.delta_pct) },
+                { header: 'Forecast', value: (row) => row.forecast_sales, format: metric === 'units' ? 'integer' : 'currency' },
+                { header: 'Realizat', value: (row) => row.actual_sales, format: metric === 'units' ? 'integer' : 'currency' },
+                { header: 'Delta', value: (row) => row.delta_sales, format: metric === 'units' ? 'integer' : 'currency' },
+                { header: 'Delta %', value: (row) => row.delta_pct, format: 'percentPoints' },
               ]}
             />
           </div>
@@ -708,11 +703,11 @@ function RollingManagerTable({ rows, metric }: { rows: AiForecastRollingManagerR
           rows={sortedRows}
           columns={[
             { header: 'Manager', value: (row) => row.manager },
-            { header: 'Magazine', value: (row) => formatInt(row.store_count) },
-            { header: 'Forecast', value: (row) => formatMetricExport(row.forecast_sales, metric) },
-            { header: 'Realizat', value: (row) => formatMetricExport(row.actual_sales, metric) },
-            { header: 'Delta', value: (row) => formatMetricExport(row.delta_sales, metric) },
-            { header: 'Delta %', value: (row) => formatPercent(row.delta_pct) },
+            { header: 'Magazine', value: (row) => row.store_count, format: 'integer' },
+            { header: 'Forecast', value: (row) => row.forecast_sales, format: metric === 'units' ? 'integer' : 'currency' },
+            { header: 'Realizat', value: (row) => row.actual_sales, format: metric === 'units' ? 'integer' : 'currency' },
+            { header: 'Delta', value: (row) => row.delta_sales, format: metric === 'units' ? 'integer' : 'currency' },
+            { header: 'Delta %', value: (row) => row.delta_pct, format: 'percentPoints' },
           ]}
         />
       </div>
@@ -948,12 +943,12 @@ function ForecastManagerTable({
           rows={sortedRows}
           columns={[
             { header: 'Manager', value: (row) => row.manager },
-            { header: 'Magazine', value: (row) => formatInt(row.store_count) },
-            { header: 'Forecast', value: (row) => formatMetricExport(row.forecast_sales, metric) },
-            { header: 'Asteptat la zi', value: (row) => formatMetricExport(row.expected_sales_to_date, metric) },
-            { header: 'Realizat', value: (row) => formatMetricExport(row.actual_sales, metric) },
-            { header: 'Delta', value: (row) => formatMetricExport(row.delta_sales, metric) },
-            { header: 'Delta %', value: (row) => formatPercent(row.delta_pct) },
+            { header: 'Magazine', value: (row) => row.store_count, format: 'integer' },
+            { header: 'Forecast', value: (row) => row.forecast_sales, format: metric === 'units' ? 'integer' : 'currency' },
+            { header: 'Asteptat la zi', value: (row) => row.expected_sales_to_date, format: metric === 'units' ? 'integer' : 'currency' },
+            { header: 'Realizat', value: (row) => row.actual_sales, format: metric === 'units' ? 'integer' : 'currency' },
+            { header: 'Delta', value: (row) => row.delta_sales, format: metric === 'units' ? 'integer' : 'currency' },
+            { header: 'Delta %', value: (row) => row.delta_pct, format: 'percentPoints' },
           ]}
         />
       </div>

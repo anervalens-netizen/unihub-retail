@@ -555,7 +555,11 @@ def test_attach_period_metrics_skips_unknown_row_and_sheet_helpers() -> None:
         [{"sales": 10, "name": "Store"}],
         header_fill="FFFFFF",
     )
+    assert sheet["A2"].value == 10
+    assert sheet["A2"].data_type == "n"
     assert sheet["A2"].number_format == "#,##0.00"
+    assert sheet["B2"].value == "Store"
+    assert sheet["B2"].data_type == "s"
     assert sheet.freeze_panes == "A2"
 
     service._add_daily_comparison_chart(

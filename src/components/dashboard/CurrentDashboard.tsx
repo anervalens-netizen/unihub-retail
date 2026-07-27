@@ -15,7 +15,7 @@ import type { AgentStat, DashboardSummary, PeriodComparisonPayload, RegionalStat
 import type { AppFilters } from '../MainLayout';
 import { AiForecastPanel } from '../AiForecastPanel';
 import { SegmentedTabs } from '../common/SegmentedTabs';
-import { formatAmount, formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
+import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
 import {
   CompactCurrency,
@@ -351,16 +351,17 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             exportSheetName={`RM ${currentMonth}`}
             exportColumns={[
               { header: 'Regional', value: (row) => row.regional },
-              { header: 'Target', value: (row) => formatCurrency(row.target) },
-              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-              { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
-              { header: 'Promo (buc. / discount)', value: (row) => `${formatInt(row.promo_qty)} buc. / ${formatCurrency(row.promo_discount_value ?? 0)}` },
-              { header: 'Cantitate', value: (row) => formatInt(row.qty_total) },
-              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-              { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-              { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
+              { header: 'Target', value: (row) => row.target, format: 'currency' },
+              { header: 'Vanzari', value: (row) => row.total_vanzari, format: 'currency' },
+              { header: 'Procent', value: (row) => row.proc_realizare_target, format: 'percentPoints' },
+              { header: 'Forecast%', value: (row) => row.forecast_target_pct, format: 'percentPoints' },
+              { header: 'Promo buc.', value: (row) => row.promo_qty, format: 'integer' },
+              { header: 'Discount promo', value: (row) => row.promo_discount_value, format: 'currency' },
+              { header: 'Cantitate', value: (row) => row.qty_total, format: 'integer' },
+              { header: 'Medie produs', value: (row) => row.medie_produs, format: 'currency' },
+              { header: 'Nr bonuri', value: (row) => row.nr_bonuri, format: 'integer' },
+              { header: 'ProcBon2Acc', value: (row) => row.proc_bon2acc, format: 'percentPoints' },
+              { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
             ]}
           />
           <BreakdownTable
@@ -378,19 +379,20 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             exportColumns={[
               { header: 'Firma', value: (row) => row.firma },
               { header: 'Magazin', value: (row) => row.locatie },
-              { header: 'Target', value: (row) => formatCurrency(row.target) },
-              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-              { header: 'Forecast%', value: (row) => formatPercent(row.forecast_target_pct) },
-              { header: 'Promo (buc. / discount)', value: (row) => `${formatInt(row.promo_qty)} buc. / ${formatCurrency(row.promo_discount_value ?? 0)}` },
-              { header: 'Cantitate', value: (row) => formatInt(row.qty_total ?? 0) },
-              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-              { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-              { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-              { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-              { header: 'Agenti', value: (row) => formatInt(row.nr_agenti) },
-              { header: 'Zile active', value: (row) => formatInt(row.zile_active) },
+              { header: 'Target', value: (row) => row.target, format: 'currency' },
+              { header: 'Vanzari', value: (row) => row.total_vanzari, format: 'currency' },
+              { header: 'Procent', value: (row) => row.proc_realizare_target, format: 'percentPoints' },
+              { header: 'Forecast%', value: (row) => row.forecast_target_pct, format: 'percentPoints' },
+              { header: 'Promo buc.', value: (row) => row.promo_qty, format: 'integer' },
+              { header: 'Discount promo', value: (row) => row.promo_discount_value, format: 'currency' },
+              { header: 'Cantitate', value: (row) => row.qty_total, format: 'integer' },
+              { header: 'Medie produs', value: (row) => row.medie_produs, format: 'currency' },
+              { header: 'Nr bonuri', value: (row) => row.nr_bonuri, format: 'integer' },
+              { header: 'ProcBon2Acc', value: (row) => row.proc_bon2acc, format: 'percentPoints' },
+              { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
+              { header: 'Retururi', value: (row) => row.return_receipt_count, format: 'integer' },
+              { header: 'Agenti', value: (row) => row.nr_agenti, format: 'integer' },
+              { header: 'Zile active', value: (row) => row.zile_active, format: 'integer' },
             ]}
           />
           <BreakdownTable
@@ -408,18 +410,19 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               { header: 'Agent', value: (row) => row.agent },
               { header: 'Firma', value: (row) => row.firma },
               { header: 'Magazin', value: (row) => row.locatie },
-              { header: 'Target', value: (row) => formatCurrency(row.target ?? 0) },
-              { header: 'Vanzari', value: (row) => formatCurrency(row.total_vanzari) },
-              { header: 'Procent', value: (row) => formatPercent(row.proc_realizare_target) },
-              { header: 'Promo (buc. / discount)', value: (row) => `${formatInt(row.promo_qty)} buc. / ${formatCurrency(row.promo_discount_value ?? 0)}` },
-              { header: 'Cantitate', value: (row) => formatInt(row.acc_qty_realizat) },
-              { header: 'Medie produs', value: (row) => formatCurrency(row.medie_produs ?? 0) },
-              { header: 'Nr bonuri', value: (row) => formatInt(row.nr_bonuri) },
-              { header: 'ProcBon2Acc', value: (row) => formatPercent(row.proc_bon2acc) },
-              { header: 'Focus%', value: (row) => formatPercent(row.prc_focus_acc_qty) },
-              { header: 'Retururi', value: (row) => formatInt(row.return_receipt_count) },
-              { header: 'Zile lucrate', value: (row) => formatInt(row.zile_lucrate) },
-              { header: 'Medie zilnica', value: (row) => formatCurrency(row.medie_zilnica ?? 0) },
+              { header: 'Target', value: (row) => row.target, format: 'currency' },
+              { header: 'Vanzari', value: (row) => row.total_vanzari, format: 'currency' },
+              { header: 'Procent', value: (row) => row.proc_realizare_target, format: 'percentPoints' },
+              { header: 'Promo buc.', value: (row) => row.promo_qty, format: 'integer' },
+              { header: 'Discount promo', value: (row) => row.promo_discount_value, format: 'currency' },
+              { header: 'Cantitate', value: (row) => row.acc_qty_realizat, format: 'integer' },
+              { header: 'Medie produs', value: (row) => row.medie_produs, format: 'currency' },
+              { header: 'Nr bonuri', value: (row) => row.nr_bonuri, format: 'integer' },
+              { header: 'ProcBon2Acc', value: (row) => row.proc_bon2acc, format: 'percentPoints' },
+              { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
+              { header: 'Retururi', value: (row) => row.return_receipt_count, format: 'integer' },
+              { header: 'Zile lucrate', value: (row) => row.zile_lucrate, format: 'integer' },
+              { header: 'Medie zilnica', value: (row) => row.medie_zilnica, format: 'currency' },
             ]}
           />
         </>

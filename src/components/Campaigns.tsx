@@ -451,10 +451,10 @@ export function Campaigns({
                     exportFilename={`focus-promo-magazine-${promoMonth}-${promoData.selected_promotion_key}`}
                     exportSheetName="Magazine promo"
                     exportColumns={[
-                      { header: '#', value: (_row, index) => index + 1 },
+                      { header: '#', value: (_row, index) => index + 1, format: 'integer' },
                       { header: 'Firma', value: (row) => row.firma },
                       { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
-                      { header: 'Bonuri', value: (row) => row.promo_bons },
+                      { header: 'Bonuri', value: (row) => row.promo_bons, format: 'integer' },
                     ]}
                     columns={[
                       {
@@ -508,11 +508,11 @@ export function Campaigns({
                     exportFilename={`focus-promo-agenti-${promoMonth}-${promoData.selected_promotion_key}`}
                     exportSheetName="Agenti promo"
                     exportColumns={[
-                      { header: '#', value: (_row, index) => index + 1 },
+                      { header: '#', value: (_row, index) => index + 1, format: 'integer' },
                       { header: 'Agent', value: (row) => row.agent_name },
                       { header: 'Firma', value: (row) => row.firma },
                       { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
-                      { header: 'Bonuri', value: (row) => row.promo_bons },
+                      { header: 'Bonuri', value: (row) => row.promo_bons, format: 'integer' },
                     ]}
                     columns={[
                       {
@@ -585,7 +585,7 @@ export function Campaigns({
                 exportFilename={`focus-incentive-agenti-${promoMonth}`}
                 exportSheetName="Agenti incentive"
                 exportColumns={[
-                  { header: '#', value: (_row, index) => index + 1 },
+                  { header: '#', value: (_row, index) => index + 1, format: 'integer' },
                   { header: 'Agent', value: (row) => row.agent_name },
                   { header: 'Firma', value: (row) => row.firma },
                   { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
@@ -668,7 +668,7 @@ export function Campaigns({
                 exportFilename={`focus-incentive-magazine-${promoMonth}`}
                 exportSheetName="Magazine incentive"
                 exportColumns={[
-                  { header: '#', value: (_row, index) => index + 1 },
+                  { header: '#', value: (_row, index) => index + 1, format: 'integer' },
                   { header: 'Firma', value: (row) => row.firma },
                   { header: 'Magazin', value: (row) => displayStoreName(row.store_name) },
                   { header: '%Prev.', value: (row) => row.achievement, format: 'percent' },
@@ -870,6 +870,9 @@ export function Campaigns({
                   secondary: item.item_code,
                   rightTop: formatCurrency(item.sales_total),
                   rightBottom: `${formatInt(item.qty_total)} buc · ${formatInt(item.store_count)} magazine`,
+                  sales: item.sales_total,
+                  quantity: item.qty_total,
+                  stores: item.store_count,
                 }))}
               />
             </>
@@ -1033,6 +1036,12 @@ function PremiumGlassModelTable({ rows }: { rows: PremiumGlassModelStat[] }) {
         defaultSortKey="total_qty"
         exportFilename="focus-folii-premium-modele"
         exportSheetName="Modele folii premium"
+        exportColumns={[
+          { header: 'Model', value: (row) => row.model_label },
+          { header: 'Premium', value: (row) => row.premium_qty, format: 'integer' },
+          { header: 'Rest', value: (row) => row.regular_qty, format: 'integer' },
+          { header: 'Share', value: (row) => row.premium_qty_share_pct, format: 'percentPoints' },
+        ]}
         columns={[
           { key: 'model_label', label: 'Model', render: (row) => <span className="font-semibold">{(row as PremiumGlassModelStat).model_label}</span> },
           { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassModelStat).premium_qty)}</span> },
@@ -1056,6 +1065,14 @@ function PremiumGlassManagerTable({ rows }: { rows: PremiumGlassManagerStat[] })
         defaultSortKey="premium_qty"
         exportFilename="focus-folii-premium-manageri"
         exportSheetName="Manageri folii premium"
+        exportColumns={[
+          { header: 'Manager', value: (row) => row.manager },
+          { header: 'Premium', value: (row) => row.premium_qty, format: 'integer' },
+          { header: 'Rest', value: (row) => row.regular_qty, format: 'integer' },
+          { header: 'Share', value: (row) => row.premium_qty_share_pct, format: 'percentPoints' },
+          { header: 'Magazine', value: (row) => row.store_count, format: 'integer' },
+          { header: 'Agenti', value: (row) => row.agent_count, format: 'integer' },
+        ]}
         columns={[
           { key: 'manager', label: 'Manager', render: (row) => <span className="font-semibold">{(row as PremiumGlassManagerStat).manager}</span> },
           { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassManagerStat).premium_qty)}</span> },
@@ -1084,9 +1101,9 @@ function PremiumGlassStoreTable({ rows }: { rows: PremiumGlassStoreStat[] }) {
         exportColumns={[
           { header: 'Firma', value: (row) => row.firma },
           { header: 'Magazin', value: (row) => row.locatie },
-          { header: 'Premium', value: (row) => row.premium_qty },
-          { header: 'Rest', value: (row) => row.regular_qty },
-          { header: 'Share', value: (row) => formatPercent(row.premium_qty_share_pct) },
+          { header: 'Premium', value: (row) => row.premium_qty, format: 'integer' },
+          { header: 'Rest', value: (row) => row.regular_qty, format: 'integer' },
+          { header: 'Share', value: (row) => row.premium_qty_share_pct, format: 'percentPoints' },
         ]}
         columns={[
           {
@@ -1127,9 +1144,9 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
           { header: 'Agent', value: (row) => row.agent },
           { header: 'Firma', value: (row) => row.firma },
           { header: 'Magazin', value: (row) => row.locatie },
-          { header: 'Premium', value: (row) => row.premium_qty },
-          { header: 'Rest', value: (row) => row.regular_qty },
-          { header: 'Share', value: (row) => formatPercent(row.premium_qty_share_pct) },
+          { header: 'Premium', value: (row) => row.premium_qty, format: 'integer' },
+          { header: 'Rest', value: (row) => row.regular_qty, format: 'integer' },
+          { header: 'Share', value: (row) => row.premium_qty_share_pct, format: 'percentPoints' },
         ]}
         columns={[
           {
@@ -1468,14 +1485,14 @@ function ContestView({ contest }: { contest: ContestResponse }) {
             sheetName="Clasament agenti"
             rows={contest.leaderboard}
             columns={[
-              { header: '#', value: (row) => row.rank },
+              { header: '#', value: (row) => row.rank, format: 'integer' },
               { header: 'Agent', value: (row) => row.agent },
               { header: 'Magazin', value: (row) => row.store_name },
               { header: 'Firma', value: (row) => row.firma },
-              { header: 'Focus', value: (row) => row.focus_points },
-              { header: 'Promo', value: (row) => row.promo_points },
-              { header: '>150', value: (row) => row.price_points },
-              { header: 'Total', value: (row) => row.total_points },
+              { header: 'Focus', value: (row) => row.focus_points, format: 'integer' },
+              { header: 'Promo', value: (row) => row.promo_points, format: 'integer' },
+              { header: '>150', value: (row) => row.price_points, format: 'integer' },
+              { header: 'Total', value: (row) => row.total_points, format: 'integer' },
               { header: 'Premiu', value: (row) => row.prize },
             ]}
           />
@@ -1583,6 +1600,9 @@ function DataTable({
     secondary: string;
     rightTop: string;
     rightBottom: string;
+    sales: number;
+    quantity: number;
+    stores: number;
   }>;
 }) {
   return (
@@ -1599,8 +1619,9 @@ function DataTable({
           columns={[
             { header: 'Denumire', value: (row) => row.primary },
             { header: 'Cod', value: (row) => row.secondary },
-            { header: 'Valoare', value: (row) => row.rightTop },
-            { header: 'Detalii', value: (row) => row.rightBottom },
+            { header: 'Vanzari', value: (row) => row.sales, format: 'currency' },
+            { header: 'Cantitate', value: (row) => row.quantity, format: 'integer' },
+            { header: 'Magazine', value: (row) => row.stores, format: 'integer' },
           ]}
         />
       </div>

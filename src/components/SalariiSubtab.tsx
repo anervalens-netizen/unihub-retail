@@ -357,11 +357,11 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               columns={[
                 { header: 'Locatie', value: (row) => row.locatie ?? row.site_code },
                 { header: 'Firma', value: (row) => row.company_name },
-                { header: 'Agenti', value: (row) => row.agent_count },
-                { header: 'Salarii', value: (row) => row.total_salary },
-                { header: 'Medie agent', value: (row) => row.avg_salary },
-                { header: 'Vanzari', value: (row) => row.total_sales },
-                { header: 'Procent', value: (row) => row.ratio },
+                { header: 'Agenti', value: (row) => row.agent_count, format: 'integer' },
+                { header: 'Salarii', value: (row) => row.total_salary, format: 'currency' },
+                { header: 'Medie agent', value: (row) => row.avg_salary, format: 'currency' },
+                { header: 'Vanzari', value: (row) => row.total_sales, format: 'currency' },
+                { header: 'Procent', value: (row) => row.ratio, format: 'percentPoints' },
               ]}
             />
             <select
@@ -487,15 +487,16 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 auditSalaryExport('monthly_trend', sortedTrend.length)
               }
               columns={[
-                { header: 'Luna', value: (row) => row.month },
-                { header: 'Agenti', value: (row) => row.agent_count },
-                { header: 'Salarii', value: (row) => row.total_salary },
-                { header: 'Medie agent', value: (row) => row.avg_salary },
-                { header: 'Vanzari', value: (row) => row.total_sales },
+                { header: 'Luna', value: (row) => row.month, format: 'month' },
+                { header: 'Agenti', value: (row) => row.agent_count, format: 'integer' },
+                { header: 'Salarii', value: (row) => row.total_salary, format: 'currency' },
+                { header: 'Medie agent', value: (row) => row.avg_salary, format: 'currency' },
+                { header: 'Vanzari', value: (row) => row.total_sales, format: 'currency' },
                 {
                   header: 'Procent',
                   value: (row) =>
                     getSalarySalesRatio(row.total_salary, row.total_sales),
+                  format: 'percentPoints',
                 },
               ]}
             />
@@ -589,9 +590,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                   { header: 'Agent', value: (row) => row.full_name },
                   { header: 'Firma', value: (row) => row.company_name },
                   { header: 'Locatie', value: (row) => row.locatie ?? '' },
-                  { header: 'Luni', value: (row) => row.month_count },
-                  { header: 'Medie lunara', value: (row) => row.avg_salary },
-                  { header: 'Total', value: (row) => row.total_salary },
+                  { header: 'Luni', value: (row) => row.month_count, format: 'integer' },
+                  { header: 'Medie lunara', value: (row) => row.avg_salary, format: 'currency' },
+                  { header: 'Total', value: (row) => row.total_salary, format: 'currency' },
                 ]}
               />
               {/* Search */}

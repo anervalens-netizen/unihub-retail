@@ -3,7 +3,7 @@ import { downloadBlob } from './download';
 export type ExportColumn<T> = {
   header: string;
   value: (row: T, index: number) => string | number | null | undefined;
-  format?: 'integer' | 'number' | 'percent' | 'currency';
+  format?: 'integer' | 'number' | 'percent' | 'percentPoints' | 'currency' | 'month';
 };
 
 type WorkbookFile = {
@@ -157,9 +157,19 @@ function columnName(index: number): string {
 function styleId(format: ExportColumn<unknown>['format']): number | null {
   if (format === 'integer') return 1;
   if (format === 'number') return 2;
-  if (format === 'percent') return 3;
+  if (format === 'percent' || format === 'percentPoints') return 3;
   if (format === 'currency') return 4;
+  if (format === 'month') return 5;
   return null;
+}
+
+function excelMonthSerial(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  return Date.UTC(year, month - 1, 1) / 86_400_000 + 25_569;
 }
 
 function cellXml(
@@ -167,9 +177,21 @@ function cellXml(
   value: string | number | null | undefined,
   format?: ExportColumn<unknown>['format'],
 ): string {
+  if (value === null || value === undefined) {
+    return `<c r="${ref}"/>`;
+  }
+  if (format === 'month' && typeof value === 'string') {
+    const serial = excelMonthSerial(value);
+    if (serial !== null) {
+      return `<c r="${ref}" s="5"><v>${serial}</v></c>`;
+    }
+  }
   if (typeof value === 'number' && Number.isFinite(value)) {
     const style = styleId(format);
-    return `<c r="${ref}"${style !== null ? ` s="${style}"` : ''}><v>${value}</v></c>`;
+    const numericValue = format === 'percentPoints'
+      ? Number((value / 100).toPrecision(15))
+      : value;
+    return `<c r="${ref}"${style !== null ? ` s="${style}"` : ''}><v>${numericValue}</v></c>`;
   }
   return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
 }
@@ -253,22 +275,24 @@ export function buildExcelWorkbook<T>({
       path: 'xl/styles.xml',
       content: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <numFmts count="4">
+  <numFmts count="5">
     <numFmt numFmtId="164" formatCode="0"/>
     <numFmt numFmtId="165" formatCode="0.00"/>
-    <numFmt numFmtId="166" formatCode="0%"/>
-    <numFmt numFmtId="167" formatCode="#,##0 &quot;RON&quot;"/>
+    <numFmt numFmtId="166" formatCode="0.00%"/>
+    <numFmt numFmtId="167" formatCode="#,##0.00 &quot;RON&quot;"/>
+    <numFmt numFmtId="168" formatCode="yyyy-mm"/>
   </numFmts>
   <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
   <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="5">
+  <cellXfs count="6">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
     <xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
     <xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
     <xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+    <xf numFmtId="168" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`),

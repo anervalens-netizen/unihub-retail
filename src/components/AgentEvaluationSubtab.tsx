@@ -1071,19 +1071,20 @@ export function AgentEvaluationSubtab() {
             sheetName="Evaluare Actuala"
             rows={rows}
             columns={[
-              { header: 'Luna', value: (row) => row.month },
+              { header: 'Luna', value: (row) => row.month, format: 'month' },
               { header: 'Firma', value: (row) => row.firma },
               { header: 'Agent', value: (row) => row.agent },
               { header: 'Magazin', value: (row) => row.locatie },
-              { header: 'Vanzare', value: (row) => formatMoney(row.total_sales) },
-              { header: 'Target', value: (row) => formatMoney(row.target_value) },
-              { header: '% Target', value: (row) => formatPct(row.target_pct) },
-              { header: 'Medie zilnica', value: (row) => formatNumber(row.daily_average, 0) },
-              { header: 'Valoare reper', value: (row) => formatNumber(row.value_reper, 0) },
-              { header: 'Bon2Acc', value: (row) => formatPct(row.bonuri_pct) },
-              { header: 'Focus', value: (row) => formatPct(row.focus_pct) },
-              { header: 'Folii Premium', value: (row) => formatPct(row.premium_glass_pct) },
-              { header: 'Scor', value: (row) => `${row.total_points}/18` },
+              { header: 'Vanzare', value: (row) => row.total_sales, format: 'currency' },
+              { header: 'Target', value: (row) => row.target_value, format: 'currency' },
+              { header: '% Target', value: (row) => row.target_pct, format: 'percentPoints' },
+              { header: 'Medie zilnica', value: (row) => row.daily_average, format: 'number' },
+              { header: 'Valoare reper', value: (row) => row.value_reper, format: 'number' },
+              { header: 'Bon2Acc', value: (row) => row.bonuri_pct, format: 'percentPoints' },
+              { header: 'Focus', value: (row) => row.focus_pct, format: 'percentPoints' },
+              { header: 'Folii Premium', value: (row) => row.premium_glass_pct, format: 'percentPoints' },
+              { header: 'Scor', value: (row) => row.total_points, format: 'integer' },
+              { header: 'Scor maxim', value: () => 18, format: 'integer' },
               { header: 'Calificativ', value: (row) => row.qualifier },
             ]}
           />
@@ -1093,22 +1094,22 @@ export function AgentEvaluationSubtab() {
             sheetName="Evaluare Noua"
             rows={v2Rows}
             columns={[
-              { header: 'Luna', value: (row) => row.month },
+              { header: 'Luna', value: (row) => row.month, format: 'month' },
               { header: 'Firma', value: (row) => row.firma },
               { header: 'Agent', value: (row) => row.agent },
               { header: 'Magazin', value: (row) => row.locatie },
-              { header: 'Vanzare', value: (row) => formatMoney(row.total_sales) },
-              { header: 'Scor', value: (row) => row.total_score === null ? '' : Number(row.total_score).toFixed(1) },
+              { header: 'Vanzare', value: (row) => row.total_sales, format: 'currency' },
+              { header: 'Scor', value: (row) => row.total_score, format: 'number' },
               { header: 'Rating', value: (row) => row.rating },
               { header: 'Status', value: (row) => row.eligibility_status },
               { header: 'Flaguri', value: (row) => row.confidence_flags.map(flagLabel).join(', ') },
-              { header: '% Target', value: (row) => formatPct(row.target_pct) },
-              { header: 'Productivitate vs reper', value: (row) => formatPct(row.daily_vs_reference_pct) },
-              { header: 'Bon2Acc', value: (row) => formatPct(row.bonuri_pct) },
-              { header: 'Focus', value: (row) => formatPct(row.focus_pct) },
-              { header: 'Folii Premium', value: (row) => formatPct(row.premium_glass_pct) },
-              { header: 'Valoare reper', value: (row) => formatNumber(row.value_reper, 0) },
-              { header: 'Trend 3 luni', value: (row) => formatPct(row.trend_daily_pct) },
+              { header: '% Target', value: (row) => row.target_pct, format: 'percentPoints' },
+              { header: 'Productivitate vs reper', value: (row) => row.daily_vs_reference_pct, format: 'percentPoints' },
+              { header: 'Bon2Acc', value: (row) => row.bonuri_pct, format: 'percentPoints' },
+              { header: 'Focus', value: (row) => row.focus_pct, format: 'percentPoints' },
+              { header: 'Folii Premium', value: (row) => row.premium_glass_pct, format: 'percentPoints' },
+              { header: 'Valoare reper', value: (row) => row.value_reper, format: 'number' },
+              { header: 'Trend 3 luni', value: (row) => row.trend_daily_pct, format: 'percentPoints' },
             ]}
           />
         )}

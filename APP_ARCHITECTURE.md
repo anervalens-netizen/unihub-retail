@@ -240,6 +240,9 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   iar randurile lunare fara atribuire de agent nu sunt amestecate in exportul
   pe agent. Query-ul de itemi activeaza CTE-urile campaniei numai cand coloanele
   cerute au nevoie de ele.
+  Exporturile rapide din carduri scriu valorile, procentele si lunile ca
+  tipuri Excel native, nu ca text formatat pentru UI; identificatorii precum
+  codurile de magazin si produs raman text pentru a nu pierde zerourile initiale.
 
 Filtrele principale sunt gestionate in `App.tsx` si persistate in
 `localStorage` separat pe zone: Hub, Focus si Agenti. Hub si Focus pot porni
