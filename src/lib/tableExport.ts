@@ -172,6 +172,30 @@ function excelMonthSerial(value: string): number | null {
   return Date.UTC(year, month - 1, 1) / 86_400_000 + 25_569;
 }
 
+function numericCellValue(
+  value: string | number,
+  format: ExportColumn<unknown>['format'],
+): number | null {
+  if (!['integer', 'number', 'percent', 'percentPoints', 'currency'].includes(format ?? '')) {
+    return null;
+  }
+
+  let parsed: number;
+  if (typeof value === 'number') {
+    parsed = value;
+  } else {
+    const normalized = value.trim();
+    if (!/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(normalized)) {
+      return null;
+    }
+    parsed = Number(normalized);
+  }
+  if (!Number.isFinite(parsed)) return null;
+  return format === 'percentPoints'
+    ? Number((parsed / 100).toPrecision(15))
+    : parsed;
+}
+
 function cellXml(
   ref: string,
   value: string | number | null | undefined,
@@ -186,12 +210,13 @@ function cellXml(
       return `<c r="${ref}" s="5"><v>${serial}</v></c>`;
     }
   }
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  const numericValue = numericCellValue(value, format);
+  if (numericValue !== null) {
     const style = styleId(format);
-    const numericValue = format === 'percentPoints'
-      ? Number((value / 100).toPrecision(15))
-      : value;
     return `<c r="${ref}"${style !== null ? ` s="${style}"` : ''}><v>${numericValue}</v></c>`;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `<c r="${ref}"><v>${value}</v></c>`;
   }
   return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
 }
