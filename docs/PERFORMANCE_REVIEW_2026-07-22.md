@@ -141,3 +141,22 @@ deduplica dupa joinul multi-model. Evaluarea foloseste acum agregatul canonic
 
 Validarea finala: 1.302 teste backend trecute, 234 teste frontend trecute,
 mypy, TypeScript, ESLint, build PWA si verificarea artefactului RUM verzi.
+
+### Promo same-model follow-up 2026-07-28
+
+Raportul operational a confirmat o regresie reala, nu doar asteptare in coada:
+Promo/Incentive p95 a ajuns la 4,775 s, iar `special_cards` la 4,663 s.
+Profilarea aceleiasi luni si aceluiasi scope a izolat joinul
+`same_model_screen_camera`: planul generic reunea de mii de ori aceleasi
+randuri intermediare si consuma 0,6-1,9 s per subperioada, desi citirea
+filtrata din `sales_transactions` dura aproximativ 10 ms.
+
+Evaluatorul citeste acum o singura data randurile filtrate de cod/perioada si
+face potrivirea bounded pe cheia canonica a bonului in memorie. Selectia ramane
+identica: acelasi model, o singura unitate camera per bon, apoi pret/cod/ID
+crescator. Comparatia read-only pe productia curenta a pastrat exact hashul
+canonic
+`8b55dede6d14b009803172f6dafe5eef65af3c97988c0a9246a58c0953c54f39`.
+Pe trei rulari consecutive, mediana Promo/Incentive a scazut de la 2.781 ms la
+312 ms (-88,8%); candidatul a ramas intre 291 si 894 ms. Gate-ul tintit are 62
+teste si mypy verzi.

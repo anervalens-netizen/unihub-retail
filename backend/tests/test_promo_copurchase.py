@@ -13,6 +13,7 @@ from services.promo_copurchase import (
     PromoCoPurchaseResult,
     compute_promo_actuals_from_report,
     compute_promo_copurchase,
+    compute_promo_same_model_pair,
 )
 
 
@@ -130,6 +131,70 @@ class TestComputePromoCoPurchase:
         sql = conn.fetch.await_args.args[0]
         assert "(s.regional = ANY(string_to_array($5::TEXT, ',')) OR s.asm = ANY(string_to_array($5::TEXT, ',')))" in sql
         assert "s.is_active = true" in sql
+
+
+class TestComputePromoSameModelPair:
+    @pytest.mark.asyncio
+    async def test_matches_models_per_receipt_without_rejoining_mapping_rows(self):
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(
+            return_value=[
+                FakeRow(
+                    sale_date=date(2026, 7, 1),
+                    site_code="S1",
+                    agent="Agent1",
+                    bon_nr="B1",
+                    id=1,
+                    item_code="SCR1",
+                    unit_price=Decimal("120"),
+                    quantity=1,
+                ),
+                FakeRow(
+                    sale_date=date(2026, 7, 1),
+                    site_code="S1",
+                    agent="Agent1",
+                    bon_nr="B1",
+                    id=2,
+                    item_code="CAM1",
+                    unit_price=Decimal("80"),
+                    quantity=1,
+                ),
+                FakeRow(
+                    sale_date=date(2026, 7, 1),
+                    site_code="S1",
+                    agent="Agent1",
+                    bon_nr="B1",
+                    id=3,
+                    item_code="CAM2",
+                    unit_price=Decimal("50"),
+                    quantity=1,
+                ),
+            ]
+        )
+
+        result = await compute_promo_same_model_pair(
+            conn,
+            month="2026-07",
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+            screen_code_models={"SCR1": {"phone-a"}},
+            camera_code_models={
+                "CAM1": {"phone-a"},
+                "CAM2": {"phone-b"},
+            },
+            firma=None,
+            regional=None,
+            asm=None,
+            site_code=None,
+            agent=None,
+        )
+
+        sql = conn.fetch.await_args.args[0]
+        assert "st.item_code = ANY($4::TEXT[])" in sql
+        assert "st.item_code = ANY($5::TEXT[])" in sql
+        assert "UNNEST" not in sql
+        assert result.discounted_units == 1
+        assert result.excluded_units[("S1", "Agent1", "CAM1")] == 1
 
 
 class TestComputePromoActualsFromReport:

@@ -782,13 +782,11 @@ async def compute_promo_same_model_pair(
     if not screen_pairs or not camera_pairs:
         return PromoCoPurchaseResult()
 
-    screen_codes = [code for code, _model in screen_pairs]
-    screen_models = [model for _code, model in screen_pairs]
-    camera_codes = [code for code, _model in camera_pairs]
-    camera_models = [model for _code, model in camera_pairs]
+    screen_codes = sorted(screen_code_models)
+    camera_codes = sorted(camera_code_models)
 
     params, positions = build_scoped_params(
-        [month, start_date, end_date, screen_codes, screen_models, camera_codes, camera_models],
+        [month, start_date, end_date, screen_codes, camera_codes],
         firma=firma,
         regional=regional,
         asm=asm,
@@ -807,83 +805,90 @@ async def compute_promo_same_model_pair(
 
     rows = await conn.fetch(
         f"""
-        WITH screen_models AS (
-            SELECT item_code, model_key
-            FROM UNNEST($4::TEXT[], $5::TEXT[]) AS t(item_code, model_key)
-        ),
-        camera_models AS (
-            SELECT item_code, model_key
-            FROM UNNEST($6::TEXT[], $7::TEXT[]) AS t(item_code, model_key)
-        ),
-        lines AS (
-            SELECT
-                st.sale_date,
-                st.site_code,
-                st.agent,
-                st.bon_nr,
-                st.id,
-                st.item_code,
-                st.unit_price,
-                CASE WHEN st.quantity > 0 THEN st.quantity ELSE 0 END AS pos_qty
-            FROM sales_transactions st
-            JOIN stores s ON s.site_code = st.site_code
-            WHERE st.import_month = $1
-              AND st.sale_date BETWEEN $2 AND $3
-              AND NOT st.is_return
-              AND (
-                st.item_code = ANY($4::TEXT[])
-                OR st.item_code = ANY($6::TEXT[])
-              ){scope_sql}
-        ),
-        screen_on_bon AS (
-            SELECT DISTINCT
-                l.sale_date, l.site_code, l.agent, l.bon_nr, sm.model_key
-            FROM lines l
-            JOIN screen_models sm ON sm.item_code = l.item_code
-            WHERE l.pos_qty > 0
-        ),
-        qualifying AS (
-            SELECT DISTINCT
-                l.sale_date, l.site_code, l.agent, l.bon_nr, cm.model_key
-            FROM lines l
-            JOIN camera_models cm ON cm.item_code = l.item_code
-            JOIN screen_on_bon sb
-              ON sb.sale_date = l.sale_date
-             AND sb.site_code = l.site_code
-             AND sb.agent = l.agent
-             AND sb.bon_nr = l.bon_nr
-             AND sb.model_key = cm.model_key
-            WHERE l.pos_qty > 0
-        ),
-        discounted AS (
-            SELECT DISTINCT ON (l.sale_date, l.site_code, l.agent, l.bon_nr)
-                l.site_code, l.agent, l.item_code, l.unit_price
-            FROM lines l
-            JOIN camera_models cm ON cm.item_code = l.item_code
-            JOIN qualifying q
-              ON q.sale_date = l.sale_date
-             AND q.site_code = l.site_code
-             AND q.agent = l.agent
-             AND q.bon_nr = l.bon_nr
-             AND q.model_key = cm.model_key
-            WHERE l.pos_qty > 0
-            ORDER BY
-                l.sale_date, l.site_code, l.agent, l.bon_nr,
-                l.unit_price ASC, l.item_code ASC, l.id ASC
-        )
         SELECT
-            site_code,
-            agent,
-            item_code,
-            COUNT(*)::INT AS units,
-            COALESCE(SUM(unit_price), 0) AS gross_value
-        FROM discounted
-        GROUP BY site_code, agent, item_code
+            st.sale_date,
+            st.site_code,
+            st.agent,
+            st.bon_nr,
+            st.id,
+            st.item_code,
+            st.unit_price,
+            st.quantity
+        FROM sales_transactions st
+        JOIN stores s ON s.site_code = st.site_code
+        WHERE st.import_month = $1
+          AND st.sale_date BETWEEN $2 AND $3
+          AND NOT st.is_return
+          AND (
+            st.item_code = ANY($4::TEXT[])
+            OR st.item_code = ANY($5::TEXT[])
+          ){scope_sql}
         """,
         *params,
     )
 
-    return _result_from_discounted_rows(rows, discount_rate=discount_rate)
+    receipts: dict[
+        tuple[date, str, str, str],
+        dict[str, Any],
+    ] = {}
+    for row in rows:
+        if int(row["quantity"] or 0) <= 0:
+            continue
+        receipt_key = (
+            row["sale_date"],
+            str(row["site_code"]),
+            str(row["agent"]),
+            str(row["bon_nr"]),
+        )
+        receipt = receipts.setdefault(
+            receipt_key,
+            {"screen_models": set(), "camera_lines": []},
+        )
+        item_code = str(row["item_code"])
+        receipt["screen_models"].update(screen_code_models.get(item_code, ()))
+        camera_model_keys = camera_code_models.get(item_code)
+        if camera_model_keys:
+            receipt["camera_lines"].append(
+                (
+                    row["unit_price"],
+                    item_code,
+                    int(row["id"]),
+                    frozenset(camera_model_keys),
+                )
+            )
+
+    aggregated: dict[tuple[str, str, str], tuple[int, Decimal]] = {}
+    for (_sale_date, site, receipt_agent, _bon_nr), receipt in receipts.items():
+        screen_model_keys = receipt["screen_models"]
+        candidates = [
+            line
+            for line in receipt["camera_lines"]
+            if screen_model_keys.intersection(line[3])
+        ]
+        if not candidates:
+            continue
+        unit_price, item_code, _row_id, _model_keys = min(
+            candidates,
+            key=lambda line: (line[0], line[1], line[2]),
+        )
+        key = (site, receipt_agent, item_code)
+        units, gross_value = aggregated.get(key, (0, Decimal("0")))
+        aggregated[key] = (units + 1, gross_value + Decimal(unit_price))
+
+    discounted_rows = [
+        {
+            "site_code": site,
+            "agent": receipt_agent,
+            "item_code": item_code,
+            "units": units,
+            "gross_value": gross_value,
+        }
+        for (site, receipt_agent, item_code), (units, gross_value) in aggregated.items()
+    ]
+    return _result_from_discounted_rows(
+        discounted_rows,
+        discount_rate=discount_rate,
+    )
 
 
 def _result_from_metrics(
