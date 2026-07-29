@@ -30,7 +30,8 @@ MANUAL_ALIASES: dict[tuple[str, str], str] = {
     # Carrefour Ploiesti and Carrefour Balotesti coexist in Finance; fuzzy
     # matching previously conflated the former with the latter.
     ("Mobiup", "CARPL"): "PLCRF",
-    ("Mobicell", "BRAILAPROMENADA"): "BRPRMALL",
+    ("Mobicell", "BRAILAPROMENADA"): "BRPROM",
+    ("Mobicell", "BRAILAPROMENADAMALL 2"): "BRPROM",
     ("Mobicell", "SIBIUFESTIBAL"): "SBFESTIV",
     ("Mobicell", "CARRFORERA"): "CRFORADEA",
     ("Mobicell", "CSTTOM"): "CRFTOMCT",
@@ -40,6 +41,9 @@ MANUAL_ALIASES: dict[tuple[str, str], str] = {
     ("Mobicell", "SBPR"): "SBPROM",
     ("Mobicell", "ACM"): "ALBACAROLINA",
     ("Mobicell", "CTRAFI"): "AFICOTRO",
+    # Moldova Mall moved in master-data from Mobicell to Mobiup; the explicit,
+    # reviewed alias preserves its Finance history under the active site code.
+    ("Mobicell", "MOLDMALL"): "ISMOLDMALL",
     ("Mobiup", "BAIAMARE"): "BMAREVIVO",
     ("Mobiup", "OBOR1"): "OBO1",
 }
@@ -95,7 +99,7 @@ def build_links(source_rows: list[asyncpg.Record], stores: list[asyncpg.Record])
         manual_code = MANUAL_ALIASES.get((company, source_code.upper()))
         if manual_code:
             target = stores_by_code.get(manual_code)
-            if not target or company_name(target["firma"] or "") != company:
+            if not target:
                 raise ValueError(f"Alias invalid pentru {company}/{source_code}: {manual_code}")
             links.append(SiteLink(company, source_code, location, target["site_code"], "manual_alias", 1.0, True))
             continue

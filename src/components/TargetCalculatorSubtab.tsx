@@ -1416,35 +1416,47 @@ export function TargetCalculatorSubtab() {
               </p>
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-[1180px] w-full text-xs">
+              <table className="w-full min-w-[990px] table-fixed text-[11px]">
+                <colgroup>
+                  <col className="w-[150px]" />
+                  <col className="w-[55px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[75px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[125px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[110px]" />
+                </colgroup>
                 <thead className="bg-slate-800 text-white dark:bg-slate-950">
                   <tr>
-                    <th className="px-3 py-2 text-left">Manager</th>
-                    <th className="px-3 py-2 text-right">Locații</th>
-                    <th className="px-3 py-2 text-right">Pondere target</th>
-                    <th className="px-3 py-2 text-right">Δ mix vs iulie</th>
-                    <th className="px-3 py-2 text-right">Target</th>
-                    <th className="px-3 py-2 text-right">vs iulie</th>
-                    <th className="px-3 py-2 text-right">vs sezonier</th>
-                    <th className="px-3 py-2 text-right">vs august anul trecut</th>
-                    <th className="px-3 py-2 text-right">vs forecast AI</th>
-                    <th className="px-3 py-2 text-center">Semnal</th>
+                    <th className="px-2 py-1.5 text-left">Manager</th>
+                    <th className="px-2 py-1.5 text-right">Loc.</th>
+                    <th className="px-2 py-1.5 text-right">Pondere target</th>
+                    <th className="px-2 py-1.5 text-right">Δ mix vs iulie</th>
+                    <th className="px-2 py-1.5 text-right">Target</th>
+                    <th className="px-2 py-1.5 text-right">vs iulie</th>
+                    <th className="px-2 py-1.5 text-right">vs sezonier</th>
+                    <th className="px-2 py-1.5 text-right" title="vs august anul trecut">vs aug. 2025</th>
+                    <th className="px-2 py-1.5 text-right">vs forecast AI</th>
+                    <th className="px-2 py-1.5 text-center">Semnal</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {regionalAllocation.map((item) => (
                     <tr key={item.manager}>
-                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-800 dark:text-slate-100">{item.manager}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{item.storeCount}</td>
-                      <td className="bg-amber-50 px-3 py-2 text-right font-semibold tabular-nums text-amber-800 dark:bg-amber-950/20 dark:text-amber-200">{formatPercent(item.targetShare)}</td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousSharePp)}`}>{formatSignedPp(item.targetVsPreviousSharePp)}</td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatTableNumber(item.target)}</td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousPct)}`}>{formatSignedPercent(item.targetVsPreviousPct)}</td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsSeasonalPct)}`}>{formatSignedPercent(item.targetVsSeasonalPct)}</td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousYearPct)}`}>{formatSignedPercent(item.targetVsPreviousYearPct)}</td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsForecastPct)}`}>{formatSignedPercent(item.targetVsForecastPct)}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${
+                      <td className="truncate whitespace-nowrap px-2 py-1.5 font-semibold text-slate-800 dark:text-slate-100" title={item.manager}>{item.manager}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">{item.storeCount}</td>
+                      <td className="bg-amber-50 px-2 py-1.5 text-right font-semibold tabular-nums text-amber-800 dark:bg-amber-950/20 dark:text-amber-200">{formatPercent(item.targetShare)}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousSharePp)}`}>{formatSignedPp(item.targetVsPreviousSharePp)}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatTableNumber(item.target)}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousPct)}`}>{formatSignedPercent(item.targetVsPreviousPct)}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${percentTone(item.targetVsSeasonalPct)}`}>{formatSignedPercent(item.targetVsSeasonalPct)}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousYearPct)}`}>{formatSignedPercent(item.targetVsPreviousYearPct)}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${percentTone(item.targetVsForecastPct)}`}>{formatSignedPercent(item.targetVsForecastPct)}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           item.signal === 'Peste AI'
                             ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
                             : item.signal === 'Peste sezonier'
@@ -1707,7 +1719,27 @@ export function TargetCalculatorSubtab() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-[2380px] w-full text-[11px]">
+              <table className="w-full min-w-[1740px] table-fixed text-[10px]">
+                <colgroup>
+                  <col className="w-[70px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[180px]" />
+                  <col className="w-[85px]" />
+                  {displaySourceMonths.map((period) => (
+                    <Fragment key={period.month}>
+                      <col className="w-[76px]" />
+                      <col className="w-[78px]" />
+                      <col className="w-[58px]" />
+                    </Fragment>
+                  ))}
+                  <col className="w-[70px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[105px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[90px]" />
+                </colgroup>
                 <thead>
                   <tr className="bg-blue-100 font-bold text-slate-800 dark:bg-blue-950/50 dark:text-slate-100">
                     <th className="px-2 py-1.5 text-left">SUBTOTAL</th>
@@ -1736,67 +1768,69 @@ export function TargetCalculatorSubtab() {
                     }`}>{formatTableNumber(tableTotals.forecast)}</th>
                   </tr>
                   <tr className="bg-slate-800 text-white dark:bg-slate-950">
-                    <th className="px-2 py-2 text-left font-semibold">Firma</th>
-                    <th className="px-2 py-2 text-left font-semibold">Manager</th>
-                    <th className="px-2 py-2 text-left font-semibold">Nume locație</th>
-                    <th className="px-2 py-2 text-left font-semibold">Cod locație</th>
+                    <th className="px-1.5 py-1.5 text-left font-semibold">Firma</th>
+                    <th className="px-1.5 py-1.5 text-left font-semibold">Manager</th>
+                    <th className="px-1.5 py-1.5 text-left font-semibold">Nume locație</th>
+                    <th className="px-1.5 py-1.5 text-left font-semibold">Cod</th>
                     {displaySourceMonths.map((period) => (
                       <Fragment key={period.month}>
-                        <th className="px-2 py-2 text-right font-semibold">Target {period.month}</th>
-                        <th className="px-2 py-2 text-right font-semibold">Realizat {period.month}</th>
-                        <th className="px-2 py-2 text-right font-semibold">% {period.month}</th>
+                        <th className="px-1.5 py-1.5 text-right font-semibold">Target {period.month}</th>
+                        <th className="px-1.5 py-1.5 text-right font-semibold">Realizat {period.month}</th>
+                        <th className="px-1.5 py-1.5 text-right font-semibold">% {period.month}</th>
                       </Fragment>
                     ))}
-                    <th className="px-2 py-2 text-right font-semibold">Pondere calcul</th>
-                    <th className="px-2 py-2 text-right font-semibold">Calcul target {monthLabel(scenario.target_month)}</th>
-                    <th className="bg-red-900 px-2 py-2 text-right font-semibold">
+                    <th className="px-1.5 py-1.5 text-right font-semibold">Pondere</th>
+                    <th className="px-1.5 py-1.5 text-right font-semibold">Calcul {monthLabel(scenario.target_month)}</th>
+                    <th className="bg-red-900 px-1.5 py-1.5 text-right font-semibold">
                       <span className="flex items-center justify-end gap-1"><PencilLine size={12} /> Propunere manager</span>
                     </th>
-                    <th className="px-2 py-2 text-right font-semibold">Cheltuieli salariale la 90% - P&amp;L estimat</th>
-                    <th className="px-2 py-2 text-right font-semibold">Cheltuieli operaționale estimate</th>
-                    <th className="px-2 py-2 text-right font-semibold">Break-even vânzări brute</th>
-                    <th className="px-2 py-2 text-right font-semibold">Forecast {monthLabel(scenario.target_month)}</th>
+                    <th className="px-1.5 py-1.5 text-right font-semibold" title="Cheltuieli salariale la 90% - P&L estimat">Salarii 90%</th>
+                    <th className="px-1.5 py-1.5 text-right font-semibold" title="Cheltuieli operaționale estimate">OPEX estimat</th>
+                    <th className="px-1.5 py-1.5 text-right font-semibold" title="Break-even vânzări brute">Break-even brut</th>
+                    <th className="px-1.5 py-1.5 text-right font-semibold">Forecast {monthLabel(scenario.target_month)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredRows.map((row) => (
                     <tr key={row.site_code}>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-600 dark:text-slate-300">{row.firma}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-600 dark:text-slate-300">{row.regional}</td>
-                      <td className="min-w-56 px-2 py-1.5">
+                      <td className="whitespace-nowrap px-1.5 py-1 text-slate-600 dark:text-slate-300">{row.firma}</td>
+                      <td className="truncate whitespace-nowrap px-1.5 py-1 text-slate-600 dark:text-slate-300" title={row.regional}>{row.regional}</td>
+                      <td
+                        className={`px-1.5 py-1 ${
+                          row.profitability.anomaly_flags.includes('PNL_INCOMPLETE')
+                            ? 'bg-red-50 dark:bg-red-950/20'
+                            : ''
+                        }`}
+                        title={
+                          row.profitability.anomaly_flags.length > 0
+                            ? `Anomalii: ${row.profitability.anomaly_flags.map(profitabilityFlagLabel).join(', ')}`
+                            : undefined
+                        }
+                      >
                         <button
                           onClick={() => setDetailSiteCode(row.site_code)}
-                          className="text-left font-medium leading-tight text-slate-800 underline decoration-dotted underline-offset-4 hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
+                          className="block max-w-full truncate text-left font-medium leading-tight text-slate-800 underline decoration-dotted underline-offset-4 hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
                         >
                           {row.locatie}
                         </button>
-                        {row.profitability.anomaly_flags.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {row.profitability.anomaly_flags.map((flag) => (
-                              <span key={flag} className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
-                                {profitabilityFlagLabel(flag)}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500 dark:text-slate-400">{row.site_code}</td>
+                      <td className="truncate whitespace-nowrap px-1.5 py-1 text-slate-500 dark:text-slate-400" title={row.site_code}>{row.site_code}</td>
                       {displaySourceMonths.map((source) => {
                         const period = row.history.find((history) => history.month === source.month);
                         return (
                           <Fragment key={source.month}>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-500 dark:text-slate-400">{formatTableNumber(period?.target)}</td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(period?.realized)}</td>
-                            <td className={`px-2 py-1.5 text-right tabular-nums ${attainmentTone(period?.attainment_pct)}`}>
+                            <td className="px-1.5 py-1 text-right tabular-nums text-slate-500 dark:text-slate-400">{formatTableNumber(period?.target)}</td>
+                            <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(period?.realized)}</td>
+                            <td className={`px-1.5 py-1 text-right tabular-nums ${attainmentTone(period?.attainment_pct)}`}>
                               {period?.attainment_pct == null ? '-' : formatPercent(period.attainment_pct)}
                             </td>
                           </Fragment>
                         );
                       })}
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                      <td className="px-1.5 py-1 text-right tabular-nums text-slate-600 dark:text-slate-300">
                         {formatPercent(row.normalized_weight * 100)}
                       </td>
-                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
+                      <td className={`px-1.5 py-1 text-right font-semibold tabular-nums ${
                         row.profitability.break_even_gross_sales != null
                         && row.proposed_target < row.profitability.break_even_gross_sales
                           ? 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400'
@@ -1804,7 +1838,7 @@ export function TargetCalculatorSubtab() {
                       }`}>
                         {formatTableNumber(row.proposed_target)}
                       </td>
-                      <td className="border-x border-amber-100 bg-amber-50/50 px-2 py-1.5 text-right dark:border-amber-900 dark:bg-amber-950/10">
+                      <td className="border-x border-amber-100 bg-amber-50/50 px-1.5 py-1 text-right dark:border-amber-900 dark:bg-amber-950/10">
                         <input
                           type="number"
                           min="0"
@@ -1822,15 +1856,17 @@ export function TargetCalculatorSubtab() {
                           onChange={(event) => updateRow(row.site_code, 'note', event.target.value)}
                         />
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.salary_cost_at_90_pct)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.operating_costs)}</td>
-                      <td className="bg-orange-50 px-2 py-1.5 text-right font-semibold tabular-nums text-orange-800 dark:bg-orange-950/20 dark:text-orange-200">{formatTableNumber(row.profitability.break_even_gross_sales)}</td>
-                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
+                      <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.salary_cost_at_90_pct)}</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.operating_costs)}</td>
+                      <td className="bg-orange-50 px-1.5 py-1 text-right font-semibold tabular-nums text-orange-800 dark:bg-orange-950/20 dark:text-orange-200">{formatTableNumber(row.profitability.break_even_gross_sales)}</td>
+                      <td className={`px-1.5 py-1 text-right font-semibold tabular-nums ${
                         row.profitability.forecast_sales == null
                           ? 'text-slate-400'
                           : row.profitability.break_even_gross_sales != null
                           && row.profitability.forecast_sales < row.profitability.break_even_gross_sales
                             ? 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400'
+                            : row.profitability.anomaly_flags.includes('FORECAST_BELOW_TARGET')
+                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-300'
                             : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300'
                       }`}>{formatTableNumber(row.profitability.forecast_sales)}</td>
                     </tr>

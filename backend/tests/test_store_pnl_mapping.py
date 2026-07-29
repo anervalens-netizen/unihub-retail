@@ -95,3 +95,36 @@ def test_reversed_finance_names_use_reviewed_aliases() -> None:
         ("ACM", "ALBACAROLINA", "manual_alias", True),
         ("CTRAFI", "AFICOTRO", "manual_alias", True),
     ]
+
+
+def test_reviewed_aliases_preserve_renamed_and_transferred_store_history() -> None:
+    source_rows = cast(
+        list[asyncpg.Record],
+        [
+            {
+                "company_name": "Mobicell",
+                "source_site_code": "BRAILAPROMENADA",
+                "source_location_name": "BRAILA PROMENADA",
+            },
+            {
+                "company_name": "Mobicell",
+                "source_site_code": "MOLDMALL",
+                "source_location_name": "IASI MOLDOVA",
+            },
+        ],
+    )
+    stores = cast(
+        list[asyncpg.Record],
+        [
+            {"site_code": "BRPROM", "locatie": "BRAILA PROMENADA", "firma": "Mobicell"},
+            {"site_code": "ISMOLDMALL", "locatie": "IASI MOLDOVA MALL", "firma": "Mobiup"},
+        ],
+    )
+
+    links, unresolved = build_links(source_rows, stores)
+
+    assert unresolved == []
+    assert [(link.source_site_code, link.site_code, link.match_method, link.reviewed) for link in links] == [
+        ("BRAILAPROMENADA", "BRPROM", "manual_alias", True),
+        ("MOLDMALL", "ISMOLDMALL", "manual_alias", True),
+    ]
