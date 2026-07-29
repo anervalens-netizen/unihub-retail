@@ -1718,48 +1718,48 @@ export function TargetCalculatorSubtab() {
               ))}
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1740px] table-fixed text-[10px]">
+            <div className="compact-data-table hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[1610px] table-fixed text-[10px] leading-tight">
                 <colgroup>
-                  <col className="w-[70px]" />
-                  <col className="w-[100px]" />
-                  <col className="w-[180px]" />
-                  <col className="w-[85px]" />
+                  <col className="w-[60px]" />
+                  <col className="w-[88px]" />
+                  <col className="w-[165px]" />
+                  <col className="w-[78px]" />
                   {displaySourceMonths.map((period) => (
                     <Fragment key={period.month}>
-                      <col className="w-[76px]" />
-                      <col className="w-[78px]" />
-                      <col className="w-[58px]" />
+                      <col className="w-[68px]" />
+                      <col className="w-[70px]" />
+                      <col className="w-[50px]" />
                     </Fragment>
                   ))}
-                  <col className="w-[70px]" />
+                  <col className="w-[62px]" />
+                  <col className="w-[78px]" />
+                  <col className="w-[160px]" />
                   <col className="w-[90px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[105px]" />
-                  <col className="w-[100px]" />
-                  <col className="w-[100px]" />
                   <col className="w-[90px]" />
+                  <col className="w-[92px]" />
+                  <col className="w-[82px]" />
                 </colgroup>
                 <thead>
                   <tr className="bg-blue-100 font-bold text-slate-800 dark:bg-blue-950/50 dark:text-slate-100">
-                    <th className="px-2 py-1.5 text-left">SUBTOTAL</th>
+                    <th className="px-1.5 py-1 text-left">SUBTOTAL</th>
                     <th colSpan={3} />
                     {tableTotals.history.map((period) => (
                       <Fragment key={period.month}>
-                        <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(period.target)}</th>
-                        <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(period.realized)}</th>
-                        <th className={`px-2 py-1.5 text-right tabular-nums ${attainmentTone(period.attainment)}`}>
+                        <th className="px-1 py-1 text-right tabular-nums">{formatTableNumber(period.target)}</th>
+                        <th className="px-1 py-1 text-right tabular-nums">{formatTableNumber(period.realized)}</th>
+                        <th className={`px-1 py-1 text-right tabular-nums ${attainmentTone(period.attainment)}`}>
                           {period.attainment == null ? '-' : formatPercent(period.attainment)}
                         </th>
                       </Fragment>
                     ))}
-                    <th className="px-2 py-1.5 text-right tabular-nums">{formatPercent(tableTotals.normalizedWeight * 100)}</th>
-                    <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(tableTotals.proposedTarget)}</th>
-                    <th className="bg-amber-50 px-2 py-1.5 text-right tabular-nums dark:bg-amber-950/20">{formatTableNumber(tableTotals.finalTarget)}</th>
-                    <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(tableTotals.salary)}</th>
-                    <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(tableTotals.operatingCosts)}</th>
-                    <th className="bg-orange-50 px-2 py-1.5 text-right tabular-nums dark:bg-orange-950/20">{formatTableNumber(tableTotals.breakEven)}</th>
-                    <th className={`px-2 py-1.5 text-right tabular-nums ${
+                    <th className="px-1 py-1 text-right tabular-nums">{formatPercent(tableTotals.normalizedWeight * 100)}</th>
+                    <th className="px-1 py-1 text-right tabular-nums">{formatTableNumber(tableTotals.proposedTarget)}</th>
+                    <th className="bg-amber-50 px-1 py-1 text-right tabular-nums dark:bg-amber-950/20">{formatTableNumber(tableTotals.finalTarget)}</th>
+                    <th className="px-1 py-1 text-right tabular-nums">{formatTableNumber(tableTotals.salary)}</th>
+                    <th className="px-1 py-1 text-right tabular-nums">{formatTableNumber(tableTotals.operatingCosts)}</th>
+                    <th className="bg-orange-50 px-1 py-1 text-right tabular-nums dark:bg-orange-950/20">{formatTableNumber(tableTotals.breakEven)}</th>
+                    <th className={`px-1 py-1 text-right tabular-nums ${
                       tableTotals.forecast != null
                       && tableTotals.breakEven != null
                       && tableTotals.forecast < tableTotals.breakEven
@@ -1768,26 +1768,26 @@ export function TargetCalculatorSubtab() {
                     }`}>{formatTableNumber(tableTotals.forecast)}</th>
                   </tr>
                   <tr className="bg-slate-800 text-white dark:bg-slate-950">
-                    <th className="px-1.5 py-1.5 text-left font-semibold">Firma</th>
-                    <th className="px-1.5 py-1.5 text-left font-semibold">Manager</th>
-                    <th className="px-1.5 py-1.5 text-left font-semibold">Nume locație</th>
-                    <th className="px-1.5 py-1.5 text-left font-semibold">Cod</th>
+                    <th className="px-1 py-1 text-left font-semibold">Firma</th>
+                    <th className="px-1 py-1 text-left font-semibold">Manager</th>
+                    <th className="px-1 py-1 text-left font-semibold">Nume locație</th>
+                    <th className="px-1 py-1 text-left font-semibold">Cod</th>
                     {displaySourceMonths.map((period) => (
                       <Fragment key={period.month}>
-                        <th className="px-1.5 py-1.5 text-right font-semibold">Target {period.month}</th>
-                        <th className="px-1.5 py-1.5 text-right font-semibold">Realizat {period.month}</th>
-                        <th className="px-1.5 py-1.5 text-right font-semibold">% {period.month}</th>
+                        <th className="px-1 py-1 text-right font-semibold">Target<br />{period.month}</th>
+                        <th className="px-1 py-1 text-right font-semibold">Realizat<br />{period.month}</th>
+                        <th className="px-1 py-1 text-right font-semibold">%<br />{period.month}</th>
                       </Fragment>
                     ))}
-                    <th className="px-1.5 py-1.5 text-right font-semibold">Pondere</th>
-                    <th className="px-1.5 py-1.5 text-right font-semibold">Calcul {monthLabel(scenario.target_month)}</th>
-                    <th className="bg-red-900 px-1.5 py-1.5 text-right font-semibold">
+                    <th className="px-1 py-1 text-right font-semibold">Pondere</th>
+                    <th className="px-1 py-1 text-right font-semibold">Calcul<br />{monthLabel(scenario.target_month)}</th>
+                    <th className="bg-red-900 px-1 py-1 text-right font-semibold">
                       <span className="flex items-center justify-end gap-1"><PencilLine size={12} /> Propunere manager</span>
                     </th>
-                    <th className="px-1.5 py-1.5 text-right font-semibold" title="Cheltuieli salariale la 90% - P&L estimat">Salarii 90%</th>
-                    <th className="px-1.5 py-1.5 text-right font-semibold" title="Cheltuieli operaționale estimate">OPEX estimat</th>
-                    <th className="px-1.5 py-1.5 text-right font-semibold" title="Break-even vânzări brute">Break-even brut</th>
-                    <th className="px-1.5 py-1.5 text-right font-semibold">Forecast {monthLabel(scenario.target_month)}</th>
+                    <th className="px-1 py-1 text-right font-semibold" title="Cheltuieli salariale la 90% - P&L estimat">Salarii<br />90%</th>
+                    <th className="px-1 py-1 text-right font-semibold" title="Cheltuieli operaționale estimate">OPEX<br />estimat</th>
+                    <th className="px-1 py-1 text-right font-semibold" title="Break-even vânzări brute">Break-even<br />brut</th>
+                    <th className="px-1 py-1 text-right font-semibold">Forecast<br />{monthLabel(scenario.target_month)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1838,23 +1838,26 @@ export function TargetCalculatorSubtab() {
                       }`}>
                         {formatTableNumber(row.proposed_target)}
                       </td>
-                      <td className="border-x border-amber-100 bg-amber-50/50 px-1.5 py-1 text-right dark:border-amber-900 dark:bg-amber-950/10">
+                      <td className="border-x border-amber-100 bg-amber-50/50 px-1 py-0.5 text-right dark:border-amber-900 dark:bg-amber-950/10">
+                        <div className="flex items-center justify-end gap-1">
                         <input
                           type="number"
                           min="0"
                           disabled={scenario.status === 'finalized'}
-                          className={`${compactFinalInputCls} w-24 text-right tabular-nums disabled:opacity-70`}
+                          className="h-7 w-[72px] rounded-md border border-amber-300 bg-amber-50 px-1 text-right text-[10px] font-semibold tabular-nums text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-70 dark:border-amber-600 dark:bg-amber-950/30 dark:text-slate-100"
                           value={row.final_target ?? ''}
                           placeholder="Completeaza"
                           onChange={(event) => updateRow(row.site_code, 'final_target', event.target.value === '' ? null : Number(event.target.value))}
                         />
                         <input
                           disabled={scenario.status === 'finalized'}
-                          className={`${compactInputCls} mt-1 w-24 disabled:opacity-70`}
+                          className="h-7 w-[78px] rounded-md border border-slate-200 bg-white px-1 text-[10px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-70 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                           placeholder="Observație"
+                          title="Observație manager"
                           value={row.note ?? ''}
                           onChange={(event) => updateRow(row.site_code, 'note', event.target.value)}
                         />
+                        </div>
                       </td>
                       <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.salary_cost_at_90_pct)}</td>
                       <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.operating_costs)}</td>

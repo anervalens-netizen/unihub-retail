@@ -219,7 +219,8 @@ body {
   /* Interactive labels in dense tables open detail drawers. They must not
      inherit the 44px standalone-control height, otherwise every data row is
      stretched to roughly double its intended height. */
-  main .compact-data-table button {
+  main .compact-data-table button,
+  main .compact-data-table input {
     min-height: 0;
   }
 
