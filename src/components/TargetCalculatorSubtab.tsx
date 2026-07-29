@@ -38,7 +38,6 @@ import {
   type TargetRegionalSummary,
   type TargetScenario,
   type TargetScenarioRow,
-  type TargetSourceMonth,
   type TargetStoreDetail,
 } from '../api/targetCalculator';
 import {getApiErrorMessage} from '../api/client';
@@ -52,18 +51,6 @@ const compactFinalInputCls = 'rounded-xl border-2 border-amber-300 bg-amber-50 p
 
 function monthLabel(month: string): string {
   return formatMonthLabel(month);
-}
-
-function isPreviousYearPeriod(role: string): boolean {
-  return role === 'previous_year_reference'
-    || role === 'year_over_year'
-    || role.startsWith('seasonality_');
-}
-
-const HIDDEN_DISPLAY_SOURCE_MONTHS = new Set(['2023-06', '2023-07']);
-
-function shouldHideSourcePeriod(period: TargetSourceMonth): boolean {
-  return HIDDEN_DISPLAY_SOURCE_MONTHS.has(period.month);
 }
 
 function shouldShowHistoricalTarget(period: { month: string }): boolean {
@@ -83,13 +70,32 @@ function formatOptionalCurrency(value: number | null): string {
   return value == null ? 'Necompletat' : formatCurrency(value);
 }
 
-function formatFactor(value?: number | null): string {
-  return value == null ? '-' : `${value.toFixed(2)}x`;
-}
-
 function formatSignedPercent(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return '-';
   return `${value > 0 ? '+' : ''}${formatPercent(value)}`;
+}
+
+function formatTableNumber(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return '-';
+  return Math.round(value).toLocaleString('ro-RO');
+}
+
+function attainmentTone(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return 'text-slate-400';
+  if (value < 90) return 'font-bold text-red-600 dark:text-red-400';
+  if (value < 100) return 'font-bold text-orange-500 dark:text-orange-400';
+  return 'font-bold text-emerald-600 dark:text-emerald-400';
+}
+
+function profitabilityFlagLabel(flag: string): string {
+  const labels: Record<string, string> = {
+    PNL_INCOMPLETE: 'P&L incomplet',
+    FORECAST_MISSING: 'forecast lipsă',
+    TARGET_BELOW_BREAK_EVEN: 'target sub BE',
+    FORECAST_BELOW_BREAK_EVEN: 'forecast sub BE',
+    FORECAST_BELOW_TARGET: 'forecast sub target',
+  };
+  return labels[flag] ?? flagLabel(flag);
 }
 
 function percentTone(value?: number | null): string {
@@ -574,19 +580,50 @@ export function TargetCalculatorSubtab() {
     () => baseRows.filter((row) => selectedLocationSet.size === 0 || selectedLocationSet.has(row.site_code)),
     [baseRows, selectedLocationSet],
   );
-  const forecastMonths = useMemo(() => {
-    const months = new Set<string>();
-    scenario?.rows.forEach((row) => {
-      row.history.forEach((period) => {
-        if (period.is_forecast) months.add(period.month);
-      });
+  const displaySourceMonths = useMemo(() => {
+    if (!scenario) return [];
+    return [-13, -12, -1].map((offset) => {
+      const month = shiftMonth(scenario.target_month, offset);
+      return scenario.source_months.find((period) => period.month === month) ?? {
+        month,
+        label: monthLabel(month),
+        role: offset === -1 ? 'floor_reference' : 'previous_year_reference',
+      };
     });
-    return months;
   }, [scenario]);
-  const displaySourceMonths = useMemo(
-    () => scenario?.source_months.filter((period) => !shouldHideSourcePeriod(period)) ?? [],
-    [scenario],
-  );
+  const tableTotals = useMemo(() => {
+    const history = displaySourceMonths.map((source) => {
+      const periods = filteredRows.map((row) => row.history.find((item) => item.month === source.month));
+      const target = sum(periods.map((item) => item?.target ?? 0));
+      const realized = sum(periods.map((item) => item?.realized ?? 0));
+      return {
+        month: source.month,
+        target,
+        realized,
+        attainment: target > 0 ? realized * 100 / target : null,
+      };
+    });
+    const completeTotal = (
+      selector: (row: TargetScenarioRow) => number | null | undefined,
+    ): number | null => {
+      const values = filteredRows.map(selector);
+      return values.every((value) => value != null)
+        ? sum(values.map((value) => Number(value)))
+        : null;
+    };
+    return {
+      history,
+      normalizedWeight: filteredRows.reduce((total, row) => total + row.normalized_weight, 0),
+      proposedTarget: sum(filteredRows.map((row) => row.proposed_target)),
+      finalTarget: filteredRows.length > 0 && filteredRows.every((row) => row.final_target != null)
+        ? sum(filteredRows.map((row) => Number(row.final_target)))
+        : null,
+      salary: sum(filteredRows.map((row) => row.profitability.salary_cost_at_90_pct)),
+      operatingCosts: completeTotal((row) => row.profitability.operating_costs),
+      breakEven: completeTotal((row) => row.profitability.break_even_gross_sales),
+      forecast: completeTotal((row) => row.profitability.forecast_sales),
+    };
+  }, [displaySourceMonths, filteredRows]);
   const sourceChart = useMemo(() => {
     if (!scenario) return [];
     return displaySourceMonths.map((source) => {
@@ -614,7 +651,7 @@ export function TargetCalculatorSubtab() {
     () => scenario?.warnings.filter((warning) => {
       if (warning.startsWith('Formula foloseste sezonalitate')) return false;
       if (warning.startsWith('Perioada ') && warning.includes('forecastate')) return false;
-      return !Array.from(HIDDEN_DISPLAY_SOURCE_MONTHS).some((month) => warning.includes(month));
+      return !['2023-06', '2023-07'].some((month) => warning.includes(month));
     }) ?? [],
     [scenario],
   );
@@ -1300,9 +1337,9 @@ export function TargetCalculatorSubtab() {
           <div className="glass rounded-2xl overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
               <div>
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Target per locatie</h3>
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Target + profitabilitate per locație</h3>
                 <p className="text-xs text-slate-500">
-                  {filteredRows.length} locatii afisate · <span className="font-semibold text-amber-700 dark:text-amber-300">Final manager</span> este decizia de completat si se salveaza automat pentru toti managerii
+                  {filteredRows.length} locații afișate · <span className="font-semibold text-amber-700 dark:text-amber-300">Propunere manager</span> se salvează automat
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1330,6 +1367,12 @@ export function TargetCalculatorSubtab() {
                 )}
               </div>
             </div>
+
+            {scenario.profitability_summary.status !== 'ready' && (
+              <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                Surse financiare parțiale: P&amp;L {scenario.profitability_summary.pnl_store_count}/{scenario.store_count} magazine · forecast {scenario.profitability_summary.forecast_store_count}/{scenario.store_count}. Valorile lipsă rămân marcate, nu sunt estimate.
+              </div>
+            )}
 
             <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
               <div ref={locationFilterRef} className="flex flex-col gap-3 lg:flex-row lg:items-end">
@@ -1426,12 +1469,22 @@ export function TargetCalculatorSubtab() {
                     <p className="mt-0.5 text-[11px] text-slate-400">{row.site_code} · {row.firma} · {row.regional}</p>
                   </button>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/60">
-                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Calculat</p>
-                      <p className="font-semibold text-indigo-600 dark:text-indigo-300">{formatCurrency(row.proposed_target)}</p>
+                    <div className={`rounded-xl p-2 ${
+                      row.profitability.break_even_gross_sales != null
+                      && row.proposed_target < row.profitability.break_even_gross_sales
+                        ? 'bg-red-50 dark:bg-red-950/25'
+                        : 'bg-slate-50 dark:bg-slate-800/60'
+                    }`}>
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Calcul target</p>
+                      <p className={`font-semibold ${
+                        row.profitability.break_even_gross_sales != null
+                        && row.proposed_target < row.profitability.break_even_gross_sales
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-indigo-600 dark:text-indigo-300'
+                      }`}>{formatCurrency(row.proposed_target)}</p>
                     </div>
                     <label className="rounded-xl border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950/20">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Final manager</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Propunere manager</span>
                       <input
                         type="number"
                         min="0"
@@ -1448,40 +1501,61 @@ export function TargetCalculatorSubtab() {
                       const period = row.history.find((history) => history.month === source.month);
                       const showTarget = shouldShowHistoricalTarget(source);
                       return (
-                        <div key={source.month} className={`rounded-xl p-2 ${
-                          isPreviousYearPeriod(source.role)
-                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
-                            : 'bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300'
-                        }`}>
+                        <div key={source.month} className="rounded-xl bg-slate-50 p-2 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
                           <p className="font-semibold">{monthLabel(source.month)}</p>
-                          {showTarget && <p>{formatCurrency(period?.target ?? 0)}</p>}
-                          <p className="text-slate-400">{formatCurrency(period?.realized ?? 0)}</p>
+                          {showTarget && <p>T {formatTableNumber(period?.target)}</p>}
+                          <p className="text-slate-400">R {formatTableNumber(period?.realized)}</p>
+                          <p className={attainmentTone(period?.attainment_pct)}>
+                            {period?.attainment_pct == null ? '-' : formatPercent(period.attainment_pct)}
+                          </p>
                         </div>
                       );
                     })}
                   </div>
-                  <div className="mt-2 rounded-xl bg-slate-50 p-2 text-[11px] text-slate-500 dark:bg-slate-800/60 dark:text-slate-300">
-                    <div className="flex items-center justify-between gap-2">
-                      <span>Sezonalitate folosita</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-100">
-                        {formatFactor(row.calculation_details.seasonality?.used_factor)}
-                      </span>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/60">
+                      <p className="text-slate-400">Cheltuieli salariale</p>
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.salary_cost_at_90_pct)}</p>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-slate-400">
-                      <span>LY {formatFactor(row.calculation_details.seasonality?.last_year_store_factor)}</span>
-                      <span>MY {formatFactor(row.calculation_details.seasonality?.multiyear_store_factor)}</span>
-                      <span>Trend {formatFactor(row.calculation_details.trend?.used_adjustment)}</span>
+                    <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/60">
+                      <p className="text-slate-400">Cheltuieli operaționale</p>
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.operating_costs)}</p>
                     </div>
-                    {(row.calculation_details.flags ?? []).length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {(row.calculation_details.flags ?? []).slice(0, 3).map((flag) => (
-                          <span key={flag} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                            {flagLabel(flag)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="rounded-xl bg-orange-50 p-2 dark:bg-orange-950/20">
+                      <p className="text-orange-700 dark:text-orange-300">Break-even brut</p>
+                      <p className="font-semibold text-orange-800 dark:text-orange-200">{formatTableNumber(row.profitability.break_even_gross_sales)}</p>
+                    </div>
+                    <div className={`rounded-xl p-2 ${
+                      row.profitability.forecast_sales != null
+                      && row.profitability.break_even_gross_sales != null
+                      && row.profitability.forecast_sales < row.profitability.break_even_gross_sales
+                        ? 'bg-red-50 dark:bg-red-950/25'
+                        : 'bg-emerald-50 dark:bg-emerald-950/20'
+                    }`}>
+                      <p className="text-slate-500 dark:text-slate-300">Forecast</p>
+                      <p className={`font-semibold ${
+                        row.profitability.forecast_sales != null
+                        && row.profitability.break_even_gross_sales != null
+                        && row.profitability.forecast_sales < row.profitability.break_even_gross_sales
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}>{formatTableNumber(row.profitability.forecast_sales)}</p>
+                    </div>
                   </div>
+                  {[...(row.calculation_details.flags ?? []), ...row.profitability.anomaly_flags].length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {(row.calculation_details.flags ?? []).slice(0, 2).map((flag) => (
+                        <span key={flag} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                          {flagLabel(flag)}
+                        </span>
+                      ))}
+                      {row.profitability.anomaly_flags.map((flag) => (
+                        <span key={flag} className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                          {profitabilityFlagLabel(flag)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="mt-2 flex items-center justify-between gap-2 text-xs">
                     <span className="text-slate-400">Delta</span>
                     <span className={`font-semibold ${
@@ -1508,121 +1582,102 @@ export function TargetCalculatorSubtab() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-[1240px] w-full text-xs">
-                <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
-                  <tr>
-                    <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold align-bottom">Locatie</th>
-                    <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold align-bottom">Mgr</th>
-                    {displaySourceMonths.map((period) => (
-                      <th key={period.month} colSpan={shouldShowHistoricalTarget(period) ? 2 : 1} className={`border-b px-2 py-1.5 text-center font-semibold ${
-                        isPreviousYearPeriod(period.role)
-                          ? 'border-indigo-200 bg-indigo-100/80 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/35 dark:text-indigo-300'
-                          : 'border-slate-200 dark:border-slate-700'
-                      }`}>
-                        {monthLabel(period.month)}
-                        {isPreviousYearPeriod(period.role) && <p className="text-[9px] uppercase tracking-wide">Anul trecut</p>}
-                        {forecastMonths.has(period.month) && <p className="text-[9px] uppercase tracking-wide text-sky-600 dark:text-sky-300">Forecast</p>}
-                      </th>
-                    ))}
-                    <th rowSpan={2} className="px-2 py-1.5 text-right font-semibold align-bottom">Sez.</th>
-                    <th rowSpan={2} className="px-2 py-1.5 text-right font-semibold align-bottom">Calc.</th>
-                    <th rowSpan={2} className="border-x border-amber-200 bg-amber-100/80 px-2 py-1.5 text-right font-semibold text-amber-800 align-bottom dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                      <span className="flex items-center justify-end gap-1">
-                        <PencilLine size={12} />
-                        Final
-                      </span>
-                      <span className="mt-1 block text-[9px] uppercase tracking-wide">
-                        {scenario.status === 'draft' ? 'De completat' : 'Finalizat'}
-                      </span>
-                    </th>
-                    <th rowSpan={2} className="px-2 py-1.5 text-right font-semibold align-bottom">Delta</th>
-                    <th rowSpan={2} className="px-2 py-1.5 text-left font-semibold align-bottom">Obs.</th>
-                  </tr>
-                  <tr>
-                    {displaySourceMonths.map((period) => (
+              <table className="min-w-[2380px] w-full text-[11px]">
+                <thead>
+                  <tr className="bg-blue-100 font-bold text-slate-800 dark:bg-blue-950/50 dark:text-slate-100">
+                    <th className="px-2 py-1.5 text-left">SUBTOTAL</th>
+                    <th colSpan={3} />
+                    {tableTotals.history.map((period) => (
                       <Fragment key={period.month}>
-                        {shouldShowHistoricalTarget(period) && (
-                          <th className={`px-2 py-1.5 text-right font-medium ${
-                            isPreviousYearPeriod(period.role)
-                              ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
-                              : 'text-slate-400'
-                          }`}>Target</th>
-                        )}
-                        <th className={`px-2 py-1.5 text-right font-medium ${
-                          isPreviousYearPeriod(period.role)
-                            ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
-                            : 'text-slate-400'
-                        }`}>
-                          {forecastMonths.has(period.month)
-                            ? 'Forecast'
-                            : 'Realizat'}
+                        <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(period.target)}</th>
+                        <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(period.realized)}</th>
+                        <th className={`px-2 py-1.5 text-right tabular-nums ${attainmentTone(period.attainment)}`}>
+                          {period.attainment == null ? '-' : formatPercent(period.attainment)}
                         </th>
                       </Fragment>
                     ))}
+                    <th className="px-2 py-1.5 text-right tabular-nums">{formatPercent(tableTotals.normalizedWeight * 100)}</th>
+                    <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(tableTotals.proposedTarget)}</th>
+                    <th className="bg-amber-50 px-2 py-1.5 text-right tabular-nums dark:bg-amber-950/20">{formatTableNumber(tableTotals.finalTarget)}</th>
+                    <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(tableTotals.salary)}</th>
+                    <th className="px-2 py-1.5 text-right tabular-nums">{formatTableNumber(tableTotals.operatingCosts)}</th>
+                    <th className="bg-orange-50 px-2 py-1.5 text-right tabular-nums dark:bg-orange-950/20">{formatTableNumber(tableTotals.breakEven)}</th>
+                    <th className={`px-2 py-1.5 text-right tabular-nums ${
+                      tableTotals.forecast != null
+                      && tableTotals.breakEven != null
+                      && tableTotals.forecast < tableTotals.breakEven
+                        ? 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+                        : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300'
+                    }`}>{formatTableNumber(tableTotals.forecast)}</th>
+                  </tr>
+                  <tr className="bg-slate-800 text-white dark:bg-slate-950">
+                    <th className="px-2 py-2 text-left font-semibold">Firma</th>
+                    <th className="px-2 py-2 text-left font-semibold">Manager</th>
+                    <th className="px-2 py-2 text-left font-semibold">Nume locație</th>
+                    <th className="px-2 py-2 text-left font-semibold">Cod locație</th>
+                    {displaySourceMonths.map((period) => (
+                      <Fragment key={period.month}>
+                        <th className="px-2 py-2 text-right font-semibold">Target {period.month}</th>
+                        <th className="px-2 py-2 text-right font-semibold">Realizat {period.month}</th>
+                        <th className="px-2 py-2 text-right font-semibold">% {period.month}</th>
+                      </Fragment>
+                    ))}
+                    <th className="px-2 py-2 text-right font-semibold">Pondere calcul</th>
+                    <th className="px-2 py-2 text-right font-semibold">Calcul target {monthLabel(scenario.target_month)}</th>
+                    <th className="bg-red-900 px-2 py-2 text-right font-semibold">
+                      <span className="flex items-center justify-end gap-1"><PencilLine size={12} /> Propunere manager</span>
+                    </th>
+                    <th className="px-2 py-2 text-right font-semibold">Cheltuieli salariale la 90% - P&amp;L estimat</th>
+                    <th className="px-2 py-2 text-right font-semibold">Cheltuieli operaționale estimate</th>
+                    <th className="px-2 py-2 text-right font-semibold">Break-even vânzări brute</th>
+                    <th className="px-2 py-2 text-right font-semibold">Forecast {monthLabel(scenario.target_month)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredRows.map((row) => (
                     <tr key={row.site_code}>
-                      <td className="px-2 py-1.5">
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-600 dark:text-slate-300">{row.firma}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-600 dark:text-slate-300">{row.regional}</td>
+                      <td className="min-w-56 px-2 py-1.5">
                         <button
                           onClick={() => setDetailSiteCode(row.site_code)}
                           className="text-left font-medium leading-tight text-slate-800 underline decoration-dotted underline-offset-4 hover:text-indigo-600 dark:text-slate-200 dark:hover:text-indigo-300"
                         >
                           {row.locatie}
                         </button>
-                        <p className="text-[9px] leading-tight text-slate-400">{row.site_code} · {row.firma}</p>
-                      </td>
-                      <td className="px-2 py-1.5 leading-tight text-slate-600 dark:text-slate-300">{row.regional}</td>
-                      {displaySourceMonths.map((source) => {
-                        const period = row.history.find((history) => history.month === source.month);
-                        const showTarget = shouldShowHistoricalTarget(source);
-                        return (
-                          <Fragment key={source.month}>
-                            {showTarget && (
-                              <td className={`px-2 py-1.5 text-right tabular-nums ${
-                                isPreviousYearPeriod(source.role)
-                                  ? 'bg-indigo-50/70 font-medium text-indigo-700 dark:bg-indigo-900/15 dark:text-indigo-300'
-                                  : 'text-slate-500 dark:text-slate-400'
-                              }`}>
-                                {formatCurrency(period?.target ?? 0)}
-                              </td>
-                            )}
-                            <td className={`px-2 py-1.5 text-right tabular-nums ${
-                              isPreviousYearPeriod(source.role)
-                                ? 'bg-indigo-50/70 font-medium text-indigo-800 dark:bg-indigo-900/15 dark:text-indigo-200'
-                                : 'text-slate-700 dark:text-slate-200'
-                            }`}>
-                              {formatCurrency(period?.realized ?? 0)}
-                              {(showTarget || period?.is_forecast) && (
-                                <p className="text-[10px] text-slate-400">
-                                  {period?.is_forecast ? 'Forecast ' : ''}{period?.attainment_pct == null ? '-' : formatPercent(period.attainment_pct)}
-                                </p>
-                              )}
-                            </td>
-                          </Fragment>
-                        );
-                      })}
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                        <p className="font-semibold text-slate-800 dark:text-slate-100">{formatFactor(row.calculation_details.seasonality?.used_factor)}</p>
-                        <p className="text-[9px] text-slate-400">
-                          LY {formatFactor(row.calculation_details.seasonality?.last_year_store_factor)} · MY {formatFactor(row.calculation_details.seasonality?.multiyear_store_factor)}
-                        </p>
-                        <p className="text-[9px] text-slate-400">
-                          Trend {formatFactor(row.calculation_details.trend?.used_adjustment)}
-                        </p>
-                        {(row.calculation_details.flags ?? []).length > 0 && (
-                          <div className="mt-1 flex flex-wrap justify-end gap-1">
-                            {(row.calculation_details.flags ?? []).slice(0, 2).map((flag) => (
-                              <span key={flag} className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                {flagLabel(flag)}
+                        {row.profitability.anomaly_flags.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {row.profitability.anomaly_flags.map((flag) => (
+                              <span key={flag} className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                                {profitabilityFlagLabel(flag)}
                               </span>
                             ))}
                           </div>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-indigo-600 dark:text-indigo-300">
-                        {formatCurrency(row.proposed_target)}
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500 dark:text-slate-400">{row.site_code}</td>
+                      {displaySourceMonths.map((source) => {
+                        const period = row.history.find((history) => history.month === source.month);
+                        return (
+                          <Fragment key={source.month}>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-500 dark:text-slate-400">{formatTableNumber(period?.target)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(period?.realized)}</td>
+                            <td className={`px-2 py-1.5 text-right tabular-nums ${attainmentTone(period?.attainment_pct)}`}>
+                              {period?.attainment_pct == null ? '-' : formatPercent(period.attainment_pct)}
+                            </td>
+                          </Fragment>
+                        );
+                      })}
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                        {formatPercent(row.normalized_weight * 100)}
+                      </td>
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
+                        row.profitability.break_even_gross_sales != null
+                        && row.proposed_target < row.profitability.break_even_gross_sales
+                          ? 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400'
+                          : 'text-slate-800 dark:text-slate-100'
+                      }`}>
+                        {formatTableNumber(row.proposed_target)}
                       </td>
                       <td className="border-x border-amber-100 bg-amber-50/50 px-2 py-1.5 text-right dark:border-amber-900 dark:bg-amber-950/10">
                         <input
@@ -1634,27 +1689,25 @@ export function TargetCalculatorSubtab() {
                           placeholder="Completeaza"
                           onChange={(event) => updateRow(row.site_code, 'final_target', event.target.value === '' ? null : Number(event.target.value))}
                         />
-                      </td>
-                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
-                        row.final_target == null
-                          ? 'text-amber-600'
-                          : row.final_target - row.proposed_target > 0.01
-                          ? 'text-emerald-600'
-                          : row.final_target - row.proposed_target < -0.01
-                            ? 'text-red-600'
-                            : 'text-slate-400'
-                      }`}>
-                        {row.final_target == null ? 'Necompletat' : formatCurrency(row.final_target - row.proposed_target)}
-                      </td>
-                      <td className="px-2 py-1.5">
                         <input
                           disabled={scenario.status === 'finalized'}
-                          className={`${compactInputCls} w-32 disabled:opacity-70`}
-                          placeholder="Optional"
+                          className={`${compactInputCls} mt-1 w-24 disabled:opacity-70`}
+                          placeholder="Observație"
                           value={row.note ?? ''}
                           onChange={(event) => updateRow(row.site_code, 'note', event.target.value)}
                         />
                       </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.salary_cost_at_90_pct)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.operating_costs)}</td>
+                      <td className="bg-orange-50 px-2 py-1.5 text-right font-semibold tabular-nums text-orange-800 dark:bg-orange-950/20 dark:text-orange-200">{formatTableNumber(row.profitability.break_even_gross_sales)}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${
+                        row.profitability.forecast_sales == null
+                          ? 'text-slate-400'
+                          : row.profitability.break_even_gross_sales != null
+                          && row.profitability.forecast_sales < row.profitability.break_even_gross_sales
+                            ? 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400'
+                            : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300'
+                      }`}>{formatTableNumber(row.profitability.forecast_sales)}</td>
                     </tr>
                   ))}
                 </tbody>

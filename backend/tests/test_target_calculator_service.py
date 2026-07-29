@@ -31,6 +31,12 @@ def make_service() -> tuple[TargetCalculatorService, MagicMock]:
     repo.list_scenarios = AsyncMock()
     repo.get_scenario = AsyncMock()
     repo.get_scenario_rows = AsyncMock()
+    repo.get_profitability_inputs = AsyncMock(return_value={
+        "pnl_months": [],
+        "pnl_rows": [],
+        "forecast_run": None,
+        "forecast_rows": [],
+    })
     repo.update_final_targets = AsyncMock()
     repo.finalize_scenario = AsyncMock()
     repo.get_store_detail = AsyncMock()
@@ -202,6 +208,55 @@ async def test_get_context_rejects_missing_sales_data() -> None:
         await service.get_context()
 
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_profitability_uses_real_pnl_margin_gross_vat_and_flags_break_even() -> None:
+    service, repo = make_service()
+    repo.get_profitability_inputs.return_value = {
+        "pnl_months": ["2026-02", "2026-03", "2026-04"],
+        "pnl_rows": [
+            {"site_code": "SITE01", "category_code": "v11", "amount": Decimal("30000")},
+            {"site_code": "SITE01", "category_code": "c11", "amount": Decimal("12000")},
+            {"site_code": "SITE01", "category_code": "c4", "amount": Decimal("3000")},
+            {"site_code": "SITE01", "category_code": "c5", "amount": Decimal("6000")},
+            {"site_code": "SITE01", "category_code": "c6", "amount": Decimal("9000")},
+        ],
+        "forecast_run": {
+            "id": 44,
+            "model_name": "TimesFM + XGRegressor",
+            "model_mode": "ensemble",
+            "variant": "august_exact",
+            "generated_at": "2026-07-29T10:00:00",
+        },
+        "forecast_rows": [
+            {"site_code": "SITE01", "forecast_sales": Decimal("35000")},
+        ],
+    }
+    rows = [{
+        "site_code": "SITE01",
+        "calculated_weight": 2.0,
+        "proposed_target": 40000.0,
+    }]
+
+    summary = await service._attach_profitability(
+        {"target_month": "2026-08"},
+        rows,
+    )
+
+    profitability = rows[0]["profitability"]
+    assert rows[0]["normalized_weight"] == 1.0
+    assert profitability["salary_cost_at_90_pct"] == 11597.22
+    assert profitability["operating_costs"] == 6000.0
+    assert profitability["accessory_margin_pct"] == 60.0
+    assert profitability["break_even_gross_sales"] == 35487.73
+    assert profitability["forecast_sales"] == 35000.0
+    assert profitability["anomaly_flags"] == ["FORECAST_BELOW_BREAK_EVEN"]
+    assert summary["status"] == "ready"
+    assert summary["pnl_store_count"] == 1
+    assert summary["forecast_store_count"] == 1
+    assert summary["forecast_below_break_even_count"] == 1
+    assert summary["target_below_break_even_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -881,6 +936,14 @@ async def test_export_excel_contains_audit_sheets() -> None:
                         ]
                     },
                 },
+                "normalized_weight": 1.0,
+                "profitability": {
+                    "salary_cost_at_90_pct": 12000.0,
+                    "operating_costs": 10000.0,
+                    "break_even_gross_sales": 35000.0,
+                    "forecast_sales": 42000.0,
+                    "anomaly_flags": [],
+                },
             }
         ],
         "regional_summary": [
@@ -910,17 +973,50 @@ async def test_export_excel_contains_audit_sheets() -> None:
                 "realized": 42000.0,
             }
         ],
+        "profitability_summary": {
+            "status": "ready",
+            "pnl_months": ["2026-02", "2026-03", "2026-04"],
+            "forecast_run": {
+                "id": 44,
+                "model_name": "TimesFM + XGRegressor",
+                "variant": "august_exact",
+            },
+        },
     }
     service.get_scenario_detail = AsyncMock(return_value=detail)  # type: ignore[method-assign]
 
     output, filename = await service.export_excel(9)
     workbook = load_workbook(BytesIO(output.getvalue()))
 
-    assert workbook.sheetnames == ["Targete finale", "Rezumat manageri", "Parametri"]
-    assert workbook["Targete finale"]["G1"].value == "Forecast folosit 2025-05"
+    assert workbook.sheetnames == [
+        "Target + profitabilitate",
+        "Comparație manageri",
+        "Rezumat calcul",
+        "Parametri",
+    ]
+    main = workbook["Target + profitabilitate"]
+    assert main["A1"].value == "SUBTOTAL"
+    assert main["E1"].value == "=SUBTOTAL(109,E3:E3)"
+    assert main["G1"].value == '=IF(E1=0,0,F1/E1)'
+    assert [main.cell(2, column).value for column in range(1, 21)] == [
+        "Firma", "Manager", "Nume locație", "Cod locație",
+        "Target 2025-05", "Realizat 2025-05", "% 2025-05",
+        "Target 2025-06", "Realizat 2025-06", "% 2025-06",
+        "Target 2026-05", "Realizat 2026-05", "% 2026-05",
+        "Pondere calcul", "Calcul target iunie", "Propunere manager",
+        "Cheltuieli salariale la 90% - P&L estimat",
+        "Cheltuieli operaționale estimate", "Break-even vânzări brute",
+        "Forecast iunie",
+    ]
+    assert main["P3"].value == 41000.0
+    assert main["Q3"].value == 12000.0
+    assert main["S3"].value == 35000.0
+    assert main["T3"].value == 42000.0
+    assert len(main.conditional_formatting) == 6
     parameter_labels = [cell.value for cell in workbook["Parametri"]["A"]]
     assert "Parametru strong_weights" in parameter_labels
     assert "Forecast 2025-05" in parameter_labels
+    assert "Status surse profitabilitate" in parameter_labels
     assert filename.startswith("targete_2026-06_scenariu_9_")
 
 

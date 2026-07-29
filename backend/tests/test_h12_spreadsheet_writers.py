@@ -73,19 +73,25 @@ async def test_target_calculator_writer_uses_boundary_and_neutralizes_all_sheets
         "id": 7, "status": "=1+1", "target_month": "2026-06", "cohort_month": "2026-05", "total_target": 100,
         "min_floor": 1, "previous_month_floor_pct": 0.9, "calculation_method": "=method", "calculation_params": {},
         "source_months": [{"month": "2026-05", "label": "=luna"}],
-        "rows": [{"firma": "=1+1", "regional": "+SUM(1,1)", "asm": "@SUM(1,1)", "locatie": "-1+2", "site_code": "\t=1+1", "floor_target": 1, "calculated_weight": 1, "proposed_target": 2, "final_target": 2, "note": '=HYPERLINK("https://example.invalid","x")', "history": [{"month": "2026-05", "target": 1, "realized": 1, "actual_realized": 1, "attainment_pct": 100, "is_forecast": False}], "calculation_details": {"seasonality": {}, "trend": {}, "flags": []}}],
+        "rows": [{"firma": "=1+1", "regional": "+SUM(1,1)", "asm": "@SUM(1,1)", "locatie": "-1+2", "site_code": "\t=1+1", "floor_target": 1, "calculated_weight": 1, "normalized_weight": 1, "proposed_target": 2, "final_target": 2, "note": '=HYPERLINK("https://example.invalid","x")', "history": [{"month": "2026-05", "target": 1, "realized": 1, "actual_realized": 1, "attainment_pct": 100, "is_forecast": False}], "calculation_details": {"seasonality": {}, "trend": {}, "flags": []}, "profitability": {"salary_cost_at_90_pct": 1, "operating_costs": 1, "break_even_gross_sales": 1, "forecast_sales": 2, "anomaly_flags": []}}],
         "regional_summary": [{"regional": "\n=1+1", "store_count": 1, "floor_total": 1, "proposed_total": 2, "final_total": 2}],
-        "source_summary": [], "warnings": ["\n=1+1"],
+        "source_summary": [], "warnings": ["\n=1+1"], "profitability_summary": {},
     }
     service.get_scenario_detail = AsyncMock(return_value=detail)  # type: ignore[method-assign]
     _block_raw_append(monkeypatch)
     output, _ = await service.export_excel(7)
     content = output.getvalue()
     book = load_workbook(BytesIO(content), data_only=False)
-    assert book["Targete finale"]["A2"].data_type == "s"
-    assert book["Targete finale"]["A2"].value == "'=1+1"
+    assert book["Target + profitabilitate"]["A3"].data_type == "s"
+    assert book["Target + profitabilitate"]["A3"].value == "'=1+1"
     assert book["Parametri"]["B3"].value == "'=1+1"
-    _assert_no_untrusted_formula_xml(content)
+    trusted_formulas = {
+        *(f"SUBTOTAL(109,{column}3:{column}3)" for column in ("E", "F", "H", "I", "K", "L", "N", "O", "P", "Q", "R", "S", "T")),
+        "IF(E1=0,0,F1/E1)",
+        "IF(H1=0,0,I1/H1)",
+        "IF(K1=0,0,L1/K1)",
+    }
+    _assert_no_untrusted_formula_xml(content, trusted_formulas)
 
 
 def test_grile_writer_uses_boundary_neutralizes_external_values_and_keeps_only_trusted_formulas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

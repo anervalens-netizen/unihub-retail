@@ -1,8 +1,17 @@
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import MagicMock
 
-from scripts.import_store_pnl import PnlRow, UNALLOCATED_SOURCE, WorkbookData, merged_rows, select_snapshots, unallocated_rows
+from scripts.import_store_pnl import (
+    PnlRow,
+    UNALLOCATED_SOURCE,
+    WorkbookData,
+    detail_category,
+    merged_rows,
+    select_snapshots,
+    unallocated_rows,
+)
 
 
 def workbook(path: str, months: int, cells: int) -> WorkbookData:
@@ -16,6 +25,16 @@ def test_select_snapshots_prefers_most_complete_file() -> None:
     selected, superseded = select_snapshots([early, late])
     assert selected == [late]
     assert superseded == [early]
+
+
+def test_detail_category_recovers_shifted_finance_rows() -> None:
+    sheet = MagicMock()
+    sheet.cell_value.side_effect = lambda _row, column: {
+        1: "",
+        5: "c11-ACM",
+    }.get(column, "")
+
+    assert detail_category(sheet, 421) == "c11"
 
 
 def test_merged_rows_sums_duplicate_accounting_lines() -> None:

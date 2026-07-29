@@ -362,6 +362,27 @@ aceleasi `site_code`. Cand selectia curenta este pe RM/firma, cohorta se
 stabileste din apartenenta curenta; istoricul magazinelor ramane inclus chiar
 daca acestea au fost mutate ulterior intre RM-uri sau firme.
 
+### Calculator target si profitabilitate
+
+Calculatorul foloseste numai magazinele cu `stores.is_active=TRUE` din cohorta
+lunii de calcul si normalizeaza ponderile lor la 100%. Tabelul si exportul au
+aceeasi proiectie de 20 de coloane: identitatea magazinului, target/realizat/%
+pentru `target-13`, `target-12` si `target-1`, ponderea, targetul calculat,
+propunerea managerului, costul salarial, costurile operationale, break-even-ul
+brut si forecastul lunii target. Exportul are subtotaluri filtrabile, freeze la
+`E3` si foi separate pentru comparatia managerilor, rezumat si parametri.
+
+Profitabilitatea citeste cele mai recente trei luni complete de P&L `actual`
+anterioare lunii target. Marja accesoriilor este `(v11-c11)/v11`; costurile
+operationale sunt media `c4+c5+c6`. Costul salarial la 90% foloseste doi agenti
+per magazin, trei la SunPlaza, salariul de baza configurat pe locatie, 480 lei
+tichete per agent, comision 3% si factorul P&L salarial documentat. Break-even-ul
+converteste rezultatul P&L fara TVA in vanzari brute cu TVA 21%. Forecastul este
+ultimul run complet `sales_value/current_month` pentru luna target; lipsurile
+raman explicit partiale si nu sunt inventate. Procentele sub 90% sunt rosii,
+90–sub 100% portocalii si cel putin 100% verzi; targetul sau forecastul sub
+break-even sunt marcate ca anomalii rosii.
+
 ## Baze de date
 
 ### PostgreSQL `unihub`
@@ -401,6 +422,9 @@ P&L-ul financiar lunar pe magazin este pastrat in `store_pnl_monthly` la
 granularitatea companie, luna, cod istoric de locatie si categorie contabila.
 Importul din `backend/scripts/import_store_pnl.py` deduplica fisierele identice,
 alege snapshotul anual cu cea mai buna acoperire si importa numai valori reale.
+Pentru blocurile Finance deplasate in care coloanele de identificare sunt goale,
+parserul recupereaza categoria din cheia compusa de forma `c11-COD` inainte de
+a exclude randul.
 Codurile istorice din fisiere nu sunt fortate peste `stores.site_code`, iar
 orice luna estimata ulterior trebuie marcata explicit cu `data_kind=estimated`.
 La citire, tipul de date se alege la granularitatea companie + luna: daca

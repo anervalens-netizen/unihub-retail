@@ -38,6 +38,7 @@ export interface TargetScenarioRow {
   regional: string;
   asm: string;
   calculated_weight: number;
+  normalized_weight: number;
   floor_target: number;
   proposed_target: number;
   final_target: number | null;
@@ -46,6 +47,39 @@ export interface TargetScenarioRow {
   calculation_details: TargetCalculationDetails;
   note: string | null;
   updated_at: string;
+  profitability: TargetProfitability;
+}
+
+export interface TargetProfitability {
+  agent_count: number;
+  base_salary_per_agent: number;
+  salary_cost_at_90_pct: number;
+  operating_costs: number | null;
+  accessory_margin_pct: number | null;
+  break_even_gross_sales: number | null;
+  forecast_sales: number | null;
+  anomaly_flags: string[];
+}
+
+export interface TargetProfitabilitySummary {
+  status: 'ready' | 'partial';
+  pnl_months: string[];
+  pnl_store_count: number;
+  forecast_store_count: number;
+  forecast_run: {
+    id: number;
+    model_name: string;
+    model_mode: string;
+    variant: string;
+    generated_at: string;
+  } | null;
+  assumptions: Record<string, number>;
+  salary_total: number;
+  operating_costs_total: number | null;
+  break_even_total: number | null;
+  forecast_total: number | null;
+  forecast_below_break_even_count: number;
+  target_below_break_even_count: number;
 }
 
 export interface TargetSeasonalityYear {
@@ -152,6 +186,7 @@ export interface TargetScenario extends TargetScenarioSummary {
   rows: TargetScenarioRow[];
   regional_summary: TargetRegionalSummary[];
   source_summary: TargetSourceSummary[];
+  profitability_summary: TargetProfitabilitySummary;
 }
 
 export interface TargetCalculationInput {

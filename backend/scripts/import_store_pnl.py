@@ -68,6 +68,17 @@ def company_from_title(value: object) -> str:
     raise ValueError(f"Companie necunoscuta in titlul P&L: {value!r}")
 
 
+def detail_category(detail: xlrd.sheet.Sheet, row_index: int) -> str:
+    direct = str(detail.cell_value(row_index, 1)).strip().lower()
+    if direct in VALID_CODES:
+        return direct
+    # Unele exporturi Finance lasa coloanele A/B goale pentru blocurile finale,
+    # dar pastreaza cheia auditabila in coloana F (de exemplu ``c11-ACM``).
+    composite = str(detail.cell_value(row_index, 5)).strip().lower()
+    inferred = composite.split("-", 1)[0]
+    return inferred if inferred in VALID_CODES else direct
+
+
 def parse_workbook(path: Path, root: Path) -> WorkbookData:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     workbook = xlrd.open_workbook(path)
@@ -85,7 +96,7 @@ def parse_workbook(path: Path, root: Path) -> WorkbookData:
     rows: list[PnlRow] = []
     months_with_values: set[date] = set()
     for row_index in range(1, detail.nrows):
-        category = str(detail.cell_value(row_index, 1)).strip().lower()
+        category = detail_category(detail, row_index)
         if category not in VALID_CODES:
             continue
         site_code = str(detail.cell_value(row_index, 2)).strip()

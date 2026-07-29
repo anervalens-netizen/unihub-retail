@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -51,6 +52,7 @@ class TargetCalculatorRepository:
                 FROM reporting_agent_month ram
                 JOIN stores s ON s.site_code = ram.site_code
                 WHERE ram.import_month = $1
+                  AND s.is_active = TRUE
                   AND {distribution_location_clause("s")}
                   AND NOT EXISTS (
                       SELECT 1
@@ -122,6 +124,112 @@ class TargetCalculatorRepository:
                 months,
                 site_codes,
             )
+
+    async def get_profitability_inputs(
+        self,
+        *,
+        site_codes: list[str],
+        target_month: str,
+    ) -> dict[str, Any]:
+        if not site_codes:
+            return {
+                "pnl_months": [],
+                "pnl_rows": [],
+                "forecast_run": None,
+                "forecast_rows": [],
+            }
+
+        target_date = date.fromisoformat(f"{target_month}-01")
+        required_categories = ["v11", "c11", "c4", "c5", "c6"]
+        expected_pairs = len(site_codes) * len(required_categories)
+        async with self.pool.acquire() as conn:
+            pnl_month_records = await conn.fetch(
+                """
+                WITH resolved AS (
+                    SELECT
+                        COALESCE(link.site_code, pnl.source_site_code) AS site_code,
+                        pnl.period,
+                        pnl.category_code
+                    FROM store_pnl_monthly pnl
+                    LEFT JOIN store_pnl_site_links link
+                      ON link.company_name = pnl.company_name
+                     AND link.source_site_code = pnl.source_site_code
+                    WHERE pnl.data_kind = 'actual'
+                      AND pnl.period < $1
+                      AND pnl.category_code = ANY($2::TEXT[])
+                      AND COALESCE(link.site_code, pnl.source_site_code) = ANY($3::TEXT[])
+                )
+                SELECT period
+                FROM resolved
+                GROUP BY period
+                HAVING COUNT(DISTINCT (site_code, category_code)) = $4
+                ORDER BY period DESC
+                LIMIT 3
+                """,
+                target_date,
+                required_categories,
+                site_codes,
+                expected_pairs,
+            )
+            pnl_months = sorted(record["period"] for record in pnl_month_records)
+            pnl_rows: list[asyncpg.Record] = []
+            if len(pnl_months) == 3:
+                pnl_rows = await conn.fetch(
+                    """
+                    SELECT
+                        COALESCE(link.site_code, pnl.source_site_code) AS site_code,
+                        pnl.category_code,
+                        SUM(pnl.amount)::NUMERIC(16, 2) AS amount
+                    FROM store_pnl_monthly pnl
+                    LEFT JOIN store_pnl_site_links link
+                      ON link.company_name = pnl.company_name
+                     AND link.source_site_code = pnl.source_site_code
+                    WHERE pnl.data_kind = 'actual'
+                      AND pnl.period = ANY($1::DATE[])
+                      AND pnl.category_code = ANY($2::TEXT[])
+                      AND COALESCE(link.site_code, pnl.source_site_code) = ANY($3::TEXT[])
+                    GROUP BY COALESCE(link.site_code, pnl.source_site_code), pnl.category_code
+                    ORDER BY site_code, pnl.category_code
+                    """,
+                    pnl_months,
+                    required_categories,
+                    site_codes,
+                )
+
+            forecast_run = await conn.fetchrow(
+                """
+                SELECT id, forecast_month, source_month, model_name, model_mode,
+                       variant, generated_at::TEXT, metadata
+                FROM ai_forecast_runs
+                WHERE status = 'completed'
+                  AND metric = 'sales_value'
+                  AND horizon = 'current_month'
+                  AND forecast_month = $1
+                ORDER BY generated_at DESC, id DESC
+                LIMIT 1
+                """,
+                target_month,
+            )
+            forecast_rows: list[asyncpg.Record] = []
+            if forecast_run:
+                forecast_rows = await conn.fetch(
+                    """
+                    SELECT site_code, forecast_sales
+                    FROM ai_forecast_store_month
+                    WHERE run_id = $1
+                      AND site_code = ANY($2::TEXT[])
+                    ORDER BY site_code
+                    """,
+                    forecast_run["id"],
+                    site_codes,
+                )
+
+        return {
+            "pnl_months": [period.strftime("%Y-%m") for period in pnl_months],
+            "pnl_rows": pnl_rows,
+            "forecast_run": forecast_run,
+            "forecast_rows": forecast_rows,
+        }
 
     async def save_draft_scenario(
         self,

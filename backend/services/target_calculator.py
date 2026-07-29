@@ -9,6 +9,7 @@ from typing import Any, TypedDict
 
 from fastapi import HTTPException
 from openpyxl import Workbook
+from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from services.spreadsheet_safety import append_openpyxl_row
@@ -33,6 +34,59 @@ DEFAULT_SEASONALITY_MIN = Decimal("0.70")
 DEFAULT_SEASONALITY_MAX = Decimal("1.70")
 MIN_SEASONALITY_BASE = Decimal("10000")
 CALCULATION_METHOD = "seasonal_blended_multiyear_v1"
+VAT_MULTIPLIER = Decimal("1.21")
+SALARY_PNL_FACTOR = Decimal("1.6955")
+MEAL_VOUCHERS_PER_AGENT = Decimal("480")
+SALES_COMMISSION_RATE = Decimal("0.03")
+SALARY_ASSUMED_ATTAINMENT = Decimal("0.90")
+DEFAULT_STORE_AGENT_COUNT = 2
+SUN_PLAZA_AGENT_COUNT = 3
+BASE_SALARY_DEFAULT = Decimal("2400")
+BASE_SALARY_HIGH = Decimal("2600")
+BASE_SALARY_HIGH_SITE_CODES = {
+    "AFICOTRO",
+    "AUCHMIL2",
+    "AUCHMILI",
+    "AUCHTRIC",
+    "CCTCIT",
+    "CJIULMALL",
+    "CJPPOL",
+    "CLUJCFPOL",
+    "CORALEX",
+    "COTROCENI",
+    "CRFFEER",
+    "CTAUCH",
+    "CTCITYPRK",
+    "CTCORA",
+    "CTCRFTOM",
+    "CTVIVO",
+    "MC-MEGAMALL",
+    "MCRFBAL",
+    "MEGAMALL",
+    "PRKLK",
+    "PROM",
+    "PROMEN",
+    "SUNPLZ",
+    "TMACUH",
+    "TMSHOPCITY",
+    "UNIRII",
+}
+PROFITABILITY_REQUIRED_CATEGORIES = {"v11", "c11", "c4", "c5", "c6"}
+ROMANIAN_MONTH_NAMES = (
+    "",
+    "ianuarie",
+    "februarie",
+    "martie",
+    "aprilie",
+    "mai",
+    "iunie",
+    "iulie",
+    "august",
+    "septembrie",
+    "octombrie",
+    "noiembrie",
+    "decembrie",
+)
 
 STRONG_SEASONALITY_WEIGHTS = {
     "store": Decimal("0.50"),
@@ -93,6 +147,14 @@ def shift_month(month: str, offset: int) -> str:
         raise HTTPException(status_code=400, detail="Luna trebuie sa fie in format YYYY-MM") from exc
     index = year * 12 + month_number - 1 + offset
     return f"{index // 12:04d}-{index % 12 + 1:02d}"
+
+
+def month_label_ro(month: str) -> str:
+    try:
+        month_number = int(month.split("-")[1])
+        return ROMANIAN_MONTH_NAMES[month_number]
+    except (IndexError, ValueError):
+        return month
 
 
 def source_month_configuration(target_month: str) -> list[dict[str, str]]:
@@ -710,6 +772,7 @@ class TargetCalculatorService:
                         "strong_weights": {key: float(value) for key, value in STRONG_SEASONALITY_WEIGHTS.items()},
                         "weak_weights": {key: float(value) for key, value in WEAK_SEASONALITY_WEIGHTS.items()},
                         "new_store_weights": {key: float(value) for key, value in NEW_STORE_SEASONALITY_WEIGHTS.items()},
+                        "profitability": self._profitability_assumptions(),
                     },
                 },
                 calculated_rows,
@@ -741,6 +804,7 @@ class TargetCalculatorService:
         rows = await self.repo.get_scenario_rows(scenario_id)
         header = self._serialize_header(dict(scenario))
         serialized_rows = [self._serialize_row(dict(row)) for row in rows]
+        profitability_summary = await self._attach_profitability(header, serialized_rows)
         proposed_total = sum(row["proposed_target"] for row in serialized_rows)
         final_total = sum((row["final_target"] or 0) for row in serialized_rows)
         pending_final_count = sum(1 for row in serialized_rows if row["final_target"] is None)
@@ -759,6 +823,155 @@ class TargetCalculatorService:
             "rows": serialized_rows,
             "regional_summary": self._regional_summary(serialized_rows),
             "source_summary": self._source_summary(serialized_rows),
+            "profitability_summary": profitability_summary,
+        }
+
+    @staticmethod
+    def _profitability_assumptions() -> dict[str, Any]:
+        return {
+            "vat_rate": float(VAT_MULTIPLIER - Decimal("1")),
+            "salary_pnl_factor": float(SALARY_PNL_FACTOR),
+            "meal_vouchers_per_agent": float(MEAL_VOUCHERS_PER_AGENT),
+            "sales_commission_rate": float(SALES_COMMISSION_RATE),
+            "salary_assumed_attainment": float(SALARY_ASSUMED_ATTAINMENT),
+            "default_store_agent_count": DEFAULT_STORE_AGENT_COUNT,
+            "sun_plaza_agent_count": SUN_PLAZA_AGENT_COUNT,
+            "base_salary_default": float(BASE_SALARY_DEFAULT),
+            "base_salary_high": float(BASE_SALARY_HIGH),
+        }
+
+    async def _attach_profitability(
+        self,
+        scenario: dict[str, Any],
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        weight_total = sum((Decimal(str(row["calculated_weight"])) for row in rows), Decimal("0"))
+        for row in rows:
+            weight = Decimal(str(row["calculated_weight"]))
+            row["normalized_weight"] = float(weight / weight_total) if weight_total > 0 else 0.0
+
+        inputs = await self.repo.get_profitability_inputs(
+            site_codes=[row["site_code"] for row in rows],
+            target_month=scenario["target_month"],
+        )
+        pnl_months = list(inputs.get("pnl_months") or [])
+        pnl_values: dict[tuple[str, str], Decimal] = {
+            (record["site_code"], record["category_code"]): Decimal(record["amount"] or 0)
+            for record in inputs.get("pnl_rows") or []
+        }
+        forecast_values = {
+            record["site_code"]: money(Decimal(record["forecast_sales"] or 0))
+            for record in inputs.get("forecast_rows") or []
+        }
+        forecast_run_record = inputs.get("forecast_run")
+        forecast_run = dict(forecast_run_record) if forecast_run_record else None
+
+        salary_total = Decimal("0")
+        opex_total = Decimal("0")
+        break_even_total = Decimal("0")
+        forecast_total = Decimal("0")
+        forecast_below_break_even_count = 0
+        target_below_break_even_count = 0
+        complete_pnl_count = 0
+        for row in rows:
+            site_code = row["site_code"]
+            agents = SUN_PLAZA_AGENT_COUNT if site_code == "SUNPLZ" else DEFAULT_STORE_AGENT_COUNT
+            base_salary = BASE_SALARY_HIGH if site_code in BASE_SALARY_HIGH_SITE_CODES else BASE_SALARY_DEFAULT
+            calculated_target = money(row["proposed_target"])
+            salary_source = (
+                Decimal(agents) * (base_salary + MEAL_VOUCHERS_PER_AGENT)
+                + calculated_target * SALARY_ASSUMED_ATTAINMENT * SALES_COMMISSION_RATE
+            )
+            salary_cost = money(salary_source * SALARY_PNL_FACTOR)
+            salary_total += salary_cost
+
+            categories = {
+                category: pnl_values.get((site_code, category))
+                for category in PROFITABILITY_REQUIRED_CATEGORIES
+            }
+            pnl_complete = len(pnl_months) == 3 and all(value is not None for value in categories.values())
+            accessory_margin: Decimal | None = None
+            opex: Decimal | None = None
+            break_even: Decimal | None = None
+            if pnl_complete:
+                accessory_revenue = categories["v11"] or Decimal("0")
+                accessory_cogs = categories["c11"] or Decimal("0")
+                if accessory_revenue > 0:
+                    accessory_margin = (accessory_revenue - accessory_cogs) / accessory_revenue
+                if accessory_margin is not None and accessory_margin > 0:
+                    opex = money(
+                        (
+                            (categories["c4"] or Decimal("0"))
+                            + (categories["c5"] or Decimal("0"))
+                            + (categories["c6"] or Decimal("0"))
+                        )
+                        / Decimal(len(pnl_months))
+                    )
+                    break_even = money(
+                        (salary_cost + opex) / accessory_margin * VAT_MULTIPLIER
+                    )
+                    complete_pnl_count += 1
+                    opex_total += opex
+                    break_even_total += break_even
+
+            forecast = forecast_values.get(site_code)
+            if forecast is not None:
+                forecast_total += forecast
+
+            anomaly_flags: list[str] = []
+            if not pnl_complete or break_even is None:
+                anomaly_flags.append("PNL_INCOMPLETE")
+            if forecast is None:
+                anomaly_flags.append("FORECAST_MISSING")
+            if break_even is not None and calculated_target < break_even:
+                anomaly_flags.append("TARGET_BELOW_BREAK_EVEN")
+                target_below_break_even_count += 1
+            if break_even is not None and forecast is not None and forecast < break_even:
+                anomaly_flags.append("FORECAST_BELOW_BREAK_EVEN")
+                forecast_below_break_even_count += 1
+            elif forecast is not None and forecast < calculated_target:
+                anomaly_flags.append("FORECAST_BELOW_TARGET")
+
+            row["profitability"] = {
+                "agent_count": agents,
+                "base_salary_per_agent": float(base_salary),
+                "salary_cost_at_90_pct": float(salary_cost),
+                "operating_costs": float(opex) if opex is not None else None,
+                "accessory_margin_pct": (
+                    float(accessory_margin * Decimal("100"))
+                    if accessory_margin is not None
+                    else None
+                ),
+                "break_even_gross_sales": float(break_even) if break_even is not None else None,
+                "forecast_sales": float(forecast) if forecast is not None else None,
+                "anomaly_flags": anomaly_flags,
+            }
+
+        forecast_coverage = len(forecast_values)
+        source_status = (
+            "ready"
+            if complete_pnl_count == len(rows) and forecast_coverage == len(rows)
+            else "partial"
+        )
+        return {
+            "status": source_status,
+            "pnl_months": pnl_months,
+            "pnl_store_count": complete_pnl_count,
+            "forecast_store_count": forecast_coverage,
+            "forecast_run": {
+                "id": int(forecast_run["id"]),
+                "model_name": forecast_run["model_name"],
+                "model_mode": forecast_run["model_mode"],
+                "variant": forecast_run["variant"],
+                "generated_at": forecast_run["generated_at"],
+            } if forecast_run else None,
+            "assumptions": self._profitability_assumptions(),
+            "salary_total": float(money(salary_total)),
+            "operating_costs_total": float(money(opex_total)) if complete_pnl_count else None,
+            "break_even_total": float(money(break_even_total)) if complete_pnl_count else None,
+            "forecast_total": float(money(forecast_total)) if forecast_coverage else None,
+            "forecast_below_break_even_count": forecast_below_break_even_count,
+            "target_below_break_even_count": target_below_break_even_count,
         }
 
     async def save_final_targets(
@@ -830,74 +1043,115 @@ class TargetCalculatorService:
         scenario = await self.get_scenario_detail(scenario_id)
         workbook = Workbook()
         sheet = workbook.active
-        sheet.title = "Targete finale"
-        source_months = scenario["source_months"]
-        forecast_by_month = {
-            period["month"]: any(
-                history["month"] == period["month"] and history.get("is_forecast", False)
-                for row in scenario["rows"]
-                for history in row["history"]
-            )
-            for period in source_months
-        }
-        headers = ["Firma", "Regional", "ASM", "Nume locatie", "Cod locatie"]
-        for period in source_months:
+        sheet.title = "Target + profitabilitate"
+        target_month = scenario["target_month"]
+        comparison_months = [
+            shift_month(target_month, -13),
+            shift_month(target_month, -12),
+            shift_month(target_month, -1),
+        ]
+        headers = ["Firma", "Manager", "Nume locație", "Cod locație"]
+        for month in comparison_months:
             headers.extend([
-                f"Target {period['month']}",
-                f"{'Forecast folosit' if forecast_by_month[period['month']] else 'Realizat folosit'} {period['month']}",
-                f"Realizat importat {period['month']}",
-                f"% Realizare {period['month']}",
+                f"Target {month}",
+                f"Realizat {month}",
+                f"% {month}",
             ])
         headers.extend([
-            "Forecast luna curenta", "Sezonalitate magazin LY", "Sezonalitate magazin multi-year",
-            "Sezonalitate zona", "Sezonalitate retea", "Sezonalitate folosita",
-            "Ajustare trend", "Estimare bruta", "Floor", "Cap", "Pondere calcul",
-            "Target propus", "Target final", "Diferenta final-propus", "Ajustat manual",
-            "Flag-uri", "Observatii",
+            "Pondere calcul",
+            f"Calcul target {month_label_ro(target_month)}",
+            "Propunere manager",
+            "Cheltuieli salariale la 90% - P&L estimat",
+            "Cheltuieli operaționale estimate",
+            "Break-even vânzări brute",
+            f"Forecast {month_label_ro(target_month)}",
         ])
+        append_openpyxl_row(sheet, ["SUBTOTAL", *([""] * (len(headers) - 1))])
         append_openpyxl_row(sheet, headers)
-        history_by_month: dict[str, dict[str, Any]]
-        for row in scenario["rows"]:
+        sorted_rows = sorted(
+            scenario["rows"],
+            key=lambda row: (-row["proposed_target"], row["locatie"], row["site_code"]),
+        )
+        for row in sorted_rows:
             history_by_month = {period["month"]: period for period in row["history"]}
             values: list[Any] = [
-                row["firma"], row["regional"], row["asm"], row["locatie"], row["site_code"],
+                row["firma"], row["regional"], row["locatie"], row["site_code"],
             ]
-            for period in source_months:
-                history = history_by_month[period["month"]]
+            for month in comparison_months:
+                history = history_by_month.get(month) or {}
+                attainment = history.get("attainment_pct")
                 values.extend([
-                    history["target"],
-                    history["realized"],
-                    history.get("actual_realized", history["realized"]),
-                    history["attainment_pct"],
+                    history.get("target", 0),
+                    history.get("realized", 0),
+                    None if attainment is None else attainment / 100,
                 ])
-            details = row.get("calculation_details") or {}
-            seasonality = details.get("seasonality") or {}
-            trend = details.get("trend") or {}
+            profitability = row.get("profitability") or {}
             values.extend([
-                details.get("current_forecast"),
-                seasonality.get("last_year_store_factor"),
-                seasonality.get("multiyear_store_factor"),
-                seasonality.get("zone_factor"),
-                seasonality.get("network_factor"),
-                seasonality.get("used_factor"),
-                trend.get("used_adjustment"),
-                details.get("raw_estimate"),
-                row["floor_target"],
-                details.get("cap_target"),
-                row["calculated_weight"],
+                row.get("normalized_weight", row["calculated_weight"]),
                 row["proposed_target"],
                 row["final_target"],
-                None if row["final_target"] is None else row["final_target"] - row["proposed_target"],
-                "Necompletat" if row["final_target"] is None
-                else "Da" if abs(row["final_target"] - row["proposed_target"]) > 0.01 else "Nu",
-                ", ".join(details.get("flags") or []),
-                row["note"] or "",
+                profitability.get("salary_cost_at_90_pct"),
+                profitability.get("operating_costs"),
+                profitability.get("break_even_gross_sales"),
+                profitability.get("forecast_sales"),
             ])
             append_openpyxl_row(sheet, values)
-        sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
+        last_row = sheet.max_row
+        sheet.freeze_panes = "E3"
+        sheet.auto_filter.ref = f"A2:T{last_row}"
 
-        summary = workbook.create_sheet("Rezumat manageri")
+        total_columns = ("E", "F", "H", "I", "K", "L", "N", "O", "P", "Q", "R", "S", "T")
+        for column in total_columns:
+            sheet[f"{column}1"] = f"=SUBTOTAL(109,{column}3:{column}{last_row})"
+        for percentage_column, target_column, realized_column in (
+            ("G", "E", "F"),
+            ("J", "H", "I"),
+            ("M", "K", "L"),
+        ):
+            sheet[f"{percentage_column}1"] = (
+                f'=IF({target_column}1=0,0,{realized_column}1/{target_column}1)'
+            )
+
+        comparison = workbook.create_sheet("Comparație manageri")
+        append_openpyxl_row(comparison, [
+            "Manager", "Magazine", "Target calculat", "Propunere manager",
+            "Cheltuieli salariale", "Cheltuieli operaționale",
+            "Break-even", "Forecast", "Forecast - break-even",
+        ])
+        rows_by_manager: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in scenario["rows"]:
+            rows_by_manager[row["regional"]].append(row)
+        for manager, manager_rows in sorted(rows_by_manager.items()):
+            profitability_rows = [row.get("profitability") or {} for row in manager_rows]
+            break_even_values = [item.get("break_even_gross_sales") for item in profitability_rows]
+            forecast_values = [item.get("forecast_sales") for item in profitability_rows]
+            break_even = (
+                sum(float(value) for value in break_even_values if value is not None)
+                if all(value is not None for value in break_even_values)
+                else None
+            )
+            forecast = (
+                sum(float(value) for value in forecast_values if value is not None)
+                if all(value is not None for value in forecast_values)
+                else None
+            )
+            append_openpyxl_row(comparison, [
+                manager,
+                len(manager_rows),
+                sum(row["proposed_target"] for row in manager_rows),
+                sum((row["final_target"] or 0) for row in manager_rows),
+                sum(float(item.get("salary_cost_at_90_pct") or 0) for item in profitability_rows),
+                (
+                    sum(float(item["operating_costs"]) for item in profitability_rows)
+                    if all(item.get("operating_costs") is not None for item in profitability_rows)
+                    else None
+                ),
+                break_even,
+                forecast,
+                None if break_even is None or forecast is None else forecast - break_even,
+            ])
+
+        summary = workbook.create_sheet("Rezumat calcul")
         append_openpyxl_row(summary, [
             "Regional", "Magazine", "Floor", "Target propus", "Target final", "Diferenta",
             "Luna curenta", "Forecast luna curenta", "% crestere propus vs luna curenta",
@@ -936,13 +1190,98 @@ class TargetCalculatorService:
                 ])
         for warning in scenario["warnings"]:
             append_openpyxl_row(parameters, ["Atentionare", warning])
+        profitability_summary = scenario.get("profitability_summary") or {}
+        append_openpyxl_row(parameters, ["Status surse profitabilitate", profitability_summary.get("status")])
+        append_openpyxl_row(parameters, ["Luni P&L reale", ", ".join(profitability_summary.get("pnl_months") or [])])
+        forecast_run = profitability_summary.get("forecast_run") or {}
+        append_openpyxl_row(parameters, ["Forecast run", forecast_run.get("id")])
+        append_openpyxl_row(parameters, ["Forecast model", forecast_run.get("model_name")])
+        append_openpyxl_row(parameters, ["Forecast variant", forecast_run.get("variant")])
 
-        for worksheet in workbook.worksheets:
-            header_fill = PatternFill("solid", fgColor="4F46E5")
+        navy_fill = PatternFill("solid", fgColor="17365D")
+        subtotal_fill = PatternFill("solid", fgColor="D9E2F3")
+        percentage_fill = PatternFill("solid", fgColor="F3F4F6")
+        manager_fill = PatternFill("solid", fgColor="FFF8D9")
+        break_even_fill = PatternFill("solid", fgColor="FFF7ED")
+        forecast_fill = PatternFill("solid", fgColor="EFF8F1")
+        red_fill = PatternFill("solid", fgColor="F4CCCC")
+        green_fill = PatternFill("solid", fgColor="E2F0D9")
+        red_font = Font(color="9C0006", bold=True)
+        amber_font = Font(color="C65911", bold=True)
+        green_font = Font(color="00B050", bold=True)
+
+        for cell in sheet[1]:
+            cell.font = Font(color="111827", bold=True)
+            cell.fill = subtotal_fill
+        for cell in sheet[2]:
+            cell.font = Font(color="FFFFFF", bold=True)
+            cell.fill = navy_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        sheet.row_dimensions[2].height = 52
+        for row_number in range(1, last_row + 1):
+            for column in ("G", "J", "M", "N"):
+                sheet[f"{column}{row_number}"].number_format = "0.0%"
+        for row_number in range(3, last_row + 1):
+            for column in ("G", "J", "M", "N"):
+                sheet[f"{column}{row_number}"].fill = percentage_fill
+            sheet[f"P{row_number}"].fill = manager_fill
+            sheet[f"S{row_number}"].fill = break_even_fill
+            sheet[f"T{row_number}"].fill = forecast_fill
+            sheet[f"O{row_number}"].font = Font(color="111827", bold=True)
+            sheet[f"S{row_number}"].font = Font(color="8A4B16", bold=True)
+            sheet[f"T{row_number}"].font = Font(color="27633B", bold=True)
+        for row_number in range(1, last_row + 1):
+            for column in ("E", "F", "H", "I", "K", "L", "O", "P", "Q", "R", "S", "T"):
+                sheet[f"{column}{row_number}"].number_format = '#,##0;[Red]-#,##0;-'
+
+        for column in ("G", "J", "M"):
+            data_range = f"{column}3:{column}{last_row}"
+            sheet.conditional_formatting.add(
+                data_range,
+                CellIsRule(operator="lessThan", formula=["0.9"], font=red_font),
+            )
+            sheet.conditional_formatting.add(
+                data_range,
+                CellIsRule(operator="between", formula=["0.9", "0.999999999"], font=amber_font),
+            )
+            sheet.conditional_formatting.add(
+                data_range,
+                CellIsRule(operator="greaterThanOrEqual", formula=["1"], font=green_font),
+            )
+        sheet.conditional_formatting.add(
+            f"O3:O{last_row}",
+            FormulaRule(formula=["AND(ISNUMBER($S3),$O3<$S3)"], fill=red_fill, font=red_font),
+        )
+        sheet.conditional_formatting.add(
+            f"P3:P{last_row}",
+            FormulaRule(formula=["AND(ISNUMBER($P3),ISNUMBER($S3),$P3<$S3)"], fill=red_fill, font=red_font),
+        )
+        sheet.conditional_formatting.add(
+            f"T3:T{last_row}",
+            FormulaRule(formula=["AND(ISNUMBER($T3),ISNUMBER($S3),$T3<$S3)"], fill=red_fill, font=red_font),
+        )
+        sheet.conditional_formatting.add(
+            f"T3:T{last_row}",
+            FormulaRule(formula=["AND(ISNUMBER($T3),ISNUMBER($S3),$T3>=$S3)"], fill=green_fill, font=green_font),
+        )
+
+        sheet.column_dimensions["A"].width = 12
+        sheet.column_dimensions["B"].width = 20
+        sheet.column_dimensions["C"].width = 29
+        sheet.column_dimensions["D"].width = 15
+        for column in ("E", "F", "H", "I", "K", "L", "O", "P", "Q", "R", "S", "T"):
+            sheet.column_dimensions[column].width = 15
+        for column in ("G", "J", "M", "N"):
+            sheet.column_dimensions[column].width = 11
+        sheet.column_dimensions["Q"].width = 20
+        sheet.column_dimensions["R"].width = 19
+        sheet.column_dimensions["S"].width = 18
+
+        for worksheet in (comparison, summary, parameters):
             for cell in worksheet[1]:
                 cell.font = Font(color="FFFFFF", bold=True)
-                cell.fill = header_fill
-                cell.alignment = Alignment(horizontal="center")
+                cell.fill = navy_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             for column in worksheet.columns:
                 letter = get_column_letter(column[0].column)
                 max_length = max(len(str(cell.value or "")) for cell in column)
