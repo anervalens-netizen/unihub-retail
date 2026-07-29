@@ -75,6 +75,11 @@ function formatSignedPercent(value?: number | null): string {
   return `${value > 0 ? '+' : ''}${formatPercent(value)}`;
 }
 
+function formatSignedPp(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return '-';
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)} pp`;
+}
+
 function formatTableNumber(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return '-';
   return Math.round(value).toLocaleString('ro-RO');
@@ -643,6 +648,75 @@ export function TargetCalculatorSubtab() {
     () => scenario?.regional_summary.filter((item) => regionalFilter === 'all' || item.regional === regionalFilter) ?? [],
     [scenario, regionalFilter],
   );
+  const regionalAllocation = useMemo(() => {
+    if (!scenario) return [];
+    const previousYearBaseMonth = shiftMonth(scenario.target_month, -13);
+    const previousYearTargetMonth = shiftMonth(scenario.target_month, -12);
+    const previousMonth = shiftMonth(scenario.target_month, -1);
+    const groups = new Map<string, TargetScenarioRow[]>();
+    scenario.rows.forEach((row) => {
+      groups.set(row.regional, [...(groups.get(row.regional) ?? []), row]);
+    });
+    const aggregate = (manager: string, rows: TargetScenarioRow[]) => {
+      const realized = (row: TargetScenarioRow, month: string) => (
+        row.history.find((period) => period.month === month)?.realized ?? 0
+      );
+      const target = sum(rows.map((row) => row.proposed_target));
+      const previous = sum(rows.map((row) => realized(row, previousMonth)));
+      const previousYearBase = sum(rows.map((row) => realized(row, previousYearBaseMonth)));
+      const previousYearTarget = sum(rows.map((row) => realized(row, previousYearTargetMonth)));
+      const forecastValues = rows.map((row) => row.profitability.forecast_sales);
+      const forecast = forecastValues.every((value) => value != null)
+        ? sum(forecastValues.map((value) => Number(value)))
+        : null;
+      const seasonalityPct = percentChangeValue(previousYearTarget, previousYearBase);
+      const seasonalTarget = seasonalityPct == null ? null : previous * (1 + seasonalityPct / 100);
+      const targetVsPreviousPct = percentChangeValue(target, previous);
+      const targetVsSeasonalPct = seasonalTarget == null ? null : percentChangeValue(target, seasonalTarget);
+      const targetVsForecastPct = forecast == null ? null : percentChangeValue(target, forecast);
+      const signal = targetVsForecastPct != null && targetVsForecastPct >= 5
+        ? 'Peste AI'
+        : targetVsSeasonalPct != null && Math.round(targetVsSeasonalPct * 10) / 10 >= 3
+          ? 'Peste sezonier'
+          : 'Echilibrat';
+      return {
+        manager,
+        storeCount: rows.length,
+        target,
+        previous,
+        previousYearTarget,
+        forecast,
+        seasonalityPct,
+        seasonalTarget,
+        targetVsPreviousPct,
+        targetVsSeasonalPct,
+        targetVsPreviousYearPct: percentChangeValue(target, previousYearTarget),
+        targetVsForecastPct,
+        signal,
+      };
+    };
+    const network = aggregate('Rețea', scenario.rows);
+    return Array.from(groups.entries())
+      .map(([manager, rows]) => {
+        const item = aggregate(manager, rows);
+        const targetShare = network.target > 0 ? item.target * 100 / network.target : 0;
+        const previousShare = network.previous > 0 ? item.previous * 100 / network.previous : 0;
+        const previousYearShare = network.previousYearTarget > 0
+          ? item.previousYearTarget * 100 / network.previousYearTarget
+          : 0;
+        const forecastShare = item.forecast != null && network.forecast
+          ? item.forecast * 100 / network.forecast
+          : null;
+        return {
+          ...item,
+          targetShare,
+          targetVsPreviousSharePp: targetShare - previousShare,
+          targetVsPreviousYearSharePp: targetShare - previousYearShare,
+          targetVsForecastSharePp: forecastShare == null ? null : targetShare - forecastShare,
+        };
+      })
+      .sort((left, right) => right.target - left.target);
+  }, [scenario]);
   const activeSeasonalityLabel = useMemo(() => {
     const years = Number(scenario?.calculation_params?.seasonality_years ?? 1);
     return years > 1 ? `Multi-year ${years} ani` : 'Sezonalitate anul trecut';
@@ -1331,6 +1405,57 @@ export function TargetCalculatorSubtab() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          <div className="glass overflow-hidden rounded-2xl">
+            <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Cum a fost alocat targetul pe manageri</h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Δ mix arată dacă managerul primește o pondere mai mare sau mai mică decât contribuția sa la vânzări. „Peste sezonier” și „Peste AI” cer verificare, nu înseamnă automat alocare greșită.
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-[1180px] w-full text-xs">
+                <thead className="bg-slate-800 text-white dark:bg-slate-950">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Manager</th>
+                    <th className="px-3 py-2 text-right">Locații</th>
+                    <th className="px-3 py-2 text-right">Pondere target</th>
+                    <th className="px-3 py-2 text-right">Δ mix vs iulie</th>
+                    <th className="px-3 py-2 text-right">Target</th>
+                    <th className="px-3 py-2 text-right">vs iulie</th>
+                    <th className="px-3 py-2 text-right">vs sezonier</th>
+                    <th className="px-3 py-2 text-right">vs august anul trecut</th>
+                    <th className="px-3 py-2 text-right">vs forecast AI</th>
+                    <th className="px-3 py-2 text-center">Semnal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {regionalAllocation.map((item) => (
+                    <tr key={item.manager}>
+                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-800 dark:text-slate-100">{item.manager}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{item.storeCount}</td>
+                      <td className="bg-amber-50 px-3 py-2 text-right font-semibold tabular-nums text-amber-800 dark:bg-amber-950/20 dark:text-amber-200">{formatPercent(item.targetShare)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousSharePp)}`}>{formatSignedPp(item.targetVsPreviousSharePp)}</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatTableNumber(item.target)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousPct)}`}>{formatSignedPercent(item.targetVsPreviousPct)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsSeasonalPct)}`}>{formatSignedPercent(item.targetVsSeasonalPct)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsPreviousYearPct)}`}>{formatSignedPercent(item.targetVsPreviousYearPct)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${percentTone(item.targetVsForecastPct)}`}>{formatSignedPercent(item.targetVsForecastPct)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${
+                          item.signal === 'Peste AI'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                            : item.signal === 'Peste sezonier'
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                        }`}>{item.signal}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 

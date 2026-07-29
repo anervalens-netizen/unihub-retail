@@ -371,6 +371,10 @@ pentru `target-13`, `target-12` si `target-1`, ponderea, targetul calculat,
 propunerea managerului, costul salarial, costurile operationale, break-even-ul
 brut si forecastul lunii target. Exportul are subtotaluri filtrabile, freeze la
 `E3` si foi separate pentru comparatia managerilor, rezumat si parametri.
+Comparatia managerilor explica separat ponderea alocata fata de mixul din luna
+precedenta, anul anterior si forecast, apoi compara targetul cu sezonalitatea
+istorica si forecastul AI. Semnalele `Echilibrat`, `Peste sezonier` si
+`Peste AI` sunt controale de review, nu inlocuiesc decizia manageriala.
 
 Profitabilitatea citeste cele mai recente trei luni complete de P&L `actual`
 anterioare lunii target. Marja accesoriilor este `(v11-c11)/v11`; costurile

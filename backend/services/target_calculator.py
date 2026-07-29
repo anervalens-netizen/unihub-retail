@@ -1039,6 +1039,112 @@ class TargetCalculatorService:
             raise HTTPException(status_code=409, detail="Scenariul nu poate fi finalizat.")
         return await self.get_scenario_detail(scenario_id)
 
+    def _manager_allocation_analysis(self, scenario: dict[str, Any]) -> list[dict[str, Any]]:
+        target_month = scenario["target_month"]
+        previous_year_base_month = shift_month(target_month, -13)
+        previous_year_target_month = shift_month(target_month, -12)
+        previous_month = shift_month(target_month, -1)
+        rows_by_manager: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in scenario["rows"]:
+            rows_by_manager[row["regional"]].append(row)
+
+        def period_value(row: dict[str, Any], month: str) -> float:
+            period = next((item for item in row["history"] if item["month"] == month), None)
+            return float((period or {}).get("realized") or 0)
+
+        def build(manager: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+            target = sum(float(row["proposed_target"]) for row in rows)
+            previous = sum(period_value(row, previous_month) for row in rows)
+            previous_year_base = sum(period_value(row, previous_year_base_month) for row in rows)
+            previous_year_target = sum(period_value(row, previous_year_target_month) for row in rows)
+            forecast_values = [(row.get("profitability") or {}).get("forecast_sales") for row in rows]
+            forecast = (
+                sum(float(value) for value in forecast_values if value is not None)
+                if all(value is not None for value in forecast_values)
+                else None
+            )
+            seasonality_pct = percent_change(previous_year_target, previous_year_base)
+            seasonal_target = (
+                previous * (1 + seasonality_pct / 100)
+                if seasonality_pct is not None
+                else None
+            )
+            target_vs_previous_pct = percent_change(target, previous)
+            target_vs_seasonal_pct = (
+                percent_change(target, seasonal_target)
+                if seasonal_target is not None
+                else None
+            )
+            target_vs_forecast_pct = (
+                percent_change(target, forecast)
+                if forecast is not None
+                else None
+            )
+            if target_vs_forecast_pct is not None and target_vs_forecast_pct >= 5:
+                signal = "Peste AI"
+            elif target_vs_seasonal_pct is not None and round(target_vs_seasonal_pct, 1) >= 3:
+                signal = "Peste sezonier"
+            else:
+                signal = "Echilibrat"
+            return {
+                "manager": manager,
+                "store_count": len(rows),
+                "target": target,
+                "previous": previous,
+                "previous_year_base": previous_year_base,
+                "previous_year_target": previous_year_target,
+                "forecast": forecast,
+                "target_vs_previous_pct": target_vs_previous_pct,
+                "seasonality_pct": seasonality_pct,
+                "seasonality_deviation_pp": (
+                    target_vs_previous_pct - seasonality_pct
+                    if target_vs_previous_pct is not None and seasonality_pct is not None
+                    else None
+                ),
+                "seasonal_target": seasonal_target,
+                "target_vs_seasonal_pct": target_vs_seasonal_pct,
+                "target_vs_previous_year_pct": percent_change(target, previous_year_target),
+                "target_vs_forecast_pct": target_vs_forecast_pct,
+                "signal": signal,
+            }
+
+        managers = [
+            build(manager, manager_rows)
+            for manager, manager_rows in rows_by_manager.items()
+        ]
+        managers.sort(key=lambda item: (-item["target"], item["manager"]))
+        network = build("TOTAL REȚEA", list(scenario["rows"]))
+        network["signal"] = "Rețea"
+        for item in [*managers, network]:
+            item["target_share"] = (
+                item["target"] / network["target"] if network["target"] > 0 else 0
+            )
+            item["previous_share"] = (
+                item["previous"] / network["previous"] if network["previous"] > 0 else 0
+            )
+            item["previous_year_share"] = (
+                item["previous_year_target"] / network["previous_year_target"]
+                if network["previous_year_target"] > 0
+                else 0
+            )
+            item["forecast_share"] = (
+                item["forecast"] / network["forecast"]
+                if item["forecast"] is not None and network["forecast"]
+                else None
+            )
+            item["target_vs_previous_share_pp"] = (
+                (item["target_share"] - item["previous_share"]) * 100
+            )
+            item["target_vs_previous_year_share_pp"] = (
+                (item["target_share"] - item["previous_year_share"]) * 100
+            )
+            item["target_vs_forecast_share_pp"] = (
+                (item["target_share"] - item["forecast_share"]) * 100
+                if item["forecast_share"] is not None
+                else None
+            )
+        return [*managers, network]
+
     async def export_excel(self, scenario_id: int) -> tuple[BytesIO, str]:
         scenario = await self.get_scenario_detail(scenario_id)
         workbook = Workbook()
@@ -1113,43 +1219,52 @@ class TargetCalculatorService:
             )
 
         comparison = workbook.create_sheet("Comparație manageri")
+        manager_analysis = self._manager_allocation_analysis(scenario)
+        append_openpyxl_row(comparison, ["1. Distribuția targetului", *([""] * 8)])
+        comparison.merge_cells("A1:I1")
         append_openpyxl_row(comparison, [
-            "Manager", "Magazine", "Target calculat", "Propunere manager",
-            "Cheltuieli salariale", "Cheltuieli operaționale",
-            "Break-even", "Forecast", "Forecast - break-even",
+            "Manager", "Nr. locații", "Pondere target calculat",
+            f"Pondere realizat {comparison_months[2]}",
+            f"Δ vs {comparison_months[2]} (pp)",
+            f"Pondere realizat {comparison_months[1]}",
+            f"Δ vs {comparison_months[1]} (pp)",
+            f"Pondere forecast {target_month}",
+            "Δ vs forecast (pp)",
         ])
-        rows_by_manager: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in scenario["rows"]:
-            rows_by_manager[row["regional"]].append(row)
-        for manager, manager_rows in sorted(rows_by_manager.items()):
-            profitability_rows = [row.get("profitability") or {} for row in manager_rows]
-            break_even_values = [item.get("break_even_gross_sales") for item in profitability_rows]
-            forecast_values = [item.get("forecast_sales") for item in profitability_rows]
-            break_even = (
-                sum(float(value) for value in break_even_values if value is not None)
-                if all(value is not None for value in break_even_values)
-                else None
-            )
-            forecast = (
-                sum(float(value) for value in forecast_values if value is not None)
-                if all(value is not None for value in forecast_values)
-                else None
-            )
+        for item in manager_analysis:
             append_openpyxl_row(comparison, [
-                manager,
-                len(manager_rows),
-                sum(row["proposed_target"] for row in manager_rows),
-                sum((row["final_target"] or 0) for row in manager_rows),
-                sum(float(item.get("salary_cost_at_90_pct") or 0) for item in profitability_rows),
-                (
-                    sum(float(item["operating_costs"]) for item in profitability_rows)
-                    if all(item.get("operating_costs") is not None for item in profitability_rows)
-                    else None
-                ),
-                break_even,
-                forecast,
-                None if break_even is None or forecast is None else forecast - break_even,
+                item["manager"], item["store_count"], item["target_share"],
+                item["previous_share"], item["target_vs_previous_share_pp"],
+                item["previous_year_share"], item["target_vs_previous_year_share_pp"],
+                item["forecast_share"], item["target_vs_forecast_share_pp"],
             ])
+        distribution_total_row = comparison.max_row
+        append_openpyxl_row(comparison, [])
+        second_title_row = distribution_total_row + 2
+        append_openpyxl_row(
+            comparison,
+            ["2. Target vs lună precedentă, an precedent, sezonalitate și forecast AI", *([""] * 12)],
+        )
+        comparison.merge_cells(start_row=second_title_row, start_column=1, end_row=second_title_row, end_column=13)
+        second_header_row = second_title_row + 1
+        append_openpyxl_row(comparison, [
+            "Manager", f"Target {target_month}", f"Realizat {comparison_months[2]}",
+            f"Target vs {comparison_months[2]}", "Sezonalitate istorică",
+            "Abatere sezonalitate (pp)", "Target sezonier estimat",
+            "Gap vs target sezonier", f"Realizat {comparison_months[1]}",
+            f"Target vs {comparison_months[1]}", f"Forecast AI {target_month}",
+            "Target vs AI", "Semnal alocare",
+        ])
+        for item in manager_analysis:
+            append_openpyxl_row(comparison, [
+                item["manager"], item["target"], item["previous"],
+                item["target_vs_previous_pct"], item["seasonality_pct"],
+                item["seasonality_deviation_pp"], item["seasonal_target"],
+                item["target_vs_seasonal_pct"], item["previous_year_target"],
+                item["target_vs_previous_year_pct"], item["forecast"],
+                item["target_vs_forecast_pct"], item["signal"],
+            ])
+        analysis_total_row = comparison.max_row
 
         summary = workbook.create_sheet("Rezumat calcul")
         append_openpyxl_row(summary, [
@@ -1277,7 +1392,68 @@ class TargetCalculatorService:
         sheet.column_dimensions["R"].width = 19
         sheet.column_dimensions["S"].width = 18
 
-        for worksheet in (comparison, summary, parameters):
+        section_fill = PatternFill("solid", fgColor="17365D")
+        header_fill = PatternFill("solid", fgColor="5B9BD5")
+        total_fill = PatternFill("solid", fgColor="1F2937")
+        signal_balanced_fill = PatternFill("solid", fgColor="C6EFCE")
+        signal_seasonal_fill = PatternFill("solid", fgColor="FFF2CC")
+        signal_ai_fill = PatternFill("solid", fgColor="F4CCCC")
+        for row_number in (1, second_title_row):
+            for cell in comparison[row_number]:
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.fill = section_fill
+        for row_number in (2, second_header_row):
+            for cell in comparison[row_number]:
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="bottom", wrap_text=True)
+            comparison.row_dimensions[row_number].height = 46
+        for row_number in (distribution_total_row, analysis_total_row):
+            for cell in comparison[row_number]:
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.fill = total_fill
+        for row_number in range(3, distribution_total_row + 1):
+            for column in ("C", "D", "F", "H"):
+                comparison[f"{column}{row_number}"].number_format = "0.0%"
+            for column in ("E", "G", "I"):
+                comparison[f"{column}{row_number}"].number_format = '0.0" pp"'
+                value = comparison[f"{column}{row_number}"].value
+                if isinstance(value, (int, float)) and value < 0:
+                    comparison[f"{column}{row_number}"].font = Font(color="FF0000", bold=True)
+        for row_number in range(second_header_row + 1, analysis_total_row + 1):
+            for column in ("B", "C", "G", "I", "K"):
+                comparison[f"{column}{row_number}"].number_format = '#,##0;[Red]-#,##0;-'
+            for column in ("D", "E", "H", "J", "L"):
+                comparison[f"{column}{row_number}"].number_format = '0.0"%"'
+                value = comparison[f"{column}{row_number}"].value
+                if isinstance(value, (int, float)):
+                    comparison[f"{column}{row_number}"].font = Font(
+                        color="00B050" if value >= 0 else "FF0000",
+                        bold=True,
+                    )
+            comparison[f"F{row_number}"].number_format = '0.0" pp"'
+            signal = comparison[f"M{row_number}"].value
+            if signal == "Echilibrat":
+                comparison[f"M{row_number}"].fill = signal_balanced_fill
+                comparison[f"M{row_number}"].font = Font(color="006100", bold=True)
+            elif signal == "Peste sezonier":
+                comparison[f"M{row_number}"].fill = signal_seasonal_fill
+                comparison[f"M{row_number}"].font = Font(color="9C6500", bold=True)
+            elif signal == "Peste AI":
+                comparison[f"M{row_number}"].fill = signal_ai_fill
+                comparison[f"M{row_number}"].font = Font(color="9C0006", bold=True)
+        comparison.freeze_panes = "A3"
+        comparison.column_dimensions["A"].width = 23
+        comparison.column_dimensions["B"].width = 15
+        for column in ("C", "D", "E", "F", "G", "H", "I", "J", "K", "L"):
+            comparison.column_dimensions[column].width = 18
+        comparison.column_dimensions["M"].width = 17
+        for row_number in (distribution_total_row, analysis_total_row):
+            for cell in comparison[row_number]:
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.fill = total_fill
+
+        for worksheet in (summary, parameters):
             for cell in worksheet[1]:
                 cell.font = Font(color="FFFFFF", bold=True)
                 cell.fill = navy_fill

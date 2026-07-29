@@ -62,3 +62,36 @@ def test_prahova_carrefour_alias_does_not_conflate_balotesti() -> None:
     assert [(link.site_code, link.match_method, link.reviewed) for link in links] == [
         ("PLCRF", "manual_alias", True)
     ]
+
+
+def test_reversed_finance_names_use_reviewed_aliases() -> None:
+    source_rows = cast(
+        list[asyncpg.Record],
+        [
+            {
+                "company_name": "Mobicell",
+                "source_site_code": "ACM",
+                "source_location_name": "ALBA CAROLINA MALL",
+            },
+            {
+                "company_name": "Mobicell",
+                "source_site_code": "CTRAFI",
+                "source_location_name": "COTROCENI AFI",
+            },
+        ],
+    )
+    stores = cast(
+        list[asyncpg.Record],
+        [
+            {"site_code": "ALBACAROLINA", "locatie": "CAROLINA MALL ALBA", "firma": "Mobicell"},
+            {"site_code": "AFICOTRO", "locatie": "AFI COTROCENI", "firma": "Mobicell"},
+        ],
+    )
+
+    links, unresolved = build_links(source_rows, stores)
+
+    assert unresolved == []
+    assert [(link.source_site_code, link.site_code, link.match_method, link.reviewed) for link in links] == [
+        ("ACM", "ALBACAROLINA", "manual_alias", True),
+        ("CTRAFI", "AFICOTRO", "manual_alias", True),
+    ]
