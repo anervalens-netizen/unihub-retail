@@ -189,5 +189,4 @@ formal este documentat în `ops/README.md` și
 - siguranță spreadsheet: `docs/engineering/h12-spreadsheet-formula-safety.md`;
 - SLO și readiness: `docs/operations/retail-slo-readiness.md`;
 - performanță: `docs/engineering/performance-baseline-v2.md`;
-- organizare Retail: `docs/retail-org-analysis.md`;
-- simularea grilei salariale: `docs/salary-grid-simulation.md`.
+- organizare Retail: `docs/retail-org-analysis.md`.
