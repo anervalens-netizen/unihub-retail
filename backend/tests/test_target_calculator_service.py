@@ -1013,6 +1013,14 @@ async def test_export_excel_contains_audit_sheets() -> None:
     assert main["S3"].value == 35000.0
     assert main["T3"].value == 42000.0
     assert len(main.conditional_formatting) == 6
+    comparison = workbook["Comparație manageri"]
+    assert comparison["A1"].value == "1. Distribuția targetului"
+    assert comparison["A2"].value == "Manager"
+    assert comparison["A3"].value == "Regional A"
+    assert comparison["A4"].value == "TOTAL REȚEA"
+    assert comparison["A6"].value == "2. Target vs lună precedentă, an precedent, sezonalitate și forecast AI"
+    assert comparison["M7"].value == "Semnal alocare"
+    assert comparison["M8"].value == "Echilibrat"
     parameter_labels = [cell.value for cell in workbook["Parametri"]["A"]]
     assert "Parametru strong_weights" in parameter_labels
     assert "Forecast 2025-05" in parameter_labels

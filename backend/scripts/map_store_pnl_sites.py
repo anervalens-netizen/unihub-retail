@@ -38,6 +38,8 @@ MANUAL_ALIASES: dict[tuple[str, str], str] = {
     ("Mobicell", "PLVL"): "PLVALUE",
     ("Mobicell", "PROMDMALL"): "PROMEN",
     ("Mobicell", "SBPR"): "SBPROM",
+    ("Mobicell", "ACM"): "ALBACAROLINA",
+    ("Mobicell", "CTRAFI"): "AFICOTRO",
     ("Mobiup", "BAIAMARE"): "BMAREVIVO",
     ("Mobiup", "OBOR1"): "OBO1",
 }
