@@ -50,21 +50,19 @@ class GrileRepository:
             return {r["site_code"]: r["sheet_id"] for r in rows}
 
     async def get_latest_data_month(self) -> str | None:
-        """Ultima luna operationala din vanzari sau targete.
+        """Ultima luna operationala cu vanzari importate.
 
-        La inceput de luna targetele pot fi publicate inaintea primului import
-        de vanzari. Default-ul Grile trebuie sa urmeze luna noua in acel caz,
-        nu sa ramana blocat pe luna anterioara.
+        Targetele lunii urmatoare pot fi publicate in avans, dar nu trebuie sa
+        mute Grile pe luna noua inaintea primului import de vanzari. Targetele
+        sunt doar fallback pentru o instalare fara niciun snapshot de vanzari.
         """
         async with self.pool.acquire() as conn:
             return await conn.fetchval(
                 """
-                SELECT max(month)
-                FROM (
-                    SELECT max(import_month) AS month FROM reporting_item_month
-                    UNION ALL
-                    SELECT max(import_month) AS month FROM store_targets
-                ) months
+                SELECT COALESCE(
+                    (SELECT MAX(import_month) FROM reporting_item_month),
+                    (SELECT MAX(import_month) FROM store_targets)
+                )
                 """
             )
 
