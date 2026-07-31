@@ -190,7 +190,7 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
           </div>
         </div>
         <div className="text-right text-xs">
-          <div className="text-slate-400">Luna inchisa</div>
+          <div className="text-slate-400">Luna selectata</div>
           <div className="font-semibold text-slate-700 dark:text-slate-200">
             {month ? roLabel(month) : '—'}
           </div>
