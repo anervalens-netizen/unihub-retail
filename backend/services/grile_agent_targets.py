@@ -529,6 +529,7 @@ async def _load_enabled_sheets(
             FROM grile_sheets gs
             JOIN stores s ON s.site_code = gs.site_code
             WHERE gs.is_active = true
+              AND s.is_active = true
             ORDER BY s.asm, gs.site_code
             """
         )

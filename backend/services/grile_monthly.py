@@ -377,6 +377,7 @@ async def load_entries(pool: asyncpg.Pool, only: str | None = None) -> list[Stor
             FROM grile_sheets gs
             JOIN stores s ON s.site_code = gs.site_code
             WHERE gs.is_active = true
+              AND s.is_active = true
             ORDER BY COALESCE(gs.registry_key, s.firma || '/' || s.locatie)
             """
         )

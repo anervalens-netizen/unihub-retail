@@ -276,6 +276,8 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
         run_info = _run_to_dict(latest)
         statuses = await repo.get_run_statuses(latest["id"])
         for st in statuses:
+            if st["site_code"] not in sheet_map:
+                continue
             h = hierarchy.get(st["site_code"], {})
             grila_target = _f(st["grila_target"])
             grila_sales = _f(st["grila_sales"])
@@ -322,6 +324,27 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
                 "error_code": st["error_code"],
                 "error_message": st["error_message"],
             })
+
+        # Overview-ul este despre cohorta Grile activa acum. Rularile istorice
+        # raman nemodificate in DB, dar magazinele inchise nu trebuie sa reapara
+        # in sumar doar fiindca au participat la o verificare mai veche.
+        error_count = sum(1 for store in stores if store["error_code"])
+        ok_count = sum(
+            1
+            for store in stores
+            if not store["error_code"]
+            and store["target_status"] == "OK"
+            and store["sales_status"] == "OK"
+        )
+        run_info.update(
+            {
+                "progress_current": len(stores),
+                "progress_total": total_sheets,
+                "ok_count": ok_count,
+                "problem_count": len(stores) - ok_count - error_count,
+                "error_count": error_count,
+            }
+        )
 
     return {
         "month": month,

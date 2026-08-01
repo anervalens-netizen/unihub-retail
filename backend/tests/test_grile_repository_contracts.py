@@ -53,3 +53,38 @@ def test_latest_grile_month_prefers_sales_and_uses_targets_only_as_fallback() ->
 
     repo = GrileRepository(Pool())  # type: ignore[arg-type]
     assert asyncio.run(repo.get_latest_data_month()) == "2026-07"
+
+
+def test_active_grile_reads_require_both_sheet_and_store_to_be_active() -> None:
+    queries: list[str] = []
+
+    class Connection:
+        async def fetch(self, query: str):
+            queries.append(" ".join(query.split()))
+            return []
+
+        async def fetchval(self, query: str) -> int:
+            queries.append(" ".join(query.split()))
+            return 0
+
+    class Acquire:
+        async def __aenter__(self) -> Connection:
+            return Connection()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    class Pool:
+        def acquire(self) -> Acquire:
+            return Acquire()
+
+    repo = GrileRepository(Pool())  # type: ignore[arg-type]
+    asyncio.run(repo.get_active_sheets())
+    asyncio.run(repo.count_active_sheets())
+    asyncio.run(repo.get_sheet_map())
+
+    assert len(queries) == 3
+    for query in queries:
+        assert "JOIN stores s ON s.site_code = gs.site_code" in query
+        assert "gs.is_active = true" in query
+        assert "s.is_active = true" in query

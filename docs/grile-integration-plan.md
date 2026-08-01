@@ -81,6 +81,11 @@ luna următoare. Coloana `G32:G46` rămâne formulă și nu este ștearsă.
 ## Date și identitate
 
 - cheia magazinului este `site_code`; linkul Google permanent nu se recreează;
+- cohorta Grile cere simultan `grile_sheets.is_active = true` și
+  `stores.is_active = true`; un reseed preia starea magazinului și nu poate
+  reactiva grilele locațiilor închise;
+- Overview proiectează ultima verificare pe cohorta Grile activă curentă, fără
+  să rescrie rezultatul istoric persistent;
 - ierarhia și valorile expected provin din Retail DB;
 - lunile API/DB folosesc `YYYY-MM`;
 - auditul de autorizare persistă OIDC `sub`, nu emailul;

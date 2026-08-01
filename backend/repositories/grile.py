@@ -34,6 +34,7 @@ class GrileRepository:
                 FROM grile_sheets gs
                 JOIN stores s ON s.site_code = gs.site_code
                 WHERE gs.is_active = true
+                  AND s.is_active = true
                 ORDER BY gs.site_code
                 """
             )
@@ -41,12 +42,26 @@ class GrileRepository:
     async def count_active_sheets(self) -> int:
         async with self.pool.acquire() as conn:
             return await conn.fetchval(
-                "SELECT count(*) FROM grile_sheets WHERE is_active = true"
+                """
+                SELECT count(*)
+                FROM grile_sheets gs
+                JOIN stores s ON s.site_code = gs.site_code
+                WHERE gs.is_active = true
+                  AND s.is_active = true
+                """
             )
 
     async def get_sheet_map(self) -> dict[str, str]:
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("SELECT site_code, sheet_id FROM grile_sheets")
+            rows = await conn.fetch(
+                """
+                SELECT gs.site_code, gs.sheet_id
+                FROM grile_sheets gs
+                JOIN stores s ON s.site_code = gs.site_code
+                WHERE gs.is_active = true
+                  AND s.is_active = true
+                """
+            )
             return {r["site_code"]: r["sheet_id"] for r in rows}
 
     async def get_latest_data_month(self) -> str | None:

@@ -8,6 +8,9 @@ grile-salarii si NU atinge Google. Default dry-run; `--apply` face upsert.
 
 source_hash = sha256 al registry-ului -> detecteaza drift la reseed (linkurile
 NU ar trebui sa se schimbe).
+
+Starea activa este derivata din `stores.is_active`, astfel incat un reseed sa
+nu reactiveze grilele magazinelor inchise.
 """
 from __future__ import annotations
 
@@ -72,9 +75,16 @@ async def main() -> None:
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
-            valid_codes = {r["site_code"] for r in await conn.fetch("SELECT site_code FROM stores")}
-            matched = [r for r in rows if r["site_code"] in valid_codes]
-            skipped = [r for r in rows if r["site_code"] not in valid_codes]
+            store_activity = {
+                r["site_code"]: bool(r["is_active"])
+                for r in await conn.fetch("SELECT site_code, is_active FROM stores")
+            }
+            matched = [
+                {**r, "is_active": store_activity[r["site_code"]]}
+                for r in rows
+                if r["site_code"] in store_activity
+            ]
+            skipped = [r for r in rows if r["site_code"] not in store_activity]
             for r in skipped:
                 print(f"  SKIP (site_code lipsa in stores): {r['registry_key']} -> {r['site_code']}")
             print(f"de upsertat: {len(matched)}  | skipped: {len(skipped)}")
@@ -87,16 +97,19 @@ async def main() -> None:
                 for r in matched:
                     await conn.execute(
                         """
-                        INSERT INTO grile_sheets (site_code, sheet_id, registry_key, source_hash, updated_at)
-                        VALUES ($1, $2, $3, $4, now())
+                        INSERT INTO grile_sheets (
+                            site_code, sheet_id, registry_key, source_hash, is_active, updated_at
+                        )
+                        VALUES ($1, $2, $3, $4, $5, now())
                         ON CONFLICT (site_code) DO UPDATE SET
                             sheet_id = EXCLUDED.sheet_id,
                             registry_key = EXCLUDED.registry_key,
                             source_hash = EXCLUDED.source_hash,
-                            is_active = true,
+                            is_active = EXCLUDED.is_active,
                             updated_at = now()
                         """,
                         r["site_code"], r["sheet_id"], r["registry_key"], source_hash,
+                        r["is_active"],
                     )
             print(f"APPLIED: {len(matched)} grile_sheets upsertate.")
     finally:
