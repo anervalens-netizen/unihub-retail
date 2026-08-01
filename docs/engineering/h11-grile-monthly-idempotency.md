@@ -60,6 +60,10 @@ The active editable `Suplimentar` input range is `Grila!B32:F46`. Reset
 snapshots, clear payloads and readback verification must cover all 15 rows;
 `G32:G46` remains formula-only and outside the clear payload.
 
+Permanent Grile monetary result cells use integer `ROUND(..., 0)` formulas and
+the `#,##0` number format. Commission, supplemental-pay and salary totals must
+not expose fractional RON; percentage and ratio cells retain their decimals.
+
 The verified reset manifest, successful operation transition and consumption
 of the approved archive manifest commit in one PostgreSQL transaction. If that
 transaction fails, Google values are restored from the snapshots and the
