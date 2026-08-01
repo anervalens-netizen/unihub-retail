@@ -570,6 +570,11 @@ calificate si incentive-ul calculat acum; mecanismele active raman afisate
 separat dedesubt. `Incentive potential` ramane numai in tabelele detaliate si
 exporturi, etichetat explicit ca simulare la realizare 100%. Sumarul separa
 mecanismele active in aceeasi luna si include distributia pe subcategorii.
+Pentru Incentive, cheia randului de agent este `site_code + agent`; un agent
+care apare in doua magazine nu este mutat integral in magazinul principal.
+Cantitatile si valorile pe agent sunt reconciliate la granularitatea canonica
+magazin/produs/perioada, inclusiv dupa retururi, astfel incat suma exportului
+Agenti sa coincida cu exportul Magazine si cu sumarul principal.
 Tabelele din toate subsectiunile Focus, inclusiv
 Concurs si Folii premium, pot fi exportate in Excel. Exporturile Focus pe
 randuri de magazine sau agenti includ explicit `Firma` si `Magazin` cand

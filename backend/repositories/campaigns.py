@@ -416,6 +416,7 @@ class CampaignsRepository:
         regional: str | None,
         asm: str | None,
         site_code: str | None,
+        agent: str | None,
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> list[asyncpg.Record]:
@@ -426,7 +427,7 @@ class CampaignsRepository:
             regional=regional,
             asm=asm,
             site_code=site_code,
-            agent=None,
+            agent=agent,
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
         )

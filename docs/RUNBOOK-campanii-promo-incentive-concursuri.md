@@ -35,6 +35,13 @@ Sub card rămân mecanismele active ale lunii, cu perioadele și regulile lor.
 în exporturi ca simulare la realizare 100%, dar nu înlocuiește niciuna dintre
 cele patru valori ale cardului.
 
+Tabelul și exportul pe agenți se reconciliază cu totalul canonic pe magazine:
+același agent rămâne pe rânduri separate când vinde în magazine diferite, iar
+cantitatea eligibilă pe magazin/produs/perioadă se distribuie ca întreg prin
+metoda celui mai mare rest. Astfel, retururile nu produc valori negative pe
+agent și nici un total mai mare decât magazinul. O diferență fără atribuire se
+afișează explicit ca `Neatribuit`, fără a inventa un agent.
+
 În payload:
 
 - `incentive_sold_qty` = unități vândute;

@@ -445,8 +445,83 @@ class TestPromoIncentivesNoConfig:
         assert result["incentive_product_count"] == 1
         assert len(result["top_agents"]) == 21
         assert result["top_agents"][0].agent_name == "Agent1"
-        assert result["top_agents"][0].incentive_potential == 200.0
+        assert result["top_agents"][0].incentive_potential == 150.0
         assert result["top_stores"][0].incentive_potential == 300.0
+        assert sum(row.qty_sold for row in result["top_agents"]) == result["top_stores"][0].qty
+        assert sum(row.incentive_potential for row in result["top_agents"]) == result["top_stores"][0].incentive_potential
+
+    @pytest.mark.asyncio
+    @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
+    @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
+    @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
+    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    async def test_incentive_agent_rows_remain_scoped_to_each_store(
+        self, mock_mults, mock_summary, mock_inc, mock_promo, mock_config,
+        service_and_conn, mock_repo,
+    ):
+        service, _conn = service_and_conn
+        mock_inc.return_value = {
+            "title": "Incentive Mai", "description": "",
+            "reward_map": {"COD1": 10.0}, "subtitle": None,
+        }
+        mock_mults.return_value = (
+            {"S1": 1.0, "S2": 0.5},
+            {"S1": 1.0, "S2": 0.95},
+        )
+        mock_summary.return_value = PromoIncentiveSummary()
+        mock_repo.fetch_incentive_store_rows.return_value = [
+            FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=2),
+            FakeRow(site_code="S2", locatie="Store 2", firma="F1", item_code="COD1", qty=3),
+        ]
+        mock_repo.fetch_incentive_agent_rows.return_value = [
+            FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=2),
+            FakeRow(agent="Agent1", site_code="S2", locatie="Store 2", firma="F1", item_code="COD1", qty=3),
+        ]
+
+        result = await service.get_promotions_incentives(
+            "2026-05-01", "2026-05-31", None, None, None, None, None
+        )
+
+        assert len(result["top_agents"]) == 2
+        assert {row.store_name.split(" - ")[0] for row in result["top_agents"]} == {"S1", "S2"}
+        for store in result["top_stores"]:
+            site_code = store.store_name.split(" - ")[0]
+            agents = [row for row in result["top_agents"] if row.store_name.startswith(f"{site_code} - ")]
+            assert sum(row.qty_sold for row in agents) == store.qty
+            assert sum(row.val_incentive for row in agents) == store.incentive_value
+
+    @pytest.mark.asyncio
+    @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
+    @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
+    @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
+    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    async def test_agent_returns_reconcile_to_canonical_store_incentive(
+        self, mock_mults, mock_summary, mock_inc, mock_promo, mock_config,
+        service_and_conn, mock_repo,
+    ):
+        service, _conn = service_and_conn
+        mock_inc.return_value = {
+            "title": "Incentive Mai", "description": "",
+            "reward_map": {"COD1": 5.0}, "subtitle": None,
+        }
+        mock_mults.return_value = ({"S1": 1.0}, {"S1": 1.0})
+        mock_summary.return_value = PromoIncentiveSummary()
+        mock_repo.fetch_incentive_store_rows.return_value = [
+            FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=2),
+        ]
+        mock_repo.fetch_incentive_agent_rows.return_value = [
+            FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=3),
+            FakeRow(agent="Agent2", site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=-1),
+        ]
+
+        result = await service.get_promotions_incentives(
+            "2026-05-01", "2026-05-31", None, None, None, None, None
+        )
+
+        assert sum(row.qty_sold for row in result["top_agents"]) == result["top_stores"][0].qty == 2
+        assert sum(row.val_incentive for row in result["top_agents"]) == result["top_stores"][0].incentive_value == 10.0
 
     @pytest.mark.asyncio
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))

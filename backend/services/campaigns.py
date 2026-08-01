@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from decimal import Decimal
 from typing import Any
 
@@ -54,6 +55,88 @@ def _excluded_by_site_item(
     for (site_code, _agent, item_code), units in excluded_units.items():
         out[(site_code, item_code)] = out.get((site_code, item_code), 0) + units
     return out
+
+
+def _allocate_integer_target(
+    quantities: dict[str | None, int],
+    target: int,
+) -> dict[str | None, int]:
+    """Allocate a canonical non-negative store quantity across agent rows."""
+    target = max(0, int(target))
+    normalized = {
+        agent: max(0, int(quantity))
+        for agent, quantity in quantities.items()
+    }
+    current = sum(normalized.values())
+    if current == target:
+        return normalized
+    if current < target:
+        normalized[None] = normalized.get(None, 0) + target - current
+        return normalized
+    if target == 0:
+        return {agent: 0 for agent in normalized}
+
+    allocated = {
+        agent: quantity * target // current
+        for agent, quantity in normalized.items()
+    }
+    remainder = target - sum(allocated.values())
+    ranked = sorted(
+        normalized,
+        key=lambda agent: (
+            -(normalized[agent] * target % current),
+            str(agent or "").casefold(),
+        ),
+    )
+    for agent in ranked[:remainder]:
+        allocated[agent] += 1
+    return allocated
+
+
+def _allocate_currency_targets(
+    values: dict[tuple[str, str], float],
+    store_targets: dict[str, float],
+) -> dict[tuple[str, str], float]:
+    """Round agent currency values while preserving every rounded store total."""
+    by_store: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for key in values:
+        by_store[key[0]].append(key)
+
+    allocated: dict[tuple[str, str], float] = {}
+    for site_code, keys in by_store.items():
+        ordered = sorted(keys, key=lambda key: key[1].casefold())
+        raw_cents = {
+            key: Decimal(str(max(0.0, values[key]))) * Decimal("100")
+            for key in ordered
+        }
+        cents = {key: int(raw_cents[key]) for key in ordered}
+        target_cents = int(round(float(store_targets.get(site_code, 0.0)) * 100))
+        remainder = target_cents - sum(cents.values())
+        ranked_up = sorted(
+            ordered,
+            key=lambda key: (-(raw_cents[key] - cents[key]), key[1].casefold()),
+        )
+        ranked_down = list(reversed(ranked_up))
+        while remainder > 0 and ranked_up:
+            for key in ranked_up:
+                if remainder == 0:
+                    break
+                cents[key] += 1
+                remainder -= 1
+        while remainder < 0 and ranked_down:
+            progressed = False
+            for key in ranked_down:
+                if remainder == 0:
+                    break
+                if cents[key] > 0:
+                    cents[key] -= 1
+                    remainder += 1
+                    progressed = True
+            if not progressed:
+                break
+        for key in ordered:
+            allocated[key] = cents[key] / 100
+    return allocated
 
 
 async def _compute_promotion_result(
@@ -645,10 +728,13 @@ class CampaignsService:
                         regional=regional,
                         asm=asm,
                         site_code=site_code,
+                        agent=agent,
                         current_scope=current_scope,
                         include_closed_stores=include_closed_stores,
                     )
                     store_inc: dict[str, list[Any]] = {}
+                    store_eligible_by_item: dict[tuple[str, str, str, str], int] = {}
+                    store_reward_by_item: dict[tuple[str, str, str, str], float] = {}
                     period_totals: dict[tuple[str, str], list[float]] = {}
                     category_totals: dict[str, list[float]] = {}
                     tier_totals: dict[str, list[float]] = {}
@@ -671,6 +757,9 @@ class CampaignsService:
                         raw_qty = int(row["qty"] or 0)
                         incentive_sold_qty += raw_qty
                         qty = max(0, raw_qty - excluded)
+                        item_key = (period_start, period_end, sc, str(row["item_code"]))
+                        store_eligible_by_item[item_key] = qty
+                        store_reward_by_item[item_key] = reward_val
                         potential = qty * reward_val
                         value = potential * store_multipliers.get(sc, 0)
                         incentive_qty += qty
@@ -760,10 +849,10 @@ class CampaignsService:
                         current_scope=current_scope,
                         include_closed_stores=include_closed_stores,
                     )
-                    agent_inc: dict[str, float] = {}
-                    agent_potential: dict[str, float] = {}
-                    agent_qty: dict[str, int] = {}
-                    agent_site_qty: dict[str, dict[str, int]] = {}
+                    agent_item_quantities: dict[
+                        tuple[str, str, str, str], dict[str | None, int]
+                    ] = {}
+                    agent_item_rewards: dict[tuple[str, str, str, str], float] = {}
                     agent_store_meta: dict[str, tuple[str, str]] = {}
                     for row in agent_item_rows:
                         ag = str(row["agent"])
@@ -777,37 +866,72 @@ class CampaignsService:
                         period_end = row_valid_to.isoformat()
                         excluded = period_excluded_ag.get((period_start, period_end, sc, ag, item_code), 0)
                         q = max(0, int(row["qty"]) - excluded)
-                        potential = q * float(
+                        reward_value = float(
                             row.get("reward_value")
                             or incentive_campaign.get("reward_map", {}).get(item_code, 0)
                         )
-                        val = potential * store_multipliers.get(sc, 0)
-                        agent_inc[ag] = agent_inc.get(ag, 0.0) + val
-                        agent_potential[ag] = agent_potential.get(ag, 0.0) + potential
-                        agent_qty[ag] = agent_qty.get(ag, 0) + q
+                        item_key = (period_start, period_end, sc, item_code)
+                        quantities = agent_item_quantities.setdefault(item_key, {})
+                        quantities[ag] = quantities.get(ag, 0) + q
+                        agent_item_rewards[item_key] = reward_value
                         agent_store_meta[sc] = (loc, firma_val)
-                        agent_site_qty.setdefault(ag, {})
-                        agent_site_qty[ag][sc] = agent_site_qty[ag].get(sc, 0) + q
+
+                    agent_inc: dict[tuple[str, str], float] = {}
+                    agent_potential: dict[tuple[str, str], float] = {}
+                    agent_qty: dict[tuple[str, str], int] = {}
+                    for item_key in sorted(set(store_eligible_by_item) | set(agent_item_quantities)):
+                        sc = item_key[2]
+                        allocated_quantities = _allocate_integer_target(
+                            agent_item_quantities.get(item_key, {}),
+                            store_eligible_by_item.get(item_key, 0),
+                        )
+                        reward_value = agent_item_rewards.get(
+                            item_key,
+                            store_reward_by_item.get(
+                                item_key,
+                                float(
+                                    incentive_campaign.get("reward_map", {}).get(item_key[3], 0)
+                                ),
+                            ),
+                        )
+                        for allocated_agent, quantity in allocated_quantities.items():
+                            label = allocated_agent or "Neatribuit"
+                            agent_key = (sc, label)
+                            potential = quantity * reward_value
+                            value = potential * store_multipliers.get(sc, 0)
+                            agent_qty[agent_key] = agent_qty.get(agent_key, 0) + quantity
+                            agent_potential[agent_key] = agent_potential.get(agent_key, 0.0) + potential
+                            agent_inc[agent_key] = agent_inc.get(agent_key, 0.0) + value
+
+                    allocated_agent_values = _allocate_currency_targets(
+                        agent_inc,
+                        {sc: float(data[1]) for sc, data in store_inc.items()},
+                    )
+                    allocated_agent_potential = _allocate_currency_targets(
+                        agent_potential,
+                        {sc: float(data[4]) for sc, data in store_inc.items()},
+                    )
 
                     agent_rows: list[IncentiveTopAgent] = []
-                    for ag in agent_inc:
-                        site_quantities = agent_site_qty.get(ag, {})
-                        primary_site = max(
-                            site_quantities,
-                            key=lambda site: (site_quantities[site], site),
-                            default="",
+                    for agent_key in agent_inc:
+                        sc, ag = agent_key
+                        loc, firma_val = agent_store_meta.get(
+                            sc,
+                            (
+                                str(store_inc.get(sc, ["", 0.0, ""])[0]),
+                                str(store_inc.get(sc, ["", 0.0, ""])[2]),
+                            ),
                         )
-                        loc, firma_val = agent_store_meta.get(primary_site, ("", ""))
-                        store_name = f"{primary_site} - {loc}" if primary_site and loc else primary_site
+                        store_name = f"{sc} - {loc}" if sc and loc else sc
                         agent_rows.append(
                             IncentiveTopAgent(
                                 agent_name=ag,
                                 store_name=store_name,
                                 firma=firma_val,
-                                qty_sold=agent_qty[ag],
-                                val_incentive=round(agent_inc[ag], 2),
-                                incentive_potential=round(agent_potential[ag], 2),
-                                achievement=store_achievements.get(primary_site),
+                                qty_sold=agent_qty[agent_key],
+                                val_incentive=allocated_agent_values[agent_key],
+                                incentive_potential=allocated_agent_potential[agent_key],
+                                achievement=store_achievements.get(sc),
                             )
                         )
 
