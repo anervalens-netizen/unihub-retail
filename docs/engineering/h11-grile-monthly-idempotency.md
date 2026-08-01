@@ -25,10 +25,14 @@ authorization identity. A verified manifest records the month and operation,
 expected and processed store/agent counts, control totals, zero errors,
 artifact SHA-256 values, source backups and the requesting subject.
 
-Finalization accepts only finite, non-negative required numbers. A missing
-agent, a partially populated slot, duplicate agent, contradictory store
+Finalization accepts only finite, non-negative required numbers. Blank optional
+commission components contribute zero, while nonblank invalid values still
+fail closed. A missing agent, a partially populated slot, duplicate agent, contradictory store
 metadata, incomplete Google response, timeout or retry exhaustion fails the
-operation. The staged workbook is structurally re-read before atomic promotion,
+operation. The only zero-agent exception is a location explicitly marked
+`INCHIS` in Retail whose slot has no worked hours, commissions or extra pay;
+template salary and meal-voucher defaults are ignored for that closed slot.
+The staged workbook is structurally re-read before atomic promotion,
 so a partial artifact never receives the official filename and an existing
 official artifact is preserved as a revision.
 

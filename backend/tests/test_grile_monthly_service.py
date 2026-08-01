@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -38,8 +39,9 @@ def entry(
     sheet_id: str = "sheet-1",
     site_code: str = "SITE01",
     manager: str = "Manager 1",
+    is_closed: bool = False,
 ) -> StoreEntry:
-    return StoreEntry(company, store, sheet_id, site_code, manager)
+    return StoreEntry(company, store, sheet_id, site_code, manager, is_closed)
 
 
 def extracted(*, status: str = "OK", error: str = "") -> ExtractedAgentRow:
@@ -260,6 +262,9 @@ def test_operation_serialization_and_number_helpers() -> None:
             grile.to_number(invalid)
         assert exc_info.value.code == "invalid_numeric_value"
     assert grile.sum_scalars([{"values": [["1,5"]]}, {"values": [[2]]}]) == 3.5
+    assert grile.sum_scalars([{"values": []}, {"values": [[2]]}]) == 2
+    with pytest.raises(grile.MonthlyIntegrityError):
+        grile.sum_scalars([{"values": [["invalid"]]}])
 
 
 @pytest.mark.asyncio
@@ -404,6 +409,47 @@ def test_extract_store_rows_reads_two_slots_and_returns_error_row() -> None:
         entry(),
     )
     assert missing_agent[0].error_code == "missing_or_invalid_agent"
+
+
+def test_closed_store_accepts_only_empty_template_slots() -> None:
+    template_values: list[dict[str, Any]] = []
+    for raw in (
+        ["", 2600, 0, "", 0, 0, 0, 0, 0, 480, 0],
+        ["", 2600, 0, "", 0, 0, 0, 0, 0, 480, 0],
+    ):
+        template_values.extend(
+            {"values": [[value]]} if value != "" else {"values": []}
+            for value in raw
+        )
+
+    closed = entry(is_closed=True)
+    assert grile.extract_store_rows(make_sheets_value_service(template_values), closed) == []
+    assert grile._validate_finalization_coverage([closed], []) == (1, 1, 0, 0, [])
+
+    template_values[-1] = {"values": [[8]]}
+    invalid = grile.extract_store_rows(make_sheets_value_service(template_values), closed)
+    assert invalid[-1].error_code == "missing_or_invalid_agent"
+
+
+def test_public_manifest_payload_serializes_database_timestamps() -> None:
+    timestamp = datetime(2026, 8, 1, 10, 24, tzinfo=timezone.utc)
+    payload = grile.public_manifest_payload(
+        {
+            "id": 1,
+            "operation_id": 4,
+            "closing_month": "2026-07",
+            "operation": "finalize",
+            "status": "failed",
+            "manifest": {"expected": {}, "processed": {}},
+            "created_at": timestamp,
+            "verified_at": None,
+            "approved_at": None,
+            "consumed_at": None,
+        }
+    )
+
+    assert payload["created_at"] == timestamp.isoformat()
+    json.dumps(payload)
 
 
 def test_finalization_coverage_rejects_unexpected_store_and_conflicts() -> None:

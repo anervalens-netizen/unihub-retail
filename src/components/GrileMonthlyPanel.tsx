@@ -75,6 +75,12 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
     }
   }, [jobQuery.data?.status, refetchManifest]);
 
+  useEffect(() => {
+    if (jobQuery.data?.status === 'complete' && jobQuery.data.error) {
+      setError(`Operatia a esuat in worker: ${jobQuery.data.error}`);
+    }
+  }, [jobQuery.data?.error, jobQuery.data?.status]);
+
   // Ascuns complet daca utilizatorul nu e admin grile (gate-ul real e server-side)
   if (perms.data && !perms.data.can_run) return null;
 
@@ -114,7 +120,7 @@ export function GrileMonthlyPanel({ month }: { month: string }) {
         );
         return;
       }
-      setJob({ jobId: res.job_id, op, dryRun });
+      setJob({ jobId: res.job_id, op: res.op, dryRun: res.dry_run ?? dryRun });
     } catch (exc: unknown) {
       setError(getApiErrorMessage(
         exc,

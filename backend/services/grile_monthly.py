@@ -179,6 +179,7 @@ class StoreEntry:
     sheet_id: str
     site_code: str
     manager: str
+    is_closed: bool = False
 
 
 @dataclass
@@ -387,6 +388,7 @@ async def load_entries(pool: asyncpg.Pool, only: str | None = None) -> list[Stor
             sheet_id=r["sheet_id"],
             site_code=r["site_code"],
             manager=(r["asm"] or "Neatribuit").strip() or "Neatribuit",
+            is_closed=str(r["locatie"] or "").strip().upper().startswith("INCHIS "),
         )
         for r in rows
     ]
@@ -649,10 +651,25 @@ def to_number(value: Any, *, field: str = "value") -> float:
 def sum_scalars(value_ranges: list[dict[str, Any]], *, field: str = "value") -> float:
     return float(
         sum(
-            (parse_required_decimal(scalar(vr.get("values", [])), field=field) for vr in value_ranges),
+            (
+                Decimal("0")
+                if scalar(vr.get("values", [])) in (None, "")
+                else parse_required_decimal(scalar(vr.get("values", [])), field=field)
+                for vr in value_ranges
+            ),
             start=Decimal("0"),
         )
     )
+
+
+def _closed_empty_slot(entry: StoreEntry, agent: Any, slot_values: list[Any]) -> bool:
+    """Accept template defaults only for an explicitly closed store with no work."""
+    if not entry.is_closed or agent not in (None, ""):
+        return False
+    # Base salary and meal vouchers are template defaults even without an agent.
+    # Any worked hours, commission or extra payment still requires an agent name.
+    work_values = [*slot_values[2:9], slot_values[10]]
+    return all(value in (None, "", 0, 0.0, False) for value in work_values)
 
 
 def _error_row(
@@ -730,6 +747,8 @@ def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgen
                 for value in slot_values[1:]
             ):
                 continue
+            if _closed_empty_slot(entry, agent, slot_values):
+                continue
             if (
                 not isinstance(agent, str)
                 or not agent.strip()
@@ -766,6 +785,8 @@ def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgen
                     sheet_id=entry.sheet_id,
                 )
             )
+        if not rows and entry.is_closed:
+            return []
         if not rows:
             return [_error_row(entry, slot=0, code="store_has_no_agent")]
         seen_agents: set[str] = set()
@@ -927,6 +948,9 @@ def _validate_finalization_coverage(
     processed_stores = 0
     for site_code in entries_by_site:
         store_rows = rows_by_site.get(site_code, [])
+        if not store_rows and entries_by_site[site_code].is_closed:
+            processed_stores += 1
+            continue
         slot_rows = [row for row in store_rows if row.slot in (1, 2)]
         expected_agents += len(slot_rows)
         valid_rows = [row for row in slot_rows if row.status == "OK"]
@@ -1571,11 +1595,15 @@ def public_manifest_payload(record: dict[str, Any]) -> dict[str, Any]:
         "error_count": record.get("error_count", 0),
         "manifest_sha256": record.get("manifest_sha256"),
         "approved": bool(record.get("approved_by_sub")),
-        "created_at": record.get("created_at"),
-        "verified_at": record.get("verified_at"),
-        "approved_at": record.get("approved_at"),
-        "consumed_at": record.get("consumed_at"),
+        "created_at": _public_timestamp(record.get("created_at")),
+        "verified_at": _public_timestamp(record.get("verified_at")),
+        "approved_at": _public_timestamp(record.get("approved_at")),
+        "consumed_at": _public_timestamp(record.get("consumed_at")),
     }
+
+
+def _public_timestamp(value: Any) -> Any:
+    return value.isoformat() if isinstance(value, datetime) else value
 
 
 async def approve_monthly_manifest(

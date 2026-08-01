@@ -263,19 +263,23 @@ async def grile_monthly_run(
     except GrileMonthlyRetryBlockedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
+    persisted_operation = result.operation or {}
+    effective_op = persisted_operation.get("op") or body.op
+    effective_month = persisted_operation.get("closing_month") or body.month
+    effective_dry_run = bool(persisted_operation.get("dry_run", body.dry_run))
     payload: dict[str, Any] = {
         "status": result.status,
         "job_id": result.job_id,
         "operation_id": result.operation_id,
-        "op": body.op,
-        "month": body.month,
-        "month_label": ro_month_label(body.month),
+        "op": effective_op,
+        "month": effective_month,
+        "month_label": ro_month_label(effective_month),
     }
     if result.operation is not None:
         payload["operation"] = result.operation
-    if body.op == "reset":
-        payload["next_month_label"] = ro_month_label(next_ym(body.month))
-        payload["dry_run"] = body.dry_run
+    if effective_op == "reset":
+        payload["next_month_label"] = ro_month_label(next_ym(effective_month))
+        payload["dry_run"] = effective_dry_run
     return payload
 
 

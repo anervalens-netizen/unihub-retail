@@ -210,9 +210,28 @@ async def grile_monthly_background(
 
     token = bind_request_id(request_id) if request_id else None
     try:
-        from services.grile_monthly import run_monthly_op
+        from services.grile_monthly import fail_monthly_operation, run_monthly_op
 
-        return await run_monthly_op(operation_id=persisted_operation_id)
+        try:
+            return await run_monthly_op(operation_id=persisted_operation_id)
+        except Exception:
+            pool = ctx.get("db_pool")
+            if pool is None:
+                from db.connection import get_pool
+
+                pool = await get_pool()
+            try:
+                await fail_monthly_operation(
+                    pool,
+                    persisted_operation_id,
+                    error_message="Operatia lunara Grile a esuat neasteptat in worker",
+                )
+            except Exception:  # noqa: BLE001 - preserve the original worker failure
+                logger.exception(
+                    "Could not fail unexpected Grile monthly operation operation_id=%s",
+                    persisted_operation_id,
+                )
+            raise
     finally:
         if token is not None:
             reset_request_id(token)

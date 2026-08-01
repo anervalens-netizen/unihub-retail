@@ -57,7 +57,10 @@ diff-ul aprobat. Retry-ul concurent este rezervat în DB și nu poate dubla appl
 Operațiile lunare sunt joburi distincte, rezervate în PostgreSQL înainte de
 enqueue. Finalizarea validează strict toate valorile numerice, registry-ul,
 magazinele și agenții așteptați. Orice eroare, timeout, răspuns Google incomplet,
-agent lipsă sau coverage incomplet marchează operația `failed`; un artefact
+agent lipsă sau coverage incomplet marchează operația `failed`; componentele
+opționale de comision goale sunt zero. O grilă asociată unei locații marcate
+`INCHIS`, fără ore, comisioane sau plăți suplimentare, poate avea zero agenți,
+chiar dacă șablonul păstrează salariul de bază și bonurile implicite. Un artefact
 parțial nu primește calea oficială.
 
 Manifestul persistent conține luna și operația, coverage așteptat/procesat,

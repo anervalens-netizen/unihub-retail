@@ -87,6 +87,35 @@ async def test_monthly_enqueue_uses_oidc_subject_not_email(
 
 
 @pytest.mark.asyncio
+async def test_duplicate_monthly_request_returns_persisted_operation_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueue = AsyncMock(
+        return_value=SimpleNamespace(
+            status="already_running",
+            operation_id=8,
+            job_id="grile-monthly:8",
+            operation={
+                "op": "finalize",
+                "closing_month": "2098-08",
+                "dry_run": False,
+            },
+        )
+    )
+    monkeypatch.setattr(grile_router, "enqueue_grile_monthly", enqueue)
+
+    result = await grile_router.grile_monthly_run(
+        body=grile_router.MonthlyRunRequest(op="archive", month="2098-09", dry_run=False),
+        claims=claims(["synthetic-finalizer"]),
+        _rate_limit=None,
+    )
+
+    assert result["op"] == "finalize"
+    assert result["month"] == "2098-08"
+    assert "next_month_label" not in result
+
+
+@pytest.mark.asyncio
 async def test_manifest_approval_persists_approver_subject(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

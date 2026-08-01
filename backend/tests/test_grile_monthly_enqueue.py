@@ -211,6 +211,30 @@ async def test_monthly_worker_accepts_only_persisted_operation_identity(
     run.assert_awaited_once_with(operation_id=51)
 
 
+async def test_monthly_worker_marks_unexpected_failure_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = TypeError("unexpected serialization failure")
+    run = AsyncMock(side_effect=failure)
+    fail = AsyncMock(return_value=True)
+    db_pool = object()
+    monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
+    monkeypatch.setattr(grile_monthly, "fail_monthly_operation", fail)
+
+    with pytest.raises(TypeError, match="unexpected serialization"):
+        await worker.grile_monthly_background(
+            {"db_pool": db_pool},
+            operation_id=53,
+            request_id=None,
+        )
+
+    fail.assert_awaited_once_with(
+        db_pool,
+        53,
+        error_message="Operatia lunara Grile a esuat neasteptat in worker",
+    )
+
+
 async def test_monthly_worker_normalizes_already_queued_legacy_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
