@@ -799,7 +799,7 @@ class ErpReconciliationService:
         if reference["snapshot"] is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Nu exista un snapshot Retail finalizat pentru luna {import_month}",
+                detail=f"Nu exista date Retail importate cu succes pentru luna {import_month}",
             )
         campaign_summary: PromoIncentiveSummary | None = None
         try:

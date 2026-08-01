@@ -16,6 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
 import { ApiError, getApiErrorMessage } from '../api/client';
 import { pollImportJob } from '../lib/importJobPolling';
+import { formatMonthLabel } from '../lib/dates';
 import { SegmentedTabs } from './common/SegmentedTabs';
 import { TableHeaderCell } from './common/TableHeader';
 
@@ -86,7 +87,7 @@ export function Settings({
   const [promoActualsUploading, setPromoActualsUploading] = useState(false);
   const [promoActualsMessage, setPromoActualsMessage] = useState('');
   const [erpReconciliationFile, setErpReconciliationFile] = useState<File | null>(null);
-  const [erpReconciliationMonth, setErpReconciliationMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [erpReconciliationMonth, setErpReconciliationMonth] = useState('');
   const [erpReconciliationBusy, setErpReconciliationBusy] = useState(false);
   const [erpReconciliationError, setErpReconciliationError] = useState('');
   const [erpReconciliationResult, setErpReconciliationResult] = useState<ErpReconciliationResponse | null>(null);
@@ -130,9 +131,6 @@ export function Settings({
     const cached = getCachedView<{ history: ImportHistoryEntry[] }>(CACHE_KEY, SETTINGS_CACHE_TTL_MS);
     if (cached.value) {
       setHistory(cached.value.history);
-      if (cached.isFresh) {
-        return;
-      }
     }
 
     getImportHistory()
@@ -146,6 +144,27 @@ export function Settings({
         setMessageType('error');
       });
   }, [canImportSales]);
+
+  const erpReconciliationMonths = useMemo(
+    () => Array.from(new Set(
+      history
+        .filter((entry) => entry.status === 'completed')
+        .map((entry) => entry.import_month),
+    )).sort((left, right) => right.localeCompare(left)),
+    [history],
+  );
+
+  useEffect(() => {
+    if (erpReconciliationMonths.length === 0) {
+      setErpReconciliationMonth('');
+      return;
+    }
+    setErpReconciliationMonth((current) => (
+      erpReconciliationMonths.includes(current)
+        ? current
+        : erpReconciliationMonths[0]
+    ));
+  }, [erpReconciliationMonths]);
 
   useEffect(() => {
     if (section !== 'exports' || !canUseExports) return;
@@ -293,6 +312,7 @@ export function Settings({
         // nu trebuie reclasificat drept esec al importului.
       }
       onImportCompleted(response.import_month);
+      setErpReconciliationMonth(response.import_month);
       const parts = [
         `Import ${response.import_month}: ${response.rows_imported} rânduri importate`,
       ];
@@ -574,20 +594,29 @@ export function Settings({
               <h3 className="text-sm font-bold">Verificare raport detaliat ERP</h3>
             </div>
             <p className="mb-3 text-xs text-slate-500">
-              Reconciliere read-only cu Luna în curs și Focus, strict de la ziua 1 până la cutoff-ul din raport. Fișierul nu înlocuiește datele Retail și nu este păstrat pe server.
+              Reconciliere read-only cu luna Retail selectată și Focus, strict de la ziua 1 până la cutoff-ul din raport. Fișierul nu înlocuiește datele Retail și nu este păstrat pe server.
             </p>
             <div className="mb-3 grid gap-2 sm:grid-cols-[180px_1fr]">
               <label className="text-[11px] font-semibold text-slate-500">
                 Luna verificată
-                <input
-                  type="month"
+                <select
                   value={erpReconciliationMonth}
                   onChange={(event) => {
                     setErpReconciliationMonth(event.target.value);
                     setErpReconciliationResult(null);
                   }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                />
+                  disabled={erpReconciliationMonths.length === 0}
+                >
+                  {erpReconciliationMonths.length === 0 && (
+                    <option value="">Niciun import Retail disponibil</option>
+                  )}
+                  {erpReconciliationMonths.map((month) => (
+                    <option key={month} value={month}>
+                      {formatMonthLabel(month, { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label
                 htmlFor="upload-erp-reconciliation-file"
