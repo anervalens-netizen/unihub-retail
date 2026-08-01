@@ -35,6 +35,11 @@ AGENT_TARGET_RANGES = [
     "Grila!D16",  # Agent 2 nume
     "Grila!D22",  # Agent 2 target
 ]
+AGENT_TARGET_RANGES_V3 = [
+    *AGENT_TARGET_RANGES,
+    "Grila!D30",  # Agent 3 nume
+    "Grila!D36",  # Agent 3 target
+]
 
 DEFAULT_ENABLED_MANAGERS = (
     "Andrei Stancu",
@@ -125,7 +130,7 @@ class AgentTargetSyncBlockedError(RuntimeError):
     pass
 
 
-FetchAgentRanges = Callable[[str], list[dict[str, Any]]]
+FetchAgentRanges = Callable[[str, str], list[dict[str, Any]]]
 
 
 def configured_enabled_managers() -> tuple[str, ...]:
@@ -218,9 +223,13 @@ def extract_agent_targets(
     value_ranges: list[dict[str, Any]],
 ) -> list[AgentTargetCandidate]:
     vals = [vr.get("values", []) for vr in value_ranges]
-    slot_specs = (
-        (1, _cell(vals[0], 0, 0) if len(vals) > 0 else None, _cell(vals[1], 0, 0) if len(vals) > 1 else None),
-        (2, _cell(vals[2], 0, 0) if len(vals) > 2 else None, _cell(vals[3], 0, 0) if len(vals) > 3 else None),
+    slot_specs = tuple(
+        (
+            index // 2 + 1,
+            _cell(vals[index], 0, 0),
+            _cell(vals[index + 1], 0, 0),
+        )
+        for index in range(0, len(vals) - 1, 2)
     )
     candidates: list[AgentTargetCandidate] = []
     for slot, raw_name, raw_target in slot_specs:
@@ -323,6 +332,7 @@ async def sync_agent_targets_from_grile(
     disabled_managers = disabled_managers or configured_disabled_managers()
     sheets, skipped = await _load_enabled_sheets(
         pool,
+        month=month,
         enabled_managers=enabled_managers,
         disabled_managers=disabled_managers,
     )
@@ -519,19 +529,23 @@ def _build_target_diff(
 async def _load_enabled_sheets(
     pool: asyncpg.Pool,
     *,
+    month: str,
     enabled_managers: tuple[str, ...],
     disabled_managers: tuple[str, ...],
 ) -> tuple[list[asyncpg.Record], dict[str, int]]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT gs.site_code, gs.sheet_id, gs.registry_key, s.asm AS manager
+            SELECT gs.site_code, gs.sheet_id, gs.registry_key,
+                   gs.template_version, s.asm AS manager
             FROM grile_sheets gs
             JOIN stores s ON s.site_code = gs.site_code
             WHERE gs.is_active = true
               AND s.is_active = true
+              AND (gs.active_from_month IS NULL OR gs.active_from_month <= $1)
             ORDER BY s.asm, gs.site_code
-            """
+            """,
+            month,
         )
     enabled: list[asyncpg.Record] = []
     skipped: dict[str, int] = {}
@@ -571,7 +585,11 @@ async def _read_candidates(
         async with semaphore:
             site_code = sheet["site_code"]
             try:
-                value_ranges = await asyncio.to_thread(fetcher, sheet["sheet_id"])
+                value_ranges = await asyncio.to_thread(
+                    fetcher,
+                    sheet["sheet_id"],
+                    sheet.get("template_version", "v2"),
+                )
                 candidates.extend(
                     extract_agent_targets(
                         month=month,
@@ -608,7 +626,7 @@ def _build_google_fetcher(concurrency: int) -> FetchAgentRanges:
             local.sheets, _ = build_services()
         return local.sheets
 
-    def fetch(sheet_id: str) -> list[dict[str, Any]]:
+    def fetch(sheet_id: str, template_version: str) -> list[dict[str, Any]]:
         with lock:
             elapsed = time.monotonic() - last_call["ts"]
             if elapsed < min_interval:
@@ -618,7 +636,11 @@ def _build_google_fetcher(concurrency: int) -> FetchAgentRanges:
         return _retry_sync(
             lambda: sheets_svc.spreadsheets().values().batchGet(
                 spreadsheetId=sheet_id,
-                ranges=AGENT_TARGET_RANGES,
+                ranges=(
+                    AGENT_TARGET_RANGES_V3
+                    if template_version == "v3"
+                    else AGENT_TARGET_RANGES
+                ),
                 valueRenderOption="UNFORMATTED_VALUE",
             ).execute().get("valueRanges", []),
             attempts=GOOGLE_API_RETRY_ATTEMPTS,

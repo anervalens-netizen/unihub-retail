@@ -115,6 +115,22 @@ RESET_RANGES = [
     "Grila!F26:F28",
     "Pontaj!C8:AG31",
 ]
+RESET_RANGES_V3 = [
+    "Grila!D8",
+    "Grila!D22",
+    "Grila!D36",
+    "Grila!P5:P50",
+    "Grila!Q5:S50",
+    "Grila!U5:U50",
+    "Grila!V5:X50",
+    "Grila!Z5:Z50",
+    "Grila!AA5:AC50",
+    "Grila!B46:F60",
+    "Grila!F12:F14",
+    "Grila!F26:F28",
+    "Grila!F40:F42",
+    "Pontaj!C8:AG31",
+]
 GRILA_CELLS = {
     1: {
         "agent": "D2",
@@ -133,6 +149,18 @@ GRILA_CELLS = {
         "extra_hours_pay": "G24",
         "extra_location_commission": "G25",
         "worked_hours": "Pontaj!AH11",
+    },
+}
+GRILA_CELLS_V3 = {
+    **GRILA_CELLS,
+    3: {
+        "agent": "D30",
+        "base_salary": "D31",
+        "sales_commission_cells": ["G36", "G37", "G40", "G41", "G42"],
+        "bonuri": "D32",
+        "extra_hours_pay": "G38",
+        "extra_location_commission": "G39",
+        "worked_hours": "Pontaj!AH14",
     },
 }
 HEADERS = [
@@ -180,6 +208,15 @@ class StoreEntry:
     site_code: str
     manager: str
     is_closed: bool = False
+    template_version: str = "v2"
+
+
+def cells_for_entry(entry: StoreEntry) -> dict[int, dict[str, Any]]:
+    return GRILA_CELLS_V3 if entry.template_version == "v3" else GRILA_CELLS
+
+
+def reset_ranges_for_entry(entry: StoreEntry) -> list[str]:
+    return list(RESET_RANGES_V3 if entry.template_version == "v3" else RESET_RANGES)
 
 
 @dataclass
@@ -363,7 +400,12 @@ def _store_from_values(registry_key: str | None, fallback: str | None) -> str:
     return (fallback or "").strip()
 
 
-async def load_entries(pool: asyncpg.Pool, only: str | None = None) -> list[StoreEntry]:
+async def load_entries(
+    pool: asyncpg.Pool,
+    only: str | None = None,
+    *,
+    month: str | None = None,
+) -> list[StoreEntry]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -373,13 +415,16 @@ async def load_entries(pool: asyncpg.Pool, only: str | None = None) -> list[Stor
                 gs.registry_key,
                 s.locatie,
                 s.firma,
-                s.asm
+                s.asm,
+                gs.template_version
             FROM grile_sheets gs
             JOIN stores s ON s.site_code = gs.site_code
             WHERE gs.is_active = true
               AND s.is_active = true
+              AND ($1::TEXT IS NULL OR gs.active_from_month IS NULL OR gs.active_from_month <= $1)
             ORDER BY COALESCE(gs.registry_key, s.firma || '/' || s.locatie)
-            """
+            """,
+            month,
         )
 
     entries = [
@@ -390,6 +435,7 @@ async def load_entries(pool: asyncpg.Pool, only: str | None = None) -> list[Stor
             site_code=r["site_code"],
             manager=(r["asm"] or "Neatribuit").strip() or "Neatribuit",
             is_closed=str(r["locatie"] or "").strip().upper().startswith("INCHIS "),
+            template_version=r.get("template_version") or "v2",
         )
         for r in rows
     ]
@@ -526,10 +572,10 @@ async def ensure_reset_items(
                 sheet_id=entry.sheet_id,
                 company=entry.company,
                 store=entry.store,
+                ranges=tuple(reset_ranges_for_entry(entry)),
             )
             for entry in entries
         ],
-        ranges=RESET_RANGES,
     )
 
 
@@ -701,8 +747,7 @@ def _error_row(
 def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgentRow]:
     def read_values() -> list[dict[str, Any]]:
         ranges = []
-        for slot in (1, 2):
-            cells = GRILA_CELLS[slot]
+        for cells in cells_for_entry(entry).values():
             ranges += [
                 f"Grila!{cells['agent']}",
                 f"Grila!{cells['base_salary']}",
@@ -734,7 +779,7 @@ def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgen
         )
         rows: list[ExtractedAgentRow] = []
         idx = 0
-        for slot in (1, 2):
+        for slot in cells_for_entry(entry):
             slot_ranges = value_ranges[idx : idx + 11]
             idx += 11
             slot_values = [scalar(item.get("values", [])) for item in slot_ranges]
@@ -952,7 +997,8 @@ def _validate_finalization_coverage(
         if not store_rows and entries_by_site[site_code].is_closed:
             processed_stores += 1
             continue
-        slot_rows = [row for row in store_rows if row.slot in (1, 2)]
+        valid_slots = set(cells_for_entry(entries_by_site[site_code]))
+        slot_rows = [row for row in store_rows if row.slot in valid_slots]
         expected_agents += len(slot_rows)
         valid_rows = [row for row in slot_rows if row.status == "OK"]
         processed_agents += len(valid_rows)
@@ -1013,7 +1059,11 @@ def _control_totals(rows: list[ExtractedAgentRow]) -> dict[str, str]:
 def _source_registry(entries: list[StoreEntry]) -> list[dict[str, str]]:
     return sorted(
         (
-            {"site_code": entry.site_code, "sheet_id": entry.sheet_id}
+            {
+                "site_code": entry.site_code,
+                "sheet_id": entry.sheet_id,
+                "template_version": entry.template_version,
+            }
             for entry in entries
         ),
         key=lambda item: (item["site_code"], item["sheet_id"]),
@@ -1092,7 +1142,7 @@ async def _finalize_month_execution(
     only: str | None = None,
     delay: float = 1.1,
 ) -> MonthlyExecution:
-    entries = await load_entries(pool, only=only)
+    entries = await load_entries(pool, only=only, month=month_key)
     metadata = {(e.company, e.store): {"Manager": e.manager} for e in entries}
     sheets_svc, _ = build_google_services()
     all_rows: list[ExtractedAgentRow] = []
@@ -1197,6 +1247,7 @@ def export_sheet_xlsx(drive_service: Any, entry: StoreEntry, output_path: Path) 
         "site_code": entry.site_code,
         "manager": entry.manager,
         "sheet_id": entry.sheet_id,
+        "template_version": entry.template_version,
         "status": "OK",
         "xlsx_path": str(output_path),
         "bytes": 0,
@@ -1411,7 +1462,7 @@ async def _archive_month_execution(
     validate_verified_manifest(final_manifest, operation="finalize")
     verify_artifacts(final_manifest, root=OUTPUTS_DIR)
 
-    entries = await load_entries(pool)
+    entries = await load_entries(pool, month=month_key)
     expected = final_manifest["expected"]
     finalized_registry = final_manifest.get("source_registry")
     current_registry = _source_registry(entries)
@@ -1469,6 +1520,7 @@ async def _archive_month_execution(
                     "site_code": entry.site_code,
                     "manager": entry.manager,
                     "sheet_id": entry.sheet_id,
+                    "template_version": entry.template_version,
                     "status": "ERROR",
                     "xlsx_path": "",
                     "bytes": 0,
@@ -1511,7 +1563,11 @@ async def _archive_month_execution(
                 staged_archive_dir=staged_archive_dir,
                 official_archive_dir=official_archive_dir,
                 kind="source_workbook",
-                extra={"site_code": result["site_code"], "sheet_id": result["sheet_id"]},
+                extra={
+                    "site_code": result["site_code"],
+                    "sheet_id": result["sheet_id"],
+                    "template_version": result.get("template_version", "v2"),
+                },
             )
             for result in results
         ]
@@ -1647,15 +1703,17 @@ async def approve_monthly_manifest(
 
 
 def _read_reset_snapshot(sheets_svc: Any, entry: StoreEntry) -> dict[str, Any]:
+    reset_ranges = reset_ranges_for_entry(entry)
+
     def read() -> dict[str, Any]:
         response = sheets_svc.spreadsheets().values().batchGet(
             spreadsheetId=entry.sheet_id,
-            ranges=list(RESET_RANGES),
+            ranges=reset_ranges,
             valueRenderOption="FORMULA",
             dateTimeRenderOption="SERIAL_NUMBER",
         ).execute()
         value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
-        if not isinstance(value_ranges, list) or len(value_ranges) != len(RESET_RANGES):
+        if not isinstance(value_ranges, list) or len(value_ranges) != len(reset_ranges):
             raise MonthlyIntegrityError(
                 "backup_response_incomplete",
                 "Google backup response is incomplete",
@@ -1714,6 +1772,7 @@ def _verify_reset_cleared(sheets_svc: Any, entry: StoreEntry) -> None:
 
 
 def reset_store(sheets_svc: Any | None, entry: StoreEntry, *, dry_run: bool) -> dict[str, Any]:
+    reset_ranges = reset_ranges_for_entry(entry)
     result = {
         "company": entry.company,
         "store": entry.store,
@@ -1721,7 +1780,7 @@ def reset_store(sheets_svc: Any | None, entry: StoreEntry, *, dry_run: bool) -> 
         "sheet_id": entry.sheet_id,
         "status": "DRY_RUN" if dry_run else "OK",
         "error": "",
-        "ranges": list(RESET_RANGES),
+        "ranges": reset_ranges,
     }
     if dry_run:
         return result
@@ -1731,7 +1790,7 @@ def reset_store(sheets_svc: Any | None, entry: StoreEntry, *, dry_run: bool) -> 
         def clear() -> dict[str, Any]:
             return sheets_svc.spreadsheets().values().batchClear(
                 spreadsheetId=entry.sheet_id,
-                body={"ranges": list(RESET_RANGES)},
+                body={"ranges": reset_ranges},
             ).execute()
 
         retry_api(
@@ -1862,7 +1921,7 @@ async def _reset_month_execution(
     validate_verified_manifest(archive_manifest, operation="archive")
     verify_artifacts(archive_manifest, root=OUTPUTS_DIR)
 
-    entries = await load_entries(pool, only=only)
+    entries = await load_entries(pool, only=only, month=closing_month_key)
     expected = archive_manifest["expected"]
     source_backups = archive_manifest.get("source_backups")
     archived_by_site = {
@@ -1880,6 +1939,8 @@ async def _reset_month_execution(
         or len(source_backups) != len(entries)
         or any(
             archived_by_site[entry.site_code].get("sheet_id") != entry.sheet_id
+            or archived_by_site[entry.site_code].get("template_version", "v2")
+            != entry.template_version
             for entry in entries
         )
     ):
@@ -1932,13 +1993,18 @@ async def _reset_month_execution(
                     "closing_month": closing_month_key,
                     "site_code": entry.site_code,
                     "sheet_id": entry.sheet_id,
+                    "template_version": entry.template_version,
                     "snapshot": snapshot,
                     "snapshot_sha256": snapshot_sha256(snapshot),
                     "created_at": utc_now(),
                 }
                 secure_write_json(backup_path, payload)
                 artifact = relative_artifact(backup_path, root=OUTPUTS_DIR, kind="reset_source_snapshot")
-                artifact.update({"site_code": entry.site_code, "sheet_id": entry.sheet_id})
+                artifact.update({
+                    "site_code": entry.site_code,
+                    "sheet_id": entry.sheet_id,
+                    "template_version": entry.template_version,
+                })
                 backup_artifacts.append(artifact)
                 recorded = await record_reset_item_backup(
                     pool,

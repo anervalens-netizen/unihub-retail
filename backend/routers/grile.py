@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from auth import AuthClaims, require_auth
@@ -16,7 +16,7 @@ from privileged_access import (
 )
 from rate_limits import GRILE_JOB_LIMIT, rate_limit
 from repositories.grile import GrileRepository
-from services.grile import _run_to_dict, get_overview, resolve_month
+from services.grile import _run_to_dict, get_overview, refresh_grile_store, resolve_month
 from services.grile_monthly import (
     GrileMonthlyRetryBlockedError,
     MonthlyIntegrityError,
@@ -84,6 +84,27 @@ async def grile_run_status(
     repo = GrileRepository(pool)
     latest = await repo.get_latest_run(await resolve_month(pool, month))
     return {"run": _run_to_dict(latest) if latest is not None else None}
+
+
+@router.post("/stores/{site_code}/refresh")
+async def grile_store_refresh(
+    site_code: str = Path(pattern=r"^[A-Za-z0-9_-]{1,64}$"),
+    month: str | None = Query(default=None),
+    claims: AuthClaims = Depends(require_auth),
+    _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
+) -> dict[str, Any]:
+    pool = await get_pool()
+    resolved = await resolve_month(pool, month)
+    try:
+        result = await refresh_grile_store(
+            pool,
+            month=resolved,
+            site_code=site_code,
+            requested_by_sub=claims.sub,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return {"month": resolved, **result}
 
 
 # ── inchidere luna (WRITE Google Sheets — doar admin) ──────────────────────────

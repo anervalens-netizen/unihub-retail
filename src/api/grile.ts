@@ -30,6 +30,7 @@ export interface GrileStore {
   team_leader_name: string;
   completion_pct: number | null;
   last_edit: string | null;
+  checked_at: string | null;
   grila_target: number | null;
   grila_sales: number | null;
   db_target: number | null;
@@ -95,6 +96,19 @@ export async function getGrileRunStatus(month?: string): Promise<{ run: GrileRun
   const { data } = await client.get<{ run: GrileRun | null }>('/api/grile/run-status', {
     params: month ? { month } : {},
   });
+  return data;
+}
+
+export async function refreshGrileStore(
+  month: string,
+  siteCode: string,
+): Promise<{ month: string; site_code: string; changed: boolean; status: 'ok' | 'error' }> {
+  const { data } = await client.post<{
+    month: string;
+    site_code: string;
+    changed: boolean;
+    status: 'ok' | 'error';
+  }>(`/api/grile/stores/${encodeURIComponent(siteCode)}/refresh`, {}, { params: { month } });
   return data;
 }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from services.grile_sheets import GRILA_RANGES, analyze_grila
+from services.grile_sheets import GRILA_RANGES, GRILA_RANGES_V3, analyze_grila
 
 
 def _ranges(
@@ -72,3 +72,21 @@ def test_analyze_grila_counts_suplimentar_day_from_last_extended_row() -> None:
 
     assert reading.missing_days == [1]
     assert reading.completion_pct == 50.0
+
+
+def test_v3_completion_counts_agent3_and_shifted_supplemental_range() -> None:
+    assert "Grila!Z5:Z35" in GRILA_RANGES_V3
+    assert "Grila!B46:G60" in GRILA_RANGES_V3
+    reading = analyze_grila(
+        [
+            {"values": [[100]]},
+            {"values": [[50]]},
+            {"values": []},
+            {"values": []},
+            {"values": [[10], [20]]},
+            {"values": []},
+        ],
+        as_of=datetime(2026, 8, 3),
+    )
+    assert reading.completion_pct == 100.0
+    assert reading.missing_days == []

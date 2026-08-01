@@ -6,6 +6,7 @@ from services.spreadsheet_safety import TrustedFormula
 from services.grile_monthly import (
     ExtractedAgentRow,
     RESET_RANGES,
+    RESET_RANGES_V3,
     StoreEntry,
     build_store_export_path,
     build_workbook,
@@ -25,6 +26,16 @@ def test_reset_ranges_clear_manual_pontaj_without_total_column():
     assert "Grila!B32:F37" not in RESET_RANGES
     assert "Grila!G10" not in joined
     assert "Grila!G24" not in joined
+
+
+def test_v3_reset_ranges_include_agent3_and_shifted_supplemental_section():
+    joined = " ".join(RESET_RANGES_V3)
+    assert "Grila!D36" in RESET_RANGES_V3
+    assert "Grila!Z5:Z50" in RESET_RANGES_V3
+    assert "Grila!AA5:AC50" in RESET_RANGES_V3
+    assert "Grila!B46:F60" in RESET_RANGES_V3
+    assert "Grila!F40:F42" in RESET_RANGES_V3
+    assert "Pontaj!AH" not in joined
 
 
 def test_ro_month_label_and_safe_filename():

@@ -46,6 +46,7 @@ class ResetItemInput:
     sheet_id: str
     company: str
     store: str
+    ranges: Sequence[str]
 
 
 def operation_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
@@ -695,9 +696,7 @@ async def ensure_reset_items(
     closing_month: str,
     next_month: str,
     entries: Sequence[ResetItemInput],
-    ranges: Sequence[str],
 ) -> None:
-    encoded_ranges = json.dumps(list(ranges), ensure_ascii=False)
     async with pool.acquire() as conn:
         await conn.executemany(
             """
@@ -717,7 +716,7 @@ async def ensure_reset_items(
                     entry.sheet_id,
                     entry.company,
                     entry.store,
-                    encoded_ranges,
+                    json.dumps(list(entry.ranges), ensure_ascii=False),
                 )
                 for entry in entries
             ],

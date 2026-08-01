@@ -59,11 +59,11 @@ def test_active_grile_reads_require_both_sheet_and_store_to_be_active() -> None:
     queries: list[str] = []
 
     class Connection:
-        async def fetch(self, query: str):
+        async def fetch(self, query: str, *_args: object):
             queries.append(" ".join(query.split()))
             return []
 
-        async def fetchval(self, query: str) -> int:
+        async def fetchval(self, query: str, *_args: object) -> int:
             queries.append(" ".join(query.split()))
             return 0
 
@@ -79,12 +79,13 @@ def test_active_grile_reads_require_both_sheet_and_store_to_be_active() -> None:
             return Acquire()
 
     repo = GrileRepository(Pool())  # type: ignore[arg-type]
-    asyncio.run(repo.get_active_sheets())
-    asyncio.run(repo.count_active_sheets())
-    asyncio.run(repo.get_sheet_map())
+    asyncio.run(repo.get_active_sheets("2026-07"))
+    asyncio.run(repo.count_active_sheets("2026-07"))
+    asyncio.run(repo.get_sheet_map("2026-07"))
 
     assert len(queries) == 3
     for query in queries:
         assert "JOIN stores s ON s.site_code = gs.site_code" in query
         assert "gs.is_active = true" in query
         assert "s.is_active = true" in query
+        assert "gs.active_from_month" in query

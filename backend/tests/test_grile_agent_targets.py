@@ -93,3 +93,23 @@ def test_build_resolved_rows_uses_safe_matches_without_sum_validation() -> None:
         ("POPESCUANA", Decimal("10000.00")),
         ("IONESCUM", Decimal("50000.00")),
     ]
+
+
+def test_extract_agent_targets_supports_third_agent_slot() -> None:
+    candidates = extract_agent_targets(
+        month="2026-08",
+        site_code="SUNPLZ",
+        manager="Manager",
+        source_store_key="Mobiup/SUNPLAZA BUCURESTI",
+        value_ranges=[
+            _range("Agent Unu"), _range(100),
+            _range("Agent Doi"), _range(200),
+            _range("Agent Trei"), _range(300),
+        ],
+    )
+
+    assert [(item.slot, item.target_value) for item in candidates] == [
+        (1, Decimal("100.00")),
+        (2, Decimal("200.00")),
+        (3, Decimal("300.00")),
+    ]

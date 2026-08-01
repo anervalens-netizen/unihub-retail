@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import {
   getGrileOverview,
+  refreshGrileStore,
   runGrileCheck,
   type GrileManager,
   type GrileStore,
@@ -173,13 +174,30 @@ function MobileField({ label, children }: { label: string; children: ReactNode }
 }
 
 // ── Rând magazin: card stivuit pe mobil, grid dens pe desktop (lg+) ───────────
-function StoreRow({ s }: { s: GrileStore }) {
+function StoreRow({ s, month }: { s: GrileStore; month: string }) {
   const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const refreshMut = useMutation({
+    mutationFn: () => refreshGrileStore(month, s.site_code),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['grile-overview', month] }),
+  });
   const url = s.sheet_id ? `https://docs.google.com/spreadsheets/d/${s.sheet_id}` : null;
   const st = statusInfo(s);
   const missing = s.missing_days ?? [];
   const hasDetail = missing.length > 0 || !!s.error_message;
   const toggle = () => setOpen((v) => !v);
+  const refreshButton = (
+    <button
+      type="button"
+      onClick={() => refreshMut.mutate()}
+      disabled={refreshMut.isPending}
+      title={`Verifică doar ${s.locatie}`}
+      aria-label={`Reîmprospătează grila ${s.locatie}`}
+      className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-wait disabled:opacity-60 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
+    >
+      <RefreshCw className={cn('h-3.5 w-3.5', refreshMut.isPending && 'animate-spin')} />
+    </button>
+  );
 
   // Nume = link la grila (partajat mobil/desktop)
   const nameEl = url ? (
@@ -215,9 +233,16 @@ function StoreRow({ s }: { s: GrileStore }) {
           <div className="flex min-w-0 items-center gap-1">
             <FirmaBadge firma={s.firma} />
             {nameEl}
+            {refreshButton}
           </div>
           <div className="flex-shrink-0">{statusBadge}</div>
         </div>
+        {refreshMut.data && (
+          <div className="mt-1 text-[10px] text-slate-400">
+            Verificare: {refreshMut.data.changed ? 'grila a fost actualizată' : 'fără modificări'}
+          </div>
+        )}
+        {refreshMut.isError && <div className="mt-1 text-[10px] text-rose-500">Verificarea a eșuat</div>}
         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
           <MobileField label="Completare">
             <CompletionBadge pct={s.completion_pct} hasDetail={hasDetail} open={open} onToggle={toggle} />
@@ -240,6 +265,13 @@ function StoreRow({ s }: { s: GrileStore }) {
         <div className="flex items-center gap-1 truncate">
           <FirmaBadge firma={s.firma} />
           {nameEl}
+          {refreshButton}
+          {refreshMut.data && (
+            <span className="flex-shrink-0 text-[10px] text-slate-400">
+              {refreshMut.data.changed ? 'actualizată' : 'fără modificări'}
+            </span>
+          )}
+          {refreshMut.isError && <span className="flex-shrink-0 text-[10px] text-rose-500">eroare</span>}
         </div>
         <div className="flex items-center justify-center gap-1">
           <CompletionBadge pct={s.completion_pct} hasDetail={hasDetail} open={open} onToggle={toggle} />
@@ -286,7 +318,7 @@ function DesktopTableHeader() {
 }
 
 // ── Grup Team Leader (pliabil ca managerul; fara bara cand nu exista TL) ──────
-function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
+function TeamLeaderGroup({ tl, month }: { tl: GrileTeamLeader; month: string }) {
   const storageKey = `unihub_grile_tl_${tl.name ?? 'fara-tl'}`;
   const [open, setOpen] = useState(() => localStorage.getItem(storageKey) !== 'closed');
   const toggleOpen = () => setOpen((value) => {
@@ -296,7 +328,7 @@ function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
   });
 
   const stores = tl.firms.flatMap((f) =>
-    f.stores.map((s) => <StoreRow key={s.site_code} s={s} />),
+    f.stores.map((s) => <StoreRow key={s.site_code} s={s} month={month} />),
   );
 
   // Magazine fara Team Leader: apar direct sub manager, fara rand/bara TL
@@ -319,7 +351,7 @@ function TeamLeaderGroup({ tl }: { tl: GrileTeamLeader }) {
 }
 
 // ── Grup manager (ASM) ────────────────────────────────────────────────────────
-function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) {
+function ManagerGroup({ m, filter, month }: { m: GrileManager; filter: StatusFilter; month: string }) {
   const storageKey = `unihub_grile_manager_${m.name}`;
   const [open, setOpen] = useState(() => localStorage.getItem(storageKey) !== 'closed');
   const toggleOpen = () => setOpen((value) => {
@@ -385,7 +417,7 @@ function ManagerGroup({ m, filter }: { m: GrileManager; filter: StatusFilter }) 
       {open && (
         <div className="bg-white dark:bg-slate-900">
           {filteredTLs.map((tl, i) => (
-            <TeamLeaderGroup key={tl.name ?? `__no_tl_${i}`} tl={tl} />
+            <TeamLeaderGroup key={tl.name ?? `__no_tl_${i}`} tl={tl} month={month} />
           ))}
         </div>
       )}
@@ -548,7 +580,9 @@ export function GrileSubtab() {
             Nicio dată. Rulează o verificare pentru luna selectată.
           </div>
         )}
-        {data?.managers.map((m) => <ManagerGroup key={m.name} m={m} filter={filter} />)}
+        {data?.managers.map((m) => (
+          <ManagerGroup key={m.name} m={m} filter={filter} month={month || data.month} />
+        ))}
       </div>
     </div>
   );

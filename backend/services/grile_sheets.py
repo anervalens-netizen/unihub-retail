@@ -32,6 +32,14 @@ GRILA_RANGES = [
     "Grila!U5:U35",    # 3: vanzari zilnice Agent 2
     "Grila!B32:G46",   # 4: sectiunea Suplimentar (15 randuri; D=data, E=target, F=realizat)
 ]
+GRILA_RANGES_V3 = [
+    "Grila!K5",        # 0: target magazin
+    "Grila!L5",        # 1: realizat magazin
+    "Grila!P5:P35",    # 2: vanzari zilnice Agent 1
+    "Grila!U5:U35",    # 3: vanzari zilnice Agent 2
+    "Grila!Z5:Z35",    # 4: vanzari zilnice Agent 3
+    "Grila!B46:G60",   # 5: sectiunea Suplimentar mutata in schema v3
+]
 
 
 def _sa_file() -> str:
@@ -135,13 +143,13 @@ def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None 
     grila_target = _to_number(_cell(vals[0], 0, 0)) if len(vals) > 0 else None
     grila_sales = _to_number(_cell(vals[1], 0, 0)) if len(vals) > 1 else None
 
-    a1_daily = [_cell(vals[2], i, 0) for i in range(31)] if len(vals) > 2 else [None] * 31
-    a2_daily = [_cell(vals[3], i, 0) for i in range(31)] if len(vals) > 3 else [None] * 31
+    daily_ranges = vals[2:-1] if len(vals) >= 5 else []
 
     days_from_supl: set[int] = set()
-    if len(vals) > 4:
+    if len(vals) >= 5:
+        supplemental = vals[-1]
         for i in range(15):
-            d = _parse_day(_cell(vals[4], i, 2))  # col D = data
+            d = _parse_day(_cell(supplemental, i, 2))  # col D = data
             if d:
                 days_from_supl.add(d)
 
@@ -151,9 +159,11 @@ def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None 
     missing_days: list[int] = []
     for d in range(1, days_elapsed + 1):
         idx = d - 1
-        has_a1 = _to_number(a1_daily[idx] if idx < len(a1_daily) else None) is not None
-        has_a2 = _to_number(a2_daily[idx] if idx < len(a2_daily) else None) is not None
-        if has_a1 or has_a2 or d in days_from_supl:
+        has_daily = any(
+            _to_number(_cell(daily, idx, 0)) is not None
+            for daily in daily_ranges
+        )
+        if has_daily or d in days_from_supl:
             covered += 1
         else:
             missing_days.append(d)
@@ -168,11 +178,15 @@ def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None 
     )
 
 
-def fetch_grila(sheets_svc: Any, sheet_id: str) -> list[dict[str, Any]]:
+def fetch_grila(
+    sheets_svc: Any,
+    sheet_id: str,
+    template_version: str = "v2",
+) -> list[dict[str, Any]]:
     """Un batchGet UNFORMATTED per spreadsheet (sincron)."""
     return sheets_svc.spreadsheets().values().batchGet(
         spreadsheetId=sheet_id,
-        ranges=GRILA_RANGES,
+        ranges=GRILA_RANGES_V3 if template_version == "v3" else GRILA_RANGES,
         valueRenderOption="UNFORMATTED_VALUE",
     ).execute().get("valueRanges", [])
 

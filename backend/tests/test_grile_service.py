@@ -77,14 +77,15 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
             "sales_status": "OK",
             "error_code": None,
             "error_message": None,
-            "raw_summary": None,
+                "raw_summary": None,
+                "checked_at": None,
         }
 
     class Repository:
         def __init__(self, _pool) -> None:
             pass
 
-        async def count_active_sheets(self) -> int:
+        async def count_active_sheets(self, _month: str) -> int:
             return 2
 
         async def get_latest_run(self, _month: str):
@@ -102,10 +103,10 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
                 for code in ("ACTIVE_OK", "ACTIVE_PROBLEM", "CLOSED")
             }
 
-        async def get_sheet_map(self):
+        async def get_sheet_map(self, _month: str):
             return {"ACTIVE_OK": "sheet-a", "ACTIVE_PROBLEM": "sheet-b"}
 
-        async def get_run_statuses(self, _run_id: int):
+        async def get_current_statuses(self, _month: str):
             return [
                 status("ACTIVE_OK", ok=True),
                 status("ACTIVE_PROBLEM", ok=False),
@@ -130,3 +131,55 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
         for store in firm["stores"]
     }
     assert visible == {"ACTIVE_OK", "ACTIVE_PROBLEM"}
+
+
+def test_store_refresh_detects_unchanged_content_without_mutating_full_run(monkeypatch) -> None:
+    values = [
+        {"values": [[100]]},
+        {"values": [[50]]},
+        {"values": []},
+        {"values": []},
+        {"values": []},
+    ]
+    persisted: list[dict] = []
+
+    class Repository:
+        def __init__(self, _pool) -> None:
+            pass
+
+        async def get_active_sheet(self, site_code: str, month: str):
+            assert (site_code, month) == ("SITE01", "2026-07")
+            return {
+                "site_code": site_code,
+                "sheet_id": "sheet-1",
+                "template_version": "v2",
+            }
+
+        async def get_expected_by_site(self, _month: str):
+            return {"SITE01": {"db_target": 100, "db_sales_mtd": 50}}
+
+        async def get_current_status(self, _month: str, _site_code: str):
+            return {"content_sha256": grile._content_sha256(values)}
+
+        async def upsert_current_status(self, **kwargs):
+            persisted.append(kwargs)
+
+    monkeypatch.setattr(grile, "GrileRepository", Repository)
+    monkeypatch.setattr(grile, "get_credentials", lambda: object())
+    monkeypatch.setattr(grile, "build_services", lambda: (object(), object()))
+    monkeypatch.setattr(grile, "fetch_grila", lambda *_args: values)
+    monkeypatch.setattr(grile, "fetch_mod_time", lambda *_args: None)
+
+    result = asyncio.run(
+        grile.refresh_grile_store(
+            object(),
+            month="2026-07",
+            site_code="SITE01",
+            requested_by_sub="subject",
+        )
+    )
+
+    assert result == {"site_code": "SITE01", "changed": False, "status": "ok"}
+    assert len(persisted) == 1
+    assert persisted[0]["month"] == "2026-07"
+    assert persisted[0]["checked_by_sub"] == "subject"

@@ -56,7 +56,26 @@ def load_mapping() -> tuple[list[dict], str, list[str]]:
         if not isinstance(sheet_id, str) or not sheet_id.strip():
             warnings.append(f"sheet_id invalid: {key}")
             continue
-        rows.append({"site_code": cod, "sheet_id": sheet_id.strip(), "registry_key": key})
+        template_version = str(meta.get("template_version") or "v2").strip()
+        if template_version not in {"v2", "v3"}:
+            warnings.append(f"template_version invalid: {key}")
+            continue
+        active_from_month = str(meta.get("active_from_month") or "").strip() or None
+        if active_from_month is not None and (
+            len(active_from_month) != 7
+            or active_from_month[4] != "-"
+            or not active_from_month.replace("-", "").isdigit()
+            or not 1 <= int(active_from_month[5:]) <= 12
+        ):
+            warnings.append(f"active_from_month invalid: {key}")
+            continue
+        rows.append({
+            "site_code": cod,
+            "sheet_id": sheet_id.strip(),
+            "registry_key": key,
+            "template_version": template_version,
+            "active_from_month": active_from_month,
+        })
     return rows, source_hash, warnings
 
 
@@ -98,18 +117,22 @@ async def main() -> None:
                     await conn.execute(
                         """
                         INSERT INTO grile_sheets (
-                            site_code, sheet_id, registry_key, source_hash, is_active, updated_at
+                            site_code, sheet_id, registry_key, source_hash, is_active,
+                            template_version, active_from_month, updated_at
                         )
-                        VALUES ($1, $2, $3, $4, $5, now())
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, now())
                         ON CONFLICT (site_code) DO UPDATE SET
                             sheet_id = EXCLUDED.sheet_id,
                             registry_key = EXCLUDED.registry_key,
                             source_hash = EXCLUDED.source_hash,
                             is_active = EXCLUDED.is_active,
+                            template_version = EXCLUDED.template_version,
+                            active_from_month = EXCLUDED.active_from_month,
                             updated_at = now()
                         """,
                         r["site_code"], r["sheet_id"], r["registry_key"], source_hash,
                         r["is_active"],
+                        r["template_version"], r["active_from_month"],
                     )
             print(f"APPLIED: {len(matched)} grile_sheets upsertate.")
     finally:

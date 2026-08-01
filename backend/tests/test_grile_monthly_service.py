@@ -40,8 +40,11 @@ def entry(
     site_code: str = "SITE01",
     manager: str = "Manager 1",
     is_closed: bool = False,
+    template_version: str = "v2",
 ) -> StoreEntry:
-    return StoreEntry(company, store, sheet_id, site_code, manager, is_closed)
+    return StoreEntry(
+        company, store, sheet_id, site_code, manager, is_closed, template_version
+    )
 
 
 def extracted(*, status: str = "OK", error: str = "") -> ExtractedAgentRow:
@@ -409,6 +412,24 @@ def test_extract_store_rows_reads_two_slots_and_returns_error_row() -> None:
         entry(),
     )
     assert missing_agent[0].error_code == "missing_or_invalid_agent"
+
+
+def test_extract_store_rows_v3_reads_three_agents_into_salary_rows() -> None:
+    values: list[dict[str, Any]] = []
+    for slot in range(1, 4):
+        raw = [
+            f"Agent {slot}", 2400, 10, 20, 30, 40, 50,
+            25, 150, 480, 176,
+        ]
+        values.extend({"values": [[value]]} for value in raw)
+
+    v3_entry = entry(template_version="v3")
+    rows = grile.extract_store_rows(make_sheets_value_service(values), v3_entry)
+
+    assert [row.slot for row in rows] == [1, 2, 3]
+    assert [row.agent for row in rows] == ["Agent 1", "Agent 2", "Agent 3"]
+    assert all(row.sales_commission == 150 for row in rows)
+    assert grile._validate_finalization_coverage([v3_entry], rows)[2:4] == (3, 3)
 
 
 def test_closed_store_accepts_only_empty_template_slots() -> None:

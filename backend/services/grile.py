@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+from hashlib import sha256
 import json
 import threading
 import time
@@ -130,6 +131,45 @@ def compute_status(
     }
 
 
+def _content_sha256(value_ranges: list[dict[str, Any]]) -> str:
+    canonical = json.dumps(
+        value_ranges,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _status_from_google(
+    *,
+    site_code: str,
+    expected: dict[str, Any],
+    value_ranges: list[dict[str, Any]],
+    modified_time: str | None,
+    tolerance: float,
+) -> dict[str, Any]:
+    reading = analyze_grila(value_ranges)
+    row = compute_status(
+        site_code,
+        grila_target=reading.grila_target,
+        grila_sales=reading.grila_sales,
+        completion_pct=reading.completion_pct,
+        last_edit=_parse_mod_time(modified_time),
+        db_target=_num(expected.get("db_target")),
+        db_sales_mtd=_num(expected.get("db_sales_mtd")),
+        db_max_sale_date=expected.get("db_max_sale_date"),
+        tolerance=tolerance,
+    )
+    row["raw_summary"] = {
+        "missing_days": reading.missing_days,
+        "days_elapsed": reading.days_elapsed,
+    }
+    row["content_sha256"] = _content_sha256(value_ranges)
+    return row
+
+
 async def run_grile_check(
     pool: asyncpg.Pool,
     *,
@@ -143,7 +183,7 @@ async def run_grile_check(
 ) -> int:
     """Ruleaza verificarea pentru toate magazinele cu sheet activ. Returneaza run_id."""
     repo = GrileRepository(pool)
-    sheets = await repo.get_active_sheets()
+    sheets = await repo.get_active_sheets(month)
     expected = await repo.get_expected_by_site(month)
     if run_id is None:
         run_id = await repo.reserve_run(
@@ -183,9 +223,11 @@ async def run_grile_check(
             _local.svc = build_services()
         return _local.svc
 
-    def _fetch_one(sid: str) -> tuple[list, str | None]:
+    def _fetch_one(sid: str, template_version: str) -> tuple[list, str | None]:
         sheets_svc, drive_svc = _services()
-        value_ranges = _retry_sync(lambda: fetch_grila(sheets_svc, sid))
+        value_ranges = _retry_sync(
+            lambda: fetch_grila(sheets_svc, sid, template_version)
+        )
         mod_raw = _retry_sync(lambda: fetch_mod_time(drive_svc, sid))
         return value_ranges, mod_raw
 
@@ -199,23 +241,19 @@ async def run_grile_check(
         sid = sheet["sheet_id"]
         exp = expected.get(site, {})
         try:
-            value_ranges, mod_raw = await loop.run_in_executor(executor, _fetch_one, sid)
-            reading = analyze_grila(value_ranges)
-            row = compute_status(
-                site,
-                grila_target=reading.grila_target,
-                grila_sales=reading.grila_sales,
-                completion_pct=reading.completion_pct,
-                last_edit=_parse_mod_time(mod_raw),
-                db_target=_num(exp.get("db_target")),
-                db_sales_mtd=_num(exp.get("db_sales_mtd")),
-                db_max_sale_date=exp.get("db_max_sale_date"),
+            value_ranges, mod_raw = await loop.run_in_executor(
+                executor,
+                _fetch_one,
+                sid,
+                sheet["template_version"],
+            )
+            row = _status_from_google(
+                site_code=site,
+                expected=exp,
+                value_ranges=value_ranges,
+                modified_time=mod_raw,
                 tolerance=tolerance,
             )
-            row["raw_summary"] = {
-                "missing_days": reading.missing_days,
-                "days_elapsed": reading.days_elapsed,
-            }
             cls = row["_class"]
         except Exception as exc:  # noqa: BLE001 — eroare per magazin, nu opreste runul
             row = {
@@ -231,7 +269,7 @@ async def run_grile_check(
                 "error_message": str(exc)[:500],
             }
             cls = "error"
-        await repo.upsert_store_status(run_id, row)
+        await repo.upsert_store_status(run_id, row, checked_by_sub=triggered_by_sub)
         async with progress_lock:
             progress["done"] += 1
             if progress["done"] % 5 == 0 or progress["done"] == len(sheets):
@@ -253,6 +291,73 @@ async def run_grile_check(
     return run_id
 
 
+async def refresh_grile_store(
+    pool: asyncpg.Pool,
+    *,
+    month: str,
+    site_code: str,
+    requested_by_sub: str,
+    tolerance: float = DEFAULT_TOLERANCE,
+) -> dict[str, Any]:
+    """Read and persist one active grid without mutating full-run audit rows."""
+    repo = GrileRepository(pool)
+    sheet = await repo.get_active_sheet(site_code, month)
+    if sheet is None:
+        raise LookupError("Grila activa nu exista pentru magazin.")
+    expected = (await repo.get_expected_by_site(month)).get(site_code, {})
+    previous = await repo.get_current_status(month, site_code)
+
+    def fetch_one() -> tuple[list[dict[str, Any]], str | None]:
+        sheets_service, drive_service = build_services()
+        values = _retry_sync(
+            lambda: fetch_grila(
+                sheets_service,
+                sheet["sheet_id"],
+                sheet["template_version"],
+            )
+        )
+        modified = _retry_sync(lambda: fetch_mod_time(drive_service, sheet["sheet_id"]))
+        return values, modified
+
+    try:
+        await asyncio.to_thread(get_credentials)
+        value_ranges, modified_time = await asyncio.to_thread(fetch_one)
+        row = _status_from_google(
+            site_code=site_code,
+            expected=expected,
+            value_ranges=value_ranges,
+            modified_time=modified_time,
+            tolerance=tolerance,
+        )
+    except Exception as exc:  # noqa: BLE001 - persisted as a per-store Google error
+        row = {
+            "site_code": site_code,
+            "db_target": _num(expected.get("db_target")),
+            "db_sales_mtd": _num(expected.get("db_sales_mtd")),
+            "db_max_sale_date": expected.get("db_max_sale_date"),
+            "fill_status": None,
+            "target_status": None,
+            "sales_status": None,
+            "tolerance": tolerance,
+            "error_code": "GOOGLE_ERROR",
+            "error_message": str(exc)[:500],
+            "content_sha256": None,
+        }
+
+    previous_hash = previous["content_sha256"] if previous is not None else None
+    await repo.upsert_current_status(
+        month=month,
+        row=row,
+        checked_by_sub=requested_by_sub,
+    )
+    current_hash = row.get("content_sha256")
+    return {
+        "site_code": site_code,
+        "changed": previous is None or previous_hash != current_hash,
+        "status": "error" if row.get("error_code") else "ok",
+    }
+
+
 # ---------- overview (citeste doar din DB) ----------
 
 async def resolve_month(pool: asyncpg.Pool, month: str | None) -> str:
@@ -265,16 +370,16 @@ async def resolve_month(pool: asyncpg.Pool, month: str | None) -> str:
 
 async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
     repo = GrileRepository(pool)
-    total_sheets = await repo.count_active_sheets()
+    total_sheets = await repo.count_active_sheets(month)
     latest = await repo.get_latest_run(month)
     hierarchy = await repo.get_hierarchy()
-    sheet_map = await repo.get_sheet_map()
+    sheet_map = await repo.get_sheet_map(month)
 
     run_info: dict[str, Any] | None = None
     stores: list[dict[str, Any]] = []
     if latest is not None:
         run_info = _run_to_dict(latest)
-        statuses = await repo.get_run_statuses(latest["id"])
+        statuses = await repo.get_current_statuses(month)
         for st in statuses:
             if st["site_code"] not in sheet_map:
                 continue
@@ -308,6 +413,7 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
                 "team_leader_name": h.get("team_leader_name"),
                 "completion_pct": completion_pct,
                 "last_edit": st["last_edit"].isoformat() if st["last_edit"] else None,
+                "checked_at": st["checked_at"].isoformat() if st["checked_at"] else None,
                 "grila_target": grila_target,
                 "grila_sales": grila_sales,
                 "db_target": db_target,
