@@ -212,7 +212,7 @@ async def test_lifespan_allows_arq_port_down_and_logs_degraded(
         def acquire(self) -> Acquire:
             return Acquire()
 
-    monkeypatch.setattr(main, "validate_required_env_vars", lambda: None)
+    monkeypatch.setattr(main, "validate_required_env_vars", lambda _role: None)
     monkeypatch.setattr(main, "init_oidc_runtime", AsyncMock())
     monkeypatch.setattr(main, "init_session_runtime", AsyncMock())
     monkeypatch.setattr(main, "init_rate_limit_runtime", AsyncMock())
