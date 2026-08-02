@@ -36,6 +36,7 @@
     "028_grile_monthly_fail_closed.sql": "6bbf34dcb10d923812fb815eb6ef76ae806422f212e893e45bd16fbdb091c2aa",
     "029_reporting_cartela_day.sql": "57c7a0d54ae4a861a9c9dae13db51e5dcf6589032066883becb71158fa359ac8",
     "030_import_snapshot_finished_at.sql": "04cabecd64b54e0b6f973984d4d9eccc104d0f4a8c235d7677084452c457d67a",
-    "031_grile_store_refresh_and_templates.sql": "de5c380da7d362955d03d9d71d1bc46e42ac007737c32951faabb4d29f8bf61a"
+    "031_grile_store_refresh_and_templates.sql": "de5c380da7d362955d03d9d71d1bc46e42ac007737c32951faabb4d29f8bf61a",
+    "032_store_pnl_shadow_generations.sql": "a75f77c1a85fef1b39d5db11b9007d23114943b96554988566bb63e30a4923f5"
   }
 }

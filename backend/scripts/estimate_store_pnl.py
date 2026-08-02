@@ -14,17 +14,21 @@ import argparse
 import asyncio
 import hashlib
 import os
-import statistics
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping, Sequence
 
 import asyncpg
 from dotenv import load_dotenv
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from services.fiscal_rules import (
     LEGACY_VAT_RULESET_ID,
     STANDARD_VAT_RULESET_ID,
@@ -33,7 +37,7 @@ from services.fiscal_rules import (
     standard_vat_ruleset_hash,
 )
 
-REPO_DIR = Path(__file__).resolve().parents[2]
+REPO_DIR = BACKEND_DIR.parent
 LEGACY_MODEL_VERSION = "store-pnl-estimator-v2"
 EFFECTIVE_MODEL_VERSION = "store-pnl-estimator-v3-effective-vat"
 VARIABLE_CODES = {"v1", "v11", "v2", "v3", "c1", "c11", "c2"}
@@ -66,59 +70,84 @@ def month_date(value: str) -> date:
     return date(year, month, 1)
 
 
-def money(value: float) -> Decimal:
-    return Decimal(str(max(0.0, value))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+ZERO = Decimal("0")
+MONEY = Decimal("0.01")
+Numeric = Decimal | int | float | str
 
 
-def median(values: Iterable[float]) -> float | None:
-    items = list(values)
-    return statistics.median(items) if items else None
+def as_decimal(value: Numeric) -> Decimal:
+    """Normalize external numeric values before any P&L arithmetic."""
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def money(value: Numeric) -> Decimal:
+    return max(ZERO, as_decimal(value)).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def median(values: Iterable[Numeric]) -> Decimal | None:
+    items = sorted(as_decimal(value) for value in values)
+    if not items:
+        return None
+    middle = len(items) // 2
+    if len(items) % 2:
+        return items[middle]
+    return (items[middle - 1] + items[middle]) / Decimal("2")
 
 
 def relevant_history(
-    history: list[tuple[date, float]], target: date, *, causal: bool, limit: int = 12,
-) -> list[tuple[date, float]]:
+    history: Sequence[tuple[date, Numeric]],
+    target: date,
+    *,
+    causal: bool,
+    limit: int = 12,
+) -> list[tuple[date, Numeric]]:
     eligible = [item for item in history if not causal or item[0] < target]
     return sorted(eligible, key=lambda item: abs((item[0] - target).days))[:limit]
 
 
 def ratio_history(
-    values: list[tuple[date, float]], bases: dict[date, float], target: date, *, causal: bool,
-) -> list[tuple[date, float]]:
+    values: Sequence[tuple[date, Numeric]],
+    bases: Mapping[date, Numeric],
+    target: date,
+    *,
+    causal: bool,
+) -> list[tuple[date, Decimal]]:
     return [
-        (period, amount / bases[period])
+        (period, as_decimal(amount) / as_decimal(bases[period]))
         for period, amount in relevant_history(values, target, causal=causal)
-        if bases.get(period, 0) > 0
+        if as_decimal(bases.get(period, ZERO)) > ZERO
     ]
 
 
 def predict_amount(
     category: str,
     target: date,
-    history: list[tuple[date, float]],
-    sales_history: dict[date, float],
-    salary_history: dict[date, float],
-    target_sales: float,
-    target_salary: float,
+    history: Sequence[tuple[date, Numeric]],
+    sales_history: Mapping[date, Numeric],
+    salary_history: Mapping[date, Numeric],
+    target_sales: Numeric,
+    target_salary: Numeric,
     *,
     causal: bool = False,
-) -> float | None:
+) -> Decimal | None:
     """Estimate a value from one store history; kept small and unit-testable."""
+    target_sales_decimal = as_decimal(target_sales)
+    target_salary_decimal = as_decimal(target_salary)
     nearest = relevant_history(history, target, causal=causal)
     if not nearest:
         return None
-    if category == "c3" and target_salary > 0:
+    if category == "c3" and target_salary_decimal > ZERO:
         salary_ratios = ratio_history(history, salary_history, target, causal=causal)
         if salary_ratios:
             median_ratio = median(ratio for _, ratio in salary_ratios)
             if median_ratio is not None:
-                return median_ratio * target_salary
+                return median_ratio * target_salary_decimal
     if category in VARIABLE_CODES or category == "c3":
         sales_ratios = ratio_history(history, sales_history, target, causal=causal)
-        if sales_ratios and target_sales > 0:
+        if sales_ratios and target_sales_decimal > ZERO:
             median_ratio = median(ratio for _, ratio in sales_ratios)
             if median_ratio is not None:
-                return median_ratio * target_sales
+                return median_ratio * target_sales_decimal
     if category in FIXED_CODES:
         same_month = [amount for period, amount in nearest if period.month == target.month]
         return median(same_month) if same_month else median(amount for _, amount in nearest[:3])
@@ -126,32 +155,43 @@ def predict_amount(
 
 
 def aggregate_ratios(
-    entries: list[tuple[date, float]],
-) -> list[tuple[date, float]]:
-    by_period: dict[date, list[float]] = defaultdict(list)
+    entries: Sequence[tuple[date, Numeric]],
+) -> list[tuple[date, Decimal]]:
+    by_period: dict[date, list[Decimal]] = defaultdict(list)
     for period, value in entries:
-        by_period[period].append(value)
-    return [(period, statistics.median(values)) for period, values in by_period.items()]
+        by_period[period].append(as_decimal(value))
+    aggregated: list[tuple[date, Decimal]] = []
+    for period, values in by_period.items():
+        median_value = median(values)
+        if median_value is not None:
+            aggregated.append((period, median_value))
+    return aggregated
 
 
 def choose_ratio(
-    store_ratios: list[tuple[date, float]],
-    company_ratios: list[tuple[date, float]],
+    store_ratios: Sequence[tuple[date, Numeric]],
+    company_ratios: Sequence[tuple[date, Numeric]],
     target: date,
     *,
     causal: bool,
-) -> float | None:
+) -> Decimal | None:
     nearby_store = relevant_history(store_ratios, target, causal=causal)
     nearby_company = relevant_history(company_ratios, target, causal=causal)
     chosen = nearby_store if len(nearby_store) >= 2 else nearby_company
     return median(value for _, value in chosen)
 
 
-async def load_data(
+async def load_inputs(
     connection: asyncpg.Connection,
     *,
-    effective_vat: bool = False,
+    input_cutoff: date | None = None,
 ):
+    """Read raw estimator inputs without selecting a VAT interpretation.
+
+    Shadow generations invoke this inside repeatable-read.  Gross sales remain
+    raw here so legacy-v2 and effective-v3 are comparable from one snapshot.
+    """
+    cutoff = input_cutoff or date.max
     actual = await connection.fetch(
         """
         SELECT p.company_name, p.period,
@@ -164,9 +204,11 @@ async def load_data(
         LEFT JOIN store_pnl_site_links l USING (company_name, source_site_code)
         WHERE p.data_kind = 'actual'
           AND p.source_site_code <> '__FINANCE_UNALLOCATED__'
+          AND p.period <= $1
         GROUP BY p.company_name, p.period,
                  COALESCE(l.site_code, p.source_site_code), p.category_code
-        """
+        """,
+        cutoff,
     )
     gross_sales = await connection.fetch(
         """
@@ -186,11 +228,31 @@ async def load_data(
             ) AS preference_rank FROM sources
         )
         SELECT company_name, period, site_code, gross_amount
-        FROM preferred WHERE preference_rank = 1
-        """
+        FROM preferred
+        WHERE preference_rank = 1
+          AND period <= $1
+        """,
+        cutoff,
     )
+    salaries = await connection.fetch(
+        """
+        SELECT CASE WHEN company_name ILIKE 'mobicell%' THEN 'Mobicell' ELSE 'Mobiup' END AS company_name,
+               make_date(year, month, 1) AS period, site_code, SUM(total_salary)::numeric AS amount
+        FROM salary_records
+        WHERE site_code IS NOT NULL
+          AND make_date(year, month, 1) <= $1
+        GROUP BY company_name, year, month, site_code
+        """,
+        cutoff,
+    )
+    stores = await connection.fetch("SELECT site_code, locatie, firma FROM stores")
+    return actual, gross_sales, salaries, stores
+
+
+def normalize_sales(gross_sales, *, effective_vat: bool = False):
+    """Normalize a previously captured gross-sales input snapshot."""
     net_converter = gross_to_net if effective_vat else legacy_gross_to_net
-    sales = [
+    return [
         {
             "company_name": row["company_name"],
             "period": row["period"],
@@ -199,15 +261,20 @@ async def load_data(
         }
         for row in gross_sales
     ]
-    salaries = await connection.fetch(
-        """
-        SELECT CASE WHEN company_name ILIKE 'mobicell%' THEN 'Mobicell' ELSE 'Mobiup' END AS company_name,
-               make_date(year, month, 1) AS period, site_code, SUM(total_salary)::float8 AS amount
-        FROM salary_records WHERE site_code IS NOT NULL GROUP BY company_name, year, month, site_code
-        """
+
+
+async def load_data(
+    connection: asyncpg.Connection,
+    *,
+    effective_vat: bool = False,
+    input_cutoff: date | None = None,
+):
+    """Compatibility wrapper for legacy estimator callers."""
+    actual, gross_sales, salaries, stores = await load_inputs(
+        connection,
+        input_cutoff=input_cutoff,
     )
-    stores = await connection.fetch("SELECT site_code, locatie, firma FROM stores")
-    return actual, sales, salaries, stores
+    return actual, normalize_sales(gross_sales, effective_vat=effective_vat), salaries, stores
 
 
 def build_estimates(
@@ -221,31 +288,31 @@ def build_estimates(
     include_actual_targets: bool = False,
 ) -> list[Estimate]:
     # Sales in this dictionary are deliberately *net of TVA*. No sales table is written.
-    sales = {(row["company_name"], row["period"], row["site_code"]): float(row["amount"]) for row in sales_rows}
-    salaries = {(row["company_name"], row["period"], row["site_code"]): float(row["amount"]) for row in salary_rows}
+    sales = {(row["company_name"], row["period"], row["site_code"]): as_decimal(row["amount"]) for row in sales_rows}
+    salaries = {(row["company_name"], row["period"], row["site_code"]): as_decimal(row["amount"]) for row in salary_rows}
     store_lookup = {row["site_code"]: row for row in stores}
     actual_store_months = {(row["company_name"], row["period"], row["site_code"]) for row in actual}
-    store_history: dict[tuple[str, str, str], list[tuple[date, float]]] = defaultdict(list)
-    company_values: dict[tuple[str, str], list[tuple[date, float]]] = defaultdict(list)
-    store_sales_ratios: dict[tuple[str, str, str], list[tuple[date, float]]] = defaultdict(list)
-    company_sales_ratios: dict[tuple[str, str], list[tuple[date, float]]] = defaultdict(list)
-    store_salary_ratios: dict[tuple[str, str, str], list[tuple[date, float]]] = defaultdict(list)
-    company_salary_ratios: dict[tuple[str, str], list[tuple[date, float]]] = defaultdict(list)
+    store_history: dict[tuple[str, str, str], list[tuple[date, Decimal]]] = defaultdict(list)
+    company_values: dict[tuple[str, str], list[tuple[date, Decimal]]] = defaultdict(list)
+    store_sales_ratios: dict[tuple[str, str, str], list[tuple[date, Decimal]]] = defaultdict(list)
+    company_sales_ratios: dict[tuple[str, str], list[tuple[date, Decimal]]] = defaultdict(list)
+    store_salary_ratios: dict[tuple[str, str, str], list[tuple[date, Decimal]]] = defaultdict(list)
+    company_salary_ratios: dict[tuple[str, str], list[tuple[date, Decimal]]] = defaultdict(list)
     metadata: dict[tuple[str, str], tuple[date, str, str]] = {}
     category_names = dict(CATEGORY_NAMES)
 
     for row in actual:
         company, period, site_code, category = row["company_name"], row["period"], row["site_code"], row["category_code"]
-        amount = float(row["amount"])
+        amount = as_decimal(row["amount"])
         key = (company, site_code, category)
         store_history[key].append((period, amount))
         company_values[(company, category)].append((period, amount))
-        sales_value = sales.get((company, period, site_code), 0)
-        if sales_value > 0:
+        sales_value = sales.get((company, period, site_code), ZERO)
+        if sales_value > ZERO:
             store_sales_ratios[key].append((period, amount / sales_value))
             company_sales_ratios[(company, category)].append((period, amount / sales_value))
-        salary_value = salaries.get((company, period, site_code), 0)
-        if salary_value > 0:
+        salary_value = salaries.get((company, period, site_code), ZERO)
+        if salary_value > ZERO:
             store_salary_ratios[key].append((period, amount / salary_value))
             company_salary_ratios[(company, category)].append((period, amount / salary_value))
         category_names[category] = row["category_name"] or category_names.get(category, category)
@@ -267,16 +334,16 @@ def build_estimates(
         if not include_actual_targets and (company, target, site_code) in actual_store_months:
             continue
         _, source_code, location = metadata.get((company, site_code), (target, site_code, store["locatie"]))
-        target_sales = sales.get((company, target, site_code), 0.0)
-        target_salary = salaries.get((company, target, site_code), 0.0)
-        if target_sales <= 0:
+        target_sales = sales.get((company, target, site_code), ZERO)
+        target_salary = salaries.get((company, target, site_code), ZERO)
+        if target_sales <= ZERO:
             continue
-        estimated_amounts: dict[str, float] = {}
+        estimated_amounts: dict[str, Decimal] = {}
         for category in sorted(VALID_CODES):
             key = (company, site_code, category)
             store_values = store_history.get(key, [])
-            estimate_amount: float | None
-            if category == "c3" and target_salary > 0:
+            estimate_amount: Decimal | None
+            if category == "c3" and target_salary > ZERO:
                 ratio = choose_ratio(store_salary_ratios.get(key, []), company_salary_ratios.get((company, category), []), target, causal=causal)
                 estimate_amount = ratio * target_salary if ratio is not None else None
             elif category in VARIABLE_CODES or category == "c3":
@@ -298,8 +365,8 @@ def build_estimates(
         # For a completely missing P&L store-month, the estimated P&L revenue
         # must equal the Retail sale without TVA. Retain the observed revenue
         # category mix only as an allocation detail.
-        revenue_amount = sum(estimated_amounts.get(category, 0) for category in REVENUE_CODES)
-        if revenue_amount > 0:
+        revenue_amount = sum((estimated_amounts.get(category, ZERO) for category in REVENUE_CODES), ZERO)
+        if revenue_amount > ZERO:
             scale = target_sales / revenue_amount
             for category in REVENUE_CODES:
                 if category in estimated_amounts:
@@ -309,13 +376,18 @@ def build_estimates(
     return estimates
 
 
-def all_missing_targets(actual, sales_rows) -> set[tuple[str, date, str]]:
-    today = date.today().replace(day=1)
+def all_missing_targets(
+    actual,
+    sales_rows,
+    *,
+    input_cutoff: date | None = None,
+) -> set[tuple[str, date, str]]:
+    today = (input_cutoff or date.today()).replace(day=1)
     actual_company_months = {(row["company_name"], row["period"]) for row in actual}
     return {
         (row["company_name"], row["period"], row["site_code"])
         for row in sales_rows
-        if date(2018, 1, 1) <= row["period"] < today and float(row["amount"]) > 0
+        if date(2018, 1, 1) <= row["period"] < today and as_decimal(row["amount"]) > ZERO
         and (row["company_name"], row["period"]) not in actual_company_months
     }
 
@@ -327,7 +399,10 @@ def estimate_replacement_scopes(
 
 
 def backtest(actual, sales_rows, salary_rows, stores) -> None:
-    actual_lookup = {(row["company_name"], row["period"], row["site_code"], row["category_code"]): float(row["amount"]) for row in actual}
+    actual_lookup = {
+        (row["company_name"], row["period"], row["site_code"], row["category_code"]): as_decimal(row["amount"])
+        for row in actual
+    }
     targets = {(company, period, site) for company, period, site, _ in actual_lookup if date(2025, 1, 1) <= period <= date(2026, 4, 1)}
     predicted = build_estimates(
         actual,
@@ -338,15 +413,15 @@ def backtest(actual, sales_rows, salary_rows, stores) -> None:
         causal=True,
         include_actual_targets=True,
     )
-    totals: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
+    totals: dict[str, list[Decimal]] = defaultdict(lambda: [ZERO, ZERO])
     for row in predicted:
         actual_amount = actual_lookup.get((row.company_name, row.period, row.site_code, row.category_code))
         if actual_amount is None:
             continue
-        totals[row.category_code][0] += abs(float(row.amount) - actual_amount)
+        totals[row.category_code][0] += abs(row.amount - actual_amount)
         totals[row.category_code][1] += abs(actual_amount)
-    overall_error = sum(error for error, _ in totals.values())
-    overall_actual = sum(total for _, total in totals.values())
+    overall_error = sum((error for error, _ in totals.values()), ZERO)
+    overall_actual = sum((total for _, total in totals.values()), ZERO)
     print("Backtest cauzal 2025-01..2026-04 (WAPE):")
     for category in sorted(totals):
         error, total = totals[category]
@@ -359,17 +434,16 @@ async def run(
     apply: bool,
     *,
     effective_vat: bool = False,
-    allow_effective_apply: bool = False,
 ) -> int:
+    if apply and effective_vat:
+        raise RuntimeError(
+            "Promovarea TVA effective-dated este blocata; genereaza si verifica shadow provenance."
+        )
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("DATABASE_URL lipseste din .env")
     connection = await asyncpg.connect(database_url)
     try:
-        if apply and effective_vat and not allow_effective_apply:
-            raise RuntimeError(
-                "Promovarea TVA effective-dated necesita gate-ul explicit de shadow approval."
-            )
         actual, sales_rows, salary_rows, stores = await load_data(
             connection,
             effective_vat=effective_vat,
@@ -427,7 +501,6 @@ def main() -> int:
     parser.add_argument("--months", nargs="+", help="Optional: numai lunile YYYY-MM cerute.")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--effective-vat", action="store_true", help="Genereaza candidatul shadow cu registry-ul TVA effective-dated.")
-    parser.add_argument("--approve-effective-vat-promotion", action="store_true", help="Gate explicit dupa shadow diff si pre-image verificat.")
     args = parser.parse_args()
     load_dotenv(REPO_DIR / ".env")
     return asyncio.run(
@@ -435,7 +508,6 @@ def main() -> int:
             [month_date(value) for value in args.months] if args.months else None,
             args.apply,
             effective_vat=args.effective_vat,
-            allow_effective_apply=args.approve_effective_vat_promotion,
         )
     )
 
