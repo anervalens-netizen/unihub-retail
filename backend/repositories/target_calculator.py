@@ -233,14 +233,34 @@ class TargetCalculatorRepository:
             if forecast_run:
                 forecast_rows = await conn.fetch(
                     """
-                    SELECT site_code, forecast_sales
-                    FROM ai_forecast_store_month
-                    WHERE run_id = $1
-                      AND site_code = ANY($2::TEXT[])
-                    ORDER BY site_code
+                    WITH requested_stores AS (
+                        SELECT DISTINCT UNNEST($2::TEXT[]) AS site_code
+                    ), realized_coverage AS (
+                        SELECT
+                            reporting.site_code,
+                            MAX(reporting.sale_date) AS cutoff_date
+                        FROM reporting_agent_day reporting
+                        WHERE reporting.import_month = $3
+                          AND reporting.site_code = ANY($2::TEXT[])
+                        GROUP BY reporting.site_code
+                    )
+                    SELECT
+                        requested_stores.site_code,
+                        forecast.forecast_sales,
+                        (forecast.site_code IS NOT NULL) AS forecast_present,
+                        realized_coverage.cutoff_date,
+                        (realized_coverage.site_code IS NOT NULL) AS realized_present
+                    FROM requested_stores
+                    LEFT JOIN ai_forecast_store_month forecast
+                      ON forecast.run_id = $1
+                     AND forecast.site_code = requested_stores.site_code
+                    LEFT JOIN realized_coverage
+                      ON realized_coverage.site_code = requested_stores.site_code
+                    ORDER BY requested_stores.site_code
                     """,
                     forecast_run["id"],
                     site_codes,
+                    forecast_run["source_month"],
                 )
 
         return {

@@ -90,8 +90,8 @@ _PROBE_HANDLERS = {"/health", "/readyz", "/livez", "/metrics"}
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    validate_required_env_vars()
+async def lifespan(app: FastAPI):
+    app.state.runtime_config = validate_required_env_vars("web")
     try:
         await init_oidc_runtime()
         await init_session_runtime()

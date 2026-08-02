@@ -2,40 +2,51 @@
 
 ## Request contract
 
-Every `/api/dashboard/*` request has one monotonic deadline. The default is
-`DASHBOARD_REQUEST_DEADLINE_MS=2500`; configuration must be a positive integer.
-The router maps the typed expiry to HTTP `504`. Components do not receive a new
-budget: batch items and concurrent `/all` components share the originating
-deadline, so cancellation stops outstanding work and no new database call may
-begin after expiry.
+Every `/api/dashboard/*` request creates one absolute monotonic deadline before
+pool/dependency resolution. `DASHBOARD_REQUEST_DEADLINE_MS` is a validated web
+`RuntimeConfig` value (default `2500`, positive, max `30000`); it is never read
+from the environment per request. The router maps only typed deadline expiry to
+HTTP `504`; `CancelledError` / client disconnect propagates.
 
-`DeadlinePool` wraps each acquired Dashboard connection. `fetch`, `fetchrow`,
-`fetchval`, and `execute` receive the positive remaining asyncpg `timeout` at
-the point of each operation. Repository queries, direct Dashboard components,
-premium-glass, and special-cards use this wrapper; global PostgreSQL timeout
-settings remain unchanged.
+All Dashboard children share this same deadline: batch items, `/all` loaders,
+campaign and promo tasks are cancelled and awaited before the endpoint exits.
+`DeadlinePool` bounds both `pool.acquire()` and every `fetch`, `fetchrow`,
+`fetchval`, and `execute` with the positive remaining asyncpg budget, reserving
+a small cleanup interval. No new DB operation starts once the deadline is
+expired; no pooled session setting is changed.
+
+`DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY` is also parsed once at web startup.
+It must be no greater than `DB_POOL_MAX_SIZE - 2`; the two connections remain
+reserved for the request path. The injected web runtime config creates the
+per-event-loop global semaphore; `dashboard_service` has no import-time
+Dashboard environment parsing.
 
 ## Store filter boundary
 
-Dashboard API endpoints canonicalize `site_code` once before service logic:
-split comma selections, trim, uppercase, deduplicate, and sort. Batch payloads
-perform the identical canonicalization through `DashboardAllQuery` validation.
-The service receives the canonical value and does not normalize `site_code`
-again. Other payload fields and business calculations are unchanged.
+Dashboard API boundaries canonicalize `site_code` exactly once: CSV tokens are
+trimmed, empty/UI-sentinel values dropped, and duplicate *exact* codes removed
+while preserving first order and case. Thus `" S1,S1, S2 "` is `"S1,S2"`; an
+empty/sentinel-only scope is `null`. This applies to GET endpoints, both batch
+routes through `DashboardAllQuery`, and the store key of `performance-detail`.
+Services/repositories receive this immutable scope; unknown codes retain the
+existing empty-result behavior.
 
 ## Forecast coverage contract
 
-Target current forecast comes from one selected completed AI run, therefore its
-coverage mode is `uniform`: `cutoff_month`, `min_cutoff_month`, and
-`max_cutoff_month` are the run's `source_month`. The profitability summary adds
-`forecast_coverage` with expected/covered store counts and sorted
-`missing_site_codes`.
+The current AI run is checked per expected cohort store. A row is covered only
+when both the forecast and realized reporting source exist, the forecast value
+is non-NULL (a real numeric zero is valid), and the store's realized cutoff is
+present. Coverage is deterministic:
 
-An absent run is `unavailable`; all expected stores remain missing. A NULL or
-absent forecast row is never coerced to zero. Any missing store makes
-`forecast_total` `null`, while the per-store row carries `FORECAST_MISSING`.
-Existing frozen Target scenarios retain their saved profitability payload and
-are not re-read or rewritten by this change.
+- `uniform`: every cohort store is covered and all cutoffs match;
+- `nonuniform`: different cutoffs, a missing source/forecast, or no rows;
+- `cutoff` is present only for `uniform`; `cutoff_min`, `cutoff_max`, expected /
+  covered counts, and sorted `missing_site_codes` are always explicit.
+
+The existing v2 calculation refuses `nonuniform` coverage with HTTP `409`
+before any scenario/revision write. The coverage contract is included in the
+new scenario's profitability input hash and frozen snapshot. Frozen and legacy
+scenarios are not backfilled, re-read from live P&L/forecast, or changed.
 
 ## Verification
 
@@ -45,6 +56,7 @@ env -u PYTHONHOME -u PYTHONPATH backend/scripts/run_tests_isolated.sh -q
 env -u PYTHONHOME -u PYTHONPATH backend/venv/bin/mypy backend/ --ignore-missing-imports --explicit-package-bases
 ```
 
-Focused evidence covers shared deadline cancellation, positive DB timeout
-propagation, no post-expiry query, endpoint `504`, direct and batch store-code
-canonicalization, and complete/partial uniform forecast coverage.
+Focused tests cover pool acquire starvation/recovery and `pg_sleep`, shared
+12-item batch budget, child reaping, client cancellation, API filter boundary,
+web startup config limits, and uniform/nonuniform/missing/zero forecast cases
+with zero writes for every v2 refusal.

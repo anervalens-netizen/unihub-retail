@@ -142,7 +142,7 @@ async def test_lifespan_startup_failure_still_runs_cleanup_in_order(monkeypatch:
     import main
 
     events: list[str] = []
-    monkeypatch.setattr(main, "validate_required_env_vars", lambda: events.append("validate"))
+    monkeypatch.setattr(main, "validate_required_env_vars", lambda role: events.append(f"validate:{role}"))
     monkeypatch.setattr(main, "init_oidc_runtime", AsyncMock(side_effect=lambda: events.append("oidc-init")))
     monkeypatch.setattr(main, "init_session_runtime", AsyncMock(side_effect=lambda: events.append("session-init")))
     monkeypatch.setattr(main, "init_rate_limit_runtime", AsyncMock(side_effect=lambda: events.append("rate-init")))
@@ -171,7 +171,7 @@ async def test_lifespan_cleanup_continues_after_cleanup_failure(
     import main
 
     events: list[str] = []
-    monkeypatch.setattr(main, "validate_required_env_vars", lambda: None)
+    monkeypatch.setattr(main, "validate_required_env_vars", lambda role: None)
     monkeypatch.setattr(main, "init_oidc_runtime", AsyncMock())
     monkeypatch.setattr(main, "init_session_runtime", AsyncMock())
     monkeypatch.setattr(main, "init_rate_limit_runtime", AsyncMock())

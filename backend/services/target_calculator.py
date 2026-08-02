@@ -855,6 +855,13 @@ class TargetCalculatorService:
             site_codes=site_codes,
             target_month=target_month,
         )
+        forecast_coverage, _forecast_values = self._forecast_coverage(
+            calculated_rows,
+            profitability_inputs,
+        )
+        profitability_inputs["forecast_coverage"] = forecast_coverage
+        if forecast_coverage["mode"] != "uniform":
+            raise self._forecast_coverage_error(forecast_coverage)
         profitability_input_sha256 = self._canonical_input_hash(
             self._profitability_input_payload(profitability_inputs)
         )
@@ -1088,7 +1095,63 @@ class TargetCalculatorService:
             "pnl_rows": [dict(record) for record in inputs.get("pnl_rows") or []],
             "forecast_run": dict(forecast_run) if forecast_run else None,
             "forecast_rows": [dict(record) for record in inputs.get("forecast_rows") or []],
+            "forecast_coverage": inputs.get("forecast_coverage"),
         }
+
+    @staticmethod
+    def _forecast_coverage(
+        rows: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Decimal]]:
+        """Derive the v2 forecast contract from explicit per-store source presence."""
+        expected_site_codes = sorted({str(row["site_code"]) for row in rows})
+        records_by_site = {
+            str(record["site_code"]): record
+            for record in inputs.get("forecast_rows") or []
+        }
+        forecast_values: dict[str, Decimal] = {}
+        covered_site_codes: list[str] = []
+        missing_site_codes: list[str] = []
+        cutoff_values: list[str] = []
+        for site_code in expected_site_codes:
+            record = records_by_site.get(site_code)
+            forecast_present = bool(record and record.get("forecast_present"))
+            realized_present = bool(record and record.get("realized_present"))
+            forecast_sales = record.get("forecast_sales") if record else None
+            cutoff_date = record.get("cutoff_date") if record else None
+            if not forecast_present or not realized_present or forecast_sales is None or cutoff_date is None:
+                missing_site_codes.append(site_code)
+                continue
+            forecast_values[site_code] = money(Decimal(forecast_sales))
+            covered_site_codes.append(site_code)
+            cutoff_values.append(str(cutoff_date))
+
+        distinct_cutoffs = sorted(set(cutoff_values))
+        uniform = (
+            inputs.get("forecast_run") is not None
+            and len(covered_site_codes) == len(expected_site_codes)
+            and len(distinct_cutoffs) == 1
+        )
+        coverage = {
+            "mode": "uniform" if uniform else "nonuniform",
+            "cutoff": distinct_cutoffs[0] if uniform else None,
+            "cutoff_min": min(cutoff_values) if cutoff_values else None,
+            "cutoff_max": max(cutoff_values) if cutoff_values else None,
+            "expected_store_count": len(expected_site_codes),
+            "covered_store_count": len(covered_site_codes),
+            "missing_site_codes": missing_site_codes,
+        }
+        return coverage, forecast_values
+
+    @staticmethod
+    def _forecast_coverage_error(coverage: dict[str, Any]) -> HTTPException:
+        return HTTPException(
+            status_code=409,
+            detail={
+                "message": "Forecastul curent nu are coverage uniform complet; propunerea nu a fost salvată.",
+                "forecast_coverage": coverage,
+            },
+        )
 
     def _populate_profitability(
         self,
@@ -1106,32 +1169,9 @@ class TargetCalculatorService:
             (record["site_code"], record["category_code"]): Decimal(record["amount"] or 0)
             for record in inputs.get("pnl_rows") or []
         }
-        expected_forecast_site_codes = {str(row["site_code"]) for row in rows}
-        forecast_values: dict[str, Decimal] = {}
-        for record in inputs.get("forecast_rows") or []:
-            forecast_sales = record["forecast_sales"]
-            if forecast_sales is not None:
-                forecast_values[str(record["site_code"])] = money(Decimal(forecast_sales))
+        forecast_coverage_contract, forecast_values = self._forecast_coverage(rows, inputs)
         forecast_run_record = inputs.get("forecast_run")
         forecast_run = dict(forecast_run_record) if forecast_run_record else None
-        covered_forecast_site_codes = expected_forecast_site_codes & set(forecast_values)
-        missing_forecast_site_codes = sorted(
-            expected_forecast_site_codes - covered_forecast_site_codes
-        )
-        forecast_cutoff_month = (
-            str(forecast_run["source_month"])
-            if forecast_run is not None and forecast_run.get("source_month") is not None
-            else None
-        )
-        forecast_coverage_contract = {
-            "mode": "uniform" if forecast_run is not None else "unavailable",
-            "cutoff_month": forecast_cutoff_month,
-            "min_cutoff_month": forecast_cutoff_month,
-            "max_cutoff_month": forecast_cutoff_month,
-            "expected_store_count": len(expected_forecast_site_codes),
-            "covered_store_count": len(covered_forecast_site_codes),
-            "missing_site_codes": missing_forecast_site_codes,
-        }
         saved_target_rule_set = self._saved_target_rule_set(scenario)
         saved_profitability = (
             rule_set_profitability_assumptions(saved_target_rule_set)
@@ -1234,8 +1274,8 @@ class TargetCalculatorService:
                 "anomaly_flags": anomaly_flags,
             }
 
-        forecast_coverage = len(covered_forecast_site_codes)
-        forecast_complete = not missing_forecast_site_codes and forecast_run is not None
+        forecast_coverage = int(forecast_coverage_contract["covered_store_count"])
+        forecast_complete = forecast_coverage_contract["mode"] == "uniform"
         source_status = "ready" if complete_pnl_count == len(rows) and forecast_complete else "partial"
         return {
             "status": source_status,
@@ -1248,7 +1288,7 @@ class TargetCalculatorService:
                 "model_mode": forecast_run["model_mode"],
                 "variant": forecast_run["variant"],
                 "generated_at": forecast_run["generated_at"],
-                "source_month": forecast_cutoff_month,
+                "source_month": forecast_run["source_month"],
             } if forecast_run else None,
             "forecast_coverage": forecast_coverage_contract,
             "assumptions": saved_profitability,

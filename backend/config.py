@@ -48,6 +48,8 @@ class RuntimeConfig:
     db_statement_timeout_ms: int
     db_lock_timeout_ms: int
     db_idle_transaction_timeout_ms: int
+    dashboard_request_deadline_ms: int | None
+    dashboard_global_component_concurrency: int | None
     valkey_host: str
     valkey_port: int
     valkey_database: int
@@ -136,6 +138,28 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
             "DB_IDLE_TRANSACTION_TIMEOUT_MS trebuie să fie <= DB_STATEMENT_TIMEOUT_MS"
         )
 
+    dashboard_request_deadline_ms = (
+        _parse_runtime_int(
+            "DASHBOARD_REQUEST_DEADLINE_MS", 2500, errors, minimum=1, maximum=30000
+        )
+        if process_role == "web"
+        else None
+    )
+    dashboard_global_component_concurrency: int | None = None
+    if process_role == "web":
+        dashboard_component_ceiling = db_pool_max_size - WEB_MIN_DB_POOL_MAX_SIZE
+        if dashboard_component_ceiling < 1:
+            errors.append(
+                "DB_POOL_MAX_SIZE trebuie să fie >= 3 pentru rezerva Dashboard de 2 conexiuni"
+            )
+        else:
+            dashboard_global_component_concurrency = _parse_runtime_int(
+                "DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY",
+                min(6, dashboard_component_ceiling),
+                errors,
+                maximum=dashboard_component_ceiling,
+            )
+
     valkey_port = _parse_runtime_int("VALKEY_PORT", 6379, errors, maximum=65535)
     valkey_database = _parse_runtime_int("VALKEY_DATABASE", 0, errors, minimum=0, maximum=15)
     valkey_conn_timeout = _parse_runtime_int(
@@ -210,6 +234,8 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
         db_statement_timeout_ms=db_statement_timeout_ms,
         db_lock_timeout_ms=db_lock_timeout_ms,
         db_idle_transaction_timeout_ms=db_idle_transaction_timeout_ms,
+        dashboard_request_deadline_ms=dashboard_request_deadline_ms,
+        dashboard_global_component_concurrency=dashboard_global_component_concurrency,
         valkey_host=os.getenv("VALKEY_HOST", "127.0.0.1").strip() or "127.0.0.1",
         valkey_port=valkey_port,
         valkey_database=valkey_database,
@@ -258,7 +284,7 @@ def visits_shadow_compare_enabled() -> bool:
     }
 
 
-def validate_required_env_vars() -> None:
+def validate_required_env_vars(role: RuntimeRole | None = None) -> RuntimeConfig:
     """Validează env vars critice. Ridică ConfigError dacă ceva e greșit.
 
     Se apelează cât mai devreme în lifespan — înainte de init_db_pool,
@@ -266,8 +292,9 @@ def validate_required_env_vars() -> None:
     și systemd loghează eroarea clar.
     """
     errors: list[str] = []
+    runtime_config: RuntimeConfig | None = None
     try:
-        load_runtime_config()
+        runtime_config = load_runtime_config(role)
     except ConfigError as exc:
         errors.extend(str(exc).splitlines())
 
@@ -321,3 +348,6 @@ def validate_required_env_vars() -> None:
         raise ConfigError(
             "Config invalid la startup:\n  - " + "\n  - ".join(errors)
         )
+    if runtime_config is None:
+        raise ConfigError("Runtime config nu a fost încărcat")
+    return runtime_config

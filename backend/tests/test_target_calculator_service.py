@@ -67,12 +67,31 @@ def make_service() -> tuple[TargetCalculatorService, MagicMock]:
     repo.list_scenarios = AsyncMock()
     repo.get_scenario = AsyncMock()
     repo.get_scenario_rows = AsyncMock()
-    repo.get_profitability_inputs = AsyncMock(return_value={
-        "pnl_months": [],
-        "pnl_rows": [],
-        "forecast_run": None,
-        "forecast_rows": [],
-    })
+    async def profitability_inputs(*, site_codes: list[str], target_month: str) -> dict:
+        return {
+            "pnl_months": [],
+            "pnl_rows": [],
+            "forecast_run": {
+                "id": 1,
+                "model_name": "test",
+                "model_mode": "test",
+                "variant": "test",
+                "generated_at": "2026-01-01T00:00:00",
+                "source_month": target_month,
+            },
+            "forecast_rows": [
+                {
+                    "site_code": site_code,
+                    "forecast_sales": Decimal("0"),
+                    "forecast_present": True,
+                    "realized_present": True,
+                    "cutoff_date": f"{target_month}-01",
+                }
+                for site_code in site_codes
+            ],
+        }
+
+    repo.get_profitability_inputs = AsyncMock(side_effect=profitability_inputs)
     repo.update_final_targets = AsyncMock()
     repo.finalize_scenario = AsyncMock()
     repo.get_store_detail = AsyncMock()
@@ -249,6 +268,7 @@ async def test_get_context_rejects_missing_sales_data() -> None:
 @pytest.mark.asyncio
 async def test_profitability_uses_real_pnl_margin_gross_vat_and_flags_break_even() -> None:
     service, repo = make_service()
+    repo.get_profitability_inputs.side_effect = None
     repo.get_profitability_inputs.return_value = {
         "pnl_months": ["2026-02", "2026-03", "2026-04"],
         "pnl_rows": [
@@ -267,7 +287,13 @@ async def test_profitability_uses_real_pnl_margin_gross_vat_and_flags_break_even
             "source_month": "2026-07",
         },
         "forecast_rows": [
-            {"site_code": "SITE01", "forecast_sales": Decimal("35000")},
+            {
+                "site_code": "SITE01",
+                "forecast_sales": Decimal("35000"),
+                "forecast_present": True,
+                "realized_present": True,
+                "cutoff_date": "2026-07-31",
+            },
         ],
     }
     rows = [{
@@ -295,9 +321,9 @@ async def test_profitability_uses_real_pnl_margin_gross_vat_and_flags_break_even
     assert summary["forecast_store_count"] == 1
     assert summary["forecast_coverage"] == {
         "mode": "uniform",
-        "cutoff_month": "2026-07",
-        "min_cutoff_month": "2026-07",
-        "max_cutoff_month": "2026-07",
+        "cutoff": "2026-07-31",
+        "cutoff_min": "2026-07-31",
+        "cutoff_max": "2026-07-31",
         "expected_store_count": 1,
         "covered_store_count": 1,
         "missing_site_codes": [],
@@ -328,17 +354,29 @@ def test_profitability_coverage_keeps_missing_forecast_explicit_and_never_zeros_
                 "source_month": "2026-07",
             },
             "forecast_rows": [
-                {"site_code": "SITE01", "forecast_sales": Decimal("125.50")},
-                {"site_code": "SITE02", "forecast_sales": None},
+                {
+                    "site_code": "SITE01",
+                    "forecast_sales": Decimal("125.50"),
+                    "forecast_present": True,
+                    "realized_present": True,
+                    "cutoff_date": "2026-07-30",
+                },
+                {
+                    "site_code": "SITE02",
+                    "forecast_sales": None,
+                    "forecast_present": False,
+                    "realized_present": False,
+                    "cutoff_date": None,
+                },
             ],
         },
     )
 
     assert summary["forecast_coverage"] == {
-        "mode": "uniform",
-        "cutoff_month": "2026-07",
-        "min_cutoff_month": "2026-07",
-        "max_cutoff_month": "2026-07",
+        "mode": "nonuniform",
+        "cutoff": None,
+        "cutoff_min": "2026-07-30",
+        "cutoff_max": "2026-07-30",
         "expected_store_count": 2,
         "covered_store_count": 1,
         "missing_site_codes": ["SITE02"],
@@ -348,6 +386,104 @@ def test_profitability_coverage_keeps_missing_forecast_explicit_and_never_zeros_
     assert isinstance(second_profitability, dict)
     assert second_profitability["forecast_sales"] is None
     assert "FORECAST_MISSING" in second_profitability["anomaly_flags"]
+
+
+def test_profitability_coverage_requires_all_stores_at_the_same_cutoff_and_keeps_zero_real() -> None:
+    service, _repo = make_service()
+    rows = [
+        {"site_code": "SITE01", "calculated_weight": Decimal("1"), "proposed_target": Decimal("100")},
+        {"site_code": "SITE02", "calculated_weight": Decimal("1"), "proposed_target": Decimal("100")},
+    ]
+    inputs = {
+        "forecast_run": {"id": 1},
+        "forecast_rows": [
+            {
+                "site_code": "SITE01", "forecast_sales": Decimal("0"),
+                "forecast_present": True, "realized_present": True, "cutoff_date": "2026-07-31",
+            },
+            {
+                "site_code": "SITE02", "forecast_sales": Decimal("50"),
+                "forecast_present": True, "realized_present": True, "cutoff_date": "2026-07-30",
+            },
+        ],
+    }
+
+    coverage, values = service._forecast_coverage(rows, inputs)
+
+    assert coverage == {
+        "mode": "nonuniform",
+        "cutoff": None,
+        "cutoff_min": "2026-07-30",
+        "cutoff_max": "2026-07-31",
+        "expected_store_count": 2,
+        "covered_store_count": 2,
+        "missing_site_codes": [],
+    }
+    assert values["SITE01"] == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("forecast_rows", "expected_missing"),
+    [
+        (
+            [
+                {
+                    "site_code": "SITE01", "forecast_sales": Decimal("10"),
+                    "forecast_present": True, "realized_present": True, "cutoff_date": "2026-05-31",
+                },
+                {
+                    "site_code": "SITE02", "forecast_sales": Decimal("10"),
+                    "forecast_present": True, "realized_present": True, "cutoff_date": "2026-05-30",
+                },
+            ],
+            [],
+        ),
+        (
+            [
+                {
+                    "site_code": "SITE01", "forecast_sales": Decimal("10"),
+                    "forecast_present": True, "realized_present": True, "cutoff_date": "2026-05-31",
+                },
+            ],
+            ["SITE02"],
+        ),
+        ([], ["SITE01", "SITE02"]),
+    ],
+    ids=["nonuniform-cutoff", "missing-store", "zero-forecast-rows"],
+)
+async def test_calculate_rejects_incomplete_forecast_before_any_save(
+    monkeypatch: pytest.MonkeyPatch,
+    forecast_rows: list[dict[str, object]],
+    expected_missing: list[str],
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {"site_code": "SITE01", "locatie": "One", "firma": "Mobiup", "regional": "R", "asm": "A"},
+        {"site_code": "SITE02", "locatie": "Two", "firma": "Mobiup", "regional": "R", "asm": "A"},
+    ]
+    repo.get_source_metrics.return_value = []
+    repo.get_profitability_inputs.side_effect = None
+    repo.get_profitability_inputs.return_value = {
+        "pnl_months": [],
+        "pnl_rows": [],
+        "forecast_run": {"id": 1, "source_month": "2026-05"},
+        "forecast_rows": forecast_rows,
+    }
+    monkeypatch.setattr(target_module, "get_forecast_factor", AsyncMock(return_value=Decimal("1")))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.calculate({"target_month": "2026-06", "total_target": 70000})
+
+    assert exc_info.value.status_code == 409
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    coverage = detail.get("forecast_coverage")
+    assert isinstance(coverage, dict)
+    assert coverage.get("mode") == "nonuniform"
+    assert coverage.get("missing_site_codes") == expected_missing
+    repo.save_draft_scenario.assert_not_awaited()
 
 
 @pytest.mark.asyncio

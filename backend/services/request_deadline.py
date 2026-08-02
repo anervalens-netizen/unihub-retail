@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
@@ -10,7 +9,7 @@ from typing import Any, TypeVar
 
 _T = TypeVar("_T")
 _MIN_TIMEOUT_SECONDS = 0.001
-DEFAULT_DASHBOARD_DEADLINE_MS = 2_500
+_CLEANUP_RESERVE_SECONDS = 0.010
 
 
 class RequestDeadlineExceeded(TimeoutError):
@@ -26,18 +25,22 @@ class RequestDeadline:
         self._expires_at = time.monotonic() + timeout_seconds
 
     @classmethod
-    def dashboard(cls) -> "RequestDeadline":
-        raw = os.getenv("DASHBOARD_REQUEST_DEADLINE_MS", str(DEFAULT_DASHBOARD_DEADLINE_MS))
-        try:
-            timeout_ms = int(raw)
-        except ValueError as exc:
-            raise RuntimeError("DASHBOARD_REQUEST_DEADLINE_MS must be an integer") from exc
-        if timeout_ms < 1:
-            raise RuntimeError("DASHBOARD_REQUEST_DEADLINE_MS must be positive")
-        return cls(timeout_ms / 1_000)
+    def from_runtime_config(cls, runtime_config: Any) -> "RequestDeadline":
+        """Build once from the already validated web-process configuration."""
+        deadline_ms = runtime_config.dashboard_request_deadline_ms
+        if deadline_ms is None:
+            raise RuntimeError("Dashboard deadline is unavailable outside the web RuntimeConfig")
+        return cls(float(deadline_ms) / 1_000)
 
     def remaining_seconds(self) -> float:
         remaining = self._expires_at - time.monotonic()
+        if remaining <= _MIN_TIMEOUT_SECONDS:
+            raise RequestDeadlineExceeded("Dashboard request deadline exceeded")
+        return remaining
+
+    def remaining_operation_seconds(self) -> float:
+        """Leave a small bounded interval for cancellation and pool release."""
+        remaining = self.remaining_seconds() - _CLEANUP_RESERVE_SECONDS
         if remaining <= _MIN_TIMEOUT_SECONDS:
             raise RequestDeadlineExceeded("Dashboard request deadline exceeded")
         return remaining
@@ -61,7 +64,7 @@ class DeadlineConnection:
         self._deadline = deadline
 
     async def _call(self, method: Callable[..., Awaitable[_T]], *args: Any, **kwargs: Any) -> _T:
-        remaining = self._deadline.remaining_seconds()
+        remaining = self._deadline.remaining_operation_seconds()
         requested_timeout = kwargs.pop("timeout", None)
         if requested_timeout is not None:
             remaining = min(remaining, float(requested_timeout))
@@ -94,7 +97,11 @@ class _DeadlineAcquire:
         self._deadline = deadline
 
     async def __aenter__(self) -> DeadlineConnection:
-        connection = await self._acquire_context.__aenter__()
+        try:
+            async with asyncio.timeout(self._deadline.remaining_operation_seconds()):
+                connection = await self._acquire_context.__aenter__()
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            raise RequestDeadlineExceeded("Dashboard request deadline exceeded") from exc
         return DeadlineConnection(connection, self._deadline)
 
     async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> Any:
