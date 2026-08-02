@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_SCRIPT="$SCRIPT_DIR/deploy-retail-artifact.sh"
 [[ -x "$DEPLOY_SCRIPT" ]] || DEPLOY_SCRIPT="$SCRIPT_DIR/deploy-retail-artifact.sh.candidate"
 APPROVE_SCRIPT="$SCRIPT_DIR/approve-retail-release.sh"
+BUILD_SCRIPT="$SCRIPT_DIR/build-retail-release-artifact.sh"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/retail-deploy-test.XXXXXX")"
 trap 'rm -rf -- "$ROOT"' EXIT
 
@@ -14,7 +15,6 @@ REMOTE="$ROOT/remote.git"
 BUILDER="$ROOT/builder"
 LIVE="$ROOT/live"
 OPS="$ROOT/ops"
-ARTIFACT="$ROOT/release.tar.gz"
 CI_RUN_ID=29445177873
 
 git init --bare --quiet "$REMOTE"
@@ -49,9 +49,20 @@ git -C "$BUILDER" push --quiet origin main
 mkdir -p "$BUILDER/dist/assets"
 printf 'new frontend\n' >"$BUILDER/dist/index.html"
 printf 'asset\n' >"$BUILDER/dist/assets/app.js"
-git -C "$BUILDER" archive --format=tar "$NEW_SHA" >"$ROOT/release.tar"
-tar -rf "$ROOT/release.tar" -C "$BUILDER" dist
-gzip -n "$ROOT/release.tar"
+build_release() {
+  local source_sha="$1"
+  local output_dir="$2"
+  (
+    cd "$BUILDER"
+    "$BUILD_SCRIPT" "$source_sha" "$output_dir"
+  ) >/dev/null
+}
+
+RELEASE_DIR="$ROOT/release"
+build_release "$NEW_SHA" "$RELEASE_DIR"
+ARTIFACT="$RELEASE_DIR/retail-release-${NEW_SHA}.tar.gz"
+[[ "$(<"$RELEASE_DIR/SOURCE_SHA")" == "$NEW_SHA" ]]
+(cd "$RELEASE_DIR" && sha256sum --check SHA256SUMS >/dev/null)
 ARTIFACT_SHA256="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
 
 run_deploy() {
@@ -155,11 +166,19 @@ git -C "$BUILDER" add .
 git -C "$BUILDER" commit --quiet -m newer
 NEWER_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
 git -C "$BUILDER" push --quiet origin main
-git -C "$BUILDER" archive --format=tar "$NEWER_SHA" >"$ROOT/release-newer.tar"
-tar -rf "$ROOT/release-newer.tar" -C "$BUILDER" dist
-gzip -n "$ROOT/release-newer.tar"
-NEWER_ARTIFACT="$ROOT/release-newer.tar.gz"
+NEWER_RELEASE_DIR="$ROOT/release-newer"
+build_release "$NEWER_SHA" "$NEWER_RELEASE_DIR"
+NEWER_ARTIFACT="$NEWER_RELEASE_DIR/retail-release-${NEWER_SHA}.tar.gz"
+[[ "$(<"$NEWER_RELEASE_DIR/SOURCE_SHA")" == "$NEWER_SHA" ]]
+(cd "$NEWER_RELEASE_DIR" && sha256sum --check SHA256SUMS >/dev/null)
 NEWER_ARTIFACT_SHA256="$(sha256sum "$NEWER_ARTIFACT" | awk '{print $1}')"
+
+set +e
+build_release "$NEW_SHA" "$ROOT/stale-release" >/dev/null 2>&1
+STALE_BUILD_RC=$?
+set -e
+[[ "$STALE_BUILD_RC" -ne 0 ]]
+[[ ! -e "$ROOT/stale-release" ]]
 
 approve_release "$((CI_RUN_ID + 10))" "$NEWER_SHA" "$NEWER_ARTIFACT_SHA256" >/dev/null
 run_deploy "$NEWER_ARTIFACT" "$NEWER_SHA" "$((CI_RUN_ID + 10))" "$NEWER_ARTIFACT_SHA256"
@@ -350,10 +369,11 @@ git -C "$BUILDER" add backend/db/migrations/manifest.json
 git -C "$BUILDER" commit --quiet -m migrated
 MIGRATED_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
 git -C "$BUILDER" push --quiet origin main
-git -C "$BUILDER" archive --format=tar "$MIGRATED_SHA" >"$ROOT/release-migrated.tar"
-tar -rf "$ROOT/release-migrated.tar" -C "$BUILDER" dist
-gzip -n "$ROOT/release-migrated.tar"
-MIGRATED_ARTIFACT="$ROOT/release-migrated.tar.gz"
+MIGRATED_RELEASE_DIR="$ROOT/release-migrated"
+build_release "$MIGRATED_SHA" "$MIGRATED_RELEASE_DIR"
+MIGRATED_ARTIFACT="$MIGRATED_RELEASE_DIR/retail-release-${MIGRATED_SHA}.tar.gz"
+[[ "$(<"$MIGRATED_RELEASE_DIR/SOURCE_SHA")" == "$MIGRATED_SHA" ]]
+(cd "$MIGRATED_RELEASE_DIR" && sha256sum --check SHA256SUMS >/dev/null)
 MIGRATED_ARTIFACT_SHA256="$(sha256sum "$MIGRATED_ARTIFACT" | awk '{print $1}')"
 MIGRATED_RUN_ID="$((CI_RUN_ID + 20))"
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null

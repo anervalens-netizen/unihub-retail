@@ -131,6 +131,9 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 - Push-ul direct în `main` este acceptat pentru schimbări obișnuite verificate.
   Dacă este deschis un PR, du-l fără o nouă confirmare prin CI, merge, deploy și
   verificare live. Vezi `docs/adr/005-chat-authorized-delivery.md`.
+- Pentru un release formal, rulează manual `CI` numai de pe `main`; approval-ul
+  și deployul folosesc exact `head_sha` și digestul artefactului acelui run,
+  niciodată un rebuild local.
 - Frontend changes are not live until `npm run build`.
 - Backend changes require `unihub-backend.service` restart.
 - Worker/job changes also require `unihub-worker.service` restart.

@@ -22,6 +22,17 @@ Run the sandbox without production access:
 ops/test-deploy-retail-artifact.sh
 ```
 
+## Artifactul CI manual
+
+Pentru un release formal, pornește manual workflowul `CI` doar de pe `main`.
+După toate verificările, el rulează
+`ops/build-retail-release-artifact.sh` pentru exact `GITHUB_SHA` al runului și
+publică trei fișiere: `SOURCE_SHA`, `SHA256SUMS` și
+`retail-release-<SHA>.tar.gz`. Scriptul refuză un checkout diferit, build lipsă
+sau linkuri simbolice în `dist`; deployul re-arhivează independent același SHA
+și refuză artefactul dacă sursa nu coincide byte cu byte. Folosește `head_sha`
+din acel run atât la approval, cât și la deploy; nu reconstrui artefactul.
+
 Validate an already downloaded CI artifact without deploying it:
 
 ```bash

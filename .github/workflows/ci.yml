@@ -270,7 +270,7 @@ jobs:
         run: npm run build
 
       - name: Verify production RUM artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         run: npm run verify:rum-build
 
       - name: Install Playwright browser
@@ -291,32 +291,11 @@ jobs:
           retention-days: 3
 
       - name: Package tested main release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          set -euo pipefail
-          release_root="$(mktemp -d)"
-          trap 'rm -rf "$release_root"' EXIT
-          mkdir -p "$release_root/source"
-          git archive --format=tar HEAD | tar --extract --file=- \
-            --directory "$release_root/source"
-          cp -a dist "$release_root/source/dist"
-          printf '%s\n' "$GITHUB_SHA" > "$release_root/SOURCE_SHA"
-          tar --create --gzip \
-            --file "$release_root/retail-release-${GITHUB_SHA}.tar.gz" \
-            --directory "$release_root/source" .
-          (
-            cd "$release_root"
-            sha256sum SOURCE_SHA "retail-release-${GITHUB_SHA}.tar.gz" \
-              > SHA256SUMS
-          )
-          mkdir -p release-artifact
-          cp "$release_root/SOURCE_SHA" \
-            "$release_root/SHA256SUMS" \
-            "$release_root/retail-release-${GITHUB_SHA}.tar.gz" \
-            release-artifact/
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        run: ops/build-retail-release-artifact.sh "$GITHUB_SHA" release-artifact
 
       - name: Upload tested main release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: retail-release-${{ github.sha }}

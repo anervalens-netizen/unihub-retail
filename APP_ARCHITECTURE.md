@@ -63,6 +63,13 @@ read-only starea migrations la startup si nu executa DDL sau backfill. Runnerul
 foloseste explicit `MIGRATION_DATABASE_URL`, iar bootstrap-ul nou reaplica doar
 seed-urile de date desemnate care nu pot exista in baseline-ul DDL.
 
+Release-ul formal este o frontiera separata: un run manual `CI` pe `main`
+impacheteaza sursa exact la `head_sha` plus `dist` verificat si publica SHA-256.
+Approval-ul one-time leaga runul, SHA-ul si digestul; entrypointul root-owned
+recompara sursa artefactului cu acel commit inainte de mutatii. Rollback-ul este
+permis numai intre manifeste de migrari identice; altfel recuperarea este
+strict roll-forward coordonat.
+
 ## Diagrama
 
 ```mermaid

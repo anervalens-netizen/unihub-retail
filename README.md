@@ -175,6 +175,9 @@ canonică este [`ADR-005`](docs/adr/005-chat-authorized-delivery.md); mecanismul
 formal este documentat în `ops/README.md` și
 `docs/engineering/pr-runner-isolation.md`.
 
+Un run manual `CI` de pe `main` livrează artefactul numit după `head_sha`; acel
+SHA și digestul publicat sunt singurele valori admise pentru approval și deploy.
+
 ## Documentație specializată
 
 - campanii: `docs/RUNBOOK-campanii-promo-incentive-concursuri.md`;
