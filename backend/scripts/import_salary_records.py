@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
+import json
 import os
 import re
 import sys
@@ -22,6 +24,9 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+
+CNP_WEIGHTS = (2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9)
+REQUIRED_COMPANIES = ("Mobiup", "Mobicell")
 
 import asyncpg
 import pandas as pd
@@ -127,6 +132,9 @@ class SalaryRecord:
     company_name: str
     site_code: str | None
     locatie: str
+    source_file: str = ""
+    source_row: int | None = None
+    source_sha256: str = ""
 
 
 def normalize_text(value: Any) -> str:
@@ -144,7 +152,19 @@ def format_cnp(value: Any) -> str:
     text = str(value).strip()
     if re.fullmatch(r"\d+(\.0+)?", text):
         return str(int(float(text)))
-    return re.sub(r"\D", "", text)
+    return text
+
+
+def validate_cnp(value: Any) -> str:
+    cnp = format_cnp(value)
+    if not re.fullmatch(r"\d{13}", cnp):
+        raise ValueError("CNP invalid: sunt necesare exact 13 cifre")
+    checksum = sum(int(digit) * weight for digit, weight in zip(cnp[:12], CNP_WEIGHTS)) % 11
+    if checksum == 10:
+        checksum = 1
+    if int(cnp[-1]) != checksum:
+        raise ValueError("CNP invalid: checksum invalid")
+    return cnp
 
 
 def decimal_value(value: Any) -> Decimal:
@@ -155,6 +175,10 @@ def decimal_value(value: Any) -> Decimal:
 
 def company_key(value: str) -> str:
     return normalize_text(value).replace(" ", "")
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 async def load_store_map(conn: asyncpg.Connection) -> dict[tuple[str, str], str | None]:
@@ -176,23 +200,28 @@ def parse_file(
     month: int,
     company_name: str,
     store_map: dict[tuple[str, str], str | None],
+    source_sha256: str | None = None,
 ) -> list[SalaryRecord]:
-    df = pd.read_excel(path, sheet_name=0)
+    source_path = Path(path)
+    source_name = source_path.name
+    source_digest = source_sha256 or (sha256_file(source_path) if source_path.is_file() else "")
+    df = pd.read_excel(source_path, sheet_name=0)
     cnp_col = "CNP" if "CNP" in df.columns else "cnp"
     meal_col = next((col for col in df.columns if normalize_text(col).startswith("BONURI MASA")), None)
     required = {"Denumire locatie", cnp_col, "Nume Prenume", "TOTAL SALARIU"}
     missing = [col for col in required if col not in df.columns]
     if missing or meal_col is None:
-        raise ValueError(f"{path.name}: coloane lipsa: {missing}; meal_col={meal_col!r}")
+        raise ValueError(f"{source_name}: coloane lipsa: {missing}; meal_col={meal_col!r}")
 
     records: list[SalaryRecord] = []
-    for _, row in df.iterrows():
+    for source_row, (_, row) in enumerate(df.iterrows(), start=2):
         full_name = str(row["Nume Prenume"]).strip() if pd.notna(row["Nume Prenume"]) else ""
         if not full_name or normalize_text(full_name).startswith("TOTAL"):
             continue
-        cnp = format_cnp(row[cnp_col])
-        if not cnp:
-            continue
+        try:
+            cnp = validate_cnp(row[cnp_col])
+        except ValueError as exc:
+            raise ValueError(f"{source_name}, randul {source_row}: {exc}") from exc
 
         locatie = str(row["Denumire locatie"]).strip() if pd.notna(row["Denumire locatie"]) else ""
         normalized_location = normalize_text(locatie)
@@ -211,74 +240,115 @@ def parse_file(
                 company_name=company_name,
                 site_code=site_code,
                 locatie=locatie,
+                source_file=source_name,
+                source_row=source_row,
+                source_sha256=source_digest,
             )
         )
     return records
 
 
 def validate_records(records: list[SalaryRecord]) -> None:
-    seen: set[tuple[int, int, str, str, str]] = set()
-    duplicates: list[SalaryRecord] = []
+    seen_source_rows: set[tuple[str, int]] = set()
+    names_by_cnp: dict[str, set[str]] = {}
     for record in records:
-        key = (record.year, record.month, record.cnp, record.full_name, record.company_name)
-        if key in seen:
-            duplicates.append(record)
-        seen.add(key)
-    if duplicates:
-        raise ValueError(
-            "Duplicate pe cheia salary_records: "
-            f"duplicate_count={len(duplicates)}"
+        cnp = validate_cnp(record.cnp)
+        names_by_cnp.setdefault(cnp, set()).add(normalize_text(record.full_name))
+        if record.source_file and record.source_row is not None:
+            source_key = (record.source_sha256 or record.source_file, record.source_row)
+            if source_key in seen_source_rows:
+                raise ValueError("Duplicate source row in salary batch")
+            seen_source_rows.add(source_key)
+
+    if any(len(names) > 1 for names in names_by_cnp.values()):
+        raise ValueError("Conflict identitate: acelasi CNP are nume normalizate diferite")
+
+
+def build_dry_run_manifest(
+    records: list[SalaryRecord],
+    *,
+    year: int,
+    month: int,
+    source_files: list[tuple[str, Path]],
+    source_hashes: dict[str, str],
+) -> dict[str, Any]:
+    companies: list[dict[str, Any]] = []
+    for company_name, path in source_files:
+        company_records = [record for record in records if record.company_name == company_name]
+        total = sum((record.total_salary for record in company_records), Decimal("0"))
+        companies.append(
+            {
+                "company_name": company_name,
+                "source_file": path.name,
+                "source_sha256": source_hashes[company_name],
+                "row_count": len(company_records),
+                "control_total": f"{total:.2f}",
+                "mapped_site_rows": sum(1 for record in company_records if record.site_code),
+                "unmapped_locations": sorted(
+                    {record.locatie for record in company_records if not record.site_code}
+                ),
+            }
         )
+    grand_total = sum((record.total_salary for record in records), Decimal("0"))
+    return {
+        "manifest_version": 1,
+        "year": year,
+        "month": month,
+        "companies": companies,
+        "row_count": len(records),
+        "control_total": f"{grand_total:.2f}",
+    }
 
 
 async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) -> None:
     if not records:
         raise ValueError("Nu exista randuri valide de importat.")
+    validate_records(records)
     person_id_key = get_salary_person_id_key()
     identified_records = [
         (record, make_salary_person_id(record.cnp, record.full_name, person_id_key))
         for record in records
     ]
-    await conn.executemany(
-        """
-        INSERT INTO salary_private.people (
-            person_id, cnp, normalized_name, identity_source
-        ) VALUES ($1, $2, LOWER(BTRIM($3)), 'cnp')
-        ON CONFLICT (person_id) DO UPDATE SET
-            cnp = EXCLUDED.cnp,
-            normalized_name = EXCLUDED.normalized_name
-        """,
-        [(person_id, record.cnp, record.full_name) for record, person_id in identified_records],
-    )
-    await conn.execute(
-        "DELETE FROM salary_records WHERE year = $1 AND month = $2 AND company_name = ANY($3::text[])",
-        records[0].year,
-        records[0].month,
-        sorted({r.company_name for r in records}),
-    )
-    await conn.executemany(
-        """
-        INSERT INTO salary_records (
-            year, month, full_name, cnp, total_salary, company_name, site_code, locatie,
-            person_id
+
+    async with conn.transaction():
+        await conn.executemany(
+            """
+            INSERT INTO salary_private.people (
+                person_id, cnp, normalized_name, identity_source
+            ) VALUES ($1, $2, LOWER(BTRIM($3)), 'cnp')
+            ON CONFLICT (person_id) DO NOTHING
+            """,
+            [(person_id, record.cnp, record.full_name) for record, person_id in identified_records],
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        """,
-        [
-            (
-                r.year,
-                r.month,
-                r.full_name,
-                r.cnp,
-                r.total_salary,
-                r.company_name,
-                r.site_code,
-                r.locatie,
-                person_id,
+        await conn.execute(
+            "DELETE FROM salary_records WHERE year = $1 AND month = $2 AND company_name = ANY($3::text[])",
+            records[0].year,
+            records[0].month,
+            sorted({r.company_name for r in records}),
+        )
+        await conn.executemany(
+            """
+            INSERT INTO salary_records (
+                year, month, full_name, cnp, total_salary, company_name, site_code, locatie,
+                person_id
             )
-            for r, person_id in identified_records
-        ],
-    )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            """,
+            [
+                (
+                    r.year,
+                    r.month,
+                    r.full_name,
+                    r.cnp,
+                    r.total_salary,
+                    r.company_name,
+                    r.site_code,
+                    r.locatie,
+                    person_id,
+                )
+                for r, person_id in identified_records
+            ],
+        )
 
 
 def print_summary(records: list[SalaryRecord]) -> None:
@@ -314,6 +384,12 @@ async def main() -> None:
             print(f"EROARE: fisierul nu exista: {file_path}", file=sys.stderr)
             sys.exit(1)
 
+    source_files = [
+        ("Mobiup", args.mobiup_file),
+        ("Mobicell", args.mobicell_file),
+    ]
+    source_hashes = {company_name: sha256_file(path) for company_name, path in source_files}
+
     conn = await asyncpg.connect(db_url)
     try:
         store_map = await load_store_map(conn)
@@ -324,6 +400,7 @@ async def main() -> None:
                 month=args.month,
                 company_name="Mobiup",
                 store_map=store_map,
+                source_sha256=source_hashes["Mobiup"],
             ),
             *parse_file(
                 args.mobicell_file,
@@ -331,17 +408,34 @@ async def main() -> None:
                 month=args.month,
                 company_name="Mobicell",
                 store_map=store_map,
+                source_sha256=source_hashes["Mobicell"],
             ),
         ]
         validate_records(records)
+        manifest = build_dry_run_manifest(
+            records,
+            year=args.year,
+            month=args.month,
+            source_files=source_files,
+            source_hashes=source_hashes,
+        )
         print_summary(records)
+        missing_companies = [
+            company_name
+            for company_name in REQUIRED_COMPANIES
+            if not any(record.company_name == company_name for record in records)
+        ]
         if not args.apply:
+            print("DRY RUN MANIFEST: " + json.dumps(manifest, ensure_ascii=False, sort_keys=True))
+            if missing_companies:
+                raise ValueError("Batch HR incomplet: ambele firme sunt obligatorii")
             print("DRY RUN: nu s-a scris nimic. Adauga --apply pentru import.")
             return
+        if missing_companies:
+            raise ValueError("Batch HR incomplet: ambele firme sunt obligatorii")
         if not records:
             raise ValueError("Nu exista randuri valide de importat.")
-        async with conn.transaction():
-            await insert_records(conn, records)
+        await insert_records(conn, records)
         print(f"Import finalizat pentru {args.year}-{args.month:02d}: {len(records)} randuri.")
     finally:
         await conn.close()
