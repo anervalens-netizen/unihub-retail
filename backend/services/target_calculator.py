@@ -1106,12 +1106,32 @@ class TargetCalculatorService:
             (record["site_code"], record["category_code"]): Decimal(record["amount"] or 0)
             for record in inputs.get("pnl_rows") or []
         }
-        forecast_values = {
-            record["site_code"]: money(Decimal(record["forecast_sales"] or 0))
-            for record in inputs.get("forecast_rows") or []
-        }
+        expected_forecast_site_codes = {str(row["site_code"]) for row in rows}
+        forecast_values: dict[str, Decimal] = {}
+        for record in inputs.get("forecast_rows") or []:
+            forecast_sales = record["forecast_sales"]
+            if forecast_sales is not None:
+                forecast_values[str(record["site_code"])] = money(Decimal(forecast_sales))
         forecast_run_record = inputs.get("forecast_run")
         forecast_run = dict(forecast_run_record) if forecast_run_record else None
+        covered_forecast_site_codes = expected_forecast_site_codes & set(forecast_values)
+        missing_forecast_site_codes = sorted(
+            expected_forecast_site_codes - covered_forecast_site_codes
+        )
+        forecast_cutoff_month = (
+            str(forecast_run["source_month"])
+            if forecast_run is not None and forecast_run.get("source_month") is not None
+            else None
+        )
+        forecast_coverage_contract = {
+            "mode": "uniform" if forecast_run is not None else "unavailable",
+            "cutoff_month": forecast_cutoff_month,
+            "min_cutoff_month": forecast_cutoff_month,
+            "max_cutoff_month": forecast_cutoff_month,
+            "expected_store_count": len(expected_forecast_site_codes),
+            "covered_store_count": len(covered_forecast_site_codes),
+            "missing_site_codes": missing_forecast_site_codes,
+        }
         saved_target_rule_set = self._saved_target_rule_set(scenario)
         saved_profitability = (
             rule_set_profitability_assumptions(saved_target_rule_set)
@@ -1214,8 +1234,9 @@ class TargetCalculatorService:
                 "anomaly_flags": anomaly_flags,
             }
 
-        forecast_coverage = len(forecast_values)
-        source_status = "ready" if complete_pnl_count == len(rows) and forecast_coverage == len(rows) else "partial"
+        forecast_coverage = len(covered_forecast_site_codes)
+        forecast_complete = not missing_forecast_site_codes and forecast_run is not None
+        source_status = "ready" if complete_pnl_count == len(rows) and forecast_complete else "partial"
         return {
             "status": source_status,
             "pnl_months": pnl_months,
@@ -1227,12 +1248,14 @@ class TargetCalculatorService:
                 "model_mode": forecast_run["model_mode"],
                 "variant": forecast_run["variant"],
                 "generated_at": forecast_run["generated_at"],
+                "source_month": forecast_cutoff_month,
             } if forecast_run else None,
+            "forecast_coverage": forecast_coverage_contract,
             "assumptions": saved_profitability,
             "salary_total": float(money(salary_total)),
             "operating_costs_total": float(money(opex_total)) if complete_pnl_count else None,
             "break_even_total": float(money(break_even_total)) if complete_pnl_count else None,
-            "forecast_total": float(money(forecast_total)) if forecast_coverage else None,
+            "forecast_total": float(money(forecast_total)) if forecast_complete else None,
             "forecast_below_break_even_count": forecast_below_break_even_count,
             "target_below_break_even_count": target_below_break_even_count,
         }

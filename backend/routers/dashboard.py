@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from db.connection import get_pool
 from schemas.dashboard import (
@@ -11,21 +12,39 @@ from schemas.dashboard import (
     DashboardAllBatchResponse,
     DashboardAllResponse,
     DashboardHistoryResponse,
-    PerformanceDetailResponse,
     DashboardSpecialCardsResponse,
     DashboardSummary,
+    PerformanceDetailResponse,
     YearHistoryResponse,
 )
 from schemas.premium_glass import PremiumGlassAnalysis
 from repositories.dashboard import DashboardRepository
+from services.dashboard_filters import canonical_dashboard_site_codes
 from services.dashboard_service import DashboardService
+from services.request_deadline import RequestDeadline, RequestDeadlineExceeded
+
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+
 
 async def get_dashboard_service() -> DashboardService:
     pool = await get_pool()
     repo = DashboardRepository(pool)
     return DashboardService(repo, pool)
+
+
+async def _run_dashboard(
+    operation: Callable[[RequestDeadline], Awaitable[Any]],
+) -> Any:
+    deadline = RequestDeadline.dashboard()
+    try:
+        return await deadline.run(operation(deadline))
+    except RequestDeadlineExceeded:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Dashboard request deadline exceeded.",
+        ) from None
+
 
 @router.get("/summary", response_model=DashboardSummary)
 async def get_summary(
@@ -37,7 +56,13 @@ async def get_summary(
     agent: str | None = None,
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardSummary:
-    return await svc.get_summary(month, firma, regional, asm, site_code, agent)
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_summary(
+            month, firma, regional, asm, site_code, agent, deadline=deadline
+        )
+    )
+
 
 @router.get("/all", response_model=DashboardAllResponse)
 async def get_dashboard_all(
@@ -51,8 +76,19 @@ async def get_dashboard_all(
     include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardAllResponse:
-    return await svc.get_dashboard_all(
-        month, firma, regional, asm, site_code, agent, current_scope, include_closed_stores
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_dashboard_all(
+            month,
+            firma,
+            regional,
+            asm,
+            site_code,
+            agent,
+            current_scope,
+            include_closed_stores,
+            deadline=deadline,
+        )
     )
 
 
@@ -61,7 +97,9 @@ async def get_dashboard_all_batch(
     request: DashboardAllBatchRequest,
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardAllBatchResponse:
-    return await svc.get_dashboard_all_batch(request.queries)
+    return await _run_dashboard(
+        lambda deadline: svc.get_dashboard_all_batch(request.queries, deadline=deadline)
+    )
 
 
 @router.post("/history-details-batch", response_model=DashboardAllBatchResponse)
@@ -69,7 +107,13 @@ async def get_dashboard_history_details_batch(
     request: DashboardAllBatchRequest,
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardAllBatchResponse:
-    return await svc.get_dashboard_history_details_batch(request.queries)
+    return await _run_dashboard(
+        lambda deadline: svc.get_dashboard_history_details_batch(
+            request.queries,
+            deadline=deadline,
+        )
+    )
+
 
 @router.get("/daily", response_model=list[DailySalesPoint])
 async def get_daily_sales(
@@ -81,7 +125,13 @@ async def get_daily_sales(
     agent: str | None = None,
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> list[DailySalesPoint]:
-    return await svc.get_daily_sales(month, firma, regional, asm, site_code, agent)
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_daily_sales(
+            month, firma, regional, asm, site_code, agent, deadline=deadline
+        )
+    )
+
 
 @router.get("/special-cards", response_model=DashboardSpecialCardsResponse)
 async def get_special_cards(
@@ -93,7 +143,13 @@ async def get_special_cards(
     agent: str | None = None,
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardSpecialCardsResponse:
-    return await svc.get_special_cards(month, firma, regional, asm, site_code, agent)
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_special_cards(
+            month, firma, regional, asm, site_code, agent, deadline=deadline
+        )
+    )
+
 
 @router.get("/premium-glass", response_model=PremiumGlassAnalysis)
 async def get_premium_glass(
@@ -108,17 +164,22 @@ async def get_premium_glass(
     include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> PremiumGlassAnalysis:
-    return await svc.get_premium_glass(
-        month,
-        firma,
-        regional,
-        asm,
-        site_code,
-        agent,
-        surface,
-        current_scope,
-        include_closed_stores,
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_premium_glass(
+            month,
+            firma,
+            regional,
+            asm,
+            site_code,
+            agent,
+            surface,
+            current_scope,
+            include_closed_stores,
+            deadline=deadline,
+        )
     )
+
 
 @router.get("/history", response_model=DashboardHistoryResponse)
 async def get_monthly_history(
@@ -133,17 +194,22 @@ async def get_monthly_history(
     include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardHistoryResponse:
-    return await svc.get_monthly_history(
-        month,
-        months_back,
-        firma,
-        regional,
-        asm,
-        site_code,
-        agent,
-        current_scope,
-        include_closed_stores,
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_monthly_history(
+            month,
+            months_back,
+            firma,
+            regional,
+            asm,
+            site_code,
+            agent,
+            current_scope,
+            include_closed_stores,
+            deadline=deadline,
+        )
     )
+
 
 @router.get("/history-year", response_model=YearHistoryResponse)
 async def get_history_by_year(
@@ -157,8 +223,19 @@ async def get_history_by_year(
     include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> YearHistoryResponse:
-    return await svc.get_history_by_year(
-        year, firma, regional, asm, site_code, agent, current_scope, include_closed_stores
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_history_by_year(
+            year,
+            firma,
+            regional,
+            asm,
+            site_code,
+            agent,
+            current_scope,
+            include_closed_stores,
+            deadline=deadline,
+        )
     )
 
 
@@ -176,15 +253,19 @@ async def get_performance_detail(
     include_closed_stores: bool = Query(False),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> PerformanceDetailResponse:
-    return await svc.get_performance_detail(
-        month,
-        level,
-        key,
-        firma,
-        regional,
-        asm,
-        site_code,
-        agent,
-        current_scope,
-        include_closed_stores,
+    site_code = canonical_dashboard_site_codes(site_code)
+    return await _run_dashboard(
+        lambda deadline: svc.get_performance_detail(
+            month,
+            level,
+            key,
+            firma,
+            regional,
+            asm,
+            site_code,
+            agent,
+            current_scope,
+            include_closed_stores,
+            deadline=deadline,
+        )
     )

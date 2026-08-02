@@ -16,9 +16,12 @@ class DashboardRepository:
         params: list[Any],
         cartela_clauses: list[str],
         current_scope: bool = False,
+        *,
+        pool: Any | None = None,
     ) -> asyncpg.Record | None:
+        active_pool = pool or self.pool
         store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
-        async with self.pool.acquire() as conn:
+        async with active_pool.acquire() as conn:
             return await conn.fetchrow(
                 f"""
                 WITH filtered_days AS (
@@ -138,10 +141,16 @@ class DashboardRepository:
             )
 
     async def fetch_daily_sales(
-        self, clauses: list[str], params: list[Any], current_scope: bool = False
+        self,
+        clauses: list[str],
+        params: list[Any],
+        current_scope: bool = False,
+        *,
+        pool: Any | None = None,
     ) -> list[asyncpg.Record]:
+        active_pool = pool or self.pool
         store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
-        async with self.pool.acquire() as conn:
+        async with active_pool.acquire() as conn:
             return await conn.fetch(
                 f"""
                 SELECT
@@ -159,8 +168,14 @@ class DashboardRepository:
             )
 
     async def fetch_monthly_history(
-        self, sales_clauses: list[str], params: list[Any], current_scope: bool = False
+        self,
+        sales_clauses: list[str],
+        params: list[Any],
+        current_scope: bool = False,
+        *,
+        pool: Any | None = None,
     ) -> list[asyncpg.Record]:
+        active_pool = pool or self.pool
         store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
         return_receipt_identity = canonical_receipt_identity_sql("st")
         target_store_clauses = [
@@ -173,7 +188,7 @@ class DashboardRepository:
             for clause in sales_clauses
             if "import_month" not in clause
         ]
-        async with self.pool.acquire() as conn:
+        async with active_pool.acquire() as conn:
             return await conn.fetch(
                 f"""
                 WITH recent_months AS (
@@ -279,9 +294,17 @@ class DashboardRepository:
                 *params,
             )
 
-    async def fetch_year_history_agg(self, year: int, hist_clauses: list[str], hist_params: list[Any]) -> asyncpg.Record | None:
+    async def fetch_year_history_agg(
+        self,
+        year: int,
+        hist_clauses: list[str],
+        hist_params: list[Any],
+        *,
+        pool: Any | None = None,
+    ) -> asyncpg.Record | None:
+        active_pool = pool or self.pool
         where_hist = f"AND {' AND '.join(hist_clauses)}" if hist_clauses else ""
-        async with self.pool.acquire() as conn:
+        async with active_pool.acquire() as conn:
             return await conn.fetchrow(
                 f"""
                 SELECT COALESCE(SUM(has.total_value), 0) AS total_sales,
@@ -293,7 +316,14 @@ class DashboardRepository:
                 *hist_params,
             )
 
-    async def fetch_year_history_monthly(self, rep_clauses: list[str], rep_params: list[Any]) -> list[asyncpg.Record]:
+    async def fetch_year_history_monthly(
+        self,
+        rep_clauses: list[str],
+        rep_params: list[Any],
+        *,
+        pool: Any | None = None,
+    ) -> list[asyncpg.Record]:
+        active_pool = pool or self.pool
         where_rep = f"AND {' AND '.join(rep_clauses)}" if rep_clauses else ""
         store_clauses = [
             clause.replace("agg.", "s.").replace("s.agent", "agg.agent")
@@ -310,7 +340,7 @@ class DashboardRepository:
             if ".agent" not in clause
         ]
         where_historical = f"AND {' AND '.join(historical_clauses)}" if historical_clauses else ""
-        async with self.pool.acquire() as conn:
+        async with active_pool.acquire() as conn:
             return await conn.fetch(
                 f"""
                 WITH all_months AS (

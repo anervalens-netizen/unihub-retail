@@ -264,6 +264,7 @@ async def test_profitability_uses_real_pnl_margin_gross_vat_and_flags_break_even
             "model_mode": "ensemble",
             "variant": "august_exact",
             "generated_at": "2026-07-29T10:00:00",
+            "source_month": "2026-07",
         },
         "forecast_rows": [
             {"site_code": "SITE01", "forecast_sales": Decimal("35000")},
@@ -292,8 +293,61 @@ async def test_profitability_uses_real_pnl_margin_gross_vat_and_flags_break_even
     assert summary["status"] == "ready"
     assert summary["pnl_store_count"] == 1
     assert summary["forecast_store_count"] == 1
+    assert summary["forecast_coverage"] == {
+        "mode": "uniform",
+        "cutoff_month": "2026-07",
+        "min_cutoff_month": "2026-07",
+        "max_cutoff_month": "2026-07",
+        "expected_store_count": 1,
+        "covered_store_count": 1,
+        "missing_site_codes": [],
+    }
     assert summary["forecast_below_break_even_count"] == 1
     assert summary["target_below_break_even_count"] == 0
+
+
+def test_profitability_coverage_keeps_missing_forecast_explicit_and_never_zeros_it() -> None:
+    service, _repo = make_service()
+    rows = [
+        {"site_code": "SITE01", "calculated_weight": Decimal("1"), "proposed_target": Decimal("100")},
+        {"site_code": "SITE02", "calculated_weight": Decimal("1"), "proposed_target": Decimal("100")},
+    ]
+
+    summary = service._populate_profitability(
+        {"target_month": "2026-08"},
+        rows,
+        {
+            "pnl_months": [],
+            "pnl_rows": [],
+            "forecast_run": {
+                "id": 9,
+                "model_name": "model",
+                "model_mode": "test",
+                "variant": "current",
+                "generated_at": "2026-08-01T00:00:00",
+                "source_month": "2026-07",
+            },
+            "forecast_rows": [
+                {"site_code": "SITE01", "forecast_sales": Decimal("125.50")},
+                {"site_code": "SITE02", "forecast_sales": None},
+            ],
+        },
+    )
+
+    assert summary["forecast_coverage"] == {
+        "mode": "uniform",
+        "cutoff_month": "2026-07",
+        "min_cutoff_month": "2026-07",
+        "max_cutoff_month": "2026-07",
+        "expected_store_count": 2,
+        "covered_store_count": 1,
+        "missing_site_codes": ["SITE02"],
+    }
+    assert summary["forecast_total"] is None
+    second_profitability = rows[1].get("profitability")
+    assert isinstance(second_profitability, dict)
+    assert second_profitability["forecast_sales"] is None
+    assert "FORECAST_MISSING" in second_profitability["anomaly_flags"]
 
 
 @pytest.mark.asyncio

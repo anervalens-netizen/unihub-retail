@@ -63,6 +63,7 @@ from services.dashboard.metrics import (
 from services.dashboard.utils import _expand_current_manager_scope
 from services.filters import build_scoped_params, normalize_filter, scoped_clauses
 from services.premium_glass import build_premium_glass_card, get_premium_glass_analysis
+from services.request_deadline import RequestDeadline
 
 
 _RO_MONTHS = {
@@ -144,6 +145,9 @@ class DashboardService:
         self.repo = repo
         self.pool = pool
 
+    def _pool_for(self, deadline: RequestDeadline | None) -> Any:
+        return deadline.bind_pool(self.pool) if deadline is not None else self.pool
+
     async def get_summary(
         self,
         month: str,
@@ -154,6 +158,8 @@ class DashboardService:
         agent: str | None,
         current_scope: bool = False,
         include_closed_stores: bool = False,
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> DashboardSummary:
         params, positions = build_scoped_params(
             [month],
@@ -189,7 +195,7 @@ class DashboardService:
         if current_scope and not include_closed_stores:
             cartela_clauses.append("cs.is_active = true")
 
-        row = await self.repo.fetch_summary(clauses, params, cartela_clauses, current_scope)
+        row = await self.repo.fetch_summary(clauses, params, cartela_clauses, current_scope, pool=self._pool_for(deadline))
         if row is None:
             return DashboardSummary(
                 month=month,
@@ -225,6 +231,8 @@ class DashboardService:
         agent: str | None,
         current_scope: bool = False,
         include_closed_stores: bool = False,
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> list[DailySalesPoint]:
         params, positions = build_scoped_params(
             [month],
@@ -247,7 +255,7 @@ class DashboardService:
         if current_scope and not include_closed_stores:
             clauses.append("s.is_active = true")
 
-        rows = await self.repo.fetch_daily_sales(clauses, params, current_scope)
+        rows = await self.repo.fetch_daily_sales(clauses, params, current_scope, pool=self._pool_for(deadline))
         return [DailySalesPoint(**dict(row)) for row in rows]
 
     async def get_special_cards(
@@ -258,11 +266,19 @@ class DashboardService:
         asm: str | None,
         site_code: str | None,
         agent: str | None,
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> DashboardSpecialCardsResponse:
         cards = await _get_special_cards_data(
-            month, firma, regional, asm, site_code, agent
+            month,
+            firma,
+            regional,
+            asm,
+            site_code,
+            agent,
+            pool=self._pool_for(deadline),
         )
-        async with self.pool.acquire() as conn:
+        async with self._pool_for(deadline).acquire() as conn:
             premium_glass = await get_premium_glass_analysis(
                 conn,
                 month,
@@ -288,8 +304,10 @@ class DashboardService:
         surface: Literal["all", "screen", "camera"] = "all",
         current_scope: bool = True,
         include_closed_stores: bool = False,
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> PremiumGlassAnalysis:
-        async with self.pool.acquire() as conn:
+        async with self._pool_for(deadline).acquire() as conn:
             return await get_premium_glass_analysis(
                 conn,
                 month,
@@ -314,6 +332,8 @@ class DashboardService:
         agent: str | None,
         current_scope: bool = False,
         include_closed_stores: bool = False,
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> DashboardHistoryResponse:
         params, positions = build_scoped_params(
             [month, months_back],
@@ -339,7 +359,7 @@ class DashboardService:
         if current_scope and not include_closed_stores:
             sales_clauses.append("s.is_active = true")
 
-        rows = await self.repo.fetch_monthly_history(sales_clauses, params, current_scope)
+        rows = await self.repo.fetch_monthly_history(sales_clauses, params, current_scope, pool=self._pool_for(deadline))
         return DashboardHistoryResponse(
             history=[MonthlyHistoryPoint(**dict(row)) for row in rows]
         )
@@ -354,11 +374,13 @@ class DashboardService:
         agent: str | None,
         current_scope: bool = False,
         include_closed_stores: bool = False,
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> YearHistoryResponse:
         _firma = normalize_filter(firma)
         _regional = normalize_filter(regional)
         _asm = normalize_filter(asm)
-        _site_code = normalize_filter(site_code)
+        _site_code = site_code
         _agent = normalize_filter(agent)
 
         points: list[YearHistoryPoint] = []
@@ -400,7 +422,7 @@ class DashboardService:
         if current_scope and not include_closed_stores:
             rep_clauses.append("s.is_active = TRUE")
 
-        rows = await self.repo.fetch_year_history_monthly(rep_clauses, rep_params)
+        rows = await self.repo.fetch_year_history_monthly(rep_clauses, rep_params, pool=self._pool_for(deadline))
         visible_rows = [
             r
             for r in rows
@@ -443,7 +465,7 @@ class DashboardService:
             if current_scope and not include_closed_stores:
                 hist_clauses.append("s.is_active = TRUE")
 
-            row = await self.repo.fetch_year_history_agg(year, hist_clauses, hist_params)
+            row = await self.repo.fetch_year_history_agg(year, hist_clauses, hist_params, pool=self._pool_for(deadline))
             if row and row["total_sales"] > 0:
                 points.append(
                     YearHistoryPoint(
@@ -483,6 +505,8 @@ class DashboardService:
         agent: str | None,
         current_scope: bool = True,
         include_closed_stores: bool = False,
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> PerformanceDetailResponse:
         del regional, asm, agent
         key = key.strip()
@@ -499,7 +523,7 @@ class DashboardService:
         context_summary: DashboardSummary | None = None
         selected_agent_stats: AgentStats | None = None
 
-        async with self.pool.acquire() as conn:
+        async with self._pool_for(deadline).acquire() as conn:
             if level == "regional":
                 effective_regional = key
                 regional_rows = await _fetch_regional_stats(
@@ -550,7 +574,7 @@ class DashboardService:
                 )
                 peer_rows = self._store_peer_rows([StoreStats(**dict(row)) for row in peer_source], key)
             elif level == "agent":
-                effective_site_code = normalize_filter(site_code)
+                effective_site_code = site_code
                 effective_agent = key
                 agent_rows = await _fetch_agent_stats_rows(
                     conn,
@@ -596,6 +620,7 @@ class DashboardService:
                 effective_agent,
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
+                deadline=deadline,
             ),
             self.get_monthly_history(
                 month,
@@ -607,6 +632,7 @@ class DashboardService:
                 effective_agent,
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
+                deadline=deadline,
             ),
             self.get_daily_sales(
                 month,
@@ -617,6 +643,7 @@ class DashboardService:
                 effective_agent,
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
+                deadline=deadline,
             ),
         )
 
@@ -632,6 +659,7 @@ class DashboardService:
                 None,
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
+                deadline=deadline,
             )
 
         score_breakdown = self._performance_score_breakdown(summary)
@@ -877,9 +905,10 @@ class DashboardService:
         include_closed_stores: bool = False,
         *,
         _history_projection: bool = False,
+        deadline: RequestDeadline | None = None,
     ) -> DashboardAllResponse:
         async def load_campaign_context():
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 return await _load_dashboard_campaign_context(
                     conn,
                     month,
@@ -909,7 +938,7 @@ class DashboardService:
                 if campaign_context_task is not None
                 else None
             )
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_agent_stats_rows(
                     conn,
                     month=month,
@@ -936,7 +965,7 @@ class DashboardService:
                 if campaign_context_task is not None
                 else None
             )
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_store_stats_rows(
                     conn,
                     month=month,
@@ -978,10 +1007,11 @@ class DashboardService:
                 agent,
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
+                deadline=deadline,
             )
 
         async def get_daily_last_year_data() -> list[DailySalesPoint]:
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_daily_last_year_for_current_cohort(
                     conn,
                     month,
@@ -998,7 +1028,7 @@ class DashboardService:
         async def get_period_comparison_data(
             target_metric: str = "sales",
         ) -> PeriodComparisonPayload:
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 return await _fetch_period_comparison(
                     conn,
                     target_metric=target_metric,
@@ -1013,7 +1043,7 @@ class DashboardService:
                 )
 
         async def get_category_mix_data() -> list[CategoryMixItem]:
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 return await _fetch_category_mix(
                     conn,
                     month=month,
@@ -1027,7 +1057,7 @@ class DashboardService:
                 )
 
         async def get_receipt_bucket_mix_data() -> list[ReceiptBucketItem]:
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 return await _fetch_receipt_bucket_mix(
                     conn,
                     month=month,
@@ -1041,7 +1071,7 @@ class DashboardService:
                 )
 
         async def get_focus_subcategory_mix_data() -> list[CategoryMixItem]:
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 return await _fetch_focus_subcategory_mix(
                     conn,
                     month=month,
@@ -1055,7 +1085,7 @@ class DashboardService:
                 )
 
         async def get_brand_mix_data() -> list[BrandMixItem]:
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 return await _fetch_brand_mix(
                     conn,
                     month=month,
@@ -1071,7 +1101,7 @@ class DashboardService:
         async def get_promo_incentive_data() -> PromoIncentiveSummary:
             assert campaign_context_task is not None
             campaign_context = await campaign_context_task
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 return await _fetch_promo_incentive_summary(
                     conn,
                     month=month,
@@ -1109,6 +1139,7 @@ class DashboardService:
                 include_closed_stores=include_closed_stores,
                 campaign_context=campaign_context,
                 promo_incentive_summary=promo_incentive_task,
+                pool=self._pool_for(deadline),
             )
 
         async def get_premium_glass_data() -> PremiumGlassAnalysis:
@@ -1121,6 +1152,7 @@ class DashboardService:
                 agent,
                 current_scope=True,
                 include_closed_stores=include_closed_stores,
+                deadline=deadline,
             )
 
         async def get_regional_data() -> list[RegionalStats]:
@@ -1129,7 +1161,7 @@ class DashboardService:
                 if campaign_context_task is not None
                 else None
             )
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_regional_stats(
                     conn,
                     month=month,
@@ -1185,7 +1217,7 @@ class DashboardService:
             return [RegionalStats(**row) for row in row_dicts]
 
         async def get_asm_data() -> list[AsmStats]:
-            async with self.pool.acquire() as conn:
+            async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_asm_stats(
                     conn,
                     month=month,
@@ -1211,6 +1243,7 @@ class DashboardService:
                     agent,
                     current_scope=current_scope,
                     include_closed_stores=include_closed_stores,
+                    deadline=deadline,
                 ),
             ),
             "agents": observe_dashboard_component("agents", get_agents_data()),
@@ -1311,12 +1344,14 @@ class DashboardService:
     async def get_dashboard_all_batch(
         self,
         queries: list[DashboardAllQuery],
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> DashboardAllBatchResponse:
         semaphore = asyncio.Semaphore(2)
 
         async def load(query: DashboardAllQuery) -> DashboardAllResponse:
             async with semaphore:
-                return await self.get_dashboard_all(**query.model_dump())
+                return await self.get_dashboard_all(**query.model_dump(), deadline=deadline)
 
         results = await asyncio.gather(*(load(query) for query in queries))
         return DashboardAllBatchResponse(results=list(results))
@@ -1324,6 +1359,8 @@ class DashboardService:
     async def get_dashboard_history_details_batch(
         self,
         queries: list[DashboardAllQuery],
+        *,
+        deadline: RequestDeadline | None = None,
     ) -> DashboardAllBatchResponse:
         """Load only the components consumed by the multi-month History UI."""
         semaphore = asyncio.Semaphore(2)
@@ -1333,6 +1370,7 @@ class DashboardService:
                 return await self.get_dashboard_all(
                     **query.model_dump(),
                     _history_projection=True,
+                    deadline=deadline,
                 )
 
         results = await asyncio.gather(*(load(query) for query in queries))

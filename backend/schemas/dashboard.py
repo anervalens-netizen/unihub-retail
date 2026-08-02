@@ -4,11 +4,12 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas.campaigns import PromoIncentiveSummary
 from schemas.common import MonthStr
 from schemas.premium_glass import PremiumGlassAnalysis
+from services.dashboard_filters import canonical_dashboard_site_codes
 
 
 class DashboardSummary(BaseModel):
@@ -302,6 +303,11 @@ class DashboardAllQuery(BaseModel):
     agent: str | None = None
     current_scope: bool = False
     include_closed_stores: bool = False
+
+    @field_validator("site_code", mode="before")
+    @classmethod
+    def canonicalize_site_code(cls, value: object) -> str | None:
+        return canonical_dashboard_site_codes(value)
 
 
 class DashboardAllBatchRequest(BaseModel):

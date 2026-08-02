@@ -32,11 +32,12 @@ async def _get_special_cards_data(
     include_closed_stores: bool = False,
     campaign_context: DashboardCampaignContext | None = None,
     promo_incentive_summary: Awaitable[PromoIncentiveSummary] | None = None,
+    pool: Any | None = None,
 ) -> list[DashboardSpecialCard]:
     """Internal helper to build special cards data without HTTP dependencies."""
-    pool = await get_pool()
+    active_pool = pool or await get_pool()
     if campaign_context is None:
-        async with pool.acquire() as conn:
+        async with active_pool.acquire() as conn:
             campaign_context = await _load_dashboard_campaign_context(
                 conn,
                 month,
@@ -100,7 +101,7 @@ async def _get_special_cards_data(
             )
             clauses.extend(query_clauses)
             summary: PromoIncentiveSummary | None = None
-            async with pool.acquire() as conn:
+            async with active_pool.acquire() as conn:
                 rows = await conn.fetch(
                     f"""
                     WITH filtered AS MATERIALIZED (
