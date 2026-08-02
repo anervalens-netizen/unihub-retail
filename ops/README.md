@@ -22,6 +22,22 @@ Run the sandbox without production access:
 ops/test-deploy-retail-artifact.sh
 ```
 
+## Raport PostgreSQL lunar read-only
+
+Inainte de orice index, partitionare sau rescriere SQL, captureaza topul
+workloadului pentru rolul runtime fara resetarea statisticilor:
+
+```bash
+cd /opt/Mobiup/unihub-retail
+backend/venv/bin/python backend/scripts/report_pg_stat_statements.py \
+  --limit 25 --min-calls 5 --output /tmp/retail-pg-stat.json
+```
+
+Scriptul deschide o tranzactie `READ ONLY`, refuza lipsa extensiei si nu ruleaza
+`pg_stat_statements_reset()`. Pastreaza raportul cu data, SHA-ul runtime si
+dovada `EXPLAIN (ANALYZE, BUFFERS)` numai pentru query-urile user-facing care
+depasesc bugetul; valorile volatile nu se copiaza in arhitectura fara data.
+
 ## Evidență Gate 0 și P0
 
 Candidatul documentat este `f9c0b1efe15686bcda532d22528e6e2644925aec`. Gate 0 rămâne artifact -> deploy -> reverify -> rollback pe SHA identic; verificarea locală fără deploy se rulează cu `bash ops/test-deploy-retail-artifact.sh`. Approval-ul și deployul formal consumă numai `head_sha`, `SOURCE_SHA` și digestul `SHA256SUMS` ale aceluiași run CI.

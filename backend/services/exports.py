@@ -4,8 +4,8 @@ import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from io import BytesIO
-from typing import Any
+from tempfile import SpooledTemporaryFile
+from typing import Any, IO, Iterator
 
 from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
@@ -37,6 +37,25 @@ class ColumnDef:
     label: str
     type: str
     group: str
+
+
+XLSX_SPOOL_MAX_MEMORY_BYTES = 8 * 1024 * 1024
+XLSX_STREAM_CHUNK_BYTES = 256 * 1024
+
+
+@dataclass
+class XlsxArtifact:
+    stream: IO[bytes]
+    filename: str
+    size: int
+
+    def iter_chunks(self, chunk_size: int = XLSX_STREAM_CHUNK_BYTES) -> Iterator[bytes]:
+        self.stream.seek(0)
+        while chunk := self.stream.read(chunk_size):
+            yield chunk
+
+    def close(self) -> None:
+        self.stream.close()
 
 
 DATASETS = {
@@ -510,6 +529,16 @@ class ExportsService:
         return {"columns": columns, "rows": rows}
 
     async def build_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
+        """Compatibility helper for in-process callers and focused tests."""
+        artifact = await self.build_xlsx_artifact(request)
+        try:
+            artifact.stream.seek(0)
+            return artifact.stream.read(), artifact.filename
+        finally:
+            artifact.close()
+
+    async def build_xlsx_artifact(self, request: dict[str, Any]) -> XlsxArtifact:
+        """Build an XLSX into a bounded spool for chunked HTTP delivery."""
         if request.get("export_mode") == "daily_comparison":
             return await self._build_daily_comparison_xlsx(request)
 
@@ -541,7 +570,7 @@ class ExportsService:
         result: dict[str, Any],
         selected_days: list[int] | None,
         daily_rows: list[Any] | None,
-    ) -> tuple[bytes, str]:
+    ) -> XlsxArtifact:
         wb = Workbook()
         ws = wb.active
         ws.title = "Raport"
@@ -587,13 +616,11 @@ class ExportsService:
                 records=daily_rows,
             )
 
-        stream = BytesIO()
-        wb.save(stream)
         filename = request.get("filename") or (
             f"export_retail_{request['dataset']}_{'_'.join(request['months'])}"
             f"{self._days_filename_suffix(selected_days)}.xlsx"
         )
-        return stream.getvalue(), self._safe_filename(str(filename))
+        return self._spool_workbook(wb, self._safe_filename(str(filename)))
 
     async def _preview_daily_comparison(self, request: dict[str, Any]) -> dict[str, Any]:
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
@@ -622,7 +649,7 @@ class ExportsService:
             "truncated": len(table["rows"]) > limit,
         }
 
-    async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
+    async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> XlsxArtifact:
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
         campaign_codes_by_month: dict[str, list[str]] = {}
         semaphore = asyncio.Semaphore(2)
@@ -671,7 +698,7 @@ class ExportsService:
         include_closed_stores: bool,
         selected_days: list[int] | None,
         tables: list[tuple[str, dict[str, Any]]],
-    ) -> tuple[bytes, str]:
+    ) -> XlsxArtifact:
         wb = Workbook()
         first_sheet = True
         total_rows = 0
@@ -706,13 +733,25 @@ class ExportsService:
         cfg.column_dimensions["A"].width = 28
         cfg.column_dimensions["B"].width = 72
 
-        stream = BytesIO()
-        wb.save(stream)
         filename = request.get("filename") or (
             f"export_retail_evolutie_zilnica_{'_'.join(months)}"
             f"{self._days_filename_suffix(selected_days)}.xlsx"
         )
-        return stream.getvalue(), self._safe_filename(str(filename))
+        return self._spool_workbook(wb, self._safe_filename(str(filename)))
+
+    @staticmethod
+    def _spool_workbook(wb: Workbook, filename: str) -> XlsxArtifact:
+        stream = SpooledTemporaryFile(max_size=XLSX_SPOOL_MAX_MEMORY_BYTES, mode="w+b")
+        try:
+            wb.save(stream)
+            size = stream.tell()
+            stream.seek(0)
+            return XlsxArtifact(stream=stream, filename=filename, size=size)
+        except Exception:
+            stream.close()
+            raise
+        finally:
+            wb.close()
 
     def _base_row(self, record: Any, dimensions: list[str], metrics: list[str]) -> dict[str, Any]:
         row = {dimension: record[dimension] for dimension in dimensions}

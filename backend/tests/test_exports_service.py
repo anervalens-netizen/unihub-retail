@@ -15,6 +15,7 @@ from services.exports import (
     COMPARISON_LEVELS,
     ExportValidationError,
     ExportsService,
+    XlsxArtifact,
 )
 from services.promotion_evaluation import PromotionEvaluationStatus
 
@@ -81,6 +82,15 @@ def row(**overrides: Any) -> dict[str, Any]:
     for key in ("total_sales", "target"):
         defaults[key] = Decimal(str(defaults[key]))
     return defaults
+
+
+def test_xlsx_artifact_streams_in_bounded_chunks_and_closes() -> None:
+    stream = BytesIO(b"PK" + (b"x" * 19))
+    artifact = XlsxArtifact(stream=stream, filename="report.xlsx", size=21)
+
+    assert list(artifact.iter_chunks(chunk_size=8)) == [b"PKxxxxxx", b"xxxxxxxx", b"xxxxx"]
+    artifact.close()
+    assert stream.closed is True
 
 
 @pytest.mark.asyncio

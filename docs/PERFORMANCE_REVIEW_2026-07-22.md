@@ -160,3 +160,21 @@ canonic
 Pe trei rulari consecutive, mediana Promo/Incentive a scazut de la 2.781 ms la
 312 ms (-88,8%); candidatul a ramas intre 291 si 894 ms. Gate-ul tintit are 62
 teste si mypy verzi.
+
+### P2.3 PostgreSQL si export spool 2026-08-03
+
+`backend/scripts/report_pg_stat_statements.py` produce acum un raport JSON
+read-only, limitat la baza si utilizatorul curent, ordonat dupa timpul total si
+cu `calls`, mean, rows, shared buffers si temp buffers. Rularea read-only pe
+productia `5586ff614ece00ed20bed27f21401a63b7418095`, la
+`2026-08-03T02:02:33+03:00`, a confirmat extensia activa. Cea mai costisitoare
+semnatura observata avea 22 apeluri, 8.686,307 ms total si 394,832 ms mean;
+acesta este baseline operational, nu autorizatie de indexare fara
+`EXPLAIN (ANALYZE, BUFFERS)` si A/B cu hash business.
+
+Downloadul configurabil XLSX foloseste un spool bounded (8 MiB in memorie,
+apoi fisier temporar) si raspuns chunked de 256 KiB cu cleanup la final. Calea
+compatibila ce intoarce `bytes` ramane doar pentru apeluri in-process si teste;
+routerul public nu o mai foloseste. Writerul OpenPyXL si randurile raportului
+nu sunt inca complet streaming, deci benchmarkul de export maxim si impactul
+asupra p95 Dashboard raman deschise pentru fereastra post-deploy.

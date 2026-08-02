@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.background import BackgroundTask
 
 from db.connection import get_pool
 from rate_limits import REPORT_EXPORT_LIMIT, rate_limit
@@ -71,12 +72,16 @@ async def download_export(
     svc: ExportsService = Depends(get_exports_service),
 ) -> StreamingResponse:
     try:
-        content, filename = await svc.build_xlsx(body.model_dump())
+        artifact = await svc.build_xlsx_artifact(body.model_dump())
     except ExportValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return StreamingResponse(
-        iter([content]),
+        artifact.iter_chunks(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{artifact.filename}"',
+            "Content-Length": str(artifact.size),
+        },
+        background=BackgroundTask(artifact.close),
     )

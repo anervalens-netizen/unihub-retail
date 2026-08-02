@@ -59,7 +59,11 @@ async def test_exports_standard_and_daily_writers_use_boundary_and_neutralize_xm
     _assert_no_untrusted_formula_xml(standard)
 
     monkeypatch.setattr(service, "_daily_comparison_params", lambda _request: (["=1+1"], ["total_sales"], ["general"], {}, False, []))
-    daily, _ = await service._build_daily_comparison_xlsx({})
+    daily_artifact = await service._build_daily_comparison_xlsx({})
+    try:
+        daily = b"".join(daily_artifact.iter_chunks())
+    finally:
+        daily_artifact.close()
     daily_book = load_workbook(BytesIO(daily), data_only=False)
     month_cell = daily_book["Configuratie"]["B3"]
     assert month_cell.value == "'=1+1" and month_cell.data_type == "s"

@@ -85,6 +85,11 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 - Risky/costly endpoints use `backend/rate_limits.py`. Keep rate limits on
   auth proxy, import uploads, server-side exports, Grile jobs, Target
   Calculator mutations and business writes when changing these routes.
+- Server-side XLSX downloads use the bounded spool/chunked response path; do
+  not replace it with `BytesIO.getvalue()` or a one-chunk `StreamingResponse`.
+  Review PostgreSQL workload monthly with the read-only
+  `backend/scripts/report_pg_stat_statements.py`, and optimize only a proven
+  user-facing query with EXPLAIN/BUFFERS plus an unchanged business hash.
 - Salary endpoints are backend-gated. Access is limited to `unihub-manager`,
   `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`
   group. Agents and Team Leaders must receive 403.

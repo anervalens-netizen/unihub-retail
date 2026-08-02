@@ -250,6 +250,14 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   iar randurile lunare fara atribuire de agent nu sunt amestecate in exportul
   pe agent. Query-ul de itemi activeaza CTE-urile campaniei numai cand coloanele
   cerute au nevoie de ele.
+  Downloadul server-side scrie workbookul intr-un `SpooledTemporaryFile` cu
+  prag de memorie 8 MiB si livreaza raspunsul in chunkuri de 256 KiB; spoolul
+  este inchis de background cleanup inclusiv dupa terminarea raspunsului.
+  Astfel nu mai exista `BytesIO.getvalue()` plus un singur chunk HTTP care
+  dubla fisierul final in memorie. Modelul OpenPyXL si randurile extrase raman
+  inca in proces pe durata writerului, deci benchmarkul exporturilor mari si
+  separarea plan/extract/transform/writer raman gate-uri masurate, nu beneficii
+  revendicate implicit.
   Exporturile rapide din carduri scriu valorile, procentele si lunile ca
   tipuri Excel native, nu ca text formatat pentru UI; identificatorii precum
   codurile de magazin si produs raman text pentru a nu pierde zerourile initiale.
