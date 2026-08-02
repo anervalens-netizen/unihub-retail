@@ -8,6 +8,10 @@ export interface PromoActualImportResponse {
   report_rows: number;
   promo_units: number;
   updated_promotions: number;
+  generation_id: string;
+  config_sha256: string;
+  source_sha256: string;
+  material_sha256: string;
 }
 
 export type ErpReconciliationStatus = 'ok' | 'explained' | 'difference' | 'not_comparable';

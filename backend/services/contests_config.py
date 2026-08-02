@@ -2,7 +2,8 @@
 
 Concursurile sunt definite in `data/contests.json` (gitignored, live config, ca
 `hub_specials.json`). Fiecare concurs are: perioada, scope (zona), reguli de
-punctaj si premii. Punctajul este la nivel de agent.
+punctaj, politica explicita de identitate si premii. Punctajul este separat pe
+`(site_code, agent)` sau consolidat pe `person_id`, conform configuratiei.
 
 Reguli suportate (per regula: `points`, optional `threshold`):
   - `focus`        -> +points / unitate vanduta din `focus_products`
@@ -24,7 +25,9 @@ from services.dashboard_specials import month_overlaps_period
 from services.product_lists import get_data_dir, get_repo_root, resolve_path
 
 RuleType = Literal["focus", "promo", "price_above"]
+IdentityPolicy = Literal["site_agent", "person_id"]
 _VALID_RULE_TYPES = {"focus", "promo", "price_above"}
+_VALID_IDENTITY_POLICIES = {"site_agent", "person_id"}
 
 _config_cache: dict[tuple[str, float], tuple[dict[str, Any], str | None]] = {}
 
@@ -52,6 +55,7 @@ class ContestDefinition:
     start_date: date
     end_date: date
     scope: dict[str, Any]
+    identity_policy: IdentityPolicy = "site_agent"
     rules: list[ContestRule] = field(default_factory=list)
     prizes: list[ContestPrize] = field(default_factory=list)
 
@@ -145,6 +149,9 @@ def _parse_contest(raw: dict[str, Any]) -> ContestDefinition | None:
     scope = raw.get("scope")
     if not isinstance(scope, dict):
         scope = {}
+    identity_policy = str(raw.get("identity_policy") or "site_agent")
+    if identity_policy not in _VALID_IDENTITY_POLICIES:
+        return None
 
     rules = [
         rule_parsed
@@ -166,6 +173,7 @@ def _parse_contest(raw: dict[str, Any]) -> ContestDefinition | None:
         subtitle=str(raw.get("subtitle") or ""),
         start_date=start_date,
         end_date=end_date,
+        identity_policy=identity_policy,  # type: ignore[arg-type]
         scope=scope,
         rules=rules,
         prizes=prizes,

@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import os
+import fcntl
 import hashlib
 import json
-from datetime import date
+import logging
+import os
+import shutil
+from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
+import asyncpg
+import pandas as pd
 from fastapi import HTTPException, status
 from fastapi import UploadFile
-import pandas as pd
 
 from models import (
     ImportHistoryEntry,
@@ -22,7 +26,11 @@ from models import (
     SalesGenerationPromotionRequest,
 )
 from repositories.imports import ImportsRepository
-from services.dashboard_specials import get_special_cards_config_path, month_overlaps_period
+from services.dashboard_specials import (
+    get_special_cards_config_path,
+    month_overlaps_period,
+    validate_special_cards_config,
+)
 from services.jobs import (
     JobStatus,
     enqueue_grile_check,
@@ -30,13 +38,17 @@ from services.jobs import (
     enqueue_sales_promotion,
     get_job_status,
 )
-from services.product_lists import get_data_dir, normalize_column_name
+from services.product_lists import (
+    get_data_dir,
+    get_repo_root,
+    normalize_column_name,
+    resolve_path,
+)
 from services.sales_generation import SalesGenerationConflictError
 from services.sales_generation_flow import (
     claim_validated_sales_generation,
     restore_sales_generation_claim,
 )
-import asyncpg
 
 logger = logging.getLogger(__name__)
 DEFAULT_MAX_SALES_UPLOAD_BYTES = 32 * 1024 * 1024
@@ -45,6 +57,138 @@ PROMO_REPORT_SHEET = "AccesoriPromoLunar"
 PROMO_REPORT_SITE_ALIASES = {"sitecode", "site_code", "site"}
 PROMO_REPORT_CODE_ALIASES = {"cod", "item_code", "itemcode", "cod_produs"}
 PROMO_REPORT_QTY_ALIASES = {"promo_luna_curenta", "promo_qty", "cantitate_promo", "promo"}
+
+
+class PromoGenerationConflictError(RuntimeError):
+    """Raised when another writer moves the promo pointer during validation."""
+
+
+def _canonical_json_bytes(payload: dict) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _promo_pointer_sha256(data_dir: Path) -> str | None:
+    pointer_path = data_dir / "promo_generations" / "current.json"
+    return (
+        hashlib.sha256(pointer_path.read_bytes()).hexdigest()
+        if pointer_path.exists()
+        else None
+    )
+
+
+def _publish_promo_generation(
+    *,
+    data_dir: Path,
+    config: dict,
+    content: bytes,
+    suffix: str,
+    material_sha256: str,
+    expected_pointer_sha256: str | None,
+) -> tuple[str, str, str]:
+    generation_root = data_dir / "promo_generations"
+    source_sha256 = hashlib.sha256(content).hexdigest()
+    seed = hashlib.sha256(
+        _canonical_json_bytes(config)
+        + source_sha256.encode("ascii")
+        + material_sha256.encode("ascii")
+    ).hexdigest()
+    generation_id = seed[:32]
+    generation_dir = generation_root / generation_id
+    actual_name = f"promo_actuals{suffix}"
+    config_name = "hub_specials.json"
+    final_actual_path = generation_dir / actual_name
+    for promotion in config["promotions"]:
+        if promotion.get("actuals_source_file") == "@GENERATION_ACTUALS@":
+            promotion["actuals_source_file"] = str(final_actual_path)
+    config_bytes = _canonical_json_bytes(config)
+    config_sha256 = hashlib.sha256(config_bytes).hexdigest()
+    actuals_manifest: list[dict[str, str]] = []
+    for source_file in sorted(
+        {
+            str(promotion["actuals_source_file"])
+            for promotion in config["promotions"]
+            if promotion.get("actuals_source_file")
+        }
+    ):
+        source_path = resolve_path(source_file, get_repo_root())
+        if source_path == final_actual_path:
+            actuals_sha256 = source_sha256
+        elif source_path.is_file():
+            actuals_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        else:
+            raise ValueError("Sursa actuals promo lipsește")
+        actuals_manifest.append({"file": source_file, "sha256": actuals_sha256})
+
+    generation_root.mkdir(parents=True, exist_ok=True)
+    staging = generation_root / f".staging-{uuid4()}"
+    lock_path = generation_root / ".promotion.lock"
+    try:
+        if generation_dir.exists():
+            config_path = generation_dir / config_name
+            if (
+                not final_actual_path.is_file()
+                or hashlib.sha256(final_actual_path.read_bytes()).hexdigest()
+                != source_sha256
+                or not config_path.is_file()
+                or hashlib.sha256(config_path.read_bytes()).hexdigest()
+                != config_sha256
+            ):
+                raise RuntimeError("Coliziune de generație promo")
+        else:
+            staging.mkdir(mode=0o700)
+            (staging / actual_name).write_bytes(content)
+            (staging / config_name).write_bytes(config_bytes)
+            staging.replace(generation_dir)
+
+        with lock_path.open("a+b") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            pointer_path = generation_root / "current.json"
+            current_pointer_sha256 = (
+                hashlib.sha256(pointer_path.read_bytes()).hexdigest()
+                if pointer_path.exists()
+                else None
+            )
+            if current_pointer_sha256 != expected_pointer_sha256:
+                raise PromoGenerationConflictError(
+                    "Pointerul promo a fost schimbat de alt worker"
+                )
+            previous_generation_id: str | None = None
+            if pointer_path.exists():
+                try:
+                    previous_generation_id = str(
+                        json.loads(pointer_path.read_text(encoding="utf-8")).get(
+                            "generation_id"
+                        )
+                        or ""
+                    ) or None
+                except Exception:
+                    previous_generation_id = None
+            pointer = {
+                "version": 1,
+                "generation_id": generation_id,
+                "previous_generation_id": previous_generation_id,
+                "config_file": f"{generation_id}/{config_name}",
+                "config_sha256": config_sha256,
+                "actuals_sha256": source_sha256,
+                "actuals": actuals_manifest,
+                "material_sha256": material_sha256,
+                "promoted_at": datetime.now(timezone.utc).isoformat(),
+            }
+            pointer_tmp = generation_root / f".current-{uuid4()}.tmp"
+            pointer_tmp.write_bytes(_canonical_json_bytes(pointer))
+            pointer_tmp.replace(pointer_path)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    return generation_id, config_sha256, source_sha256
 
 
 async def trigger_grile_check_after_import(import_month: str, snapshot_id: int | None) -> None:
@@ -212,13 +356,22 @@ class ImportsService:
         if not content:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raportul este gol")
 
+        data_dir = get_data_dir()
+        expected_pointer_sha256 = _promo_pointer_sha256(data_dir)
         report_rows, promo_units = await asyncio.to_thread(
             self._validate_promo_actuals_report,
             content,
         )
-        config_path = get_special_cards_config_path()
         try:
+            config_path = get_special_cards_config_path()
+            if _promo_pointer_sha256(data_dir) != expected_pointer_sha256:
+                raise PromoGenerationConflictError
             config = json.loads(config_path.read_text(encoding="utf-8"))
+        except PromoGenerationConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Configurația promo s-a schimbat; reîncarcă și reîncearcă",
+            ) from exc
         except Exception as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -230,46 +383,85 @@ class ImportsService:
                 detail="Configuratia promo este invalida",
             )
 
-        suffix = Path(file.filename).suffix.casefold()
-        digest = hashlib.sha256(content).hexdigest()[:12]
-        destination = get_data_dir() / "promo_actuals" / import_month / f"promo_firma_{cutoff_date.isoformat()}_{digest}{suffix}"
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary_destination = destination.with_suffix(f"{destination.suffix}.tmp")
-        temporary_destination.write_bytes(content)
-        temporary_destination.replace(destination)
-
         updated_promotions = 0
         for promotion in config["promotions"]:
             if not isinstance(promotion, dict):
-                continue
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Configuratia promo este invalida",
+                )
             try:
                 start_date = date.fromisoformat(str(promotion.get("start_date", "")))
                 end_date = date.fromisoformat(str(promotion.get("end_date", "")))
             except ValueError:
-                continue
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Configuratia promo este invalida",
+                ) from None
             if not month_overlaps_period(import_month, start_date, end_date):
                 continue
-            promotion["actuals_source_file"] = str(destination)
+            previous_cutoff = promotion.get("actuals_cutoff_date")
+            try:
+                previous_cutoff_date = (
+                    date.fromisoformat(str(previous_cutoff))
+                    if previous_cutoff
+                    else None
+                )
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Configuratia promo este invalida",
+                ) from None
+            if previous_cutoff_date and cutoff_date < previous_cutoff_date:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Cutoff-ul promo nu poate regresa față de generația "
+                        "curentă"
+                    ),
+                )
+            promotion["actuals_source_file"] = "@GENERATION_ACTUALS@"
             promotion["actuals_sheet"] = PROMO_REPORT_SHEET
             promotion["actuals_cutoff_date"] = cutoff_date.isoformat()
             updated_promotions += 1
         if updated_promotions == 0:
-            destination.unlink(missing_ok=True)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Nu exista promotii configurate pentru luna selectata",
             )
 
-        temporary_config = config_path.with_suffix(f"{config_path.suffix}.tmp")
-        temporary_config.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        temporary_config.replace(config_path)
+        try:
+            _definitions, material_sha256 = validate_special_cards_config(config)
+            generation_id, config_sha256, source_sha256 = _publish_promo_generation(
+                data_dir=data_dir,
+                config=config,
+                content=content,
+                suffix=Path(file.filename).suffix.casefold(),
+                material_sha256=material_sha256,
+                expected_pointer_sha256=expected_pointer_sha256,
+            )
+        except PromoGenerationConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Configurația promo s-a schimbat; reîncarcă și reîncearcă",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Configuratia promo este invalida",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Generatia promo nu a putut fi promovata",
+            ) from exc
         logger.info(
-            "promo actuals imported month=%s cutoff=%s rows=%s units=%s file=%s",
+            "promo actuals promoted month=%s cutoff=%s rows=%s units=%s generation=%s",
             import_month,
             cutoff_date,
             report_rows,
             promo_units,
-            destination.name,
+            generation_id,
         )
         return PromoActualImportResponse(
             import_month=import_month,
@@ -278,12 +470,20 @@ class ImportsService:
             report_rows=report_rows,
             promo_units=promo_units,
             updated_promotions=updated_promotions,
+            generation_id=generation_id,
+            config_sha256=config_sha256,
+            source_sha256=source_sha256,
+            material_sha256=material_sha256,
         )
 
     @staticmethod
     def _validate_promo_actuals_report(content: bytes) -> tuple[int, int]:
         try:
-            dataframe = pd.read_excel(BytesIO(content), sheet_name=PROMO_REPORT_SHEET)
+            dataframe = pd.read_excel(
+                BytesIO(content),
+                sheet_name=PROMO_REPORT_SHEET,
+                keep_default_na=False,
+            )
         except Exception as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -298,17 +498,42 @@ class ImportsService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Raportul trebuie sa contina coloanele SiteCode, Cod si Promo Luna Curenta",
             )
-        promo_values = pd.to_numeric(dataframe[promo_column], errors="coerce").fillna(0)
         positive_rows = 0
         promo_units = 0
-        for index, value in promo_values.items():
-            quantity = int(round(float(value or 0)))
-            if quantity <= 0:
+        seen_keys: set[tuple[str, str]] = set()
+        for index, raw_value in dataframe[promo_column].items():
+            if raw_value is None or str(raw_value).strip() == "":
                 continue
             site_code = str(dataframe.at[index, site_column]).strip()
             item_code = str(dataframe.at[index, code_column]).strip()
-            if not site_code or site_code.lower() == "nan" or not item_code or item_code.lower() == "nan":
+            try:
+                quantity_value = Decimal(str(raw_value).strip())
+            except (InvalidOperation, ValueError):
+                quantity_value = Decimal("NaN")
+            if (
+                not quantity_value.is_finite()
+                or quantity_value != quantity_value.to_integral_value()
+                or quantity_value < 0
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cantitatile promo trebuie sa fie intregi finite si nenegative",
+                )
+            quantity = int(quantity_value)
+            if quantity == 0:
                 continue
+            if not site_code or site_code.casefold() == "nan" or not item_code or item_code.casefold() == "nan":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Fiecare cantitate promo pozitiva necesita SiteCode si Cod",
+                )
+            key = (site_code, item_code)
+            if key in seen_keys:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Raportul promo contine chei SiteCode/Cod duplicate",
+                )
+            seen_keys.add(key)
             positive_rows += 1
             promo_units += quantity
         if positive_rows == 0:

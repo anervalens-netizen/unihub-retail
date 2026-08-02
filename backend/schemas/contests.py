@@ -1,6 +1,8 @@
 """Public API contracts for config-driven contest leaderboards."""
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from schemas.common import MonthStr
@@ -44,6 +46,7 @@ class ContestResponse(BaseModel):
     start_date: str
     end_date: str
     store_count: int = 0
+    identity_policy: Literal["site_agent", "person_id"] = "site_agent"
     rules: list[ContestRuleInfo] = Field(default_factory=list)
     prizes: list[ContestPrizeInfo] = Field(default_factory=list)
     leaderboard: list[ContestLeaderboardRow] = Field(default_factory=list)

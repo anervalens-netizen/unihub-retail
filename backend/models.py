@@ -175,6 +175,10 @@ class PromoActualImportResponse(BaseModel):
     report_rows: NonNegativeInt
     promo_units: NonNegativeInt
     updated_promotions: NonNegativeInt
+    generation_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    config_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    material_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ImportJobStatus(BaseModel):

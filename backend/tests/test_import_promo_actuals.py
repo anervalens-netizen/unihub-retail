@@ -150,10 +150,18 @@ async def test_promo_actuals_persists_file_and_updates_only_matching_promotions(
         tmp_path,
         {
             "promotions": [
-                "invalid-entry",
-                {"start_date": "invalid", "end_date": "2026-06-30"},
-                {"key": "other-month", "start_date": "2026-05-01", "end_date": "2026-05-31"},
-                {"key": "active", "start_date": "2026-06-01", "end_date": "2026-06-30"},
+                {
+                    "key": "other-month",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-31",
+                    "item_codes": ["OTHER"],
+                },
+                {
+                    "key": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                    "item_codes": ["ACTIVE"],
+                },
             ]
         },
     )
@@ -174,15 +182,29 @@ async def test_promo_actuals_persists_file_and_updates_only_matching_promotions(
     assert result.updated_promotions == 1
     assert result.filename == "PROMO.XLSX"
 
-    stored = json.loads(config_path.read_text(encoding="utf-8"))
-    active = next(item for item in stored["promotions"] if isinstance(item, dict) and item.get("key") == "active")
+    legacy = json.loads(config_path.read_text(encoding="utf-8"))
+    assert all("actuals_source_file" not in item for item in legacy["promotions"])
+
+    pointer_path = tmp_path / "data" / "promo_generations" / "current.json"
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    assert pointer["generation_id"] == result.generation_id
+    assert pointer["config_sha256"] == result.config_sha256
+    assert pointer["actuals_sha256"] == result.source_sha256
+    assert pointer["material_sha256"] == result.material_sha256
+
+    generated_config_path = pointer_path.parent / pointer["config_file"]
+    stored = json.loads(generated_config_path.read_text(encoding="utf-8"))
+    active = next(item for item in stored["promotions"] if item["key"] == "active")
     destination = Path(active["actuals_source_file"])
     assert destination.read_bytes() == b"valid-promo-data"
     assert destination.suffix == ".xlsx"
     assert active["actuals_sheet"] == "AccesoriPromoLunar"
     assert active["actuals_cutoff_date"] == "2026-06-15"
-    other = next(item for item in stored["promotions"] if isinstance(item, dict) and item.get("key") == "other-month")
+    other = next(item for item in stored["promotions"] if item["key"] == "other-month")
     assert "actuals_source_file" not in other
+    assert pointer["actuals"] == [
+        {"file": str(destination), "sha256": result.source_sha256}
+    ]
 
 
 @pytest.mark.asyncio
@@ -210,7 +232,46 @@ async def test_promo_actuals_removes_saved_file_when_no_promotion_matches(
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "Nu exista promotii configurate pentru luna selectata"
-    assert list((tmp_path / "data").rglob("*")) == [tmp_path / "data" / "promo_actuals", tmp_path / "data" / "promo_actuals" / "2026-06"]
+    assert not (tmp_path / "data").exists()
+
+
+@pytest.mark.asyncio
+async def test_promo_actuals_rejects_cutoff_regression(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure_paths(
+        monkeypatch,
+        tmp_path,
+        {
+            "promotions": [
+                {
+                    "key": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                    "item_codes": ["I1"],
+                    "actuals_source_file": "previous.xlsx",
+                    "actuals_cutoff_date": "2026-06-15",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        ImportsService,
+        "_validate_promo_actuals_report",
+        staticmethod(lambda _: (1, 1)),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await service().import_promo_actuals(
+            file=upload(),
+            import_month="2026-06",
+            cutoff_date=date(2026, 6, 14),
+        )
+
+    assert exc.value.status_code == 409
+    assert "nu poate regresa" in str(exc.value.detail)
+    assert not (tmp_path / "data").exists()
 
 
 def test_validate_promo_actuals_report_maps_read_errors(
@@ -240,14 +301,14 @@ def test_validate_promo_actuals_report_counts_only_positive_valid_rows(
 ) -> None:
     dataframe = pd.DataFrame(
         {
-            "SiteCode": ["S1", "", "nan", "S2", "S3"],
-            "Cod": ["I1", "I2", "I3", "nan", "I4"],
-            "Promo Luna Curenta": [2, 3, 4, 5, -1],
+            "SiteCode": ["S1", "S2", "", "S3"],
+            "Cod": ["I1", "I2", "", "I3"],
+            "Promo Luna Curenta": [2, 0, "", 3],
         }
     )
     monkeypatch.setattr(imports_module.pd, "read_excel", lambda *args, **kwargs: dataframe)
 
-    assert ImportsService._validate_promo_actuals_report(b"data") == (1, 2)
+    assert ImportsService._validate_promo_actuals_report(b"data") == (2, 5)
 
 
 def test_validate_promo_actuals_report_rejects_no_positive_rows(
@@ -257,7 +318,7 @@ def test_validate_promo_actuals_report_rejects_no_positive_rows(
         {
             "site_code": ["S1", "S2"],
             "item_code": ["I1", "I2"],
-            "promo_qty": [0, -1],
+            "promo_qty": [0, ""],
         }
     )
     monkeypatch.setattr(imports_module.pd, "read_excel", lambda *args, **kwargs: dataframe)
@@ -266,3 +327,67 @@ def test_validate_promo_actuals_report_rejects_no_positive_rows(
         ImportsService._validate_promo_actuals_report(b"data")
     assert exc.value.status_code == 400
     assert exc.value.detail == "Raportul nu contine unitati promo pozitive"
+
+
+@pytest.mark.parametrize("quantity", [1.5, "NaN", "Infinity", -1])
+def test_validate_promo_actuals_report_rejects_invalid_quantities(
+    monkeypatch: pytest.MonkeyPatch,
+    quantity: object,
+) -> None:
+    dataframe = pd.DataFrame(
+        {"site_code": ["S1"], "item_code": ["I1"], "promo_qty": [quantity]}
+    )
+    monkeypatch.setattr(imports_module.pd, "read_excel", lambda *args, **kwargs: dataframe)
+
+    with pytest.raises(HTTPException) as exc:
+        ImportsService._validate_promo_actuals_report(b"data")
+    assert exc.value.status_code == 400
+    assert "intregi finite" in str(exc.value.detail)
+
+
+def test_validate_promo_actuals_report_rejects_duplicate_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataframe = pd.DataFrame(
+        {
+            "site_code": ["S1", "S1"],
+            "item_code": ["I1", "I1"],
+            "promo_qty": [1, 2],
+        }
+    )
+    monkeypatch.setattr(imports_module.pd, "read_excel", lambda *args, **kwargs: dataframe)
+
+    with pytest.raises(HTTPException) as exc:
+        ImportsService._validate_promo_actuals_report(b"data")
+    assert exc.value.status_code == 400
+    assert "duplicate" in str(exc.value.detail)
+
+
+def test_publish_promo_generation_rejects_stale_pointer(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    pointer_path = data_dir / "promo_generations" / "current.json"
+    pointer_path.parent.mkdir(parents=True)
+    pointer_path.write_text('{"generation_id":"other"}', encoding="utf-8")
+    original_pointer = pointer_path.read_bytes()
+    config = {
+        "promotions": [
+            {
+                "key": "active",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-30",
+                "item_codes": ["I1"],
+                "actuals_source_file": "@GENERATION_ACTUALS@",
+            }
+        ]
+    }
+
+    with pytest.raises(imports_module.PromoGenerationConflictError):
+        imports_module._publish_promo_generation(
+            data_dir=data_dir,
+            config=config,
+            content=b"report",
+            suffix=".xlsx",
+            material_sha256="a" * 64,
+            expected_pointer_sha256=None,
+        )
+    assert pointer_path.read_bytes() == original_pointer

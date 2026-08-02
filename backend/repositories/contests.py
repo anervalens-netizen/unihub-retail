@@ -26,6 +26,7 @@ class ContestsRepository:
                         st.site_code,
                         s.locatie AS store_name,
                         s.firma,
+                        asl.person_id,
                         COALESCE(SUM(
                             CASE WHEN fp.item_code IS NOT NULL AND st.quantity > 0
                                  THEN st.quantity ELSE 0 END
@@ -33,26 +34,62 @@ class ContestsRepository:
                         COALESCE(SUM(
                             CASE WHEN st.unit_price > $4 AND st.quantity > 0
                                  THEN st.quantity ELSE 0 END
-                        ), 0)::INT AS price_units,
-                        COALESCE(SUM(st.total_value), 0) AS sales_value
+                        ), 0)::INT AS price_units
                     FROM sales_transactions st
                     JOIN stores s ON s.site_code = st.site_code
                     LEFT JOIN focus_products fp ON fp.item_code = st.item_code
+                    LEFT JOIN agent_salary_links asl
+                      ON asl.agent_code = st.agent
+                     AND asl.site_code = st.site_code
+                     AND asl.match_status = 'confirmed'
+                     AND (asl.effective_from_month IS NULL OR asl.effective_from_month <= $1)
                     WHERE {where_sql}
-                    GROUP BY st.agent, st.site_code, s.locatie, s.firma
+                    GROUP BY
+                        st.agent, st.site_code, s.locatie, s.firma, asl.person_id
                 )
                 SELECT
-                    agent,
-                    (ARRAY_AGG(site_code ORDER BY (focus_units + price_units) DESC, sales_value DESC, store_name))[1] AS site_code,
-                    (ARRAY_AGG(store_name ORDER BY (focus_units + price_units) DESC, sales_value DESC, store_name))[1] AS store_name,
-                    (ARRAY_AGG(firma ORDER BY (focus_units + price_units) DESC, sales_value DESC, store_name))[1] AS firma,
-                    COALESCE(SUM(focus_units), 0)::INT AS focus_units,
-                    COALESCE(SUM(price_units), 0)::INT AS price_units
+                    agent, site_code, store_name, firma, person_id,
+                    focus_units, price_units
                 FROM per_store
-                GROUP BY agent
+                ORDER BY site_code, LOWER(BTRIM(agent)), agent
                 """,
                 *params,
             )
+
+    async def fetch_person_ids(
+        self,
+        *,
+        month: str,
+        identities: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], str]:
+        if not identities:
+            return {}
+        site_codes = [site_code for site_code, _agent in identities]
+        agents = [agent for _site_code, agent in identities]
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT requested.site_code, requested.agent, asl.person_id
+                FROM UNNEST($1::TEXT[], $2::TEXT[])
+                     AS requested(site_code, agent)
+                JOIN agent_salary_links asl
+                  ON asl.site_code = requested.site_code
+                 AND asl.agent_code = requested.agent
+                 AND asl.match_status = 'confirmed'
+                 AND asl.person_id IS NOT NULL
+                 AND (
+                     asl.effective_from_month IS NULL
+                     OR asl.effective_from_month <= $3
+                 )
+                """,
+                site_codes,
+                agents,
+                month,
+            )
+        return {
+            (str(row["site_code"]), str(row["agent"])): str(row["person_id"])
+            for row in rows
+        }
 
     async def fetch_scope_store_count(
         self, where_sql: str, params: list[Any]

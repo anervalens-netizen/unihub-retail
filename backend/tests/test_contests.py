@@ -34,6 +34,7 @@ class TestContestConfigParsing:
                     "start_date": "2026-06-01",
                     "end_date": "2026-06-30",
                     "scope": {"asm": "Andrei Stancu"},
+                    "identity_policy": "site_agent",
                     "rules": [
                         {"type": "focus", "points": 1, "label": "Focus"},
                         {"type": "promo", "points": 1, "label": "Promo"},
@@ -54,6 +55,7 @@ class TestContestConfigParsing:
         c = contests[0]
         assert c.key == "iunie-2026-stancu"
         assert c.scope == {"asm": "Andrei Stancu"}
+        assert c.identity_policy == "site_agent"
         assert len(c.rules) == 3
         price = next(r for r in c.rules if r.type == "price_above")
         assert price.threshold == 150.0
@@ -82,6 +84,11 @@ class TestContestConfigParsing:
 
     def test_missing_key_skips_contest(self):
         raw = {"contests": [{"title": "x", "start_date": "2026-06-01", "end_date": "2026-06-30"}]}
+        assert parse_contests(raw) == []
+
+    def test_invalid_identity_policy_skips_contest(self):
+        raw = self._raw()
+        raw["contests"][0]["identity_policy"] = "agent_name"
         assert parse_contests(raw) == []
 
     def test_get_active_contest_overlaps_month(self):
@@ -163,10 +170,20 @@ def _contest_def_mihai():
 def _service():
     repo = MagicMock()
     repo.fetch_agent_scores = AsyncMock(return_value=[
-        FakeRow(agent="Agent1", site_code="S1", store_name="Store 1", firma="Mobiup", focus_units=5, price_units=3),
-        FakeRow(agent="Agent2", site_code="S2", store_name="Store 2", firma="MobiCell", focus_units=2, price_units=2),
-        FakeRow(agent="Agent3", site_code="S3", store_name="Store 3", firma="Mobiup", focus_units=0, price_units=0),
+        FakeRow(
+            agent="Agent1", site_code="S1", store_name="Store 1",
+            firma="Mobiup", person_id=None, focus_units=5, price_units=3,
+        ),
+        FakeRow(
+            agent="Agent2", site_code="S2", store_name="Store 2",
+            firma="MobiCell", person_id=None, focus_units=2, price_units=2,
+        ),
+        FakeRow(
+            agent="Agent3", site_code="S3", store_name="Store 3",
+            firma="Mobiup", person_id=None, focus_units=0, price_units=0,
+        ),
     ])
+    repo.fetch_person_ids = AsyncMock(return_value={})
     repo.fetch_scope_store_count = AsyncMock(return_value=23)
     pool = MagicMock()
     conn = AsyncMock()
@@ -193,11 +210,12 @@ class TestContestScoring:
         mock_cp.return_value = PromoCoPurchaseResult(
             excluded_units={
                 ("S1", "Agent1", "CL1"): 2,  # Agent1 -> 2 bonuri promo
-                ("S1", "Agent2", "CL2"): 1,  # Agent2 -> 1 bon promo
+                ("S2", "Agent2", "CL2"): 1,  # Agent2 -> 1 bon promo
             }
         )
         resp = await svc.get_active_contest("2026-06")
         assert resp is not None
+        assert resp.identity_policy == "site_agent"
         assert resp.store_count == 23
         assert len(resp.leaderboard) == 2  # Agent3 (0 puncte) exclus
 
@@ -261,3 +279,105 @@ class TestContestScoring:
         assert a1.promo_points == 0
         # Agent1: focus 5 + price 3 = 8
         assert a1.total_points == 8
+
+
+def _identity_contest(policy: str) -> ContestDefinition:
+    from services.contests_config import ContestRule
+
+    return ContestDefinition(
+        key=f"identity-{policy}",
+        title="Identity",
+        subtitle="",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+        scope={},
+        identity_policy=policy,  # type: ignore[arg-type]
+        rules=[ContestRule(type="focus", points=1, label="Focus")],
+    )
+
+
+def _identity_service(rows: list[FakeRow]) -> ContestsService:
+    repo = MagicMock()
+    repo.fetch_agent_scores = AsyncMock(return_value=rows)
+    repo.fetch_person_ids = AsyncMock(return_value={})
+    repo.fetch_scope_store_count = AsyncMock(return_value=2)
+    return ContestsService(repo, MagicMock())
+
+
+class TestContestIdentityPolicy:
+    @pytest.mark.asyncio
+    async def test_site_agent_keeps_homonyms_separate(self):
+        svc = _identity_service(
+            [
+                FakeRow(
+                    agent="Alex",
+                    site_code="S1",
+                    store_name="Store 1",
+                    firma="Mobiup",
+                    person_id=None,
+                    focus_units=3,
+                    price_units=0,
+                ),
+                FakeRow(
+                    agent="Alex",
+                    site_code="S2",
+                    store_name="Store 2",
+                    firma="Mobiup",
+                    person_id=None,
+                    focus_units=4,
+                    price_units=0,
+                ),
+            ]
+        )
+
+        response = await svc._build(_identity_contest("site_agent"), "2026-06")
+
+        assert len(response.leaderboard) == 2
+        assert sum(row.focus_units for row in response.leaderboard) == 7
+        assert {row.site_code for row in response.leaderboard} == {"S1", "S2"}
+
+    @pytest.mark.asyncio
+    async def test_person_id_combines_transfer_deterministically(self):
+        person_id = "sp1_" + "a" * 64
+        svc = _identity_service(
+            [
+                FakeRow(
+                    agent="Alex",
+                    site_code="S2",
+                    store_name="Store 2",
+                    firma="Mobiup",
+                    person_id=person_id,
+                    focus_units=4,
+                    price_units=0,
+                ),
+                FakeRow(
+                    agent="Alex",
+                    site_code="S1",
+                    store_name="Store 1",
+                    firma="Mobiup",
+                    person_id=person_id,
+                    focus_units=3,
+                    price_units=0,
+                ),
+            ]
+        )
+
+        response = await svc._build(_identity_contest("person_id"), "2026-06")
+
+        assert len(response.leaderboard) == 1
+        assert response.leaderboard[0].focus_units == 7
+        assert response.leaderboard[0].site_code == "S1"
+
+    @pytest.mark.asyncio
+    async def test_person_id_rejects_unconfirmed_identity(self):
+        svc = _identity_service(
+            [
+                FakeRow(
+                    agent="Alex", site_code="S1", store_name="Store 1",
+                    firma="Mobiup", person_id=None, focus_units=1, price_units=0,
+                )
+            ]
+        )
+
+        with pytest.raises(RuntimeError, match="neconfirmată"):
+            await svc._build(_identity_contest("person_id"), "2026-06")

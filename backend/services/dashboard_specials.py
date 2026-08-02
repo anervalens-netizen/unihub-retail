@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import hashlib
 import json
 import os
 from datetime import date
@@ -73,8 +74,73 @@ def month_overlaps_period(month: str, start_date: date, end_date: date) -> bool:
     return not (month_end < start_date or month_start > end_date)
 
 
+def _generated_config_path(data_dir: Path) -> Path | None:
+    generation_root = data_dir / "promo_generations"
+    pointer_path = generation_root / "current.json"
+    if not pointer_path.exists():
+        return None
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        relative = str(pointer["config_file"])
+        expected_config_sha256 = str(pointer["config_sha256"])
+        actuals_manifest = pointer["actuals"]
+    except Exception as exc:
+        raise ValueError("Pointerul generației promo este invalid.") from exc
+    if (
+        not relative
+        or Path(relative).is_absolute()
+        or ".." in Path(relative).parts
+        or len(expected_config_sha256) != 64
+        or not isinstance(actuals_manifest, list)
+    ):
+        raise ValueError("Pointerul generației promo este invalid.")
+    candidate = (generation_root / relative).resolve()
+    root = generation_root.resolve()
+    if candidate.parent.parent != root or not candidate.is_file():
+        raise ValueError("Configul generației promo lipsește.")
+    config_bytes = candidate.read_bytes()
+    actual_config_sha256 = hashlib.sha256(config_bytes).hexdigest()
+    if actual_config_sha256 != expected_config_sha256:
+        raise ValueError("Configul generației promo nu corespunde hashului aprobat.")
+
+    try:
+        config = json.loads(config_bytes)
+        declared_sources = {
+            str(entry["actuals_source_file"])
+            for entry in config["promotions"]
+            if isinstance(entry, dict) and entry.get("actuals_source_file")
+        }
+        expected_sources = {
+            str(entry["file"]): str(entry["sha256"])
+            for entry in actuals_manifest
+            if (
+                isinstance(entry, dict)
+                and entry.get("file")
+                and len(str(entry.get("sha256") or "")) == 64
+            )
+        }
+    except Exception as exc:
+        raise ValueError("Manifestul surselor promo este invalid.") from exc
+    if (
+        len(expected_sources) != len(actuals_manifest)
+        or set(expected_sources) != declared_sources
+    ):
+        raise ValueError("Manifestul surselor promo nu corespunde configului aprobat.")
+    for source_file, expected_sha256 in expected_sources.items():
+        source_path = resolve_path(source_file, get_repo_root())
+        if (
+            not source_path.is_file()
+            or hashlib.sha256(source_path.read_bytes()).hexdigest() != expected_sha256
+        ):
+            raise ValueError("Sursa actuals promo nu corespunde hashului aprobat.")
+    return candidate
+
+
 def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
-    config_path = get_special_cards_config_path()
+    try:
+        config_path = get_special_cards_config_path()
+    except ValueError as exc:
+        return {}, str(exc)
     if not config_path.exists():
         return EMPTY_SPECIAL_CARDS_CONFIG.copy(), None
 
@@ -102,11 +168,10 @@ def load_special_cards_config() -> tuple[dict[str, Any], str | None]:
 
 def get_special_cards_config_path() -> Path:
     configured_path = os.getenv("UNIHUB_HUB_SPECIALS_CONFIG")
-    return (
-        resolve_path(configured_path, get_repo_root())
-        if configured_path
-        else get_data_dir() / "hub_specials.json"
-    )
+    if configured_path:
+        return resolve_path(configured_path, get_repo_root())
+    data_dir = get_data_dir()
+    return _generated_config_path(data_dir) or data_dir / "hub_specials.json"
 
 
 def _parse_single_promotion(
@@ -303,6 +368,88 @@ def load_promotion_rule_products(
     result = payload, None
     _promotion_products_cache[cache_key] = result
     return result
+
+
+def _materialized_codes(products: dict[str, Any]) -> set[str]:
+    codes: set[str] = set()
+    for key, value in products.items():
+        if key.endswith("_codes") or key == "item_codes":
+            if isinstance(value, list):
+                codes.update(str(item).strip() for item in value if str(item).strip())
+        elif key.endswith("_code_models") and isinstance(value, dict):
+            codes.update(str(item).strip() for item in value if str(item).strip())
+    return codes
+
+
+def validate_special_cards_config(
+    config: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str]:
+    """Validate and materialize every promo before an atomic generation switch."""
+    entries = config.get("promotions")
+    if not isinstance(entries, list):
+        raise ValueError("Secțiunea promotions trebuie să fie un array JSON.")
+    definitions: list[dict[str, Any]] = []
+    materialized: list[tuple[dict[str, Any], set[str]]] = []
+    seen_keys: set[str] = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Promoția #{index + 1} trebuie să fie un obiect JSON.")
+        definition, error = _parse_single_promotion(entry)
+        if error or definition is None:
+            raise ValueError(error or f"Promoția #{index + 1} este invalidă.")
+        key = str(definition["key"]).strip()
+        if key in seen_keys:
+            raise ValueError(f"Cheia promo duplicată: {key}.")
+        seen_keys.add(key)
+        cutoff_raw = definition.get("actuals_cutoff_date")
+        if cutoff_raw:
+            try:
+                cutoff = date.fromisoformat(str(cutoff_raw))
+            except ValueError as exc:
+                raise ValueError(f"Cutoff invalid pentru promoția {key}.") from exc
+            if not definition["start_date"] <= cutoff <= definition["end_date"]:
+                raise ValueError(f"Cutoff în afara perioadei pentru promoția {key}.")
+            if not definition.get("actuals_source_file"):
+                raise ValueError(f"Cutoff fără sursă actuals pentru promoția {key}.")
+        products, products_error = load_promotion_rule_products(definition)
+        if products is None or products_error is not None:
+            raise ValueError(products_error or f"Masterul promoției {key} este invalid.")
+        codes = _materialized_codes(products)
+        if not codes:
+            raise ValueError(f"Masterul promoției {key} nu conține produse.")
+        definitions.append(definition)
+        materialized.append((definition, codes))
+
+    for index, (left, left_codes) in enumerate(materialized):
+        for right, right_codes in materialized[index + 1 :]:
+            overlaps = not (
+                left["end_date"] < right["start_date"]
+                or right["end_date"] < left["start_date"]
+            )
+            if overlaps and left_codes.intersection(right_codes):
+                raise ValueError(
+                    "Promoțiile suprapuse nu pot conține aceleași produse: "
+                    f"{left['key']} / {right['key']}."
+                )
+
+    material_payload = [
+        {
+            "key": definition["key"],
+            "start_date": definition["start_date"].isoformat(),
+            "end_date": definition["end_date"].isoformat(),
+            "codes": sorted(codes),
+        }
+        for definition, codes in materialized
+    ]
+    material_sha256 = hashlib.sha256(
+        json.dumps(
+            material_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return definitions, material_sha256
 
 
 def _product_code_models(rows: list[dict[str, str | None]]) -> dict[str, set[str]]:

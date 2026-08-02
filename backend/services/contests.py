@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import timedelta
 from typing import Any
 
@@ -148,7 +149,7 @@ class ContestsService:
         agent_rows = await self.repo.fetch_agent_scores(" AND ".join(clauses), params)
 
         # --- promo: bonuri calificate per agent (co-purchase) ---
-        promo_bonuri: dict[str, int] = {}
+        promo_bonuri: dict[tuple[str, str], int] = {}
         if promo_rule is not None:
             promo_config, promo_cfg_err = load_special_cards_config()
             promo_def, promo_def_err = parse_promotion_definition(promo_config, month)
@@ -250,42 +251,100 @@ class ContestsService:
                             )
                     for (_site, agent, _item), units in cp.excluded_units.items():
                         if agent and agent != "-":
-                            promo_bonuri[agent] = promo_bonuri.get(agent, 0) + units
+                            pair = (_site, agent)
+                            promo_bonuri[pair] = promo_bonuri.get(pair, 0) + units
 
-        # --- combinare per agent ---
-        focus_units_by_agent = {r["agent"]: int(r["focus_units"]) for r in agent_rows}
-        price_units_by_agent = {r["agent"]: int(r["price_units"]) for r in agent_rows}
-        store_by_agent = {
-            r["agent"]: {
-                "site_code": r["site_code"],
-                "store_name": r["store_name"],
-                "firma": r["firma"],
-            }
-            for r in agent_rows
+        # --- combinare pe politica explicită de identitate ---
+        person_by_pair = {
+            (str(row["site_code"]), str(row["agent"])): str(row["person_id"])
+            for row in agent_rows
+            if row.get("person_id")
         }
-        all_agents = set(focus_units_by_agent) | set(promo_bonuri)
+        if contest.identity_policy == "person_id":
+            missing_promo_pairs = sorted(set(promo_bonuri).difference(person_by_pair))
+            person_by_pair.update(
+                await self.repo.fetch_person_ids(
+                    month=month,
+                    identities=missing_promo_pairs,
+                )
+            )
+
+        stats: dict[object, dict[str, Any]] = defaultdict(
+            lambda: {
+                "focus_units": 0,
+                "price_units": 0,
+                "promo_bonuri": 0,
+                "representative": None,
+            }
+        )
+
+        def identity_key(pair: tuple[str, str]) -> object:
+            if contest.identity_policy == "site_agent":
+                return pair
+            person_id = person_by_pair.get(pair)
+            if not person_id:
+                raise RuntimeError(
+                    "Concursul person_id are o identitate de agent neconfirmată."
+                )
+            return person_id
+
+        for row in agent_rows:
+            pair = (str(row["site_code"]), str(row["agent"]))
+            identity = identity_key(pair)
+            target = stats[identity]
+            target["focus_units"] += int(row["focus_units"])
+            target["price_units"] += int(row["price_units"])
+            representative = {
+                "agent": pair[1],
+                "site_code": pair[0],
+                "store_name": row["store_name"],
+                "firma": row["firma"],
+            }
+            current = target["representative"]
+            if current is None or (
+                pair[0],
+                pair[1].casefold(),
+                pair[1],
+            ) < (
+                current["site_code"],
+                current["agent"].casefold(),
+                current["agent"],
+            ):
+                target["representative"] = representative
+
+        for pair, units in promo_bonuri.items():
+            identity = identity_key(pair)
+            target = stats[identity]
+            target["promo_bonuri"] += units
+            if target["representative"] is None:
+                target["representative"] = {
+                    "agent": pair[1],
+                    "site_code": pair[0],
+                    "store_name": None,
+                    "firma": None,
+                }
 
         scored: list[ContestLeaderboardRow] = []
-        for agent in all_agents:
-            f_units = focus_units_by_agent.get(agent, 0)
-            p_units = price_units_by_agent.get(agent, 0)
-            b = promo_bonuri.get(agent, 0)
+        for values in stats.values():
+            representative = values["representative"]
+            f_units = int(values["focus_units"])
+            p_units = int(values["price_units"])
+            promo_units = int(values["promo_bonuri"])
             f_pts = f_units * focus_pts
-            pr_pts = b * promo_pts
+            pr_pts = promo_units * promo_pts
             pc_pts = p_units * price_pts
             total = f_pts + pr_pts + pc_pts
             if total <= 0:
                 continue
-            store_info = store_by_agent.get(agent, {})
             scored.append(
                 ContestLeaderboardRow(
                     rank=0,
-                    agent=agent,
-                    site_code=store_info.get("site_code"),
-                    store_name=store_info.get("store_name"),
-                    firma=store_info.get("firma"),
+                    agent=str(representative["agent"]),
+                    site_code=representative.get("site_code"),
+                    store_name=representative.get("store_name"),
+                    firma=representative.get("firma"),
                     focus_units=f_units,
-                    promo_bonuri=b,
+                    promo_bonuri=promo_units,
                     price_units=p_units,
                     focus_points=f_pts,
                     promo_points=pr_pts,
@@ -294,7 +353,13 @@ class ContestsService:
                 )
             )
 
-        scored.sort(key=lambda row: (-row.total_points, row.agent))
+        scored.sort(
+            key=lambda row: (
+                -row.total_points,
+                row.agent.casefold(),
+                row.site_code or "",
+            )
+        )
         for index, row in enumerate(scored):
             row.rank = index + 1
             row.prize = contest.prize_for_rank(row.rank)
@@ -302,6 +367,7 @@ class ContestsService:
         store_count = await self.repo.fetch_scope_store_count(scope_store_sql, scope_store_params)
 
         return ContestResponse(
+            identity_policy=contest.identity_policy,
             key=contest.key,
             title=contest.title,
             subtitle=contest.subtitle,

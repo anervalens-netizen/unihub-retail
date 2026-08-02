@@ -21,7 +21,9 @@ test.describe('E2E: Excel Import (Settings)', () => {
 
     await page.getByRole('button', { name: /Setari/i }).first().click();
 
-    await expect(page.getByText(/Importă fișier/i)).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.getByRole('button', { name: /Validează fișierul/i }),
+    ).toBeVisible({ timeout: 10000 });
   });
 
   test('renders import history entries', async ({ page, context }) => {

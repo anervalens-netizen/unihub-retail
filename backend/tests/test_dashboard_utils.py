@@ -1,7 +1,12 @@
 """Tests for dashboard specials and utility functions."""
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date
+from pathlib import Path
+
+import pytest
 
 
 def test_format_currency():
@@ -111,3 +116,112 @@ def test_prewarm_special_cards_cache():
     prewarm_special_cards_cache()
     # Prewarming should not raise exceptions even if config is missing
     assert isinstance(_special_config_cache, dict)
+
+
+def test_generated_promo_config_rejects_tampered_actuals(tmp_path: Path) -> None:
+    from services.dashboard_specials import _generated_config_path
+
+    generation_root = tmp_path / "promo_generations"
+    generation_dir = generation_root / ("a" * 32)
+    generation_dir.mkdir(parents=True)
+    actuals_path = generation_dir / "promo_actuals.xlsx"
+    actuals_path.write_bytes(b"approved")
+    config_path = generation_dir / "hub_specials.json"
+    config_bytes = json.dumps(
+        {
+            "promotions": [
+                {
+                    "key": "active",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                    "item_codes": ["I1"],
+                    "actuals_source_file": str(actuals_path),
+                }
+            ]
+        },
+        sort_keys=True,
+    ).encode()
+    config_path.write_bytes(config_bytes)
+    pointer = {
+        "version": 1,
+        "generation_id": "a" * 32,
+        "config_file": f"{'a' * 32}/hub_specials.json",
+        "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
+        "actuals": [
+            {
+                "file": str(actuals_path),
+                "sha256": hashlib.sha256(b"approved").hexdigest(),
+            }
+        ],
+    }
+    (generation_root / "current.json").write_text(
+        json.dumps(pointer),
+        encoding="utf-8",
+    )
+
+    assert _generated_config_path(tmp_path) == config_path
+    actuals_path.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="hashului aprobat"):
+        _generated_config_path(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("promotions", "error"),
+    [
+        (
+            [
+                {
+                    "key": "same",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-10",
+                    "item_codes": ["I1"],
+                },
+                {
+                    "key": "same",
+                    "start_date": "2026-06-11",
+                    "end_date": "2026-06-20",
+                    "item_codes": ["I2"],
+                },
+            ],
+            "duplicată",
+        ),
+        (
+            [
+                {
+                    "key": "left",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-20",
+                    "item_codes": ["I1"],
+                },
+                {
+                    "key": "right",
+                    "start_date": "2026-06-10",
+                    "end_date": "2026-06-30",
+                    "item_codes": ["I1"],
+                },
+            ],
+            "suprapuse",
+        ),
+        (
+            [
+                {
+                    "key": "cutoff",
+                    "start_date": "2026-06-01",
+                    "end_date": "2026-06-30",
+                    "item_codes": ["I1"],
+                    "actuals_source_file": "unused.xlsx",
+                    "actuals_cutoff_date": "2026-07-01",
+                }
+            ],
+            "Cutoff",
+        ),
+    ],
+)
+def test_validate_special_cards_config_is_all_or_nothing(
+    promotions: list[dict[str, object]],
+    error: str,
+) -> None:
+    from services.dashboard_specials import validate_special_cards_config
+
+    with pytest.raises(ValueError, match=error):
+        validate_special_cards_config({"promotions": promotions})

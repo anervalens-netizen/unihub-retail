@@ -446,7 +446,8 @@ export function Settings({
       );
       setPromoActualsMessage(
         `Raport aplicat: ${result.promo_units.toLocaleString('ro-RO')} unități promo, `
-        + `cutoff ${result.cutoff_date}, ${result.updated_promotions} promoții actualizate.`,
+        + `cutoff ${result.cutoff_date}, ${result.updated_promotions} promoții actualizate. `
+        + `Generație ${result.generation_id.slice(0, 12)}.`,
       );
       setPromoActualsFile(null);
     } catch (error) {
@@ -637,7 +638,6 @@ export function Settings({
               <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                 <div className="font-bold">Verificare înainte de import</div>
                 <div className="mt-1">{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB · fișier Excel</div>
-                <label className="mt-3 flex cursor-pointer items-start gap-2 font-semibold">
                 <label className="mt-3 block font-semibold">
                   Cutoff declarat
                   <input
@@ -648,6 +648,7 @@ export function Settings({
                     required
                   />
                 </label>
+                <label className="mt-3 flex cursor-pointer items-start gap-2 font-semibold">
                   <input
                     type="checkbox"
                     checked={salesReplaceConfirmed}
