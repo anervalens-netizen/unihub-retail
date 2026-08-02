@@ -178,3 +178,16 @@ compatibila ce intoarce `bytes` ramane doar pentru apeluri in-process si teste;
 routerul public nu o mai foloseste. Writerul OpenPyXL si randurile raportului
 nu sunt inca complet streaming, deci benchmarkul de export maxim si impactul
 asupra p95 Dashboard raman deschise pentru fereastra post-deploy.
+
+### P2.4 Web Vitals si PWA lifecycle 2026-08-03
+
+Frontendul colecteaza acum LCP si INP prin `web-vitals` numai cand DSN-ul RUM
+este configurat. Valorile sunt trimise in milisecunde ca measurements si
+distributii Sentry cu atribute finite (`rating`, `navigation_type`); URL-ul si
+identitatea nu sunt etichete de metrica. Testul browser dedicat instaleaza un
+service worker real si a trecut secventa N -> N+1 -> rollback la N.
+
+Aceste verificari dovedesc instrumentarea si mecanica de upgrade/rollback, nu
+percentile reale. LCP/INP production, compatibilitatea artefactului formal si
+pragul SLO se evalueaza numai dupa deploy si trafic suficient; fereastra de 7
+zile cu minimum 100 observatii pe ruta ramane deschisa.

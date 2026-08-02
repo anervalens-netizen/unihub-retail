@@ -34,6 +34,11 @@ taguri finite pentru tipul conexiunii și `saveData`. Vite folosește
 `VITE_GLITCHTIP_DSN`, cu fallback controlat la `SENTRY_DSN`; raportul zilnic
 central din Command Center verifică inclusiv că DSN-ul RUM este compilat în
 artefact, apoi corelează RUM/GlitchTip cu p95 și erorile Prometheus pe 24h.
+În același boundary, `web-vitals` înregistrează numai LCP și INP, în
+milisecunde, ca measurements și distribuții `web_vitals.lcp|inp`; atributele
+sunt finite (`rating`, `navigation_type`), fără URL, identitate sau alte chei
+cu cardinalitate necontrolată. Observarea pornește numai când DSN-ul este
+configurat, iar importul dinamic nu intră în bundle-ul inițial fără RUM.
 
 API-ul normalizeaza sau genereaza `X-Request-ID`, il returneaza clientului,
 il include in loguri si GlitchTip si il propaga spre fluxurile interne si
@@ -288,7 +293,10 @@ PWA precache exclude logo-urile mari nefolosite in UI (`logo-horizontal`,
 `logo-inverted`, `logo-mark`); sidebar-ul foloseste `favicon-64.png`, iar
 imaginile autentificate din Vizite folosesc lazy loading. Assetele Vite cu hash
 folosesc runtime `CacheFirst`; raspunsurile API autentificate nu intra in acest
-cache.
+cache. Gate-ul browser `e2e/pwa-release-lifecycle.spec.ts` verifică instalarea
+reală a unui service worker, activarea imediată, upgrade-ul N -> N+1 și
+rollback-ul N+1 -> N; nu este dovadă de deploy production și se completează cu
+probele artefactului formal.
 Calitatea frontend are doua praguri: `npm run lint` ruleaza ESLint flat config
 cu React Hooks si TypeScript rules, iar `npm run typecheck:strict` aplica
 strict TypeScript pe subseturi curate. `npm run typecheck` ramane pragul

@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { installPreloadRecovery } from './lib/preloadRecovery.ts';
+import { observeCoreWebVitals, webVitalDistributionName } from './lib/webVitals.ts';
 
 import * as Sentry from '@sentry/react';
 
@@ -23,6 +24,18 @@ if (sentryDsn) {
   });
   Sentry.setTag('network.effective_type', connection?.effectiveType ?? 'unknown');
   Sentry.setTag('network.save_data', String(connection?.saveData ?? false));
+  void observeCoreWebVitals((metric) => {
+    Sentry.setMeasurement(metric.name.toLowerCase(), metric.value, 'millisecond');
+    Sentry.metrics.distribution(webVitalDistributionName(metric), metric.value, {
+      unit: 'millisecond',
+      attributes: {
+        rating: metric.rating,
+        navigation_type: metric.navigationType,
+      },
+    });
+  }).catch((error: unknown) => {
+    Sentry.captureException(error);
+  });
 }
 
 installPreloadRecovery();

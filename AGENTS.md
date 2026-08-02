@@ -90,6 +90,9 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
   Review PostgreSQL workload monthly with the read-only
   `backend/scripts/report_pg_stat_statements.py`, and optimize only a proven
   user-facing query with EXPLAIN/BUFFERS plus an unchanged business hash.
+- Frontend RUM reports only LCP and INP as low-cardinality Sentry distributions;
+  do not attach URLs, user IDs or unbounded labels. A release that changes PWA
+  behavior must pass the browser lifecycle gate N -> N+1 -> rollback to N.
 - Salary endpoints are backend-gated. Access is limited to `unihub-manager`,
   `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`
   group. Agents and Team Leaders must receive 403.
