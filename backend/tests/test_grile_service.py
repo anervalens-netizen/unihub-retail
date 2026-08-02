@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from contextlib import nullcontext
+from datetime import date, datetime, timezone
 
 from services import grile
 from services.grile import _completed_days_for_month, _normalize_completion_window
@@ -144,6 +145,21 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
     persisted: list[dict] = []
     finished: list[dict] = []
     closed: list[object] = []
+    phases: list[tuple[str, float | None]] = []
+
+    class Timings:
+        def db(self):
+            phases.append(("db", None))
+            return nullcontext()
+
+        def queue_wait(self, seconds: float) -> None:
+            phases.append(("queue_wait", seconds))
+
+        def provider(self, seconds: float) -> None:
+            phases.append(("provider", seconds))
+
+        def finish(self) -> None:
+            phases.append(("finish", None))
 
     class Repository:
         def __init__(self, _pool) -> None:
@@ -157,6 +173,8 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
                 "site_code": "SITE01",
                 "generation": 4,
                 "requested_by_sub": "subject",
+                "created_at": datetime(2026, 7, 1, 12, tzinfo=timezone.utc),
+                "started_at": datetime(2026, 7, 1, 12, 0, 2, tzinfo=timezone.utc),
             }
 
         async def get_active_sheet(self, site_code: str, month: str):
@@ -174,6 +192,7 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
         async def finish_store_refresh(self, refresh_id: int, **kwargs):
             finished.append({"refresh_id": refresh_id, **kwargs})
 
+    monkeypatch.setattr(grile, "GrileStoreRefreshTimings", Timings)
     monkeypatch.setattr(grile, "GrileRepository", Repository)
     monkeypatch.setattr(grile, "get_credentials", lambda: object())
     monkeypatch.setattr(grile, "build_services", lambda: (object(), object()))
@@ -193,3 +212,9 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
     assert persisted[0]["content_sha256"] == grile._content_sha256(values)
     assert finished == [{"refresh_id": 19, "status": "completed", "error_message": None}]
     assert len(closed) == 2
+    assert [phase for phase, _seconds in phases] == [
+        "db", "queue_wait", "db", "provider", "db", "finish",
+    ]
+    assert phases[1] == ("queue_wait", 2.0)
+    assert phases[3][1] is not None
+    assert phases[3][1] >= 0

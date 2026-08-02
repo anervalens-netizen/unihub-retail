@@ -68,6 +68,21 @@ exact șase range-uri, în ordinea canonică `K5,L5,P5:P35,U5:U35,Z5:Z35,B46:G60
 cu cardinalitatea/formele maxime ale fiecăruia. Răspunsul lipsă, reordonat sau
 malformat devine `STRUCTURAL_INVALID` fail-closed și este păstrat ca observație.
 
+## P2.1 — latență observabilă
+
+Workerul expune histograma Prometheus
+`grile_store_refresh_phase_seconds{phase=...}`, cu faze fixe:
+
+- `queue_wait`: rezervare DB până la claimul workerului;
+- `provider`: credentials + Google Sheets/Drive I/O;
+- `db`: claim, citiri Retail și persistența observației/proiecției;
+- `total`: rezervare până la finalul jobului, inclusiv queue wait.
+
+Metricul nu are label de lună, magazin, utilizator sau job, deci cardinalitatea
+rămâne bounded. Enqueue p95 se măsoară separat din histograma HTTP a endpointului.
+Gate-ul de performanță nu se declară acceptat înainte de șapte zile curate și
+minimum 100 de requesturi pe rută.
+
 ## Targete agent: diff și sincronizare
 
 Citirea targetelor agent este separată în două operații:

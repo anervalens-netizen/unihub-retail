@@ -20,6 +20,7 @@ from typing import Any, Mapping
 import asyncpg
 
 from repositories.grile import GrileRepository
+from services.grile_metrics import GrileStoreRefreshTimings
 from services.grile_sheets import (
     GrileStructureError,
     analyze_grila,
@@ -320,16 +321,43 @@ async def run_grile_store_refresh(
     refresh_id: int,
     tolerance: float = DEFAULT_TOLERANCE,
 ) -> dict[str, Any]:
+    """Consume one reserved refresh and always publish its phase metrics."""
+    timings = GrileStoreRefreshTimings()
+    try:
+        return await _run_grile_store_refresh(
+            pool,
+            refresh_id=refresh_id,
+            tolerance=tolerance,
+            timings=timings,
+        )
+    finally:
+        timings.finish()
+
+
+async def _run_grile_store_refresh(
+    pool: asyncpg.Pool,
+    *,
+    refresh_id: int,
+    tolerance: float = DEFAULT_TOLERANCE,
+    timings: GrileStoreRefreshTimings,
+) -> dict[str, Any]:
     """Consume only a pre-reserved refresh from the operations worker."""
     repo = GrileRepository(pool)
-    refresh = await repo.claim_store_refresh(refresh_id)
+    with timings.db():
+        refresh = await repo.claim_store_refresh(refresh_id)
     if refresh is None:
         return {"operation_id": refresh_id, "status": "not_claimed"}
 
+    created_at = refresh.get("created_at")
+    started_at = refresh.get("started_at")
+    if isinstance(created_at, datetime) and isinstance(started_at, datetime):
+        timings.queue_wait((started_at - created_at).total_seconds())
+
     month = str(refresh["run_month"])
     site_code = str(refresh["site_code"])
-    sheet = await repo.get_active_sheet(site_code, month)
-    expected = (await repo.get_expected_by_site(month)).get(site_code, {})
+    with timings.db():
+        sheet = await repo.get_active_sheet(site_code, month)
+        expected = (await repo.get_expected_by_site(month)).get(site_code, {})
     operation_status = "completed"
     error_message: str | None = None
 
@@ -349,6 +377,7 @@ async def run_grile_store_refresh(
             finally:
                 close_services(sheets_service, drive_service)
 
+        provider_started = time.perf_counter()
         try:
             await asyncio.to_thread(get_credentials)
             value_ranges, modified_time = await asyncio.to_thread(fetch_one)
@@ -368,9 +397,12 @@ async def run_grile_store_refresh(
             operation_status = "failed"
             error_message = str(exc)[:500]
             row = _error_row(site_code, expected, tolerance, "GOOGLE_ERROR", error_message)
+        finally:
+            timings.provider(time.perf_counter() - provider_started)
 
-    projection_applied = await repo.record_store_refresh_observation(refresh_id, row)
-    await repo.finish_store_refresh(refresh_id, status=operation_status, error_message=error_message)
+    with timings.db():
+        projection_applied = await repo.record_store_refresh_observation(refresh_id, row)
+        await repo.finish_store_refresh(refresh_id, status=operation_status, error_message=error_message)
     return {
         "operation_id": refresh_id,
         "site_code": site_code,

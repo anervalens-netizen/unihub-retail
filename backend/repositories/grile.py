@@ -278,7 +278,8 @@ class GrileRepository:
                 """
                 UPDATE grile_store_refreshes SET status = 'running', started_at = now(), heartbeat_at = now()
                 WHERE id = $1 AND status = 'queued'
-                RETURNING id, run_month, site_code, generation, requested_by_sub
+                RETURNING id, run_month, site_code, generation, requested_by_sub,
+                          created_at, started_at
                 """, refresh_id,
             )
 

@@ -748,6 +748,11 @@ dar nu poate suprascrie proiectia mai noua. Proiectia expune separat ultimul
 succes, ultima eroare si stale age. Validarea v3 este fail-closed pe range,
 ordine, cardinalitate si shape si persista `STRUCTURAL_INVALID`.
 
+Refreshul per magazin expune histograma internă Prometheus
+`grile_store_refresh_phase_seconds` cu fazele fixe `queue_wait`, `provider`,
+`db` si `total`; totalul include așteptarea în coadă. Nu există labels per
+magazin/lună/job, iar gate-ul p95 cere fereastra reală de șapte zile.
+
 Retail compara `K5/L5` din grila cu `store_targets` si
 `reporting_item_month.total_sales` pe `site_code`. Inchiderea de luna ruleaza
 nativ in Retail: finalizare salarii, export arhiva XLSX/ZIP si reset lunar
