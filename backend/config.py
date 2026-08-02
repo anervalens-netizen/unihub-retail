@@ -151,20 +151,6 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
         "ARQ_MAX_CONNECTIONS", 4, errors, maximum=1000
     )
 
-    default_completion_wait = 1800 if worker_role == "imports" else 2400
-    arq_job_timeout_seconds = _parse_runtime_int(
-        "ARQ_JOB_TIMEOUT_SECONDS", 1800, errors, maximum=7200
-    )
-    arq_completion_wait_seconds = _parse_runtime_int(
-        "ARQ_JOB_COMPLETION_WAIT_SECONDS",
-        default_completion_wait,
-        errors,
-        maximum=7200,
-    )
-    arq_max_jobs = _parse_runtime_int("ARQ_MAX_JOBS", 1, errors, maximum=32)
-    arq_keep_result_seconds = _parse_runtime_int(
-        "ARQ_KEEP_RESULT_SECONDS", 3600, errors, maximum=86400
-    )
     arq_failure_cooldown_seconds = _parse_runtime_int(
         "ARQ_FAILURE_COOLDOWN_SECONDS", 5, errors, maximum=300
     )
@@ -176,18 +162,40 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
         errors.append(
             "ARQ conexiunea trebuie să respecte bugetul de 3 secunde"
         )
-    if arq_completion_wait_seconds < arq_job_timeout_seconds:
-        errors.append(
-            "ARQ_JOB_COMPLETION_WAIT_SECONDS trebuie să fie >= ARQ_JOB_TIMEOUT_SECONDS"
+
+    # Job execution/retention belongs to worker processes. The web process
+    # only needs bounded transport settings for enqueue/status operations;
+    # invalid worker-only environment must not prevent web startup.
+    arq_job_timeout_seconds = 1800
+    arq_completion_wait_seconds = 1800 if worker_role == "imports" else 2400
+    arq_max_jobs = 1
+    arq_keep_result_seconds = 3600
+    if process_role in {"worker", "import"}:
+        arq_job_timeout_seconds = _parse_runtime_int(
+            "ARQ_JOB_TIMEOUT_SECONDS", 1800, errors, maximum=7200
         )
-    if arq_keep_result_seconds < max(
-        arq_job_timeout_seconds, arq_completion_wait_seconds
-    ):
-        errors.append(
-            "ARQ_KEEP_RESULT_SECONDS trebuie să fie >= cel mai lung job ARQ"
+        arq_completion_wait_seconds = _parse_runtime_int(
+            "ARQ_JOB_COMPLETION_WAIT_SECONDS",
+            arq_completion_wait_seconds,
+            errors,
+            maximum=7200,
         )
-    if valkey_max_connections < arq_max_jobs:
-        errors.append("ARQ_MAX_CONNECTIONS trebuie să fie >= ARQ_MAX_JOBS")
+        arq_max_jobs = _parse_runtime_int("ARQ_MAX_JOBS", 1, errors, maximum=32)
+        arq_keep_result_seconds = _parse_runtime_int(
+            "ARQ_KEEP_RESULT_SECONDS", 3600, errors, maximum=86400
+        )
+        if arq_completion_wait_seconds < arq_job_timeout_seconds:
+            errors.append(
+                "ARQ_JOB_COMPLETION_WAIT_SECONDS trebuie să fie >= ARQ_JOB_TIMEOUT_SECONDS"
+            )
+        if arq_keep_result_seconds < max(
+            arq_job_timeout_seconds, arq_completion_wait_seconds
+        ):
+            errors.append(
+                "ARQ_KEEP_RESULT_SECONDS trebuie să fie >= cel mai lung job ARQ"
+            )
+        if valkey_max_connections < arq_max_jobs:
+            errors.append("ARQ_MAX_CONNECTIONS trebuie să fie >= ARQ_MAX_JOBS")
 
     if errors:
         raise ConfigError(

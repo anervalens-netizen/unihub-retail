@@ -107,8 +107,11 @@ async def lifespan(_: FastAPI):
             synced = await sync_visits_snapshot(conn)
             logger.info("visits_snapshot synced at boot: %d rows", synced)
         prewarm_special_cards_cache()
-        await get_arq_pool()
-        logger.info("arq worker pool initialized")
+        arq_pool = await get_arq_pool()
+        if arq_pool is None:
+            logger.warning("arq worker pool unavailable; queue endpoints degraded")
+        else:
+            logger.info("arq worker pool initialized")
         current_pool = await get_pool()
         await update_business_metrics(current_pool)
         yield
