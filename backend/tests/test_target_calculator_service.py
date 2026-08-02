@@ -245,6 +245,7 @@ async def test_profitability_uses_real_pnl_margin_gross_vat_and_flags_break_even
     )
 
     profitability = rows[0]["profitability"]
+    assert isinstance(profitability, dict)
     assert rows[0]["normalized_weight"] == 1.0
     assert profitability["salary_cost_at_90_pct"] == 11597.22
     assert profitability["operating_costs"] == 6000.0

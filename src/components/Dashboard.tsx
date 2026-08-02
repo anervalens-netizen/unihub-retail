@@ -116,7 +116,7 @@ const COMPACT_TEXT_TD_CLASS = `${COMPACT_TD_CLASS} text-left`;
 
 function PromoMetric({ qty, discount }: { qty: number; discount: number }) {
   return (
-    <span className="inline-flex flex-col items-end leading-tight">
+    <span className="inline-flex flex-col items-end leading-[11px] lg:leading-tight">
       <span className="font-semibold">{formatInt(qty)} buc.</span>
       <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
         {formatAmount(discount)} RON
