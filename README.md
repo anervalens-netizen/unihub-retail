@@ -45,6 +45,12 @@ Probe:
 - `/health` este alias compatibil pentru `/readyz`;
 - `/metrics`, `/docs`, `/redoc` și `/openapi.json` nu sunt accesibile public.
 
+Coada ARQ este o dependență opțională pentru procesul web: indisponibilitatea
+ei nu schimbă `/readyz` cât timp PostgreSQL și sesiunea Valkey sunt sănătoase și
+nu blochează citirile autentificate. Enqueue răspunde bounded cu 503, iar
+statusurile interne disting `not_found`, `backend_unavailable` și `unknown`;
+starea terminală din PostgreSQL rămâne autoritativă.
+
 ## Module
 
 - **Hub:** KPI retail, comparații, istoric și forecasturi AI persistate;

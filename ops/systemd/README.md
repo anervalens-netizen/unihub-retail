@@ -30,3 +30,18 @@ After a backend restart, `/livez` proves that the process responds and
 Workerul operațional are `TimeoutStopSec=2460`, import workerul `1860`, backendul `75`, iar migration runnerul `TimeoutStartSec=300`. Aceste valori aliniază shutdown-ul controlat, dar nu închid benchmarkul P0.5 și nu justifică ridicarea limitelor de memorie ca substitut pentru remediere.
 
 Recovery-ul P0 păstrează ultima generație bună: sales folosește generation head/CAS și rollback auditabil, P&L folosește pointer/pre-image shadow fără apply runtime, iar salary batch revine tranzacțional. Dacă health sau manifestul nu se reconciliază, oprește promovarea și marchează `recovery_required`.
+
+## P1.4 availability și config
+
+ARQ este opțional numai pentru procesul web; PostgreSQL și sesiunea/rate-limit
+Valkey rămân obligatorii. Cu portul cozii închis, `/readyz` trebuie să rămână
+200 și citirile autentificate funcționale, în timp ce enqueue răspunde bounded
+503. Recovery-ul cozii este lazy, single-flight și fără restart; publish-ul
+incert se reconciliază prin job ID și rezervarea PostgreSQL, fără retry orb.
+
+Configul este validat separat pentru web/operations/import. Relațiile minime
+sunt `DB_POOL_MIN_SIZE <= DB_POOL_MAX_SIZE`, minimum două conexiuni web,
+`DB_LOCK_TIMEOUT_MS < DB_STATEMENT_TIMEOUT_MS`, buget ARQ de conectare <=3s,
+`ARQ_MAX_CONNECTIONS >= ARQ_MAX_JOBS`, completion wait >= job timeout și
+retention >= cea mai lungă fereastră. Valorile versionate `2460/2400` pentru
+operations și `1860/1800` pentru import păstrează marja de shutdown de 60s.

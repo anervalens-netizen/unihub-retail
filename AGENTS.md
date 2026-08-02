@@ -97,8 +97,18 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
   `unihub-admin`, `authentik Admins`, and the reserved future `unihub-hr`
   group. Agents and Team Leaders must receive 403.
 - Shared Google API clients are not thread-safe. Build one service per worker thread and keep conservative concurrency.
-- The Retail ARQ worker serializes heavy jobs (`max_jobs=1`), waits up to 60
-  seconds for an active job on SIGTERM, and must close both ARQ and DB pools.
+- The Retail ARQ worker serializes heavy jobs (`ARQ_MAX_JOBS=1` by default).
+  Web startup and authenticated reads must not require the optional ARQ queue;
+  only enqueue/status boundaries map typed queue transport failures to bounded
+  503 responses. A durable terminal DB state wins over ephemeral ARQ state.
+- Runtime config is parsed per web/operations/import process. Keep
+  `DB_LOCK_TIMEOUT_MS < DB_STATEMENT_TIMEOUT_MS`, at least two web DB
+  connections, ARQ connection budget <=3s, result retention at least as long
+  as the job/completion window, and systemd `TimeoutStopSec` at least 60s above
+  the worker completion wait.
+- Business dates/months use the injectable aware clock in
+  `backend/business_clock.py` and `Europe/Bucharest`; persist instants in UTC,
+  reject naive datetimes and use monotonic time for durations.
 - Sales imports use Stage -> Validate -> Promote. A generation manifest contains
   source/cutoff/control totals, site-day coverage and a business hash. Lease
   loss fences the writer; promote and rollback use owner fencing and CAS.

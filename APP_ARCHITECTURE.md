@@ -45,12 +45,27 @@ il include in loguri si GlitchTip si il propaga spre fluxurile interne si
 joburile ARQ. Workerul pastreaza acelasi ID pentru jobul derivat de verificare
 Grile, astfel incat fluxul API -> queue -> worker poate fi urmarit integral.
 
-Workerul ARQ serializeaza joburile grele, are timeout explicit de 30 minute si
-la SIGTERM asteapta bounded jobul activ inainte sa inchida conexiunile Valkey
-si PostgreSQL. Unitatea systemd acorda 75 secunde pentru shutdown-ul controlat.
+Coada ARQ este opțională pentru procesul web. Startupul încearcă bounded un
+pool best-effort, iar citirile autentificate și `/readyz` depind în continuare
+numai de PostgreSQL plus sesiunea Valkey; nicio citire nu inițializează coada.
+Crearea poolului ARQ este single-flight, are cooldown și recovery lazy fără
+restart. Un eșec cunoscut înainte de publish produce 503 retry-safe; un răspuns
+pierdut după publish rămâne `unknown` cu job/operație reconciliabilă și fără
+retry orb. `not_found` este folosit numai după un lookup ARQ reușit, iar o
+stare terminală PostgreSQL este autoritativă chiar dacă ARQ este indisponibil.
+
+Workerul ARQ serializeaza implicit joburile grele (`ARQ_MAX_JOBS=1`). Configul
+tipizat per web/operations/import validează poolurile, timeouturile, bugetul de
+conectare sub 3 secunde, completion wait și retention. La SIGTERM, systemd
+acordă 2460 secunde workerului operațional pentru completion wait 2400 și 1860
+secunde import workerului pentru 1800, apoi se închid poolurile ARQ și DB.
 La startup, workerul inchide rezervarile de import ramase `processing` dupa o
 oprire necontrolata. Tranzactia PostgreSQL intrerupta este deja rollback-ata,
 rezervarea devine `failed`, iar retry-ul ARQ poate porni imediat.
+
+`backend/business_clock.py` este boundary-ul unic pentru date/luni business:
+clock injectabil, datetime aware și `Europe/Bucharest`, cu instanțe persistate
+UTC. Datetime naive este refuzat; duratele/cooldown-urile folosesc monotonic.
 
 Pool-ul PostgreSQL seteaza server-side `statement_timeout=120s`,
 `lock_timeout=10s` si `idle_in_transaction_session_timeout=60s` implicit.
