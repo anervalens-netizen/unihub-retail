@@ -203,6 +203,23 @@ def test_bounded_allocation_handles_zero_weights_and_iterative_bounds() -> None:
     assert sum(row["proposed_target"] for row in cap_allocated) == Decimal("100.00")
 
 
+def test_bounded_allocation_distributes_residual_across_multiple_capacities() -> None:
+    rows = [bounded_row("1", "0", "10.01") for _ in range(10)]
+    for index, row in enumerate(rows):
+        row["site_code"] = f"SITE{index:02d}"
+
+    allocated, warnings = allocate_with_bounds(rows, Decimal("100.04"))
+
+    assert warnings == []
+    assert [row["proposed_target"] for row in allocated] == [
+        Decimal("10.01"), Decimal("10.01"), Decimal("10.01"), Decimal("10.01"),
+        Decimal("10.00"), Decimal("10.00"), Decimal("10.00"), Decimal("10.00"),
+        Decimal("10.00"), Decimal("10.00"),
+    ]
+    assert sum(row["proposed_target"] for row in allocated) == Decimal("100.04")
+    assert sum(row["is_cap_limited"] for row in allocated) == 4
+
+
 def test_bounded_allocation_rounding_marks_bound_when_single_row_cannot_absorb_diff() -> None:
     positive_rows = [
         bounded_row("1", "0", "33.335"),

@@ -206,6 +206,46 @@ def target_rule_set_from_snapshot(snapshot: Any, target_month: str) -> TargetRul
     return validate_target_rule_set(record, target_month)
 
 
+def validate_store_exception_scope(
+    rule_set: TargetRuleSet,
+    *,
+    cohort: list[dict[str, Any]],
+    master_rows: list[dict[str, Any]],
+) -> None:
+    """Require every exception to identify one exact, canonical master/cohort store."""
+    expected_codes = set(rule_set.rules["store_exceptions"])
+    if not expected_codes:
+        return
+
+    def as_mapping(rows: list[dict[str, Any]], source: str) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        for row in rows:
+            site_code = row.get("site_code")
+            locatie = row.get("locatie")
+            if not isinstance(site_code, str) or not isinstance(locatie, str) or site_code in mapping:
+                raise TargetRuleSetValidationError(
+                    f"Mappingul {source} Target nu este unu-la-unu; aliasurile nu sunt acceptate."
+                )
+            mapping[site_code] = " ".join(locatie.split()).casefold()
+        return mapping
+
+    cohort_by_code = as_mapping(cohort, "cohort")
+    master_by_code = as_mapping(master_rows, "master")
+    if set(master_by_code) != expected_codes:
+        raise TargetRuleSetValidationError(
+            "Exceptiile Target nu se reconciliaza unu-la-unu cu master data."
+        )
+    if not expected_codes.issubset(cohort_by_code):
+        raise TargetRuleSetValidationError(
+            "Exceptiile Target nu se reconciliaza unu-la-unu cu cohorta activa."
+        )
+    for site_code in expected_codes:
+        if master_by_code[site_code] != cohort_by_code[site_code]:
+            raise TargetRuleSetValidationError(
+                "Exceptiile Target au coliziune de alias intre master si cohorta."
+            )
+
+
 def profitability_assumptions(rule_set: TargetRuleSet) -> dict[str, Any]:
     vat = rule_set.rules["vat"]
     salary = rule_set.rules["salary"]

@@ -17,6 +17,7 @@ from services.target_rule_registry import (
     profitability_assumptions,
     store_salary_parameters,
     target_rule_set_from_snapshot,
+    validate_store_exception_scope,
     validate_target_rule_set,
 )
 
@@ -80,6 +81,40 @@ def test_rule_set_rejects_tampering_and_invalid_store_mapping() -> None:
         validate_target_rule_set(invalid_mapping, "2026-06")
 
 
+def test_store_exception_scope_rejects_unknown_and_alias_collisions() -> None:
+    rule_set = validate_target_rule_set(make_rule_set_record(), "2026-06")
+    exact_mapping = [{"site_code": "SITE01", "locatie": "Magazin 1"}]
+    validate_store_exception_scope(rule_set, cohort=exact_mapping, master_rows=exact_mapping)
+
+    with pytest.raises(TargetRuleSetValidationError, match="master data"):
+        validate_store_exception_scope(
+            rule_set,
+            cohort=[{"site_code": "SITE01", "locatie": "Magazin 1"}],
+            master_rows=[],
+        )
+    with pytest.raises(TargetRuleSetValidationError, match="cohorta activa"):
+        validate_store_exception_scope(
+            rule_set,
+            cohort=[],
+            master_rows=exact_mapping,
+        )
+    with pytest.raises(TargetRuleSetValidationError, match="alias"):
+        validate_store_exception_scope(
+            rule_set,
+            cohort=[{"site_code": "SITE01", "locatie": "Magazin Alias"}],
+            master_rows=exact_mapping,
+        )
+    with pytest.raises(TargetRuleSetValidationError, match="unu-la-unu"):
+        validate_store_exception_scope(
+            rule_set,
+            cohort=[
+                {"site_code": "SITE01", "locatie": "Magazin 1"},
+                {"site_code": "SITE01", "locatie": "Magazin 1"},
+            ],
+            master_rows=[{"site_code": "SITE01", "locatie": "Magazin 1"}],
+        )
+
+
 def test_snapshot_revalidates_without_reading_current_registry() -> None:
     rule_set = validate_target_rule_set(make_rule_set_record(), "2026-06")
 
@@ -104,7 +139,7 @@ def test_snapshot_revalidates_without_reading_current_registry() -> None:
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="Requires the explicitly isolated PostgreSQL test database",
 )
-async def test_registry_uses_contiguous_from_to_intervals_and_blocks_legacy_mutations() -> None:
+async def test_registry_derives_successor_interval_without_rewriting_history() -> None:
     pool = await get_pool()
     repo = TargetCalculatorRepository(pool)
     try:
@@ -114,28 +149,52 @@ async def test_registry_uses_contiguous_from_to_intervals_and_blocks_legacy_muta
         assert legacy["id"] == "target-finance-legacy-19-v1"
         assert legacy["effective_to_month"] == "2025-08"
         assert effective["id"] == "target-finance-21-v1"
+        assert effective["effective_to_month"] is None
 
         async with pool.acquire() as conn:
-            with pytest.raises(asyncpg.PostgresError, match="immutable"):
+            with pytest.raises(asyncpg.PostgresError, match="append-only"):
                 async with conn.transaction():
                     await conn.execute(
                         """
                         UPDATE target_calculator_rule_sets
-                        SET rules = jsonb_set(rules, '{salary,base_salary}', '9999'::jsonb)
+                        SET effective_from_month = '2025-09'
                         WHERE id = $1
                         """,
                         "target-finance-21-v1",
                     )
+            source = await conn.fetchrow(
+                "SELECT rules::TEXT AS rules, rules_sha256 FROM target_calculator_rule_sets WHERE id = $1",
+                "target-finance-21-v1",
+            )
+            assert source is not None
+            await conn.execute(
+                """
+                INSERT INTO target_calculator_rule_sets (id, version, effective_from_month, rules, rules_sha256)
+                VALUES ('target-finance-append-only-v3', 3, '2099-01', $1::jsonb, $2)
+                """,
+                source["rules"],
+                source["rules_sha256"],
+            )
 
         async with pool.acquire() as conn:
-            with pytest.raises(asyncpg.PostgresError, match="gap"):
+            with pytest.raises(asyncpg.PostgresError, match="must append"):
                 async with conn.transaction():
                     await conn.execute(
-                        "UPDATE target_calculator_rule_sets SET effective_to_month = $1 WHERE id = $2",
-                        "2025-07",
-                        "target-finance-legacy-19-v1",
+                        """
+                        INSERT INTO target_calculator_rule_sets (id, version, effective_from_month, rules, rules_sha256)
+                        VALUES ('target-finance-out-of-order-v4', 4, '2025-09', $1::jsonb, $2)
+                        """,
+                        source["rules"],
+                        source["rules_sha256"],
                     )
-                    await conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+        before_successor = await repo.get_effective_target_rule_set("2098-12")
+        successor = await repo.get_effective_target_rule_set("2099-01")
+        assert before_successor is not None and successor is not None
+        assert before_successor["id"] == "target-finance-21-v1"
+        assert before_successor["effective_to_month"] == "2099-01"
+        assert successor["id"] == "target-finance-append-only-v3"
+        assert successor["effective_to_month"] is None
     finally:
         await close_db_pool()
 

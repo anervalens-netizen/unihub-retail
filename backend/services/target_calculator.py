@@ -34,6 +34,7 @@ from services.target_rule_registry import (
     profitability_assumptions as rule_set_profitability_assumptions,
     store_salary_parameters,
     target_rule_set_from_snapshot,
+    validate_store_exception_scope,
     validate_target_rule_set,
 )
 
@@ -322,36 +323,53 @@ def _apply_rounding_difference(
     *,
     include_caps: bool,
 ) -> None:
+    """Distribute the final cent residual deterministically over all available capacity."""
     rounded_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
-    difference = requested_total - rounded_total
+    difference = money(requested_total - rounded_total)
     if not difference:
         return
-    if difference > 0:
-        candidates = [
-            row for row in rows
-            if not include_caps or row["proposed_target"] + difference <= row["cap_target"]
-        ]
+
+    increase = difference > 0
+    remaining = abs(difference)
+    while remaining > 0:
+        candidates: list[tuple[Decimal, str, int, dict[str, Any]]] = []
+        for index, row in enumerate(rows):
+            capacity = (
+                row["cap_target"] - row["proposed_target"]
+                if increase and include_caps
+                else row["proposed_target"] - row["floor_target"]
+                if not increase
+                else remaining
+            )
+            capacity = money(capacity)
+            if capacity > 0:
+                candidates.append((capacity, str(row.get("site_code", "")), index, row))
         if not candidates:
             floor_total, cap_total = _normalize_bounds(rows, include_caps)
             raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
-        target_row = max(
+
+        progressed = False
+        for capacity, _site_code, _index, row in sorted(
             candidates,
-            key=lambda row: row["cap_target"] - row["proposed_target"] if include_caps else row["calculated_weight"],
-        )
-    else:
-        candidates = [
-            row for row in rows
-            if row["proposed_target"] + difference >= row["floor_target"]
-        ]
-        if not candidates:
+            key=lambda candidate: (-candidate[0], candidate[1], candidate[2]),
+        ):
+            step = min(capacity, remaining)
+            if step <= 0:
+                continue
+            row["proposed_target"] = money(
+                row["proposed_target"] + step if increase else row["proposed_target"] - step
+            )
+            remaining = money(remaining - step)
+            progressed = True
+            if include_caps and row["proposed_target"] == row["cap_target"]:
+                _mark_bound(row, cap=True)
+            if row["proposed_target"] == row["floor_target"]:
+                _mark_bound(row, floor=True)
+            if not remaining:
+                return
+        if not progressed:  # pragma: no cover - defensive guard for malformed bounds
             floor_total, cap_total = _normalize_bounds(rows, include_caps)
             raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
-        target_row = max(candidates, key=lambda row: row["proposed_target"] - row["floor_target"])
-    target_row["proposed_target"] = money(target_row["proposed_target"] + difference)
-    if include_caps and target_row["proposed_target"] == target_row["cap_target"]:
-        _mark_bound(target_row, cap=True)
-    if target_row["proposed_target"] == target_row["floor_target"]:
-        _mark_bound(target_row, floor=True)
 
 
 def allocate_with_floors(
@@ -543,6 +561,20 @@ class TargetCalculatorService:
                 status_code=409,
                 detail=f"Rule-set-ul Target este invalid; nu s-a creat nicio propunere. {exc}",
             ) from None
+        exception_codes = sorted(target_rule_set.rules["store_exceptions"])
+        if exception_codes:
+            master_rows = await self.repo.get_target_rule_exception_master(exception_codes)
+            try:
+                validate_store_exception_scope(
+                    target_rule_set,
+                    cohort=[dict(row) for row in cohort],
+                    master_rows=[dict(row) for row in master_rows],
+                )
+            except TargetRuleSetValidationError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Rule-set-ul Target nu se reconciliaza cu master/cohort; nu s-a creat nicio propunere. {exc}",
+                ) from None
 
         months = unique_months([item["month"] for item in source_months])
         site_codes = [row["site_code"] for row in cohort]

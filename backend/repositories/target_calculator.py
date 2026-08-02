@@ -71,6 +71,21 @@ class TargetCalculatorRepository:
                 target_month,
             )
 
+    async def get_target_rule_exception_master(self, site_codes: list[str]) -> list[asyncpg.Record]:
+        """Resolve Target rule exception keys by exact canonical master code only."""
+        if not site_codes:
+            return []
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                SELECT site_code, locatie
+                FROM stores
+                WHERE site_code = ANY($1::TEXT[])
+                ORDER BY site_code
+                """,
+                site_codes,
+            )
+
     async def get_source_metrics(
         self,
         site_codes: list[str],
@@ -241,7 +256,7 @@ class TargetCalculatorRepository:
             return await conn.fetchrow(
                 """
                 SELECT id, version, effective_from_month, effective_to_month, rules, rules_sha256
-                FROM target_calculator_rule_sets
+                FROM target_calculator_effective_rule_sets
                 WHERE effective_from_month <= $1
                   AND (effective_to_month IS NULL OR effective_to_month > $1)
                 ORDER BY effective_from_month DESC, version DESC

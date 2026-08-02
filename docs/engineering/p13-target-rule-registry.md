@@ -3,9 +3,10 @@
 ## Scope
 
 Migration `036_target_rule_registry.sql` introduces the versioned Target rule
-registry. Ranges use `[effective_from_month, effective_to_month)`: they are
-non-overlapping and contiguous, with no gap. It seeds two immutable business
-configurations:
+registry. The table is append-only; the effective end is derived with `LEAD`
+from the next inserted version, yielding contiguous `[effective_from_month,
+effective_to_month)` intervals without rewriting prior rows. It seeds two immutable
+business configurations:
 
 - `target-finance-legacy-19-v1`, effective through `2025-07`;
 - `target-finance-21-v1`, effective from `2025-08`.
@@ -13,9 +14,10 @@ configurations:
 A rule-set contains the official effective TVA rule, salary P&L factor, base
 salary, meal vouchers, commission, assumed attainment, default agent count and
 validated per-store exceptions. The service validates the canonical JSON
-SHA-256, exact schema, numeric ranges, site-code mappings and equality with the
-fiscal registry for the requested month. Missing, malformed or mismatched rules
-return no proposal and cause no Target write.
+SHA-256, exact schema, numeric ranges, fiscal registry equality and every
+exception as one exact code in both current master and active cohort; aliases,
+unknown codes, duplicate mappings and master/cohort name mismatches fail closed
+before any metrics query or Target write.
 
 ## Calculation and override contract
 
@@ -45,10 +47,10 @@ not the mutable current registry. Legacy scenarios with no snapshot continue as
 `legacy-unversioned`; their finalized reads and published rows are therefore not
 rewritten or reinterpreted by migration 036.
 
-The rule-set content (`id`, version, rules and canonical hash) is immutable. A
-future additive migration may close the preceding open interval and insert the
-next rule-set in the same transaction; it cannot alter a rule-set's business
-content or an existing scenario snapshot.
+The rule-set table is append-only: UPDATE and DELETE are forbidden, including
+effective boundaries. A future additive migration only inserts a successor with
+a later `effective_from_month`; the view derives the predecessor's ending month.
+It cannot alter a rule-set's business content or an existing scenario snapshot.
 
 The same freeze stores canonical calculation/source-input and profitability-input
 SHA-256 values, plus profitability per Target row. New scenarios' GET/export
@@ -65,13 +67,15 @@ backend/scripts/run_tests_isolated.sh -q
 backend/venv/bin/mypy backend/ --ignore-missing-imports --explicit-package-bases
 ```
 
-Target-specific evidence covers deterministic residual-cent allocation,
-infeasible floor/cap rejection before persistence, registry hash/schema/fiscal
-validation, `[from,to)` overlap/gap rejection, frozen source/profitability
-snapshots, separate override audit, stale revision conflict and legacy
-read/export compatibility. Migration 036 is additive and issues no UPDATE for
-legacy scenarios. DB fencing rejects old final-target mutation against a
-ruleset draft, and repository recalculation rejects an algorithm mismatch.
+Target-specific evidence covers deterministic multi-row residual-cent
+allocation, infeasible floor/cap rejection before persistence, registry
+hash/schema/fiscal validation, append-only successor-derived `[from,to)` ranges,
+exact master/cohort exception reconciliation,
+frozen source/profitability snapshots, separate override audit, stale revision
+conflict and legacy read/export compatibility. Migration 036 is additive and
+issues no UPDATE for legacy scenarios. DB fencing rejects old final-target
+mutation against a ruleset draft, and repository recalculation rejects an
+algorithm mismatch.
 Rollback of code keeps the registry, snapshots and override audit data intact.
 No P1.3 command promotes Finance data, mutates live Target scenarios, deploys,
 or changes published Target hashes.

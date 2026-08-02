@@ -62,6 +62,7 @@ def make_service() -> tuple[TargetCalculatorService, MagicMock]:
     repo.get_active_cohort = AsyncMock()
     repo.get_source_metrics = AsyncMock()
     repo.get_effective_target_rule_set = AsyncMock(return_value=target_rule_record())
+    repo.get_target_rule_exception_master = AsyncMock(return_value=[])
     repo.save_draft_scenario = AsyncMock()
     repo.list_scenarios = AsyncMock()
     repo.get_scenario = AsyncMock()
@@ -1200,6 +1201,37 @@ async def test_calculate_rejects_floor_infeasibility_without_persisting(
         )
 
     assert exc_info.value.status_code == 400
+    repo.save_draft_scenario.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_calculate_rejects_unreconciled_rule_exception_before_save(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    record = target_rule_record()
+    record["rules"]["store_exceptions"] = {"UNKNOWN01": {"base_salary": "2600"}}  # type: ignore[index]
+    record["rules_sha256"] = canonical_rules_hash(record["rules"])  # type: ignore[arg-type]
+    repo.get_effective_target_rule_set.return_value = record
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {"site_code": "SITE01", "locatie": "Magazin", "firma": "Mobiup", "regional": "R", "asm": "A"}
+    ]
+    repo.get_target_rule_exception_master.return_value = []
+    monkeypatch.setattr(target_module, "get_forecast_factor", AsyncMock(return_value=Decimal("1")))
+
+    with pytest.raises(HTTPException, match="nu se reconciliaza") as exc_info:
+        await service.calculate({
+            "target_month": "2026-06",
+            "total_target": 100,
+            "min_floor": 100,
+            "previous_month_floor_pct": 0,
+            "previous_month_cap_pct": 2,
+        })
+
+    assert exc_info.value.status_code == 409
+    repo.get_target_rule_exception_master.assert_awaited_once_with(["UNKNOWN01"])
+    repo.get_source_metrics.assert_not_awaited()
     repo.save_draft_scenario.assert_not_awaited()
 
 
