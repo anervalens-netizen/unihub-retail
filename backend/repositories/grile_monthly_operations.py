@@ -312,6 +312,24 @@ async def attach_job(
     return row is not None
 
 
+async def get_by_job_id(
+    pool: asyncpg.Pool,
+    job_id: str,
+) -> dict[str, Any] | None:
+    """Return the durable operation used to reconcile ephemeral ARQ state."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, status, result, error_message
+            FROM grile_monthly_operations
+            WHERE job_id = $1
+            LIMIT 1
+            """,
+            job_id,
+        )
+    return operation_to_dict(row)
+
+
 async def start(
     pool: asyncpg.Pool,
     operation_id: int,

@@ -700,19 +700,10 @@ async def enqueue_grile_target_sync(
 async def get_grile_monthly_operation_by_job_id(job_id: str) -> dict | None:
     """Read the durable monthly operation before consulting ephemeral ARQ state."""
     from db.connection import get_pool
+    from repositories.grile_monthly_operations import get_by_job_id
 
     db_pool = await get_pool()
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT id, status, result, error_message
-            FROM grile_monthly_operations
-            WHERE job_id = $1
-            LIMIT 1
-            """,
-            job_id,
-        )
-    return dict(row) if row is not None else None
+    return await get_by_job_id(db_pool, job_id)
 
 
 async def get_grile_target_sync_operation(
