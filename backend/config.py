@@ -140,7 +140,7 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
 
     dashboard_request_deadline_ms = (
         _parse_runtime_int(
-            "DASHBOARD_REQUEST_DEADLINE_MS", 2500, errors, minimum=1, maximum=30000
+            "DASHBOARD_REQUEST_DEADLINE_MS", 2500, errors, minimum=1, maximum=3000
         )
         if process_role == "web"
         else None

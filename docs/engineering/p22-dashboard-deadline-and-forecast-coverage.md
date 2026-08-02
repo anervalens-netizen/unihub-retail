@@ -4,7 +4,7 @@
 
 Every `/api/dashboard/*` request creates one absolute monotonic deadline before
 pool/dependency resolution. `DASHBOARD_REQUEST_DEADLINE_MS` is a validated web
-`RuntimeConfig` value (default `2500`, positive, max `30000`); it is never read
+`RuntimeConfig` value (default `2500`, positive, max `3000`); it is never read
 from the environment per request. The router maps only typed deadline expiry to
 HTTP `504`; `CancelledError` / client disconnect propagates.
 

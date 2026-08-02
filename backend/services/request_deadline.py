@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
@@ -47,7 +48,15 @@ class RequestDeadline:
 
     async def run(self, operation: Awaitable[_T]) -> _T:
         try:
-            async with asyncio.timeout(self.remaining_seconds()):
+            timeout = self.remaining_seconds()
+        except RequestDeadlineExceeded:
+            # A fresh coroutine handed to an already-expired deadline must not
+            # survive unawaited long enough to emit a RuntimeWarning.
+            if inspect.iscoroutine(operation):
+                operation.close()
+            raise
+        try:
+            async with asyncio.timeout(timeout):
                 return await operation
         except (asyncio.TimeoutError, TimeoutError) as exc:
             raise RequestDeadlineExceeded("Dashboard request deadline exceeded") from exc

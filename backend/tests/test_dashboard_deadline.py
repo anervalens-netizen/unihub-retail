@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -230,6 +231,30 @@ def test_web_runtime_config_validates_dashboard_deadline_and_connection_reserve(
     monkeypatch.setenv("DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY", "3")
     with pytest.raises(ConfigError, match="DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY"):
         load_runtime_config("web")
+
+    monkeypatch.setenv("DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY", "2")
+    monkeypatch.setenv("DASHBOARD_REQUEST_DEADLINE_MS", "3001")
+    with pytest.raises(ConfigError, match="DASHBOARD_REQUEST_DEADLINE_MS"):
+        load_runtime_config("web")
+
+
+@pytest.mark.asyncio
+async def test_already_expired_deadline_closes_unstarted_coroutine() -> None:
+    started = False
+
+    async def operation() -> None:
+        nonlocal started
+        started = True
+
+    coroutine = operation()
+    deadline = RequestDeadline(1)
+    deadline._expires_at = 0
+
+    with pytest.raises(RequestDeadlineExceeded):
+        await deadline.run(coroutine)
+
+    assert started is False
+    assert inspect.getcoroutinestate(coroutine) == inspect.CORO_CLOSED
 
 
 class _BlockingAcquire:
