@@ -862,6 +862,28 @@ class TargetCalculatorService:
         })
         return assumptions
 
+    @staticmethod
+    def _saved_profitability_assumptions(scenario: dict[str, Any]) -> dict[str, Any]:
+        """Normalize historical snapshots without persisting invented metadata."""
+        legacy = TargetCalculatorService._legacy_profitability_assumptions()
+        raw = (scenario.get("calculation_params") or {}).get("profitability")
+        if not isinstance(raw, dict):
+            return legacy
+        assumptions = {**legacy, **raw}
+        if "vat_multiplier" not in raw:
+            saved_rate = raw.get("vat_rate")
+            if saved_rate is not None:
+                assumptions["vat_multiplier"] = float(
+                    Decimal("1") + Decimal(str(saved_rate))
+                )
+            else:
+                assumptions["vat_multiplier"] = legacy["vat_multiplier"]
+        if not raw.get("vat_rule_id"):
+            assumptions["vat_rule_id"] = "legacy-unversioned"
+        if not raw.get("vat_ruleset_id"):
+            assumptions["vat_ruleset_id"] = "legacy-unversioned"
+        return assumptions
+
 
 
     async def _attach_profitability(
@@ -889,10 +911,7 @@ class TargetCalculatorService:
         }
         forecast_run_record = inputs.get("forecast_run")
         forecast_run = dict(forecast_run_record) if forecast_run_record else None
-        saved_profitability = (
-            (scenario.get("calculation_params") or {}).get("profitability")
-            or self._legacy_profitability_assumptions()
-        )
+        saved_profitability = self._saved_profitability_assumptions(scenario)
         vat_multiplier = Decimal(str(saved_profitability["vat_multiplier"]))
 
         salary_total = Decimal("0")

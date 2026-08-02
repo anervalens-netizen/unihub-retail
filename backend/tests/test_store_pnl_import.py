@@ -135,7 +135,7 @@ def test_coverage_regression_blocks_missing_existing_key() -> None:
 
 
 
-def test_resolved_unallocated_bucket_is_not_a_coverage_regression() -> None:
+def test_missing_unallocated_bucket_is_a_coverage_regression() -> None:
     candidate = workbook("candidate.xls", 1, 1).rows[0]
     current = [
         {
@@ -146,7 +146,9 @@ def test_resolved_unallocated_bucket_is_not_a_coverage_regression() -> None:
         }
     ]
 
-    assert coverage_regressions(current, [candidate]) == []
+    assert coverage_regressions(current, [candidate]) == [
+        ("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "v1")
+    ]
 
 def test_duplicate_candidate_business_key_is_rejected() -> None:
     candidate = workbook("candidate.xls", 1, 1).rows[0]

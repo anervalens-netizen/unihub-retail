@@ -388,7 +388,6 @@ def coverage_regressions(
             row["category_code"],
         )
         for row in current_rows
-        if row["source_site_code"] != UNALLOCATED_SOURCE
     }
     return sorted(current - candidate)
 

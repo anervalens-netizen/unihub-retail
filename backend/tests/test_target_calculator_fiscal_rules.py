@@ -15,3 +15,21 @@ def test_legacy_target_scenario_keeps_previous_unversioned_behavior() -> None:
     assert assumptions["vat_rule_id"] == "legacy-unversioned"
     assert assumptions["vat_multiplier"] == 1.21
     assert assumptions["vat_ruleset_hash"] is None
+
+
+def test_legacy_profitability_with_only_saved_vat_rate_is_readable() -> None:
+    scenario = {
+        "calculation_params": {
+            "profitability": {
+                "vat_rate": 0.21,
+            }
+        }
+    }
+
+    assumptions = TargetCalculatorService._saved_profitability_assumptions(scenario)
+
+    assert assumptions["vat_multiplier"] == 1.21
+    assert assumptions["vat_rate"] == 0.21
+    assert assumptions["vat_rule_id"] == "legacy-unversioned"
+    assert assumptions["vat_ruleset_id"] == "legacy-unversioned"
+    assert assumptions["vat_ruleset_hash"] is None
