@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import defaultdict
 from datetime import datetime
@@ -16,6 +17,7 @@ from services.spreadsheet_safety import append_openpyxl_row
 
 from repositories.target_calculator import (
     TargetCalculatorRepository,
+    TargetScenarioAlgorithmMismatch,
     TargetScenarioFinalizedError,
     TargetScenarioVersionConflict,
 )
@@ -25,6 +27,14 @@ from services.fiscal_rules import (
     net_to_gross,
     standard_vat_rule,
     standard_vat_ruleset_hash,
+)
+from services.target_rule_registry import (
+    TargetRuleSet,
+    TargetRuleSetValidationError,
+    profitability_assumptions as rule_set_profitability_assumptions,
+    store_salary_parameters,
+    target_rule_set_from_snapshot,
+    validate_target_rule_set,
 )
 
 MONEY = Decimal("0.01")
@@ -39,7 +49,7 @@ DEFAULT_TREND_ADJUSTMENT_MAX = Decimal("1.10")
 DEFAULT_SEASONALITY_MIN = Decimal("0.70")
 DEFAULT_SEASONALITY_MAX = Decimal("1.70")
 MIN_SEASONALITY_BASE = Decimal("10000")
-CALCULATION_METHOD = "seasonal_blended_multiyear_v1"
+CALCULATION_METHOD = "seasonal_blended_multiyear_v2_ruleset"
 SALARY_PNL_FACTOR = Decimal("1.6955")
 MEAL_VOUCHERS_PER_AGENT = Decimal("480")
 SALES_COMMISSION_RATE = Decimal("0.03")
@@ -263,173 +273,190 @@ def weighted_available(components: dict[str, tuple[Decimal | None, Decimal]]) ->
     )
 
 
+class TargetBudgetInfeasibleError(ValueError):
+    def __init__(self, requested_total: Decimal, floor_total: Decimal, cap_total: Decimal | None = None):
+        self.requested_total = money(requested_total)
+        self.floor_total = money(floor_total)
+        self.cap_total = money(cap_total) if cap_total is not None else None
+        if self.requested_total < self.floor_total:
+            detail = "Bugetul este sub suma floor-urilor"
+        else:
+            detail = "Bugetul depaseste suma cap-urilor"
+        super().__init__(detail)
+
+
+def _mark_bound(row: dict[str, Any], *, floor: bool = False, cap: bool = False) -> None:
+    if floor:
+        row["is_floor_limited"] = True
+        row["allocation_reason"] = "floor"
+        if "FLOOR_APPLIED" not in row["flags"]:
+            row["flags"].append("FLOOR_APPLIED")
+    if cap:
+        row["is_cap_limited"] = True
+        row["allocation_reason"] = "cap"
+        if "CAP_APPLIED" not in row["flags"]:
+            row["flags"].append("CAP_APPLIED")
+
+
+def _normalize_bounds(rows: list[dict[str, Any]], include_caps: bool) -> tuple[Decimal, Decimal | None]:
+    floor_total = Decimal("0")
+    cap_total = Decimal("0") if include_caps else None
+    for row in rows:
+        row["floor_target"] = money(row["floor_target"])
+        row.setdefault("is_floor_limited", False)
+        row.setdefault("is_cap_limited", False)
+        row.setdefault("allocation_reason", "proportional")
+        row.setdefault("flags", [])
+        floor_total += row["floor_target"]
+        if include_caps:
+            row["cap_target"] = money(row["cap_target"])
+            if row["cap_target"] < row["floor_target"]:
+                raise ValueError("Cap-ul unei locatii nu poate fi sub floor.")
+            cap_total = (cap_total or Decimal("0")) + row["cap_target"]
+    return floor_total, cap_total
+
+
+def _apply_rounding_difference(
+    rows: list[dict[str, Any]],
+    requested_total: Decimal,
+    *,
+    include_caps: bool,
+) -> None:
+    rounded_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
+    difference = requested_total - rounded_total
+    if not difference:
+        return
+    if difference > 0:
+        candidates = [
+            row for row in rows
+            if not include_caps or row["proposed_target"] + difference <= row["cap_target"]
+        ]
+        if not candidates:
+            floor_total, cap_total = _normalize_bounds(rows, include_caps)
+            raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
+        target_row = max(
+            candidates,
+            key=lambda row: row["cap_target"] - row["proposed_target"] if include_caps else row["calculated_weight"],
+        )
+    else:
+        candidates = [
+            row for row in rows
+            if row["proposed_target"] + difference >= row["floor_target"]
+        ]
+        if not candidates:
+            floor_total, cap_total = _normalize_bounds(rows, include_caps)
+            raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
+        target_row = max(candidates, key=lambda row: row["proposed_target"] - row["floor_target"])
+    target_row["proposed_target"] = money(target_row["proposed_target"] + difference)
+    if include_caps and target_row["proposed_target"] == target_row["cap_target"]:
+        _mark_bound(target_row, cap=True)
+    if target_row["proposed_target"] == target_row["floor_target"]:
+        _mark_bound(target_row, floor=True)
+
+
 def allocate_with_floors(
     rows: list[dict[str, Any]],
     requested_total: Decimal,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Allocate a budget proportionally while honoring store minimums."""
-    warnings: list[str] = []
+    """Allocate an exactly feasible budget proportionally while honoring floors."""
     if not rows:
-        return rows, warnings
-
+        return rows, []
     requested_total = money(requested_total)
-    floor_total = sum((row["floor_target"] for row in rows), Decimal("0"))
+    floor_total, _ = _normalize_bounds(rows, include_caps=False)
     if floor_total > requested_total:
-        for row in rows:
-            row["proposed_target"] = money(row["floor_target"])
-            row["is_floor_limited"] = True
-        warnings.append(
-            "Bugetul total este mai mic decat suma pragurilor minime; propunerea depaseste bugetul pentru a respecta floor-ul."
-        )
-        return rows, warnings
+        raise TargetBudgetInfeasibleError(requested_total, floor_total)
 
     remaining = set(range(len(rows)))
     assigned: dict[int, Decimal] = {}
     remaining_budget = requested_total
-
     while remaining:
         weight_total = sum((rows[index]["calculated_weight"] for index in remaining), Decimal("0"))
-        allocations: dict[int, Decimal] = {}
-        for index in remaining:
-            if weight_total > 0:
-                allocations[index] = remaining_budget * rows[index]["calculated_weight"] / weight_total
-            else:
-                allocations[index] = remaining_budget / Decimal(len(remaining))
-
-        below_floor = {
-            index for index in remaining
-            if allocations[index] < rows[index]["floor_target"]
+        allocations = {
+            index: (
+                remaining_budget * rows[index]["calculated_weight"] / weight_total
+                if weight_total > 0
+                else remaining_budget / Decimal(len(remaining))
+            )
+            for index in remaining
         }
+        below_floor = {index for index in remaining if allocations[index] < rows[index]["floor_target"]}
         if not below_floor:
             assigned.update(allocations)
             break
-
         for index in below_floor:
             assigned[index] = rows[index]["floor_target"]
             remaining_budget -= rows[index]["floor_target"]
-            rows[index]["is_floor_limited"] = True
+            _mark_bound(rows[index], floor=True)
         remaining -= below_floor
 
     for index, row in enumerate(rows):
         row["proposed_target"] = money(assigned[index])
-
-    rounded_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
-    difference = requested_total - rounded_total
-    if difference:
-        adjustable = [
-            row for row in rows
-            if row["proposed_target"] + difference >= row["floor_target"]
-        ]
-        target_row = max(adjustable or rows, key=lambda row: row["proposed_target"])
-        target_row["proposed_target"] = money(target_row["proposed_target"] + difference)
-
-    return rows, warnings
+    _apply_rounding_difference(rows, requested_total, include_caps=False)
+    if sum((row["proposed_target"] for row in rows), Decimal("0")) != requested_total:
+        raise TargetBudgetInfeasibleError(requested_total, floor_total)
+    return rows, []
 
 
 def allocate_with_bounds(
     rows: list[dict[str, Any]],
     requested_total: Decimal,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Allocate proportionally while respecting lower and upper proposal bounds."""
-    warnings: list[str] = []
+    """Allocate only a budget that can exactly satisfy every floor and cap."""
     if not rows:
-        return rows, warnings
-
+        return rows, []
     requested_total = money(requested_total)
-    floor_total = sum((row["floor_target"] for row in rows), Decimal("0"))
-    cap_total = sum((row["cap_target"] for row in rows), Decimal("0"))
-    if floor_total > requested_total:
-        for row in rows:
-            row["proposed_target"] = money(row["floor_target"])
-            row["is_floor_limited"] = True
-            row["allocation_reason"] = "floor"
-            row["flags"].append("FLOOR_APPLIED")
-        warnings.append(
-            "Bugetul total este mai mic decat suma pragurilor minime; propunerea depaseste bugetul pentru a respecta floor-ul."
-        )
-        return rows, warnings
-    if cap_total < requested_total:
-        for row in rows:
-            row["proposed_target"] = money(row["cap_target"])
-            row["is_cap_limited"] = True
-            row["allocation_reason"] = "cap"
-            row["flags"].append("CAP_APPLIED")
-        warnings.append(
-            "Bugetul total depaseste suma cap-urilor configurate; propunerea ramane sub buget pana la ajustare manageriala."
-        )
-        return rows, warnings
+    floor_total, cap_total = _normalize_bounds(rows, include_caps=True)
+    assert cap_total is not None
+    if requested_total < floor_total or requested_total > cap_total:
+        raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
 
     remaining = set(range(len(rows)))
     assigned: dict[int, Decimal] = {}
     remaining_budget = requested_total
-
     while remaining:
         weight_total = sum((rows[index]["calculated_weight"] for index in remaining), Decimal("0"))
-        allocations: dict[int, Decimal] = {}
-        for index in remaining:
-            if weight_total > 0:
-                allocations[index] = remaining_budget * rows[index]["calculated_weight"] / weight_total
-            else:
-                allocations[index] = remaining_budget / Decimal(len(remaining))
-
+        allocations = {
+            index: (
+                remaining_budget * rows[index]["calculated_weight"] / weight_total
+                if weight_total > 0
+                else remaining_budget / Decimal(len(remaining))
+            )
+            for index in remaining
+        }
         fixed = False
-        for index in list(remaining):
+        for index in sorted(remaining):
             row = rows[index]
             if allocations[index] < row["floor_target"]:
                 assigned[index] = row["floor_target"]
                 remaining_budget -= row["floor_target"]
                 remaining.remove(index)
-                row["is_floor_limited"] = True
-                row["allocation_reason"] = "floor"
-                row["flags"].append("FLOOR_APPLIED")
+                _mark_bound(row, floor=True)
                 fixed = True
             elif allocations[index] > row["cap_target"]:
                 assigned[index] = row["cap_target"]
                 remaining_budget -= row["cap_target"]
                 remaining.remove(index)
-                row["is_cap_limited"] = True
-                row["allocation_reason"] = "cap"
-                row["flags"].append("CAP_APPLIED")
+                _mark_bound(row, cap=True)
                 fixed = True
-
         if not fixed:
             assigned.update(allocations)
             break
 
     for index, row in enumerate(rows):
         row["proposed_target"] = money(assigned[index])
-
-    rounded_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
-    difference = requested_total - rounded_total
-    if difference:
-        if difference > 0:
-            adjustable = [
-                row for row in rows
-                if row["proposed_target"] + difference <= row["cap_target"]
-            ]
-            target_row = max(adjustable or rows, key=lambda row: row["cap_target"] - row["proposed_target"])
-        else:
-            adjustable = [
-                row for row in rows
-                if row["proposed_target"] + difference >= row["floor_target"]
-            ]
-            target_row = max(adjustable or rows, key=lambda row: row["proposed_target"] - row["floor_target"])
-        target_row["proposed_target"] = money(target_row["proposed_target"] + difference)
-        if target_row["proposed_target"] > target_row["cap_target"]:
-            target_row["is_cap_limited"] = True
-            target_row["flags"].append("CAP_APPLIED")
-        if target_row["proposed_target"] < target_row["floor_target"]:
-            target_row["is_floor_limited"] = True
-            target_row["flags"].append("FLOOR_APPLIED")
-
+    _apply_rounding_difference(rows, requested_total, include_caps=True)
+    for row in rows:
+        if row["proposed_target"] == row["floor_target"]:
+            _mark_bound(row, floor=True)
+        if row["proposed_target"] == row["cap_target"]:
+            _mark_bound(row, cap=True)
     final_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
-    if final_total != requested_total:  # pragma: no cover - defensive guard after cent-level correction
-        warnings.append(
-            "Rotunjirea sau limitarile floor/cap au lasat propunerea diferita de bugetul total; verifica ajustarile finale."
-        )
-
-    return rows, warnings
-
+    if final_total != requested_total or any(
+        row["proposed_target"] < row["floor_target"] or row["proposed_target"] > row["cap_target"]
+        for row in rows
+    ):
+        raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
+    return rows, []
 
 class TargetCalculatorService:
     def __init__(self, repo: TargetCalculatorRepository):
@@ -503,6 +530,20 @@ class TargetCalculatorService:
         ):
             raise HTTPException(status_code=400, detail="Parametrii de calcul nu sunt valizi.")
 
+        rule_record = await self.repo.get_effective_target_rule_set(target_month)
+        if not rule_record:
+            raise HTTPException(
+                status_code=409,
+                detail="Nu exista un rule-set Target efectiv pentru luna ceruta; nu s-a creat nicio propunere.",
+            )
+        try:
+            target_rule_set = validate_target_rule_set(dict(rule_record), target_month)
+        except TargetRuleSetValidationError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Rule-set-ul Target este invalid; nu s-a creat nicio propunere. {exc}",
+            ) from None
+
         months = unique_months([item["month"] for item in source_months])
         site_codes = [row["site_code"] for row in cohort]
         metrics = await self.repo.get_source_metrics(site_codes, months)
@@ -511,6 +552,14 @@ class TargetCalculatorService:
                 month: Decimal(str(await get_forecast_factor(conn, month)))
                 for month in months
             }
+        calculation_input_sha256 = self._canonical_input_hash({
+            "target_month": target_month,
+            "cohort_month": cohort_month,
+            "source_months": source_months,
+            "cohort": [dict(row) for row in cohort],
+            "source_metrics": [dict(row) for row in metrics],
+            "forecast_factors": {month: str(forecast_factors[month]) for month in sorted(forecast_factors)},
+        })
         metric_map: dict[tuple[str, str], SourceMetric] = {
             (row["site_code"], row["import_month"]): {
                 "target": Decimal(row["target"] or 0),
@@ -736,7 +785,16 @@ class TargetCalculatorService:
             for row in calculated_rows:
                 row["calculated_weight"] = row["calculated_weight"] / raw_total
 
+        floor_total = sum((row["floor_target"] for row in calculated_rows), Decimal("0"))
         cap_total = sum((row["cap_target"] for row in calculated_rows), Decimal("0"))
+        if total_target < floor_total:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Targetul total {total_target:,.0f} RON este sub suma floor-urilor calculate "
+                    f"{floor_total:,.0f} RON. Ajusteaza bugetul sau floor-ul operational; propunerea nu a fost salvata."
+                ).replace(",", "."),
+            )
         if cap_total < total_target:
             raise HTTPException(
                 status_code=400,
@@ -746,7 +804,13 @@ class TargetCalculatorService:
                 ).replace(",", "."),
             )
 
-        calculated_rows, allocation_warnings = allocate_with_bounds(calculated_rows, total_target)
+        try:
+            calculated_rows, allocation_warnings = allocate_with_bounds(calculated_rows, total_target)
+        except TargetBudgetInfeasibleError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bugetul Target este infezabil; propunerea nu a fost salvata. {exc}",
+            ) from None
         warnings.extend(allocation_warnings)
         for row in calculated_rows:
             flags = list(dict.fromkeys(row["flags"]))
@@ -754,6 +818,28 @@ class TargetCalculatorService:
             row["calculation_details"]["allocation_reason"] = row["allocation_reason"]
             row["calculation_details"]["is_floor_limited"] = row["is_floor_limited"]
             row["calculation_details"]["is_cap_limited"] = row["is_cap_limited"]
+
+        profitability_inputs = await self.repo.get_profitability_inputs(
+            site_codes=site_codes,
+            target_month=target_month,
+        )
+        profitability_input_sha256 = self._canonical_input_hash(
+            self._profitability_input_payload(profitability_inputs)
+        )
+        profitability_summary = self._populate_profitability(
+            {
+                "target_month": target_month,
+                "rule_set_snapshot": target_rule_set.snapshot(),
+                "calculation_params": {
+                    "profitability": rule_set_profitability_assumptions(target_rule_set),
+                },
+            },
+            calculated_rows,
+            profitability_inputs,
+        )
+        profitability_summary["input_sha256"] = profitability_input_sha256
+        for row in calculated_rows:
+            row["profitability_snapshot"] = row.pop("profitability")
         try:
             scenario_id = await self.repo.save_draft_scenario(
                 {
@@ -765,6 +851,11 @@ class TargetCalculatorService:
                     "calculation_method": CALCULATION_METHOD,
                     "source_months": source_months,
                     "warnings": warnings,
+                    "rule_set_id": target_rule_set.rule_set_id,
+                    "rule_set_hash": target_rule_set.rules_hash,
+                    "rule_set_snapshot": target_rule_set.snapshot(),
+                    "calculation_input_sha256": calculation_input_sha256,
+                    "profitability_input_sha256": profitability_input_sha256,
                     "calculation_params": {
                         "seasonality_years": seasonality_years,
                         "seasonality_min": float(seasonality_min),
@@ -777,7 +868,8 @@ class TargetCalculatorService:
                         "strong_weights": {key: float(value) for key, value in STRONG_SEASONALITY_WEIGHTS.items()},
                         "weak_weights": {key: float(value) for key, value in WEAK_SEASONALITY_WEIGHTS.items()},
                         "new_store_weights": {key: float(value) for key, value in NEW_STORE_SEASONALITY_WEIGHTS.items()},
-                        "profitability": self._profitability_assumptions(target_month),
+                        "profitability": rule_set_profitability_assumptions(target_rule_set),
+                        "profitability_summary": profitability_summary,
                     },
                 },
                 calculated_rows,
@@ -787,6 +879,11 @@ class TargetCalculatorService:
             raise HTTPException(
                 status_code=409,
                 detail="Targetul acestei luni a fost deja finalizat si nu mai poate fi recalculat.",
+            ) from None
+        except TargetScenarioAlgorithmMismatch:
+            raise HTTPException(
+                status_code=409,
+                detail="Scenariul draft apartine altei versiuni de algoritm; nu poate fi rescris.",
             ) from None
         except TargetScenarioVersionConflict:
             raise HTTPException(
@@ -800,7 +897,18 @@ class TargetCalculatorService:
 
     async def list_scenarios(self) -> list[dict[str, Any]]:
         rows = await self.repo.list_scenarios()
-        return [self._serialize_header(dict(row)) for row in rows]
+        serialized = [self._serialize_header(dict(row)) for row in rows]
+        for row in serialized:
+            if row.get("rule_set_snapshot") is None:
+                for key in (
+                    "rule_set_id",
+                    "rule_set_hash",
+                    "rule_set_snapshot",
+                    "calculation_input_sha256",
+                    "profitability_input_sha256",
+                ):
+                    row.pop(key, None)
+        return serialized
 
     async def get_scenario_detail(self, scenario_id: int) -> dict[str, Any]:
         scenario = await self.repo.get_scenario(scenario_id)
@@ -809,11 +917,35 @@ class TargetCalculatorService:
         rows = await self.repo.get_scenario_rows(scenario_id)
         header = self._serialize_header(dict(scenario))
         serialized_rows = [self._serialize_row(dict(row)) for row in rows]
+        legacy_unversioned = header.get("rule_set_snapshot") is None
         profitability_summary = await self._attach_profitability(header, serialized_rows)
+        if legacy_unversioned:
+            for key in (
+                "rule_set_id",
+                "rule_set_hash",
+                "rule_set_snapshot",
+                "calculation_input_sha256",
+                "profitability_input_sha256",
+            ):
+                header.pop(key, None)
+            for row in serialized_rows:
+                for key in (
+                    "cap_target",
+                    "is_cap_limited",
+                    "manager_override_target",
+                    "manager_override_reason",
+                    "manager_override_actor",
+                    "manager_override_at",
+                    "manager_override_revision",
+                    "profitability_snapshot",
+                ):
+                    row.pop(key, None)
+        for row in serialized_rows:
+            row.pop("manager_override_actor", None)
         proposed_total = sum(row["proposed_target"] for row in serialized_rows)
         final_total = sum((row["final_target"] or 0) for row in serialized_rows)
         pending_final_count = sum(1 for row in serialized_rows if row["final_target"] is None)
-        return {
+        detail = {
             **header,
             "store_count": len(serialized_rows),
             "proposed_total": proposed_total,
@@ -830,6 +962,12 @@ class TargetCalculatorService:
             "source_summary": self._source_summary(serialized_rows),
             "profitability_summary": profitability_summary,
         }
+        if not legacy_unversioned:
+            detail["cap_limited_count"] = sum(1 for row in serialized_rows if row.get("is_cap_limited"))
+            detail["manager_overrides_count"] = sum(
+                1 for row in serialized_rows if row.get("manager_override_target") is not None
+            )
+        return detail
 
     @staticmethod
     def _profitability_assumptions(target_month: str) -> dict[str, Any]:
@@ -884,22 +1022,53 @@ class TargetCalculatorService:
             assumptions["vat_ruleset_id"] = "legacy-unversioned"
         return assumptions
 
+    @staticmethod
+    def _saved_target_rule_set(scenario: dict[str, Any]) -> TargetRuleSet | None:
+        snapshot = scenario.get("rule_set_snapshot")
+        if snapshot is None:
+            return None
+        if isinstance(snapshot, str):
+            try:
+                snapshot = json.loads(snapshot)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=409, detail="Snapshotul Target nu este JSON valid.") from exc
+        try:
+            rule_set = target_rule_set_from_snapshot(snapshot, scenario["target_month"])
+        except TargetRuleSetValidationError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Snapshotul rule-set-ului Target este invalid: {exc}",
+            ) from None
+        if rule_set is None:
+            raise HTTPException(status_code=409, detail="Snapshotul rule-set-ului Target este incomplet.")
+        return rule_set
 
+    @staticmethod
+    def _canonical_input_hash(payload: Any) -> str:
+        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    async def _attach_profitability(
+    @staticmethod
+    def _profitability_input_payload(inputs: dict[str, Any]) -> dict[str, Any]:
+        forecast_run = inputs.get("forecast_run")
+        return {
+            "pnl_months": list(inputs.get("pnl_months") or []),
+            "pnl_rows": [dict(record) for record in inputs.get("pnl_rows") or []],
+            "forecast_run": dict(forecast_run) if forecast_run else None,
+            "forecast_rows": [dict(record) for record in inputs.get("forecast_rows") or []],
+        }
+
+    def _populate_profitability(
         self,
         scenario: dict[str, Any],
         rows: list[dict[str, Any]],
+        inputs: dict[str, Any],
     ) -> dict[str, Any]:
         weight_total = sum((Decimal(str(row["calculated_weight"])) for row in rows), Decimal("0"))
         for row in rows:
             weight = Decimal(str(row["calculated_weight"]))
             row["normalized_weight"] = float(weight / weight_total) if weight_total > 0 else 0.0
 
-        inputs = await self.repo.get_profitability_inputs(
-            site_codes=[row["site_code"] for row in rows],
-            target_month=scenario["target_month"],
-        )
         pnl_months = list(inputs.get("pnl_months") or [])
         pnl_values: dict[tuple[str, str], Decimal] = {
             (record["site_code"], record["category_code"]): Decimal(record["amount"] or 0)
@@ -911,8 +1080,24 @@ class TargetCalculatorService:
         }
         forecast_run_record = inputs.get("forecast_run")
         forecast_run = dict(forecast_run_record) if forecast_run_record else None
-        saved_profitability = self._saved_profitability_assumptions(scenario)
+        saved_target_rule_set = self._saved_target_rule_set(scenario)
+        saved_profitability = (
+            rule_set_profitability_assumptions(saved_target_rule_set)
+            if saved_target_rule_set is not None
+            else self._saved_profitability_assumptions(scenario)
+        )
         vat_multiplier = Decimal(str(saved_profitability["vat_multiplier"]))
+        if saved_target_rule_set is not None:
+            salary_rules = saved_target_rule_set.rules["salary"]
+            salary_pnl_factor = Decimal(str(salary_rules["pnl_factor"]))
+            meal_vouchers = Decimal(str(salary_rules["meal_vouchers_per_agent"]))
+            commission_rate = Decimal(str(salary_rules["sales_commission_rate"]))
+            assumed_attainment = Decimal(str(salary_rules["assumed_attainment"]))
+        else:
+            salary_pnl_factor = SALARY_PNL_FACTOR
+            meal_vouchers = MEAL_VOUCHERS_PER_AGENT
+            commission_rate = SALES_COMMISSION_RATE
+            assumed_attainment = SALARY_ASSUMED_ATTAINMENT
 
         salary_total = Decimal("0")
         opex_total = Decimal("0")
@@ -923,14 +1108,17 @@ class TargetCalculatorService:
         complete_pnl_count = 0
         for row in rows:
             site_code = row["site_code"]
-            agents = SUN_PLAZA_AGENT_COUNT if site_code == "SUNPLZ" else DEFAULT_STORE_AGENT_COUNT
-            base_salary = BASE_SALARY_HIGH if site_code in BASE_SALARY_HIGH_SITE_CODES else BASE_SALARY_DEFAULT
+            if saved_target_rule_set is not None:
+                agents, base_salary = store_salary_parameters(saved_target_rule_set, site_code)
+            else:
+                agents = SUN_PLAZA_AGENT_COUNT if site_code == "SUNPLZ" else DEFAULT_STORE_AGENT_COUNT
+                base_salary = BASE_SALARY_HIGH if site_code in BASE_SALARY_HIGH_SITE_CODES else BASE_SALARY_DEFAULT
             calculated_target = money(row["proposed_target"])
             salary_source = (
-                Decimal(agents) * (base_salary + MEAL_VOUCHERS_PER_AGENT)
-                + calculated_target * SALARY_ASSUMED_ATTAINMENT * SALES_COMMISSION_RATE
+                Decimal(agents) * (base_salary + meal_vouchers)
+                + calculated_target * assumed_attainment * commission_rate
             )
-            salary_cost = money(salary_source * SALARY_PNL_FACTOR)
+            salary_cost = money(salary_source * salary_pnl_factor)
             salary_total += salary_cost
 
             categories = {
@@ -956,12 +1144,7 @@ class TargetCalculatorService:
                         / Decimal(len(pnl_months))
                     )
                     net_break_even = (salary_cost + opex) / accessory_margin
-                    break_even = net_to_gross(
-                        net_break_even,
-                        scenario["target_month"],
-                    )
-                    # Stored scenarios remain reproducible if a later fiscal
-                    # registry version changes the effective multiplier.
+                    break_even = net_to_gross(net_break_even, scenario["target_month"])
                     if vat_multiplier != standard_vat_rule(scenario["target_month"]).multiplier:
                         break_even = money(net_break_even * vat_multiplier)
                     complete_pnl_count += 1
@@ -992,9 +1175,7 @@ class TargetCalculatorService:
                 "salary_cost_at_90_pct": float(salary_cost),
                 "operating_costs": float(opex) if opex is not None else None,
                 "accessory_margin_pct": (
-                    float(accessory_margin * Decimal("100"))
-                    if accessory_margin is not None
-                    else None
+                    float(accessory_margin * Decimal("100")) if accessory_margin is not None else None
                 ),
                 "break_even_gross_sales": float(break_even) if break_even is not None else None,
                 "forecast_sales": float(forecast) if forecast is not None else None,
@@ -1002,11 +1183,7 @@ class TargetCalculatorService:
             }
 
         forecast_coverage = len(forecast_values)
-        source_status = (
-            "ready"
-            if complete_pnl_count == len(rows) and forecast_coverage == len(rows)
-            else "partial"
-        )
+        source_status = "ready" if complete_pnl_count == len(rows) and forecast_coverage == len(rows) else "partial"
         return {
             "status": source_status,
             "pnl_months": pnl_months,
@@ -1028,19 +1205,75 @@ class TargetCalculatorService:
             "target_below_break_even_count": target_below_break_even_count,
         }
 
+    def _frozen_profitability(self, scenario: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+        rule_set = self._saved_target_rule_set(scenario)
+        if (
+            rule_set is None
+            or scenario.get("rule_set_id") != rule_set.rule_set_id
+            or scenario.get("rule_set_hash") != rule_set.rules_hash
+        ):
+            raise HTTPException(status_code=409, detail="Snapshotul rule-set-ului Target nu corespunde antetului salvat.")
+        calculation_params = scenario.get("calculation_params") or {}
+        summary = calculation_params.get("profitability_summary")
+        expected_hash = scenario.get("profitability_input_sha256")
+        if not isinstance(summary, dict) or not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            raise HTTPException(status_code=409, detail="Snapshotul de profitabilitate Target este incomplet.")
+        if summary.get("input_sha256") != expected_hash:
+            raise HTTPException(status_code=409, detail="Hashul snapshotului de profitabilitate Target nu corespunde.")
+        for row in rows:
+            snapshot = row.get("profitability_snapshot")
+            if isinstance(snapshot, str):
+                try:
+                    snapshot = json.loads(snapshot)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=409, detail="Snapshotul per magazin Target nu este JSON valid.") from exc
+            if not isinstance(snapshot, dict):
+                raise HTTPException(status_code=409, detail="Snapshotul per magazin Target lipseste.")
+            row["profitability"] = snapshot
+        return summary
+
+    async def _attach_profitability(
+        self,
+        scenario: dict[str, Any],
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if scenario.get("rule_set_snapshot") is not None:
+            return self._frozen_profitability(scenario, rows)
+        inputs = await self.repo.get_profitability_inputs(
+            site_codes=[row["site_code"] for row in rows],
+            target_month=scenario["target_month"],
+        )
+        return self._populate_profitability(scenario, rows, inputs)
+
     async def save_final_targets(
         self,
         scenario_id: int,
         rows: list[dict[str, Any]],
         expected_revision: int,
+        *,
+        actor: str | None = None,
     ) -> dict[str, Any]:
         if len({row["site_code"] for row in rows}) != len(rows):
             raise HTTPException(status_code=400, detail="Aceeasi locatie apare de mai multe ori in salvare.")
+        if actor is not None:
+            current = await self.get_scenario_detail(scenario_id)
+            proposed_by_site = {row["site_code"]: row["proposed_target"] for row in current["rows"]}
+            for row in rows:
+                proposed = proposed_by_site.get(row["site_code"])
+                final_target = row.get("final_target")
+                if proposed is not None and final_target is not None and money(final_target) != money(proposed):
+                    reason = str(row.get("override_reason") or row.get("note") or "").strip()
+                    if not reason:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Override-ul managerial necesita un motiv explicit.",
+                        )
         try:
             updated = await self.repo.update_final_targets(
                 scenario_id,
                 rows,
                 expected_revision,
+                actor=actor,
             )
         except TargetScenarioVersionConflict:
             raise HTTPException(
@@ -1557,21 +1790,26 @@ class TargetCalculatorService:
         for key in ("total_target", "min_floor", "previous_month_floor_pct", "proposed_total", "final_total"):
             if key in row:
                 row[key] = float(row[key] or 0)
-        for key in ("source_months", "warnings", "calculation_params"):
+        for key in ("source_months", "warnings", "calculation_params", "rule_set_snapshot"):
             if key in row and isinstance(row[key], str):
                 row[key] = json.loads(row[key])
         row.setdefault("source_months", [])
         row.setdefault("warnings", [])
         row.setdefault("calculation_params", {})
+        row.setdefault("rule_set_snapshot", None)
         if "store_count" in row:
             row["store_count"] = int(row["store_count"])
         row["pending_final_count"] = int(row.get("pending_final_count") or 0)
         return row
 
     def _serialize_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        for key in ("calculated_weight", "floor_target", "proposed_target"):
-            row[key] = float(row[key] or 0)
-        row["final_target"] = float(row["final_target"]) if row.get("final_target") is not None else None
+        for key in ("calculated_weight", "floor_target", "cap_target", "proposed_target"):
+            if key in row:
+                row[key] = float(row[key] or 0)
+        for key in ("final_target", "manager_override_target"):
+            row[key] = float(row[key]) if row.get(key) is not None else None
+        if isinstance(row.get("profitability_snapshot"), str):
+            row["profitability_snapshot"] = json.loads(row["profitability_snapshot"])
         if isinstance(row.get("history"), str):
             row["history"] = json.loads(row["history"])
         if isinstance(row.get("calculation_details"), str):

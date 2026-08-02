@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
@@ -19,6 +20,39 @@ from services.target_calculator import (
     allocate_with_floors,
     shift_month,
 )
+from services.target_rule_registry import canonical_rules_hash
+
+
+def target_rule_record(target_month: str = "2026-06") -> dict[str, Any]:
+    if target_month < "2025-08":
+        rule_id, rate, multiplier = "ro-standard-vat-19", "0.19", "1.19"
+    else:
+        rule_id, rate, multiplier = "ro-standard-vat-21", "0.21", "1.21"
+    rules = {
+        "vat": {
+            "ruleset_id": "ro-standard-vat-v1",
+            "rule_id": rule_id,
+            "rate": rate,
+            "multiplier": multiplier,
+        },
+        "salary": {
+            "pnl_factor": "1.6955",
+            "meal_vouchers_per_agent": "480",
+            "sales_commission_rate": "0.03",
+            "assumed_attainment": "0.90",
+            "default_agent_count": 2,
+            "base_salary": "2400",
+        },
+        "store_exceptions": {},
+    }
+    return {
+        "id": "target-finance-test-v1",
+        "version": 1,
+        "effective_from_month": "1900-01",
+        "effective_to_month": None,
+        "rules": rules,
+        "rules_sha256": canonical_rules_hash(rules),
+    }
 
 
 def make_service() -> tuple[TargetCalculatorService, MagicMock]:
@@ -27,6 +61,7 @@ def make_service() -> tuple[TargetCalculatorService, MagicMock]:
     repo.get_target_total = AsyncMock()
     repo.get_active_cohort = AsyncMock()
     repo.get_source_metrics = AsyncMock()
+    repo.get_effective_target_rule_set = AsyncMock(return_value=target_rule_record())
     repo.save_draft_scenario = AsyncMock()
     repo.list_scenarios = AsyncMock()
     repo.get_scenario = AsyncMock()
@@ -699,6 +734,10 @@ async def test_scenario_detail_serializes_totals_and_summaries() -> None:
     assert result["remaining_difference"] == 0.0
     assert result["pending_final_count"] == 0
     assert result["floor_limited_count"] == 1
+    assert "cap_limited_count" not in result
+    assert "manager_overrides_count" not in result
+    assert "rule_set_snapshot" not in result
+    assert "profitability_snapshot" not in result["rows"][0]
     assert result["manual_adjustments_count"] == 2
     assert result["regional_summary"] == [
         {
@@ -1097,3 +1136,170 @@ async def test_store_detail_serializes_history_agents_and_statistics() -> None:
     with pytest.raises(HTTPException) as exc:
         await service.get_store_detail(9, "MISSING")
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_calculate_persists_rule_set_identity_hash_and_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {"site_code": "SITE01", "locatie": "Magazin", "firma": "Mobiup", "regional": "R", "asm": "A"}
+    ]
+    repo.get_source_metrics.return_value = []
+    repo.save_draft_scenario.return_value = 9
+    service.get_scenario_detail = AsyncMock(return_value={"id": 9})  # type: ignore[method-assign]
+    monkeypatch.setattr(target_module, "get_forecast_factor", AsyncMock(return_value=Decimal("1")))
+
+    await service.calculate(
+        {
+            "target_month": "2026-06",
+            "total_target": 100,
+            "min_floor": 100,
+            "previous_month_floor_pct": 0,
+            "previous_month_cap_pct": 2,
+            "expected_revision": 2,
+        }
+    )
+
+    saved_scenario = repo.save_draft_scenario.await_args.args[0]
+    assert saved_scenario["rule_set_id"] == "target-finance-test-v1"
+    assert len(saved_scenario["rule_set_hash"]) == 64
+    assert saved_scenario["rule_set_snapshot"]["rules"] == target_rule_record()["rules"]
+    assert len(saved_scenario["calculation_input_sha256"]) == 64
+    assert len(saved_scenario["profitability_input_sha256"]) == 64
+    assert saved_scenario["calculation_params"]["profitability_summary"]["input_sha256"] == saved_scenario["profitability_input_sha256"]
+    assert (saved_rows := repo.save_draft_scenario.await_args.args[1])
+    assert all(row["profitability_snapshot"] for row in saved_rows)
+    assert saved_scenario["calculation_params"]["profitability"]["target_rule_set_id"] == "target-finance-test-v1"
+
+
+@pytest.mark.asyncio
+async def test_calculate_rejects_floor_infeasibility_without_persisting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = make_service()
+    repo.get_latest_sales_month.return_value = "2026-05"
+    repo.get_active_cohort.return_value = [
+        {"site_code": "SITE01", "locatie": "Magazin", "firma": "Mobiup", "regional": "R", "asm": "A"}
+    ]
+    repo.get_source_metrics.return_value = []
+    monkeypatch.setattr(target_module, "get_forecast_factor", AsyncMock(return_value=Decimal("1")))
+
+    with pytest.raises(HTTPException, match="sub suma floor-urilor") as exc_info:
+        await service.calculate(
+            {
+                "target_month": "2026-06",
+                "total_target": 99,
+                "min_floor": 100,
+                "previous_month_floor_pct": 0,
+                "previous_month_cap_pct": 2,
+                "expected_revision": 2,
+            }
+        )
+
+    assert exc_info.value.status_code == 400
+    repo.save_draft_scenario.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_saved_rule_snapshot_freezes_profitability_after_registry_changes() -> None:
+    service, repo = make_service()
+    record = target_rule_record()
+    rules = record["rules"]
+    rules["salary"] = {
+        "pnl_factor": "1.5",
+        "meal_vouchers_per_agent": "100",
+        "sales_commission_rate": "0",
+        "assumed_attainment": "0",
+        "default_agent_count": 2,
+        "base_salary": "3000",
+    }
+    rules["store_exceptions"] = {"SITE01": {"agent_count": 4, "base_salary": "3100"}}
+    record["rules_sha256"] = canonical_rules_hash(rules)
+    from services.target_rule_registry import validate_target_rule_set
+    snapshot = validate_target_rule_set(record, "2026-06").snapshot()
+    profitability_hash = "a" * 64
+    repo.get_scenario.return_value = scenario_header(
+        rule_set_id=record["id"],
+        rule_set_hash=record["rules_sha256"],
+        rule_set_snapshot=snapshot,
+        profitability_input_sha256=profitability_hash,
+        calculation_params={
+            "profitability_summary": {
+                "input_sha256": profitability_hash,
+                "salary_total": 28500.0,
+            }
+        },
+    )
+    frozen_rows = scenario_rows()
+    frozen_rows[0]["profitability_snapshot"] = {
+        "agent_count": 4,
+        "base_salary_per_agent": 3100.0,
+        "salary_cost_at_90_pct": 19200.0,
+        "operating_costs": None,
+        "accessory_margin_pct": None,
+        "break_even_gross_sales": None,
+        "forecast_sales": None,
+        "anomaly_flags": ["PNL_INCOMPLETE", "FORECAST_MISSING"],
+    }
+    frozen_rows[1]["profitability_snapshot"] = {
+        "agent_count": 2,
+        "base_salary_per_agent": 3000.0,
+        "salary_cost_at_90_pct": 9300.0,
+        "operating_costs": None,
+        "accessory_margin_pct": None,
+        "break_even_gross_sales": None,
+        "forecast_sales": None,
+        "anomaly_flags": ["PNL_INCOMPLETE", "FORECAST_MISSING"],
+    }
+    repo.get_scenario_rows.return_value = frozen_rows
+
+    detail = await service.get_scenario_detail(9)
+
+    assert detail["profitability_summary"]["salary_total"] == 28500.0
+    assert detail["rows"][0]["profitability"]["agent_count"] == 4
+    assert detail["rows"][1]["profitability"]["base_salary_per_agent"] == 3000.0
+    repo.get_profitability_inputs.assert_not_awaited()
+
+    repo.get_scenario.return_value["rule_set_hash"] = "0" * 64
+    with pytest.raises(HTTPException, match="nu corespunde antetului"):
+        await service.get_scenario_detail(9)
+    repo.get_profitability_inputs.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manager_override_requires_reason_and_records_actor() -> None:
+    service, repo = make_service()
+    service.get_scenario_detail = AsyncMock(return_value={
+        "rows": [{"site_code": "SITE01", "proposed_target": 100.0}],
+    })  # type: ignore[method-assign]
+
+    with pytest.raises(HTTPException, match="motiv explicit"):
+        await service.save_final_targets(
+            9,
+            [{"site_code": "SITE01", "final_target": 110}],
+            2,
+            actor="owner-sub",
+        )
+
+    repo.update_final_targets.return_value = 1
+    service.get_scenario_detail = AsyncMock(side_effect=[
+        {"rows": [{"site_code": "SITE01", "proposed_target": 100.0}]},
+        {"id": 9, "revision": 3},
+    ])  # type: ignore[method-assign]
+    result = await service.save_final_targets(
+        9,
+        [{"site_code": "SITE01", "final_target": 110, "override_reason": "buget local"}],
+        2,
+        actor="owner-sub",
+    )
+
+    assert result == {"id": 9, "revision": 3}
+    repo.update_final_targets.assert_awaited_once_with(
+        9,
+        [{"site_code": "SITE01", "final_target": 110, "override_reason": "buget local"}],
+        2,
+        actor="owner-sub",
+    )

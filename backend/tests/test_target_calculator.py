@@ -19,6 +19,7 @@ from repositories.target_calculator import (
 from routers.target_calculator import can_finalize_targets, require_target_owner
 from services.target_calculator import (
     CALCULATION_METHOD,
+    TargetBudgetInfeasibleError,
     allocate_with_bounds,
     allocate_with_floors,
     percent_change,
@@ -57,7 +58,7 @@ def test_source_months_are_derived_from_target_month() -> None:
         {"month": "2026-05", "label": "Forecast luna curenta", "role": "floor_reference"},
     ]
     assert shift_month("2026-01", -1) == "2025-12"
-    assert CALCULATION_METHOD == "seasonal_blended_multiyear_v1"
+    assert CALCULATION_METHOD == "seasonal_blended_multiyear_v2_ruleset"
 
 
 def _request(path: str) -> Request:
@@ -136,16 +137,15 @@ def test_allocation_redistributes_after_applying_floor() -> None:
     assert allocated[2]["is_floor_limited"] is True
 
 
-def test_allocation_warns_when_budget_cannot_cover_floors() -> None:
+def test_allocation_rejects_budget_that_cannot_cover_floors() -> None:
     rows = [
         {"calculated_weight": Decimal("0.5"), "floor_target": Decimal("100"), "is_floor_limited": False},
         {"calculated_weight": Decimal("0.5"), "floor_target": Decimal("100"), "is_floor_limited": False},
     ]
 
-    allocated, warnings = allocate_with_floors(rows, Decimal("150"))
-
-    assert sum(row["proposed_target"] for row in allocated) == Decimal("200.00")
-    assert len(warnings) == 1
+    with pytest.raises(TargetBudgetInfeasibleError):
+        allocate_with_floors(rows, Decimal("150"))
+    assert all("proposed_target" not in row for row in rows)
 
 
 def bounded_row(
@@ -168,26 +168,20 @@ def test_bounded_allocation_handles_empty_input() -> None:
     assert allocate_with_bounds([], Decimal("100")) == ([], [])
 
 
-def test_bounded_allocation_warns_when_budget_cannot_cover_floors() -> None:
-    rows = [bounded_row("0.5", "100", "200"), bounded_row("0.5", "100", "200")]
-
-    allocated, warnings = allocate_with_bounds(rows, Decimal("150"))
-
-    assert sum(row["proposed_target"] for row in allocated) == Decimal("200.00")
-    assert warnings
-    assert all(row["is_floor_limited"] for row in allocated)
-    assert all("FLOOR_APPLIED" in row["flags"] for row in allocated)
-
-
-def test_bounded_allocation_warns_when_budget_exceeds_caps() -> None:
-    rows = [bounded_row("0.5", "0", "50"), bounded_row("0.5", "0", "50")]
-
-    allocated, warnings = allocate_with_bounds(rows, Decimal("150"))
-
-    assert sum(row["proposed_target"] for row in allocated) == Decimal("100.00")
-    assert warnings
-    assert all(row["is_cap_limited"] for row in allocated)
-    assert all("CAP_APPLIED" in row["flags"] for row in allocated)
+@pytest.mark.parametrize(
+    ("rows", "budget"),
+    [
+        ([bounded_row("0.5", "100", "200"), bounded_row("0.5", "100", "200")], Decimal("150")),
+        ([bounded_row("0.5", "0", "50"), bounded_row("0.5", "0", "50")], Decimal("150")),
+    ],
+)
+def test_bounded_allocation_rejects_infeasible_budget(
+    rows: list[dict[str, object]],
+    budget: Decimal,
+) -> None:
+    with pytest.raises(TargetBudgetInfeasibleError):
+        allocate_with_bounds(rows, budget)
+    assert all("proposed_target" not in row for row in rows)
 
 
 def test_bounded_allocation_handles_zero_weights_and_iterative_bounds() -> None:
@@ -225,9 +219,9 @@ def test_bounded_allocation_rounding_marks_bound_when_single_row_cannot_absorb_d
         bounded_row("1", "33.335", "100"),
         bounded_row("1", "33.335", "100"),
     ]
-    negative_allocated, negative_warnings = allocate_with_bounds(negative_rows, Decimal("100.01"))
+    negative_allocated, negative_warnings = allocate_with_bounds(negative_rows, Decimal("100.02"))
     assert negative_warnings == []
-    assert sum(row["proposed_target"] for row in negative_allocated) == Decimal("100.01")
+    assert sum(row["proposed_target"] for row in negative_allocated) == Decimal("100.02")
     assert any(row["is_floor_limited"] for row in negative_allocated)
 
 
@@ -265,6 +259,37 @@ async def test_target_batch_with_unknown_site_code_has_zero_writes() -> None:
     assert updated == 1
     conn.executemany.assert_not_awaited()
     conn.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manager_override_persists_reason_actor_and_revision_separately() -> None:
+    repo, conn = make_repository_connection()
+    conn.fetchrow.return_value = {"status": "draft", "revision": 2}
+    conn.fetchval.return_value = 1
+
+    updated = await repo.update_final_targets(
+        8,
+        [{
+            "site_code": "SITE01",
+            "final_target": Decimal("110.00"),
+            "override_reason": "exception operationala",
+        }],
+        expected_revision=2,
+        actor="owner-sub",
+    )
+
+    assert updated == 1
+    update_sql, update_rows = conn.executemany.await_args.args
+    assert "manager_override_target" in update_sql
+    assert "manager_override_at" in update_sql
+    assert update_rows == [(
+        8,
+        "SITE01",
+        Decimal("110.00"),
+        "exception operationala",
+        "owner-sub",
+        3,
+    )]
 
 
 @pytest.mark.asyncio

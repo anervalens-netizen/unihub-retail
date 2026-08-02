@@ -63,6 +63,7 @@ class TargetFinalRow(BaseModel):
     site_code: str
     final_target: Decimal | None = Field(default=None, ge=0)
     note: str | None = Field(default=None, max_length=500)
+    override_reason: str | None = Field(default=None, min_length=1, max_length=500)
 
 
 class TargetFinalRowsRequest(BaseModel):
@@ -115,7 +116,7 @@ async def calculate_scenario(
 async def update_final_targets(
     scenario_id: int,
     body: TargetFinalRowsRequest,
-    _claims: AuthClaims = Depends(require_target_owner),
+    claims: AuthClaims = Depends(require_target_owner),
     _rate_limit: None = Depends(rate_limit(TARGET_MUTATION_LIMIT)),
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 ):
@@ -123,6 +124,7 @@ async def update_final_targets(
         scenario_id,
         [row.model_dump() for row in body.rows],
         body.expected_revision,
+        actor=claims.sub,
     )
 
 

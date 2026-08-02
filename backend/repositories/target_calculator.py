@@ -18,6 +18,10 @@ class TargetScenarioVersionConflict(Exception):
     pass
 
 
+class TargetScenarioAlgorithmMismatch(Exception):
+    pass
+
+
 class TargetCalculatorRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
@@ -231,6 +235,21 @@ class TargetCalculatorRepository:
             "forecast_rows": forecast_rows,
         }
 
+    async def get_effective_target_rule_set(self, target_month: str) -> asyncpg.Record | None:
+        """Return the single effective-dated Target rule-set for a calculation month."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                SELECT id, version, effective_from_month, effective_to_month, rules, rules_sha256
+                FROM target_calculator_rule_sets
+                WHERE effective_from_month <= $1
+                  AND (effective_to_month IS NULL OR effective_to_month > $1)
+                ORDER BY effective_from_month DESC, version DESC
+                LIMIT 1
+                """,
+                target_month,
+            )
+
     async def save_draft_scenario(
         self,
         scenario: dict[str, Any],
@@ -245,7 +264,7 @@ class TargetCalculatorRepository:
                 )
                 existing = await conn.fetchrow(
                     """
-                    SELECT id, status, revision
+                    SELECT id, status, revision, calculation_method
                     FROM target_scenarios
                     WHERE target_month = $1
                     FOR UPDATE
@@ -255,6 +274,8 @@ class TargetCalculatorRepository:
                 if existing:
                     if existing["status"] != "draft":
                         raise TargetScenarioFinalizedError
+                    if existing.get("calculation_method", scenario["calculation_method"]) != scenario["calculation_method"]:
+                        raise TargetScenarioAlgorithmMismatch
                     if expected_revision != int(existing["revision"]):
                         raise TargetScenarioVersionConflict
                     scenario_id = int(existing["id"])
@@ -269,6 +290,11 @@ class TargetCalculatorRepository:
                             source_months = $7::jsonb,
                             warnings = $8::jsonb,
                             calculation_params = $9::jsonb,
+                            rule_set_id = $10,
+                            rule_set_hash = $11,
+                            rule_set_snapshot = $12::jsonb,
+                            calculation_input_sha256 = $13,
+                            profitability_input_sha256 = $14,
                             revision = revision + 1,
                             updated_at = now()
                         WHERE id = $1
@@ -282,6 +308,11 @@ class TargetCalculatorRepository:
                         json.dumps(scenario["source_months"]),
                         json.dumps(scenario["warnings"]),
                         json.dumps(scenario.get("calculation_params", {})),
+                        scenario.get("rule_set_id"),
+                        scenario.get("rule_set_hash"),
+                        json.dumps(scenario.get("rule_set_snapshot")) if scenario.get("rule_set_snapshot") else None,
+                        scenario.get("calculation_input_sha256"),
+                        scenario.get("profitability_input_sha256"),
                     )
                 else:
                     if expected_revision is not None:
@@ -291,9 +322,11 @@ class TargetCalculatorRepository:
                         INSERT INTO target_scenarios (
                             target_month, cohort_month, total_target, min_floor,
                             previous_month_floor_pct, calculation_method,
-                            source_months, warnings, calculation_params
+                            source_months, warnings, calculation_params,
+                            rule_set_id, rule_set_hash, rule_set_snapshot,
+                            calculation_input_sha256, profitability_input_sha256
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12::jsonb, $13, $14)
                         RETURNING id
                         """,
                         scenario["target_month"],
@@ -305,6 +338,11 @@ class TargetCalculatorRepository:
                         json.dumps(scenario["source_months"]),
                         json.dumps(scenario["warnings"]),
                         json.dumps(scenario.get("calculation_params", {})),
+                        scenario.get("rule_set_id"),
+                        scenario.get("rule_set_hash"),
+                        json.dumps(scenario.get("rule_set_snapshot")) if scenario.get("rule_set_snapshot") else None,
+                        scenario.get("calculation_input_sha256"),
+                        scenario.get("profitability_input_sha256"),
                     )
                 await conn.execute(
                     "DELETE FROM target_scenario_rows WHERE scenario_id = $1",
@@ -314,10 +352,10 @@ class TargetCalculatorRepository:
                     """
                     INSERT INTO target_scenario_rows (
                         scenario_id, site_code, locatie, firma, regional, asm,
-                        calculated_weight, floor_target, proposed_target,
-                        is_floor_limited, history, calculation_details
+                        calculated_weight, floor_target, cap_target, proposed_target,
+                        is_floor_limited, is_cap_limited, history, calculation_details, profitability_snapshot
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15::jsonb)
                     """,
                     [
                         (
@@ -329,10 +367,13 @@ class TargetCalculatorRepository:
                             row["asm"],
                             row["calculated_weight"],
                             row["floor_target"],
+                            row.get("cap_target"),
                             row["proposed_target"],
                             row["is_floor_limited"],
+                            row.get("is_cap_limited", False),
                             json.dumps(row["history"]),
                             json.dumps(row.get("calculation_details", {})),
+                            json.dumps(row.get("profitability_snapshot")) if row.get("profitability_snapshot") else None,
                         )
                         for row in rows
                     ],
@@ -347,7 +388,8 @@ class TargetCalculatorRepository:
                     ts.id, ts.target_month, ts.cohort_month, ts.total_target,
                     ts.min_floor, ts.previous_month_floor_pct, ts.status,
                     ts.revision, ts.calculation_method, ts.source_months, ts.warnings,
-                    ts.calculation_params, ts.created_at::text,
+                    ts.calculation_params, ts.rule_set_id, ts.rule_set_hash, ts.rule_set_snapshot,
+                    ts.calculation_input_sha256, ts.profitability_input_sha256, ts.created_at::text,
                     ts.updated_at::text, ts.finalized_at::text,
                     COUNT(tr.site_code) AS store_count,
                     COALESCE(SUM(tr.proposed_target), 0) AS proposed_total,
@@ -370,7 +412,8 @@ class TargetCalculatorRepository:
                     ts.id, ts.target_month, ts.cohort_month, ts.total_target,
                     ts.min_floor, ts.previous_month_floor_pct, ts.status,
                     ts.revision, ts.calculation_method, ts.source_months, ts.warnings,
-                    ts.calculation_params,
+                    ts.calculation_params, ts.rule_set_id, ts.rule_set_hash, ts.rule_set_snapshot,
+                    ts.calculation_input_sha256, ts.profitability_input_sha256,
                     ts.created_at::text, ts.updated_at::text, ts.finalized_at::text
                 FROM target_scenarios ts
                 WHERE ts.id = $1
@@ -384,7 +427,9 @@ class TargetCalculatorRepository:
                 """
                 SELECT
                     site_code, locatie, firma, regional, asm, calculated_weight,
-                    floor_target, proposed_target, final_target, is_floor_limited,
+                    floor_target, cap_target, proposed_target, final_target, is_floor_limited, is_cap_limited,
+                    manager_override_target, manager_override_reason, manager_override_actor,
+                    manager_override_at::text, manager_override_revision, profitability_snapshot,
                     history, calculation_details, note, updated_at::text
                 FROM target_scenario_rows
                 WHERE scenario_id = $1
@@ -398,6 +443,7 @@ class TargetCalculatorRepository:
         scenario_id: int,
         rows: list[dict[str, Any]],
         expected_revision: int,
+        actor: str | None = None,
     ) -> int:
         if not rows:
             return 0
@@ -430,11 +476,37 @@ class TargetCalculatorRepository:
                 await conn.executemany(
                     """
                     UPDATE target_scenario_rows
-                    SET final_target = $3, note = $4, updated_at = now()
+                    SET final_target = $3,
+                        note = $4,
+                        manager_override_target = CASE
+                            WHEN $3 IS DISTINCT FROM proposed_target THEN $3
+                            ELSE NULL
+                        END,
+                        manager_override_reason = CASE
+                            WHEN $3 IS DISTINCT FROM proposed_target THEN $4
+                            ELSE NULL
+                        END,
+                        manager_override_actor = CASE
+                            WHEN $3 IS DISTINCT FROM proposed_target THEN $5
+                            ELSE NULL
+                        END,
+                        manager_override_at = CASE
+                            WHEN $3 IS DISTINCT FROM proposed_target THEN now()
+                            ELSE NULL
+                        END,
+                        manager_override_revision = $6,
+                        updated_at = now()
                     WHERE scenario_id = $1 AND site_code = $2
                     """,
                     [
-                        (scenario_id, row["site_code"], row["final_target"], row.get("note"))
+                        (
+                            scenario_id,
+                            row["site_code"],
+                            row["final_target"],
+                            row.get("override_reason") or row.get("note"),
+                            actor,
+                            expected_revision + 1,
+                        )
                         for row in rows
                     ],
                 )
