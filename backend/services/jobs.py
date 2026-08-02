@@ -41,6 +41,14 @@ class GrileEnqueueResult:
 
 
 @dataclass
+class GrileStoreRefreshEnqueueResult:
+    status: str
+    operation_id: int
+    job: Job | None = None
+    operation: dict | None = None
+
+
+@dataclass
 class GrileMonthlyEnqueueResult:
     status: str
     operation_id: int
@@ -355,6 +363,55 @@ async def enqueue_grile_check(
     return GrileEnqueueResult(
         status="enqueued",
         run_id=int(run_id),
+        job=job,
+    )
+
+
+async def enqueue_grile_store_refresh(
+    *,
+    month: str,
+    site_code: str,
+    requested_by_sub: str,
+) -> GrileStoreRefreshEnqueueResult:
+    from db.connection import get_pool
+    from repositories.grile import GrileRepository
+
+    db_pool = await get_pool()
+    repo = GrileRepository(db_pool)
+    if await repo.get_active_sheet(site_code, month) is None:
+        raise LookupError("Grila activa nu exista pentru magazin.")
+    operation_id = await repo.reserve_store_refresh(
+        run_month=month,
+        site_code=site_code,
+        requested_by_sub=requested_by_sub,
+    )
+    if operation_id is None:
+        active = await repo.get_active_store_refresh(month, site_code)
+        if active is None:
+            raise RuntimeError("Failed to reserve grile store refresh")
+        return GrileStoreRefreshEnqueueResult(
+            status="already_running",
+            operation_id=int(active["id"]),
+            operation=dict(active),
+        )
+    try:
+        pool = await get_arq_pool()
+        job = await pool.enqueue_job(
+            "grile_store_refresh_background",
+            int(operation_id),
+            get_request_id(),
+        )
+        if job is None:
+            raise RuntimeError("Failed to enqueue grile store refresh job")
+    except Exception:
+        await repo.fail_queued_store_refresh(
+            int(operation_id),
+            "Jobul refresh nu a putut fi adaugat in coada",
+        )
+        raise
+    return GrileStoreRefreshEnqueueResult(
+        status="enqueued",
+        operation_id=int(operation_id),
         job=job,
     )
 

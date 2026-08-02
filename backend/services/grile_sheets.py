@@ -42,6 +42,31 @@ GRILA_RANGES_V3 = [
 ]
 
 
+class GrileStructureError(ValueError):
+    """Google batchGet response does not match the active v3 Grile template."""
+
+
+def validate_grila_v3_response(value_ranges: list[dict[str, Any]]) -> None:
+    """Fail closed before analysis when the v3 response lost a range or its shape."""
+    if len(value_ranges) != len(GRILA_RANGES_V3):
+        raise GrileStructureError(
+            f"Grila v3 expected {len(GRILA_RANGES_V3)} ranges, received {len(value_ranges)}"
+        )
+    limits = ((1, 1), (1, 1), (31, 1), (31, 1), (31, 1), (15, 6))
+    for index, (entry, expected_range, (max_rows, max_columns)) in enumerate(
+        zip(value_ranges, GRILA_RANGES_V3, limits, strict=True)
+    ):
+        if not isinstance(entry, dict) or entry.get("range") != expected_range:
+            raise GrileStructureError(
+                f"Grila v3 range {index} must be {expected_range!r} in canonical order"
+            )
+        values = entry.get("values", [])
+        if not isinstance(values, list) or len(values) > max_rows:
+            raise GrileStructureError(f"Grila v3 range {expected_range!r} has invalid row cardinality")
+        if any(not isinstance(row, list) or len(row) > max_columns for row in values):
+            raise GrileStructureError(f"Grila v3 range {expected_range!r} has invalid row shape")
+
+
 def _sa_file() -> str:
     return os.getenv(
         "GRILE_GOOGLE_SA_FILE",
@@ -148,7 +173,12 @@ class GrilaReading:
     days_elapsed: int
 
 
-def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None = None) -> GrilaReading:
+def analyze_grila(
+    value_ranges: list[dict[str, Any]],
+    *,
+    as_of: datetime | None = None,
+    template_version: str = "v2",
+) -> GrilaReading:
     """Extrage target/realizat (K5/L5) + % completare + zilele lipsa dintr-un batchGet.
 
     Model completare ("acoperire zi", portat din monitor_grile.py): o zi e
@@ -156,6 +186,8 @@ def analyze_grila(value_ranges: list[dict[str, Any]], *, as_of: datetime | None 
     Suplimentar (D32:D46). % = zile acoperite / zilele complete din luna curenta.
     Ziua curenta nu se cere, pentru ca grilele se completeaza abia seara dupa program.
     """
+    if template_version == "v3":
+        validate_grila_v3_response(value_ranges)
     vals = [vr.get("values", []) for vr in value_ranges]
     grila_target = _to_number(_cell(vals[0], 0, 0)) if len(vals) > 0 else None
     grila_sales = _to_number(_cell(vals[1], 0, 0)) if len(vals) > 1 else None
@@ -201,11 +233,14 @@ def fetch_grila(
     template_version: str = "v2",
 ) -> list[dict[str, Any]]:
     """Un batchGet UNFORMATTED per spreadsheet (sincron)."""
-    return sheets_svc.spreadsheets().values().batchGet(
+    value_ranges = sheets_svc.spreadsheets().values().batchGet(
         spreadsheetId=sheet_id,
         ranges=GRILA_RANGES_V3 if template_version == "v3" else GRILA_RANGES,
         valueRenderOption="UNFORMATTED_VALUE",
     ).execute().get("valueRanges", [])
+    if template_version == "v3":
+        validate_grila_v3_response(value_ranges)
+    return value_ranges
 
 
 def fetch_mod_time(drive_svc: Any, sheet_id: str) -> str | None:

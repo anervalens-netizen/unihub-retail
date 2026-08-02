@@ -21,6 +21,7 @@ import asyncpg
 
 from repositories.grile import GrileRepository
 from services.grile_sheets import (
+    GrileStructureError,
     analyze_grila,
     build_services,
     close_services,
@@ -150,8 +151,9 @@ def _status_from_google(
     value_ranges: list[dict[str, Any]],
     modified_time: str | None,
     tolerance: float,
+    template_version: str,
 ) -> dict[str, Any]:
-    reading = analyze_grila(value_ranges)
+    reading = analyze_grila(value_ranges, template_version=template_version)
     row = compute_status(
         site_code,
         grila_target=reading.grila_target,
@@ -198,7 +200,12 @@ async def run_grile_check(
             if active is None:
                 raise RuntimeError("Nu s-a putut rezerva verificarea grilelor")
             return int(active["id"])
-    if not await repo.start_run(run_id, len(sheets)):
+    generations = await repo.claim_run(
+        run_id,
+        progress_total=len(sheets),
+        site_codes=[str(sheet["site_code"]) for sheet in sheets],
+    )
+    if generations is None:
         return run_id
     started = time.monotonic()
 
@@ -258,8 +265,12 @@ async def run_grile_check(
                 value_ranges=value_ranges,
                 modified_time=mod_raw,
                 tolerance=tolerance,
+                template_version=sheet["template_version"],
             )
             cls = row["_class"]
+        except GrileStructureError as exc:
+            row = _error_row(site, exp, tolerance, "STRUCTURAL_INVALID", str(exc)[:500])
+            cls = "error"
         except Exception as exc:  # noqa: BLE001 — eroare per magazin, nu opreste runul
             row = {
                 "site_code": site,
@@ -274,7 +285,12 @@ async def run_grile_check(
                 "error_message": str(exc)[:500],
             }
             cls = "error"
-        await repo.upsert_store_status(run_id, row, checked_by_sub=triggered_by_sub)
+        await repo.record_full_observation(
+            run_id,
+            row,
+            generation=generations[site],
+            checked_by_sub=triggered_by_sub,
+        )
         async with progress_lock:
             progress["done"] += 1
             if progress["done"] % 5 == 0 or progress["done"] == len(sheets):
@@ -298,75 +314,90 @@ async def run_grile_check(
     return run_id
 
 
-async def refresh_grile_store(
+async def run_grile_store_refresh(
     pool: asyncpg.Pool,
     *,
-    month: str,
-    site_code: str,
-    requested_by_sub: str,
+    refresh_id: int,
     tolerance: float = DEFAULT_TOLERANCE,
 ) -> dict[str, Any]:
-    """Read and persist one active grid without mutating full-run audit rows."""
+    """Consume only a pre-reserved refresh from the operations worker."""
     repo = GrileRepository(pool)
+    refresh = await repo.claim_store_refresh(refresh_id)
+    if refresh is None:
+        return {"operation_id": refresh_id, "status": "not_claimed"}
+
+    month = str(refresh["run_month"])
+    site_code = str(refresh["site_code"])
     sheet = await repo.get_active_sheet(site_code, month)
-    if sheet is None:
-        raise LookupError("Grila activa nu exista pentru magazin.")
     expected = (await repo.get_expected_by_site(month)).get(site_code, {})
-    previous = await repo.get_current_status(month, site_code)
+    operation_status = "completed"
+    error_message: str | None = None
 
-    def fetch_one() -> tuple[list[dict[str, Any]], str | None]:
-        sheets_service, drive_service = build_services()
-        try:
-            values = _retry_sync(
-                lambda: fetch_grila(
-                    sheets_service,
-                    sheet["sheet_id"],
-                    sheet["template_version"],
+    if sheet is None:
+        operation_status = "failed"
+        error_message = "Grila activa nu exista pentru magazin."
+        row = _error_row(site_code, expected, tolerance, "STRUCTURAL_INVALID", error_message)
+    else:
+        def fetch_one() -> tuple[list[dict[str, Any]], str | None]:
+            sheets_service, drive_service = build_services()
+            try:
+                values = _retry_sync(
+                    lambda: fetch_grila(sheets_service, sheet["sheet_id"], sheet["template_version"])
                 )
-            )
-            modified = _retry_sync(
-                lambda: fetch_mod_time(drive_service, sheet["sheet_id"])
-            )
-            return values, modified
-        finally:
-            close_services(sheets_service, drive_service)
+                modified = _retry_sync(lambda: fetch_mod_time(drive_service, sheet["sheet_id"]))
+                return values, modified
+            finally:
+                close_services(sheets_service, drive_service)
 
-    try:
-        await asyncio.to_thread(get_credentials)
-        value_ranges, modified_time = await asyncio.to_thread(fetch_one)
-        row = _status_from_google(
-            site_code=site_code,
-            expected=expected,
-            value_ranges=value_ranges,
-            modified_time=modified_time,
-            tolerance=tolerance,
-        )
-    except Exception as exc:  # noqa: BLE001 - persisted as a per-store Google error
-        row = {
-            "site_code": site_code,
-            "db_target": _num(expected.get("db_target")),
-            "db_sales_mtd": _num(expected.get("db_sales_mtd")),
-            "db_max_sale_date": expected.get("db_max_sale_date"),
-            "fill_status": None,
-            "target_status": None,
-            "sales_status": None,
-            "tolerance": tolerance,
-            "error_code": "GOOGLE_ERROR",
-            "error_message": str(exc)[:500],
-            "content_sha256": None,
-        }
+        try:
+            await asyncio.to_thread(get_credentials)
+            value_ranges, modified_time = await asyncio.to_thread(fetch_one)
+            row = _status_from_google(
+                site_code=site_code,
+                expected=expected,
+                value_ranges=value_ranges,
+                modified_time=modified_time,
+                tolerance=tolerance,
+                template_version=sheet["template_version"],
+            )
+        except GrileStructureError as exc:
+            operation_status = "failed"
+            error_message = str(exc)[:500]
+            row = _error_row(site_code, expected, tolerance, "STRUCTURAL_INVALID", error_message)
+        except Exception as exc:  # noqa: BLE001 - keep last success and error separately
+            operation_status = "failed"
+            error_message = str(exc)[:500]
+            row = _error_row(site_code, expected, tolerance, "GOOGLE_ERROR", error_message)
 
-    previous_hash = previous["content_sha256"] if previous is not None else None
-    await repo.upsert_current_status(
-        month=month,
-        row=row,
-        checked_by_sub=requested_by_sub,
-    )
-    current_hash = row.get("content_sha256")
+    projection_applied = await repo.record_store_refresh_observation(refresh_id, row)
+    await repo.finish_store_refresh(refresh_id, status=operation_status, error_message=error_message)
+    return {
+        "operation_id": refresh_id,
+        "site_code": site_code,
+        "status": operation_status,
+        "projection_applied": projection_applied,
+    }
+
+
+def _error_row(
+    site_code: str,
+    expected: dict[str, Any],
+    tolerance: float,
+    error_code: str,
+    error_message: str,
+) -> dict[str, Any]:
     return {
         "site_code": site_code,
-        "changed": previous is None or previous_hash != current_hash,
-        "status": "error" if row.get("error_code") else "ok",
+        "db_target": _num(expected.get("db_target")),
+        "db_sales_mtd": _num(expected.get("db_sales_mtd")),
+        "db_max_sale_date": expected.get("db_max_sale_date"),
+        "fill_status": None,
+        "target_status": None,
+        "sales_status": None,
+        "tolerance": tolerance,
+        "error_code": error_code,
+        "error_message": error_message,
+        "content_sha256": None,
     }
 
 
@@ -386,90 +417,97 @@ async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
     latest = await repo.get_latest_run(month)
     hierarchy = await repo.get_hierarchy()
     sheet_map = await repo.get_sheet_map(month)
-
-    run_info: dict[str, Any] | None = None
+    run_info: dict[str, Any] | None = _run_to_dict(latest) if latest is not None else None
     stores: list[dict[str, Any]] = []
-    if latest is not None:
-        run_info = _run_to_dict(latest)
-        statuses = await repo.get_current_statuses(month)
-        for st in statuses:
-            if st["site_code"] not in sheet_map:
-                continue
-            h = hierarchy.get(st["site_code"], {})
-            grila_target = _f(st["grila_target"])
-            grila_sales = _f(st["grila_sales"])
-            db_target = _f(st["db_target"])
-            db_sales = _f(st["db_sales_mtd"])
-            raw = st["raw_summary"]
-            if isinstance(raw, str):
-                try:
-                    raw = json.loads(raw)
-                except (ValueError, TypeError):
-                    raw = None
-            completion_pct = _f(st["completion_pct"])
-            missing_days = (raw or {}).get("missing_days") if isinstance(raw, dict) else None
-            days_elapsed = (raw or {}).get("days_elapsed") if isinstance(raw, dict) else None
-            completion_pct, missing_days, days_elapsed = _normalize_completion_window(
-                month=month,
-                completion_pct=completion_pct,
-                missing_days=missing_days,
-                days_elapsed=days_elapsed,
-            )
-            stores.append({
-                "site_code": st["site_code"],
-                "sheet_id": sheet_map.get(st["site_code"]),
-                "locatie": h.get("locatie", st["site_code"]),
-                "firma": h.get("firma", ""),
-                "regional": h.get("regional", "Neatribuit"),
-                "asm": h.get("asm", ""),
-                "team_leader_name": h.get("team_leader_name"),
-                "completion_pct": completion_pct,
-                "last_edit": st["last_edit"].isoformat() if st["last_edit"] else None,
-                "checked_at": st["checked_at"].isoformat() if st["checked_at"] else None,
-                "grila_target": grila_target,
-                "grila_sales": grila_sales,
-                "db_target": db_target,
-                "db_sales_mtd": db_sales,
-                # diff = grila - DB (Raport), ca in aplicatia veche (ex: +960)
-                "target_diff": (grila_target - db_target) if (grila_target is not None and db_target is not None) else None,
-                "sales_diff": (grila_sales - db_sales) if (grila_sales is not None and db_sales is not None) else None,
-                "db_max_sale_date": st["db_max_sale_date"].isoformat() if st["db_max_sale_date"] else None,
-                "fill_status": st["fill_status"],
-                "target_status": st["target_status"],
-                "sales_status": st["sales_status"],
-                "missing_days": missing_days,
-                "days_elapsed": days_elapsed,
-                "error_code": st["error_code"],
-                "error_message": st["error_message"],
-            })
 
-        # Overview-ul este despre cohorta Grile activa acum. Rularile istorice
-        # raman nemodificate in DB, dar magazinele inchise nu trebuie sa reapara
-        # in sumar doar fiindca au participat la o verificare mai veche.
-        error_count = sum(1 for store in stores if store["error_code"])
-        ok_count = sum(
-            1
-            for store in stores
-            if not store["error_code"]
-            and store["target_status"] == "OK"
-            and store["sales_status"] == "OK"
+    # Store refreshes are useful even before the first full run, so the current
+    # projection—not the latest run—determines what the read model can show.
+    for st in await repo.get_current_statuses(month):
+        if st["site_code"] not in sheet_map:
+            continue
+        h = hierarchy.get(st["site_code"], {})
+        grila_target = _f(st["grila_target"])
+        grila_sales = _f(st["grila_sales"])
+        db_target = _f(st["db_target"])
+        db_sales = _f(st["db_sales_mtd"])
+        raw = st["raw_summary"]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (ValueError, TypeError):
+                raw = None
+        completion_pct = _f(st["completion_pct"])
+        missing_days = (raw or {}).get("missing_days") if isinstance(raw, dict) else None
+        days_elapsed = (raw or {}).get("days_elapsed") if isinstance(raw, dict) else None
+        completion_pct, missing_days, days_elapsed = _normalize_completion_window(
+            month=month,
+            completion_pct=completion_pct,
+            missing_days=missing_days,
+            days_elapsed=days_elapsed,
         )
-        run_info.update(
-            {
-                "progress_current": len(stores),
-                "progress_total": total_sheets,
-                "ok_count": ok_count,
-                "problem_count": len(stores) - ok_count - error_count,
-                "error_count": error_count,
-            }
-        )
+        last_success = st.get("last_success_checked_at")
+        last_error = st.get("last_error_checked_at")
+        stores.append({
+            "site_code": st["site_code"],
+            "sheet_id": sheet_map.get(st["site_code"]),
+            "locatie": h.get("locatie", st["site_code"]),
+            "firma": h.get("firma", ""),
+            "regional": h.get("regional", "Neatribuit"),
+            "asm": h.get("asm", ""),
+            "team_leader_name": h.get("team_leader_name"),
+            "completion_pct": completion_pct,
+            "last_edit": st["last_edit"].isoformat() if st["last_edit"] else None,
+            "checked_at": st["checked_at"].isoformat() if st["checked_at"] else None,
+            "last_success_checked_at": last_success.isoformat() if last_success else None,
+            "last_error_checked_at": last_error.isoformat() if last_error else None,
+            "last_error_code": st.get("last_error_code"),
+            "last_error_message": st.get("last_error_message"),
+            "stale_age_seconds": _stale_age_seconds(last_success),
+            "grila_target": grila_target,
+            "grila_sales": grila_sales,
+            "db_target": db_target,
+            "db_sales_mtd": db_sales,
+            "target_diff": (grila_target - db_target) if (grila_target is not None and db_target is not None) else None,
+            "sales_diff": (grila_sales - db_sales) if (grila_sales is not None and db_sales is not None) else None,
+            "db_max_sale_date": st["db_max_sale_date"].isoformat() if st["db_max_sale_date"] else None,
+            "fill_status": st["fill_status"],
+            "target_status": st["target_status"],
+            "sales_status": st["sales_status"],
+            "missing_days": missing_days,
+            "days_elapsed": days_elapsed,
+            # The display state remains the last successful observation; errors
+            # are exposed above as independent metadata and do not erase it.
+            "error_code": st["error_code"],
+            "error_message": st["error_message"],
+        })
 
+    error_count = sum(1 for store in stores if store["error_code"])
+    ok_count = sum(
+        1 for store in stores
+        if not store["error_code"]
+        and store["target_status"] == "OK"
+        and store["sales_status"] == "OK"
+    )
+    if run_info is not None:
+        run_info.update({
+            "progress_current": len(stores),
+            "progress_total": total_sheets,
+            "ok_count": ok_count,
+            "problem_count": len(stores) - ok_count - error_count,
+            "error_count": error_count,
+        })
     return {
         "month": month,
         "total_sheets": total_sheets,
         "run": run_info,
         "managers": _group_managers(stores),
     }
+
+
+def _stale_age_seconds(last_success: datetime | None) -> int | None:
+    if last_success is None:
+        return None
+    return max(0, int((datetime.now(tz=last_success.tzinfo) - last_success).total_seconds()))
 
 
 def _group_managers(stores: list[dict[str, Any]]) -> list[dict[str, Any]]:

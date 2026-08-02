@@ -38,6 +38,36 @@ Contractul UX activ din `2026-07-17` are `15` rânduri în tabelul
 `D32:D46` în acoperirea zilelor. Acest interval trebuie să rămână sincronizat
 cu modelul și grilele permanente din `/opt/Mobiup/grile-salarii`.
 
+## P1.1 — observații, proiecție curentă și refresh
+
+`035_grile_observation_fencing.sql` păstrează fiecare citire în
+`grile_store_observations`, append-only. O observație este legată exact de un
+full run sau de un refresh per magazin; runtime-ul are drepturi `SELECT/INSERT`
+pe tabel, nu `UPDATE/DELETE`.
+
+Full run-ul și `POST /api/grile/stores/{site_code}/refresh` rezervă mai întâi o
+generație monotonă per `(run_month, site_code)`. Endpointul de refresh returnează
+rapid `operation_id`/`job_id`; Google este citit numai de workerul operațional.
+O singură operație refresh poate fi `queued|running` per magazin-lună, iar workerul
+face CAS `queued -> running`. Eșecul publicării cozii marchează reservation-ul
+`failed`, nu îl lasă suspendat.
+
+`grile_store_current_status` este doar proiecție. O observație reușită o poate
+actualiza numai dacă `(generation, checked_at)` este strict mai nou decât cel
+proiectat. Astfel un full run care a citit înaintea refresh-ului, dar termină după,
+rămâne auditabil fără să rescrie ecranul. Generațiile pot avea goluri după o cursă
+pierdută; nu pot regresa.
+
+Ultima observație reușită (`last_success_*`) rămâne afișabilă. Ultima eroare
+(`last_error_*`) și `stale_age_seconds` sunt metadate separate: o eroare Google
+sau structurală nu șterge ultimul rezultat bun. Nu se face retry automat pentru
+o observație deja claim-uită.
+
+Pentru șabloanele `v3`, răspunsul `batchGet` se validează înainte de analiză:
+exact șase range-uri, în ordinea canonică `K5,L5,P5:P35,U5:U35,Z5:Z35,B46:G60`,
+cu cardinalitatea/formele maxime ale fiecăruia. Răspunsul lipsă, reordonat sau
+malformat devine `STRUCTURAL_INVALID` fail-closed și este păstrat ca observație.
+
 ## Targete agent: diff și sincronizare
 
 Citirea targetelor agent este separată în două operații:

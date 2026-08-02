@@ -39,6 +39,7 @@
     "031_grile_store_refresh_and_templates.sql": "de5c380da7d362955d03d9d71d1bc46e42ac007737c32951faabb4d29f8bf61a",
     "032_store_pnl_shadow_generations.sql": "a75f77c1a85fef1b39d5db11b9007d23114943b96554988566bb63e30a4923f5",
     "033_sales_generation_staging_and_fencing.sql": "b6e10b7198e01d7893fefe66f28879d8b363956e3a87be11f63e875df9193cb1",
-    "034_salary_import_batch_provenance.sql": "93dae9fa15c1b891e6484a8ddecc189e3bc412f2913066619288d0fd8938ec7f"
+    "034_salary_import_batch_provenance.sql": "93dae9fa15c1b891e6484a8ddecc189e3bc412f2913066619288d0fd8938ec7f",
+    "035_grile_observation_fencing.sql": "4afd71ef2c8e0f215bb2687d28d07ae5a7b76ebc2625b05fe3c638a315293b5f"
   }
 }

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from services.grile_sheets import GRILA_RANGES, GRILA_RANGES_V3, analyze_grila
+import pytest
+
+from services.grile_sheets import (
+    GRILA_RANGES,
+    GRILA_RANGES_V3,
+    GrileStructureError,
+    analyze_grila,
+    validate_grila_v3_response,
+)
 
 
 def _ranges(
@@ -74,19 +82,40 @@ def test_analyze_grila_counts_suplimentar_day_from_last_extended_row() -> None:
     assert reading.completion_pct == 50.0
 
 
+def _v3_ranges() -> list[dict[str, object]]:
+    return [
+        {"range": "Grila!K5", "values": [[100]]},
+        {"range": "Grila!L5", "values": [[50]]},
+        {"range": "Grila!P5:P35", "values": []},
+        {"range": "Grila!U5:U35", "values": []},
+        {"range": "Grila!Z5:Z35", "values": [[10], [20]]},
+        {"range": "Grila!B46:G60", "values": []},
+    ]
+
+
 def test_v3_completion_counts_agent3_and_shifted_supplemental_range() -> None:
     assert "Grila!Z5:Z35" in GRILA_RANGES_V3
     assert "Grila!B46:G60" in GRILA_RANGES_V3
     reading = analyze_grila(
-        [
-            {"values": [[100]]},
-            {"values": [[50]]},
-            {"values": []},
-            {"values": []},
-            {"values": [[10], [20]]},
-            {"values": []},
-        ],
+        _v3_ranges(),
         as_of=datetime(2026, 8, 3),
+        template_version="v3",
     )
     assert reading.completion_pct == 100.0
     assert reading.missing_days == []
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda ranges: ranges.pop(),
+        lambda ranges: ranges.__setitem__(2, {"range": "Grila!U5:U35", "values": []}),
+        lambda ranges: ranges.__setitem__(4, {"range": "Grila!Z5:Z35", "values": [[1, 2]]}),
+        lambda ranges: ranges.__setitem__(5, {"range": "Grila!B46:G60", "values": [[]] * 16}),
+    ],
+)
+def test_v3_structure_validation_fails_closed(mutate) -> None:
+    ranges = _v3_ranges()
+    mutate(ranges)
+    with pytest.raises(GrileStructureError):
+        validate_grila_v3_response(ranges)

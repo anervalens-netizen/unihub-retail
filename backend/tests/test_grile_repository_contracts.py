@@ -14,6 +14,9 @@ PERSISTED_GRILE_TABLES = (
     "grile_monthly_manifests",
     "grile_runs",
     "grile_store_status",
+    "grile_store_refreshes",
+    "grile_store_observations",
+    "grile_store_current_status",
 )
 
 

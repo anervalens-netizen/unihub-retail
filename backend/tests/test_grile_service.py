@@ -133,7 +133,7 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
     assert visible == {"ACTIVE_OK", "ACTIVE_PROBLEM"}
 
 
-def test_store_refresh_detects_unchanged_content_without_mutating_full_run(monkeypatch) -> None:
+def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> None:
     values = [
         {"values": [[100]]},
         {"values": [[50]]},
@@ -142,28 +142,37 @@ def test_store_refresh_detects_unchanged_content_without_mutating_full_run(monke
         {"values": []},
     ]
     persisted: list[dict] = []
+    finished: list[dict] = []
     closed: list[object] = []
 
     class Repository:
         def __init__(self, _pool) -> None:
             pass
 
+        async def claim_store_refresh(self, refresh_id: int):
+            assert refresh_id == 19
+            return {
+                "id": refresh_id,
+                "run_month": "2026-07",
+                "site_code": "SITE01",
+                "generation": 4,
+                "requested_by_sub": "subject",
+            }
+
         async def get_active_sheet(self, site_code: str, month: str):
             assert (site_code, month) == ("SITE01", "2026-07")
-            return {
-                "site_code": site_code,
-                "sheet_id": "sheet-1",
-                "template_version": "v2",
-            }
+            return {"site_code": site_code, "sheet_id": "sheet-1", "template_version": "v2"}
 
         async def get_expected_by_site(self, _month: str):
             return {"SITE01": {"db_target": 100, "db_sales_mtd": 50}}
 
-        async def get_current_status(self, _month: str, _site_code: str):
-            return {"content_sha256": grile._content_sha256(values)}
+        async def record_store_refresh_observation(self, refresh_id: int, row: dict):
+            assert refresh_id == 19
+            persisted.append(row)
+            return True
 
-        async def upsert_current_status(self, **kwargs):
-            persisted.append(kwargs)
+        async def finish_store_refresh(self, refresh_id: int, **kwargs):
+            finished.append({"refresh_id": refresh_id, **kwargs})
 
     monkeypatch.setattr(grile, "GrileRepository", Repository)
     monkeypatch.setattr(grile, "get_credentials", lambda: object())
@@ -172,17 +181,15 @@ def test_store_refresh_detects_unchanged_content_without_mutating_full_run(monke
     monkeypatch.setattr(grile, "fetch_grila", lambda *_args: values)
     monkeypatch.setattr(grile, "fetch_mod_time", lambda *_args: None)
 
-    result = asyncio.run(
-        grile.refresh_grile_store(
-            object(),
-            month="2026-07",
-            site_code="SITE01",
-            requested_by_sub="subject",
-        )
-    )
+    result = asyncio.run(grile.run_grile_store_refresh(object(), refresh_id=19))
 
-    assert result == {"site_code": "SITE01", "changed": False, "status": "ok"}
+    assert result == {
+        "operation_id": 19,
+        "site_code": "SITE01",
+        "status": "completed",
+        "projection_applied": True,
+    }
     assert len(persisted) == 1
-    assert persisted[0]["month"] == "2026-07"
-    assert persisted[0]["checked_by_sub"] == "subject"
+    assert persisted[0]["content_sha256"] == grile._content_sha256(values)
+    assert finished == [{"refresh_id": 19, "status": "completed", "error_message": None}]
     assert len(closed) == 2

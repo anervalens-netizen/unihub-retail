@@ -148,3 +148,30 @@ then inspect aggregate operation states only. After deployment, trigger a
 dry-run in a controlled month and verify that a duplicated worker invocation is
 a no-op. Verify finalization/archive with non-production fixtures. Do not test
 duplicate or destructive live Google writes in production.
+
+## P1.1 read-observation state machine
+
+Monitoringul read-only are o mașină de stări separată de closeout: full run-ul
+folosește `queued -> running -> completed|failed` în `grile_runs`, iar refresh-ul
+per magazin are aceeași tranziție CAS în `grile_store_refreshes`. Înainte ca
+oricare worker să citească Google, primește o generație monotonă per
+`(run_month, site_code)`.
+
+Fiecare rezultat este inserat imuabil în `grile_store_observations`. O observație
+`full` aparține exact unui `run_id`; una `store` exact unui `refresh_id`. Niciun
+worker nu actualizează sau șterge observații. Proiecția este permisă numai dacă
+noua pereche `(generation, checked_at)` este mai nouă decât cea curentă. Un
+worker întârziat poate deci păstra dovada citirii, dar nu poate reveni UI-ul la
+o stare veche.
+
+Pentru o eroare, proiecția valorilor de succes nu este înlocuită. Se actualizează
+numai `last_error_observation_id/generation/checked_at/code/message` cu aceeași
+regulă monotonă. `last_success_checked_at` este sursa stale-age; UI expune ambele
+ramuri fără să clasifice o valoare bună drept pierdută. Un răspuns Google `v3`
+cu range/cardinalitate/shape neconforme intră în această ramură ca
+`STRUCTURAL_INVALID`, nu este interpretat parțial.
+
+Verificările izolate acoperă un refresh cu generație mai nouă urmat de un full
+run întârziat, observațiile acumulate, un al doilea refresh concurent refuzat,
+și o eroare ulterioară care păstrează ultima proiecție reușită. Rollbackul de
+cod păstrează migrarea aditivă 035 și observațiile; nu se șterg datele de audit.

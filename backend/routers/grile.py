@@ -16,7 +16,7 @@ from privileged_access import (
 )
 from rate_limits import GRILE_JOB_LIMIT, rate_limit
 from repositories.grile import GrileRepository
-from services.grile import _run_to_dict, get_overview, refresh_grile_store, resolve_month
+from services.grile import _run_to_dict, get_overview, resolve_month
 from services.grile_monthly import (
     GrileMonthlyRetryBlockedError,
     MonthlyIntegrityError,
@@ -29,6 +29,7 @@ from services.grile_monthly import (
 )
 from services.jobs import (
     enqueue_grile_check,
+    enqueue_grile_store_refresh,
     enqueue_grile_monthly,
     enqueue_grile_target_sync,
     get_grile_target_sync_operation,
@@ -93,18 +94,22 @@ async def grile_store_refresh(
     claims: AuthClaims = Depends(require_auth),
     _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
 ) -> dict[str, Any]:
-    pool = await get_pool()
-    resolved = await resolve_month(pool, month)
+    resolved = await resolve_month(await get_pool(), month)
     try:
-        result = await refresh_grile_store(
-            pool,
+        result = await enqueue_grile_store_refresh(
             month=resolved,
             site_code=site_code,
             requested_by_sub=claims.sub,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return {"month": resolved, **result}
+    return {
+        "status": result.status,
+        "month": resolved,
+        "operation_id": result.operation_id,
+        "job_id": result.job.job_id if result.job is not None else None,
+        "operation": result.operation,
+    }
 
 
 # ── inchidere luna (WRITE Google Sheets — doar admin) ──────────────────────────

@@ -299,6 +299,25 @@ async def grile_check_background(
             reset_request_id(token)
 
 
+async def grile_store_refresh_background(
+    ctx: dict,
+    refresh_id: int,
+    request_id: str | None = None,
+) -> dict:
+    from services.grile import run_grile_store_refresh
+
+    token = bind_request_id(request_id) if request_id else None
+    try:
+        pool = ctx.get("db_pool")
+        if pool is None:
+            from db.connection import get_pool
+            pool = await get_pool()
+        return await run_grile_store_refresh(pool, refresh_id=refresh_id)
+    finally:
+        if token is not None:
+            reset_request_id(token)
+
+
 async def grile_monthly_background(
     ctx: dict,
     operation_id: int | str,
@@ -527,6 +546,7 @@ def main() -> None:
             import_sales_background,
             promote_sales_background,
             grile_check_background,
+            func(grile_store_refresh_background, max_tries=1),
             func(grile_monthly_background, timeout=2400, max_tries=1),
             grile_agent_targets_background,
         ]

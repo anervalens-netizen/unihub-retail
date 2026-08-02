@@ -89,19 +89,28 @@ class FixtureRepository:
     async def get_expected_by_site(self, _month: str) -> dict[str, dict[str, Any]]:
         return self.expected
 
-    async def start_run(self, run_id: int, _progress_total: int) -> bool:
+    async def claim_run(
+        self,
+        run_id: int,
+        *,
+        progress_total: int,
+        site_codes: list[str],
+    ) -> dict[str, int]:
+        del progress_total
         self.captured[run_id] = []
-        return True
+        return {site_code: index + 1 for index, site_code in enumerate(site_codes)}
 
-    async def upsert_store_status(
+    async def record_full_observation(
         self,
         run_id: int,
         row: dict[str, Any],
         *,
+        generation: int,
         checked_by_sub: str | None = None,
-    ) -> None:
-        del checked_by_sub
+    ) -> bool:
+        del generation, checked_by_sub
         self.captured[run_id].append(dict(row))
+        return True
 
     async def set_run_progress(self, _run_id: int, _current: int) -> None:
         return None
