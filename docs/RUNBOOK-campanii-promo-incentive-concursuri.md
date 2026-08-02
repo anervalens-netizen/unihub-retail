@@ -9,8 +9,8 @@ loguri.
 | Domeniu | Sursă |
 | --- | --- |
 | Incentive | PostgreSQL `incentive_campaigns` și `incentive_products` |
-| Promo | `data/hub_specials.json` și anexele referite de configurație |
-| Promo actuals | fișierele POS importate sub `data/promo_actuals/` |
+| Promo | generația indicată de `data/promo_generations/current.json`; `data/hub_specials.json` este seed legacy |
+| Promo actuals | sursele imuabile și hashurile din manifestul generației active |
 | Concursuri | `data/contests.json` |
 | Vânzări | snapshotul lunar Retail și agregatele `reporting_*` |
 
@@ -117,14 +117,22 @@ producție.
 
 ## Promo actuals
 
-Importul POS validează sheetul și metadatele înainte de a păstra fișierul sub
-`data/promo_actuals/`. Până la cutoff, sursa POS corectează calculul promo și
-excluderea Incentive; după cutoff, calculul continuă din regulile pe bonuri.
+Importul POS citește seedul `data/hub_specials.json`, dar nu îl activează
+direct. Înaintea oricărei promovări validează all-or-nothing cheile,
+intervalele, suprapunerile de produse, cutoff-ul neregresiv, valorile finite și
+nefractionare și materializarea masterelor de produs. Configurația, sursele și
+manifestul sunt scrise într-un director de generație imutabil sub
+`data/promo_generations/`.
 
-Dacă sursa lipsește, aplicația poate folosi fallbackul configurat numai dacă
-regula este completă și rezultatul nu devine financiar fail-open. Orice
-inconsistență trebuie raportată fără a expune bonuri, agenți sau valori
-comerciale în log.
+Pointerul `current.json` se mută atomic numai sub lock și dacă hashul lui este
+cel observat la începutul validării. Un writer stale primește conflict și nu
+înlocuiește generația bună. Runtime-ul reverifică hashurile configului și ale
+fiecărei surse înainte de utilizare.
+
+Până la cutoff, sursa POS cumulativă corectează Promo și excluderea Incentive;
+după cutoff, regula pe bonuri acoperă numai coada perioadei. Dacă o sursă
+configurată lipsește sau nu corespunde hashului, pointerul rămâne nemodificat,
+rezultatul este fail-closed și eroarea nu expune date comerciale în log.
 
 Contractul runtime este fail-closed:
 
@@ -162,7 +170,14 @@ Concursurile sunt config-driven și scoped server-side. Configurația definește
 - cheia și perioada;
 - scope-ul organizațional;
 - regulile de punctaj;
-- clasamentul și premiile.
+- clasamentul și premiile;
+- `identity_policy`: `site_agent` sau `person_id`.
+
+`site_agent` păstrează un participant separat pentru fiecare
+`(site_code, agent normalizat)`; vânzările nu sunt transferate către un
+magazin principal. `person_id` poate uni activitatea cross-store numai printr-un
+link salarial confirmat; o identitate necunoscută sau neconfirmată oprește
+calculul, iar omonimele nu sunt agregate implicit.
 
 Filtrele globale nu trebuie să extindă sau să restrângă accidental scope-ul
 oficial al concursului. Răspunsul backend este autoritativ.
@@ -171,21 +186,27 @@ oficial al concursului. Răspunsul backend este autoritativ.
 
 1. pornește dintr-un fișier/config nou sau o revizie explicită, nu edita
    retroactiv o perioadă închisă;
-2. verifică duplicatele, intervalele, codurile și metadatele;
-3. rulează calculul read-only pe o lună cu fixture sintetic sau snapshot local;
-4. compară separat bonurile promo, unitățile reduse, unitățile Incentive și
+2. validează toate cheile, intervalele, suprapunerile, codurile, cutoff-ul și
+   configurația de identitate înainte de orice scriere;
+3. stage-uiește generația și manifestul fără a muta pointerul;
+4. reverifică hashurile configului, surselor și materializării;
+5. promovează `current.json` numai cu lock și CAS pe hashul pointerului
+   observat înainte de validare;
+6. compară separat bonurile promo, unitățile reduse, unitățile Incentive și
    plata;
-5. rulează testele backend și frontend relevante;
-6. verifică exporturile și cele patru valori ale cardului;
-7. livrează prin calea proporțională cu riscul din ADR-005; dacă se deschide PR,
+7. rulează testele backend și frontend relevante;
+8. verifică exporturile și cele patru valori ale cardului;
+9. livrează prin calea proporțională cu riscul din ADR-005; dacă se deschide PR,
    agentul îl duce prin CI, merge, deploy și verificare fără o aprobare repetată;
-8. verifică live fără a afișa date comerciale în output.
+10. verifică live generation ID, hashuri și metrici fără a afișa date comerciale.
 
 ## Verificări minime
 
 ```bash
 pytest backend/tests/test_campaigns_promos.py \
   backend/tests/test_import_promo_actuals.py \
+  backend/tests/test_contests.py \
+  backend/tests/test_promotion_evaluation.py \
   backend/tests/test_campaigns.py -q
 npm run test -- src/components/Campaigns.test.ts
 npm run typecheck
@@ -195,6 +216,18 @@ npm run build
 Pentru o schimbare de contract sau de calcul, rulează și suita completă conform
 `AGENTS.md`. Testele trebuie să includă promoții suprapuse, cutoff, duplicate,
 retururi, magazine necalificate și lipsa sursei corective.
+
+## Rollback
+
+Generațiile sunt imuabile și backupul operațional include întregul
+`data/promo_generations/`. Înainte de promovare, păstrează hashul și conținutul
+pointerului curent. Pentru rollback:
+
+1. oprește o nouă promovare concurentă și verifică hashul pointerului activ;
+2. reverifică manifestul și toate hashurile generației precedente;
+3. înlocuiește atomic numai `current.json` cu pointerul precedent;
+4. verifică generation ID, Focus, exporturile și health; nu șterge generația
+   respinsă, deoarece rămâne evidence de audit.
 
 ## Reguli de siguranță
 

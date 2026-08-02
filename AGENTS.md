@@ -105,6 +105,18 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
   conflicting identity data before writes, and persist source-line provenance.
   The dry-run manifest must include both companies without CNP. Identity and
   salary writes are one transaction; any fault rolls back the batch.
+- Promo config and POS actuals are validated and materialized into an immutable
+  generation before the atomic `current.json` pointer switch. The switch uses
+  a file lock and pointer-hash CAS; missing/tampered sources or stale writers
+  never replace the last good generation. Runtime must reverify every source
+  hash before using it.
+- Contest identity is explicit per contest: `site_agent` preserves a separate
+  row per store and normalized agent, while `person_id` requires a confirmed
+  salary link. Never merge homonyms or transfer sales across stores by name.
+- Grile observations are append-only. Full runs and per-store refreshes reserve
+  and claim the store generation before Google I/O; only the winning fenced
+  writer may update the current projection. Persist last success, last error
+  and stale age separately; structural v3 failures remain auditable.
 - Never log or put CNP in API, metrics, manifests, diffs or handoff messages.
 - Documentation is updated after every P0 lot with the exact SHA, migration
   manifest checksum, evidence commands and real limits.
@@ -131,6 +143,10 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
   scenario revision; stale writes must return 409 instead of overwriting newer
   work. Finalization requires all manager values and zero remaining allocation.
 - Promo qualifying receipts and incentive quantity are distinct metrics; do not reuse one field for both meanings.
+- Promo cutoff cannot regress within the active generation. Actuals are
+  cumulative only through cutoff; the receipt rule may cover only the tail
+  after cutoff. A configured source failure is never converted into zero or an
+  implicit legacy fallback.
 - Visits are grouped by the visit author's Team Leader snapshot, not the store ASM. Enrich store hierarchy from current `stores`.
 - PostgreSQL `fieldops_visits` is the only production visit source. Production
   config must reject SQLite and shadow comparison; the SQLite file is archive only.

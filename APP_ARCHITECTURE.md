@@ -202,9 +202,12 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   si unitatile promo necesare unei reconcilieri independente.
 - Setari -> Importuri permite si incarcarea raportului POS de promo al firmei:
   administratorul selecteaza luna si data cutoff, iar aplicatia valideaza foaia
-  `AccesoriPromoLunar` (SiteCode, Cod, Promo Luna Curenta), pastreaza fisierul
-  sub `data/promo_actuals/` si il leaga automat de promotiile active ale lunii.
-  Pana la cutoff raportul devine sursa de adevar pentru Focus si exporturi;
+  `AccesoriPromoLunar` (SiteCode, Cod, Promo Luna Curenta), valideaza integral
+  configuratia si materializeaza config + surse intr-o generatie imutabila sub
+  `data/promo_generations/`. Pointerul `current.json` este mutat atomic cu
+  lock si hash-CAS numai dupa validare. Runtime-ul reverifica hashurile inainte
+  de folosire. Pana la cutoff raportul este sursa corectiva pentru Focus si
+  exporturi;
   dupa cutoff calculul continua din regula pe bonuri.
 - Importul de vanzari este rezervat administratorilor, accepta numai Excel in
   limita configurata (implicit 32 MB) si ruleaza exclusiv in worker. Hash-ul
@@ -554,10 +557,12 @@ luna; vanzarea foloseste lista si reward-ul active la data sa, iar rezultatele
 per perioada se insumeaza inaintea multiplicatorului lunar. Pragurile sunt
 exact 90% pentru plata 50% si 100% pentru plata integrala.
 
-Promotiile speciale si concursurile sunt configurate prin JSON-uri
-operationale din `data/`, care sunt gitignored pe server:
+Promotiile speciale si concursurile pornesc din JSON-uri operationale din
+`data/`, care sunt gitignored pe server:
 
-- `data/hub_specials.json` — promotii speciale pentru cardurile Hub si tabul
+- `data/hub_specials.json` — seedul legacy pentru promotii; adevarul runtime
+  este generatia indicata de `data/promo_generations/current.json`.
+  Configuratia deserveste cardurile Hub si tabul
   Focus -> Promo. In Focus, mai multe promotii active pe aceeasi luna sunt
   selectabile prin `promotion_key`; config-ul expune `key`, `rule_type`,
   perioada si, pentru regulile bazate pe anexe, fisierul Excel + sheet-urile.
@@ -568,7 +573,15 @@ operationale din `data/`, care sunt gitignored pe server:
   fisierului minus o zi. Pentru zilele de dupa cutoff, regula pe bonuri ramane
   activa, deci ingestul zilnic poate continua fara sa suprascrie corectia.
 - `data/contests.json` — concursuri config-driven, cu perioada, scope,
-  reguli de punctaj si premii.
+  reguli de punctaj, premii si `identity_policy`. `site_agent` pastreaza cheia
+  `(site_code, agent normalizat)`; `person_id` cere link salarial confirmat si
+  refuza identitatile neconfirmate, fara agregare globala dupa nume.
+
+Validarea generatiei Promo este all-or-nothing: chei si intervale unice,
+suprapuneri fara coliziuni de produse, cutoff neregresiv, coduri finite si
+nefractionare in actuals si mastere de produse materializate. Pointerul contine
+hashurile de config, material si surse. Un writer stale, o sursa lipsa sau un
+hash diferit nu muta pointerul si nu afecteaza ultima generatie buna.
 
 Evaluatorul comun `services/promotion_evaluation.py` clasifica sursa POS
 corectiva drept `complete`, `partial` sau `invalid`. Promo partial ramane
@@ -609,11 +622,12 @@ Concurs si Folii premium, pot fi exportate in Excel. Exporturile Focus pe
 randuri de magazine sau agenti includ explicit `Firma` si `Magazin` cand
 payload-ul are acele metadate.
 
-Importul zilnic de vanzari rescrie snapshot-ul lunii prin
-`replace_month_snapshot`, apoi reconstruieste agregatele `reporting_*`. Raportul
-promo saptamanal nu este parte din ingestul zilnic; se pastreaza separat in
-`/opt/Mobiup/docs` si este citit la runtime. Daca fisierul lipseste sau nu este
-configurat, toate calculele revin la regula pe bonuri.
+Importul zilnic de vanzari promoveaza atomic o generatie validata, cu lease,
+fencing, manifest si business hash, apoi reconstruieste agregatele
+`reporting_*`. Raportul promo cumulativ are propria generatie, separata de
+ingestul zilnic. O promotie fara sursa configurata foloseste regula pe bonuri;
+daca sursa este configurata dar lipseste sau nu mai corespunde hashului,
+generatia curenta ramane neschimbata si rezultatul financiar este fail-closed.
 
 `promo_qty` din tabelele operationale Hub ramane agregatul simplu din
 `reporting_item_day`; headline-urile de campanii folosesc metricile promo
@@ -725,6 +739,14 @@ Sub-tab-ul `Agenti -> Grile` administreaza Google Sheets permanente pentru
 grilele salariale. Retail pastreaza Sheet ID-urile in `grile_sheets`, ruleaza
 verificari async in `grile_runs` si salveaza rezultatul per magazin in
 `grile_store_status`.
+
+Migrarea 035 separa observatia imuabila de proiectia curenta. Fiecare full run
+sau refresh per magazin rezerva si claim-uieste prin CAS generatia
+`(luna, magazin)` inainte de orice I/O Google. Workerul ruleaza o singura
+incercare; observatia unui writer care si-a pierdut claim-ul ramane in audit,
+dar nu poate suprascrie proiectia mai noua. Proiectia expune separat ultimul
+succes, ultima eroare si stale age. Validarea v3 este fail-closed pe range,
+ordine, cardinalitate si shape si persista `STRUCTURAL_INVALID`.
 
 Retail compara `K5/L5` din grila cu `store_targets` si
 `reporting_item_month.total_sales` pe `site_code`. Inchiderea de luna ruleaza

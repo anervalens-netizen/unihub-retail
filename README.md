@@ -102,6 +102,23 @@ existente. Procedurile sunt în
 [`docs/RUNBOOK-import-pnl-tva-P0.md`](docs/RUNBOOK-import-pnl-tva-P0.md) și
 [`docs/RUNBOOK-import-salarii-HR.md`](docs/RUNBOOK-import-salarii-HR.md).
 
+## Starea P1.1–P1.2 la SHA-ul documentat
+
+Baseline-ul documentat este `82e8d49dd8f1856329546605f79e2d726b288323`.
+Grile păstrează observațiile append-only și actualizează proiecția curentă
+numai prin claim/CAS; un refresh stale rămâne auditabil, dar nu poate înlocui
+un rezultat mai nou. Ultimul succes, ultima eroare și vârsta rezultatului sunt
+stări separate, iar răspunsurile structural invalide sunt respinse fail-closed.
+
+Promo validează și materializează configurația și sursele într-o generație
+imutabilă, apoi mută atomic `data/promo_generations/current.json` numai dacă
+pointerul nu s-a schimbat. Runtime-ul reverifică hashurile configurației și
+surselor; o sursă lipsă sau alterată păstrează ultima generație bună. Concursul
+declară explicit identitatea `site_agent` sau `person_id`; politica
+`person_id` acceptă numai linkuri confirmate și nu unește implicit omonime.
+Procedura completă este în
+[`docs/RUNBOOK-campanii-promo-incentive-concursuri.md`](docs/RUNBOOK-campanii-promo-incentive-concursuri.md).
+
 ## Setup local
 
 Cerințe: Node.js 22, Python 3.12+ și Docker pentru testele PostgreSQL izolate.

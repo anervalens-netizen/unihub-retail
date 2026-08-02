@@ -76,6 +76,7 @@ def test_contest_serialization_contract_is_preserved() -> None:
         "start_date": "2026-07-01",
         "end_date": "2026-07-31",
         "store_count": 0,
+        "identity_policy": "site_agent",
         "rules": [{"type": "focus", "points": 2, "label": "Focus", "threshold": None}],
         "prizes": [],
         "leaderboard": [],
