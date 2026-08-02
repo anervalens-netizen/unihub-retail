@@ -3,8 +3,8 @@
 
 Vanzarile din ``historical_monthly_sales`` si ``reporting_agent_month`` sunt
 citite exclusiv ca semnal pentru model. Ele sunt stocate cu TVA, iar modelul
-lucreaza cu valoarea fara TVA (standard 19%), pentru a nu compara venituri P&L
-cu vanzari brute. Un magazin-luna care exista in Finance ramane exclusiv
+foloseste registrul fiscal effective-dated pentru a nu compara venituri P&L cu
+vanzari brute. Un magazin-luna care exista in Finance ramane exclusiv
 Finance; estimarile se creeaza numai pentru magazine-luni complet absente.
 """
 
@@ -25,10 +25,17 @@ from typing import Iterable
 
 import asyncpg
 from dotenv import load_dotenv
+from services.fiscal_rules import (
+    LEGACY_VAT_RULESET_ID,
+    STANDARD_VAT_RULESET_ID,
+    gross_to_net,
+    legacy_gross_to_net,
+    standard_vat_ruleset_hash,
+)
 
 REPO_DIR = Path(__file__).resolve().parents[2]
-MODEL_VERSION = "store-pnl-estimator-v2"
-VAT_DIVISOR = 1.19
+LEGACY_MODEL_VERSION = "store-pnl-estimator-v2"
+EFFECTIVE_MODEL_VERSION = "store-pnl-estimator-v3-effective-vat"
 VARIABLE_CODES = {"v1", "v11", "v2", "v3", "c1", "c11", "c2"}
 REVENUE_CODES = {"v1", "v11", "v2", "v3"}
 FIXED_CODES = {"c4", "c5", "c6", "a1"}
@@ -140,7 +147,11 @@ def choose_ratio(
     return median(value for _, value in chosen)
 
 
-async def load_data(connection: asyncpg.Connection):
+async def load_data(
+    connection: asyncpg.Connection,
+    *,
+    effective_vat: bool = False,
+):
     actual = await connection.fetch(
         """
         SELECT p.company_name, p.period,
@@ -157,27 +168,37 @@ async def load_data(connection: asyncpg.Connection):
                  COALESCE(l.site_code, p.source_site_code), p.category_code
         """
     )
-    sales = await connection.fetch(
+    gross_sales = await connection.fetch(
         """
         WITH sources AS (
             SELECT CASE WHEN firma ILIKE 'mobicell%' THEN 'Mobicell' ELSE 'Mobiup' END AS company_name,
                    to_date(import_month || '-01', 'YYYY-MM-DD') AS period,
-                   site_code, (total_value / 1.19)::float8 AS amount_without_vat, 1 AS priority
+                   site_code, total_value::numeric AS gross_amount, 1 AS priority
             FROM historical_monthly_sales
             UNION ALL
             SELECT CASE WHEN firma ILIKE 'mobicell%' THEN 'Mobicell' ELSE 'Mobiup' END,
                    to_date(import_month || '-01', 'YYYY-MM-DD'), site_code,
-                   (SUM(total_sales) / 1.19)::float8, 2
+                   SUM(total_sales)::numeric, 2
             FROM reporting_agent_month GROUP BY firma, import_month, site_code
         ), preferred AS (
             SELECT *, ROW_NUMBER() OVER (
                 PARTITION BY company_name, period, site_code ORDER BY priority DESC
             ) AS preference_rank FROM sources
         )
-        SELECT company_name, period, site_code, amount_without_vat AS amount
+        SELECT company_name, period, site_code, gross_amount
         FROM preferred WHERE preference_rank = 1
         """
     )
+    net_converter = gross_to_net if effective_vat else legacy_gross_to_net
+    sales = [
+        {
+            "company_name": row["company_name"],
+            "period": row["period"],
+            "site_code": row["site_code"],
+            "amount": net_converter(row["gross_amount"], row["period"]),
+        }
+        for row in gross_sales
+    ]
     salaries = await connection.fetch(
         """
         SELECT CASE WHEN company_name ILIKE 'mobicell%' THEN 'Mobicell' ELSE 'Mobiup' END AS company_name,
@@ -299,6 +320,12 @@ def all_missing_targets(actual, sales_rows) -> set[tuple[str, date, str]]:
     }
 
 
+def estimate_replacement_scopes(
+    targets: set[tuple[str, date, str]],
+) -> list[tuple[str, date]]:
+    return sorted({(company, period) for company, period, _ in targets})
+
+
 def backtest(actual, sales_rows, salary_rows, stores) -> None:
     actual_lookup = {(row["company_name"], row["period"], row["site_code"], row["category_code"]): float(row["amount"]) for row in actual}
     targets = {(company, period, site) for company, period, site, _ in actual_lookup if date(2025, 1, 1) <= period <= date(2026, 4, 1)}
@@ -327,25 +354,56 @@ def backtest(actual, sales_rows, salary_rows, stores) -> None:
     print(f"  TOTAL categorii: {100 * overall_error / overall_actual:.1f}%" if overall_actual else "  TOTAL categorii: n/a")
 
 
-async def run(months: list[date] | None, apply: bool) -> int:
+async def run(
+    months: list[date] | None,
+    apply: bool,
+    *,
+    effective_vat: bool = False,
+    allow_effective_apply: bool = False,
+) -> int:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("DATABASE_URL lipseste din .env")
     connection = await asyncpg.connect(database_url)
     try:
-        actual, sales_rows, salary_rows, stores = await load_data(connection)
-        print(f"Vanzari Retail citite read-only, normalizate fara TVA (impartire la {VAT_DIVISOR:.2f}).")
+        if apply and effective_vat and not allow_effective_apply:
+            raise RuntimeError(
+                "Promovarea TVA effective-dated necesita gate-ul explicit de shadow approval."
+            )
+        actual, sales_rows, salary_rows, stores = await load_data(
+            connection,
+            effective_vat=effective_vat,
+        )
+        ruleset_id = STANDARD_VAT_RULESET_ID if effective_vat else LEGACY_VAT_RULESET_ID
+        model_version = EFFECTIVE_MODEL_VERSION if effective_vat else LEGACY_MODEL_VERSION
+        print(f"Vanzari Retail normalizate read-only cu registrul {ruleset_id}.")
         backtest(actual, sales_rows, salary_rows, stores)
         targets = all_missing_targets(actual, sales_rows)
         if months is not None:
             targets = {target for target in targets if target[1] in months}
         estimates = build_estimates(actual, sales_rows, salary_rows, stores, targets, causal=False)
+        scopes = estimate_replacement_scopes(targets)
         periods = sorted({period for _, period, _ in targets})
         print(f"Estimari generate: {len(estimates)} valori pentru {len(periods)} luni ({periods[0]:%Y-%m}..{periods[-1]:%Y-%m})" if periods else "Nu exista luni de estimat.")
-        if apply and periods:
-            digest = hashlib.sha256(MODEL_VERSION.encode()).hexdigest()
+        if apply and scopes:
+            if effective_vat:
+                digest = hashlib.sha256(
+                    f"{model_version}:{standard_vat_ruleset_hash()}".encode()
+                ).hexdigest()
+            else:
+                digest = hashlib.sha256(model_version.encode()).hexdigest()
             async with connection.transaction():
-                await connection.execute("DELETE FROM store_pnl_monthly WHERE data_kind = 'estimated' AND period = ANY($1::date[])", periods)
+                for company, period in scopes:
+                    await connection.execute(
+                        """
+                        DELETE FROM store_pnl_monthly
+                        WHERE data_kind = 'estimated'
+                          AND company_name = $1
+                          AND period = $2
+                        """,
+                        company,
+                        period,
+                    )
                 if estimates:
                     await connection.executemany(
                         """
@@ -354,7 +412,9 @@ async def run(months: list[date] | None, apply: bool) -> int:
                         VALUES ($1,$2,$3,$4,$5,$6,$7,'estimated',$8,$9)
                         """,
                         [(x.company_name, x.period, x.source_site_code, x.source_location_name, x.category_code,
-                          x.category_name, x.amount, f"model:{MODEL_VERSION}:historical-reconstruction", digest) for x in estimates],
+                          x.category_name, x.amount,
+                          f"model:{model_version}:{ruleset_id}:historical-reconstruction",
+                          digest) for x in estimates],
                     )
             print("Au fost scrise numai randuri P&L estimate; tabelele de vanzari nu au fost modificate.")
         return 0
@@ -366,9 +426,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Reconstruieste P&L-ul lipsa din istoricul Retail.")
     parser.add_argument("--months", nargs="+", help="Optional: numai lunile YYYY-MM cerute.")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--effective-vat", action="store_true", help="Genereaza candidatul shadow cu registry-ul TVA effective-dated.")
+    parser.add_argument("--approve-effective-vat-promotion", action="store_true", help="Gate explicit dupa shadow diff si pre-image verificat.")
     args = parser.parse_args()
     load_dotenv(REPO_DIR / ".env")
-    return asyncio.run(run([month_date(value) for value in args.months] if args.months else None, args.apply))
+    return asyncio.run(
+        run(
+            [month_date(value) for value in args.months] if args.months else None,
+            args.apply,
+            effective_vat=args.effective_vat,
+            allow_effective_apply=args.approve_effective_vat_promotion,
+        )
+    )
 
 
 if __name__ == "__main__":

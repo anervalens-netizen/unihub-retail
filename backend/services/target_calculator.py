@@ -20,6 +20,12 @@ from repositories.target_calculator import (
     TargetScenarioVersionConflict,
 )
 from services.forecast import get_forecast_factor
+from services.fiscal_rules import (
+    STANDARD_VAT_RULESET_ID,
+    net_to_gross,
+    standard_vat_rule,
+    standard_vat_ruleset_hash,
+)
 
 MONEY = Decimal("0.01")
 DEFAULT_MIN_FLOOR = Decimal("35000")
@@ -34,7 +40,6 @@ DEFAULT_SEASONALITY_MIN = Decimal("0.70")
 DEFAULT_SEASONALITY_MAX = Decimal("1.70")
 MIN_SEASONALITY_BASE = Decimal("10000")
 CALCULATION_METHOD = "seasonal_blended_multiyear_v1"
-VAT_MULTIPLIER = Decimal("1.21")
 SALARY_PNL_FACTOR = Decimal("1.6955")
 MEAL_VOUCHERS_PER_AGENT = Decimal("480")
 SALES_COMMISSION_RATE = Decimal("0.03")
@@ -772,7 +777,7 @@ class TargetCalculatorService:
                         "strong_weights": {key: float(value) for key, value in STRONG_SEASONALITY_WEIGHTS.items()},
                         "weak_weights": {key: float(value) for key, value in WEAK_SEASONALITY_WEIGHTS.items()},
                         "new_store_weights": {key: float(value) for key, value in NEW_STORE_SEASONALITY_WEIGHTS.items()},
-                        "profitability": self._profitability_assumptions(),
+                        "profitability": self._profitability_assumptions(target_month),
                     },
                 },
                 calculated_rows,
@@ -827,9 +832,15 @@ class TargetCalculatorService:
         }
 
     @staticmethod
-    def _profitability_assumptions() -> dict[str, Any]:
+    def _profitability_assumptions(target_month: str) -> dict[str, Any]:
+        vat_rule = standard_vat_rule(target_month)
         return {
-            "vat_rate": float(VAT_MULTIPLIER - Decimal("1")),
+            "vat_ruleset_id": STANDARD_VAT_RULESET_ID,
+            "vat_ruleset_hash": standard_vat_ruleset_hash(),
+            "vat_rule_id": vat_rule.rule_id,
+            "vat_effective_from": vat_rule.effective_from.isoformat(),
+            "vat_multiplier": float(vat_rule.multiplier),
+            "vat_rate": float(vat_rule.rate),
             "salary_pnl_factor": float(SALARY_PNL_FACTOR),
             "meal_vouchers_per_agent": float(MEAL_VOUCHERS_PER_AGENT),
             "sales_commission_rate": float(SALES_COMMISSION_RATE),
@@ -839,6 +850,19 @@ class TargetCalculatorService:
             "base_salary_default": float(BASE_SALARY_DEFAULT),
             "base_salary_high": float(BASE_SALARY_HIGH),
         }
+
+    @staticmethod
+    def _legacy_profitability_assumptions() -> dict[str, Any]:
+        assumptions = TargetCalculatorService._profitability_assumptions("2025-08")
+        assumptions.update({
+            "vat_ruleset_id": "legacy-unversioned",
+            "vat_ruleset_hash": None,
+            "vat_rule_id": "legacy-unversioned",
+            "vat_effective_from": None,
+        })
+        return assumptions
+
+
 
     async def _attach_profitability(
         self,
@@ -865,6 +889,11 @@ class TargetCalculatorService:
         }
         forecast_run_record = inputs.get("forecast_run")
         forecast_run = dict(forecast_run_record) if forecast_run_record else None
+        saved_profitability = (
+            (scenario.get("calculation_params") or {}).get("profitability")
+            or self._legacy_profitability_assumptions()
+        )
+        vat_multiplier = Decimal(str(saved_profitability["vat_multiplier"]))
 
         salary_total = Decimal("0")
         opex_total = Decimal("0")
@@ -907,9 +936,15 @@ class TargetCalculatorService:
                         )
                         / Decimal(len(pnl_months))
                     )
-                    break_even = money(
-                        (salary_cost + opex) / accessory_margin * VAT_MULTIPLIER
+                    net_break_even = (salary_cost + opex) / accessory_margin
+                    break_even = net_to_gross(
+                        net_break_even,
+                        scenario["target_month"],
                     )
+                    # Stored scenarios remain reproducible if a later fiscal
+                    # registry version changes the effective multiplier.
+                    if vat_multiplier != standard_vat_rule(scenario["target_month"]).multiplier:
+                        break_even = money(net_break_even * vat_multiplier)
                     complete_pnl_count += 1
                     opex_total += opex
                     break_even_total += break_even
@@ -965,7 +1000,7 @@ class TargetCalculatorService:
                 "variant": forecast_run["variant"],
                 "generated_at": forecast_run["generated_at"],
             } if forecast_run else None,
-            "assumptions": self._profitability_assumptions(),
+            "assumptions": saved_profitability,
             "salary_total": float(money(salary_total)),
             "operating_costs_total": float(money(opex_total)) if complete_pnl_count else None,
             "break_even_total": float(money(break_even_total)) if complete_pnl_count else None,

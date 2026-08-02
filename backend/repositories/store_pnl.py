@@ -160,8 +160,7 @@ class StorePnlRepository:
                     FROM sales_sources
                 )
                 SELECT sales.period,
-                       SUM(sales.amount) AS gross_amount,
-                       SUM(sales.amount / 1.19) AS net_amount
+                       SUM(sales.amount) AS gross_amount
                 FROM preferred_sales sales
                 JOIN stores s ON s.site_code = sales.site_code
                 WHERE sales.preference_rank = 1

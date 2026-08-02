@@ -352,67 +352,210 @@ def print_audit(selected: list[WorkbookData], superseded: list[WorkbookData], du
         print(f"  {period:%Y-%m}: {len(period_rows)} valori, {sites} magazine, {', '.join(companies)}")
     print(f"Diferente consolidat Finance nealocate pe magazine: {len(reconciliation)} valori")
 
+PnlScope = tuple[str, date]
+PnlBusinessKey = tuple[str, date, str, str]
+
+
+def replacement_scopes(rows: list[PnlRow]) -> list[PnlScope]:
+    return sorted({(row.company_name, row.period) for row in rows})
+
+
+def candidate_business_keys(rows: list[PnlRow]) -> set[PnlBusinessKey]:
+    keys = {
+        (
+            row.company_name,
+            row.period,
+            row.source_site_code,
+            row.category_code,
+        )
+        for row in rows
+    }
+    if len(keys) != len(rows):
+        raise RuntimeError("Batchul P&L contine chei business duplicate.")
+    return keys
+
+
+def coverage_regressions(
+    current_rows: list[asyncpg.Record | dict],
+    candidate_rows: list[PnlRow],
+) -> list[PnlBusinessKey]:
+    candidate = candidate_business_keys(candidate_rows)
+    current = {
+        (
+            row["company_name"],
+            row["period"],
+            row["source_site_code"],
+            row["category_code"],
+        )
+        for row in current_rows
+        if row["source_site_code"] != UNALLOCATED_SOURCE
+    }
+    return sorted(current - candidate)
+
+
+def scope_totals(rows: list[PnlRow]) -> dict[PnlScope, tuple[int, Decimal]]:
+    totals: dict[PnlScope, tuple[int, Decimal]] = {}
+    for row in rows:
+        scope = (row.company_name, row.period)
+        count, amount = totals.get(scope, (0, Decimal("0")))
+        totals[scope] = (count + 1, amount + row.amount)
+    return totals
+
+
+async def load_current_actual_rows(
+    connection: asyncpg.Connection,
+    scopes: list[PnlScope],
+) -> list[asyncpg.Record]:
+    current: list[asyncpg.Record] = []
+    for company, period in scopes:
+        current.extend(
+            await connection.fetch(
+                """
+                SELECT company_name, period, source_site_code, category_code, amount
+                FROM store_pnl_monthly
+                WHERE data_kind = 'actual'
+                  AND company_name = $1
+                  AND period = $2
+                """,
+                company,
+                period,
+            )
+        )
+    return current
+
+
+def print_scope_comparison(
+    current_rows: list[asyncpg.Record],
+    candidate_rows: list[PnlRow],
+) -> None:
+    current_by_scope: dict[PnlScope, tuple[int, Decimal]] = {}
+    for row in current_rows:
+        scope = (row["company_name"], row["period"])
+        count, amount = current_by_scope.get(scope, (0, Decimal("0")))
+        current_by_scope[scope] = (count + 1, amount + Decimal(row["amount"]))
+    candidate_by_scope = scope_totals(candidate_rows)
+    print("Comparatie inventar DB pentru scope-ul exact:")
+    for scope in sorted(candidate_by_scope):
+        old_count, old_amount = current_by_scope.get(scope, (0, Decimal("0")))
+        new_count, new_amount = candidate_by_scope[scope]
+        company, period = scope
+        print(
+            f"  {company} {period:%Y-%m}: "
+            f"{old_count} -> {new_count} valori; "
+            f"{old_amount:.2f} -> {new_amount:.2f} RON"
+        )
+
+
+async def audit_database_coverage(
+    connection: asyncpg.Connection,
+    candidate_rows: list[PnlRow],
+) -> None:
+    scopes = replacement_scopes(candidate_rows)
+    current = await load_current_actual_rows(connection, scopes)
+    print_scope_comparison(current, candidate_rows)
+    missing = coverage_regressions(current, candidate_rows)
+    if missing:
+        preview = ", ".join(
+            f"{company}/{period:%Y-%m}/{site}/{category}"
+            for company, period, site, category in missing[:10]
+        )
+        raise RuntimeError(
+            "Importul ar reduce acoperirea actuala P&L in scope-ul declarat: "
+            f"{len(missing)} chei lipsa ({preview})."
+        )
+
+
+async def dry_run_database_audit(rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
+        print("Dry-run DB omis: DATABASE_URL lipseste; aplicarea ramane blocata.")
+        return
+    connection = await asyncpg.connect(database_url)
+    try:
+        await audit_database_coverage(connection, [*rows, *reconciliation])
+    finally:
+        await connection.close()
+
+
+async def replace_rows(
+    connection: asyncpg.Connection,
+    candidate_rows: list[PnlRow],
+) -> None:
+    scopes = replacement_scopes(candidate_rows)
+    if not scopes:
+        raise RuntimeError("Batchul P&L nu contine niciun scope importabil.")
+    candidate_business_keys(candidate_rows)
+    expected = scope_totals(candidate_rows)
+
+    async with connection.transaction():
+        await audit_database_coverage(connection, candidate_rows)
+        for company, period in scopes:
+            await connection.execute(
+                """
+                DELETE FROM store_pnl_monthly
+                WHERE company_name = $1
+                  AND period = $2
+                  AND data_kind IN ('actual', 'estimated')
+                """,
+                company,
+                period,
+            )
+
+        await connection.executemany(
+            """
+            INSERT INTO store_pnl_monthly (
+                company_name, period, source_site_code, source_location_name,
+                category_code, category_name, amount, data_kind, source_file, source_sha256
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'actual', $8, $9)
+            """,
+            [
+                (
+                    row.company_name,
+                    row.period,
+                    row.source_site_code,
+                    row.source_location_name,
+                    row.category_code,
+                    row.category_name,
+                    row.amount,
+                    row.source_file,
+                    row.source_sha256,
+                )
+                for row in candidate_rows
+            ],
+        )
+
+        for company, period in scopes:
+            persisted = await connection.fetchrow(
+                """
+                SELECT COUNT(*)::integer AS row_count,
+                       COALESCE(SUM(amount), 0)::numeric AS total_amount
+                FROM store_pnl_monthly
+                WHERE company_name = $1
+                  AND period = $2
+                  AND data_kind = 'actual'
+                """,
+                company,
+                period,
+            )
+            expected_count, expected_amount = expected[(company, period)]
+            if (
+                persisted is None
+                or persisted["row_count"] != expected_count
+                or Decimal(persisted["total_amount"]) != expected_amount
+            ):
+                raise RuntimeError(
+                    f"Control totals P&L esuat pentru {company} {period:%Y-%m}."
+                )
+
 
 async def apply_rows(rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("DATABASE_URL lipseste din .env")
+    candidate_rows = [*rows, *reconciliation]
     connection = await asyncpg.connect(database_url)
     try:
-        async with connection.transaction():
-            imported_years = sorted({(row.company_name, row.period.year) for row in rows})
-            for company, year in imported_years:
-                await connection.execute(
-                    """
-                    DELETE FROM store_pnl_monthly
-                    WHERE data_kind = 'actual'
-                      AND company_name = $1
-                      AND period >= make_date($2, 1, 1)
-                      AND period < make_date($2 + 1, 1, 1)
-                    """,
-                    company,
-                    year,
-                )
-            await connection.execute(
-                "DELETE FROM store_pnl_monthly WHERE data_kind = 'actual' AND source_site_code = $1",
-                UNALLOCATED_SOURCE,
-            )
-            await connection.executemany(
-                """
-                INSERT INTO store_pnl_monthly (
-                    company_name, period, source_site_code, source_location_name,
-                    category_code, category_name, amount, data_kind, source_file, source_sha256
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'actual', $8, $9)
-                ON CONFLICT (company_name, period, source_site_code, category_code, data_kind)
-                DO UPDATE SET
-                    source_location_name = EXCLUDED.source_location_name,
-                    category_name = EXCLUDED.category_name,
-                    amount = EXCLUDED.amount,
-                    source_file = EXCLUDED.source_file,
-                    source_sha256 = EXCLUDED.source_sha256,
-                    imported_at = now()
-                """,
-                [
-                    (
-                        row.company_name, row.period, row.source_site_code, row.source_location_name,
-                        row.category_code, row.category_name, row.amount, row.source_file, row.source_sha256,
-                    )
-                    for row in [*rows, *reconciliation]
-                ],
-            )
-            await connection.execute(
-                """
-                DELETE FROM store_pnl_monthly estimate
-                WHERE estimate.data_kind = 'estimated'
-                  AND EXISTS (
-                      SELECT 1
-                      FROM store_pnl_monthly actual
-                      WHERE actual.data_kind = 'actual'
-                        AND actual.company_name = estimate.company_name
-                        AND actual.period = estimate.period
-                  )
-                """
-            )
+        await replace_rows(connection, candidate_rows)
         print(f"Import finalizat: {len(rows)} valori detaliate + {len(reconciliation)} diferente consolidate actuale.")
     finally:
         await connection.close()
@@ -435,7 +578,8 @@ def main() -> int:
     if args.apply:
         asyncio.run(apply_rows(rows, reconciliation))
     else:
-        print("Dry-run: baza de date nu a fost modificata. Foloseste --apply dupa aplicarea migrarii 021.")
+        asyncio.run(dry_run_database_audit(rows, reconciliation))
+        print("Dry-run: baza de date nu a fost modificata.")
     return 0
 
 

@@ -1,7 +1,13 @@
 from datetime import date
 from decimal import Decimal
 
-from scripts.estimate_store_pnl import CATEGORY_NAMES, REVENUE_CODES, build_estimates, predict_amount
+from scripts.estimate_store_pnl import (
+    CATEGORY_NAMES,
+    REVENUE_CODES,
+    build_estimates,
+    estimate_replacement_scopes,
+    predict_amount,
+)
 
 
 def test_variable_cost_scales_with_sales() -> None:
@@ -54,3 +60,16 @@ def test_missing_store_revenue_equals_sales_without_vat() -> None:
     estimates = build_estimates(actual, sales, [], stores, {("Mobicell", target_period, "MISSING")}, causal=False)
 
     assert sum(item.amount for item in estimates if item.category_code in REVENUE_CODES) == Decimal("1000.00")
+
+
+def test_estimate_replacement_scope_keeps_company_boundary() -> None:
+    targets = {
+        ("Mobiup", date(2026, 3, 1), "SITE-A"),
+        ("Mobiup", date(2026, 3, 1), "SITE-B"),
+        ("Mobicell", date(2026, 4, 1), "SITE-C"),
+    }
+
+    assert estimate_replacement_scopes(targets) == [
+        ("Mobicell", date(2026, 4, 1)),
+        ("Mobiup", date(2026, 3, 1)),
+    ]

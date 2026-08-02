@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from repositories.store_pnl import StorePnlRepository
+from services.fiscal_rules import runtime_gross_to_net
 
 REVENUE_CODES = {"v1", "v11", "v2", "v3"}
 COGS_CODES = {"c1", "c11", "c2"}
@@ -99,10 +100,20 @@ class StorePnlService:
             store_payload.append({**store, **metrics})
         store_payload.sort(key=lambda item: item["ebit"], reverse=True)
 
-        sales_by_month = {
-            row["period"]: (row["gross_amount"], row["net_amount"])
-            for row in await self.repository.sales_rows(start, end, company, site_code, site_company, regional)
-        }
+        sales_by_month = {}
+        for row in await self.repository.sales_rows(
+            start,
+            end,
+            company,
+            site_code,
+            site_company,
+            regional,
+        ):
+            gross_amount = Decimal(row["gross_amount"] or 0)
+            sales_by_month[row["period"]] = (
+                gross_amount,
+                runtime_gross_to_net(gross_amount, row["period"]),
+            )
         reconciliation = []
         for period, values in sorted(monthly.items()):
             metrics = finalize_metrics(values.copy())
