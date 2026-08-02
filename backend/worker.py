@@ -9,6 +9,7 @@ from typing import Any
 
 from arq.worker import create_worker, func
 
+from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
 from services.jobs import (
@@ -227,8 +228,10 @@ async def startup(ctx: dict) -> None:
     from db.connection import init_db_pool, get_pool
     from services.importer import reconcile_interrupted_imports
 
+    raw_worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
+    runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
+    worker_role = runtime.worker_role or "operations"
     await init_db_pool()
-    worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
     if worker_role == "imports":
         removed = await asyncio.to_thread(cleanup_stale_sales_import_spool_files)
         if removed:
@@ -534,9 +537,9 @@ def main() -> None:
     from dotenv import find_dotenv, load_dotenv
     load_dotenv(find_dotenv())
 
-    worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
-    if worker_role not in {"operations", "imports"}:
-        raise RuntimeError("RETAIL_WORKER_ROLE must be operations or imports")
+    raw_worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
+    runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
+    worker_role = runtime.worker_role or "operations"
     functions = (
         [import_sales_background, promote_sales_background]
         if worker_role == "imports"
@@ -547,7 +550,7 @@ def main() -> None:
             promote_sales_background,
             grile_check_background,
             func(grile_store_refresh_background, max_tries=1),
-            func(grile_monthly_background, timeout=2400, max_tries=1),
+            func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),
             grile_agent_targets_background,
         ]
     )
@@ -556,10 +559,10 @@ def main() -> None:
         "functions": functions,
         "on_startup": startup,
         "on_shutdown": shutdown,
-        "job_completion_wait": 1800 if worker_role == "imports" else 2400,
-        "max_jobs": 1,
-        "job_timeout": 1800,
-        "keep_result": 3600,
+        "job_completion_wait": runtime.arq_completion_wait_seconds,
+        "max_jobs": runtime.arq_max_jobs,
+        "job_timeout": runtime.arq_job_timeout_seconds,
+        "keep_result": runtime.arq_keep_result_seconds,
         "health_check_interval": 30,
         "retry_jobs": True,
     }

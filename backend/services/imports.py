@@ -32,6 +32,8 @@ from services.dashboard_specials import (
     validate_special_cards_config,
 )
 from services.jobs import (
+    JobPublishUncertainError,
+    JobResult,
     JobStatus,
     enqueue_grile_check,
     enqueue_sales_import,
@@ -61,6 +63,21 @@ PROMO_REPORT_QTY_ALIASES = {"promo_luna_curenta", "promo_qty", "cantitate_promo"
 
 class PromoGenerationConflictError(RuntimeError):
     """Raised when another writer moves the promo pointer during validation."""
+
+
+def _to_public_import_status(result: JobResult) -> ImportJobStatus:
+    if result.status in {JobStatus.BACKEND_UNAVAILABLE, JobStatus.UNKNOWN}:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Job status unavailable",
+        )
+    payload = ImportResponse(**result.result) if result.result else None
+    return ImportJobStatus(
+        job_id=result.job_id,
+        status=result.status.value,
+        result=payload,
+        error=result.error,
+    )
 
 
 def _canonical_json_bytes(payload: dict) -> bytes:
@@ -260,12 +277,7 @@ class ImportsService:
                 requested_by_sub=requested_by_sub,
             )
         job_status = await get_job_status(job.job_id)
-        return ImportJobStatus(
-            job_id=job.job_id,
-            status=job_status.status.value,
-            result=ImportResponse(**job_status.result) if job_status.result else None,
-            error=job_status.error,
-        )
+        return _to_public_import_status(job_status)
 
     async def promote_sales_generation(
         self,
@@ -299,6 +311,8 @@ class ImportsService:
                 requested_by_sub=requested_by_sub,
                 override_reason=request.override_reason,
             )
+        except JobPublishUncertainError:
+            raise
         except Exception:
             try:
                 async with self.pool.acquire() as conn:
@@ -317,12 +331,7 @@ class ImportsService:
                 )
             raise
         job_status = await get_job_status(job.job_id)
-        return ImportJobStatus(
-            job_id=job.job_id,
-            status=job_status.status.value,
-            result=ImportResponse(**job_status.result) if job_status.result else None,
-            error=job_status.error,
-        )
+        return _to_public_import_status(job_status)
 
     async def import_promo_actuals(
         self,
@@ -545,13 +554,7 @@ class ImportsService:
 
     async def get_import_job_status(self, job_id: str) -> ImportJobStatus:
         result = await get_job_status(job_id)
-        payload = ImportResponse(**result.result) if result.result else None
-        return ImportJobStatus(
-            job_id=result.job_id,
-            status=result.status.value,
-            result=payload,
-            error=result.error,
-        )
+        return _to_public_import_status(result)
 
     async def get_import_history(self) -> list[ImportHistoryEntry]:
         rows = await self.repo.get_import_history()

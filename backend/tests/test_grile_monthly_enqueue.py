@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 import db.connection as db_connection
 import services.grile_monthly as grile_monthly
@@ -129,7 +130,7 @@ async def test_h11_monthly_enqueue_does_not_publish_when_attachment_is_rejected(
 
 
 @pytest.mark.parametrize("publish_mode", ["none", "exception"])
-async def test_h11_monthly_enqueue_failure_transitions_queued_reservation_to_failed(
+async def test_h11_monthly_enqueue_handles_publish_uncertainty_without_retry(
     monkeypatch: pytest.MonkeyPatch,
     publish_mode: str,
 ) -> None:
@@ -147,20 +148,36 @@ async def test_h11_monthly_enqueue_failure_transitions_queued_reservation_to_fai
     )
     monkeypatch.setattr(jobs, "get_arq_pool", AsyncMock(return_value=queue))
 
-    with pytest.raises((RuntimeError, ConnectionError)):
-        await jobs.enqueue_grile_monthly(
-            op="reset",
-            month="2099-03",
-            dry_run=True,
-            requested_by_sub="subject-1",
+    if publish_mode == "exception":
+        with pytest.raises(HTTPException) as exc_info:
+            await jobs.enqueue_grile_monthly(
+                op="reset",
+                month="2099-03",
+                dry_run=True,
+                requested_by_sub="subject-1",
+            )
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == {
+            "status": "unknown",
+            "job_id": "grile-monthly:44",
+            "operation_id": 44,
+        }
+        fail.assert_not_awaited()
+    else:
+        with pytest.raises(RuntimeError, match="Failed to enqueue"):
+            await jobs.enqueue_grile_monthly(
+                op="reset",
+                month="2099-03",
+                dry_run=True,
+                requested_by_sub="subject-1",
+            )
+        fail.assert_awaited_once_with(
+            db_pool,
+            44,
+            error_message="Jobul lunar Grile nu a putut fi adaugat in coada",
         )
 
     assert events == ["reserve", "attach", "enqueue"]
-    fail.assert_awaited_once_with(
-        db_pool,
-        44,
-        error_message="Jobul lunar Grile nu a putut fi adaugat in coada",
-    )
 
 
 async def test_h11_existing_monthly_reservation_bypasses_queue_publication(

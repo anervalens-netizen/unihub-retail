@@ -10,7 +10,9 @@ Check-uri:
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from privileged_access import privileged_access_config_errors
 from oidc_settings import hub_internal_secret_errors, oidc_config_errors
@@ -27,6 +29,199 @@ VISITS_SHADOW_COMPARE_ENV = "RETAIL_VISITS_SHADOW_COMPARE_ENABLED"
 
 class ConfigError(RuntimeError):
     """Ridicat la boot când env vars critice sunt invalide sau lipsă."""
+
+
+RuntimeRole = Literal["web", "worker", "import"]
+WorkerRole = Literal["operations", "imports"]
+ARQ_CONNECTION_BUDGET_SECONDS = 3
+WEB_MIN_DB_POOL_MAX_SIZE = 2
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    """Configurația comună, tipizată, pentru web și cele două worker roles."""
+
+    role: RuntimeRole
+    worker_role: WorkerRole | None
+    db_pool_min_size: int
+    db_pool_max_size: int
+    db_statement_timeout_ms: int
+    db_lock_timeout_ms: int
+    db_idle_transaction_timeout_ms: int
+    valkey_host: str
+    valkey_port: int
+    valkey_database: int
+    valkey_password: str | None
+    valkey_url: str | None
+    valkey_conn_timeout: int
+    valkey_conn_retries: int
+    valkey_conn_retry_delay: int
+    valkey_max_connections: int
+    arq_job_timeout_seconds: int
+    arq_completion_wait_seconds: int
+    arq_max_jobs: int
+    arq_keep_result_seconds: int
+    arq_failure_cooldown_seconds: int
+
+
+def _parse_runtime_int(
+    name: str,
+    default: int,
+    errors: list[str],
+    *,
+    minimum: int = 1,
+    maximum: int | None = None,
+) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        errors.append(f"{name} trebuie să fie întreg")
+        return default
+    if value < minimum:
+        errors.append(f"{name} trebuie să fie >= {minimum}")
+    if maximum is not None and value > maximum:
+        errors.append(f"{name} trebuie să fie <= {maximum}")
+    return value
+
+
+def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
+    """Parsează și validează configul de proces fără conectări externe."""
+    errors: list[str] = []
+    raw_worker_role = os.getenv("RETAIL_WORKER_ROLE")
+    configured_worker_role = (
+        raw_worker_role.strip().lower()
+        if raw_worker_role is not None
+        else ("imports" if role == "import" else "operations")
+    )
+    worker_role: WorkerRole | None = None
+    if configured_worker_role not in {"operations", "imports"}:
+        errors.append("RETAIL_WORKER_ROLE trebuie să fie operations sau imports")
+    else:
+        worker_role = configured_worker_role  # type: ignore[assignment]
+
+    if role is None:
+        process_role: RuntimeRole = (
+            "import" if worker_role == "imports" else
+            "worker" if "RETAIL_WORKER_ROLE" in os.environ else "web"
+        )
+    else:
+        process_role = role
+        if role not in {"web", "worker", "import"}:
+            errors.append("role trebuie să fie web, worker sau import")
+    if process_role == "import" and worker_role not in {None, "imports"}:
+        errors.append("role=import necesită RETAIL_WORKER_ROLE=imports")
+    if process_role == "worker" and worker_role == "imports":
+        errors.append("role=worker nu poate folosi RETAIL_WORKER_ROLE=imports")
+
+    db_pool_min_size = _parse_runtime_int("DB_POOL_MIN_SIZE", 3, errors, maximum=100)
+    db_pool_max_size = _parse_runtime_int("DB_POOL_MAX_SIZE", 10, errors, maximum=100)
+    db_statement_timeout_ms = _parse_runtime_int(
+        "DB_STATEMENT_TIMEOUT_MS", 120000, errors, maximum=900000
+    )
+    db_lock_timeout_ms = _parse_runtime_int(
+        "DB_LOCK_TIMEOUT_MS", 10000, errors, maximum=900000
+    )
+    db_idle_transaction_timeout_ms = _parse_runtime_int(
+        "DB_IDLE_TRANSACTION_TIMEOUT_MS", 60000, errors, maximum=900000
+    )
+    if db_pool_min_size > db_pool_max_size:
+        errors.append("DB_POOL_MIN_SIZE trebuie să fie <= DB_POOL_MAX_SIZE")
+    if db_lock_timeout_ms >= db_statement_timeout_ms:
+        errors.append("DB_LOCK_TIMEOUT_MS trebuie să fie < DB_STATEMENT_TIMEOUT_MS")
+    if process_role == "web" and db_pool_max_size < WEB_MIN_DB_POOL_MAX_SIZE:
+        errors.append("DB_POOL_MAX_SIZE trebuie să fie >= 2 pentru web")
+    if db_idle_transaction_timeout_ms > db_statement_timeout_ms:
+        errors.append(
+            "DB_IDLE_TRANSACTION_TIMEOUT_MS trebuie să fie <= DB_STATEMENT_TIMEOUT_MS"
+        )
+
+    valkey_port = _parse_runtime_int("VALKEY_PORT", 6379, errors, maximum=65535)
+    valkey_database = _parse_runtime_int("VALKEY_DATABASE", 0, errors, minimum=0, maximum=15)
+    valkey_conn_timeout = _parse_runtime_int(
+        "ARQ_CONN_TIMEOUT_SECONDS", 1, errors, maximum=60
+    )
+    valkey_conn_retries = _parse_runtime_int(
+        "ARQ_CONN_RETRIES", 1, errors, minimum=0, maximum=20
+    )
+    valkey_conn_retry_delay = _parse_runtime_int(
+        "ARQ_CONN_RETRY_DELAY_SECONDS", 1, errors, maximum=60
+    )
+    valkey_max_connections = _parse_runtime_int(
+        "ARQ_MAX_CONNECTIONS", 4, errors, maximum=1000
+    )
+
+    default_completion_wait = 1800 if worker_role == "imports" else 2400
+    arq_job_timeout_seconds = _parse_runtime_int(
+        "ARQ_JOB_TIMEOUT_SECONDS", 1800, errors, maximum=7200
+    )
+    arq_completion_wait_seconds = _parse_runtime_int(
+        "ARQ_JOB_COMPLETION_WAIT_SECONDS",
+        default_completion_wait,
+        errors,
+        maximum=7200,
+    )
+    arq_max_jobs = _parse_runtime_int("ARQ_MAX_JOBS", 1, errors, maximum=32)
+    arq_keep_result_seconds = _parse_runtime_int(
+        "ARQ_KEEP_RESULT_SECONDS", 3600, errors, maximum=86400
+    )
+    arq_failure_cooldown_seconds = _parse_runtime_int(
+        "ARQ_FAILURE_COOLDOWN_SECONDS", 5, errors, maximum=300
+    )
+    transport_budget = (
+        (valkey_conn_retries + 1) * valkey_conn_timeout
+        + valkey_conn_retries * valkey_conn_retry_delay
+    )
+    if transport_budget > ARQ_CONNECTION_BUDGET_SECONDS:
+        errors.append(
+            "ARQ conexiunea trebuie să respecte bugetul de 3 secunde"
+        )
+    if arq_completion_wait_seconds < arq_job_timeout_seconds:
+        errors.append(
+            "ARQ_JOB_COMPLETION_WAIT_SECONDS trebuie să fie >= ARQ_JOB_TIMEOUT_SECONDS"
+        )
+    if arq_keep_result_seconds < max(
+        arq_job_timeout_seconds, arq_completion_wait_seconds
+    ):
+        errors.append(
+            "ARQ_KEEP_RESULT_SECONDS trebuie să fie >= cel mai lung job ARQ"
+        )
+    if valkey_max_connections < arq_max_jobs:
+        errors.append("ARQ_MAX_CONNECTIONS trebuie să fie >= ARQ_MAX_JOBS")
+
+    if errors:
+        raise ConfigError(
+            "Runtime config invalid la startup:\n  - " + "\n  - ".join(errors)
+        )
+
+    return RuntimeConfig(
+        role=process_role,
+        worker_role=worker_role,
+        db_pool_min_size=db_pool_min_size,
+        db_pool_max_size=db_pool_max_size,
+        db_statement_timeout_ms=db_statement_timeout_ms,
+        db_lock_timeout_ms=db_lock_timeout_ms,
+        db_idle_transaction_timeout_ms=db_idle_transaction_timeout_ms,
+        valkey_host=os.getenv("VALKEY_HOST", "127.0.0.1").strip() or "127.0.0.1",
+        valkey_port=valkey_port,
+        valkey_database=valkey_database,
+        valkey_password=os.getenv("VALKEY_PASSWORD") or None,
+        valkey_url=os.getenv("VALKEY_URL", "").strip() or None,
+        valkey_conn_timeout=valkey_conn_timeout,
+        valkey_conn_retries=valkey_conn_retries,
+        valkey_conn_retry_delay=valkey_conn_retry_delay,
+        valkey_max_connections=valkey_max_connections,
+        arq_job_timeout_seconds=arq_job_timeout_seconds,
+        arq_completion_wait_seconds=arq_completion_wait_seconds,
+        arq_max_jobs=arq_max_jobs,
+        arq_keep_result_seconds=arq_keep_result_seconds,
+        arq_failure_cooldown_seconds=arq_failure_cooldown_seconds,
+    )
+
+
+def validate_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
+    """Alias explicit pentru boot checks în fiecare proces."""
+    return load_runtime_config(role)
 
 
 def _is_production() -> bool:
@@ -63,6 +258,10 @@ def validate_required_env_vars() -> None:
     și systemd loghează eroarea clar.
     """
     errors: list[str] = []
+    try:
+        load_runtime_config()
+    except ConfigError as exc:
+        errors.extend(str(exc).splitlines())
 
     # DATABASE_URL
     db_url = os.getenv("DATABASE_URL", "").strip()

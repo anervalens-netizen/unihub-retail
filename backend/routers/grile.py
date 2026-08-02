@@ -32,8 +32,10 @@ from services.jobs import (
     enqueue_grile_store_refresh,
     enqueue_grile_monthly,
     enqueue_grile_target_sync,
+    get_grile_monthly_operation_by_job_id,
     get_grile_target_sync_operation,
     get_job_status,
+    JobStatus,
 )
 
 router = APIRouter(prefix="/api/grile", tags=["grile"])
@@ -346,7 +348,57 @@ async def grile_monthly_job(
     job_id: str,
     claims: AuthClaims = Depends(require_grile_admin),
 ) -> dict[str, Any]:
+    try:
+        operation = await get_grile_monthly_operation_by_job_id(job_id)
+    except Exception as exc:  # noqa: BLE001 - DB status is required for authority
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Job status unavailable",
+        ) from exc
+    if operation is not None:
+        operation_status = str(operation.get("status") or "")
+        if operation_status in {"completed", "failed"}:
+            return {
+                "job_id": job_id,
+                "status": "complete",
+                "result": operation.get("result") if operation_status == "completed" else None,
+                "error": operation.get("error_message") if operation_status == "failed" else None,
+            }
+        js = await get_job_status(job_id)
+        if js.status in {JobStatus.QUEUED, JobStatus.IN_PROGRESS}:
+            return {
+                "job_id": js.job_id,
+                "status": js.status.value,
+                "result": js.result,
+                "error": js.error,
+            }
+        detail_status = (
+            "backend_unavailable"
+            if js.status is JobStatus.BACKEND_UNAVAILABLE
+            else "unknown"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": detail_status,
+                "operation_id": operation.get("id"),
+                "job_id": job_id,
+            },
+        )
     js = await get_job_status(job_id)
+    if js.status in {JobStatus.BACKEND_UNAVAILABLE, JobStatus.UNKNOWN}:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": (
+                    "backend_unavailable"
+                    if js.status is JobStatus.BACKEND_UNAVAILABLE
+                    else "unknown"
+                ),
+                "operation_id": None,
+                "job_id": job_id,
+            },
+        )
     return {
         "job_id": js.job_id,
         "status": js.status.value,

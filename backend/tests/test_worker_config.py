@@ -28,7 +28,7 @@ def test_worker_uses_bounded_serial_execution(monkeypatch: pytest.MonkeyPatch) -
         for entry in settings["functions"]
         if getattr(entry, "coroutine", None) is worker.grile_monthly_background
     )
-    assert (monthly.timeout_s, monthly.max_tries) == (2400, 1)
+    assert (monthly.timeout_s, monthly.max_tries) == (1800, 1)
     worker_instance.run.assert_called_once_with()
 
 
@@ -110,3 +110,51 @@ async def test_worker_shutdown_closes_all_pools(
 
     close_arq_pool.assert_awaited_once_with()
     close_db_pool.assert_awaited_once_with()
+
+
+def test_worker_operations_consumes_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_instance = MagicMock()
+    create_worker = MagicMock(return_value=worker_instance)
+    monkeypatch.setattr(worker, "create_worker", create_worker)
+    monkeypatch.setenv("ARQ_MAX_JOBS", "2")
+    monkeypatch.setenv("ARQ_JOB_TIMEOUT_SECONDS", "900")
+    monkeypatch.setenv("ARQ_JOB_COMPLETION_WAIT_SECONDS", "1200")
+    monkeypatch.setenv("ARQ_KEEP_RESULT_SECONDS", "1200")
+
+    worker.main()
+
+    settings = create_worker.call_args.args[0]
+    assert settings["max_jobs"] == 2
+    assert settings["job_timeout"] == 900
+    assert settings["job_completion_wait"] == 1200
+    assert settings["keep_result"] == 1200
+    monthly = next(
+        entry
+        for entry in settings["functions"]
+        if getattr(entry, "coroutine", None) is worker.grile_monthly_background
+    )
+    assert monthly.timeout_s == 900
+
+
+def test_worker_import_consumes_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_instance = MagicMock()
+    create_worker = MagicMock(return_value=worker_instance)
+    monkeypatch.setattr(worker, "create_worker", create_worker)
+    monkeypatch.setenv("RETAIL_WORKER_ROLE", "imports")
+    monkeypatch.setenv("ARQ_MAX_JOBS", "2")
+    monkeypatch.setenv("ARQ_JOB_TIMEOUT_SECONDS", "900")
+    monkeypatch.setenv("ARQ_JOB_COMPLETION_WAIT_SECONDS", "1200")
+    monkeypatch.setenv("ARQ_KEEP_RESULT_SECONDS", "1200")
+
+    worker.main()
+
+    settings = create_worker.call_args.args[0]
+    assert settings["queue_name"] == services.jobs.SALES_IMPORT_QUEUE_NAME
+    assert settings["max_jobs"] == 2
+    assert settings["job_timeout"] == 900
+    assert settings["job_completion_wait"] == 1200
+    assert settings["keep_result"] == 1200

@@ -9,6 +9,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import asyncpg
+from fastapi import HTTPException
 import pytest
 
 import db.connection as db_connection
@@ -285,12 +286,15 @@ async def test_enqueue_error_does_not_fail_operation_claimed_by_worker(
             AsyncMock(return_value=AcceptedThenDisconnectedQueue()),
         )
 
-        with pytest.raises(ConnectionError, match="response loss"):
+        with pytest.raises(HTTPException) as exc_info:
             await jobs.enqueue_grile_target_sync(
                 month=month,
                 mode="dry_run",
                 requested_by_sub="stable-synthetic-subject",
             )
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == {"status": "unknown", "job_id": "grile-agent-targets:1", "operation_id": 1}
 
         async with pool.acquire() as conn:
             operation = await conn.fetchrow(

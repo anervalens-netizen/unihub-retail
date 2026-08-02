@@ -1,20 +1,71 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from hashlib import sha256
-from dataclasses import dataclass
+from contextlib import suppress
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 from arq.constants import result_key_prefix
 from arq.jobs import Job, JobStatus as ArqJobStatus
+from fastapi import HTTPException
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
+from config import ConfigError, load_runtime_config
 from request_context import get_request_id
+
+
+logger = logging.getLogger(__name__)
+
+
+class JobQueueUnavailableError(HTTPException):
+    """Queue-ul nu este disponibil; endpointurile de enqueue răspund 503."""
+
+    def __init__(self) -> None:
+        super().__init__(status_code=503, detail="Job backend unavailable")
+
+
+class JobPublishUncertainError(HTTPException):
+    """Publish-ul poate fi acceptat, dar confirmarea nu a fost posibilă."""
+
+    def __init__(
+        self,
+        *,
+        job_id: str | None = None,
+        operation_id: int | None = None,
+    ) -> None:
+        self.job_id = job_id
+        self.operation_id = operation_id
+        super().__init__(status_code=503, detail=self._detail())
+
+    def _detail(self) -> dict[str, object | None]:
+        return {
+            "status": "unknown",
+            "job_id": self.job_id,
+            "operation_id": self.operation_id,
+        }
+
+    def attach_operation_id(self, operation_id: int) -> None:
+        self.operation_id = operation_id
+        object.__setattr__(self, "detail", self._detail())
+
+
+ARQ_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
+    RedisConnectionError,
+    RedisTimeoutError,
+    ConnectionError,
+    TimeoutError,
+    OSError,
+)
 
 
 class JobStatus(str, Enum):
@@ -22,6 +73,8 @@ class JobStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETE = "complete"
     NOT_FOUND = "not_found"
+    BACKEND_UNAVAILABLE = "backend_unavailable"
+    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -166,31 +219,108 @@ def cleanup_stale_sales_import_spool_files() -> int:
 def get_valkey_settings() -> RedisSettings:
     global _VALKEY_SETTINGS
     if _VALKEY_SETTINGS is None:
-        host = os.getenv("VALKEY_HOST", "127.0.0.1")
-        port = int(os.getenv("VALKEY_PORT", "6379"))
-        password = os.getenv("VALKEY_PASSWORD", "")
-        valkey_url = os.getenv("VALKEY_URL", "")
-        if valkey_url:
-            _VALKEY_SETTINGS = RedisSettings.from_dsn(valkey_url)
-        elif password:
-            _VALKEY_SETTINGS = RedisSettings(host=host, port=port, password=password)
+        runtime = load_runtime_config()
+        if runtime.valkey_url:
+            parsed = RedisSettings.from_dsn(runtime.valkey_url)
+            _VALKEY_SETTINGS = replace(
+                parsed,
+                conn_timeout=runtime.valkey_conn_timeout,
+                conn_retries=runtime.valkey_conn_retries,
+                conn_retry_delay=runtime.valkey_conn_retry_delay,
+                max_connections=runtime.valkey_max_connections,
+            )
         else:
-            _VALKEY_SETTINGS = RedisSettings(host=host, port=port)
+            _VALKEY_SETTINGS = RedisSettings(
+                host=runtime.valkey_host,
+                port=runtime.valkey_port,
+                database=runtime.valkey_database,
+                password=runtime.valkey_password,
+                conn_timeout=runtime.valkey_conn_timeout,
+                conn_retries=runtime.valkey_conn_retries,
+                conn_retry_delay=runtime.valkey_conn_retry_delay,
+                max_connections=runtime.valkey_max_connections,
+            )
     return _VALKEY_SETTINGS
 
 
 _arq_pool: Optional[ArqRedis] = None
+_arq_pool_attempt: asyncio.Task[ArqRedis | None] | None = None
+_arq_last_failure_monotonic = 0.0
 
 
-async def get_arq_pool() -> ArqRedis:
-    global _arq_pool
-    if _arq_pool is None:
-        _arq_pool = await create_pool(get_valkey_settings())
-    return _arq_pool
+async def _create_arq_pool() -> ArqRedis | None:
+    global _arq_last_failure_monotonic
+    try:
+        pool = await create_pool(get_valkey_settings())
+    except ConfigError:
+        raise
+    except ARQ_TRANSPORT_ERRORS as exc:
+        _arq_last_failure_monotonic = time.monotonic()
+        logger.warning("ARQ queue unavailable; continuing without job backend: %s", exc)
+        return None
+    if pool is None:
+        _arq_last_failure_monotonic = time.monotonic()
+        logger.warning("ARQ queue creation returned no pool")
+        return None
+    return pool
+
+
+async def _publish_arq_job(
+    pool: ArqRedis,
+    *args: Any,
+    **kwargs: Any,
+) -> Job | None:
+    """Publish once; transport failure remains explicitly uncertain."""
+    try:
+        return await pool.enqueue_job(*args, **kwargs)
+    except ARQ_TRANSPORT_ERRORS as exc:
+        job_id = kwargs.get("_job_id")
+        raise JobPublishUncertainError(
+            job_id=str(job_id) if job_id is not None else None,
+        ) from exc
+
+
+async def get_arq_pool() -> ArqRedis | None:
+    """Best-effort ARQ pool with single-flight creation and cooldown retry."""
+    global _arq_pool, _arq_pool_attempt
+    if _arq_pool is not None:
+        return _arq_pool
+    runtime = load_runtime_config()
+    if (
+        _arq_last_failure_monotonic
+        and time.monotonic() - _arq_last_failure_monotonic
+        < runtime.arq_failure_cooldown_seconds
+    ):
+        return None
+    attempt = _arq_pool_attempt
+    if attempt is None:
+        attempt = asyncio.create_task(_create_arq_pool())
+        _arq_pool_attempt = attempt
+    try:
+        result = await asyncio.shield(attempt)
+        if result is not None:
+            _arq_pool = result
+        return result
+    finally:
+        if attempt.done() and _arq_pool_attempt is attempt:
+            _arq_pool_attempt = None
+
+
+async def _require_arq_pool() -> ArqRedis:
+    pool = await get_arq_pool()
+    if pool is None:
+        raise JobQueueUnavailableError()
+    return pool
 
 
 async def close_arq_pool() -> None:
-    global _arq_pool
+    global _arq_pool, _arq_pool_attempt
+    attempt = _arq_pool_attempt
+    _arq_pool_attempt = None
+    if attempt is not None and not attempt.done():
+        attempt.cancel()
+        with suppress(asyncio.CancelledError):
+            await attempt
     if _arq_pool is not None:
         await _arq_pool.close()
         _arq_pool = None
@@ -203,7 +333,7 @@ async def enqueue_sales_import(
     cutoff_date: str | None = None,
     requested_by_sub: str = "legacy-direct",
 ) -> Job:
-    pool = await get_arq_pool()
+    pool = await _require_arq_pool()
     digest = sha256(file_content).hexdigest()
     request_digest = sha256(
         f"{digest}:{cutoff_date or 'detected'}".encode("utf-8")
@@ -225,18 +355,19 @@ async def enqueue_sales_import(
             _job_id=job_id,
             _queue_name=SALES_IMPORT_QUEUE_NAME,
         )
-    except Exception:
+    except ARQ_TRANSPORT_ERRORS as exc:
         # Publicarea poate fi acceptată de Valkey chiar dacă răspunsul către
-        # client se pierde. Nu șterge spoolul unui job deja vizibil în coadă.
+        # client se pierde. Nu șterge spoolul până când confirmarea nu este
+        # posibilă; un status necunoscut nu declanșează retry orb.
         existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
         try:
             existing_status = await existing.status()
-        except Exception:
-            existing_status = ArqJobStatus.not_found
+        except ARQ_TRANSPORT_ERRORS as status_exc:
+            raise JobPublishUncertainError(job_id=job_id) from status_exc
         if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
             return existing
         await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
-        raise
+        raise exc
     if job is None:
         existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
         existing_status = await existing.status()
@@ -270,7 +401,7 @@ async def enqueue_sales_promotion(
     requested_by_sub: str,
     override_reason: str | None,
 ) -> Job:
-    pool = await get_arq_pool()
+    pool = await _require_arq_pool()
     job_id = f"sales-promote:{snapshot_id}:{manifest_sha256}"
     enqueue_args = (
         "promote_sales_background",
@@ -282,7 +413,8 @@ async def enqueue_sales_promotion(
         override_reason,
         get_request_id(),
     )
-    job = await pool.enqueue_job(
+    job = await _publish_arq_job(
+        pool,
         *enqueue_args,
         _job_id=job_id,
         _queue_name=SALES_IMPORT_QUEUE_NAME,
@@ -298,7 +430,8 @@ async def enqueue_sales_promotion(
     }:
         return existing
     await pool.delete(result_key_prefix + job_id)
-    replacement = await pool.enqueue_job(
+    replacement = await _publish_arq_job(
+        pool,
         *enqueue_args,
         _job_id=job_id,
         _queue_name=SALES_IMPORT_QUEUE_NAME,
@@ -337,8 +470,9 @@ async def enqueue_grile_check(
         )
 
     try:
-        pool = await get_arq_pool()
-        job = await pool.enqueue_job(
+        pool = await _require_arq_pool()
+        job = await _publish_arq_job(
+            pool,
             "grile_check_background",
             month,
             source,
@@ -349,6 +483,9 @@ async def enqueue_grile_check(
         )
         if job is None:
             raise RuntimeError("Failed to enqueue grile check job")
+    except JobPublishUncertainError as exc:
+        exc.attach_operation_id(int(run_id))
+        raise
     except Exception:
         await repo.finalize_run(
             int(run_id),
@@ -395,14 +532,18 @@ async def enqueue_grile_store_refresh(
             operation=dict(active),
         )
     try:
-        pool = await get_arq_pool()
-        job = await pool.enqueue_job(
+        pool = await _require_arq_pool()
+        job = await _publish_arq_job(
+            pool,
             "grile_store_refresh_background",
             int(operation_id),
             get_request_id(),
         )
         if job is None:
             raise RuntimeError("Failed to enqueue grile store refresh job")
+    except JobPublishUncertainError as exc:
+        exc.attach_operation_id(int(operation_id))
+        raise
     except Exception:
         await repo.fail_queued_store_refresh(
             int(operation_id),
@@ -466,8 +607,9 @@ async def enqueue_grile_monthly(
         )
 
     try:
-        pool = await get_arq_pool()
-        job = await pool.enqueue_job(
+        pool = await _require_arq_pool()
+        job = await _publish_arq_job(
+            pool,
             "grile_monthly_background",
             reservation.operation_id,
             request_id=get_request_id(),
@@ -475,6 +617,9 @@ async def enqueue_grile_monthly(
         )
         if job is None:
             raise RuntimeError("Failed to enqueue grile monthly job")
+    except JobPublishUncertainError as exc:
+        exc.attach_operation_id(reservation.operation_id)
+        raise
     except Exception:
         # If Valkey accepted the publish but the client lost the response, this
         # compare-and-set moves the row to failed only while it is still queued.
@@ -526,8 +671,9 @@ async def enqueue_grile_target_sync(
     if not await repo.attach_job(operation_id, job_id):
         raise RuntimeError("Grile target sync operation is no longer queued")
     try:
-        pool = await get_arq_pool()
-        job = await pool.enqueue_job(
+        pool = await _require_arq_pool()
+        job = await _publish_arq_job(
+            pool,
             "grile_agent_targets_background",
             operation_id,
             get_request_id(),
@@ -535,6 +681,9 @@ async def enqueue_grile_target_sync(
         )
         if job is None:
             raise RuntimeError("Failed to enqueue Grile target sync job")
+    except JobPublishUncertainError as exc:
+        exc.attach_operation_id(operation_id)
+        raise
     except Exception:
         # A publish can be accepted by Valkey even when the client raises.  If
         # the worker already claimed the operation, leave it running so its
@@ -546,6 +695,24 @@ async def enqueue_grile_target_sync(
         operation_id=operation_id,
         job=job,
     )
+
+
+async def get_grile_monthly_operation_by_job_id(job_id: str) -> dict | None:
+    """Read the durable monthly operation before consulting ephemeral ARQ state."""
+    from db.connection import get_pool
+
+    db_pool = await get_pool()
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, status, result, error_message
+            FROM grile_monthly_operations
+            WHERE job_id = $1
+            LIMIT 1
+            """,
+            job_id,
+        )
+    return dict(row) if row is not None else None
 
 
 async def get_grile_target_sync_operation(
@@ -562,24 +729,45 @@ async def get_grile_target_sync_operation(
 
 async def get_job_status(job_id: str) -> JobResult:
     pool = await get_arq_pool()
+    if pool is None:
+        return JobResult(
+            job_id=job_id,
+            status=JobStatus.BACKEND_UNAVAILABLE,
+            error="Job backend unavailable",
+        )
     try:
         queue_name = SALES_IMPORT_QUEUE_NAME if job_id.startswith("sales-import:") else None
         job = Job(job_id, pool, _queue_name=queue_name) if queue_name else Job(job_id, pool)
-        status = await job.status()
-    except Exception:
-        return JobResult(job_id=job_id, status=JobStatus.NOT_FOUND)
+        arq_status = await job.status()
+    except ARQ_TRANSPORT_ERRORS:
+        return JobResult(
+            job_id=job_id,
+            status=JobStatus.UNKNOWN,
+            error="Job status could not be determined",
+        )
 
-    if status == ArqJobStatus.queued:
+    if arq_status == ArqJobStatus.queued:
         return JobResult(job_id=job_id, status=JobStatus.QUEUED)
-    if status == ArqJobStatus.in_progress:
+    if arq_status == ArqJobStatus.in_progress:
         return JobResult(job_id=job_id, status=JobStatus.IN_PROGRESS)
-    if status == ArqJobStatus.complete:
-        result_info = await job.result_info()
+    if arq_status == ArqJobStatus.complete:
+        try:
+            result_info = await job.result_info()
+        except ARQ_TRANSPORT_ERRORS:
+            return JobResult(
+                job_id=job_id,
+                status=JobStatus.UNKNOWN,
+                error="Job result could not be determined",
+            )
         if result_info and result_info.success:
             return JobResult(job_id=job_id, status=JobStatus.COMPLETE, result=result_info.result)
         error = str(result_info.result) if result_info else "Unknown error"
         return JobResult(job_id=job_id, status=JobStatus.COMPLETE, error=error)
-    if status == ArqJobStatus.not_found:
+    if arq_status == ArqJobStatus.not_found:
         return JobResult(job_id=job_id, status=JobStatus.NOT_FOUND)
 
-    return JobResult(job_id=job_id, status=JobStatus.QUEUED)
+    return JobResult(
+        job_id=job_id,
+        status=JobStatus.UNKNOWN,
+        error="Unknown job status",
+    )
