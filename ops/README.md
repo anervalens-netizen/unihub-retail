@@ -22,6 +22,14 @@ Run the sandbox without production access:
 ops/test-deploy-retail-artifact.sh
 ```
 
+## Evidență Gate 0 și P0
+
+Candidatul documentat este `f9c0b1efe15686bcda532d22528e6e2644925aec`. Gate 0 rămâne artifact -> deploy -> reverify -> rollback pe SHA identic; verificarea locală fără deploy se rulează cu `bash ops/test-deploy-retail-artifact.sh`. Approval-ul și deployul formal consumă numai `head_sha`, `SOURCE_SHA` și digestul `SHA256SUMS` ale aceluiași run CI.
+
+Pentru P0, migration manifest-ul este verificat înaintea restartului, iar recovery-ul este roll-forward sau rollback numai între manifeste identice. Nu se aplică Finance/TVA și nu se aplică salarii live din această cale: P&L effective-dated rămâne shadow-only, iar salariile rămân NO-GO până la HR.
+
+Dovezile de cod se păstrează împreună cu SHA-ul, manifestul și outputul testelor. Hosted CI, deploy production și mutațiile de date nu sunt revendicate de acest document dacă nu există un run ID și un audit handle.
+
 ## Artifactul CI manual
 
 Pentru un release formal, pornește manual workflowul `CI` doar de pe `main`.

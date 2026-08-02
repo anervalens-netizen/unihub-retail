@@ -14,10 +14,10 @@ salarii, P&L, raportarea vizitelor și interfața activă Grile.
 - regula canonică pentru multiplicitatea rândurilor de vânzare:
   [`docs/adr/004-sales-row-multiplicity.md`](docs/adr/004-sales-row-multiplicity.md);
 - instalare locală: [`LOCAL_SETUP.md`](LOCAL_SETUP.md);
-- audit tehnic și riscuri rămase:
+- audit tehnic istoric și riscuri de la release-ul v2.0.1:
   [`docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md`](docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md);
-- plan activ după `v2.0.1`:
-  [`docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md`](docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md);
+- plan activ 10/10 după v2.0.1:
+  [`docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md`](docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md);
 - plan activ de performanță și operativitate P0-P2:
   [`docs/PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md`](docs/PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md);
 - deploy privilegiat și rollback: [`ops/README.md`](ops/README.md).
@@ -82,6 +82,26 @@ repository sunt în `APP_ARCHITECTURE.md`.
 - bonurile promo calificate și cantitatea incentive sunt metrici distincte;
 - vizitele se grupează după snapshotul Team Leader al autorului.
 
+## Starea P0 la SHA-ul documentat
+
+Baseline-ul documentat este `f9c0b1efe15686bcda532d22528e6e2644925aec`.
+Lotul P0 introduce garduri de date și state machines pentru vânzări, shadow
+P&L/TVA și importul HR, împreună cu migrațiile aditive 032–034. Orice worker
+care pierde lease-ul este fencing-uit, iar datele sunt promovate numai după
+manifest, control totals, business hash și CAS.
+
+P&L/TVA este în prezent numai dry-run/shadow: registry-ul effective-dated
+folosește 1,19 înainte de 2025-08-01 și 1,21 de la 2025-08-01, dar nu există
+activare live sau apply Finance. Actualele Finance, estimările și scenariile
+Target finalizate nu se rescriu automat.
+
+Importul salarial este fail-closed și cere ambele firme, CNP validat,
+provenance și rollback tranzacțional. Importul live rămâne NO-GO până la
+reconcilierea HR a celor 8 grupuri; nu se șterg sau repară automat datele
+existente. Procedurile sunt în
+[`docs/RUNBOOK-import-pnl-tva-P0.md`](docs/RUNBOOK-import-pnl-tva-P0.md) și
+[`docs/RUNBOOK-import-salarii-HR.md`](docs/RUNBOOK-import-salarii-HR.md).
+
 ## Setup local
 
 Cerințe: Node.js 22, Python 3.12+ și Docker pentru testele PostgreSQL izolate.
@@ -107,12 +127,15 @@ registry sau rețeaua internă.
 Fluxul standard al importului de vânzări:
 
 1. validează antete, identificatori, valori numerice și metadate;
-2. rezervă în PostgreSQL un singur snapshot `processing` pentru lună;
-3. persistă coverage/diff agregat înainte de promovare;
-4. actualizează metadatele numai pentru magazinele prezente, fără scriere de
-   activitate;
+2. rezervă în PostgreSQL un singur snapshot `processing` cu token, owner și
+   lease;
+3. scrie generația în staging și persistă manifestul, coverage/diff și hashul
+   business înainte de promovare;
+4. claim-uiește atomic generația `validated` în `promoting`, cu fencing și CAS;
 5. înlocuiește snapshotul și reconstruiește `reporting_*` în aceeași operație;
-6. marchează snapshotul `completed` sau `failed`, fără stare parțială.
+6. păstrează generația precedentă pentru rollback și șterge spoolul numai după
+   stare terminală confirmată;
+7. marchează snapshotul `completed` sau `failed`, fără stare parțială.
 
 Interfața tolerează întreruperile temporare în verificarea jobului. Lipsa unei
 confirmări de rețea este afișată ca stare necunoscută, nu ca import eșuat; doar

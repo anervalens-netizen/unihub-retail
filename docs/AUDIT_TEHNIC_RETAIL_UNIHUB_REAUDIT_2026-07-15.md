@@ -1,5 +1,10 @@
 # AUDIT TEHNIC INDEPENDENT — UniHub Retail
 
+> HISTORICAL / SUPERSEDED — auditul descrie release-ul `964f6da` și nu este
+> backlog activ pentru baseline-ul `f9c0b1e`. Se păstrează immutable ca evidence;
+> statusul curent este în planul
+> [`PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md`](PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md).
+
 **Data auditului:** 2026-07-15
 **Repository:** `anervalens-netizen/unihub-retail`
 **Branch auditat:** `main`

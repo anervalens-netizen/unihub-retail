@@ -1,5 +1,10 @@
 # PLAN DE DEZVOLTARE — UniHub Retail, următoarea versiune
 
+> HISTORICAL / SUPERSEDED — acest plan este păstrat pentru trasabilitatea
+> release-ului `964f6da`. Planul activ este
+> [`PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md`](PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md),
+> adoptat la 2026-08-02.
+
 **Data:** 2026-07-15
 **Bază de cod reconciliată și verificată live:** `964f6da07ad9e4382070866275509f3be2b399a1`
 **Baseline live anterior programului:** `d08add17147d9f24b23642dbb1a0084708ff9307`

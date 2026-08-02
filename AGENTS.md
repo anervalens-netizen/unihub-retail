@@ -25,8 +25,9 @@ For promo, incentive, or contest work, read
 `docs/RUNBOOK-campanii-promo-incentive-concursuri.md`; for salary-grid work,
 read the focused salary documents under `docs/`.
 For the monthly official HR salary import, follow
-`docs/RUNBOOK-import-salarii-HR.md`; always dry-run, reconcile both companies,
-then apply and verify the live salary/read-model paths.
+`docs/RUNBOOK-import-salarii-HR.md`; always dry-run both companies, validate
+the manifest and reconcile HR before any apply. At the P0 baseline, live salary
+apply is NO-GO until the eight known groups are reconciled.
 
 ## Runtime
 
@@ -90,6 +91,23 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 - Shared Google API clients are not thread-safe. Build one service per worker thread and keep conservative concurrency.
 - The Retail ARQ worker serializes heavy jobs (`max_jobs=1`), waits up to 60
   seconds for an active job on SIGTERM, and must close both ARQ and DB pools.
+- Sales imports use Stage -> Validate -> Promote. A generation manifest contains
+  source/cutoff/control totals, site-day coverage and a business hash. Lease
+  loss fences the writer; promote and rollback use owner fencing and CAS.
+- A source or worker error must not replace the last good generation. Missing
+  source data is an explicit anomaly, never an implicit zero. The same source
+  hash and spool are reused for a retry.
+- P&L/TVA dry-run is scoped to (company, period), uses Decimal and
+  effective-dated rules, and records source/input/rule/model/output hashes.
+  Finance actuals, estimates and finalized Target scenarios are protected until
+  a separately approved live promotion.
+- Salary imports require exact 13-digit CNP plus checksum, reject blank or
+  conflicting identity data before writes, and persist source-line provenance.
+  The dry-run manifest must include both companies without CNP. Identity and
+  salary writes are one transaction; any fault rolls back the batch.
+- Never log or put CNP in API, metrics, manifests, diffs or handoff messages.
+- Documentation is updated after every P0 lot with the exact SHA, migration
+  manifest checksum, evidence commands and real limits.
 
 ## Business invariants
 

@@ -394,6 +394,26 @@ raman explicit partiale si nu sunt inventate. Procentele sub 90% sunt rosii,
 90–sub 100% portocalii si cel putin 100% verzi; targetul sau forecastul sub
 break-even sunt marcate ca anomalii rosii.
 
+## Contracte P0 la baseline-ul documentat
+
+Baseline-ul exact este `f9c0b1efe15686bcda532d22528e6e2644925aec`. Contractele de mai jos descriu numai codul integrat la acest SHA.
+
+### Import sales: Stage -> Validate -> Promote
+
+`processing` rezervă luna și lease-ul; `validated` persistă staging, manifest, coverage și business hash; `promoting` este claim-uit atomic prin owner fencing; `completed` publică generația prin CAS și păstrează pointerul anterior; `failed` închide lotul fără date parțiale. Un worker stale nu mai poate scrie, iar spoolul rămâne până la stare terminală confirmată. Rollbackul este o promovare auditabilă către generația anterioară, nu un delete neînregistrat.
+
+### P&L/TVA: shadow și protecție
+
+`shadow_store_pnl.py` capturează snapshot repeatable-read cu cutoff fix pe scope `(company, period)`, compară `legacy_v2` cu `effective_v3` și salvează source/input/rule/model/output hashes, `fiscal_delta` și `input_or_model_delta`. Stările shadow sunt `staged`, `promoted`, `superseded` și `rolled_back`; pointerul este CAS pentru review și rollback, nu este consumat de citirile runtime. Actualele Finance, estimările și Target finalizat nu sunt rescrise, iar apply effective VAT este blocat la P0.
+
+### Salarii: preflight -> dry-run -> apply controlat
+
+`import_salary_records.py` validează ambele companii, CNP exact 13 cifre plus checksum, conflicte de nume și provenance source-line înainte de write. Manifestul nu conține CNP; insertul de identitate și salary records este tranzacțional, iar faultul produce rollback total. Componentele distincte rămân permise pe source rows distincte și read model-ul agregă după `person_id`. Importul live este NO-GO până la reconcilierea HR a celor 8 grupuri; nu există reconciliere sau delete automat.
+
+### Evidence și recovery
+
+Verificarea P0 se leagă de SHA-ul de mai sus, manifestul `backend/db/migrations/manifest.json`, testele PostgreSQL/Valkey izolate și comenzile din runbookurile P0. Orice apply live financiar sau salarial cere pre-image, diff, control totals, backup verificat și aprobare separată; în lipsa lor se păstrează generația bună.
+
 ## Baze de date
 
 ### PostgreSQL `unihub`
@@ -469,6 +489,8 @@ companiei ramane identic cu Excel fara a atribui artificial diferenta unui RM
 sau magazin. Reconcilierea este acceptata numai daca venitul sumarului este cel
 putin egal cu detalierea; foile salvate cu un singur magazin selectat sunt
 respinse ca total consolidat.
+
+P0 nu activează încă această cale de aplicare: `estimate_store_pnl.py` rămâne legacy pentru citiri/estimări, iar normalizarea effective-dated este disponibilă numai în shadow. Aplicarea Finance/TVA live este blocată până la pre-image, diff, control totals și aprobare separată; actualele și scenariile Target finalizate rămân protejate.
 
 ### AI Forecast
 
@@ -646,6 +668,8 @@ consolideaza afisarea pe `locatie + company_name`. Aceasta evita duplicatele
 vizuale cauzate de contracte duble, part-time sau site_code-uri istorice pentru
 aceeasi locatie. Consolidarea este doar la nivel de query/read model si nu
 modifica randurile din `salary_records`.
+
+P0 salary boundary: parserul HR poate valida și construi manifestul, dar importul live este NO-GO până la reconcilierea HR. CNP rămâne privat, nu intră în API/log/manifest, iar conflictul de identitate sau provenance incomplet oprește batchul înainte de orice write.
 
 ### Grila de salarizare ASM (Management -> Manageri)
 

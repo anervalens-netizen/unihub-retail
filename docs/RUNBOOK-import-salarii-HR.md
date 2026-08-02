@@ -1,5 +1,7 @@
 # Import lunar salarii oficiale HR
 
+> P0 status la `f9c0b1efe15686bcda532d22528e6e2644925aec`: importul live este NO-GO până la reconcilierea HR a celor 8 grupuri. Acest runbook documentează gardurile implementate și nu autorizează mutații production.
+
 Acest flux publica salariile oficiale primite lunar de la HR in
 **Management -> Salarii** si actualizeaza, cand este necesar, legaturile folosite
 de sumarul salarial al agentului din Hub.
@@ -16,6 +18,12 @@ de sumarul salarial al agentului din Hub.
   singura firma ca inchidere lunara si nu se accepta un batch gol.
 - CNP-ul nu se afiseaza in rapoarte, loguri sau fisiere de verificare. El ramane
   exclusiv in limita privata de identitate salariala.
+
+## P0 gate și limite
+
+Dry-run-ul este obligatoriu pentru Mobiup și Mobicell. CNP-ul nu apare în manifest, loguri, exporturi sau handoff. Orice CNP gol, non-numeric, diferit de exact 13 cifre ori cu checksum invalid oprește batchul înaintea tranzacției.
+
+Același CNP cu nume normalizate diferite, conflict cu `salary_private.people` sau provenance incomplet produce zero scrieri. Componentele salariale sunt permise pe source rows distincte; nu se impune unicitate brută person-month fără decizia HR.
 
 ## 1. Preflight si dry-run
 
@@ -42,7 +50,15 @@ O locatie nemapata nu blocheaza totalul general, dar blocheaza atribuirea
 corecta pe manager/magazin. Corecteaza aliasul in importator numai dupa
 confirmarea locatiei din `stores`, apoi repeta dry-run-ul si testele importului.
 
-## 2. Import atomic
+Dry-run-ul trebuie să emită manifestul pentru ambele firme, cu row count, control total, locații nemapate și SHA-256 al fiecărui fișier, fără CNP. Pentru trasabilitate, fiecare rând aplicat are batch id, source file, sheet, source row și source SHA-256; cheia raw este provenance de sursă, nu unicitate person-month.
+
+Dovezi locale relevante: `backend/scripts/run_tests_isolated.sh -q`, `backend/venv/bin/mypy backend/ --ignore-missing-imports --explicit-package-bases` și testele `backend/tests/test_salary_import.py`. Acestea verifică fail-closed, zero-write la conflict și rollback tranzacțional; nu înlocuiesc reconcilierea HR live.
+
+## 2. Apply controlat — NO-GO la baseline P0
+
+Comanda de mai jos este calea tehnică existentă, dar nu se execută pe date live la baseline-ul P0. Devine eligibilă numai după reconcilierea HR documentată pentru cele 8 grupuri, backup/pre-image verificat, manifest aprobat și review independent.
+
+În caz de fault după inserarea identității, tranzacția revine integral; nu se repară manual parțial și nu se șterg duplicatele live fără sursă și aprobare.
 
 Doar dupa reconcilierea ambelor firme, repeta exact comanda cu `--apply`.
 Importatorul scrie identitatile private si `salary_records` in aceeasi
