@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
 from io import BytesIO
@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import re
 from typing import Any
+from uuid import uuid4
 
 import asyncpg
 import pandas as pd
@@ -17,6 +18,19 @@ import pandas as pd
 from services.reporting_refresh import (
     rebuild_agent_lifecycle_reporting,
     rebuild_reporting_month,
+)
+from services.sales_generation import (
+    build_sales_generation_manifest,
+    canonical_json_sha256,
+    compare_sales_generation_manifests,
+    fenced_generation_heartbeat,
+    stage_sales_generation_rows,
+)
+from services.sales_generation_flow import (
+    fail_sales_generation,
+    load_current_sales_manifest,
+    persist_validated_sales_generation,
+    promote_sales_generation,
 )
 
 SALES_COLUMNS = [
@@ -51,6 +65,11 @@ class ImportResult:
     filename: str
     is_month_final: bool
     coverage_report: dict[str, Any]
+    generation_state: str = "promoted"
+    generation_token: str | None = None
+    owner_id: str | None = None
+    manifest_sha256: str | None = None
+    manifest: dict[str, Any] | None = None
 
 
 class ImportAlreadyRunningError(RuntimeError):
@@ -60,9 +79,8 @@ class ImportAlreadyRunningError(RuntimeError):
 async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
     """Close leases left by a worker stop before ARQ retries queued imports.
 
-    The import transaction is bound to the worker connection, so PostgreSQL
-    rolls it back when that process stops. Only the reservation row survives
-    because it is intentionally committed before the destructive replacement.
+    Startup only closes an expired fenced lease (or a legacy reservation stale
+    for more than one hour); another worker may still be healthy.
     """
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -74,6 +92,10 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
                 heartbeat_at = now(),
                 finished_at = now()
             WHERE status = 'processing'
+              AND (
+                    (lease_until IS NOT NULL AND lease_until <= now())
+                    OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
+              )
             RETURNING id
             """
         )
@@ -427,7 +449,17 @@ async def reserve_snapshot(
     import_month: str,
     filename: str,
     rows_in_file: int,
+    *,
+    source_sha256: str | None = None,
+    cutoff_date: date | None = None,
+    generation_token: str | None = None,
+    owner_id: str | None = None,
+    lease_seconds: int = 2 * 60 * 60,
 ) -> int:
+    generation_token = generation_token or str(uuid4())
+    owner_id = owner_id or str(uuid4())
+    if lease_seconds < 60:
+        raise ValueError("Sales generation lease must be at least 60 seconds")
     async with conn.transaction():
         await conn.execute(
             """
@@ -439,17 +471,32 @@ async def reserve_snapshot(
                 finished_at = now()
             WHERE import_month = $1
               AND status = 'processing'
-              AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour'
+              AND (
+                    (lease_until IS NOT NULL AND lease_until <= now())
+                    OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
+              )
             """,
             import_month,
         )
+        head = await conn.fetchrow(
+            "SELECT snapshot_id, revision FROM sales_generation_heads WHERE import_month = $1",
+            import_month,
+        )
+        previous_snapshot_id = int(head["snapshot_id"]) if head is not None else None
+        expected_head_revision = int(head["revision"]) if head is not None else 0
         row = await conn.fetchrow(
             """
             INSERT INTO import_snapshots (
                 import_month, filename, rows_in_file, status,
-                is_month_final, heartbeat_at
+                is_month_final, heartbeat_at, source_sha256, cutoff_date,
+                generation_token, owner_id, lease_until,
+                expected_head_revision, previous_snapshot_id
             )
-            VALUES ($1, $2, $3, 'processing', $4, now())
+            VALUES (
+                $1, $2, $3, 'processing', $4, now(), $5, $6,
+                $7::uuid, $8::uuid, now() + make_interval(secs => $9),
+                $10, $11
+            )
             ON CONFLICT (import_month)
                 WHERE status = 'processing'
             DO NOTHING
@@ -459,6 +506,13 @@ async def reserve_snapshot(
             filename,
             rows_in_file,
             is_month_final(import_month),
+            source_sha256,
+            cutoff_date,
+            generation_token,
+            owner_id,
+            lease_seconds,
+            expected_head_revision,
+            previous_snapshot_id,
         )
     if row is None:
         raise ImportAlreadyRunningError(
@@ -588,64 +642,105 @@ async def import_sales_dataframe(
     conn: asyncpg.Connection,
     df: pd.DataFrame,
     filename: str,
+    *,
+    source_sha256: str | None = None,
+    cutoff_date: date | None = None,
+    stage_only: bool = False,
+    requested_by_sub: str = "direct-execution",
+    override_reason: str | None = None,
 ) -> ImportResult:
     validate_sales_dataframe(df)
     rows_in_file_total = len(df)
 
-    # Filter out non-ASM rows (TR locations, unallocated agents)
     df, rows_filtered = filter_asm_rows(df)
     if df.empty:
         raise ValueError("Fișierul nu conține rânduri cu ASM valid după filtrare.")
 
     import_month = detect_month(df)
     month_final = is_month_final(import_month)
+    declared_cutoff = cutoff_date or max(df["Data"])
+    digest = source_sha256 or canonical_json_sha256(
+        {
+            "filename": filename,
+            "rows": df[SALES_COLUMNS].astype(str).values.tolist(),
+        }
+    )
+    generation_token = str(uuid4())
+    owner_id = str(uuid4())
 
     snapshot_id = await reserve_snapshot(
         conn,
         import_month=import_month,
         filename=filename,
         rows_in_file=rows_in_file_total,
+        source_sha256=digest,
+        cutoff_date=declared_cutoff,
+        generation_token=generation_token,
+        owner_id=owner_id,
     )
+    validated = False
     try:
         coverage_report = await build_import_coverage_report(conn, df)
-        await record_coverage_report(conn, snapshot_id, coverage_report)
-        async with conn.transaction():
-            await upsert_stores(conn, df, import_month)
-            await replace_month_snapshot(conn, import_month)
-            rows_imported = await insert_transactions(conn, df, snapshot_id, import_month)
-            await rebuild_reporting_month(conn, import_month)
-            await rebuild_agent_lifecycle_reporting(conn)
-
-            # If month is final, mark it
-            await conn.execute(
-                """
-                UPDATE import_snapshots
-                SET status = 'completed',
-                    rows_imported = $2,
-                    is_month_final = $3,
-                    error_message = NULL,
-                    heartbeat_at = now(),
-                    finished_at = now()
-                WHERE id = $1
-                """,
-                snapshot_id,
-                rows_imported,
-                month_final,
-            )
-    except Exception as exc:
-        await conn.execute(
-            """
-            UPDATE import_snapshots
-            SET status = 'failed',
-                rows_imported = 0,
-                error_message = $2,
-                heartbeat_at = now(),
-                finished_at = now()
-            WHERE id = $1
-            """,
-            snapshot_id,
-            str(exc)[:500],
+        _, previous_manifest = await load_current_sales_manifest(conn, import_month)
+        manifest = build_sales_generation_manifest(
+            df,
+            source_sha256=digest,
+            cutoff_date=declared_cutoff,
+            rows_in_file=rows_in_file_total,
+            rows_filtered=rows_filtered,
         )
+        manifest["anomalies"] = compare_sales_generation_manifests(
+            manifest,
+            previous_manifest,
+        )
+        manifest["generation_state"] = "validated"
+        manifest_sha256 = canonical_json_sha256(manifest)
+        async with conn.transaction():
+            await fenced_generation_heartbeat(
+                conn,
+                snapshot_id=snapshot_id,
+                generation_token=generation_token,
+                owner_id=owner_id,
+                lease_seconds=2 * 60 * 60,
+            )
+            rows_imported = await stage_sales_generation_rows(
+                conn,
+                df,
+                snapshot_id=snapshot_id,
+                import_month=import_month,
+            )
+            await persist_validated_sales_generation(
+                conn,
+                snapshot_id=snapshot_id,
+                generation_token=generation_token,
+                owner_id=owner_id,
+                manifest=manifest,
+                manifest_sha256=manifest_sha256,
+                coverage_report=coverage_report,
+            )
+        validated = True
+        generation_state = "validated"
+        if not stage_only:
+            rows_imported, _ = await promote_sales_generation(
+                conn,
+                snapshot_id=snapshot_id,
+                generation_token=generation_token,
+                owner_id=owner_id,
+                expected_manifest_sha256=manifest_sha256,
+                requested_by_sub=requested_by_sub,
+                override_reason=override_reason,
+            )
+            generation_state = "promoted"
+            manifest = {**manifest, "generation_state": "promoted"}
+    except Exception as exc:
+        if not validated:
+            await fail_sales_generation(
+                conn,
+                snapshot_id=snapshot_id,
+                generation_token=generation_token,
+                owner_id=owner_id,
+                error=str(exc),
+            )
         raise
 
     return ImportResult(
@@ -659,6 +754,11 @@ async def import_sales_dataframe(
         filename=filename,
         is_month_final=month_final,
         coverage_report=coverage_report,
+        generation_state=generation_state,
+        generation_token=generation_token,
+        owner_id=owner_id,
+        manifest_sha256=manifest_sha256,
+        manifest=manifest,
     )
 
 
@@ -666,9 +766,27 @@ async def import_sales_file(
     conn: asyncpg.Connection,
     source: str | Path | bytes,
     filename: str,
+    *,
+    cutoff_date: date | None = None,
+    stage_only: bool = False,
+    requested_by_sub: str = "direct-execution",
+    override_reason: str | None = None,
 ) -> ImportResult:
+    if isinstance(source, bytes):
+        digest = sha256(source).hexdigest()
+    else:
+        digest = sha256(Path(source).read_bytes()).hexdigest()
     df = load_sales_dataframe(source)
-    return await import_sales_dataframe(conn, df, filename=filename)
+    return await import_sales_dataframe(
+        conn,
+        df,
+        filename=filename,
+        source_sha256=digest,
+        cutoff_date=cutoff_date,
+        stage_only=stage_only,
+        requested_by_sub=requested_by_sub,
+        override_reason=override_reason,
+    )
 
 
 def load_targets_dataframe(source: str | Path) -> list[dict[str, Any]]:

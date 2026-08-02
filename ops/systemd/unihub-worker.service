@@ -1,5 +1,5 @@
 [Unit]
-Description=UniHub Retail serialized sales import worker (arq)
+Description=UniHub Retail background job worker (arq)
 After=network-online.target docker.service mobiup-dwh-postgres.service
 Wants=network-online.target docker.service
 StartLimitIntervalSec=60
@@ -11,16 +11,16 @@ User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker
-Environment="RETAIL_WORKER_ROLE=imports"
+Environment="RETAIL_WORKER_ROLE=operations"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5
 TimeoutStartSec=120
-TimeoutStopSec=1860
+TimeoutStopSec=2460
 KillSignal=SIGTERM
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=unihub-import-worker
+SyslogIdentifier=unihub-worker
 
 ProtectSystem=strict
 ReadWritePaths=/opt/Mobiup
@@ -42,11 +42,11 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
 CapabilityBoundingSet=
 UMask=0077
-CPUWeight=350
-IOWeight=350
+CPUWeight=600
+IOWeight=600
 MemoryLow=256M
-MemoryHigh=2304M
-MemoryMax=3072M
+MemoryHigh=1536M
+MemoryMax=2304M
 MemorySwapMax=512M
 
 [Install]

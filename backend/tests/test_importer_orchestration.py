@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -30,6 +29,8 @@ class FakeConnection:
     def __init__(self) -> None:
         self.execute = AsyncMock()
         self.copy_records_to_table = AsyncMock()
+        self.fetchrow = AsyncMock()
+        self.fetchval = AsyncMock()
 
     def transaction(self) -> AsyncContext:
         return AsyncContext()
@@ -108,32 +109,25 @@ async def test_import_sales_dataframe_completes_filtered_snapshot(
 ) -> None:
     conn = FakeConnection()
     reserve = AsyncMock(return_value=42)
-    upsert = AsyncMock()
-    replace = AsyncMock()
-    insert = AsyncMock(return_value=2)
-    rebuild_month = AsyncMock()
-    rebuild_lifecycle = AsyncMock()
+    stage = AsyncMock(return_value=2)
+    heartbeat = AsyncMock()
+    persist = AsyncMock()
+    load_previous = AsyncMock(return_value=(None, None))
     coverage = {"incoming_store_count": 2, "store_activity_writes": 0}
     build_coverage = AsyncMock(return_value=coverage)
-    record_coverage = AsyncMock()
     monkeypatch.setattr(importer, "reserve_snapshot", reserve)
-    monkeypatch.setattr(importer, "upsert_stores", upsert)
-    monkeypatch.setattr(importer, "replace_month_snapshot", replace)
-    monkeypatch.setattr(importer, "insert_transactions", insert)
+    monkeypatch.setattr(importer, "load_current_sales_manifest", load_previous)
+    monkeypatch.setattr(importer, "fenced_generation_heartbeat", heartbeat)
+    monkeypatch.setattr(importer, "stage_sales_generation_rows", stage)
+    monkeypatch.setattr(importer, "persist_validated_sales_generation", persist)
     monkeypatch.setattr(importer, "build_import_coverage_report", build_coverage)
-    monkeypatch.setattr(importer, "record_coverage_report", record_coverage)
-    monkeypatch.setattr(importer, "rebuild_reporting_month", rebuild_month)
-    monkeypatch.setattr(
-        importer,
-        "rebuild_agent_lifecycle_reporting",
-        rebuild_lifecycle,
-    )
     monkeypatch.setattr(importer, "is_month_final", lambda month: True)
 
     result = await importer.import_sales_dataframe(
         conn,  # type: ignore[arg-type]
         sales_frame(),
         "sales.xlsx",
+        stage_only=True,
     )
 
     assert result.import_month == "2099-07"
@@ -145,25 +139,22 @@ async def test_import_sales_dataframe_completes_filtered_snapshot(
     assert result.snapshot_id == 42
     assert result.is_month_final is True
     assert result.coverage_report == coverage
-    reserve.assert_awaited_once_with(
-        conn,
-        import_month="2099-07",
-        filename="sales.xlsx",
-        rows_in_file=3,
-    )
-    insert_call = insert.await_args
-    assert insert_call is not None
-    inserted_frame = insert_call.args[1]
+    assert result.generation_state == "validated"
+    reserve_call = reserve.await_args
+    assert reserve_call is not None
+    assert reserve_call.kwargs["import_month"] == "2099-07"
+    assert reserve_call.kwargs["filename"] == "sales.xlsx"
+    assert reserve_call.kwargs["rows_in_file"] == 3
+    assert reserve_call.kwargs["cutoff_date"] == date(2099, 7, 2)
+    stage_call = stage.await_args
+    assert stage_call is not None
+    inserted_frame = stage_call.args[1]
     assert list(inserted_frame["SiteCode"]) == ["SITE01", "SITE02"]
-    rebuild_month.assert_awaited_once_with(conn, "2099-07")
-    rebuild_lifecycle.assert_awaited_once_with(conn)
+    assert stage_call.kwargs == {"snapshot_id": 42, "import_month": "2099-07"}
     build_coverage.assert_awaited_once()
-    record_coverage.assert_awaited_once_with(conn, 42, coverage)
-    completed_call = conn.execute.await_args
-    assert completed_call is not None
-    assert "status = 'completed'" in completed_call.args[0]
-    assert "finished_at = now()" in completed_call.args[0]
-    assert completed_call.args[1:] == (42, 2, True)
+    heartbeat.assert_awaited_once()
+    persist.assert_awaited_once()
+    conn.execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -173,18 +164,14 @@ async def test_import_sales_dataframe_records_truncated_failure(
     conn = FakeConnection()
     long_error = "x" * 600
     monkeypatch.setattr(importer, "reserve_snapshot", AsyncMock(return_value=77))
-    monkeypatch.setattr(importer, "upsert_stores", AsyncMock())
     monkeypatch.setattr(
         importer,
         "build_import_coverage_report",
         AsyncMock(return_value={"store_activity_writes": 0}),
     )
-    monkeypatch.setattr(importer, "record_coverage_report", AsyncMock())
-    monkeypatch.setattr(
-        importer,
-        "replace_month_snapshot",
-        AsyncMock(side_effect=RuntimeError(long_error)),
-    )
+    monkeypatch.setattr(importer, "load_current_sales_manifest", AsyncMock(return_value=(None, None)))
+    monkeypatch.setattr(importer, "fenced_generation_heartbeat", AsyncMock())
+    monkeypatch.setattr(importer, "stage_sales_generation_rows", AsyncMock(side_effect=RuntimeError(long_error)))
     monkeypatch.setattr(importer, "is_month_final", lambda month: False)
 
     with pytest.raises(RuntimeError, match="x{10}"):
@@ -194,12 +181,12 @@ async def test_import_sales_dataframe_records_truncated_failure(
             "broken.xlsx",
         )
 
-    failed_call = conn.execute.await_args
+    failed_call = conn.fetchval.await_args
     assert failed_call is not None
     assert "status = 'failed'" in failed_call.args[0]
     assert "finished_at = now()" in failed_call.args[0]
     assert failed_call.args[1] == 77
-    assert failed_call.args[2] == long_error[:500]
+    assert failed_call.args[4] == long_error[:500]
 
 
 @pytest.mark.asyncio
@@ -271,12 +258,21 @@ async def test_import_sales_file_delegates_loaded_dataframe(
 
     result = await importer.import_sales_file(
         conn,  # type: ignore[arg-type]
-        Path("sales.xlsx"),
+        b"excel-bytes",
         "sales.xlsx",
     )
 
     assert result == "result"
-    run_import.assert_awaited_once_with(conn, frame, filename="sales.xlsx")
+    run_import.assert_awaited_once_with(
+        conn,
+        frame,
+        filename="sales.xlsx",
+        source_sha256=importer.sha256(b"excel-bytes").hexdigest(),
+        cutoff_date=None,
+        stage_only=False,
+        requested_by_sub="direct-execution",
+        override_reason=None,
+    )
 
 
 @pytest.mark.asyncio

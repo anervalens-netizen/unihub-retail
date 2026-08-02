@@ -23,6 +23,7 @@ from repositories.grile import GrileRepository
 from services.grile_sheets import (
     analyze_grila,
     build_services,
+    close_services,
     fetch_grila,
     fetch_mod_time,
     get_credentials,
@@ -217,10 +218,14 @@ async def run_grile_check(
     # dimensionat la `concurrency`. Astfel max `concurrency` clienti, fiecare
     # folosit de un singur thread.
     _local = threading.local()
+    created_services: list[tuple[Any, Any]] = []
+    created_services_lock = threading.Lock()
 
     def _services() -> tuple[Any, Any]:
         if not hasattr(_local, "svc"):
             _local.svc = build_services()
+            with created_services_lock:
+                created_services.append(_local.svc)
         return _local.svc
 
     def _fetch_one(sid: str, template_version: str) -> tuple[list, str | None]:
@@ -280,6 +285,8 @@ async def run_grile_check(
         results = await asyncio.gather(*[process(s) for s in sheets], return_exceptions=False)
     finally:
         executor.shutdown(wait=True)
+        for service_pair in created_services:
+            close_services(*service_pair)
 
     ok = sum(1 for r in results if r == "ok")
     err = sum(1 for r in results if r == "error")
@@ -309,15 +316,20 @@ async def refresh_grile_store(
 
     def fetch_one() -> tuple[list[dict[str, Any]], str | None]:
         sheets_service, drive_service = build_services()
-        values = _retry_sync(
-            lambda: fetch_grila(
-                sheets_service,
-                sheet["sheet_id"],
-                sheet["template_version"],
+        try:
+            values = _retry_sync(
+                lambda: fetch_grila(
+                    sheets_service,
+                    sheet["sheet_id"],
+                    sheet["template_version"],
+                )
             )
-        )
-        modified = _retry_sync(lambda: fetch_mod_time(drive_service, sheet["sheet_id"]))
-        return values, modified
+            modified = _retry_sync(
+                lambda: fetch_mod_time(drive_service, sheet["sheet_id"])
+            )
+            return values, modified
+        finally:
+            close_services(sheets_service, drive_service)
 
     try:
         await asyncio.to_thread(get_credentials)

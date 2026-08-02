@@ -534,6 +534,21 @@ export interface ImportResponse {
   filename: string;
   is_month_final: boolean;
   coverage_report: ImportCoverageReport;
+  generation_state: 'validated' | 'promoted';
+  generation_token: string | null;
+  manifest_sha256: string | null;
+  manifest: SalesGenerationManifest | null;
+}
+
+export interface SalesGenerationManifest {
+  cutoff_date: string;
+  receipt_count: number;
+  total_value: string;
+  total_quantity: number;
+  business_sha256: string;
+  site_day_count: number;
+  anomalies: Array<{ code: string; blocking: boolean; message: string; count?: number }>;
+  generation_state: 'validated' | 'promoted';
 }
 
 export interface ImportJobStatus {

@@ -71,6 +71,23 @@ def build_services() -> tuple[Any, Any]:
     return sheets, drive
 
 
+def close_services(*services: Any) -> None:
+    """Close Google transports once the owning check has finished."""
+    closed: set[int] = set()
+    for service in services:
+        if service is None:
+            continue
+        close_target = service
+        close = getattr(close_target, "close", None)
+        if not callable(close):
+            close_target = getattr(service, "_http", None)
+            close = getattr(close_target, "close", None)
+        if not callable(close) or id(close_target) in closed:
+            continue
+        closed.add(id(close_target))
+        close()
+
+
 # ---------- helpers de parsare (portate din monitor/target_check) ----------
 
 def _to_number(value: Any) -> float | None:

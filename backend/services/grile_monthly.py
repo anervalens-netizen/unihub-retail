@@ -31,6 +31,7 @@ from repositories.grile_monthly_operations import (
     claim_reset_item as persist_reset_item_claim,
     ensure_reset_items as persist_reset_items,
     fail as persist_monthly_operation_failure,
+    mark_cancelled_uncertain as persist_cancelled_uncertain,
     finish as persist_monthly_operation_result,
     finish_reset_success as persist_reset_success,
     finish_reset_item as persist_reset_item_result,
@@ -527,6 +528,19 @@ async def fail_monthly_operation(
     error_message: str,
 ) -> bool:
     return await persist_monthly_operation_failure(
+        pool,
+        operation_id,
+        error_message=error_message,
+    )
+
+
+async def mark_monthly_operation_cancelled_uncertain(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    error_message: str,
+) -> bool:
+    return await persist_cancelled_uncertain(
         pool,
         operation_id,
         error_message=error_message,
@@ -1837,6 +1851,34 @@ async def _rollback_reset_entries(
     return not rollback_failed
 
 
+async def _rollback_reset_entries_cancel_safe(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    entries: list[StoreEntry],
+    sheets_svc: Any,
+    snapshots: dict[str, dict[str, Any]],
+) -> bool:
+    """Finish rollback after task cancellation; any second interruption is uncertain."""
+    current = asyncio.current_task()
+    if current is not None:
+        while current.cancelling():
+            current.uncancel()
+    rollback_task = asyncio.create_task(
+        _rollback_reset_entries(
+            pool,
+            operation_id=operation_id,
+            entries=entries,
+            sheets_svc=sheets_svc,
+            snapshots=snapshots,
+        )
+    )
+    try:
+        return await asyncio.shield(rollback_task)
+    except BaseException:  # cancellation or provider/DB failure leaves an uncertain checkpoint
+        return False
+
+
 async def _reset_month_execution(
     pool: asyncpg.Pool,
     closing_month: str,
@@ -2017,7 +2059,7 @@ async def _reset_month_execution(
                     raise MonthlyIntegrityError("backup_checkpoint_failed", "Backup checkpoint failed")
         if backup_artifacts:
             verify_artifacts({"artifacts": backup_artifacts}, root=OUTPUTS_DIR)
-    except Exception as exc:
+    except BaseException as exc:
         code = exc.code if isinstance(exc, MonthlyIntegrityError) else "reset_preflight_failed"
         failed = base_manifest(
             month=closing_month_key,
@@ -2095,9 +2137,11 @@ async def _reset_month_execution(
             )
             if not persisted:
                 raise MonthlyIntegrityError("reset_checkpoint_finish_failed", "Reset checkpoint finish failed")
-    except Exception as exc:
-        code = exc.code if isinstance(exc, MonthlyIntegrityError) else "reset_failed"
-        rollback_ok = await _rollback_reset_entries(
+    except BaseException as exc:
+        code = exc.code if isinstance(exc, MonthlyIntegrityError) else (
+            "reset_cancelled" if isinstance(exc, asyncio.CancelledError) else "reset_failed"
+        )
+        rollback_ok = await _rollback_reset_entries_cancel_safe(
             pool,
             operation_id=operation_id,
             entries=touched,
@@ -2124,7 +2168,7 @@ async def _reset_month_execution(
         raise MonthlyManifestError(status, "Reset failed and rollback was evaluated", failed) from exc
 
     async def rollback_after_commit_failure() -> dict[str, Any]:
-        rollback_ok = await _rollback_reset_entries(
+        rollback_ok = await _rollback_reset_entries_cancel_safe(
             pool,
             operation_id=operation_id,
             entries=touched,
@@ -2188,7 +2232,7 @@ async def _reset_month_execution(
             manifest=manifest,
             rollback=rollback_after_commit_failure,
         )
-    except Exception as exc:
+    except BaseException as exc:
         failed = await rollback_after_commit_failure()
         raise MonthlyManifestError(
             str(failed["status"]),
@@ -2391,6 +2435,35 @@ async def run_monthly_op(
                 manifest=exc.manifest,
                 error_code=exc.code,
             )
+    except asyncio.CancelledError:
+        current = asyncio.current_task()
+        if current is not None:
+            while current.cancelling():
+                current.uncancel()
+        status = "failed"
+        exit_code = -1
+        error_code = "monthly_operation_cancelled"
+        if operation_id is not None:
+            cancellation_status = "uncertain" if op == "reset" and not dry_run else "failed"
+            cancelled_manifest = base_manifest(
+                month=month,
+                operation=op,
+                requested_by_sub=requested_by_sub,
+                expected_stores=0,
+                expected_agents=0,
+                processed_stores=0,
+                processed_agents=0,
+                control_totals={},
+                artifacts=[],
+                errors=[error_code],
+                status=cancellation_status,
+            )
+            manifest_record = await persist_manifest_result(
+                pool,
+                operation_id=operation_id,
+                manifest=cancelled_manifest,
+                error_code=error_code,
+            )
     except Exception as exc:  # noqa: BLE001
         status = "failed"
         exit_code = -1
@@ -2462,13 +2535,13 @@ async def run_monthly_op(
                 )
                 result["manifest"] = public_manifest_payload(manifest_record)
                 finished = True
-            except Exception:  # noqa: BLE001 - rollback must run for every commit failure
+            except BaseException:  # cancellation also requires rollback before exit
                 rollback_manifest: dict[str, Any]
                 try:
                     if execution is None or execution.rollback is None:
                         raise RuntimeError("Reset rollback callback is unavailable")
                     rollback_manifest = await execution.rollback()
-                except Exception:  # noqa: BLE001 - persisted as uncertain below
+                except BaseException:  # persisted as uncertain below
                     rollback_manifest = base_manifest(
                         month=month,
                         operation="reset",

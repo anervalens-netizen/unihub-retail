@@ -12,6 +12,7 @@ import services.grile_monthly as grile_monthly
 from db.connection import close_db_pool, get_pool
 from repositories.grile_monthly_operations import (
     approve_manifest,
+    mark_cancelled_uncertain,
     finish_reset_success,
     persist_manifest_result,
 )
@@ -813,6 +814,64 @@ async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic
             "approved_status": "consumed",
             "approved_json_status": "consumed",
             "reset_manifest_status": "verified",
+        }
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+async def test_cancelled_operation_fences_completed_clear_as_uncertain() -> None:
+    month = "2098-11"
+    pool = await get_pool()
+    try:
+        await _cleanup(month)
+        async with pool.acquire() as conn:
+            operation_id = await conn.fetchval(
+                """
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, dry_run, status, requested_by_sub,
+                    started_at, heartbeat_at
+                ) VALUES ('reset', $1, false, 'running', 'test:cancel', now(), now())
+                RETURNING id
+                """,
+                month,
+            )
+            await conn.execute(
+                """
+                INSERT INTO grile_monthly_reset_items (
+                    operation_id, closing_month, next_month, site_code,
+                    sheet_id, company, store, status, ranges, completed_at
+                ) VALUES ($1, $2, '2098-12', 'CANCEL01', 'sheet-1',
+                          'Mobiup', 'Cancel Store', 'completed', '[]'::jsonb, now())
+                """,
+                operation_id,
+                month,
+            )
+
+        assert await mark_cancelled_uncertain(
+            pool,
+            int(operation_id),
+            error_message="cancelled before confirmation",
+        )
+
+        async with pool.acquire() as conn:
+            state = await conn.fetchrow(
+                """
+                SELECT o.status AS operation_status,
+                       i.status AS item_status,
+                       i.rollback_status,
+                       i.error_message
+                FROM grile_monthly_operations o
+                JOIN grile_monthly_reset_items i ON i.operation_id = o.id
+                WHERE o.id = $1
+                """,
+                operation_id,
+            )
+        assert dict(state) == {
+            "operation_status": "failed",
+            "item_status": "uncertain",
+            "rollback_status": "failed",
+            "error_message": "cancelled before confirmation",
         }
     finally:
         await _cleanup(month)

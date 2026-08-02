@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import zipfile
 from datetime import datetime, timezone
@@ -2309,3 +2310,86 @@ async def test_run_monthly_op_reports_lost_completion_lease(
 
     assert result["status"] == "failed"
     assert result["output"].endswith("operation_lease_lost")
+
+
+@pytest.mark.asyncio
+async def test_live_reset_cancelled_after_clear_completes_verified_rollback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    original_state = dict(service.state)
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
+    monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        grile,
+        "finish_reset_item",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+    rollback_checkpoint = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "record_reset_item_rollback", rollback_checkpoint)
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.reset_month(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            dry_run=False,
+            operation_id=13,
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            approved_manifest_id=31,
+        )
+
+    assert exc_info.value.code == "rolled_back"
+    assert "reset_cancelled" in exc_info.value.manifest["errors"]
+    assert service.state == original_state
+    rollback_checkpoint.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_live_reset_cancelled_with_unverified_restore_is_uncertain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(grile, "load_entries", AsyncMock(return_value=[entry()]))
+    patch_archive_prerequisite(monkeypatch, tmp_path, approved=True)
+    service = StatefulResetService()
+    monkeypatch.setattr(grile, "build_google_services", lambda: (service, object()))
+    monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
+    monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        grile,
+        "finish_reset_item",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+    monkeypatch.setattr(
+        grile,
+        "_restore_reset_snapshot",
+        MagicMock(side_effect=RuntimeError("provider unavailable")),
+    )
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=False))
+
+    with pytest.raises(grile.MonthlyManifestError) as exc_info:
+        await grile.reset_month(
+            MagicMock(),
+            "Iunie 2026",
+            "Iulie 2026",
+            dry_run=False,
+            operation_id=13,
+            closing_month_key="2026-06",
+            next_month_key="2026-07",
+            approved_manifest_id=31,
+        )
+
+    assert exc_info.value.code == "uncertain"
+    assert exc_info.value.manifest["status"] == "uncertain"

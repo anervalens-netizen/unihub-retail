@@ -552,6 +552,48 @@ async def fail(
     return row is not None
 
 
+
+async def mark_cancelled_uncertain(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    error_message: str,
+) -> bool:
+    """Fail a cancelled operation and fence every unconfirmed destructive item."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                UPDATE grile_monthly_reset_items
+                SET status = 'uncertain',
+                    rollback_status = CASE
+                        WHEN rollback_status = 'restored' THEN rollback_status
+                        ELSE 'failed'
+                    END,
+                    error_message = COALESCE(error_message, $2),
+                    updated_at = now()
+                WHERE operation_id = $1
+                  AND status IN ('running', 'completed')
+                  AND rollback_status IS DISTINCT FROM 'restored'
+                """,
+                operation_id,
+                error_message,
+            )
+            row = await conn.fetchrow(
+                """
+                UPDATE grile_monthly_operations
+                SET status = 'failed',
+                    error_message = $2,
+                    finished_at = now(),
+                    heartbeat_at = now()
+                WHERE id = $1 AND status IN ('queued', 'running')
+                RETURNING id
+                """,
+                operation_id,
+                error_message,
+            )
+    return row is not None
+
 async def get_manifest(
     pool: asyncpg.Pool,
     manifest_id: int,

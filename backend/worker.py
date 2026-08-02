@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
+import json
 import logging
 import os
 from typing import Any
 
-from arq.worker import create_worker
+from arq.worker import create_worker, func
 
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
@@ -15,6 +17,7 @@ from services.jobs import (
     get_valkey_settings,
     read_sales_import_spool_file,
     remove_sales_import_spool_file,
+    retain_sales_import_spool_file,
 )
 
 
@@ -28,11 +31,15 @@ async def import_sales_background(
     digest_or_filename: str,
     filename_or_request_id: str | None = None,
     request_id: str | None = None,
+    cutoff_date_iso: str | None = None,
+    requested_by_sub: str | None = None,
 ) -> dict:
     from dataclasses import asdict
     from services.importer import import_sales_file
+    from services.sales_generation_flow import attach_sales_generation_source
 
     spool_path: str | None = None
+    staged = False
     if isinstance(file_reference, bytes):
         # Compatibilitate pentru joburile publicate înainte de migrarea la
         # spool: bytes, filename, request_id.
@@ -48,6 +55,8 @@ async def import_sales_background(
         filename = filename_or_request_id
 
     token = bind_request_id(request_id) if request_id else None
+    cutoff = date.fromisoformat(cutoff_date_iso) if cutoff_date_iso else None
+    actor = requested_by_sub or "legacy-direct"
     try:
         if isinstance(file_reference, bytes):
             file_content = legacy_content
@@ -63,28 +72,153 @@ async def import_sales_background(
             from db.connection import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
-                result = await import_sales_file(conn, file_content, filename=filename)
+                result = await import_sales_file(
+                    conn,
+                    file_content,
+                    filename=filename,
+                    cutoff_date=cutoff,
+                    stage_only=True,
+                    requested_by_sub=actor,
+                )
+                staged = True
+                if spool_path is not None:
+                    assert result.generation_token is not None
+                    assert result.owner_id is not None
+                    await attach_sales_generation_source(
+                        conn,
+                        snapshot_id=result.snapshot_id,
+                        generation_token=result.generation_token,
+                        owner_id=result.owner_id,
+                        source_spool_path=spool_path,
+                    )
         else:
-            result = await import_sales_file(conn, file_content, filename=filename)
+            result = await import_sales_file(
+                conn,
+                file_content,
+                filename=filename,
+                cutoff_date=cutoff,
+                stage_only=True,
+                requested_by_sub=actor,
+            )
+            staged = True
+            if spool_path is not None:
+                assert result.generation_token is not None
+                assert result.owner_id is not None
+                await attach_sales_generation_source(
+                    conn,
+                    snapshot_id=result.snapshot_id,
+                    generation_token=result.generation_token,
+                    owner_id=result.owner_id,
+                    source_spool_path=spool_path,
+                )
+        return asdict(result)
+    finally:
+        if spool_path is not None and not staged:
+            await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+        if token is not None:
+            reset_request_id(token)
 
-        from routers.filters import clear_filter_options_cache
-        from services.retail_metrics import update_business_metrics
 
-        clear_filter_options_cache()
+async def promote_sales_background(
+    ctx: dict,
+    snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
+    manifest_sha256: str,
+    requested_by_sub: str,
+    override_reason: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    from services.sales_generation_flow import promote_sales_generation
+
+    token = bind_request_id(request_id) if request_id else None
+    try:
         pool = ctx.get("db_pool")
         if pool is None:
             from db.connection import get_pool
             pool = await get_pool()
-        await update_business_metrics(pool)
+        async with pool.acquire() as conn:
+            source_spool_path = await conn.fetchval(
+                "SELECT source_spool_path FROM import_snapshots WHERE id = $1",
+                snapshot_id,
+            )
+            rows_imported, _ = await promote_sales_generation(
+                conn,
+                snapshot_id=snapshot_id,
+                generation_token=generation_token,
+                owner_id=owner_id,
+                expected_manifest_sha256=manifest_sha256,
+                requested_by_sub=requested_by_sub,
+                override_reason=override_reason,
+            )
+            row = await conn.fetchrow(
+                """
+                SELECT import_month, filename, rows_in_file, rows_imported,
+                       is_month_final, coverage_report, manifest
+                FROM import_snapshots
+                WHERE id = $1 AND status = 'completed'
+                """,
+                snapshot_id,
+            )
+            if row is None:
+                raise RuntimeError("Promoted sales generation cannot be read back")
+            import_month = str(row["import_month"])
+            if source_spool_path:
+                try:
+                    retained_path = await asyncio.to_thread(
+                        retain_sales_import_spool_file,
+                        str(source_spool_path),
+                        import_month=import_month,
+                        snapshot_id=snapshot_id,
+                    )
+                    await conn.execute(
+                        """
+                        UPDATE import_snapshots
+                        SET source_spool_path = $4
+                        WHERE id = $1
+                          AND generation_token = $2::uuid
+                          AND owner_id = $3::uuid
+                          AND status = 'completed'
+                        """,
+                        snapshot_id,
+                        generation_token,
+                        owner_id,
+                        str(retained_path),
+                    )
+                except Exception:
+                    logger.exception("Failed to retain terminal sales source snapshot=%s", snapshot_id)
 
-        # Best-effort: dupa import reusit + reporting rebuild (in tranzactia din
-        # import_sales_file), declanseaza verificarea grilelor. Nu propaga erori.
+        from routers.filters import clear_filter_options_cache
         from services.imports import trigger_grile_check_after_import
-        await trigger_grile_check_after_import(result.import_month, result.snapshot_id)
-        return asdict(result)
+        from services.retail_metrics import update_business_metrics
+
+        clear_filter_options_cache()
+        await update_business_metrics(pool)
+        await trigger_grile_check_after_import(import_month, snapshot_id)
+        manifest_value = row["manifest"]
+        if isinstance(manifest_value, str):
+            manifest_value = json.loads(manifest_value)
+        coverage_value = row["coverage_report"]
+        if isinstance(coverage_value, str):
+            coverage_value = json.loads(coverage_value)
+        manifest = dict(manifest_value or {})
+        return {
+            "import_month": import_month,
+            "rows_in_file": int(row["rows_in_file"] or 0),
+            "rows_imported": rows_imported,
+            "rows_filtered": int(manifest.get("rows_filtered", 0)),
+            "store_count": int(manifest.get("store_count", 0)),
+            "agent_count": int(manifest.get("agent_count", 0)),
+            "snapshot_id": snapshot_id,
+            "filename": str(row["filename"]),
+            "is_month_final": bool(row["is_month_final"]),
+            "coverage_report": dict(coverage_value or {}),
+            "generation_state": "promoted",
+            "generation_token": generation_token,
+            "manifest_sha256": manifest_sha256,
+            "manifest": manifest,
+        }
     finally:
-        if spool_path is not None:
-            await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
         if token is not None:
             reset_request_id(token)
 
@@ -210,10 +344,42 @@ async def grile_monthly_background(
 
     token = bind_request_id(request_id) if request_id else None
     try:
-        from services.grile_monthly import fail_monthly_operation, run_monthly_op
+        from services.grile_monthly import (
+            fail_monthly_operation,
+            mark_monthly_operation_cancelled_uncertain,
+            run_monthly_op,
+        )
 
         try:
             return await run_monthly_op(operation_id=persisted_operation_id)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None:
+                while current.cancelling():
+                    current.uncancel()
+            pool = ctx.get("db_pool")
+            if pool is None:
+                from db.connection import get_pool
+
+                pool = await get_pool()
+            cleanup_task = asyncio.create_task(
+                mark_monthly_operation_cancelled_uncertain(
+                    pool,
+                    persisted_operation_id,
+                    error_message=(
+                        "Operatia lunara Grile a fost anulata; "
+                        "efectele destructive neconfirmate sunt uncertain"
+                    ),
+                )
+            )
+            try:
+                await asyncio.shield(cleanup_task)
+            except BaseException:  # process shutdown may interrupt even the fallback checkpoint
+                logger.exception(
+                    "Could not persist cancelled Grile operation operation_id=%s",
+                    persisted_operation_id,
+                )
+            raise
         except Exception:
             pool = ctx.get("db_pool")
             if pool is None:
@@ -353,14 +519,15 @@ def main() -> None:
     if worker_role not in {"operations", "imports"}:
         raise RuntimeError("RETAIL_WORKER_ROLE must be operations or imports")
     functions = (
-        [import_sales_background]
+        [import_sales_background, promote_sales_background]
         if worker_role == "imports"
         else [
             # Păstrat temporar și aici pentru joburile legacy publicate în
             # coada implicită înainte de separarea cozilor.
             import_sales_background,
+            promote_sales_background,
             grile_check_background,
-            grile_monthly_background,
+            func(grile_monthly_background, timeout=2400, max_tries=1),
             grile_agent_targets_background,
         ]
     )
@@ -369,7 +536,7 @@ def main() -> None:
         "functions": functions,
         "on_startup": startup,
         "on_shutdown": shutdown,
-        "job_completion_wait": 60,
+        "job_completion_wait": 1800 if worker_role == "imports" else 2400,
         "max_jobs": 1,
         "job_timeout": 1800,
         "keep_result": 3600,

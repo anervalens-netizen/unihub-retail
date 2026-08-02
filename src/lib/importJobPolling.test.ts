@@ -24,6 +24,10 @@ const complete: ImportJobStatus = {
     filename: 'sales.xlsx',
     is_month_final: false,
     coverage_report: {},
+    generation_state: 'promoted',
+    generation_token: null,
+    manifest_sha256: null,
+    manifest: null,
   },
 };
 

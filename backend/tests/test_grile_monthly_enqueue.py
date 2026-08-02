@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock
@@ -275,3 +276,33 @@ async def test_monthly_worker_rejects_legacy_payload_without_reservation_id(
         )
 
     run.assert_not_awaited()
+
+
+async def test_monthly_worker_sigterm_marks_unconfirmed_reset_uncertain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = AsyncMock(side_effect=asyncio.CancelledError())
+    mark_uncertain = AsyncMock(return_value=True)
+    db_pool = object()
+    monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
+    monkeypatch.setattr(
+        grile_monthly,
+        "mark_monthly_operation_cancelled_uncertain",
+        mark_uncertain,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await worker.grile_monthly_background(
+            {"db_pool": db_pool},
+            operation_id=54,
+            request_id=None,
+        )
+
+    mark_uncertain.assert_awaited_once_with(
+        db_pool,
+        54,
+        error_message=(
+            "Operatia lunara Grile a fost anulata; "
+            "efectele destructive neconfirmate sunt uncertain"
+        ),
+    )

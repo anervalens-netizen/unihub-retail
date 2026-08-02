@@ -142,6 +142,7 @@ def test_store_refresh_detects_unchanged_content_without_mutating_full_run(monke
         {"values": []},
     ]
     persisted: list[dict] = []
+    closed: list[object] = []
 
     class Repository:
         def __init__(self, _pool) -> None:
@@ -167,6 +168,7 @@ def test_store_refresh_detects_unchanged_content_without_mutating_full_run(monke
     monkeypatch.setattr(grile, "GrileRepository", Repository)
     monkeypatch.setattr(grile, "get_credentials", lambda: object())
     monkeypatch.setattr(grile, "build_services", lambda: (object(), object()))
+    monkeypatch.setattr(grile, "close_services", lambda *services: closed.extend(services))
     monkeypatch.setattr(grile, "fetch_grila", lambda *_args: values)
     monkeypatch.setattr(grile, "fetch_mod_time", lambda *_args: None)
 
@@ -183,3 +185,4 @@ def test_store_refresh_detects_unchanged_content_without_mutating_full_run(monke
     assert len(persisted) == 1
     assert persisted[0]["month"] == "2026-07"
     assert persisted[0]["checked_by_sub"] == "subject"
+    assert len(closed) == 2

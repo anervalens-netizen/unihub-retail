@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 CNP_WEIGHTS = (2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9)
 REQUIRED_COMPANIES = ("Mobiup", "Mobicell")
@@ -133,6 +134,7 @@ class SalaryRecord:
     site_code: str | None
     locatie: str
     source_file: str = ""
+    source_sheet: str = "0"
     source_row: int | None = None
     source_sha256: str = ""
 
@@ -241,6 +243,7 @@ def parse_file(
                 site_code=site_code,
                 locatie=locatie,
                 source_file=source_name,
+                source_sheet="0",
                 source_row=source_row,
                 source_sha256=source_digest,
             )
@@ -300,17 +303,92 @@ def build_dry_run_manifest(
     }
 
 
-async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) -> None:
+async def insert_records(
+    conn: asyncpg.Connection,
+    records: list[SalaryRecord],
+    *,
+    manifest: dict[str, Any] | None = None,
+    applied_by: str = "test:salary-import",
+) -> None:
     if not records:
         raise ValueError("Nu exista randuri valide de importat.")
     validate_records(records)
+    if len({(record.year, record.month) for record in records}) != 1:
+        raise ValueError("Batchul salarial trebuie sa contina o singura perioada")
+    if not applied_by.strip():
+        raise ValueError("applied_by este obligatoriu")
+    for record in records:
+        if (
+            not record.source_file
+            or not record.source_sheet
+            or record.source_row is None
+            or not re.fullmatch(r"[0-9a-f]{64}", record.source_sha256)
+        ):
+            raise ValueError("Provenance salariala incompleta; batchul nu poate fi aplicat")
+
     person_id_key = get_salary_person_id_key()
     identified_records = [
         (record, make_salary_person_id(record.cnp, record.full_name, person_id_key))
         for record in records
     ]
+    batch_id = str(uuid4())
+    if manifest is None:
+        sources = []
+        for company_name in sorted({record.company_name for record in records}):
+            company_records = [record for record in records if record.company_name == company_name]
+            sources.append(
+                {
+                    "company_name": company_name,
+                    "source_file": company_records[0].source_file,
+                    "source_sha256": company_records[0].source_sha256,
+                    "row_count": len(company_records),
+                    "control_total": f"{sum((item.total_salary for item in company_records), Decimal('0')):.2f}",
+                }
+            )
+        manifest = {
+            "manifest_version": 1,
+            "year": records[0].year,
+            "month": records[0].month,
+            "companies": sources,
+            "row_count": len(records),
+            "control_total": f"{sum((item.total_salary for item in records), Decimal('0')):.2f}",
+        }
+    manifest_json = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    manifest_sha256 = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
 
     async with conn.transaction():
+        existing_people = await conn.fetch(
+            """
+            SELECT person_id, normalized_name
+            FROM salary_private.people
+            WHERE person_id = ANY($1::text[])
+            """,
+            [person_id for _, person_id in identified_records],
+        )
+        existing_names = {
+            str(row["person_id"]): normalize_text(row["normalized_name"])
+            for row in existing_people
+        }
+        if any(
+            person_id in existing_names
+            and existing_names[person_id] != normalize_text(record.full_name)
+            for record, person_id in identified_records
+        ):
+            raise ValueError("Conflict identitate cu registrul existent; zero scrieri")
+
+        await conn.execute(
+            """
+            INSERT INTO salary_import_batches (
+                batch_id, year, month, status, manifest, manifest_sha256, applied_by
+            ) VALUES ($1::uuid, $2, $3, 'applied', $4::jsonb, $5, $6)
+            """,
+            batch_id,
+            records[0].year,
+            records[0].month,
+            manifest_json,
+            manifest_sha256,
+            applied_by.strip(),
+        )
         await conn.executemany(
             """
             INSERT INTO salary_private.people (
@@ -330,9 +408,9 @@ async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) 
             """
             INSERT INTO salary_records (
                 year, month, full_name, cnp, total_salary, company_name, site_code, locatie,
-                person_id
+                person_id, import_batch_id, source_file, source_sheet, source_row, source_sha256
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid, $11, $12, $13, $14)
             """,
             [
                 (
@@ -345,6 +423,11 @@ async def insert_records(conn: asyncpg.Connection, records: list[SalaryRecord]) 
                     r.site_code,
                     r.locatie,
                     person_id,
+                    batch_id,
+                    r.source_file,
+                    r.source_sheet,
+                    r.source_row,
+                    r.source_sha256,
                 )
                 for r, person_id in identified_records
             ],
@@ -372,6 +455,7 @@ async def main() -> None:
     parser.add_argument("--mobiup-file", type=Path, required=True)
     parser.add_argument("--mobicell-file", type=Path, required=True)
     parser.add_argument("--apply", action="store_true", help="Scrie in DB. Fara flag ruleaza dry-run.")
+    parser.add_argument("--applied-by", required=True, help="Identitatea operatorului pentru manifestul auditabil.")
     args = parser.parse_args()
 
     db_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
@@ -435,7 +519,7 @@ async def main() -> None:
             raise ValueError("Batch HR incomplet: ambele firme sunt obligatorii")
         if not records:
             raise ValueError("Nu exista randuri valide de importat.")
-        await insert_records(conn, records)
+        await insert_records(conn, records, manifest=manifest, applied_by=args.applied_by)
         print(f"Import finalizat pentru {args.year}-{args.month:02d}: {len(records)} randuri.")
     finally:
         await conn.close()

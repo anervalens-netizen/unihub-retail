@@ -94,6 +94,31 @@ def remove_sales_import_spool_file(path: str | Path) -> None:
     candidate.unlink(missing_ok=True)
 
 
+def retain_sales_import_spool_file(
+    path: str | Path,
+    *,
+    import_month: str,
+    snapshot_id: int,
+) -> Path:
+    candidate = Path(path).resolve()
+    spool_dir = get_sales_import_spool_dir()
+    if not candidate.is_relative_to(spool_dir):
+        raise ValueError("Sales import spool path escapes the configured directory")
+    retained_dir = spool_dir / "retained" / import_month
+    retained_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination = retained_dir / f"{snapshot_id}-{candidate.stem}.source"
+    candidate.replace(destination)
+    destination.chmod(0o600)
+    retained = sorted(
+        (item for item in retained_dir.glob("*.source") if item.is_file()),
+        key=lambda item: item.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for expired in retained[2:]:
+        expired.unlink(missing_ok=True)
+    return destination
+
+
 def read_sales_import_spool_file(path: str, expected_digest: str) -> bytes:
     candidate = Path(path).resolve()
     spool_dir = get_sales_import_spool_dir()
@@ -163,10 +188,19 @@ async def close_arq_pool() -> None:
         _arq_pool = None
 
 
-async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
+async def enqueue_sales_import(
+    file_content: bytes,
+    filename: str,
+    *,
+    cutoff_date: str | None = None,
+    requested_by_sub: str = "legacy-direct",
+) -> Job:
     pool = await get_arq_pool()
     digest = sha256(file_content).hexdigest()
-    job_id = f"sales-import:{digest}"
+    request_digest = sha256(
+        f"{digest}:{cutoff_date or 'detected'}".encode("utf-8")
+    ).hexdigest()
+    job_id = f"sales-import:{request_digest}"
     spool_path = await asyncio.to_thread(_stage_sales_import, file_content, digest)
     enqueue_args = (
         "import_sales_background",
@@ -174,6 +208,8 @@ async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
         digest,
         filename,
         get_request_id(),
+        cutoff_date,
+        requested_by_sub,
     )
     try:
         job = await pool.enqueue_job(
@@ -201,7 +237,8 @@ async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
         if existing_status == ArqJobStatus.complete:
             info = await existing.result_info()
             if info and info.success:
-                await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+                # A validated generation is not terminal. Its exact source is
+                # retained until promote/rollback confirms a terminal state.
                 return existing
             await pool.delete(result_key_prefix + job_id)
             job = await pool.enqueue_job(
@@ -214,6 +251,53 @@ async def enqueue_sales_import(file_content: bytes, filename: str) -> Job:
         await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
         raise RuntimeError("Failed to enqueue import job")
     return job
+
+
+async def enqueue_sales_promotion(
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
+    manifest_sha256: str,
+    requested_by_sub: str,
+    override_reason: str | None,
+) -> Job:
+    pool = await get_arq_pool()
+    job_id = f"sales-promote:{snapshot_id}:{manifest_sha256}"
+    enqueue_args = (
+        "promote_sales_background",
+        snapshot_id,
+        generation_token,
+        owner_id,
+        manifest_sha256,
+        requested_by_sub,
+        override_reason,
+        get_request_id(),
+    )
+    job = await pool.enqueue_job(
+        *enqueue_args,
+        _job_id=job_id,
+        _queue_name=SALES_IMPORT_QUEUE_NAME,
+    )
+    if job is not None:
+        return job
+    existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
+    existing_status = await existing.status()
+    if existing_status in {
+        ArqJobStatus.queued,
+        ArqJobStatus.in_progress,
+        ArqJobStatus.complete,
+    }:
+        return existing
+    await pool.delete(result_key_prefix + job_id)
+    replacement = await pool.enqueue_job(
+        *enqueue_args,
+        _job_id=job_id,
+        _queue_name=SALES_IMPORT_QUEUE_NAME,
+    )
+    if replacement is None:
+        raise RuntimeError("Failed to enqueue sales promotion job")
+    return replacement
 
 
 async def enqueue_grile_check(

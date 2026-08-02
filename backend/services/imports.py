@@ -8,16 +8,34 @@ import json
 from datetime import date
 from io import BytesIO
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from fastapi import UploadFile
 import pandas as pd
 
-from models import ImportHistoryEntry, ImportJobStatus, ImportResponse, PromoActualImportResponse
+from models import (
+    ImportHistoryEntry,
+    ImportJobStatus,
+    ImportResponse,
+    PromoActualImportResponse,
+    SalesGenerationPromotionRequest,
+)
 from repositories.imports import ImportsRepository
 from services.dashboard_specials import get_special_cards_config_path, month_overlaps_period
-from services.jobs import JobStatus, enqueue_grile_check, enqueue_sales_import, get_job_status
+from services.jobs import (
+    JobStatus,
+    enqueue_grile_check,
+    enqueue_sales_import,
+    enqueue_sales_promotion,
+    get_job_status,
+)
 from services.product_lists import get_data_dir, normalize_column_name
+from services.sales_generation import SalesGenerationConflictError
+from services.sales_generation_flow import (
+    claim_validated_sales_generation,
+    restore_sales_generation_claim,
+)
 import asyncpg
 
 logger = logging.getLogger(__name__)
@@ -58,7 +76,13 @@ class ImportsService:
         self.repo = repo
         self.pool = pool
 
-    async def import_sales(self, file: UploadFile) -> ImportJobStatus:
+    async def import_sales(
+        self,
+        file: UploadFile,
+        *,
+        cutoff_date: date | None = None,
+        requested_by_sub: str = "legacy-direct",
+    ) -> ImportJobStatus:
         if not file.filename:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fișier invalid")
         if Path(file.filename).suffix.casefold() not in ALLOWED_SALES_EXTENSIONS:
@@ -82,7 +106,72 @@ class ImportsService:
                 detail="Fisierul este gol",
             )
 
-        job = await enqueue_sales_import(content, filename=file.filename)
+        if cutoff_date is None and requested_by_sub == "legacy-direct":
+            job = await enqueue_sales_import(content, filename=file.filename)
+        else:
+            job = await enqueue_sales_import(
+                content,
+                filename=file.filename,
+                cutoff_date=cutoff_date.isoformat() if cutoff_date else None,
+                requested_by_sub=requested_by_sub,
+            )
+        job_status = await get_job_status(job.job_id)
+        return ImportJobStatus(
+            job_id=job.job_id,
+            status=job_status.status.value,
+            result=ImportResponse(**job_status.result) if job_status.result else None,
+            error=job_status.error,
+        )
+
+    async def promote_sales_generation(
+        self,
+        *,
+        snapshot_id: int,
+        request: SalesGenerationPromotionRequest,
+        requested_by_sub: str,
+    ) -> ImportJobStatus:
+        new_owner_id = str(uuid4())
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    previous_owner_id = await claim_validated_sales_generation(
+                        conn,
+                        snapshot_id=snapshot_id,
+                        generation_token=request.generation_token,
+                        expected_manifest_sha256=request.manifest_sha256,
+                        new_owner_id=new_owner_id,
+                    )
+        except SalesGenerationConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+        try:
+            job = await enqueue_sales_promotion(
+                snapshot_id=snapshot_id,
+                generation_token=request.generation_token,
+                owner_id=new_owner_id,
+                manifest_sha256=request.manifest_sha256,
+                requested_by_sub=requested_by_sub,
+                override_reason=request.override_reason,
+            )
+        except Exception:
+            try:
+                async with self.pool.acquire() as conn:
+                    async with conn.transaction():
+                        await restore_sales_generation_claim(
+                            conn,
+                            snapshot_id=snapshot_id,
+                            generation_token=request.generation_token,
+                            current_owner_id=new_owner_id,
+                            previous_owner_id=previous_owner_id,
+                        )
+            except Exception:
+                logger.exception(
+                    "Failed to restore sales generation claim snapshot=%s",
+                    snapshot_id,
+                )
+            raise
         job_status = await get_job_status(job.job_id)
         return ImportJobStatus(
             job_id=job.job_id,

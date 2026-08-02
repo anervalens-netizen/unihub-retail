@@ -34,9 +34,9 @@ def make_record(
     cnp: str = CNP_A,
     company_name: str = "Mobiup",
     total_salary: str = "3000.00",
-    source_file: str = "",
-    source_row: int | None = None,
-    source_sha256: str = "",
+    source_file: str = "salary.xlsx",
+    source_row: int | None = 2,
+    source_sha256: str = "a" * 64,
 ) -> SalaryRecord:
     return SalaryRecord(
         year=2099,
@@ -218,6 +218,9 @@ class FaultAfterIdentityInsert:
     def transaction(self) -> object:
         return self.conn.transaction()  # type: ignore[attr-defined]
 
+    async def fetch(self, query: str, *args: object) -> object:
+        return await self.conn.fetch(query, *args)  # type: ignore[attr-defined]
+
     async def executemany(self, query: str, args: object) -> None:
         self.calls += 1
         await self.conn.executemany(query, args)  # type: ignore[attr-defined]
@@ -317,6 +320,9 @@ async def test_salary_import_replaces_only_selected_month_and_companies(
                 company_name="Mobiup",
                 site_code=None,
                 locatie="Test",
+                source_file="mobiup.xlsx",
+                source_row=2,
+                source_sha256="c" * 64,
             )
             async with conn.transaction():
                 await insert_records(conn, [replacement])
@@ -344,4 +350,87 @@ async def test_salary_import_replaces_only_selected_month_and_companies(
                 "DELETE FROM salary_private.people WHERE person_id = ANY($1::text[])",
                 [old_mobiup_id, kept_mobicell_id],
             )
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_salary_components_persist_by_source_row_and_aggregate_by_person(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", TEST_PERSON_ID_KEY)
+    person_id = make_salary_person_id(CNP_A, "Agent Test", TEST_PERSON_ID_KEY)
+    first = replace(make_record(cnp=CNP_A), month=8, source_row=2)
+    second = replace(first, source_row=3, total_salary=Decimal("1250.00"))
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 8")
+            await conn.execute("DELETE FROM salary_private.people WHERE person_id = $1", person_id)
+            await insert_records(conn, [first, second], applied_by="test:components")
+            result = await conn.fetchrow(
+                """
+                SELECT COUNT(*)::integer AS component_count,
+                       SUM(total_salary)::numeric AS total_salary,
+                       COUNT(DISTINCT person_id)::integer AS person_count
+                FROM salary_records
+                WHERE year = 2099 AND month = 8 AND company_name = 'Mobiup'
+                  AND person_id = $1
+                """,
+                person_id,
+            )
+            assert result is not None
+            assert (result["component_count"], result["total_salary"], result["person_count"]) == (
+                2,
+                Decimal("4250.00"),
+                1,
+            )
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 8")
+            await conn.execute("DELETE FROM salary_import_batches WHERE year = 2099 AND month = 8")
+            await conn.execute("DELETE FROM salary_private.people WHERE person_id = $1", person_id)
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_salary_existing_identity_name_conflict_has_zero_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", TEST_PERSON_ID_KEY)
+    person_id = make_salary_person_id(CNP_B, "Alt Nume", TEST_PERSON_ID_KEY)
+    record = replace(make_record(cnp=CNP_B), month=9, source_sha256="b" * 64)
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 9")
+            await conn.execute("DELETE FROM salary_private.people WHERE person_id = $1", person_id)
+            await conn.execute(
+                """
+                INSERT INTO salary_private.people (person_id, cnp, normalized_name, identity_source)
+                VALUES ($1, $2, 'alt nume', 'cnp')
+                """,
+                person_id,
+                CNP_B,
+            )
+            with pytest.raises(ValueError, match="zero scrieri"):
+                await insert_records(conn, [record], applied_by="test:conflict")
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM salary_records WHERE year = 2099 AND month = 9"
+            ) == 0
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM salary_import_batches WHERE year = 2099 AND month = 9"
+            ) == 0
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 9")
+            await conn.execute("DELETE FROM salary_import_batches WHERE year = 2099 AND month = 9")
+            await conn.execute("DELETE FROM salary_private.people WHERE person_id = $1", person_id)
         await close_db_pool()

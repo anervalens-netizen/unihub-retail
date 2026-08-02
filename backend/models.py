@@ -154,6 +154,18 @@ class ImportResponse(BaseModel):
     filename: str
     is_month_final: bool
     coverage_report: dict[str, Any] = Field(default_factory=dict)
+    generation_state: Literal["validated", "promoted"] = "promoted"
+    generation_token: str | None = Field(default=None, pattern=r"^[0-9a-f-]{36}$")
+    manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    manifest: dict[str, Any] | None = None
+
+
+class SalesGenerationPromotionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generation_token: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    override_reason: str | None = Field(default=None, min_length=10, max_length=500)
 
 
 class PromoActualImportResponse(BaseModel):

@@ -6,9 +6,9 @@ import { AlertTriangle, CheckCircle2, Download, Eye, FileSpreadsheet, Info, Line
 import { downloadExport, getExportCatalog, previewExport } from '../api/exports';
 import type { ExportCatalog, ExportColumnDef, ExportFilters, ExportPreview, ExportRequest } from '../api/exports';
 import { getAvailableMonths, getFilterOptions } from '../api/filters';
-import { getImportHistory, getImportJobStatus, uploadErpReconciliationFile, uploadPromoActualsFile, uploadSalesFile } from '../api/imports';
+import { getImportHistory, getImportJobStatus, promoteSalesGeneration, uploadErpReconciliationFile, uploadPromoActualsFile, uploadSalesFile } from '../api/imports';
 import type { ErpReconciliationMetric, ErpReconciliationResponse } from '../api/imports';
-import type { FilterOptions, ImportHistoryEntry } from '../api/types';
+import type { FilterOptions, ImportHistoryEntry, ImportResponse } from '../api/types';
 import { cn } from '../lib/utils';
 import { getCachedView, setCachedView } from '../lib/viewCache';
 import { downloadBlob } from '../lib/download';
@@ -81,6 +81,10 @@ export function Settings({
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [salesReplaceConfirmed, setSalesReplaceConfirmed] = useState(false);
+  const [salesCutoff, setSalesCutoff] = useState(() => new Date().toISOString().slice(0, 10));
+  const [pendingSalesGeneration, setPendingSalesGeneration] = useState<ImportResponse | null>(null);
+  const [salesOverrideReason, setSalesOverrideReason] = useState('');
+  const [promotingSales, setPromotingSales] = useState(false);
   const [promoActualsFile, setPromoActualsFile] = useState<File | null>(null);
   const [promoActualsMonth, setPromoActualsMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [promoActualsCutoff, setPromoActualsCutoff] = useState(() => new Date().toISOString().slice(0, 10));
@@ -270,7 +274,7 @@ export function Settings({
       setUploading(true);
       setMessage('');
       setMessageType('success');
-      const initialJob = await uploadSalesFile(file);
+      const initialJob = await uploadSalesFile(file, salesCutoff);
       uploadAccepted = true;
       setMessage('Fișier încărcat. Importul rulează în worker.');
       const outcome = await pollImportJob(initialJob, {
@@ -303,6 +307,21 @@ export function Settings({
         return;
       }
       const response = job.result;
+      if (response.generation_state === 'validated') {
+        if (!response.generation_token || !response.manifest_sha256 || !response.manifest) {
+          throw new Error('Manifestul generației validate este incomplet.');
+        }
+        setPendingSalesGeneration(response);
+        setSalesOverrideReason('');
+        setMessageType('warning');
+        setMessage(
+          `Generația ${response.import_month} a fost validată; datele live nu s-au schimbat. `
+          + 'Verifică manifestul și promovează explicit.',
+        );
+        setFile(null);
+        setSalesReplaceConfirmed(false);
+        return;
+      }
       try {
         const historyData = await getImportHistory();
         setHistory(historyData);
@@ -353,6 +372,65 @@ export function Settings({
       setMessageType('error');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleSalesPromotion = async () => {
+    const pending = pendingSalesGeneration;
+    if (!pending?.generation_token || !pending.manifest_sha256 || !pending.manifest) return;
+    const hasBlockingAnomaly = pending.manifest.anomalies.some((item) => item.blocking);
+    if (hasBlockingAnomaly && salesOverrideReason.trim().length < 10) {
+      setMessageType('error');
+      setMessage('Anomaliile blocante necesită un motiv explicit de minimum 10 caractere.');
+      return;
+    }
+    try {
+      setPromotingSales(true);
+      setMessageType('success');
+      setMessage('Promovarea generației rulează în worker.');
+      const initialJob = await promoteSalesGeneration(
+        pending.snapshot_id,
+        pending.generation_token,
+        pending.manifest_sha256,
+        hasBlockingAnomaly ? salesOverrideReason.trim() : undefined,
+      );
+      const outcome = await pollImportJob(initialJob, {
+        intervalMs: IMPORT_POLL_INTERVAL_MS,
+        maxAttempts: IMPORT_POLL_LIMIT,
+        maxConsecutiveErrors: IMPORT_POLL_MAX_CONSECUTIVE_ERRORS,
+        getStatus: getImportJobStatus,
+      });
+      if (outcome.kind === 'unconfirmed') {
+        setMessageType('warning');
+        setMessage('Promovarea nu poate fi confirmată momentan; verifică istoricul înainte de retry.');
+        return;
+      }
+      const job = outcome.job;
+      if (job.error || !job.result || job.result.generation_state !== 'promoted') {
+        throw new Error(job.error || 'Promovarea nu are un rezultat terminal verificat.');
+      }
+      const response = job.result;
+      try {
+        const historyData = await getImportHistory();
+        setHistory(historyData);
+        setCachedView(CACHE_KEY, { history: historyData });
+      } catch {
+        // Promovarea este deja confirmată de worker.
+      }
+      onImportCompleted(response.import_month);
+      setErpReconciliationMonth(response.import_month);
+      setPendingSalesGeneration(null);
+      setSalesOverrideReason('');
+      setMessageType('success');
+      setMessage(
+        `Import ${response.import_month} promovat: ${response.rows_imported} rânduri · `
+        + `hash business ${response.manifest?.business_sha256.slice(0, 12) ?? 'indisponibil'}.`,
+      );
+    } catch (error) {
+      setMessageType('error');
+      setMessage(formatExportError(error, 'Promovarea generației de vânzări a eșuat.'));
+    } finally {
+      setPromotingSales(false);
     }
   };
 
@@ -549,6 +627,8 @@ export function Settings({
                 onChange={(event) => {
                   setFile(event.target.files?.[0] ?? null);
                   setSalesReplaceConfirmed(false);
+                  setPendingSalesGeneration(null);
+                  setSalesOverrideReason('');
                 }}
                 className="hidden"
               />
@@ -558,22 +638,32 @@ export function Settings({
                 <div className="font-bold">Verificare înainte de import</div>
                 <div className="mt-1">{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB · fișier Excel</div>
                 <label className="mt-3 flex cursor-pointer items-start gap-2 font-semibold">
+                <label className="mt-3 block font-semibold">
+                  Cutoff declarat
+                  <input
+                    type="date"
+                    value={salesCutoff}
+                    onChange={(event) => setSalesCutoff(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs text-slate-800 dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
+                    required
+                  />
+                </label>
                   <input
                     type="checkbox"
                     checked={salesReplaceConfirmed}
                     onChange={(event) => setSalesReplaceConfirmed(event.target.checked)}
                     className="mt-0.5 h-4 w-4 rounded border-amber-300 text-indigo-600"
                   />
-                  Confirm că fișierul conține snapshot-ul corect și că importul va înlocui datele existente pentru luna identificată în fișier.
+                  Confirm că fișierul și cutoff-ul sunt corecte. Validarea creează o generație staged; datele live se schimbă numai după promovarea explicită a manifestului.
                 </label>
               </div>
             )}
             <button
               onClick={() => void handleUpload()}
-              disabled={!file || !salesReplaceConfirmed || uploading}
+              disabled={!file || !salesCutoff || !salesReplaceConfirmed || uploading}
               className="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-indigo-500/30 disabled:opacity-60"
             >
-              {uploading ? 'Import în desfășurare...' : 'Importă fișier'}
+              {uploading ? 'Validare în desfășurare...' : 'Validează fișierul'}
             </button>
             {message && (
               <div className={`mt-3 rounded-2xl px-3 py-2 text-xs font-semibold ${
@@ -584,6 +674,59 @@ export function Settings({
                   : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
               }`}>
                 {message}
+              </div>
+            )}
+            {pendingSalesGeneration?.manifest && (
+              <div className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-slate-700 dark:border-indigo-900/70 dark:bg-indigo-950/30 dark:text-slate-200">
+                <div className="font-bold text-indigo-800 dark:text-indigo-200">
+                  Generație validată · datele live sunt neschimbate
+                </div>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                  <dt className="text-slate-500">Lună / cutoff</dt>
+                  <dd className="text-right font-semibold">{pendingSalesGeneration.import_month} / {pendingSalesGeneration.manifest.cutoff_date}</dd>
+                  <dt className="text-slate-500">Rânduri / bonuri</dt>
+                  <dd className="text-right font-semibold">{pendingSalesGeneration.rows_imported.toLocaleString('ro-RO')} / {pendingSalesGeneration.manifest.receipt_count.toLocaleString('ro-RO')}</dd>
+                  <dt className="text-slate-500">Magazin-zile</dt>
+                  <dd className="text-right font-semibold">{pendingSalesGeneration.manifest.site_day_count.toLocaleString('ro-RO')}</dd>
+                  <dt className="text-slate-500">Valoare / cantitate</dt>
+                  <dd className="text-right font-semibold">{Number(pendingSalesGeneration.manifest.total_value).toLocaleString('ro-RO')} RON / {pendingSalesGeneration.manifest.total_quantity.toLocaleString('ro-RO')}</dd>
+                  <dt className="text-slate-500">Hash business</dt>
+                  <dd className="truncate text-right font-mono text-[10px]" title={pendingSalesGeneration.manifest.business_sha256}>
+                    {pendingSalesGeneration.manifest.business_sha256}
+                  </dd>
+                </dl>
+                {pendingSalesGeneration.manifest.anomalies.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {pendingSalesGeneration.manifest.anomalies.map((anomaly) => (
+                      <div
+                        key={`${anomaly.code}-${anomaly.message}`}
+                        className={anomaly.blocking ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}
+                      >
+                        {anomaly.blocking ? 'Blocant' : 'Atenție'} · {anomaly.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {pendingSalesGeneration.manifest.anomalies.some((item) => item.blocking) && (
+                  <label className="mt-3 block font-semibold">
+                    Motiv de override (minimum 10 caractere)
+                    <textarea
+                      value={salesOverrideReason}
+                      onChange={(event) => setSalesOverrideReason(event.target.value)}
+                      className="mt-1 min-h-20 w-full rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs text-slate-800 dark:border-rose-800 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </label>
+                )}
+                <button
+                  onClick={() => void handleSalesPromotion()}
+                  disabled={
+                    promotingSales
+                    || (pendingSalesGeneration.manifest.anomalies.some((item) => item.blocking) && salesOverrideReason.trim().length < 10)
+                  }
+                  className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2.5 font-bold text-white disabled:opacity-60"
+                >
+                  {promotingSales ? 'Promovare în desfășurare...' : 'Promovează generația validată'}
+                </button>
               </div>
             )}
           </div>

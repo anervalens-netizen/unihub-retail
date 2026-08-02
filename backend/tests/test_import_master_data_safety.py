@@ -307,6 +307,12 @@ async def test_identical_rows_are_preserved_as_separate_sales_facts(
     try:
         async with pool.acquire() as conn:
             await conn.execute(
+                "DELETE FROM sales_generation_promotions WHERE import_month = '2098-04'"
+            )
+            await conn.execute(
+                "DELETE FROM sales_generation_heads WHERE import_month = '2098-04'"
+            )
+            await conn.execute(
                 "DELETE FROM import_snapshots WHERE import_month = '2098-04'"
             )
             await seed_stores(conn, [site_code])
@@ -334,6 +340,12 @@ async def test_identical_rows_are_preserved_as_separate_sales_facts(
         async with pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM sales_transactions WHERE site_code = $1", site_code
+            )
+            await conn.execute(
+                "DELETE FROM sales_generation_promotions WHERE import_month = '2098-04'"
+            )
+            await conn.execute(
+                "DELETE FROM sales_generation_heads WHERE import_month = '2098-04'"
             )
             await conn.execute(
                 "DELETE FROM import_snapshots WHERE filename = $1",

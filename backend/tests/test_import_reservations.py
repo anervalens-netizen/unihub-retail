@@ -58,7 +58,8 @@ async def test_import_snapshot_reservation_is_atomic_and_recovers_stale() -> Non
             await conn.execute(
                 """
                 UPDATE import_snapshots
-                SET heartbeat_at = now() - interval '2 hours'
+                SET heartbeat_at = now() - interval '2 hours',
+                    lease_until = now() - interval '1 second'
                 WHERE import_month = $1 AND status = 'processing'
                 """,
                 import_month,
@@ -91,7 +92,7 @@ async def test_import_snapshot_reservation_is_atomic_and_recovers_stale() -> Non
         await close_db_pool()
 
 
-async def test_worker_restart_reconciliation_allows_immediate_retry() -> None:
+async def test_worker_restart_reconciliation_only_expires_stale_lease() -> None:
     pool = await get_pool()
     import_month = "2099-10"
     try:
@@ -108,7 +109,18 @@ async def test_worker_restart_reconciliation_allows_immediate_retry() -> None:
             )
 
         reconciled = await reconcile_interrupted_imports(pool)
-        assert interrupted_id in reconciled
+        assert interrupted_id not in reconciled
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE import_snapshots
+                SET lease_until = now() - interval '1 second'
+                WHERE id = $1
+                """,
+                interrupted_id,
+            )
+        assert interrupted_id in await reconcile_interrupted_imports(pool)
 
         async with pool.acquire() as conn:
             replacement_id = await reserve_snapshot(
@@ -172,7 +184,7 @@ async def test_failed_reimport_restores_the_previous_completed_snapshot(
         ]
     )
 
-    async def fail_insert(*args: object, **kwargs: object) -> int:
+    async def fail_stage(*args: object, **kwargs: object) -> int:
         raise RuntimeError("simulated insert failure")
 
     try:
@@ -193,7 +205,7 @@ async def test_failed_reimport_restores_the_previous_completed_snapshot(
                 import_month,
             )
 
-        monkeypatch.setattr(importer, "insert_transactions", fail_insert)
+        monkeypatch.setattr(importer, "stage_sales_generation_rows", fail_stage)
         async with pool.acquire() as conn:
             with pytest.raises(RuntimeError, match="simulated insert failure"):
                 await importer.import_sales_dataframe(conn, frame, "replacement.xlsx")

@@ -1,0 +1,632 @@
+from __future__ import annotations
+
+from decimal import Decimal
+import json
+from typing import Any
+from uuid import uuid4
+
+import asyncpg
+
+from services.reporting_refresh import (
+    rebuild_agent_lifecycle_reporting,
+    rebuild_reporting_month,
+)
+from services.sales_generation import (
+    SalesGenerationConflictError,
+    SalesGenerationValidationError,
+    canonical_json_sha256,
+    copy_staged_generation_to_live,
+    manifest_requires_override,
+)
+
+
+async def load_current_sales_manifest(
+    conn: asyncpg.Connection,
+    import_month: str,
+) -> tuple[int | None, dict[str, Any] | None]:
+    row = await conn.fetchrow(
+        """
+        SELECT snap.id, snap.manifest
+        FROM sales_generation_heads head
+        JOIN import_snapshots snap ON snap.id = head.snapshot_id
+        WHERE head.import_month = $1
+        """,
+        import_month,
+    )
+    if row is None:
+        row = await conn.fetchrow(
+            """
+            SELECT id, manifest
+            FROM import_snapshots
+            WHERE import_month = $1
+              AND status = 'completed'
+              AND manifest IS NOT NULL
+            ORDER BY promoted_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """,
+            import_month,
+        )
+    if row is None:
+        return None, None
+    manifest = row["manifest"]
+    if isinstance(manifest, str):
+        manifest = json.loads(manifest)
+    return int(row["id"]), dict(manifest) if manifest else None
+
+
+async def persist_validated_sales_generation(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
+    manifest: dict[str, Any],
+    manifest_sha256: str,
+    coverage_report: dict[str, Any],
+) -> None:
+    updated = await conn.fetchval(
+        """
+        UPDATE import_snapshots
+        SET manifest = $4::jsonb,
+            manifest_sha256 = $5,
+            coverage_report = $6::jsonb,
+            rows_imported = $7,
+            heartbeat_at = now()
+        WHERE id = $1
+          AND generation_token = $2::uuid
+          AND owner_id = $3::uuid
+          AND status = 'processing'
+          AND lease_until > now()
+        RETURNING id
+        """,
+        snapshot_id,
+        generation_token,
+        owner_id,
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        manifest_sha256,
+        json.dumps(coverage_report, ensure_ascii=False, sort_keys=True),
+        int(manifest["rows_imported"]),
+    )
+    if updated is None:
+        raise SalesGenerationConflictError("Sales generation lease was lost before validation")
+
+
+async def attach_sales_generation_source(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
+    source_spool_path: str,
+) -> None:
+    updated = await conn.fetchval(
+        """
+        UPDATE import_snapshots
+        SET source_spool_path = $4, heartbeat_at = now()
+        WHERE id = $1
+          AND generation_token = $2::uuid
+          AND owner_id = $3::uuid
+          AND status = 'processing'
+          AND manifest->>'generation_state' = 'validated'
+        RETURNING id
+        """,
+        snapshot_id,
+        generation_token,
+        owner_id,
+        source_spool_path,
+    )
+    if updated is None:
+        raise SalesGenerationConflictError("Sales source cannot be attached by a stale worker")
+
+
+async def claim_validated_sales_generation(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    expected_manifest_sha256: str,
+    new_owner_id: str,
+    lease_seconds: int = 2 * 60 * 60,
+) -> str:
+    if lease_seconds < 60:
+        raise ValueError("Sales generation lease must be at least 60 seconds")
+    previous_owner = await conn.fetchval(
+        """
+        WITH candidate AS (
+            SELECT id, owner_id::text AS previous_owner_id
+            FROM import_snapshots
+            WHERE id = $1
+              AND generation_token = $2::uuid
+              AND manifest_sha256 = $3
+              AND status = 'processing'
+              AND manifest->>'generation_state' = 'validated'
+            FOR UPDATE
+        ), updated AS (
+            UPDATE import_snapshots snap
+            SET owner_id = $4::uuid,
+                heartbeat_at = now(),
+                lease_until = now() + make_interval(secs => $5),
+                manifest = jsonb_set(snap.manifest, '{generation_state}', '"promoting"'::jsonb, true)
+            FROM candidate
+            WHERE snap.id = candidate.id
+            RETURNING candidate.previous_owner_id
+        )
+        SELECT previous_owner_id FROM updated
+        """,
+        snapshot_id,
+        generation_token,
+        expected_manifest_sha256,
+        new_owner_id,
+        lease_seconds,
+    )
+    if previous_owner is None:
+        raise SalesGenerationConflictError("Validated sales generation cannot be claimed")
+    return str(previous_owner)
+
+
+async def restore_sales_generation_claim(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    current_owner_id: str,
+    previous_owner_id: str,
+) -> None:
+    updated = await conn.fetchval(
+        """
+        UPDATE import_snapshots
+        SET owner_id = $4::uuid, heartbeat_at = now(),
+            manifest = jsonb_set(manifest, '{generation_state}', '"validated"'::jsonb, true)
+        WHERE id = $1
+          AND generation_token = $2::uuid
+          AND owner_id = $3::uuid
+          AND status = 'processing'
+          AND manifest->>'generation_state' = 'promoting'
+        RETURNING id
+        """,
+        snapshot_id,
+        generation_token,
+        current_owner_id,
+        previous_owner_id,
+    )
+    if updated is None:
+        raise SalesGenerationConflictError("Sales generation claim changed concurrently")
+
+
+async def fail_sales_generation(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
+    error: str,
+) -> None:
+    updated = await conn.fetchval(
+        """
+        UPDATE import_snapshots
+        SET status = 'failed',
+            rows_imported = 0,
+            error_message = $4,
+            heartbeat_at = now(),
+            finished_at = now(),
+            lease_until = now()
+        WHERE id = $1
+          AND generation_token = $2::uuid
+          AND owner_id = $3::uuid
+          AND status = 'processing'
+        RETURNING id
+        """,
+        snapshot_id,
+        generation_token,
+        owner_id,
+        error[:500],
+    )
+    if updated is None:
+        raise SalesGenerationConflictError("Stale worker cannot finalize sales generation")
+
+
+async def _upsert_stores_from_stage(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    import_month: str,
+) -> None:
+    latest_completed_month = await conn.fetchval(
+        "SELECT MAX(import_month) FROM import_snapshots WHERE status = 'completed'"
+    )
+    updates_current_structure = (
+        latest_completed_month is None or import_month >= str(latest_completed_month)
+    )
+    await conn.execute(
+        """
+        WITH source AS (
+            SELECT DISTINCT ON (site_code)
+                   site_code, locatie, firma, regional, asm
+            FROM sales_import_stage_rows
+            WHERE snapshot_id = $1
+            ORDER BY site_code, row_number
+        )
+        INSERT INTO stores (
+            site_code, locatie, firma, regional, asm,
+            first_seen_month, last_seen_month, is_active
+        )
+        SELECT site_code, locatie, firma, regional, asm, $2, $2, $3
+        FROM source
+        ON CONFLICT (site_code) DO UPDATE
+        SET locatie = CASE WHEN $3 THEN EXCLUDED.locatie ELSE stores.locatie END,
+            firma = CASE WHEN $3 THEN EXCLUDED.firma ELSE stores.firma END,
+            regional = CASE WHEN $3 THEN EXCLUDED.regional ELSE stores.regional END,
+            asm = CASE WHEN $3 THEN EXCLUDED.asm ELSE stores.asm END,
+            is_active = stores.is_active,
+            first_seen_month = LEAST(stores.first_seen_month, EXCLUDED.first_seen_month),
+            last_seen_month = GREATEST(stores.last_seen_month, EXCLUDED.last_seen_month),
+            updated_at = now()
+        """,
+        snapshot_id,
+        import_month,
+        updates_current_structure,
+    )
+
+
+async def _advance_sales_head(
+    conn: asyncpg.Connection,
+    *,
+    import_month: str,
+    snapshot_id: int,
+    expected_revision: int,
+) -> tuple[int | None, int]:
+    head = await conn.fetchrow(
+        """
+        SELECT snapshot_id, revision
+        FROM sales_generation_heads
+        WHERE import_month = $1
+        FOR UPDATE
+        """,
+        import_month,
+    )
+    if head is None:
+        if expected_revision != 0:
+            raise SalesGenerationConflictError("Sales generation head disappeared")
+        await conn.execute(
+            """
+            INSERT INTO sales_generation_heads (import_month, snapshot_id, revision)
+            VALUES ($1, $2, 1)
+            """,
+            import_month,
+            snapshot_id,
+        )
+        return None, 1
+    current_revision = int(head["revision"])
+    if current_revision != expected_revision:
+        raise SalesGenerationConflictError("Sales generation head changed before promote")
+    new_revision = current_revision + 1
+    updated = await conn.fetchval(
+        """
+        UPDATE sales_generation_heads
+        SET snapshot_id = $2, revision = $3, updated_at = now()
+        WHERE import_month = $1 AND revision = $4
+        RETURNING snapshot_id
+        """,
+        import_month,
+        snapshot_id,
+        new_revision,
+        expected_revision,
+    )
+    if updated is None:
+        raise SalesGenerationConflictError("Sales generation head CAS failed")
+    return int(head["snapshot_id"]), new_revision
+
+
+async def _verify_stage_controls(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    manifest: dict[str, Any],
+) -> None:
+    controls = await conn.fetchrow(
+        """
+        SELECT COUNT(*)::integer AS row_count,
+               COUNT(DISTINCT site_code)::integer AS store_count,
+               COALESCE(SUM(quantity), 0)::bigint AS total_quantity,
+               COALESCE(SUM(total_value), 0)::numeric AS total_value,
+               MAX(sale_date) AS max_sale_date
+        FROM sales_import_stage_rows
+        WHERE snapshot_id = $1
+        """,
+        snapshot_id,
+    )
+    if controls is None:
+        raise SalesGenerationValidationError("Sales staging controls are missing")
+    expected = (
+        int(manifest["rows_imported"]),
+        int(manifest["store_count"]),
+        int(manifest["total_quantity"]),
+        Decimal(str(manifest["total_value"])),
+        str(manifest["max_sale_date"]),
+    )
+    actual = (
+        int(controls["row_count"]),
+        int(controls["store_count"]),
+        int(controls["total_quantity"]),
+        Decimal(controls["total_value"]),
+        controls["max_sale_date"].isoformat() if controls["max_sale_date"] else None,
+    )
+    if actual != expected:
+        raise SalesGenerationValidationError(
+            f"Sales staging control totals mismatch: expected={expected}, actual={actual}"
+        )
+
+
+async def promote_sales_generation(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
+    expected_manifest_sha256: str,
+    requested_by_sub: str,
+    override_reason: str | None = None,
+    action: str = "promote",
+) -> tuple[int, int]:
+    actor = requested_by_sub.strip()
+    if not actor:
+        raise ValueError("requested_by_sub is required")
+    if action not in {"promote", "rollback"}:
+        raise ValueError("Invalid sales generation action")
+    reason = override_reason.strip() if override_reason else None
+    async with conn.transaction():
+        row = await conn.fetchrow(
+            """
+            SELECT id, import_month, manifest, manifest_sha256,
+                   expected_head_revision, is_month_final
+            FROM import_snapshots
+            WHERE id = $1
+              AND generation_token = $2::uuid
+              AND owner_id = $3::uuid
+              AND status = 'processing'
+              AND lease_until > now()
+            FOR UPDATE
+            """,
+            snapshot_id,
+            generation_token,
+            owner_id,
+        )
+        if row is None:
+            raise SalesGenerationConflictError("Sales generation lease was lost before promote")
+        if row["manifest_sha256"] != expected_manifest_sha256:
+            raise SalesGenerationConflictError("Approved sales manifest does not match staged generation")
+        manifest = row["manifest"]
+        if isinstance(manifest, str):
+            manifest = json.loads(manifest)
+        manifest = dict(manifest or {})
+        if manifest_requires_override(manifest) and (not reason or len(reason) < 10):
+            raise SalesGenerationValidationError(
+                "Anomaliile blocante necesită un motiv explicit de minimum 10 caractere"
+            )
+        await _verify_stage_controls(conn, snapshot_id=snapshot_id, manifest=manifest)
+        import_month = str(row["import_month"])
+        previous_snapshot_id, revision = await _advance_sales_head(
+            conn,
+            import_month=import_month,
+            snapshot_id=snapshot_id,
+            expected_revision=int(row["expected_head_revision"]),
+        )
+        await _upsert_stores_from_stage(
+            conn,
+            snapshot_id=snapshot_id,
+            import_month=import_month,
+        )
+        await conn.execute(
+            "DELETE FROM sales_transactions WHERE import_month = $1",
+            import_month,
+        )
+        rows_imported = await copy_staged_generation_to_live(
+            conn,
+            snapshot_id=snapshot_id,
+            import_month=import_month,
+        )
+        if rows_imported != int(manifest["rows_imported"]):
+            raise SalesGenerationValidationError("Promoted row count differs from approved manifest")
+        await rebuild_reporting_month(conn, import_month)
+        await rebuild_agent_lifecycle_reporting(conn)
+        updated = await conn.fetchval(
+            """
+            UPDATE import_snapshots
+            SET status = 'completed',
+                rows_imported = $4,
+                previous_snapshot_id = $5,
+                approved_by_sub = $6,
+                override_reason = $7,
+                promoted_at = now(),
+                heartbeat_at = now(),
+                finished_at = now(),
+                lease_until = now(),
+                error_message = NULL,
+                manifest = jsonb_set(manifest, '{generation_state}', '"promoted"'::jsonb, true)
+            WHERE id = $1
+              AND generation_token = $2::uuid
+              AND owner_id = $3::uuid
+              AND status = 'processing'
+            RETURNING id
+            """,
+            snapshot_id,
+            generation_token,
+            owner_id,
+            rows_imported,
+            previous_snapshot_id,
+            actor,
+            reason,
+        )
+        if updated is None:
+            raise SalesGenerationConflictError("Stale worker cannot finalize promoted generation")
+        await conn.execute(
+            """
+            INSERT INTO sales_generation_promotions (
+                import_month, from_snapshot_id, to_snapshot_id,
+                head_revision, action, requested_by_sub, override_reason
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """,
+            import_month,
+            previous_snapshot_id,
+            snapshot_id,
+            revision,
+            action,
+            actor,
+            reason,
+        )
+        retained = [snapshot_id]
+        if previous_snapshot_id is not None:
+            retained.append(previous_snapshot_id)
+        await conn.execute(
+            """
+            DELETE FROM sales_import_stage_rows
+            WHERE import_month = $1
+              AND NOT (snapshot_id = ANY($2::integer[]))
+            """,
+            import_month,
+            retained,
+        )
+    return rows_imported, revision
+
+
+async def rollback_sales_generation(
+    conn: asyncpg.Connection,
+    *,
+    current_snapshot_id: int,
+    current_generation_token: str,
+    expected_manifest_sha256: str,
+    requested_by_sub: str,
+    reason: str,
+) -> tuple[int, int, int]:
+    """Clone the retained previous generation and promote it as a new head."""
+    actor = requested_by_sub.strip()
+    rollback_reason = reason.strip()
+    if not actor:
+        raise ValueError("requested_by_sub is required")
+    if len(rollback_reason) < 10:
+        raise ValueError("Rollback reason must contain at least 10 characters")
+
+    async with conn.transaction():
+        current = await conn.fetchrow(
+            """
+            SELECT head.import_month, head.revision,
+                   snap.generation_token::text AS generation_token,
+                   snap.manifest_sha256, snap.previous_snapshot_id
+            FROM sales_generation_heads head
+            JOIN import_snapshots snap ON snap.id = head.snapshot_id
+            WHERE head.snapshot_id = $1
+            FOR UPDATE OF head
+            """,
+            current_snapshot_id,
+        )
+        if current is None:
+            raise SalesGenerationConflictError("Rollback source is no longer the current head")
+        if current["generation_token"] != current_generation_token:
+            raise SalesGenerationConflictError("Rollback generation token does not match current head")
+        if current["manifest_sha256"] != expected_manifest_sha256:
+            raise SalesGenerationConflictError("Rollback manifest hash does not match current head")
+        target_snapshot_id = current["previous_snapshot_id"]
+        if target_snapshot_id is None:
+            raise SalesGenerationValidationError("Current generation has no retained rollback predecessor")
+
+        source = await conn.fetchrow(
+            """
+            SELECT filename, rows_in_file, is_month_final, source_sha256,
+                   cutoff_date, coverage_report, manifest, source_spool_path
+            FROM import_snapshots
+            WHERE id = $1
+              AND import_month = $2
+              AND status = 'completed'
+              AND EXISTS (
+                  SELECT 1 FROM sales_import_stage_rows staged
+                  WHERE staged.snapshot_id = import_snapshots.id
+              )
+            """,
+            int(target_snapshot_id),
+            str(current["import_month"]),
+        )
+        if source is None:
+            raise SalesGenerationValidationError("Retained rollback generation is unavailable")
+        manifest = source["manifest"]
+        if isinstance(manifest, str):
+            manifest = json.loads(manifest)
+        coverage_report = source["coverage_report"]
+        if isinstance(coverage_report, str):
+            coverage_report = json.loads(coverage_report)
+        rollback_manifest = dict(manifest or {})
+        rollback_manifest["generation_state"] = "validated"
+        rollback_manifest["rollback_of_snapshot_id"] = current_snapshot_id
+        rollback_manifest["rollback_source_snapshot_id"] = int(target_snapshot_id)
+        rollback_manifest["anomalies"] = [
+            {
+                "code": "operator_rollback",
+                "blocking": False,
+                "message": "Generație recreată din predecesorul reținut pentru rollback.",
+            }
+        ]
+        manifest_sha256 = canonical_json_sha256(rollback_manifest)
+        generation_token = str(uuid4())
+        owner_id = str(uuid4())
+        new_snapshot_id = await conn.fetchval(
+            """
+            INSERT INTO import_snapshots (
+                import_month, filename, rows_in_file, rows_imported, status,
+                is_month_final, source_sha256, cutoff_date, manifest,
+                manifest_sha256, generation_token, owner_id, lease_until,
+                expected_head_revision, previous_snapshot_id, coverage_report,
+                source_spool_path, heartbeat_at
+            ) VALUES (
+                $1, $2, $3, $4, 'processing', $5, $6, $7, $8::jsonb,
+                $9, $10::uuid, $11::uuid, now() + interval '2 hours',
+                $12, $13, $14::jsonb, $15, now()
+            )
+            RETURNING id
+            """,
+            str(current["import_month"]),
+            f"rollback:{current_snapshot_id}->{int(target_snapshot_id)}:{source['filename']}",
+            int(source["rows_in_file"] or rollback_manifest["rows_imported"]),
+            int(rollback_manifest["rows_imported"]),
+            bool(source["is_month_final"]),
+            source["source_sha256"],
+            source["cutoff_date"],
+            json.dumps(rollback_manifest, ensure_ascii=False, sort_keys=True),
+            manifest_sha256,
+            generation_token,
+            owner_id,
+            int(current["revision"]),
+            current_snapshot_id,
+            json.dumps(dict(coverage_report or {}), ensure_ascii=False, sort_keys=True),
+            source["source_spool_path"],
+        )
+        if new_snapshot_id is None:
+            raise SalesGenerationConflictError("Rollback generation could not be reserved")
+        await conn.execute(
+            """
+            INSERT INTO sales_import_stage_rows (
+                snapshot_id, row_number, import_month, sale_date, site_code,
+                locatie, firma, regional, asm, bon_nr, item_code, item_name,
+                brand, category, subcategory, quantity, unit_price, total_value,
+                agent, is_cartela, is_return
+            )
+            SELECT $1, row_number, import_month, sale_date, site_code,
+                   locatie, firma, regional, asm, bon_nr, item_code, item_name,
+                   brand, category, subcategory, quantity, unit_price, total_value,
+                   agent, is_cartela, is_return
+            FROM sales_import_stage_rows
+            WHERE snapshot_id = $2
+            ORDER BY row_number
+            """,
+            int(new_snapshot_id),
+            int(target_snapshot_id),
+        )
+        rows_imported, revision = await promote_sales_generation(
+            conn,
+            snapshot_id=int(new_snapshot_id),
+            generation_token=generation_token,
+            owner_id=owner_id,
+            expected_manifest_sha256=manifest_sha256,
+            requested_by_sub=actor,
+            override_reason=rollback_reason,
+            action="rollback",
+        )
+    return int(new_snapshot_id), rows_imported, revision

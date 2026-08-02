@@ -20,9 +20,15 @@ def test_worker_uses_bounded_serial_execution(monkeypatch: pytest.MonkeyPatch) -
     settings = create_worker.call_args.args[0]
     assert settings["max_jobs"] == 1
     assert settings["job_timeout"] == 1800
-    assert settings["job_completion_wait"] == 60
+    assert settings["job_completion_wait"] == 2400
     assert settings["health_check_interval"] == 30
     assert "queue_name" not in settings
+    monthly = next(
+        entry
+        for entry in settings["functions"]
+        if getattr(entry, "coroutine", None) is worker.grile_monthly_background
+    )
+    assert (monthly.timeout_s, monthly.max_tries) == (2400, 1)
     worker_instance.run.assert_called_once_with()
 
 
@@ -36,8 +42,13 @@ def test_import_worker_uses_dedicated_queue(monkeypatch: pytest.MonkeyPatch) -> 
 
     settings = create_worker.call_args.args[0]
     assert settings["queue_name"] == services.jobs.SALES_IMPORT_QUEUE_NAME
-    assert settings["functions"] == [worker.import_sales_background]
+    assert settings["functions"] == [
+        worker.import_sales_background,
+        worker.promote_sales_background,
+    ]
     assert settings["max_jobs"] == 1
+    assert settings["job_timeout"] == 1800
+    assert settings["job_completion_wait"] == 1800
     worker_instance.run.assert_called_once_with()
 
 

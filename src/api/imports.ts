@@ -63,10 +63,31 @@ export interface ErpReconciliationResponse {
   notes: string[];
 }
 
-export async function uploadSalesFile(file: File): Promise<ImportJobStatus> {
+export async function uploadSalesFile(
+  file: File,
+  cutoffDate: string,
+): Promise<ImportJobStatus> {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('cutoff_date', cutoffDate);
   const { data } = await client.post<ImportJobStatus>('/api/import/sales', formData);
+  return data;
+}
+
+export async function promoteSalesGeneration(
+  snapshotId: number,
+  generationToken: string,
+  manifestSha256: string,
+  overrideReason?: string,
+): Promise<ImportJobStatus> {
+  const { data } = await client.post<ImportJobStatus>(
+    `/api/import/sales/${snapshotId}/promote`,
+    {
+      generation_token: generationToken,
+      manifest_sha256: manifestSha256,
+      override_reason: overrideReason || null,
+    },
+  );
   return data;
 }
 
