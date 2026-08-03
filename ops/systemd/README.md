@@ -1,8 +1,9 @@
 # Retail systemd units
 
-These files are the versioned source of truth for the Retail web, operations
-worker, dedicated import worker and one-shot migration services. Production
-copies live under `/etc/systemd/system`.
+This directory plus repository-root `unihub-worker.service` are the versioned
+source of truth for the Retail web, operations worker, dedicated import worker
+and one-shot migration services. Production copies live under
+`/etc/systemd/system`.
 
 Install a reviewed unit with `sudo install -m 0644`, run
 `sudo systemctl daemon-reload`, then restart only the affected service. The
