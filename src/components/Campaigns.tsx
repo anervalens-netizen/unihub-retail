@@ -348,6 +348,14 @@ export function Campaigns({
         description={<>Incentive, promo, concurs si folii premium folosesc luna {promoMonth}; istoricul focus se analizeaza separat.</>}
       />
 
+      <SegmentedTabs<CampaignSection>
+        ariaLabel="Sectiuni Focus"
+        className="glass"
+        options={SECTION_TABS}
+        value={activeSection}
+        onChange={setActiveSection}
+      />
+
       {activeSection === 'incentive' && (
         <IncentiveDesktopHeader
           promoData={promoData}
@@ -370,14 +378,6 @@ export function Campaigns({
           description={promoData?.promo_description || 'Mecanismul promo activ și performanța curentă.'}
         />
       )}
-
-      <SegmentedTabs<CampaignSection>
-        ariaLabel="Sectiuni Focus"
-        className="glass"
-        options={SECTION_TABS}
-        value={activeSection}
-        onChange={setActiveSection}
-      />
 
       {activeSection === 'concurs' ? (
         contestLoading ? (

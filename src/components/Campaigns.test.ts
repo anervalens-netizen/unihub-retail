@@ -141,6 +141,7 @@ describe('Campaigns', () => {
   it('renders promo qualifying receipts separately from incentive quantity', () => {
     const html = renderCampaigns('promo');
 
+    expect(html.indexOf('aria-label="Sectiuni Focus"')).toBeLessThan(html.indexOf('Focus</span><span'));
     expect(html).toContain('Promo test');
     expect(html).toContain('bonuri calificate');
     expect(html).toContain('Unități promo efective');
@@ -152,6 +153,7 @@ describe('Campaigns', () => {
   it('renders the four operational incentive values and both monthly mechanisms', () => {
     const html = renderCampaigns('incentive');
 
+    expect(html.indexOf('aria-label="Sectiuni Focus"')).toBeLessThan(html.indexOf('Focus</span><span'));
     expect(html).toContain('Incentive test');
     expect(html).toContain('unități vândute');
     expect(html).toContain('unități eligibile după promo');
