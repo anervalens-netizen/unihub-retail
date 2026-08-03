@@ -54,8 +54,9 @@ describe('SegmentedTabs', () => {
     );
 
     expect(html).toContain('data-tab-level="secondary"');
-    expect(html).toContain('rounded-b-xl');
-    expect(html).toContain('min-h-7');
-    expect(html).toContain('bg-indigo-50/90');
+    expect(html).toContain('-top-4');
+    expect(html).toContain('rounded-b-lg');
+    expect(html).toContain('min-h-6');
+    expect(html).toContain('bg-white/75');
   });
 });

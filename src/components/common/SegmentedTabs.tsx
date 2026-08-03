@@ -24,7 +24,7 @@ export function SegmentedTabs<T extends string>({
   const secondary = level === 'secondary';
 
   return (
-    <div className={cn('min-w-0', secondary && 'relative -top-px z-0 !mt-0 px-5 sm:px-7')}>
+    <div className={cn('min-w-0', secondary && 'relative -top-4 z-10 -mb-4 !mt-0 px-10 sm:px-14 lg:px-20')}>
       <div
         role="tablist"
         aria-label={ariaLabel}
@@ -32,7 +32,7 @@ export function SegmentedTabs<T extends string>({
         className={cn(
           'segmented-tabs-scroll flex min-w-0 snap-x snap-mandatory overflow-x-auto',
           secondary
-            ? 'gap-0.5 rounded-b-xl border-x border-b border-slate-200/70 bg-white/55 p-0.5 pt-1 shadow-[0_6px_12px_-12px_rgba(15,23,42,0.65)] backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-900/35 lg:mx-auto lg:max-w-3xl'
+            ? 'gap-0.5 rounded-b-lg border-x border-b border-slate-200/60 bg-slate-100/65 p-0.5 shadow-[0_5px_10px_-11px_rgba(15,23,42,0.6)] backdrop-blur-sm dark:border-slate-700/50 dark:bg-slate-800/55 lg:mx-auto lg:max-w-2xl'
             : 'gap-1 rounded-2xl p-1',
           className,
         )}
@@ -52,11 +52,11 @@ export function SegmentedTabs<T extends string>({
               className={cn(
                 'min-w-fit flex-1 snap-start transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
                 secondary
-                  ? 'min-h-7 rounded-md px-2 py-1 text-[10px] font-semibold lg:min-h-8 lg:px-2.5 lg:text-[11px]'
+                  ? 'min-h-6 rounded-b-md px-2 py-0.5 text-[9px] font-semibold lg:min-h-7 lg:px-2.5 lg:text-[10px]'
                   : 'min-h-11 rounded-xl px-3 py-2 text-xs font-bold lg:min-h-10 lg:text-sm',
                 active
                   ? secondary
-                    ? 'bg-indigo-50/90 text-indigo-700 ring-1 ring-inset ring-indigo-100/80 dark:bg-indigo-950/30 dark:text-indigo-300 dark:ring-indigo-900/60'
+                    ? 'bg-white/75 text-indigo-700 dark:bg-slate-900/55 dark:text-indigo-300'
                     : 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
                   : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300',
                 option.disabled && 'cursor-not-allowed opacity-50 hover:text-slate-500',
