@@ -22,6 +22,7 @@ import { ExportTableButton } from './ExportTableButton';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { usePersistentState } from '../lib/usePersistentState';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
+import { PageHeader } from './common/DesktopLayout';
 import { 
   fetchAgentsOverview, 
   fetchAgentsMovement, 
@@ -532,6 +533,12 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
 
   return (
     <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-3 lg:pb-6">
+      <PageHeader
+        className="lg:hidden"
+        title="Agenti"
+        description="Analiza echipei, miscare de personal si retentie"
+      />
+
       <SegmentedTabs<AgentsMainTab>
         ariaLabel="Secțiuni Agenți"
         className="glass"

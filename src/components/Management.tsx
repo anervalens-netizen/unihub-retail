@@ -6,6 +6,7 @@ import { PnlSubtab } from './PnlSubtab';
 import type { ManagementTab } from '../lib/tabs';
 import type { AppFilters } from './MainLayout';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
+import { PageHeader } from './common/DesktopLayout';
 
 const TABS: SegmentedTabOption<ManagementTab>[] = [
   { value: 'asm', label: 'Manageri' },
@@ -33,6 +34,13 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
 
   return (
     <div className="flex h-full flex-col lg:px-6 lg:py-3">
+      <div className="space-y-3 p-3 pb-0 pt-2 lg:hidden">
+        <PageHeader
+          title="Management"
+          description="Echipa, targete, salarii si analiza financiara"
+        />
+      </div>
+
       <SegmentedTabs
         ariaLabel="Secțiuni Management"
         className="glass mx-3 mt-3 lg:mx-0 lg:mt-0"
