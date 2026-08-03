@@ -172,13 +172,14 @@ class DashboardService:
     ):
         self.repo = repo
         self.pool = pool
-        self.dashboard_global_component_concurrency = (
+        global_component_concurrency = (
             runtime_config.dashboard_global_component_concurrency
             if runtime_config is not None
             else DEFAULT_DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY
         )
-        if self.dashboard_global_component_concurrency is None:
+        if global_component_concurrency is None:
             raise ValueError("Dashboard requires web RuntimeConfig")
+        self.dashboard_global_component_concurrency: int = global_component_concurrency
 
     def _pool_for(self, deadline: RequestDeadline | None) -> Any:
         return deadline.bind_pool(self.pool) if deadline is not None else self.pool

@@ -18,7 +18,12 @@ from routers.dashboard import (
     get_performance_detail,
     get_summary,
 )
-from schemas.dashboard import DashboardAllBatchRequest, DashboardAllQuery, DashboardSummary
+from schemas.dashboard import (
+    DashboardAllBatchRequest,
+    DashboardAllQuery,
+    DashboardAllResponse,
+    DashboardSummary,
+)
 from services.dashboard_filters import canonical_dashboard_site_codes
 from services.dashboard_service import DashboardService, _gather_cancel_on_error
 from services.request_deadline import RequestDeadline, RequestDeadlineExceeded
@@ -316,12 +321,14 @@ async def test_child_failure_cancels_and_reaps_every_dashboard_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_batch_of_twelve_uses_one_outer_deadline_and_leaves_no_tasks() -> None:
+async def test_batch_of_twelve_uses_one_outer_deadline_and_leaves_no_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     service = DashboardService(MagicMock(), MagicMock())
     started = 0
     cancelled = 0
 
-    async def slow_load(*_args: object, **_kwargs: object) -> DashboardSummary:
+    async def slow_load(*_args: object, **_kwargs: object) -> DashboardAllResponse:
         nonlocal started, cancelled
         started += 1
         try:
@@ -329,8 +336,9 @@ async def test_batch_of_twelve_uses_one_outer_deadline_and_leaves_no_tasks() -> 
         except asyncio.CancelledError:
             cancelled += 1
             raise
+        raise AssertionError("slow dashboard loader resumed unexpectedly")
 
-    service.get_dashboard_all = slow_load  # type: ignore[method-assign]
+    monkeypatch.setattr(service, "get_dashboard_all", slow_load)
     queries = [DashboardAllQuery(month=f"2026-{month:02d}") for month in range(1, 13)]
     deadline = RequestDeadline(0.05)
 

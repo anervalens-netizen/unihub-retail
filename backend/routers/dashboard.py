@@ -285,14 +285,15 @@ async def get_performance_detail(
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> PerformanceDetailResponse:
     site_code = canonical_dashboard_site_codes(site_code)
+    performance_key: str | None = key
     if level == "store":
-        key = canonical_dashboard_site_codes(key)
+        performance_key = canonical_dashboard_site_codes(key)
     return await _run_dashboard(
         deadline,
         lambda _deadline: svc.get_performance_detail(
             month,
             level,
-            key,
+            performance_key,
             firma,
             regional,
             asm,
