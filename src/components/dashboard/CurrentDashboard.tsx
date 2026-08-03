@@ -14,7 +14,6 @@ import {
 import type { AgentStat, DashboardSummary, PeriodComparisonPayload, RegionalStat, StoreStat } from '../../api/types';
 import type { AppFilters } from '../MainLayout';
 import { AiForecastPanel } from '../AiForecastPanel';
-import { DashboardGrid } from '../common/DesktopLayout';
 import { SegmentedTabs } from '../common/SegmentedTabs';
 import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
@@ -168,8 +167,8 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
         <AiForecastPanel currentMonth={currentMonth} filters={filters} />
       ) : (
         <>
-          <div className="glass space-y-4 rounded-3xl p-4 xl:grid xl:grid-cols-12 xl:gap-3 xl:space-y-0">
-            <div className="flex items-start justify-between gap-2 xl:col-span-12">
+          <div className="glass space-y-4 rounded-3xl p-4">
+            <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold">Overview — {currentMonth}</h3>
                 <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{statusLabel}</p>
@@ -179,7 +178,9 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               </span>
             </div>
 
-            <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50 xl:col-span-7">
+            <div className="grid gap-3 xl:grid-cols-12 xl:items-start">
+              <div className="space-y-3 xl:col-span-7">
+            <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
               <div className="mb-3 grid grid-cols-3 gap-2 text-center">
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div>
@@ -216,6 +217,20 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               </div>
             </div>
 
+            <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
+              <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
+              <Metric label="Accesorii nete" value={formatInt(summary.total_quantity)} className="p-2" />
+              <Metric
+                label="Magazine / Agenți"
+                value={<span className="flex items-baseline gap-1.5"><span>{formatInt(summary.total_stores)}</span><span className="text-slate-300 dark:text-slate-600">/</span><span>{formatInt(summary.total_agents)}</span></span>}
+                className="p-2"
+              />
+              <Metric label="Zile lucrate" value={formatInt(summary.working_days)} className="p-2" />
+              <Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} className="p-2" />
+              <Metric label="Medie produs" value={formatAmount(summary.medie_produs ?? 0)} className="p-2" />
+              <Metric label="Val. medie bon" value={formatAmount(summary.total_receipts > 0 ? Number(summary.total_sales) / Number(summary.total_receipts) : 0)} className="p-2" />
+              <Metric label="Cartele" value={formatInt(summary.cartele_qty ?? 0)} className="p-2" />
+            </div>              </div>
             <div className="grid grid-cols-2 gap-2.5 xl:col-span-5">
               <KpiPerformanceCard
                 title="Bonuri cu accesorii"
@@ -237,24 +252,10 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               />
             </div>
 
-            <div className="grid grid-cols-4 gap-2 lg:grid-cols-8 xl:col-span-7">
-              <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
-              <Metric label="Accesorii nete" value={formatInt(summary.total_quantity)} className="p-2" />
-              <Metric
-                label="Magazine / Agenți"
-                value={<span className="flex items-baseline gap-1.5"><span>{formatInt(summary.total_stores)}</span><span className="text-slate-300 dark:text-slate-600">/</span><span>{formatInt(summary.total_agents)}</span></span>}
-                className="p-2"
-              />
-              <Metric label="Zile lucrate" value={formatInt(summary.working_days)} className="p-2" />
-              <Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} className="p-2" />
-              <Metric label="Medie produs" value={formatAmount(summary.medie_produs ?? 0)} className="p-2" />
-              <Metric label="Val. medie bon" value={formatAmount(summary.total_receipts > 0 ? Number(summary.total_sales) / Number(summary.total_receipts) : 0)} className="p-2" />
-              <Metric label="Cartele" value={formatInt(summary.cartele_qty ?? 0)} className="p-2" />
             </div>
           </div>
 
-          <div className="grid gap-3">
-            <div className="glass min-w-0 overflow-hidden rounded-3xl p-4">
+          <div className="glass min-w-0 overflow-hidden rounded-3xl p-4">
               <div className="mb-4 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Comparatie perioade</h3>
@@ -262,9 +263,11 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               {!periodComparison || !comparisonDeltas ? (
                 <div className="text-xs text-slate-500">Date indisponibile pentru comparatia de perioade.</div>
               ) : (
-                <div className="space-y-3">
-                  <PeriodTable current={periodComparison.current} previous={periodComparison.previous} yoy={periodComparison.year_over_year} />
-                  <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 xl:grid-cols-12 xl:items-stretch">
+                  <div className="min-w-0 xl:col-span-9">
+                    <PeriodTable current={periodComparison.current} previous={periodComparison.previous} yoy={periodComparison.year_over_year} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 xl:col-span-3 xl:grid-cols-1">
                     <DeltaCard
                       title="Vs luna trecuta"
                       salesDelta={comparisonDeltas.previousSales}
@@ -286,16 +289,15 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                   </div>
                 </div>
               )}
-            </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
-            <div className="glass rounded-3xl p-4">
+          <div className="grid items-start gap-3 lg:grid-cols-[1.2fr_1fr]">
+            <div className="glass self-start rounded-3xl p-4">
               <div className="mb-3 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Evolutie zilnica pentru {currentMonth}</h3>
               </div>
-              <div className="h-64">
+              <div className="h-64 rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                   <ComposedChart data={dailyChartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
@@ -338,7 +340,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             </div>
           </div>
 
-          <DashboardGrid>
+          <div className="space-y-3">
             <div className="min-w-0">
               <BreakdownTable
             title="RM — Regional Manager"
@@ -401,7 +403,6 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             ]}
               />
             </div>
-          </DashboardGrid>
           <BreakdownTable
             title="Agenti - Toti agentii"
             subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${agentColumns.find((column) => column.key === agentSort.key)?.label} (${agentSort.direction}) · ${agents.length} agenti`}
@@ -432,6 +433,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               { header: 'Medie zilnica', value: (row) => row.medie_zilnica, format: 'currency' },
             ]}
           />
+          </div>
         </>
       )}
     </>

@@ -169,22 +169,18 @@ for (const viewport of VIEWPORTS) {
         .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
       const agentsPanel = page.getByRole('heading', { name: /^Agenti -/ })
         .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
-      if (viewport.width >= 1280) {
-        const [rmBox, storesBox, agentsBox] = await Promise.all([rmPanel.boundingBox(), storesPanel.boundingBox(), agentsPanel.boundingBox()]);
-        expect(rmBox).not.toBeNull();
-        expect(storesBox).not.toBeNull();
-        expect(agentsBox).not.toBeNull();
-        expect(Math.abs((rmBox?.y ?? 0) - (storesBox?.y ?? 0))).toBeLessThanOrEqual(8);
-        expect((agentsBox?.y ?? 0)).toBeGreaterThan(Math.max(rmBox?.y ?? 0, storesBox?.y ?? 0));
-        expect(Math.abs((rmBox?.width ?? 0) - (storesBox?.width ?? 0))).toBeLessThanOrEqual(40);
-        expect((agentsBox?.width ?? 0)).toBeGreaterThanOrEqual(
-          (rmBox?.width ?? 0) + (storesBox?.width ?? 0) - 80,
-        );
-      } else {
-        const [rmBox, storesBox, agentsBox] = await Promise.all([rmPanel.boundingBox(), storesPanel.boundingBox(), agentsPanel.boundingBox()]);
-        expect((storesBox?.y ?? 0)).toBeGreaterThan(rmBox?.y ?? 0);
-        expect((agentsBox?.y ?? 0)).toBeGreaterThan(storesBox?.y ?? 0);
-      }
+      const [rmBox, storesBox, agentsBox] = await Promise.all([
+        rmPanel.boundingBox(),
+        storesPanel.boundingBox(),
+        agentsPanel.boundingBox(),
+      ]);
+      expect(rmBox).not.toBeNull();
+      expect(storesBox).not.toBeNull();
+      expect(agentsBox).not.toBeNull();
+      expect((storesBox?.y ?? 0)).toBeGreaterThan(rmBox?.y ?? 0);
+      expect((agentsBox?.y ?? 0)).toBeGreaterThan(storesBox?.y ?? 0);
+      expect(Math.abs((rmBox?.width ?? 0) - (storesBox?.width ?? 0))).toBeLessThanOrEqual(40);
+      expect(Math.abs((storesBox?.width ?? 0) - (agentsBox?.width ?? 0))).toBeLessThanOrEqual(40);
       const agentsTable = agentsPanel.locator('table');
       await agentsTable.getByRole('button', { name: 'Agent', exact: true }).click();
       await expect(agentsTable).toBeVisible();
@@ -196,6 +192,21 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole('tab', { name: 'Istoric', exact: true }).click();
       await expect(page.getByRole('tab', { name: 'Istoric', exact: true })).toHaveAttribute('aria-selected', 'true');
       await assertNoPageOverflow(page);
+      if (viewport.width >= 1024) {
+        const historyRm = page.getByRole('heading', { name: 'RM', exact: true })
+          .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+        const historyStores = page.getByRole('heading', { name: 'Magazine', exact: true })
+          .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+        const historyAgents = page.getByRole('heading', { name: 'Agenti', exact: true })
+          .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+        const [historyRmBox, historyStoresBox, historyAgentsBox] = await Promise.all([
+          historyRm.boundingBox(),
+          historyStores.boundingBox(),
+          historyAgents.boundingBox(),
+        ]);
+        expect((historyStoresBox?.y ?? 0)).toBeGreaterThan(historyRmBox?.y ?? 0);
+        expect((historyAgentsBox?.y ?? 0)).toBeGreaterThan(historyStoresBox?.y ?? 0);
+      }
       await page.getByRole('tab', { name: 'Vizite', exact: true }).click();
       await expect(page.getByRole('tab', { name: 'Vizite', exact: true })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByText('Vizite pe Team Leader', { exact: true })).toBeVisible();

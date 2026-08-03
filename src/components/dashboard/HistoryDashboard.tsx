@@ -32,7 +32,6 @@ import {
   sumChartValues,
 } from './DashboardWidgets';
 import { SegmentedTabs } from '../common/SegmentedTabs';
-import { DashboardGrid } from '../common/DesktopLayout';
 
 export type HistoryKpiMetric = 'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts';
 
@@ -426,10 +425,10 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         </div>
       </div>
 
-      <div className={`grid gap-3 lg:grid-cols-[1.2fr_1fr] ${mobileSection !== 'details' ? 'hidden lg:grid' : ''}`}>
-        <div className="glass rounded-3xl p-4">
+      <div className={`grid items-start gap-3 lg:grid-cols-[1.2fr_1fr] ${mobileSection !== 'details' ? 'hidden lg:grid' : ''}`}>
+        <div className="glass self-start rounded-3xl p-4">
           <div className="mb-3 flex items-center gap-2"><CalendarRange size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Evolutie zilnica pentru {selectionLabel}</h3></div>
-          <div className="h-64">
+          <div className="h-64 rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
             <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <ComposedChart data={historyDailyChartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
@@ -454,7 +453,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
       </div>
 
       <div className={mobileSection !== 'details' ? 'hidden lg:contents' : 'contents'}>
-      <DashboardGrid>
+      <div className="space-y-3">
         <div className="min-w-0">
           <BreakdownTable
         title="RM"
@@ -507,7 +506,6 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         ]}
           />
         </div>
-      </DashboardGrid>
       <BreakdownTable
         title="Agenti"
         subtitle={`Sortare: ${agentColumns.find((column) => column.key === agentSort.key)?.label} (${agentSort.direction}) · ${agents.length} agenti`}
@@ -535,6 +533,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
           { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
         ]}
       />
+      </div>
       </div>
     </>
   );
