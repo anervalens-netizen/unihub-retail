@@ -65,6 +65,31 @@ class PromoGenerationConflictError(RuntimeError):
     """Raised when another writer moves the promo pointer during validation."""
 
 
+class PromoGenerationPointerIntegrityError(PromoGenerationConflictError):
+    """Raised when the current promo pointer cannot preserve rollback lineage."""
+
+
+def _previous_promo_generation_id(pointer_path: Path) -> str | None:
+    if not pointer_path.exists():
+        return None
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PromoGenerationPointerIntegrityError(
+            "Pointerul promo activ este invalid"
+        ) from exc
+    if not isinstance(pointer, dict):
+        raise PromoGenerationPointerIntegrityError("Pointerul promo activ este invalid")
+    generation_id = pointer.get("generation_id")
+    if (
+        not isinstance(generation_id, str)
+        or len(generation_id) != 32
+        or any(character not in "0123456789abcdef" for character in generation_id)
+    ):
+        raise PromoGenerationPointerIntegrityError("Pointerul promo activ este invalid")
+    return generation_id
+
+
 def _to_public_import_status(result: JobResult) -> ImportJobStatus:
     if result.status in {JobStatus.BACKEND_UNAVAILABLE, JobStatus.UNKNOWN}:
         raise HTTPException(
@@ -148,23 +173,6 @@ def _publish_promo_generation(
     staging = generation_root / f".staging-{uuid4()}"
     lock_path = generation_root / ".promotion.lock"
     try:
-        if generation_dir.exists():
-            config_path = generation_dir / config_name
-            if (
-                not final_actual_path.is_file()
-                or hashlib.sha256(final_actual_path.read_bytes()).hexdigest()
-                != source_sha256
-                or not config_path.is_file()
-                or hashlib.sha256(config_path.read_bytes()).hexdigest()
-                != config_sha256
-            ):
-                raise RuntimeError("Coliziune de generație promo")
-        else:
-            staging.mkdir(mode=0o700)
-            (staging / actual_name).write_bytes(content)
-            (staging / config_name).write_bytes(config_bytes)
-            staging.replace(generation_dir)
-
         with lock_path.open("a+b") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             pointer_path = generation_root / "current.json"
@@ -177,17 +185,23 @@ def _publish_promo_generation(
                 raise PromoGenerationConflictError(
                     "Pointerul promo a fost schimbat de alt worker"
                 )
-            previous_generation_id: str | None = None
-            if pointer_path.exists():
-                try:
-                    previous_generation_id = str(
-                        json.loads(pointer_path.read_text(encoding="utf-8")).get(
-                            "generation_id"
-                        )
-                        or ""
-                    ) or None
-                except Exception:
-                    previous_generation_id = None
+            previous_generation_id = _previous_promo_generation_id(pointer_path)
+            if generation_dir.exists():
+                config_path = generation_dir / config_name
+                if (
+                    not final_actual_path.is_file()
+                    or hashlib.sha256(final_actual_path.read_bytes()).hexdigest()
+                    != source_sha256
+                    or not config_path.is_file()
+                    or hashlib.sha256(config_path.read_bytes()).hexdigest()
+                    != config_sha256
+                ):
+                    raise RuntimeError("Coliziune de generație promo")
+            else:
+                staging.mkdir(mode=0o700)
+                (staging / actual_name).write_bytes(content)
+                (staging / config_name).write_bytes(config_bytes)
+                staging.replace(generation_dir)
             pointer = {
                 "version": 1,
                 "generation_id": generation_id,
@@ -449,6 +463,11 @@ class ImportsService:
                 material_sha256=material_sha256,
                 expected_pointer_sha256=expected_pointer_sha256,
             )
+        except PromoGenerationPointerIntegrityError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Configuratia promo activa este invalida; importul a fost oprit",
+            ) from exc
         except PromoGenerationConflictError as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

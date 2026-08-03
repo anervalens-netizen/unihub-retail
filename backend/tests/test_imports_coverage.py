@@ -140,7 +140,7 @@ def test_publish_promo_generation_hashes_external_source_and_rejects_missing_sou
         )
 
 
-def test_publish_promo_generation_reuses_exact_generation_and_rejects_collision(
+def test_publish_promo_generation_reuses_exact_generation(
     tmp_path: Path,
 ) -> None:
     data_dir = tmp_path / "data"
@@ -162,22 +162,21 @@ def test_publish_promo_generation_reuses_exact_generation_and_rejects_collision(
     )
 
     assert second == first
-    generation_dir = data_dir / "promo_generations" / first[0]
-    (generation_dir / "promo_actuals.xlsx").write_bytes(b"tampered")
-
-    with pytest.raises(RuntimeError, match="Coliziune de generație promo"):
-        imports_module._publish_promo_generation(
-            data_dir=data_dir,
-            config=_promotion_config(),
-            content=b"uploaded-actuals",
-            suffix=".xlsx",
-            material_sha256="d" * 64,
-            expected_pointer_sha256=imports_module._promo_pointer_sha256(data_dir),
-        )
 
 
-def test_publish_promo_generation_recovers_from_malformed_previous_pointer(
+@pytest.mark.parametrize(
+    ("artifact_name", "mutation"),
+    [
+        ("promo_actuals.xlsx", "missing"),
+        ("hub_specials.json", "missing"),
+        ("promo_actuals.xlsx", "tampered"),
+        ("hub_specials.json", "tampered"),
+    ],
+)
+def test_publish_promo_generation_rejects_each_existing_artifact_integrity_failure(
     tmp_path: Path,
+    artifact_name: str,
+    mutation: str,
 ) -> None:
     data_dir = tmp_path / "data"
     first = imports_module._publish_promo_generation(
@@ -188,22 +187,70 @@ def test_publish_promo_generation_recovers_from_malformed_previous_pointer(
         material_sha256="e" * 64,
         expected_pointer_sha256=None,
     )
+    artifact_path = data_dir / "promo_generations" / first[0] / artifact_name
     pointer_path = data_dir / "promo_generations" / "current.json"
-    pointer_path.write_text("not-json", encoding="utf-8")
-    malformed_sha256 = imports_module._promo_pointer_sha256(data_dir)
+    pointer_before = pointer_path.read_bytes()
+    if mutation == "missing":
+        artifact_path.unlink()
+    else:
+        artifact_path.write_bytes(b"tampered")
 
-    second = imports_module._publish_promo_generation(
+    with pytest.raises(RuntimeError, match="Coliziune de generație promo"):
+        imports_module._publish_promo_generation(
+            data_dir=data_dir,
+            config=_promotion_config(),
+            content=b"uploaded-actuals",
+            suffix=".xlsx",
+            material_sha256="e" * 64,
+            expected_pointer_sha256=imports_module._promo_pointer_sha256(data_dir),
+        )
+
+    assert pointer_path.read_bytes() == pointer_before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_pointer",
+    [
+        b"not-json",
+        b"[]",
+        b'{"generation_id":"not-a-valid-generation"}',
+    ],
+)
+async def test_promo_actuals_fails_closed_for_invalid_current_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    invalid_pointer: bytes,
+) -> None:
+    _configure_promo_paths(monkeypatch, tmp_path, _promotion_config())
+    data_dir = tmp_path / "data"
+    imports_module._publish_promo_generation(
         data_dir=data_dir,
         config=_promotion_config(),
         content=b"uploaded-actuals",
         suffix=".xlsx",
         material_sha256="e" * 64,
-        expected_pointer_sha256=malformed_sha256,
+        expected_pointer_sha256=None,
     )
+    generation_root = data_dir / "promo_generations"
+    pointer_path = generation_root / "current.json"
+    pointer_path.write_bytes(invalid_pointer)
+    generation_dirs_before = {
+        path.name for path in generation_root.iterdir() if path.is_dir()
+    }
 
-    assert second == first
-    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
-    assert pointer["previous_generation_id"] is None
+    with pytest.raises(HTTPException) as exc:
+        await _service().import_promo_actuals(
+            file=_upload(b"uploaded-actuals"),
+            import_month="2026-06",
+            cutoff_date=date(2026, 6, 15),
+        )
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Configuratia promo activa este invalida; importul a fost oprit"
+    assert isinstance(exc.value.__cause__, imports_module.PromoGenerationPointerIntegrityError)
+    assert pointer_path.read_bytes() == invalid_pointer
+    assert {path.name for path in generation_root.iterdir() if path.is_dir()} == generation_dirs_before
 
 
 def test_publish_promo_generation_removes_staging_after_atomic_promotion_fault(
