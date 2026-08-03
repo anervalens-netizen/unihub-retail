@@ -255,41 +255,50 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             </div>
           </div>
 
-          <div data-testid="hub-period-comparison-card" className="glass w-full min-w-0 overflow-hidden rounded-3xl p-4">
-            <div className="mx-auto w-full max-w-[1208px]">
-              <div className="mb-4 flex items-center gap-2">
+          <div data-testid="hub-period-comparison-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+            <div data-testid="hub-period-comparison-card" className="glass flex min-w-0 flex-col overflow-hidden rounded-3xl p-4">
+              <div className="mb-3 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Comparatie perioade</h3>
               </div>
               {!periodComparison || !comparisonDeltas ? (
                 <div className="text-xs text-slate-500">Date indisponibile pentru comparatia de perioade.</div>
               ) : (
-                <div data-testid="hub-period-comparison-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
-                  <div className="min-w-0">
-                    <PeriodTable current={periodComparison.current} previous={periodComparison.previous} yoy={periodComparison.year_over_year} />
-                  </div>
-                  <div className="grid min-w-0 grid-cols-1 gap-3 min-[640px]:max-[1499px]:grid-cols-2 min-[1500px]:grid-rows-2">
-                    <DeltaCard
-                      title="Vs luna trecuta"
-                      compact
-                      salesDelta={comparisonDeltas.previousSales}
-                      salesPct={comparisonDeltas.previousSalesPct}
-                      receiptsDelta={comparisonDeltas.previousReceipts}
-                      receiptsPct={comparisonDeltas.previousReceiptsPct}
-                      quantityDelta={comparisonDeltas.previousQuantity}
-                      quantityPct={comparisonDeltas.previousQuantityPct}
-                    />
-                    <DeltaCard
-                      title="Vs anul trecut"
-                      compact
-                      salesDelta={comparisonDeltas.yearSales}
-                      salesPct={comparisonDeltas.yearSalesPct}
-                      receiptsDelta={comparisonDeltas.yearReceipts}
-                      receiptsPct={comparisonDeltas.yearReceiptsPct}
-                      quantityDelta={comparisonDeltas.yearQuantity}
-                      quantityPct={comparisonDeltas.yearQuantityPct}
-                    />
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <PeriodTable current={periodComparison.current} previous={periodComparison.previous} yoy={periodComparison.year_over_year} />
+                </div>
+              )}
+            </div>
+
+            <div data-testid="hub-period-kpi-card" className="glass flex min-w-0 flex-col overflow-hidden rounded-3xl p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <CalendarRange size={16} className="text-indigo-500" />
+                <h3 className="text-sm font-bold">Variatii fata de perioade</h3>
+              </div>
+              {!comparisonDeltas ? (
+                <div className="text-xs text-slate-500">Date indisponibile pentru variatiile de perioada.</div>
+              ) : (
+                <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 min-[640px]:max-[1499px]:grid-cols-2 min-[1500px]:grid-rows-2">
+                  <DeltaCard
+                    title="Vs luna trecuta"
+                    compact
+                    salesDelta={comparisonDeltas.previousSales}
+                    salesPct={comparisonDeltas.previousSalesPct}
+                    receiptsDelta={comparisonDeltas.previousReceipts}
+                    receiptsPct={comparisonDeltas.previousReceiptsPct}
+                    quantityDelta={comparisonDeltas.previousQuantity}
+                    quantityPct={comparisonDeltas.previousQuantityPct}
+                  />
+                  <DeltaCard
+                    title="Vs anul trecut"
+                    compact
+                    salesDelta={comparisonDeltas.yearSales}
+                    salesPct={comparisonDeltas.yearSalesPct}
+                    receiptsDelta={comparisonDeltas.yearReceipts}
+                    receiptsPct={comparisonDeltas.yearReceiptsPct}
+                    quantityDelta={comparisonDeltas.yearQuantity}
+                    quantityPct={comparisonDeltas.yearQuantityPct}
+                  />
                 </div>
               )}
             </div>
