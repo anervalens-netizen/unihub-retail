@@ -270,7 +270,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const mobiupTotal = overview?.by_company?.find((c) => c.name === 'Mobiup')?.total ?? 0;
 
   return (
-    <div className="space-y-4 px-4 py-4">
+    <div className="space-y-4 px-4 pb-4 pt-0">
       <SegmentedTabs<'overview' | 'stores' | 'agents'>
         ariaLabel="Vizualizare salarii"
         level="secondary"

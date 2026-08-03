@@ -7,6 +7,7 @@ import type { ManagementTab } from '../lib/tabs';
 import type { AppFilters } from './MainLayout';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
+import { cn } from '../lib/utils';
 
 const TABS: SegmentedTabOption<ManagementTab>[] = [
   { value: 'asm', label: 'Manageri' },
@@ -49,7 +50,7 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
         onChange={setTab}
       />
 
-      <div className="mt-3 flex-1 lg:mt-4">
+      <div className={cn('flex-1', activeTab === 'salarii' ? 'mt-0' : 'mt-3 lg:mt-4')}>
         {activeTab === 'asm' && <ASMSubtab currentMonth={currentMonth} />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
         {activeTab === 'salarii' && <SalariiSubtab globalFilters={salaryFilters} />}

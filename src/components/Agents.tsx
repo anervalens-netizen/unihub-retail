@@ -557,7 +557,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
         </ErrorBoundary>
       ) : (
         <>
-          <div className="sticky top-2 z-20 lg:static">
+          <div className="sticky top-2 z-20 !mt-0 lg:static">
             <SegmentedTabs<AgentsOverviewSection>
               ariaLabel="Zone prezentare generală agenți"
               level="secondary"
