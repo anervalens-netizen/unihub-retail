@@ -223,7 +223,8 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
     <>
       <SegmentedTabs<'summary' | 'trend' | 'details'>
         ariaLabel="Conținut istoric mobil"
-        className="glass lg:hidden"
+        className="lg:hidden"
+        level="secondary"
         options={[
           { value: 'summary', label: 'Sumar' },
           { value: 'trend', label: 'Trend' },

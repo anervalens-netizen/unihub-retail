@@ -557,9 +557,10 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
         </ErrorBoundary>
       ) : (
         <>
-          <div className="sticky top-2 z-20 rounded-2xl lg:static bg-white/90 p-1 shadow-sm backdrop-blur-xl dark:bg-slate-900/90">
+          <div className="sticky top-2 z-20 lg:static">
             <SegmentedTabs<AgentsOverviewSection>
               ariaLabel="Zone prezentare generală agenți"
+              level="secondary"
               options={AGENTS_OVERVIEW_OPTIONS}
               value={overviewSection}
               onChange={selectOverviewSection}

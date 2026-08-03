@@ -38,4 +38,23 @@ describe('SegmentedTabs', () => {
 
     expect(html).toContain('disabled=""');
   });
+
+  it('renders secondary tabs as a compact subordinate level', () => {
+    const html = renderToStaticMarkup(
+      createElement(SegmentedTabs, {
+        ariaLabel: 'Subsectiuni',
+        level: 'secondary',
+        value: 'overview',
+        onChange: () => undefined,
+        options: [
+          { value: 'overview', label: 'Overview' },
+          { value: 'forecast', label: 'AI Forecast' },
+        ],
+      }),
+    );
+
+    expect(html).toContain('data-tab-level="secondary"');
+    expect(html).toContain('min-h-8');
+    expect(html).toContain('bg-indigo-100/75');
+  });
 });

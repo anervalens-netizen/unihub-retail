@@ -273,7 +273,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     <div className="space-y-4 px-4 py-4">
       <SegmentedTabs<'overview' | 'stores' | 'agents'>
         ariaLabel="Vizualizare salarii"
-        className="glass"
+        level="secondary"
         options={[
           { value: 'overview', label: 'Overview' },
           { value: 'stores', label: 'Magazine' },

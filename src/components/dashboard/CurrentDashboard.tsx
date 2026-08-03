@@ -154,7 +154,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
     <>
       <SegmentedTabs
         ariaLabel="Mod analiză lună curentă"
-        className="glass"
+        level="secondary"
         options={[
           { value: 'overview', label: 'Overview' },
           { value: 'forecast', label: 'AI Forecast' },

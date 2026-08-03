@@ -982,7 +982,8 @@ function PremiumGlassFocusSection({
       {analysis && (
         <SegmentedTabs<'overview' | 'models' | 'stores' | 'agents'>
           ariaLabel="Detalii folii premium pe mobil"
-          className="glass lg:hidden"
+          className="lg:hidden"
+          level="secondary"
           options={[
             { value: 'overview', label: 'Sumar' },
             { value: 'models', label: 'Modele' },
