@@ -8,8 +8,8 @@ import { observeCoreWebVitals, webVitalDistributionName } from './lib/webVitals.
 import * as Sentry from '@sentry/react';
 
 const sentryDsn = import.meta.env.VITE_GLITCHTIP_DSN;
-if (sentryDsn) {
-  const supportsBrowserTracing = typeof Array.prototype.at === 'function';
+const supportsSentry = typeof Array.prototype.at === 'function';
+if (sentryDsn && supportsSentry) {
   const connection = (
     navigator as Navigator & {
       connection?: { effectiveType?: string; saveData?: boolean };
@@ -18,8 +18,8 @@ if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,
     environment: import.meta.env.MODE,
-    integrations: supportsBrowserTracing ? [Sentry.browserTracingIntegration()] : [],
-    tracesSampleRate: supportsBrowserTracing ? 0.1 : 0,
+    integrations: [Sentry.browserTracingIntegration()],
+    tracesSampleRate: 0.1,
     tracePropagationTargets: [/^\//, window.location.origin],
   });
   Sentry.setTag('network.effective_type', connection?.effectiveType ?? 'unknown');
