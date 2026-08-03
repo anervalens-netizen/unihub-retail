@@ -228,7 +228,7 @@ export function PnlSubtab() {
     );
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:space-y-4 lg:p-0">
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-5">
         <div>
           <div className="flex items-center gap-2">
@@ -241,7 +241,7 @@ export function PnlSubtab() {
             Performanță financiară pe rețea, regiune, companie și magazin.
           </p>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-2 lg:mt-3 lg:grid-cols-5">
           <label className="text-xs text-slate-500">
             De la
             <select
@@ -425,6 +425,7 @@ export function PnlSubtab() {
             )}
           </div>
 
+          <div className="grid gap-4 xl:grid-cols-[7fr_5fr] xl:items-stretch">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-semibold text-slate-900 dark:text-white">Evoluție lunară</h3>
@@ -595,6 +596,8 @@ export function PnlSubtab() {
                 </div>
               )
             )}
+          </div>
+
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
