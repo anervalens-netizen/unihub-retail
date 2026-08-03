@@ -255,7 +255,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             </div>
           </div>
 
-          <div className="glass min-w-0 overflow-hidden rounded-3xl p-4">
+          <div className="glass mx-auto w-full max-w-[1240px] min-w-0 overflow-hidden rounded-3xl p-4">
               <div className="mb-4 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Comparatie perioade</h3>
@@ -263,7 +263,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               {!periodComparison || !comparisonDeltas ? (
                 <div className="text-xs text-slate-500">Date indisponibile pentru comparatia de perioade.</div>
               ) : (
-                <div data-testid="hub-period-comparison-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+                <div data-testid="hub-period-comparison-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
                   <div className="min-w-0">
                     <PeriodTable current={periodComparison.current} previous={periodComparison.previous} yoy={periodComparison.year_over_year} />
                   </div>

@@ -231,14 +231,18 @@ async function assertResponsiveHubLayout(page: Page, viewportWidth: number) {
 
   const comparisonChildren = page.getByTestId('hub-period-comparison-layout').locator(':scope > div');
   const chartChildren = page.getByTestId('hub-chart-layout').locator(':scope > div');
-  const [tableBox, deltasBox, dailyBox, secondaryChartsBox] = await Promise.all([
+  const [comparisonLayoutBox, tableBox, deltasBox, dailyBox, secondaryChartsBox, periodTableFontSize] = await Promise.all([
+    page.getByTestId('hub-period-comparison-layout').boundingBox(),
     comparisonChildren.nth(0).boundingBox(),
     comparisonChildren.nth(1).boundingBox(),
     chartChildren.nth(0).boundingBox(),
     chartChildren.nth(1).boundingBox(),
+    page.getByTestId('hub-period-table').evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
   ]);
 
   if (viewportWidth >= 1500) {
+    expect(comparisonLayoutBox?.width ?? 0).toBeLessThanOrEqual(1210);
+    expect(periodTableFontSize).toBeGreaterThanOrEqual(14);
     expect(Math.abs((tableBox?.y ?? 0) - (deltasBox?.y ?? 0))).toBeLessThanOrEqual(8);
     expect(Math.abs((dailyBox?.y ?? 0) - (secondaryChartsBox?.y ?? 0))).toBeLessThanOrEqual(8);
     expect(Math.abs((tableBox?.height ?? 0) - (deltasBox?.height ?? 0))).toBeLessThanOrEqual(4);

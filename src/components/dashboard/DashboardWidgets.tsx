@@ -299,15 +299,15 @@ export function PeriodTable({
 
   return (
     <div className="min-w-0 w-full overflow-hidden rounded-2xl bg-slate-50 dark:bg-slate-800/50">
-      <table className="w-full table-fixed text-[11px]">
+      <table data-testid="hub-period-table" className="w-full table-fixed text-xs min-[1500px]:text-sm">
         <thead>
           <tr className="border-b border-slate-200 dark:border-slate-700">
-            <th className="w-[22%] py-2 pl-2 pr-1 text-left font-semibold text-slate-400 sm:pl-3 sm:pr-2" />
+            <th className="w-1/4 py-2.5 pl-2 pr-1 text-left font-semibold text-slate-400 sm:pl-3 sm:pr-2" />
             {points.map((p) => (
-              <th key={p.label} className="w-[26%] px-1 py-2 text-center sm:px-2">
+              <th key={p.label} className="w-1/4 border-l border-slate-200/70 px-1 py-2.5 text-center dark:border-slate-700/60 sm:px-2">
                 <div className="font-bold text-slate-700 dark:text-slate-200">{p.label}</div>
-                <div className="text-[10px] font-normal text-slate-400">{p.month}</div>
-                <div className="text-[10px] font-normal text-slate-400">{p.day_range}</div>
+                <div className="text-[11px] font-normal text-slate-400">{p.month}</div>
+                <div className="text-[11px] font-normal text-slate-400">{p.day_range}</div>
               </th>
             ))}
           </tr>
@@ -318,9 +318,9 @@ export function PeriodTable({
               key={row.label}
               className={i % 2 === 0 ? 'bg-white/60 dark:bg-slate-900/20' : ''}
             >
-              <td className="break-words py-1.5 pl-2 pr-1 font-medium text-slate-500 sm:pl-3 sm:pr-2">{row.label}</td>
+              <td className="break-words py-2 pl-2 pr-1 font-medium text-slate-500 sm:pl-3 sm:pr-2">{row.label}</td>
               {points.map((p) => (
-                <td key={p.label} className="break-words px-1 py-1.5 text-center font-semibold text-slate-700 tabular-nums dark:text-slate-200 sm:px-3">
+                <td key={p.label} className="break-words border-l border-slate-200/70 px-1 py-2 text-center font-bold text-slate-700 tabular-nums dark:border-slate-700/60 dark:text-slate-200 sm:px-2">
                   {row.fn(p)}
                 </td>
               ))}
@@ -374,10 +374,10 @@ export function DeltaCard({
 
   return (
     <div className={`min-w-0 rounded-2xl border ${compact ? 'p-2.5' : 'p-3'} ${tone}`}>
-      <div className={`${compact ? 'mb-2' : 'mb-3'} text-[11px] font-bold uppercase tracking-wide`}>{title}</div>
+      <div className={`${compact ? 'mb-2 text-xs' : 'mb-3 text-[11px]'} font-bold uppercase tracking-wide`}>{title}</div>
       <div className={compact ? 'space-y-1' : 'space-y-2'}>
         <div>
-          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
+          <div className={`flex items-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-[11px]' : 'text-[10px]'}`}>
             <span className="text-base font-normal leading-none">Δ</span>
             <span className="opacity-60">vanzari</span>
           </div>
@@ -387,7 +387,7 @@ export function DeltaCard({
           </div>
         </div>
         <div>
-          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
+          <div className={`flex items-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-[11px]' : 'text-[10px]'}`}>
             <span className="text-base font-normal leading-none">Δ</span>
             <span className="opacity-60">bonuri</span>
           </div>
@@ -397,7 +397,7 @@ export function DeltaCard({
           </div>
         </div>
         <div>
-          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
+          <div className={`flex items-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-[11px]' : 'text-[10px]'}`}>
             <span className="text-base font-normal leading-none">Δ</span>
             <span className="opacity-60">cantitate</span>
           </div>
