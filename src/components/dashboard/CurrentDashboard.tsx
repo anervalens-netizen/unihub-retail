@@ -263,13 +263,14 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               {!periodComparison || !comparisonDeltas ? (
                 <div className="text-xs text-slate-500">Date indisponibile pentru comparatia de perioade.</div>
               ) : (
-                <div data-testid="hub-period-comparison-layout" className="grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+                <div data-testid="hub-period-comparison-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
                   <div className="min-w-0">
                     <PeriodTable current={periodComparison.current} previous={periodComparison.previous} yoy={periodComparison.year_over_year} />
                   </div>
-                  <div className="grid min-w-0 gap-3 sm:grid-cols-2 min-[1500px]:grid-cols-1">
+                  <div className="grid min-w-0 grid-cols-1 gap-3 min-[640px]:max-[1499px]:grid-cols-2 min-[1500px]:grid-rows-2">
                     <DeltaCard
                       title="Vs luna trecuta"
+                      compact
                       salesDelta={comparisonDeltas.previousSales}
                       salesPct={comparisonDeltas.previousSalesPct}
                       receiptsDelta={comparisonDeltas.previousReceipts}
@@ -279,6 +280,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                     />
                     <DeltaCard
                       title="Vs anul trecut"
+                      compact
                       salesDelta={comparisonDeltas.yearSales}
                       salesPct={comparisonDeltas.yearSalesPct}
                       receiptsDelta={comparisonDeltas.yearReceipts}
@@ -291,13 +293,13 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               )}
           </div>
 
-          <div data-testid="hub-chart-layout" className="grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-            <div className="glass min-w-0 self-start rounded-3xl p-4">
+          <div data-testid="hub-chart-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+            <div className="glass flex min-w-0 flex-col rounded-3xl p-4">
               <div className="mb-3 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Evolutie zilnica pentru {currentMonth}</h3>
               </div>
-              <div className="aspect-[16/6] min-h-56 max-h-72 w-full rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
+              <div className="aspect-[16/6] min-h-56 max-h-72 w-full rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40 min-[1500px]:aspect-auto min-[1500px]:min-h-[24rem] min-[1500px]:max-h-none min-[1500px]:flex-1">
                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                   <ComposedChart data={dailyChartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
@@ -312,12 +314,12 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="glass min-w-0 rounded-3xl p-4">
+            <div className="glass flex min-w-0 flex-col rounded-3xl p-4">
               <div className="mb-3 flex items-center gap-2">
                 <PieChartIcon size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Top categorii si branduri</h3>
               </div>
-              <div className="space-y-4">
+              <div className="grid min-w-0 flex-1 gap-3 min-[1500px]:grid-rows-2">
                 <CompactPieSection
                   title="Top categorii"
                   emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta."
@@ -326,6 +328,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                   nameKey="category"
                   valueFormatter={formatAmount}
                   centerValue={formatCompactDonutValue(sumChartValues(categoryMixChartData, 'sales_total'))}
+                  compact
                 />
                 <CompactPieSection
                   title="Branduri compatibile"
@@ -335,6 +338,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                   nameKey="brand"
                   valueFormatter={formatAmount}
                   centerValue={formatCompactDonutValue(sumChartValues(brandMixChartData, 'sales_total'))}
+                  compact
                 />
               </div>
             </div>

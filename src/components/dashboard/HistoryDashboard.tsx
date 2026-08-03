@@ -427,10 +427,10 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         </div>
       </div>
 
-      <div className={`grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] ${mobileSection !== 'details' ? 'hidden lg:grid' : ''}`}>
-        <div className="glass min-w-0 self-start rounded-3xl p-4">
+      <div className={`grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] ${mobileSection !== 'details' ? 'hidden lg:grid' : ''}`}>
+        <div className="glass flex min-w-0 flex-col rounded-3xl p-4">
           <div className="mb-3 flex items-center gap-2"><CalendarRange size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Evolutie zilnica pentru {selectionLabel}</h3></div>
-          <div className="aspect-[16/6] min-h-56 max-h-72 w-full rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
+          <div className="aspect-[16/6] min-h-56 max-h-72 w-full rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40 min-[1500px]:aspect-auto min-[1500px]:min-h-[24rem] min-[1500px]:max-h-none min-[1500px]:flex-1">
             <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <ComposedChart data={historyDailyChartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
@@ -445,11 +445,11 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="glass min-w-0 rounded-3xl p-4">
+        <div className="glass flex min-w-0 flex-col rounded-3xl p-4">
           <div className="mb-3 flex items-center gap-2"><PieChartIcon size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Top categorii si branduri</h3></div>
-          <div className="space-y-4">
-            <CompactPieSection title="Top categorii" emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta." pieData={historyCategoryMixChartData} dataKey="sales_total" nameKey="category" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(historyCategoryMixChartData, 'sales_total'))} />
-            <CompactPieSection title="Branduri compatibile" emptyLabel="Nu exista date pentru brandurile urmarite." pieData={historyBrandMixChartData} dataKey="sales_total" nameKey="brand" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(historyBrandMixChartData, 'sales_total'))} />
+          <div className="grid min-w-0 flex-1 gap-3 min-[1500px]:grid-rows-2">
+            <CompactPieSection title="Top categorii" emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta." pieData={historyCategoryMixChartData} dataKey="sales_total" nameKey="category" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(historyCategoryMixChartData, 'sales_total'))} compact />
+            <CompactPieSection title="Branduri compatibile" emptyLabel="Nu exista date pentru brandurile urmarite." pieData={historyBrandMixChartData} dataKey="sales_total" nameKey="brand" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(historyBrandMixChartData, 'sales_total'))} compact />
           </div>
         </div>
       </div>

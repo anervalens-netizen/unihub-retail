@@ -156,6 +156,7 @@ export function CompactPieSection({
   nameKey,
   valueFormatter,
   centerValue,
+  compact = false,
 }: {
   title: string;
   emptyLabel: string;
@@ -164,10 +165,11 @@ export function CompactPieSection({
   nameKey: string;
   valueFormatter: (value: number) => string;
   centerValue: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl bg-slate-50/80 p-3 dark:bg-slate-800/40">
-      <div className="mb-3 text-sm font-bold tracking-wide text-slate-600 dark:text-slate-300">{title}</div>
+    <div className={`min-w-0 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 ${compact ? 'p-2.5' : 'p-3'}`}>
+      <div className={`${compact ? 'mb-2 text-[13px]' : 'mb-3 text-sm'} font-bold tracking-wide text-slate-600 dark:text-slate-300`}>{title}</div>
       {pieData.length === 0 ? (
         <div className="rounded-2xl bg-white/70 p-4 text-xs font-semibold text-slate-500 dark:bg-slate-900/30">
           {emptyLabel}
@@ -181,6 +183,7 @@ export function CompactPieSection({
           valueFormatter={valueFormatter}
           centerLabel="TOTAL"
           centerValue={centerValue}
+          compact={compact}
           sideBySide
         />
       )}
@@ -351,6 +354,7 @@ export function DeltaCard({
   receiptsPct,
   quantityDelta,
   quantityPct,
+  compact = false,
 }: {
   title: string;
   salesDelta: number;
@@ -359,6 +363,7 @@ export function DeltaCard({
   receiptsPct?: number | null;
   quantityDelta: number;
   quantityPct?: number | null;
+  compact?: boolean;
 }) {
   const salesPositive = salesDelta >= 0;
   const receiptsPositive = receiptsDelta >= 0;
@@ -368,15 +373,15 @@ export function DeltaCard({
     : 'border-rose-200 bg-rose-50/80 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300';
 
   return (
-    <div className={`min-w-0 rounded-2xl border p-3 ${tone}`}>
-      <div className="mb-3 text-[11px] font-bold uppercase tracking-wide">{title}</div>
-      <div className="space-y-2">
+    <div className={`min-w-0 rounded-2xl border ${compact ? 'p-2.5' : 'p-3'} ${tone}`}>
+      <div className={`${compact ? 'mb-2' : 'mb-3'} text-[11px] font-bold uppercase tracking-wide`}>{title}</div>
+      <div className={compact ? 'space-y-1' : 'space-y-2'}>
         <div>
           <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
             <span className="text-base font-normal leading-none">Δ</span>
             <span className="opacity-60">vanzari</span>
           </div>
-          <div className="mt-1 flex items-center gap-2 min-w-0">
+          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center gap-2`}>
             <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaCurrency(salesDelta)}</span>
             {salesPct != null && <DeltaPctBadge pct={salesPct} positive={salesPositive} />}
           </div>
@@ -386,7 +391,7 @@ export function DeltaCard({
             <span className="text-base font-normal leading-none">Δ</span>
             <span className="opacity-60">bonuri</span>
           </div>
-          <div className="mt-1 flex items-center gap-2 min-w-0">
+          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center gap-2`}>
             <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaInt(receiptsDelta)}</span>
             {receiptsPct != null && <DeltaPctBadge pct={receiptsPct} positive={receiptsPositive} />}
           </div>
@@ -396,7 +401,7 @@ export function DeltaCard({
             <span className="text-base font-normal leading-none">Δ</span>
             <span className="opacity-60">cantitate</span>
           </div>
-          <div className="mt-1 flex items-center gap-2 min-w-0">
+          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center gap-2`}>
             <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaInt(quantityDelta)}</span>
             {quantityPct != null && <DeltaPctBadge pct={quantityPct} positive={quantityPositive} />}
           </div>

@@ -241,6 +241,8 @@ async function assertResponsiveHubLayout(page: Page, viewportWidth: number) {
   if (viewportWidth >= 1500) {
     expect(Math.abs((tableBox?.y ?? 0) - (deltasBox?.y ?? 0))).toBeLessThanOrEqual(8);
     expect(Math.abs((dailyBox?.y ?? 0) - (secondaryChartsBox?.y ?? 0))).toBeLessThanOrEqual(8);
+    expect(Math.abs((tableBox?.height ?? 0) - (deltasBox?.height ?? 0))).toBeLessThanOrEqual(4);
+    expect(Math.abs((dailyBox?.height ?? 0) - (secondaryChartsBox?.height ?? 0))).toBeLessThanOrEqual(4);
   } else {
     expect(deltasBox?.y ?? 0).toBeGreaterThanOrEqual((tableBox?.y ?? 0) + (tableBox?.height ?? 0) - 4);
     expect(secondaryChartsBox?.y ?? 0).toBeGreaterThanOrEqual((dailyBox?.y ?? 0) + (dailyBox?.height ?? 0) - 4);
