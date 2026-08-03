@@ -337,7 +337,7 @@ function CustomTooltip({ active, payload, label }: any) {
   return null;
 }
 
-export function Agents({ currentMonth, months: _months, filters }: AgentsProps) {
+export function Agents({ currentMonth, months, filters }: AgentsProps) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedAgent, setSelectedAgent] = usePersistentState<string | null>(
@@ -549,7 +549,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
 
       {mainTab === 'analysis' ? (
         <ErrorBoundary>
-          <AgentEvaluationSubtab />
+          <AgentEvaluationSubtab currentMonth={currentMonth} months={months} />
         </ErrorBoundary>
       ) : mainTab === 'grile' ? (
         <ErrorBoundary>

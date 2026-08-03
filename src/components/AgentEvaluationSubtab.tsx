@@ -10,7 +10,7 @@ import {
   type AgentEvaluationV2Response,
 } from '../api/agents';
 import { ExportTableButton } from './ExportTableButton';
-import { formatMonthLabel } from '../lib/dates';
+import { formatMonthLabel, shiftMonth } from '../lib/dates';
 import { SortableTableHeader } from './common/TableHeader';
 
 function formatMoney(value: number | null | undefined) {
@@ -201,7 +201,11 @@ function MonthDropdown({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const label = selectedMonths.length ? `${selectedMonths.length} luni` : 'Toate lunile';
+  const label = selectedMonths.length === 1
+    ? formatMonthLabel(selectedMonths[0], { month: 'long', year: 'full' })
+    : selectedMonths.length
+      ? `${selectedMonths.length} luni`
+      : 'Toate lunile';
 
   return (
     <div className="relative">
@@ -727,7 +731,7 @@ function NewEvaluationSubsection({
               Cum se face evaluarea
             </div>
             <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-              Scor 0-100, subsectiune separata de evaluarea actuala, fara componenta de bonus.
+              Punctaj 0–100, separat de analiza inițială și fără componentă de bonus.
             </div>
           </div>
           {showMechanism ? <ChevronUp size={14} className="text-indigo-500" /> : <ChevronDown size={14} className="text-indigo-500" />}
@@ -884,11 +888,31 @@ function NewEvaluationSubsection({
 const EMPTY_RESPONSE: AgentEvaluationResponse = { months: [], firmas: [], asms: [], stores: [], rows: [] };
 const EMPTY_V2_RESPONSE: AgentEvaluationV2Response = { months: [], firmas: [], asms: [], stores: [], rows: [] };
 
-export function AgentEvaluationSubtab() {
+function latestClosedMonth(currentMonth: string, months: readonly string[]): string {
+  const availableClosedMonths = months
+    .filter((month) => /^\d{4}-\d{2}$/.test(month) && month < currentMonth)
+    .sort();
+  const latestAvailable = availableClosedMonths[availableClosedMonths.length - 1];
+  if (latestAvailable) return latestAvailable;
+
+  const previousMonth = shiftMonth(currentMonth, -1);
+  return previousMonth !== currentMonth ? previousMonth : '';
+}
+
+export function AgentEvaluationSubtab({
+  currentMonth,
+  months,
+}: {
+  currentMonth: string;
+  months: string[];
+}) {
   const [data, setData] = useState<AgentEvaluationResponse>(EMPTY_RESPONSE);
   const [v2Data, setV2Data] = useState<AgentEvaluationV2Response>(EMPTY_V2_RESPONSE);
-  const [mode, setMode] = useState<'current' | 'new'>('new');
-  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [mode, setMode] = useState<'current' | 'new'>('current');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(() => {
+    const defaultMonth = latestClosedMonth(currentMonth, months);
+    return defaultMonth ? [defaultMonth] : [];
+  });
   const [firma, setFirma] = useState('');
   const [asm, setAsm] = useState('');
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
@@ -1033,8 +1057,8 @@ export function AgentEvaluationSubtab() {
         </div>
         <div className="hidden h-9 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800 lg:inline-flex">
           {[
-            { key: 'new', label: 'Scor 0–100' },
-            { key: 'current', label: 'Comparație veche' },
+            { key: 'current', label: 'Analiză' },
+            { key: 'new', label: 'Punctaj 0–100' },
           ].map((item) => (
             <button
               key={item.key}
@@ -1054,8 +1078,8 @@ export function AgentEvaluationSubtab() {
         <details className="relative lg:hidden">
           <summary className="flex min-h-11 cursor-pointer list-none items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Mod</summary>
           <div className="absolute right-0 z-40 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-            <button type="button" onClick={() => setMode('new')} className="min-h-11 w-full rounded-lg px-3 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Scor 0–100</button>
-            <button type="button" onClick={() => setMode('current')} className="min-h-11 w-full rounded-lg px-3 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Comparație veche</button>
+            <button type="button" onClick={() => setMode('current')} className="min-h-11 w-full rounded-lg px-3 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Analiză</button>
+            <button type="button" onClick={() => setMode('new')} className="min-h-11 w-full rounded-lg px-3 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Punctaj 0–100</button>
           </div>
         </details>
         <button
@@ -1068,7 +1092,7 @@ export function AgentEvaluationSubtab() {
         {mode === 'current' ? (
           <ExportTableButton
             filename="management_agenti_evaluare_actuala"
-            sheetName="Evaluare Actuala"
+            sheetName="Analiza"
             rows={rows}
             columns={[
               { header: 'Luna', value: (row) => row.month, format: 'month' },
@@ -1091,7 +1115,7 @@ export function AgentEvaluationSubtab() {
         ) : (
           <ExportTableButton
             filename="management_agenti_evaluare_noua"
-            sheetName="Evaluare Noua"
+            sheetName="Punctaj 0-100"
             rows={v2Rows}
             columns={[
               { header: 'Luna', value: (row) => row.month, format: 'month' },
