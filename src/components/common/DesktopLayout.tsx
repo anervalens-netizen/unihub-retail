@@ -77,7 +77,7 @@ export function DesktopDashboardGrid({
   className?: string;
 }) {
   return (
-    <div className={cn("min-w-0 lg:grid lg:gap-3 xl:grid-cols-2 xl:[&>:only-child]:col-span-2", className)}>
+    <div className={cn("space-y-3 min-w-0 lg:space-y-0 lg:grid lg:gap-3 xl:grid-cols-2 xl:[&>:only-child]:col-span-2", className)}>
       {children}
     </div>
   );

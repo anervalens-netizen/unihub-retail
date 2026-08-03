@@ -404,7 +404,7 @@ export function Campaigns({
                   {promoData.calculation_warnings[0] || 'Calcul promo partial; perioada nevalidată nu este folosită pentru Incentive.'}
                 </div>
               )}
-              <div className="space-y-3 lg:space-y-0">
+              <div className="space-y-3">
                 <DesktopDashboardGrid>
                   <DashboardPanel className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
                     <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
