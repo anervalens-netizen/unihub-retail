@@ -224,6 +224,11 @@ body {
     min-height: 0;
   }
 
+  /* Nested segmented tabs are compact navigation, not standalone actions. */
+  main [data-tab-level='secondary'] button {
+    min-height: 26px;
+  }
+
   .segmented-tabs-scroll {
     scrollbar-width: none;
     -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
