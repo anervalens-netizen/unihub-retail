@@ -468,7 +468,7 @@ export function ASMSubtab({ currentMonth }: { currentMonth?: string }) {
   const net = summary.added - summary.left;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4 pb-24 lg:max-w-none lg:p-0 lg:pb-8">
+    <div className="mx-auto max-w-7xl space-y-4 p-4 pb-24 lg:pb-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Overview echipe manageri</h2>

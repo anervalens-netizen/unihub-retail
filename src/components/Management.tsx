@@ -32,8 +32,8 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="space-y-3 p-3 pb-0 pt-2 lg:space-y-4 lg:p-0">
+    <div className="flex flex-col h-full">
+      <div className="space-y-3 p-3 pb-0 pt-2">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Management</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -44,13 +44,13 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
 
       <SegmentedTabs
         ariaLabel="Secțiuni Management"
-        className="glass mx-3 mt-3 lg:mx-0"
+        className="glass mx-3 mt-3"
         options={TABS.filter((tab) => tab.value !== 'pnl' || hasPnlAccess)}
         value={activeTab}
         onChange={setTab}
       />
 
-      <div className="mt-3 flex-1 lg:mt-4">
+      <div className="mt-3 flex-1">
         {activeTab === 'asm' && <ASMSubtab currentMonth={currentMonth} />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
         {activeTab === 'salarii' && <SalariiSubtab globalFilters={salaryFilters} />}

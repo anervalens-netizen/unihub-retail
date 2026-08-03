@@ -32,7 +32,7 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
   );
 
   return (
-    <div className="sticky top-0 z-30 hidden h-12 shrink-0 items-center justify-between border-b border-[var(--glass-border)] bg-[var(--glass-bg)] px-6 backdrop-blur-md lg:flex xl:px-8">
+    <div className="hidden lg:flex items-center justify-between h-14 px-6 shrink-0 border-b border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-md sticky top-0 z-30">
       <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 tracking-tight">
         {breadcrumb}
       </span>

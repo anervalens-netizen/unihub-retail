@@ -4,14 +4,6 @@ export const test = base.extend({
   context: async ({ context }, use) => {
     const browserErrors: string[] = [];
 
-    await context.route(/\/api\/\d+\/envelope\/?(?:\?|$)/, async (route) => {
-      await route.fulfill({
-        status: 200,
-        headers: { 'access-control-allow-origin': '*' },
-        body: '',
-      });
-    });
-
     context.on('page', (page) => {
       page.on('pageerror', (error) => {
         browserErrors.push(`pageerror: ${error.message}`);
