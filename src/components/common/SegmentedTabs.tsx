@@ -30,9 +30,9 @@ export function SegmentedTabs<T extends string>({
         aria-label={ariaLabel}
         data-tab-level={level}
         className={cn(
-          'segmented-tabs-scroll flex min-w-0 snap-x snap-mandatory overflow-x-auto',
+          'segmented-tabs-scroll flex min-w-0 snap-x snap-mandatory overflow-x-auto !border-0 !bg-slate-100/80 !shadow-none dark:!bg-slate-800/70',
           secondary
-            ? 'gap-0.5 rounded-b-lg border-x border-b border-slate-200/60 bg-slate-100/65 p-0.5 shadow-[0_5px_10px_-11px_rgba(15,23,42,0.6)] backdrop-blur-sm dark:border-slate-700/50 dark:bg-slate-800/55 lg:mx-auto lg:max-w-2xl'
+            ? 'gap-1 rounded-xl p-1 lg:mx-auto lg:max-w-2xl'
             : 'gap-1 rounded-2xl p-1',
           className,
         )}
@@ -55,9 +55,7 @@ export function SegmentedTabs<T extends string>({
                   ? 'min-h-7 rounded-b-md px-2 py-1 text-xs font-semibold lg:min-h-8 lg:px-2.5'
                   : 'min-h-11 rounded-xl px-3 py-2 text-sm font-bold lg:min-h-10',
                 active
-                  ? secondary
-                    ? 'bg-white/75 text-indigo-700 dark:bg-slate-900/55 dark:text-indigo-300'
-                    : 'bg-white text-indigo-600 shadow-sm dark:bg-slate-800 dark:text-indigo-400'
+                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5 dark:bg-slate-900 dark:text-indigo-300 dark:ring-white/10'
                   : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300',
                 option.disabled && 'cursor-not-allowed opacity-50 hover:text-slate-500',
               )}
