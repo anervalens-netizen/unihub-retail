@@ -100,6 +100,8 @@ async function jsonRoute(context: BrowserContext, method: string, pattern: RegEx
 
 async function installRoutes(context: BrowserContext) {
   await mockAuthenticatedSession(context);
+  await context.route('https://errors.unihub.ro/api/*/envelope/**', (route) =>
+    route.fulfill({ status: 200, body: '' }));
   await jsonRoute(context, 'GET', /\/api\/filters\/months$/, MOCK_MONTHS);
   await jsonRoute(context, 'GET', /\/api\/filters\/options(?:\?|$)/, MOCK_FILTER_OPTIONS);
   await jsonRoute(context, 'GET', /\/api\/store-pnl\/permissions(?:\?|$)/, { can_view: true });
