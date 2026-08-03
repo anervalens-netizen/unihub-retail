@@ -353,9 +353,8 @@ def _apply_rounding_difference(
             candidates,
             key=lambda candidate: (-candidate[0], candidate[1], candidate[2]),
         ):
+            # Both operands are strictly positive by the loop and candidate guards.
             step = min(capacity, remaining)
-            if step <= 0:
-                continue
             row["proposed_target"] = money(
                 row["proposed_target"] + step if increase else row["proposed_target"] - step
             )

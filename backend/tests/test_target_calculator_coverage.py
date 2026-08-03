@@ -188,7 +188,7 @@ def export_scenario() -> dict[str, Any]:
     }
 
 
-def test_uncovered_allocator_guards_and_bound_marking(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_uncovered_allocator_guards_and_bound_marking() -> None:
     assert target.month_label_ro("not-a-month") == "not-a-month"
 
     with pytest.raises(ValueError, match="sub floor"):
@@ -203,12 +203,6 @@ def test_uncovered_allocator_guards_and_bound_marking(monkeypatch: pytest.Monkey
     floor_row["proposed_target"] = Decimal("10")
     target._apply_rounding_difference([floor_row], Decimal("9"), include_caps=True)
     assert floor_row["is_floor_limited"] is True
-
-    monkeypatch.setattr(target, "min", lambda *_values: Decimal("0"), raising=False)
-    malformed_row = bounded_row(floor="0", cap="10")
-    malformed_row["proposed_target"] = Decimal("1")
-    with pytest.raises(TargetBudgetInfeasibleError):
-        target._apply_rounding_difference([malformed_row], Decimal("1.01"), include_caps=True)
 
 
 def test_allocators_detect_unreconciled_rounding_totals(monkeypatch: pytest.MonkeyPatch) -> None:
