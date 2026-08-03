@@ -2,6 +2,7 @@ import React, { type ComponentType, useCallback, useEffect, useMemo, useState } 
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { FirmaBadge } from './FirmaBadge';
 import { IncentiveDesktopDashboard, IncentiveDesktopHeader } from './IncentiveDesktopDashboard';
+import { IncentiveQualificationSummary } from './IncentiveQualificationSummary';
 import {
   BadgePercent,
   Building2,
@@ -1207,7 +1208,6 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
 }
 
 function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse | null }) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const tiers: IncentiveCategory[] = promoData?.incentive_categories ?? [];
   const periods = promoData?.incentive_periods ?? [];
 
@@ -1265,56 +1265,7 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
         </div>
       )}
 
-      <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="mt-3 min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 md:hidden">
-        {detailsOpen ? 'Ascunde mecanismul de calificare' : 'Vezi mecanismul de calificare'}
-      </button>
-
-      <div className={detailsOpen ? 'contents' : 'hidden md:contents'}>
-      {promoData && (
-        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-900/40">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-slate-200 pb-3 dark:border-slate-700">
-            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-black text-slate-900 dark:text-slate-100">{formatInt(promoData.incentive_qualified_stores)}</span>
-                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">magazine calificate</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-black text-slate-900 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents)}</span>
-                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">agenti calificati</span>
-              </div>
-            </div>
-            <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">90–99,99% = 50% · minimum 100% = integral</div>
-          </div>
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="rounded-lg border border-emerald-200 bg-white p-3 dark:border-emerald-900/50 dark:bg-slate-900/60">
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-400">
-                <span>Magazine · 100%+</span>
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">integral</span>
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{formatInt(promoData.incentive_qualified_stores_full)}</div>
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">magazine</div>
-              </div>
-              <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                <strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents_full)}</strong> agenti la acest prag
-              </div>
-            </div>
-            <div className="rounded-lg border border-amber-200 bg-white p-3 dark:border-amber-900/50 dark:bg-slate-900/60">
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-400">
-                <span>Magazine · 90–99,99%</span>
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">50%</span>
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <div className="text-3xl font-black text-amber-700 dark:text-amber-400">{formatInt(promoData.incentive_qualified_stores_half)}</div>
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">magazine</div>
-              </div>
-              <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                <strong className="text-slate-800 dark:text-slate-100">{formatInt(promoData.incentive_qualified_agents_half)}</strong> agenti la acest prag
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <IncentiveQualificationSummary promoData={promoData} className="mt-3" />
 
       {tiers.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-[10px] dark:border-slate-700">
@@ -1322,7 +1273,6 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
           {tiers.map((tier) => <span key={tier.label} className="rounded-full bg-indigo-50 px-2 py-1 font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">{tier.label}: {formatInt(tier.qty)}</span>)}
         </div>
       )}
-      </div>
     </div>
   );
 }
@@ -1330,25 +1280,28 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
 function IncentiveCategoryCard({ promoData, month }: { promoData: CampaignsPromotionsResponse | null; month: string }) {
   const rows: IncentiveCategoryBreakdown[] = promoData?.incentive_category_breakdown ?? [];
   if (rows.length === 0) return null;
-  const maxPotential = Math.max(...rows.map((row) => row.potential), 1);
 
   return (
     <div className="glass rounded-4xl border border-indigo-100 p-4 dark:border-indigo-900/30">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div><div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400"><BadgePercent size={16} /><span className="text-[11px] font-bold uppercase tracking-[0.22em]">Categorii incentive</span></div><p className="mt-1 text-[11px] text-slate-500">Cantitate eligibila si valoare dupa mecanismul activ la data vanzarii.</p></div>
+        <div><div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400"><BadgePercent size={16} /><span className="text-[11px] font-bold uppercase tracking-[0.22em]">Categorii incentive</span></div><p className="mt-1 text-[11px] text-slate-500">Cantitate și incentive: calificat / total.</p></div>
         <ExportTableButton filename={`focus-incentive-categorii-${month}`} sheetName="Categorii incentive" rows={rows} columns={[
           { header: 'Categorie', value: (row) => row.label },
-          { header: 'Cantitate', value: (row) => row.qty, format: 'integer' },
-          { header: 'Potential', value: (row) => row.potential, format: 'currency' },
+          { header: 'Cantitate calificata', value: (row) => row.qualified_qty, format: 'integer' },
+          { header: 'Cantitate totala', value: (row) => row.qty, format: 'integer' },
           { header: 'Incentive calculat', value: (row) => row.value, format: 'currency' },
+          { header: 'Incentive total', value: (row) => row.potential, format: 'currency' },
         ]} />
       </div>
       <div className="grid gap-x-6 gap-y-2 md:grid-cols-2">
         {rows.map((row) => (
           <div key={row.label} className="min-w-0">
-            <div className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-semibold" title={row.label}>{row.label}</span><span className="font-black">{formatInt(row.qty)}</span><span className="w-20 text-right font-black text-indigo-600">{formatCurrency(row.value)}</span></div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.max(2, (row.potential / maxPotential) * 100)}%` }} /></div>
-            <div className="mt-0.5 text-[10px] text-slate-400">Potential {formatCurrency(row.potential)}</div>
+            <div className="text-xs font-bold text-slate-900 dark:text-white" title={row.label}>{row.label}</div>
+            <div className="mt-1 grid grid-cols-2 gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+              <div><span>Cant. calif./total</span><strong className="ml-1 text-slate-800 dark:text-slate-100">{formatInt(row.qualified_qty)} / {formatInt(row.qty)}</strong></div>
+              <div className="text-right"><span>Inc. calc./total</span><strong className="ml-1 text-indigo-600 dark:text-indigo-300">{formatInt(row.value)} / {formatInt(row.potential)} RON</strong></div>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${row.qty > 0 ? (row.qualified_qty / row.qty) * 100 : 0}%` }} /></div>
           </div>
         ))}
       </div>

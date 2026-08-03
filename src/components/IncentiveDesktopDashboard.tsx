@@ -20,6 +20,7 @@ import {
 import type { CampaignsPromotionsResponse } from '../api/types';
 import { formatCurrency, formatInt } from '../lib/formatters';
 import { ExportTableButton } from './ExportTableButton';
+import { IncentiveQualificationSummary } from './IncentiveQualificationSummary';
 
 interface IncentiveDesktopHeaderProps {
   promoData: CampaignsPromotionsResponse | null;
@@ -121,8 +122,8 @@ export function IncentiveDesktopDashboard({
   const tiers = promoData?.incentive_categories ?? [];
   const chartRows = categories.map((row) => ({
     name: row.label,
-    Calculat: row.value,
-    Potential: row.potential,
+    Calificate: row.qualified_qty,
+    Total: row.qty,
   }));
 
   return (
@@ -162,7 +163,7 @@ export function IncentiveDesktopDashboard({
                 <Sparkles size={15} />
                 <h2 className="text-sm font-black">Performanță pe categorii</h2>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500">Calculat acum comparat cu potențialul existent.</p>
+              <p className="mt-1 text-[11px] text-slate-500">Cantitate calificată comparată cu totalul eligibil.</p>
             </div>
             {categories.length > 0 && (
               <ExportTableButton
@@ -171,9 +172,10 @@ export function IncentiveDesktopDashboard({
                 rows={categories}
                 columns={[
                   { header: 'Categorie', value: (row) => row.label },
-                  { header: 'Cantitate', value: (row) => row.qty, format: 'integer' },
-                  { header: 'Potential', value: (row) => row.potential, format: 'currency' },
+                  { header: 'Cantitate calificata', value: (row) => row.qualified_qty, format: 'integer' },
+                  { header: 'Cantitate totala', value: (row) => row.qty, format: 'integer' },
                   { header: 'Incentive calculat', value: (row) => row.value, format: 'currency' },
+                  { header: 'Incentive total', value: (row) => row.potential, format: 'currency' },
                 ]}
               />
             )}
@@ -185,10 +187,10 @@ export function IncentiveDesktopDashboard({
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
                   <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(value) => formatInt(Number(value))} />
                   <YAxis type="category" dataKey="name" width={118} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Tooltip formatter={(value) => formatInt(Number(value))} />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: 10 }} />
-                  <Bar dataKey="Calculat" fill="#4f46e5" radius={[0, 5, 5, 0]} maxBarSize={14} />
-                  <Bar dataKey="Potential" fill="#a7f3d0" radius={[0, 5, 5, 0]} maxBarSize={14} />
+                  <Bar dataKey="Total" fill="#c7d2fe" radius={[0, 5, 5, 0]} maxBarSize={14} />
+                  <Bar dataKey="Calificate" fill="#4f46e5" radius={[0, 5, 5, 0]} maxBarSize={14} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -242,44 +244,7 @@ export function IncentiveDesktopDashboard({
               </div>
             )}
           </div>
-          <div className="mt-3 rounded-xl border border-indigo-100 bg-white/90 p-3 dark:border-indigo-900/50 dark:bg-slate-900/70">
-            <div className="grid grid-cols-[1fr_1fr_1.3fr] gap-2">
-              <div>
-                <div className="text-lg font-black">{formatInt(promoData?.incentive_qualified_stores ?? 0)}</div>
-                <div className="text-[9px] font-semibold text-slate-400">Magazine calificate</div>
-              </div>
-              <div>
-                <div className="text-lg font-black">{formatInt(promoData?.incentive_qualified_agents ?? 0)}</div>
-                <div className="text-[9px] font-semibold text-slate-400">Agenți calificați</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[9px] font-bold text-slate-500">90–99,99% → 50%</div>
-                <div className="mt-1 text-[9px] font-bold text-slate-500">Minimum 100% → integral</div>
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-                <div className="flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                  <span>Magazine · 100%+</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 dark:bg-slate-900">Integral</span>
-                </div>
-                <div className="mt-2 flex items-end justify-between gap-2">
-                  <div><strong className="text-2xl text-emerald-700 dark:text-emerald-300">{formatInt(promoData?.incentive_qualified_stores_full ?? 0)}</strong><span className="ml-1 text-[9px] font-semibold text-slate-400">magazine</span></div>
-                  <span className="text-[9px] font-semibold text-slate-500">{formatInt(promoData?.incentive_qualified_agents_full ?? 0)} agenți la prag</span>
-                </div>
-              </div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
-                <div className="flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                  <span>Magazine · 90–99,99%</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 dark:bg-slate-900">50%</span>
-                </div>
-                <div className="mt-2 flex items-end justify-between gap-2">
-                  <div><strong className="text-2xl text-amber-700 dark:text-amber-300">{formatInt(promoData?.incentive_qualified_stores_half ?? 0)}</strong><span className="ml-1 text-[9px] font-semibold text-slate-400">magazine</span></div>
-                  <span className="text-[9px] font-semibold text-slate-500">{formatInt(promoData?.incentive_qualified_agents_half ?? 0)} agenți la prag</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <IncentiveQualificationSummary promoData={promoData} className="mt-3" />
         </section>
 
         <aside className="min-w-0 rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 shadow-sm xl:col-span-2 dark:border-slate-800 dark:bg-slate-900/70">

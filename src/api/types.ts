@@ -686,6 +686,7 @@ export interface IncentivePeriodStat {
 export interface IncentiveCategoryBreakdown {
   label: string;
   qty: number;
+  qualified_qty: number;
   potential: number;
   value: number;
 }

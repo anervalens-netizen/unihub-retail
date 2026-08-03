@@ -777,10 +777,12 @@ class CampaignsService:
                         period_total[1] += potential
                         period_total[2] += value
                         category = str(row.get("subcategory") or row.get("category") or "Necategorizat")
-                        category_total = category_totals.setdefault(category, [0, 0.0, 0.0])
+                        category_total = category_totals.setdefault(category, [0, 0.0, 0.0, 0])
                         category_total[0] += qty
                         category_total[1] += potential
                         category_total[2] += value
+                        if (store_achievements.get(sc) or 0) >= 0.9:
+                            category_total[3] += qty
                         tier_label = f"{int(reward_val)} RON" if reward_val == int(reward_val) else f"{reward_val} RON"
                         tier_total = tier_totals.setdefault(tier_label, [0, 0.0])
                         tier_total[0] += qty
@@ -829,9 +831,13 @@ class CampaignsService:
                         ))
                     incentive_category_breakdown = sorted(
                         [IncentiveCategoryBreakdown(
-                            label=label, qty=int(values[0]), potential=round(values[1], 2), value=round(values[2], 2)
+                            label=label,
+                            qty=int(values[0]),
+                            qualified_qty=int(values[3]),
+                            potential=round(values[1], 2),
+                            value=round(values[2], 2),
                         ) for label, values in category_totals.items() if values[0] > 0],
-                        key=lambda item: (-item.potential, item.label),
+                        key=lambda item: (-item.qty, item.label),
                     )
                     incentive_categories = sorted(
                         [IncentiveCategory(label=label, qty=int(values[0]), value=round(values[1], 2)) for label, values in tier_totals.items()],

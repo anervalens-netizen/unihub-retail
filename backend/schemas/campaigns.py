@@ -152,6 +152,7 @@ class IncentivePeriodStat(BaseModel):
 class IncentiveCategoryBreakdown(BaseModel):
     label: str
     qty: int
+    qualified_qty: int
     potential: float
     value: float
 
