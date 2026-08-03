@@ -231,8 +231,6 @@ body {
 
   .segmented-tabs-scroll {
     scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
-    mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
   }
 
   .segmented-tabs-scroll::-webkit-scrollbar {
