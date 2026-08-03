@@ -55,8 +55,8 @@ describe('SegmentedTabs', () => {
 
     expect(html).toContain('data-tab-level="secondary"');
     expect(html).toContain('-top-3');
-    expect(html).toContain('rounded-xl');
-    expect(html).toContain('min-h-7');
+    expect(html).toContain('rounded-2xl');
+    expect(html).toContain('min-h-[26px]');
     expect(html).toContain('text-xs');
     expect(html).toContain('bg-white');
     expect(html).toContain('shadow-sm');
