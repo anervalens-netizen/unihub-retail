@@ -32,6 +32,7 @@ import {
   sumChartValues,
 } from './DashboardWidgets';
 import { SegmentedTabs } from '../common/SegmentedTabs';
+import { DesktopDashboardGrid } from '../common/DesktopLayout';
 
 export type HistoryKpiMetric = 'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts';
 
@@ -453,7 +454,9 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
       </div>
 
       <div className={mobileSection !== 'details' ? 'hidden lg:contents' : 'contents'}>
-      <BreakdownTable
+      <DesktopDashboardGrid>
+        <div className="min-w-0">
+          <BreakdownTable
         title="RM"
         icon={<MapPin size={16} className="text-indigo-500" />}
         subtitle={`Sortare: ${regionalColumns.find((column) => column.key === regionalSort.key)?.label} (${regionalSort.direction}) · ${regionals.length} regionali`}
@@ -475,8 +478,10 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
           { header: 'ProcBon2Acc', value: (row) => row.proc_bon2acc, format: 'percentPoints' },
           { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
         ]}
-      />
-      <BreakdownTable
+          />
+        </div>
+        <div className="min-w-0">
+          <BreakdownTable
         title="Magazine"
         icon={<Building2 size={16} className="text-indigo-500" />}
         subtitle={`Sortare: ${storeColumns.find((column) => column.key === storeSort.key)?.label} (${storeSort.direction}) · ${stores.length} magazine`}
@@ -500,7 +505,9 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
           { header: 'Agenti', value: (row) => row.nr_agenti, format: 'integer' },
           { header: 'Zile active', value: (row) => row.zile_active, format: 'integer' },
         ]}
-      />
+          />
+        </div>
+      </DesktopDashboardGrid>
       <BreakdownTable
         title="Agenti"
         subtitle={`Sortare: ${agentColumns.find((column) => column.key === agentSort.key)?.label} (${agentSort.direction}) · ${agents.length} agenti`}

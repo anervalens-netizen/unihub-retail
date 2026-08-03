@@ -1216,7 +1216,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   };
 
   return (
-    <div className="space-y-3 p-3 pb-24 lg:pb-6 pt-2">
+    <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-3 lg:pb-6 xl:px-8">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Sales Hub</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">

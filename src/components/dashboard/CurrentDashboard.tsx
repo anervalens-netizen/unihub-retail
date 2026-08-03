@@ -14,6 +14,7 @@ import {
 import type { AgentStat, DashboardSummary, PeriodComparisonPayload, RegionalStat, StoreStat } from '../../api/types';
 import type { AppFilters } from '../MainLayout';
 import { AiForecastPanel } from '../AiForecastPanel';
+import { DesktopDashboardGrid } from '../common/DesktopLayout';
 import { SegmentedTabs } from '../common/SegmentedTabs';
 import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
@@ -337,7 +338,9 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             </div>
           </div>
 
-          <BreakdownTable
+          <DesktopDashboardGrid>
+            <div className="min-w-0">
+              <BreakdownTable
             title="RM — Regional Manager"
             icon={<Users size={16} className="text-indigo-500" />}
             subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${regionalColumns.find((column) => column.key === regionalSort.key)?.label} (${regionalSort.direction}) · ${regionals.length} regionale`}
@@ -363,8 +366,10 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               { header: 'ProcBon2Acc', value: (row) => row.proc_bon2acc, format: 'percentPoints' },
               { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
             ]}
-          />
-          <BreakdownTable
+              />
+            </div>
+            <div className="min-w-0">
+              <BreakdownTable
             title="Magazine"
             icon={<Building2 size={16} className="text-indigo-500" />}
             subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${storeColumns.find((column) => column.key === storeSort.key)?.label} (${storeSort.direction}) · ${stores.length} magazine`}
@@ -394,7 +399,9 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               { header: 'Agenti', value: (row) => row.nr_agenti, format: 'integer' },
               { header: 'Zile active', value: (row) => row.zile_active, format: 'integer' },
             ]}
-          />
+              />
+            </div>
+          </DesktopDashboardGrid>
           <BreakdownTable
             title="Agenti - Toti agentii"
             subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${agentColumns.find((column) => column.key === agentSort.key)?.label} (${agentSort.direction}) · ${agents.length} agenti`}
