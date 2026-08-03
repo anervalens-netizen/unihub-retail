@@ -161,6 +161,26 @@ Pe trei rulari consecutive, mediana Promo/Incentive a scazut de la 2.781 ms la
 312 ms (-88,8%); candidatul a ramas intre 291 si 894 ms. Gate-ul tintit are 62
 teste si mypy verzi.
 
+### P2.2 Dashboard deadline si forecast coverage 2026-08-03
+
+Dashboard foloseste acum un singur deadline monotonic per request, creat
+inainte de pool/dependency resolution. Acquire-ul si fiecare query asyncpg
+primesc timpul ramas, batchul de 12 elemente consuma acelasi buget, iar copiii
+sunt anulati si asteptati. Configul web valideaza implicit 2500 ms, maximum
+3000 ms si pastreaza doua conexiuni in afara fan-out-ului. `site_code` se
+canonizeaza o singura data, pastrand case si prima ordine.
+
+Target v2 deriva cutoff si prezenta forecast/realized per magazin. Coverage
+neuniform, magazin lipsa sau zero randuri produce 409 inainte de save; un zero
+real prezent ramane zero. Coverage intra in snapshot/hash, iar scenariile
+legacy/finalizate nu sunt recitite din surse live. Gate-ul izolat acopera
+pool-starvation, `pg_sleep` plus recovery, client cancellation, cleanup-ul
+taskurilor, boundary-urile GET/batch/performance si zero writes.
+
+Acest lot limiteaza durata si elimina missing-as-zero; nu dovedeste singur
+targetul p95. Acceptanta ramane fereastra post-deploy de 7 zile cu minimum 100
+requesturi per ruta si zero requesturi peste 3 secunde.
+
 ### P2.3 PostgreSQL si export spool 2026-08-03
 
 `backend/scripts/report_pg_stat_statements.py` produce acum un raport JSON

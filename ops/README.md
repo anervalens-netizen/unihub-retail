@@ -46,6 +46,11 @@ Pentru P0, migration manifest-ul este verificat înaintea restartului, iar recov
 
 Dovezile de cod se păstrează împreună cu SHA-ul, manifestul și outputul testelor. Hosted CI, deploy production și mutațiile de date nu sunt revendicate de acest document dacă nu există un run ID și un audit handle.
 
+Pentru `v2.1.0`, tagul adnotat, `SOURCE_SHA`, `SHA256SUMS`, runul CI manual si
+runul deploy formeaza impreuna identitatea release-ului. Migrațiile 032–036 sunt
+numai aditive. Deployul de cod nu autorizează promotion Finance/TVA sau
+reconcilierea salary live; aceste mutații rămân porți separate.
+
 ## Artifactul CI manual
 
 Pentru un release formal, pornește manual workflowul `CI` doar de pe `main`.

@@ -15,6 +15,20 @@ Planul păstrează React/FastAPI/PostgreSQL/Valkey, importul cumulativ lunar și
 strategia local-first. Nu introduce Kubernetes, microservicii, cache general,
 partiționare sau CI la fiecare push fără dovadă de nevoie.
 
+# Status implementare 2026-08-03
+
+- `v2.1.0` livrează local P0, P1 și suprafața măsurabilă P2, inclusiv
+  migrațiile aditive 032–036 și documentația canonică.
+- Finance/TVA rămâne shadow-only; importul salary live rămâne NO-GO până la
+  reconcilierea HR. Niciuna dintre aceste mutații nu este implicit autorizată
+  de deployul aplicației.
+- Gate-ul final P2 rămâne deschis: șapte zile curate, minimum 100 requesturi per
+  rută, pragurile p95/3s și LCP/INP production. P3 nu începe înaintea acestei
+  dovezi.
+- Identitatea release-ului este tagul adnotat `v2.1.0` = CI `head_sha` =
+  artifact `SOURCE_SHA` = deploy `source_sha`; runurile și digestul sunt
+  evidence operațional, nu text self-referential în commit.
+
 # Principii
 
 1. `Stage -> validate -> promote`; nicio sursă incompletă nu devine adevăr live.

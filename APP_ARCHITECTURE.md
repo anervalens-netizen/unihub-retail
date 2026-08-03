@@ -71,6 +71,12 @@ Pool-ul PostgreSQL seteaza server-side `statement_timeout=120s`,
 `lock_timeout=10s` si `idle_in_transaction_session_timeout=60s` implicit.
 Valorile sunt configurabile prin `.env`; `command_timeout` asyncpg este aliniat
 cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
+Fiecare ruta Dashboard creeaza inainte de dependency/pool resolution un deadline
+monotonic unic (`DASHBOARD_REQUEST_DEADLINE_MS`, implicit 2500 ms, maximum
+3000 ms). Acelasi buget limiteaza `pool.acquire()` si fiecare
+`fetch/fetchrow/fetchval/execute`; batchurile si componentele concurente il
+mostenesc, iar la expirare toti copiii sunt anulati si asteptati. Numai expirarea
+tipizata devine 504; anularea clientului se propaga.
 Fan-out-ul Dashboard are si un buget global per proces, configurabil prin
 `DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY` (implicit 6 si limitat automat la
 `DB_POOL_MAX_SIZE - 2`). Astfel raman conexiuni pentru readiness si requesturi
@@ -817,7 +823,7 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
    anterior lunii tinta, apoi elimina magazinele cu excluderi active in
    `target_calculator_store_exclusions`; datele de apartenenta RM/firma sunt
    snapshot in randurile draftului.
-3. Calculeaza propunerea `seasonal_blended_multiyear_v1`: porneste de la
+3. Calculeaza propunerea `seasonal_blended_multiyear_v2_ruleset`: porneste de la
    forecastul lunii curente, aplica un factor sezonier blended magazin / manager
    / retea si aloca top-down targetul total dupa estimarea bruta. Finalizatorul
    poate comuta in cardul de calcul intre `Anul trecut` si `Multi-year`, cu
@@ -846,6 +852,21 @@ Sub-tab-ul `Management -> Calculator Target` foloseste endpointurile
 Separarea dintre draftul de calcul si `store_targets` previne modificarea targetelor
 oficiale in timpul simularilor si pastreaza contextul necesar pentru audit sau
 extinderea formulei.
+
+Migrarea 036 adauga registry-ul Target append-only. Intervalele `[from,to)` sunt
+derivate din versiuni inserate in ordine, iar UPDATE/DELETE sunt refuzate.
+Scenariile v2 persista rule-set ID/hash/snapshot, input/source hashes si
+profitabilitatea rezolvata per rand; read/export folosesc exclusiv snapshotul si
+refuza hash tamper. Legacy ramane nullable/unversioned si nu este backfill-uit.
+Allocatorul valideaza la cent `sum(floor) <= buget <= sum(cap)` inainte de save,
+iar override-ul managerial ramane separat si auditabil.
+
+Forecastul v2 foloseste cutoff explicit per magazin din reporting-ul realizat.
+Coverage este `uniform` numai cand intreaga cohorta are forecast, realizat si
+acelasi cutoff; zero numeric prezent ramane zero, iar missing ramane missing.
+Coverage `nonuniform`, sursa lipsa sau zero randuri produc 409 cu zero writes.
+Contractul coverage intra in snapshot/hash, astfel incat avansarea sursei nu
+modifica un scenariu deja salvat/finalizat.
 
 ### Vizite FieldOps
 

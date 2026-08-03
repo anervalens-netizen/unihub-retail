@@ -1,8 +1,8 @@
 # UniHub Retail
 
-**Release curent:** `v2.0.1` — detalii și dovezi în
-[`docs/releases/v2.0.1.md`](docs/releases/v2.0.1.md). Tagul istoric `v2.0.0`
-rămâne nemodificat.
+**Release curent:** `v2.1.0` — contracte, limite și rutarea dovezilor în
+[`docs/releases/v2.1.0.md`](docs/releases/v2.1.0.md). Tagurile istorice
+`v2.0.0` și `v2.0.1` rămân nemodificate.
 
 UniHub Retail este aplicația centrală pentru vânzări retail, targete, campanii,
 salarii, P&L, raportarea vizitelor și interfața activă Grile.
@@ -124,6 +124,29 @@ declară explicit identitatea `site_agent` sau `person_id`; politica
 `person_id` acceptă numai linkuri confirmate și nu unește implicit omonime.
 Procedura completă este în
 [`docs/RUNBOOK-campanii-promo-incentive-concursuri.md`](docs/RUNBOOK-campanii-promo-incentive-concursuri.md).
+
+## Starea P1.3–P2 la release-ul v2.1.0
+
+Migrarea aditivă 036 introduce registry-ul Target append-only. Scenariile noi
+salvează rule-setul, hashurile și snapshotul de profitabilitate; GET/export nu
+recitesc P&L sau forecast live. Allocatorul refuză bugete în afara
+`sum(floor) <= buget <= sum(cap)` înainte de write. Scenariile legacy rămân
+`legacy-unversioned`, fără backfill inventat.
+
+Fiecare request Dashboard are un deadline monotonic unic, implicit 2.500 ms și
+configurabil până la maximum 3.000 ms, creat înainte de rezolvarea poolului.
+Acquire-urile și query-urile asyncpg primesc timpul rămas; copiii sunt anulați
+și așteptați înainte de răspuns. `site_code` se canonizează o singură dată la
+boundary, păstrând case și prima ordine. Calculator Target v2 acceptă numai
+coverage forecast complet și uniform per magazin; lipsa/neuniformitatea
+produce 409 înainte de orice scenariu sau revision write.
+
+P2 adaugă faze fixe pentru Grile, raport PostgreSQL read-only, export XLSX
+spooled/chunked, LCP/INP cu cardinalitate limitată și gate browser PWA
+N -> N+1 -> rollback. Acestea nu închid singure acceptanța de performanță:
+fereastra de 7 zile cu minimum 100 requesturi per rută rămâne deschisă, iar P3
+nu începe până la măsurarea ei. Baseline-ul și limitele sunt în
+[`docs/PERFORMANCE_REVIEW_2026-07-22.md`](docs/PERFORMANCE_REVIEW_2026-07-22.md).
 
 ## Setup local
 

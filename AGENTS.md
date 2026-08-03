@@ -106,6 +106,15 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
   connections, ARQ connection budget <=3s, result retention at least as long
   as the job/completion window, and systemd `TimeoutStopSec` at least 60s above
   the worker completion wait.
+- Every Dashboard route uses one request-wide monotonic deadline created before
+  pool resolution. Keep `DASHBOARD_REQUEST_DEADLINE_MS` at 2500ms by default
+  and never above 3000ms; bound acquire plus every query by the remaining
+  budget, cancel/await all children, and propagate client cancellation.
+- Canonicalize Dashboard `site_code` once at the API boundary: trim, drop
+  empty/sentinel tokens and exact duplicates, preserve case and first order.
+  Target v2 requires complete, uniform per-store forecast coverage; missing or
+  nonuniform coverage is a 409 before any scenario/revision write and is never
+  converted to zero.
 - Business dates/months use the injectable aware clock in
   `backend/business_clock.py` and `Europe/Bucharest`; persist instants in UTC,
   reject naive datetimes and use monotonic time for durations.
