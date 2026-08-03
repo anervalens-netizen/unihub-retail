@@ -50,6 +50,14 @@ afișează explicit ca `Neatribuit`, fără a inventa un agent.
 - `incentive_value` = incentive calculat acum;
 - `incentive_potential` = valoare de simulare folosită numai unde este etichetată
   explicit ca potențial.
+- `incentive_category_breakdown[].qty` = unități eligibile totale din categorie;
+- `incentive_category_breakdown[].qualified_qty` = subsetul eligibil din
+  magazine cu realizare de minimum 90%;
+- `incentive_category_breakdown[].value` = incentive calculat după
+  multiplicatorul magazinului;
+- `incentive_category_breakdown[].potential` = incentive total la realizare
+  integrală. Interfața afișează perechile calificat/total și sortează categoriile
+  descrescător după `qty`.
 
 Nu reutiliza `promo_qualifying_bons`, `promo_discounted_units` sau
 `reporting_*.incentive_qty` pentru un alt sens doar fiindcă tipul numeric este

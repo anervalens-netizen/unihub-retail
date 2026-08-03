@@ -126,9 +126,11 @@ Subtaburile Management sunt randate in interiorul ecranului Management, cu
 acelasi `SegmentedTabs` accesibil folosit de Hub, Focus, Agenti si Setari.
 Pe desktop, textul functional foarte mic este ridicat la minimum 12 px, iar
 scrollbar-urile pentru tabele si selectoare raman vizibile.
-Pe mobil, `SegmentedTabs` are snap si indiciu de overflow; shell-ul pastreaza
-filtrul global ca actiune flotanta de 44 px, cu accent solid, contur si umbra
-vizibile peste cardurile deschise. Indicatorul portocaliu arata numarul
+Pe mobil, `SegmentedTabs` pastreaza snap si scroll orizontal fara masca sau
+fading la margini. Subtaburile secundare nu adauga un fundal suprapus; numai
+optiunea activa este evidentiata. Shell-ul pastreaza filtrul global ca actiune
+flotanta de 44 px, cu accent solid, contur si umbra vizibile peste cardurile
+deschise. Indicatorul portocaliu arata numarul
 filtrelor active. Shell-ul coordoneaza barele sticky cu navigarea de jos si
 foloseste `safe-area-inset-bottom`. Ecranele cu tabele late pastreaza tabelul
 pe desktop si expun carduri sau sectiuni progresive la viewport mobil.
@@ -326,10 +328,12 @@ strict TypeScript pe subseturi curate. `npm run typecheck` ramane pragul
 general pentru toata aplicatia.
 
 Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Grile` si
-`Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab` si include
-evaluarea actuala plus evaluarea noua 0-100. Aceasta analiza nu mai apare in
-Management; subtaburile Management sunt Manageri, Calculator Target, Salarii
-si P&L (ultimul fiind conditionat de capabilitatea backend).
+`Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab`: modul implicit
+`Analiza` este evaluarea initiala, iar `Punctaj 0-100` este modul secundar.
+Filtrul porneste pe cea mai recenta luna complet inchisa disponibila. Aceasta
+analiza nu mai apare in Management; subtaburile Management sunt Manageri,
+Calculator Target, Salarii si P&L (ultimul fiind conditionat de capabilitatea
+backend).
 
 ## Arhitectura backend
 
@@ -651,6 +655,9 @@ calificate si incentive-ul calculat acum; mecanismele active raman afisate
 separat dedesubt. `Incentive potential` ramane numai in tabelele detaliate si
 exporturi, etichetat explicit ca simulare la realizare 100%. Sumarul separa
 mecanismele active in aceeasi luna si include distributia pe subcategorii.
+Breakdown-ul pe categorii expune cantitatea calificata si totala, respectiv
+incentive-ul calculat si total, si este sortat descrescator dupa cantitatea
+totala.
 Pentru Incentive, cheia randului de agent este `site_code + agent`; un agent
 care apare in doua magazine nu este mutat integral in magazinul principal.
 Cantitatile si valorile pe agent sunt reconciliate la granularitatea canonica
