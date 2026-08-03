@@ -126,14 +126,14 @@ export function KpiPerformanceCard({
   className?: string;
 }) {
   return (
-    <div className={`min-w-0 overflow-hidden rounded-3xl border p-2.5 ${tone.cardClass} ${className}`}>
-      <div className="mb-1 flex items-start justify-between gap-3">
+    <div className={`min-w-0 overflow-hidden rounded-3xl border p-2 ${tone.cardClass} ${className}`}>
+      <div className="mb-0.5 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="break-words text-[13px] font-bold uppercase tracking-wide opacity-75 sm:text-[11px]">{title}</div>
-          <div className="mt-0.5 break-words text-[2.5rem] font-black leading-none tabular-nums sm:text-[2rem]">{formatPercent(value)}</div>
+          <div className="break-words text-xs font-bold uppercase tracking-wide opacity-75">{title}</div>
+          <div className="mt-0.5 break-words text-[1.75rem] font-black leading-none tabular-nums">{formatPercent(value)}</div>
         </div>
-        <div className="mt-1">
-          <span className={`block h-3.5 w-3.5 rounded-full sm:h-3 sm:w-3 ${tone.badgeClass}`} />
+        <div className="mt-0.5">
+          <span className={`block h-3 w-3 rounded-full ${tone.badgeClass}`} />
         </div>
       </div>
       <DonutLegendChart
@@ -223,8 +223,8 @@ function DonutLegendChart({
     : '[grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]';
 
   return (
-    <div data-testid="donut-legend-layout" className={`grid min-w-0 items-center gap-2 ${layoutClass}`}>
-      <div className={`mx-auto aspect-square w-full ${compact ? mobileEmphasis ? 'max-w-36 sm:max-w-32' : 'max-w-32' : 'max-w-48'}`}>
+    <div data-testid="donut-legend-layout" className={`grid min-w-0 items-center ${mobileEmphasis ? 'gap-1.5' : 'gap-2'} ${layoutClass}`}>
+      <div className={`mx-auto aspect-square w-full ${compact ? mobileEmphasis ? 'max-w-28' : 'max-w-32' : 'max-w-48'}`}>
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
@@ -242,10 +242,10 @@ function DonutLegendChart({
             </Pie>
             <Tooltip formatter={(value: number) => valueFormatter(Number(value))} />
             <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
-              <tspan x="50%" dy="-0.9em" className={`fill-slate-500 font-bold uppercase tracking-wide ${compact ? mobileEmphasis ? 'text-[12px] sm:text-[10px]' : 'text-[10px]' : 'text-[11px]'}`}>
+              <tspan x="50%" dy="-0.9em" className={`fill-slate-500 font-bold uppercase tracking-wide ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
                 {centerLabel}
               </tspan>
-              <tspan x="50%" dy="1.2em" className={`fill-slate-900 font-black dark:fill-slate-100 ${compact ? mobileEmphasis ? 'text-[22px] sm:text-[18px]' : 'text-[18px]' : 'text-[20px]'}`}>
+              <tspan x="50%" dy="1.2em" className={`fill-slate-900 font-black dark:fill-slate-100 ${compact ? 'text-[18px]' : 'text-[20px]'}`}>
                 {centerValue}
               </tspan>
             </text>
@@ -256,16 +256,16 @@ function DonutLegendChart({
         {legendRows.map((item, index) => (
           <div
             key={`${String(item[nameKey])}-${index}`}
-            className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 ${mobileEmphasis ? 'text-sm sm:text-xs' : 'text-xs'} dark:bg-slate-900/30 ${
+            className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-xs dark:bg-slate-900/30 ${
               sideBySide
                 ? 'border-b border-slate-200/70 py-1 last:border-b-0'
                 : compact
-                  ? `rounded-2xl bg-white/70 ${mobileEmphasis ? 'px-3 py-1 sm:px-2.5 sm:py-0.5' : 'px-2.5 py-0.5'}`
+                  ? 'rounded-2xl bg-white/70 px-2.5 py-0.5'
                   : 'rounded-2xl bg-white/70 px-3 py-2'
             }`}
           >
             <span
-              className={`${mobileEmphasis ? 'h-3 w-3 sm:h-2.5 sm:w-2.5' : 'h-2.5 w-2.5'} shrink-0 rounded-full`}
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
               style={{ backgroundColor: colors[index % colors.length] }}
             />
             {sideBySide ? (
