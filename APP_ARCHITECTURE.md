@@ -126,6 +126,12 @@ Subtaburile Management sunt randate in interiorul ecranului Management, cu
 acelasi `SegmentedTabs` accesibil folosit de Hub, Focus, Agenti si Setari.
 Pe desktop, textul functional foarte mic este ridicat la minimum 12 px, iar
 scrollbar-urile pentru tabele si selectoare raman vizibile.
+De la breakpoint-ul `lg`, `MainLayout` foloseste un cadru fluid cu limita de
+1600 px si guttere responsive, iar sidebar-ul ocupa 208 px la `lg` si 224 px
+la `xl`. Primitivele din `components/common/DesktopLayout.tsx` compun panouri
+si griduri desktop fara a duplica stare sau controale; tabelele asociate pot
+folosi coloane 6+6 la `xl`, cu overflow numai in interiorul tabelului.
+Sub `lg`, ordinea DOM, navigarea si fluxurile mobile raman neschimbate.
 Pe mobil, `SegmentedTabs` are snap si indiciu de overflow; shell-ul pastreaza
 filtrul global ca actiune flotanta de 44 px, cu accent solid, contur si umbra
 vizibile peste cardurile deschise. Indicatorul portocaliu arata numarul
