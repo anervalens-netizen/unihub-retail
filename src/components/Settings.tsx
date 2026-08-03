@@ -18,7 +18,6 @@ import { ApiError, getApiErrorMessage } from '../api/client';
 import { pollImportJob } from '../lib/importJobPolling';
 import { formatMonthLabel } from '../lib/dates';
 import { SegmentedTabs } from './common/SegmentedTabs';
-import { PageHeader } from './common/DesktopLayout';
 import { TableHeaderCell } from './common/TableHeader';
 
 interface SettingsProps {
@@ -570,8 +569,6 @@ export function Settings({
 
   return (
     <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2 lg:max-w-none lg:space-y-4 lg:px-6 lg:py-3">
-      <PageHeader title="Setări" description="Administrare aplicație" />
-
       <SegmentedTabs<SettingsSection>
         ariaLabel="Secțiuni Setări"
         className="glass"

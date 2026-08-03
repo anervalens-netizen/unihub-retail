@@ -56,7 +56,6 @@ import { useSortable, type SortDirection } from '../lib/useSortable';
 import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
-import { PageHeader } from './common/DesktopLayout';
 import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
@@ -341,12 +340,6 @@ export function Campaigns({
 
   return (
     <div className={`mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2 lg:max-w-none lg:px-6 lg:pb-6 lg:pt-4`}>
-      <PageHeader
-        className={activeSection === 'incentive' || activeSection === 'promo' ? 'lg:hidden' : undefined}
-        title="Focus"
-        description={<>Incentive, promo, concurs si folii premium folosesc luna {promoMonth}; istoricul focus se analizeaza separat.</>}
-      />
-
       {activeSection === 'incentive' && (
         <IncentiveDesktopHeader
           promoData={promoData}

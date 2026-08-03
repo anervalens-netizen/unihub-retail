@@ -281,7 +281,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
 
       await page.getByRole('button', { name: 'Hub' }).first().click();
-      await expect(page.getByRole('heading', { name: 'Sales Hub' })).toBeVisible();
+      await expect(page.locator('main h1')).toHaveCount(0);
       await expect(page.getByRole('tab', { name: 'Luna în curs', exact: true })).toHaveAttribute('aria-selected', 'true');
       await assertNoPageOverflow(page);
       await assertResponsiveHubLayout(page, viewport.width);
@@ -335,7 +335,7 @@ for (const viewport of VIEWPORTS) {
       await assertNoPageOverflow(page);
 
       await page.getByRole('button', { name: 'Agenti' }).first().click();
-      await expect(page.getByRole('heading', { name: 'Agenti', exact: true })).toBeVisible();
+      await expect(page.locator('main h1')).toHaveCount(0);
       await page.getByRole('tab', { name: 'Lista agenților', exact: true }).click();
       await page.getByRole('button', { name: /^Ana Popescu/ }).last().click();
       await expect(page.getByText('Profil agent', { exact: true })).toBeVisible();
@@ -352,7 +352,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('tab', { name: 'Analiză agenți', exact: true })).toHaveAttribute('aria-selected', 'true');
       await page.getByRole('tab', { name: 'Prezentare generală', exact: true }).click();
       await page.getByRole('button', { name: 'Management' }).first().click();
-      await expect(page.getByRole('heading', { name: 'Management' })).toBeVisible();
+      await expect(page.locator('main h1')).toHaveCount(0);
       await expect(page.getByRole('tab', { name: 'Manageri', exact: true })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByLabel('Luna overview manageri')).toBeVisible();
       const managerButton = page.getByRole('button', { name: /Mihai Condorateanu/ });

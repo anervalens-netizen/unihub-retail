@@ -163,7 +163,7 @@ for (const viewport of VIEWPORTS) {
     test('keeps Settings and Promo operator surfaces responsive', async ({ page }) => {
       await page.goto('/');
       await page.getByRole('button', { name: /Setari/i }).first().click();
-      await expect(page.getByRole('heading', { name: 'Setări' })).toBeVisible();
+      await expect(page.locator('main h1')).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Import fișier vânzări' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Verificare raport detaliat ERP' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Import tabel promo firmă' })).toBeVisible();
@@ -179,6 +179,7 @@ for (const viewport of VIEWPORTS) {
       if (viewport.width >= 1280) expect(Math.abs((sales?.x ?? 0) - (erp?.x ?? 0))).toBeGreaterThan(200);
       else expect(Math.abs((sales?.y ?? 0) - (erp?.y ?? 0))).toBeGreaterThan(20);
       await page.getByRole('button', { name: 'Focus' }).first().click();
+      await expect(page.locator('main h1')).toHaveCount(0);
       await page.getByRole('tab', { name: 'Promo', exact: true }).click();
       await expect(page.getByRole('status')).toContainText('Raportul promo este disponibil');
       await expect(page.getByRole('status')).toHaveClass(/bg-amber-50/);
@@ -207,7 +208,7 @@ test.describe('Wave 2 Settings desktop workflow', () => {
   test('uses two desktop columns while preserving import operator flow', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: /Setari/i }).first().click();
-    await expect(page.getByRole('heading', { name: 'Setări' })).toBeVisible();
+    await expect(page.locator('main h1')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Import fișier vânzări' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Verificare raport detaliat ERP' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Import tabel promo firmă' })).toBeVisible();
