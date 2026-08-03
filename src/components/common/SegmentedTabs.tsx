@@ -30,10 +30,10 @@ export function SegmentedTabs<T extends string>({
         aria-label={ariaLabel}
         data-tab-level={level}
         className={cn(
-          'segmented-tabs-scroll flex min-w-0 snap-x snap-mandatory overflow-x-auto !border-0 !bg-slate-100/80 !shadow-none dark:!bg-slate-800/70',
+          'segmented-tabs-scroll flex min-w-0 snap-x snap-mandatory overflow-x-auto !border-0 !shadow-none',
           secondary
-            ? 'gap-0.5 rounded-2xl p-0.5 lg:mx-auto lg:max-w-2xl'
-            : 'gap-1 rounded-2xl p-1',
+            ? 'gap-0.5 rounded-2xl !bg-transparent p-0.5 lg:mx-auto lg:max-w-2xl dark:!bg-transparent'
+            : 'gap-1 rounded-2xl !bg-slate-100/80 p-1 dark:!bg-slate-800/70',
           className,
         )}
       >
