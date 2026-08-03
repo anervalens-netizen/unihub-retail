@@ -299,15 +299,15 @@ export function PeriodTable({
 
   return (
     <div className="min-w-0 w-full overflow-hidden rounded-2xl bg-slate-50 dark:bg-slate-800/50">
-      <table data-testid="hub-period-table" className="w-full table-fixed text-xs min-[1500px]:text-sm">
+      <table data-testid="hub-period-table" className="w-full table-fixed text-[13px] leading-tight min-[1500px]:text-[17px]">
         <thead>
           <tr className="border-b border-slate-200 dark:border-slate-700">
-            <th className="w-1/4 py-2.5 pl-2 pr-1 text-left font-semibold text-slate-400 sm:pl-3 sm:pr-2" />
+            <th className="w-1/4 py-2 pl-2 pr-1 text-left font-semibold text-slate-400 sm:pl-3 sm:pr-2" />
             {points.map((p) => (
-              <th key={p.label} className="w-1/4 border-l border-slate-200/70 px-1 py-2.5 text-center dark:border-slate-700/60 sm:px-2">
+              <th key={p.label} className="w-1/4 border-l border-slate-200/70 px-1 py-2 text-center dark:border-slate-700/60 sm:px-2">
                 <div className="font-bold text-slate-700 dark:text-slate-200">{p.label}</div>
-                <div className="text-[11px] font-normal text-slate-400">{p.month}</div>
-                <div className="text-[11px] font-normal text-slate-400">{p.day_range}</div>
+                <div className="text-[11px] font-medium text-slate-400 min-[1500px]:text-[13px]">{p.month}</div>
+                <div className="text-[11px] font-medium text-slate-400 min-[1500px]:text-[13px]">{p.day_range}</div>
               </th>
             ))}
           </tr>
@@ -318,9 +318,9 @@ export function PeriodTable({
               key={row.label}
               className={i % 2 === 0 ? 'bg-white/60 dark:bg-slate-900/20' : ''}
             >
-              <td className="break-words py-2 pl-2 pr-1 font-medium text-slate-500 sm:pl-3 sm:pr-2">{row.label}</td>
+              <td className="break-words py-1.5 pl-2 pr-1 font-semibold text-slate-500 sm:pl-3 sm:pr-2">{row.label}</td>
               {points.map((p) => (
-                <td key={p.label} className="break-words border-l border-slate-200/70 px-1 py-2 text-center font-bold text-slate-700 tabular-nums dark:border-slate-700/60 dark:text-slate-200 sm:px-2">
+                <td key={p.label} className="break-words border-l border-slate-200/70 px-1 py-1.5 text-center font-black text-slate-700 tabular-nums dark:border-slate-700/60 dark:text-slate-200 sm:px-2">
                   {row.fn(p)}
                 </td>
               ))}
@@ -340,7 +340,7 @@ function deltaBadgeClass(positive: boolean) {
 
 function DeltaPctBadge({ pct, positive }: { pct: number; positive: boolean }) {
   return (
-    <span className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${deltaBadgeClass(positive)}`}>
+    <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-bold ${deltaBadgeClass(positive)}`}>
       {pct > 0 ? '+' : ''}{pct}%
     </span>
   );
@@ -373,36 +373,36 @@ export function DeltaCard({
     : 'border-rose-200 bg-rose-50/80 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300';
 
   return (
-    <div className={`min-w-0 rounded-2xl border ${compact ? 'p-2.5' : 'p-3'} ${tone}`}>
-      <div className={`${compact ? 'mb-2 text-xs' : 'mb-3 text-[11px]'} font-bold uppercase tracking-wide`}>{title}</div>
-      <div className={compact ? 'space-y-1' : 'space-y-2'}>
-        <div>
-          <div className={`flex items-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-[11px]' : 'text-[10px]'}`}>
-            <span className="text-base font-normal leading-none">Δ</span>
+    <div data-testid="hub-delta-card" className={`flex h-full min-w-0 flex-col items-center justify-center rounded-2xl border text-center ${compact ? 'p-2.5' : 'p-3'} ${tone}`}>
+      <div className={`${compact ? 'mb-2.5 text-sm' : 'mb-3 text-xs'} font-black uppercase tracking-wide`}>{title}</div>
+      <div className={`w-full ${compact ? 'space-y-1.5' : 'space-y-2'}`}>
+        <div className="flex flex-col items-center">
+          <div className={`flex items-center justify-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-xs' : 'text-[10px]'}`}>
+            <span className={`${compact ? 'text-lg' : 'text-base'} font-normal leading-none`}>Δ</span>
             <span className="opacity-60">vanzari</span>
           </div>
-          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center gap-2`}>
-            <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaCurrency(salesDelta)}</span>
+          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center justify-center gap-2`}>
+            <span data-testid="hub-delta-value" className={`min-w-0 break-words font-black leading-none tabular-nums ${compact ? 'text-xl' : 'text-base'}`}>{formatDeltaCurrency(salesDelta)}</span>
             {salesPct != null && <DeltaPctBadge pct={salesPct} positive={salesPositive} />}
           </div>
         </div>
-        <div>
-          <div className={`flex items-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-[11px]' : 'text-[10px]'}`}>
-            <span className="text-base font-normal leading-none">Δ</span>
+        <div className="flex flex-col items-center">
+          <div className={`flex items-center justify-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-xs' : 'text-[10px]'}`}>
+            <span className={`${compact ? 'text-lg' : 'text-base'} font-normal leading-none`}>Δ</span>
             <span className="opacity-60">bonuri</span>
           </div>
-          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center gap-2`}>
-            <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaInt(receiptsDelta)}</span>
+          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center justify-center gap-2`}>
+            <span data-testid="hub-delta-value" className={`min-w-0 break-words font-black leading-none tabular-nums ${compact ? 'text-xl' : 'text-base'}`}>{formatDeltaInt(receiptsDelta)}</span>
             {receiptsPct != null && <DeltaPctBadge pct={receiptsPct} positive={receiptsPositive} />}
           </div>
         </div>
-        <div>
-          <div className={`flex items-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-[11px]' : 'text-[10px]'}`}>
-            <span className="text-base font-normal leading-none">Δ</span>
+        <div className="flex flex-col items-center">
+          <div className={`flex items-center justify-center gap-1 font-bold uppercase tracking-wide ${compact ? 'text-xs' : 'text-[10px]'}`}>
+            <span className={`${compact ? 'text-lg' : 'text-base'} font-normal leading-none`}>Δ</span>
             <span className="opacity-60">cantitate</span>
           </div>
-          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center gap-2`}>
-            <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaInt(quantityDelta)}</span>
+          <div className={`${compact ? 'mt-0.5' : 'mt-1'} flex min-w-0 items-center justify-center gap-2`}>
+            <span data-testid="hub-delta-value" className={`min-w-0 break-words font-black leading-none tabular-nums ${compact ? 'text-xl' : 'text-base'}`}>{formatDeltaInt(quantityDelta)}</span>
             {quantityPct != null && <DeltaPctBadge pct={quantityPct} positive={quantityPositive} />}
           </div>
         </div>

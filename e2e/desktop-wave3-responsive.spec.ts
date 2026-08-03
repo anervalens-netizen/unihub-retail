@@ -231,7 +231,7 @@ async function assertResponsiveHubLayout(page: Page, viewportWidth: number) {
 
   const comparisonChildren = page.getByTestId('hub-period-comparison-layout').locator(':scope > div');
   const chartChildren = page.getByTestId('hub-chart-layout').locator(':scope > div');
-  const [overviewCardBox, comparisonCardBox, comparisonLayoutBox, chartLayoutBox, tableBox, deltasBox, dailyBox, secondaryChartsBox, periodTableFontSize] = await Promise.all([
+  const [overviewCardBox, comparisonCardBox, comparisonLayoutBox, chartLayoutBox, tableBox, deltasBox, dailyBox, secondaryChartsBox, periodTableFontSize, deltaValueFontSize, deltaCardAlignment] = await Promise.all([
     page.getByTestId('hub-overview-card').boundingBox(),
     page.getByTestId('hub-period-comparison-card').boundingBox(),
     page.getByTestId('hub-period-comparison-layout').boundingBox(),
@@ -241,15 +241,22 @@ async function assertResponsiveHubLayout(page: Page, viewportWidth: number) {
     chartChildren.nth(0).boundingBox(),
     chartChildren.nth(1).boundingBox(),
     page.getByTestId('hub-period-table').evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
+    page.getByTestId('hub-delta-value').first().evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
+    page.getByTestId('hub-delta-card').first().evaluate((element) => {
+      const styles = getComputedStyle(element);
+      return [styles.alignItems, styles.justifyContent, styles.textAlign];
+    }),
   ]);
 
   expect(Math.abs((overviewCardBox?.x ?? 0) - (comparisonCardBox?.x ?? 0))).toBeLessThanOrEqual(2);
   expect(Math.abs((overviewCardBox?.width ?? 0) - (comparisonCardBox?.width ?? 0))).toBeLessThanOrEqual(2);
   expect(Math.abs((chartLayoutBox?.width ?? 0) - (comparisonCardBox?.width ?? 0))).toBeLessThanOrEqual(2);
+  expect(deltaValueFontSize).toBeGreaterThanOrEqual(20);
+  expect(deltaCardAlignment).toEqual(['center', 'center', 'center']);
 
   if (viewportWidth >= 1500) {
     expect(comparisonLayoutBox?.width ?? 0).toBeLessThanOrEqual(1210);
-    expect(periodTableFontSize).toBeGreaterThanOrEqual(14);
+    expect(periodTableFontSize).toBeGreaterThanOrEqual(17);
     expect(Math.abs((tableBox?.y ?? 0) - (deltasBox?.y ?? 0))).toBeLessThanOrEqual(8);
     expect(Math.abs((dailyBox?.y ?? 0) - (secondaryChartsBox?.y ?? 0))).toBeLessThanOrEqual(8);
     expect(Math.abs((tableBox?.height ?? 0) - (deltasBox?.height ?? 0))).toBeLessThanOrEqual(4);
