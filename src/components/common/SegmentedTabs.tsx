@@ -24,7 +24,7 @@ export function SegmentedTabs<T extends string>({
   const secondary = level === 'secondary';
 
   return (
-    <div className={cn('min-w-0', secondary && 'relative -top-4 z-10 -mb-4 !mt-0 px-10 sm:px-14 lg:px-20')}>
+    <div className={cn('min-w-0', secondary && 'relative -top-3 z-10 !mb-0 px-10 sm:px-14 lg:px-20')}>
       <div
         role="tablist"
         aria-label={ariaLabel}
@@ -52,8 +52,8 @@ export function SegmentedTabs<T extends string>({
               className={cn(
                 'min-w-fit flex-1 snap-start transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
                 secondary
-                  ? 'min-h-6 rounded-b-md px-2 py-0.5 text-[9px] font-semibold lg:min-h-7 lg:px-2.5 lg:text-[10px]'
-                  : 'min-h-11 rounded-xl px-3 py-2 text-xs font-bold lg:min-h-10 lg:text-sm',
+                  ? 'min-h-7 rounded-b-md px-2 py-1 text-xs font-semibold lg:min-h-8 lg:px-2.5'
+                  : 'min-h-11 rounded-xl px-3 py-2 text-sm font-bold lg:min-h-10',
                 active
                   ? secondary
                     ? 'bg-white/75 text-indigo-700 dark:bg-slate-900/55 dark:text-indigo-300'
