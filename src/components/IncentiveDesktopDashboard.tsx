@@ -118,7 +118,8 @@ export function IncentiveDesktopDashboard({
   month: string;
 }) {
   const periods = promoData?.incentive_periods ?? [];
-  const categories = promoData?.incentive_category_breakdown ?? [];
+  const categories = [...(promoData?.incentive_category_breakdown ?? [])]
+    .sort((left, right) => right.qty - left.qty || left.label.localeCompare(right.label, 'ro'));
   const tiers = promoData?.incentive_categories ?? [];
   const chartRows = categories.map((row) => ({
     name: row.label,
@@ -213,7 +214,7 @@ export function IncentiveDesktopDashboard({
               </span>
             )}
           </div>
-          <div className="max-h-[112px] space-y-2 overflow-y-auto pr-1">
+          <div className="space-y-2">
             {periods.length > 0 ? periods.map((period) => (
               <div key={period.start_date + '-' + period.end_date} className="rounded-xl border border-indigo-100 bg-white/90 p-3 dark:border-indigo-900/50 dark:bg-slate-900/70">
                 <div className="flex items-start justify-between gap-2">
@@ -221,21 +222,16 @@ export function IncentiveDesktopDashboard({
                     <div className="text-xs font-black text-slate-900 dark:text-white">{period.label}</div>
                     <div className="mt-0.5 text-[10px] font-semibold text-slate-400">{period.start_date} — {period.end_date}</div>
                   </div>
-                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300">{formatInt(period.product_count)} produse</span>
+                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300">{formatInt(period.product_count)} produse în incentive</span>
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="mt-3">
                   <div>
-                    <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Valori</div>
+                    <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Valoare / unitate eligibilă</div>
                     <div className="mt-0.5 text-[11px] font-black">{period.reward_values.map((value) => formatInt(value) + ' RON').join(' · ')}</div>
                   </div>
-                  <div>
-                    <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Unități</div>
-                    <div className="mt-0.5 text-[11px] font-black">{formatInt(period.qty)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Calculat</div>
-                    <div className="mt-0.5 text-[11px] font-black text-indigo-600 dark:text-indigo-300">{formatCurrency(period.value)}</div>
-                  </div>
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+                    Se aplică valoarea produsului activă la data vânzării, după excluderea unităților promo. La 90–99,99% din target se acordă 50%; de la 100%, integral.
+                  </p>
                 </div>
               </div>
             )) : (

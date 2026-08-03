@@ -14,10 +14,7 @@ export function IncentiveQualificationSummary({
   return (
     <section className={`rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/40 ${className}`}>
       <div>
-        <h5 className="text-xs font-black text-slate-800 dark:text-slate-100">Calificare și mecanism</h5>
-        <p className="mt-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-          90–99,99% din target = 50% incentive · minimum 100% = incentive integral
-        </p>
+        <h5 className="text-xs font-black text-slate-800 dark:text-slate-100">Calificați acum</h5>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <div className="flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 shadow-xs dark:bg-slate-900/70">

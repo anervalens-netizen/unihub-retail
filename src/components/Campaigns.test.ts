@@ -67,6 +67,7 @@ function makePromoData(): CampaignsPromotionsResponse {
     ],
     incentive_category_breakdown: [
       { label: 'Folii sticla premium', qty: 20, qualified_qty: 12, potential: 200, value: 110 },
+      { label: 'Categorie cu volum mai mare', qty: 40, qualified_qty: 30, potential: 400, value: 300 },
     ],
   has_active_promotion: true,
   promo_calculation_status: 'complete',
@@ -162,20 +163,21 @@ describe('Campaigns', () => {
     expect(html).toContain('Mecanism initial');
     expect(html).toContain('Mecanism actualizat');
     expect(html).toContain('967 produse');
-    expect(html).toContain('201 produse');
+    expect(html).toContain('201 produse în incentive');
     expect(html).not.toContain('potential la calificare 100%');
     expect(html).toContain('18');
     expect(html).toContain('25');
-    expect(html).toContain('Calificare și mecanism');
+    expect(html).toContain('Calificați acum');
     expect(html).toContain('magazine calificate');
     expect(html).toContain('agenți calificați');
-    expect(html).toContain('90–99,99% din target = 50% incentive');
-    expect(html).toContain('minimum 100% = incentive integral');
+    expect(html).toContain('după excluderea unităților promo');
+    expect(html).toContain('La 90–99,99% din target se acordă 50%; de la 100%, integral.');
     expect(html).not.toContain('Vezi mecanismul de calificare');
     expect(html).not.toContain('Ascunde mecanismul de calificare');
     expect(html).not.toContain('Magazine · 100%+');
     expect(html).toContain('Cant. calif./total');
     expect(html).toContain('Inc. calc./total');
     expect(html).not.toContain('Potential 200');
+    expect(html.indexOf('Categorie cu volum mai mare')).toBeLessThan(html.indexOf('Folii sticla premium'));
   });
 });

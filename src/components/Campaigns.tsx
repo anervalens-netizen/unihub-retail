@@ -1252,12 +1252,14 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
               <div key={`${period.start_date}-${period.end_date}`} className="rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/20">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div><div className="text-xs font-black text-indigo-700 dark:text-indigo-300">{period.label}</div><div className="mt-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">{period.start_date} – {period.end_date}</div></div>
-                  <span className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300">{formatInt(period.product_count)} produse</span>
+                  <span className="rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300">{formatInt(period.product_count)} produse în incentive</span>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                  <div><p className="text-[10px] text-slate-400">Valori</p><p className="font-bold">{period.reward_values.map((value) => `${formatInt(value)} RON`).join(' · ')}</p></div>
-                  <div><p className="text-[10px] text-slate-400">Unități</p><p className="font-bold">{formatInt(period.qty)}</p></div>
-                  <div className="text-right"><p className="text-[10px] text-slate-400">Calculat</p><p className="font-black text-indigo-600 dark:text-indigo-300">{formatCurrency(period.value)}</p></div>
+                <div className="mt-2 text-xs">
+                  <p className="text-[10px] font-semibold text-slate-400">Valoare acordată / unitate eligibilă</p>
+                  <p className="mt-0.5 font-black">{period.reward_values.map((value) => `${formatInt(value)} RON`).join(' · ')}</p>
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+                    Se aplică valoarea produsului activă la data vânzării, după excluderea unităților promo. La 90–99,99% din target se acordă 50%; de la 100%, integral.
+                  </p>
                 </div>
               </div>
             ))}
@@ -1278,7 +1280,8 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
 }
 
 function IncentiveCategoryCard({ promoData, month }: { promoData: CampaignsPromotionsResponse | null; month: string }) {
-  const rows: IncentiveCategoryBreakdown[] = promoData?.incentive_category_breakdown ?? [];
+  const rows: IncentiveCategoryBreakdown[] = [...(promoData?.incentive_category_breakdown ?? [])]
+    .sort((left, right) => right.qty - left.qty || left.label.localeCompare(right.label, 'ro'));
   if (rows.length === 0) return null;
 
   return (
