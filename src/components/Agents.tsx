@@ -531,7 +531,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
   }
 
   return (
-    <div className="space-y-3 p-3 pb-24 lg:pb-6 pt-2">
+    <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:p-0 lg:pb-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Agenti</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -557,7 +557,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
         </ErrorBoundary>
       ) : (
         <>
-          <div className="sticky top-2 z-20 rounded-2xl bg-white/90 p-1 shadow-sm backdrop-blur-xl dark:bg-slate-900/90">
+          <div className="sticky top-2 z-20 rounded-2xl lg:static bg-white/90 p-1 shadow-sm backdrop-blur-xl dark:bg-slate-900/90">
             <SegmentedTabs<AgentsOverviewSection>
               ariaLabel="Zone prezentare generală agenți"
               options={AGENTS_OVERVIEW_OPTIONS}

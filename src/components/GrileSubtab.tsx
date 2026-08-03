@@ -463,7 +463,7 @@ export function GrileSubtab() {
     run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-3 pb-24 pt-2">
+    <div className="mx-auto max-w-6xl space-y-4 p-3 pb-24 pt-2 lg:max-w-none lg:p-0">
       {/* ── Card status + actiune ── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-4">
