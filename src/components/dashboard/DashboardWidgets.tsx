@@ -80,6 +80,7 @@ export function Metric({
   value,
   detail,
   emphasize = false,
+  compact = false,
   accent = 'slate',
   className = '',
 }: {
@@ -87,6 +88,7 @@ export function Metric({
   value: React.ReactNode;
   detail?: string;
   emphasize?: boolean;
+  compact?: boolean;
   accent?: 'slate' | 'indigo';
   className?: string;
 }) {
@@ -96,9 +98,9 @@ export function Metric({
       : 'bg-slate-50 dark:bg-slate-800/60';
 
   return (
-    <div className={`min-w-0 rounded-2xl p-3 ${accentClasses} ${emphasize ? 'flex h-full flex-col justify-between' : ''} ${className}`}>
-      <div className="break-words text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`min-w-0 break-words ${emphasize ? 'mt-4 text-[2rem] leading-none' : 'mt-1 text-base leading-tight'} font-black`}>{value ?? '-'}</div>
+    <div className={`min-w-0 rounded-2xl ${compact ? 'p-1.5 sm:p-2' : 'p-3'} ${accentClasses} ${emphasize || compact ? 'flex h-full flex-col' : ''} ${emphasize ? 'justify-between' : ''} ${className}`}>
+      <div className={`break-words font-bold uppercase tracking-wide text-slate-500 ${compact ? 'text-[10px] leading-snug sm:text-[11px]' : 'text-[11px]'}`}>{label}</div>
+      <div className={`min-w-0 font-black ${emphasize ? 'mt-4 text-[2rem] leading-none' : compact ? 'mt-1 whitespace-nowrap text-[clamp(0.75rem,3.6vw,1rem)] leading-tight tracking-tight tabular-nums sm:text-base' : 'mt-1 break-words text-base leading-tight'}`}>{value ?? '-'}</div>
       {detail ? <div className="mt-2 text-xs leading-relaxed text-slate-500">{detail}</div> : null}
     </div>
   );
@@ -127,11 +129,11 @@ export function KpiPerformanceCard({
     <div className={`min-w-0 overflow-hidden rounded-3xl border p-2.5 ${tone.cardClass} ${className}`}>
       <div className="mb-1 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="break-words text-[11px] font-bold uppercase tracking-wide opacity-75">{title}</div>
-          <div className="mt-0.5 break-words text-[2rem] font-black leading-none tabular-nums">{formatPercent(value)}</div>
+          <div className="break-words text-[13px] font-bold uppercase tracking-wide opacity-75 sm:text-[11px]">{title}</div>
+          <div className="mt-0.5 break-words text-[2.5rem] font-black leading-none tabular-nums sm:text-[2rem]">{formatPercent(value)}</div>
         </div>
         <div className="mt-1">
-          <span className={`block h-3 w-3 rounded-full ${tone.badgeClass}`} />
+          <span className={`block h-3.5 w-3.5 rounded-full sm:h-3 sm:w-3 ${tone.badgeClass}`} />
         </div>
       </div>
       <DonutLegendChart
@@ -143,6 +145,7 @@ export function KpiPerformanceCard({
         centerLabel="TOTAL"
         centerValue={formatCompactDonutValue(sumChartValues(chartData, dataKey))}
         compact
+        mobileEmphasis
       />
     </div>
   );
@@ -201,6 +204,7 @@ function DonutLegendChart({
   centerValue,
   compact = false,
   sideBySide = false,
+  mobileEmphasis = false,
 }: {
   data: Array<Record<string, string | number>>;
   dataKey: string;
@@ -211,6 +215,7 @@ function DonutLegendChart({
   centerValue: string;
   compact?: boolean;
   sideBySide?: boolean;
+  mobileEmphasis?: boolean;
 }) {
   const legendRows = data.slice(0, 6);
   const layoutClass = compact
@@ -219,7 +224,7 @@ function DonutLegendChart({
 
   return (
     <div data-testid="donut-legend-layout" className={`grid min-w-0 items-center gap-2 ${layoutClass}`}>
-      <div className={`mx-auto aspect-square w-full ${compact ? 'max-w-32' : 'max-w-48'}`}>
+      <div className={`mx-auto aspect-square w-full ${compact ? mobileEmphasis ? 'max-w-36 sm:max-w-32' : 'max-w-32' : 'max-w-48'}`}>
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
@@ -237,10 +242,10 @@ function DonutLegendChart({
             </Pie>
             <Tooltip formatter={(value: number) => valueFormatter(Number(value))} />
             <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
-              <tspan x="50%" dy="-0.9em" className={`fill-slate-500 font-bold uppercase tracking-wide ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+              <tspan x="50%" dy="-0.9em" className={`fill-slate-500 font-bold uppercase tracking-wide ${compact ? mobileEmphasis ? 'text-[12px] sm:text-[10px]' : 'text-[10px]' : 'text-[11px]'}`}>
                 {centerLabel}
               </tspan>
-              <tspan x="50%" dy="1.2em" className={`fill-slate-900 font-black dark:fill-slate-100 ${compact ? 'text-[18px]' : 'text-[20px]'}`}>
+              <tspan x="50%" dy="1.2em" className={`fill-slate-900 font-black dark:fill-slate-100 ${compact ? mobileEmphasis ? 'text-[22px] sm:text-[18px]' : 'text-[18px]' : 'text-[20px]'}`}>
                 {centerValue}
               </tspan>
             </text>
@@ -251,19 +256,19 @@ function DonutLegendChart({
         {legendRows.map((item, index) => (
           <div
             key={`${String(item[nameKey])}-${index}`}
-            className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-xs dark:bg-slate-900/30 ${
+            className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 ${mobileEmphasis ? 'text-sm sm:text-xs' : 'text-xs'} dark:bg-slate-900/30 ${
               sideBySide
                 ? 'border-b border-slate-200/70 py-2 last:border-b-0'
                 : compact
-                  ? 'rounded-2xl bg-white/70 px-2.5 py-0.5'
+                  ? `rounded-2xl bg-white/70 ${mobileEmphasis ? 'px-3 py-1 sm:px-2.5 sm:py-0.5' : 'px-2.5 py-0.5'}`
                   : 'rounded-2xl bg-white/70 px-3 py-2'
             }`}
           >
             <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              className={`${mobileEmphasis ? 'h-3 w-3 sm:h-2.5 sm:w-2.5' : 'h-2.5 w-2.5'} shrink-0 rounded-full`}
               style={{ backgroundColor: colors[index % colors.length] }}
             />
-            <span className="min-w-0 break-words text-[11px] font-semibold text-slate-500">
+            <span className={`min-w-0 break-words font-semibold text-slate-500 ${mobileEmphasis ? 'text-[13px] sm:text-[11px]' : 'text-[11px]'}`}>
               {formatPercent(Number(item.share_pct ?? 0))}
             </span>
             <span className="min-w-0 break-words text-right font-bold tabular-nums">{valueFormatter(Number(item[dataKey] ?? 0))}</span>

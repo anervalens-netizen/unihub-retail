@@ -218,18 +218,18 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             </div>
 
             <div className="grid min-w-0 gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,78px),1fr))]">
-              <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
-              <Metric label="Accesorii nete" value={formatInt(summary.total_quantity)} className="p-2" />
+              <Metric label="Bonuri" value={formatInt(summary.total_receipts)} compact />
+              <Metric label="Accesorii nete" value={formatInt(summary.total_quantity)} compact />
               <Metric
                 label="Magazine / Agenți"
-                value={<span className="flex items-baseline gap-1.5"><span>{formatInt(summary.total_stores)}</span><span className="text-slate-300 dark:text-slate-600">/</span><span>{formatInt(summary.total_agents)}</span></span>}
-                className="p-2"
+                value={<span className="flex items-baseline gap-1 sm:gap-1.5"><span>{formatInt(summary.total_stores)}</span><span className="text-slate-300 dark:text-slate-600">/</span><span>{formatInt(summary.total_agents)}</span></span>}
+                compact
               />
-              <Metric label="Zile lucrate" value={formatInt(summary.working_days)} className="p-2" />
-              <Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} className="p-2" />
-              <Metric label="Medie produs" value={formatAmount(summary.medie_produs ?? 0)} className="p-2" />
-              <Metric label="Val. medie bon" value={formatAmount(summary.total_receipts > 0 ? Number(summary.total_sales) / Number(summary.total_receipts) : 0)} className="p-2" />
-              <Metric label="Cartele" value={formatInt(summary.cartele_qty ?? 0)} className="p-2" />
+              <Metric label="Zile lucrate" value={formatInt(summary.working_days)} compact />
+              <Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} compact />
+              <Metric label="Medie produs" value={formatAmount(summary.medie_produs ?? 0)} compact />
+              <Metric label="Val. medie bon" value={formatAmount(summary.total_receipts > 0 ? Number(summary.total_sales) / Number(summary.total_receipts) : 0)} compact />
+              <Metric label="Cartele" value={formatInt(summary.cartele_qty ?? 0)} compact />
             </div>              </div>
             <div data-testid="hub-donut-grid" className="grid min-w-0 items-start gap-2.5 xl:grid-cols-2">
               <KpiPerformanceCard
