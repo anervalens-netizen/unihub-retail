@@ -171,8 +171,8 @@ export function CompactPieSection({
   compact?: boolean;
 }) {
   return (
-    <div className={`min-w-0 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 ${compact ? 'p-2.5' : 'p-3'}`}>
-      <div className={`${compact ? 'mb-2 text-[13px]' : 'mb-3 text-sm'} font-bold tracking-wide text-slate-600 dark:text-slate-300`}>{title}</div>
+    <div className={`min-w-0 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 ${compact ? 'border border-slate-200/60 p-2 dark:border-slate-700/50' : 'p-3'}`}>
+      <div className={`${compact ? 'mb-1.5 text-xs' : 'mb-3 text-sm'} font-bold tracking-wide text-slate-600 dark:text-slate-300`}>{title}</div>
       {pieData.length === 0 ? (
         <div className="rounded-2xl bg-white/70 p-4 text-xs font-semibold text-slate-500 dark:bg-slate-900/30">
           {emptyLabel}
@@ -218,13 +218,15 @@ function DonutLegendChart({
   mobileEmphasis?: boolean;
 }) {
   const legendRows = data.slice(0, 6);
-  const layoutClass = compact
-    ? '[grid-template-columns:repeat(auto-fit,minmax(min(100%,112px),1fr))]'
-    : '[grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]';
+  const layoutClass = sideBySide
+    ? 'grid-cols-[96px_minmax(0,1fr)] sm:grid-cols-[112px_minmax(0,1fr)]'
+    : compact
+      ? '[grid-template-columns:repeat(auto-fit,minmax(min(100%,112px),1fr))]'
+      : '[grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]';
 
   return (
-    <div data-testid="donut-legend-layout" className={`grid min-w-0 items-center ${mobileEmphasis ? 'gap-1.5' : 'gap-2'} ${layoutClass}`}>
-      <div className={`mx-auto aspect-square w-full ${compact ? mobileEmphasis ? 'max-w-28' : 'max-w-32' : 'max-w-48'}`}>
+    <div data-testid="donut-legend-layout" className={`grid min-w-0 items-center ${mobileEmphasis || sideBySide ? 'gap-1.5' : 'gap-2'} ${layoutClass}`}>
+      <div className={`mx-auto aspect-square w-full ${sideBySide ? 'max-w-24 sm:max-w-28' : compact ? mobileEmphasis ? 'max-w-28' : 'max-w-32' : 'max-w-48'}`}>
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
@@ -258,7 +260,7 @@ function DonutLegendChart({
             key={`${String(item[nameKey])}-${index}`}
             className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-xs dark:bg-slate-900/30 ${
               sideBySide
-                ? 'border-b border-slate-200/70 py-1 last:border-b-0'
+                ? 'border-b border-slate-200/70 py-0.5 last:border-b-0'
                 : compact
                   ? 'rounded-2xl bg-white/70 px-2.5 py-0.5'
                   : 'rounded-2xl bg-white/70 px-3 py-2'
@@ -529,6 +531,18 @@ export function formatCompactDonutValue(value: number): string {
     notation: 'compact',
     maximumFractionDigits: value >= 1000000 ? 1 : 0,
   }).format(value);
+}
+
+export function formatCompactAxisValue(value: number): string {
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000) {
+    const scaled = value / 1_000_000;
+    return `${Number(scaled.toFixed(1)).toLocaleString('ro-RO')}M`;
+  }
+  if (absolute >= 1_000) {
+    return `${Math.round(value / 1_000).toLocaleString('ro-RO')}K`;
+  }
+  return Math.round(value).toLocaleString('ro-RO');
 }
 
 export function describeFilterScope(filters: AppFilters): string {

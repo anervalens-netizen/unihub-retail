@@ -7,6 +7,7 @@ import {
   getAsmSortValue,
   sumChartValues,
   formatCompactDonutValue,
+  formatCompactAxisValue,
   describeFilterScope,
   getBon2AccTone,
   getFocusTone,
@@ -236,6 +237,17 @@ describe('formatCompactDonutValue', () => {
 
   it('handles zero', () => {
     expect(formatCompactDonutValue(0)).toBe('0');
+  });
+});
+
+describe('formatCompactAxisValue', () => {
+  it('formats chart ticks in thousands', () => {
+    expect(formatCompactAxisValue(40_000)).toBe('40K');
+    expect(formatCompactAxisValue(200_000)).toBe('200K');
+  });
+
+  it('formats chart ticks in millions', () => {
+    expect(formatCompactAxisValue(1_500_000)).toBe('1,5M');
   });
 });
 
