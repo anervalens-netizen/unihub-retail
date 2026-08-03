@@ -337,6 +337,18 @@ const sortMonthsAsc = (values: string[]): string[] => [...values].sort((a, b) =>
 const formatMonthSelectionLabel = (values: string[]): string =>
   values.length === 1 ? values[0] : `${values[0]} - ${values[values.length - 1]} (${values.length} luni)`;
 
+export function getDefaultHistoryMonth(currentMonth: string, months: string[]): string {
+  const latestAvailableClosedMonth = months
+    .filter((month) => /^\d{4}-\d{2}$/.test(month) && month < currentMonth)
+    .sort((a, b) => b.localeCompare(a))[0];
+  if (latestAvailableClosedMonth) return latestAvailableClosedMonth;
+
+  const [year, month] = currentMonth.split('-').map(Number);
+  if (!year || !month) return currentMonth;
+  const previous = new Date(Date.UTC(year, month - 2, 1));
+  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 function recalcMixShares<T extends { share_pct: number | null }>(
   rows: T[],
   total: number,
@@ -680,11 +692,12 @@ export function aggregateDashboardDetails(
 export function Dashboard({ currentMonth, months, filters, initialSection = 'current', onSectionChange }: DashboardProps) {
   const { user } = useAuth();
   const canViewSalaries = canAccessSalaries(user?.profile);
+  const defaultHistoryMonth = getDefaultHistoryMonth(currentMonth, months);
   const [activeSection, setActiveSection] = useState<DashboardSection>(initialSection);
   const [currentMode, setCurrentMode] = useState<'overview' | 'forecast'>('overview');
-  const [historyMonth, setHistoryMonth] = useState(currentMonth);
-  const [historyMonths, setHistoryMonths] = useState<string[]>([currentMonth]);
-  const [draftHistoryMonths, setDraftHistoryMonths] = useState<string[]>([currentMonth]);
+  const [historyMonth, setHistoryMonth] = useState(defaultHistoryMonth);
+  const [historyMonths, setHistoryMonths] = useState<string[]>([defaultHistoryMonth]);
+  const [draftHistoryMonths, setDraftHistoryMonths] = useState<string[]>([defaultHistoryMonth]);
   const [historyMonthDropdownOpen, setHistoryMonthDropdownOpen] = useState(false);
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
   const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
@@ -694,18 +707,33 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [performanceError, setPerformanceError] = useState('');
   const historyMonthDropdownRef = useRef<HTMLDetailsElement>(null);
+  const historySelectionTouchedRef = useRef(false);
+  const historySelectionCurrentMonthRef = useRef(currentMonth);
 
   useEffect(() => {
-    setHistoryMonth((previous) => (months.includes(previous) ? previous : currentMonth));
+    const currentMonthChanged = historySelectionCurrentMonthRef.current !== currentMonth;
+    if (currentMonthChanged) {
+      historySelectionCurrentMonthRef.current = currentMonth;
+      historySelectionTouchedRef.current = false;
+    }
+
+    if (!historySelectionTouchedRef.current) {
+      setHistoryMonth(defaultHistoryMonth);
+      setHistoryMonths([defaultHistoryMonth]);
+      setDraftHistoryMonths([defaultHistoryMonth]);
+      return;
+    }
+
+    setHistoryMonth((previous) => (months.includes(previous) ? previous : defaultHistoryMonth));
     setHistoryMonths((previous) => {
       const valid = previous.filter((month) => months.includes(month));
-      return valid.length > 0 ? valid : [currentMonth];
+      return valid.length > 0 ? valid : [defaultHistoryMonth];
     });
     setDraftHistoryMonths((previous) => {
       const valid = previous.filter((month) => months.includes(month));
-      return valid.length > 0 ? valid : [currentMonth];
+      return valid.length > 0 ? valid : [defaultHistoryMonth];
     });
-  }, [months, currentMonth]);
+  }, [months, currentMonth, defaultHistoryMonth]);
 
   useEffect(() => {
     setActiveSection(initialSection);
@@ -1006,6 +1034,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
   const handleApplyHistoryMonths = useCallback(() => {
     const sorted = sortMonthsAsc(draftSelectedHistoryMonths);
+    historySelectionTouchedRef.current = true;
     setHistoryMonths(sorted);
     setHistoryMonth(sorted[sorted.length - 1] ?? currentMonth);
     historyMonthDropdownRef.current?.removeAttribute('open');
@@ -1014,6 +1043,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   const handleApplyHistoryPreset = useCallback((count: number) => {
     const selected = sortMonthsAsc(months.slice(0, Math.min(count, MAX_DASHBOARD_BATCH_MONTHS)));
     if (selected.length === 0) return;
+    historySelectionTouchedRef.current = true;
     setDraftHistoryMonths(selected);
     setHistoryMonths(selected);
     setHistoryMonth(selected[selected.length - 1] ?? currentMonth);

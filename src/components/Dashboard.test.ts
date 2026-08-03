@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateDashboardDetails } from './Dashboard';
+import { aggregateDashboardDetails, getDefaultHistoryMonth } from './Dashboard';
 import type {
   AgentStat,
   DashboardAllResponse,
@@ -182,5 +182,15 @@ describe('aggregateDashboardDetails', () => {
       { sale_date: 'zi-02', total_sales: 80, total_quantity: 8, receipt_count: 8 },
     ]);
     expect(aggregate.dailyLastYear).toEqual([]);
+  });
+});
+
+describe('getDefaultHistoryMonth', () => {
+  it('selects the latest available closed month', () => {
+    expect(getDefaultHistoryMonth('2026-08', ['2026-08', '2026-06', '2026-07'])).toBe('2026-07');
+  });
+
+  it('handles the year boundary when the month list is not loaded yet', () => {
+    expect(getDefaultHistoryMonth('2026-01', [])).toBe('2025-12');
   });
 });
