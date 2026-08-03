@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from io import BytesIO
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Any
 
 import pytest
@@ -1494,29 +1494,36 @@ async def test_saved_rule_snapshot_freezes_profitability_after_registry_changes(
 @pytest.mark.asyncio
 async def test_manager_override_requires_reason_and_records_actor() -> None:
     service, repo = make_service()
-    service.get_scenario_detail = AsyncMock(return_value={
-        "rows": [{"site_code": "SITE01", "proposed_target": 100.0}],
-    })  # type: ignore[method-assign]
+    with patch.object(
+        service,
+        "get_scenario_detail",
+        new=AsyncMock(return_value={
+            "rows": [{"site_code": "SITE01", "proposed_target": 100.0}],
+        }),
+    ):
+        with pytest.raises(HTTPException, match="motiv explicit"):
+            await service.save_final_targets(
+                9,
+                [{"site_code": "SITE01", "final_target": 110}],
+                2,
+                actor="owner-sub",
+            )
 
-    with pytest.raises(HTTPException, match="motiv explicit"):
-        await service.save_final_targets(
+    repo.update_final_targets.return_value = 1
+    with patch.object(
+        service,
+        "get_scenario_detail",
+        new=AsyncMock(side_effect=[
+            {"rows": [{"site_code": "SITE01", "proposed_target": 100.0}]},
+            {"id": 9, "revision": 3},
+        ]),
+    ):
+        result = await service.save_final_targets(
             9,
-            [{"site_code": "SITE01", "final_target": 110}],
+            [{"site_code": "SITE01", "final_target": 110, "override_reason": "buget local"}],
             2,
             actor="owner-sub",
         )
-
-    repo.update_final_targets.return_value = 1
-    service.get_scenario_detail = AsyncMock(side_effect=[
-        {"rows": [{"site_code": "SITE01", "proposed_target": 100.0}]},
-        {"id": 9, "revision": 3},
-    ])  # type: ignore[method-assign]
-    result = await service.save_final_targets(
-        9,
-        [{"site_code": "SITE01", "final_target": 110, "override_reason": "buget local"}],
-        2,
-        actor="owner-sub",
-    )
 
     assert result == {"id": 9, "revision": 3}
     repo.update_final_targets.assert_awaited_once_with(

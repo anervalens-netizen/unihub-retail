@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
+from typing import Any
 
 from services import grile
 from services.grile import _completed_days_for_month, _normalize_completion_window
@@ -135,7 +136,7 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
 
 
 def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> None:
-    values = [
+    values: list[dict[str, Any]] = [
         {"values": [[100]]},
         {"values": [[50]]},
         {"values": []},
