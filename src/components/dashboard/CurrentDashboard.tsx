@@ -167,7 +167,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
         <AiForecastPanel currentMonth={currentMonth} filters={filters} />
       ) : (
         <>
-          <div className="glass min-w-0 space-y-3 rounded-3xl p-4">
+          <div data-testid="hub-overview-card" className="glass min-w-0 space-y-3 rounded-3xl p-4">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold">Overview — {currentMonth}</h3>
@@ -255,7 +255,8 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             </div>
           </div>
 
-          <div className="glass mx-auto w-full max-w-[1240px] min-w-0 overflow-hidden rounded-3xl p-4">
+          <div data-testid="hub-period-comparison-card" className="glass w-full min-w-0 overflow-hidden rounded-3xl p-4">
+            <div className="mx-auto w-full max-w-[1208px]">
               <div className="mb-4 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Comparatie perioade</h3>
@@ -291,6 +292,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                   </div>
                 </div>
               )}
+            </div>
           </div>
 
           <div data-testid="hub-chart-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">

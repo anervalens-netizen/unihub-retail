@@ -231,14 +231,21 @@ async function assertResponsiveHubLayout(page: Page, viewportWidth: number) {
 
   const comparisonChildren = page.getByTestId('hub-period-comparison-layout').locator(':scope > div');
   const chartChildren = page.getByTestId('hub-chart-layout').locator(':scope > div');
-  const [comparisonLayoutBox, tableBox, deltasBox, dailyBox, secondaryChartsBox, periodTableFontSize] = await Promise.all([
+  const [overviewCardBox, comparisonCardBox, comparisonLayoutBox, chartLayoutBox, tableBox, deltasBox, dailyBox, secondaryChartsBox, periodTableFontSize] = await Promise.all([
+    page.getByTestId('hub-overview-card').boundingBox(),
+    page.getByTestId('hub-period-comparison-card').boundingBox(),
     page.getByTestId('hub-period-comparison-layout').boundingBox(),
+    page.getByTestId('hub-chart-layout').boundingBox(),
     comparisonChildren.nth(0).boundingBox(),
     comparisonChildren.nth(1).boundingBox(),
     chartChildren.nth(0).boundingBox(),
     chartChildren.nth(1).boundingBox(),
     page.getByTestId('hub-period-table').evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
   ]);
+
+  expect(Math.abs((overviewCardBox?.x ?? 0) - (comparisonCardBox?.x ?? 0))).toBeLessThanOrEqual(2);
+  expect(Math.abs((overviewCardBox?.width ?? 0) - (comparisonCardBox?.width ?? 0))).toBeLessThanOrEqual(2);
+  expect(Math.abs((chartLayoutBox?.width ?? 0) - (comparisonCardBox?.width ?? 0))).toBeLessThanOrEqual(2);
 
   if (viewportWidth >= 1500) {
     expect(comparisonLayoutBox?.width ?? 0).toBeLessThanOrEqual(1210);
