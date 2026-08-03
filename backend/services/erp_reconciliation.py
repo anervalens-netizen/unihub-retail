@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import calendar
 import hashlib
 import logging
 import os
@@ -60,9 +59,6 @@ STORE_REQUIRED_COLUMNS = (
     *STORE_IDENTITY_COLUMNS,
     "AccValTarget",
     *STORE_BASE_METRIC_COLUMNS,
-    "ZileLuna",
-    "ZileTrecute",
-    "ZileRamase",
 )
 AGENT_REQUIRED_COLUMNS = (*AGENT_IDENTITY_COLUMNS, *COMMON_METRIC_COLUMNS)
 
@@ -158,14 +154,6 @@ def _parse_sheet(
                 column=column,
                 row_number=row_index + 1,
             )
-        for column in ("ZileLuna", "ZileTrecute", "ZileRamase"):
-            if column in indexes:
-                values[column] = _cell_decimal(
-                    raw.iat[row_index, indexes[column]],
-                    sheet=sheet,
-                    column=column,
-                    row_number=row_index + 1,
-                )
         key = tuple(identity[column] for column in key_columns)
         if key in parsed:
             raise ErpReportValidationError(
@@ -177,11 +165,18 @@ def _parse_sheet(
     return parsed
 
 
-def parse_erp_report(content: bytes, import_month: str) -> ParsedErpReport:
+def parse_erp_report(
+    content: bytes,
+    import_month: str,
+    *,
+    cutoff_date: date,
+) -> ParsedErpReport:
     try:
         month_start = date.fromisoformat(f"{import_month}-01")
     except ValueError as exc:
         raise ErpReportValidationError("Luna selectata este invalida") from exc
+    if cutoff_date < month_start or cutoff_date.strftime("%Y-%m") != import_month:
+        raise ErpReportValidationError("Cutoff-ul Retail nu este in luna selectata")
     try:
         workbook = pd.ExcelFile(BytesIO(content))
         try:
@@ -252,29 +247,6 @@ def parse_erp_report(content: bytes, import_month: str) -> ParsedErpReport:
             for metric in missing_store_derived_metrics:
                 store_row[metric] = totals.get(metric, Decimal(0))
 
-    expected_days = calendar.monthrange(month_start.year, month_start.month)[1]
-    day_values = {
-        (
-            int(row["ZileLuna"]),
-            int(row["ZileTrecute"]),
-            int(row["ZileRamase"]),
-        )
-        for row in store_rows.values()
-    }
-    if len(day_values) != 1:
-        raise ErpReportValidationError(
-            "Foaia Locatii are valori neuniforme pentru zilele raportului"
-        )
-    days_in_month, elapsed_days, remaining_days = next(iter(day_values))
-    if days_in_month != expected_days:
-        raise ErpReportValidationError(
-            f"Raportul are {days_in_month} zile, dar luna {import_month} are {expected_days}"
-        )
-    if elapsed_days < 1 or elapsed_days > expected_days or remaining_days != expected_days - elapsed_days:
-        raise ErpReportValidationError(
-            "ZileTrecute si ZileRamase nu sunt consistente cu luna selectata"
-        )
-
     for metric in COMMON_METRIC_COLUMNS:
         store_total = sum((row[metric] for row in store_rows.values()), Decimal(0))
         agent_total = sum((row[metric] for row in agent_rows.values()), Decimal(0))
@@ -286,7 +258,7 @@ def parse_erp_report(content: bytes, import_month: str) -> ParsedErpReport:
     stores = {(key[0],): value for key, value in store_rows.items()}
     agents = {(key[0], key[1]): value for key, value in agent_rows.items()}
     return ParsedErpReport(
-        cutoff_date=date(month_start.year, month_start.month, elapsed_days),
+        cutoff_date=cutoff_date,
         stores=stores,
         agents=agents,
     )
@@ -753,7 +725,7 @@ def reconcile_erp_report(
         omitted_issue_count=max(0, issue_count - len(returned_issues)),
         notes=[
             "Verificarea este read-only: nu inlocuieste snapshotul de vanzari si nu modifica Focus, Promo sau Incentive.",
-            "Toate interogarile comparabile sunt limitate la perioada 1-cutoff citita din ZileTrecute, chiar daca snapshotul Retail contine deja zile ulterioare.",
+            "Toate interogarile comparabile sunt limitate la perioada 1-cutoff a snapshotului Retail activ; coloanele ZileLuna/ZileTrecute/ZileRamase din raport sunt ignorate.",
             "Sunt folosite randurile detaliate din foile Locatii si Agenti; randul de subtotal cache-uit deasupra antetului nu este sursa de adevar.",
             "Locatiile TR sunt excluse, identic cu KPI-urile Retail.",
         ],
@@ -791,7 +763,25 @@ class ErpReconciliationService:
         if not content:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raportul este gol")
         try:
-            parsed = await asyncio.to_thread(parse_erp_report, content, import_month)
+            date.fromisoformat(f"{import_month}-01")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Luna selectata este invalida",
+            ) from exc
+        retail_cutoff_date = await self.repo.fetch_retail_cutoff(import_month)
+        if retail_cutoff_date is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Nu exista date Retail importate cu succes pentru luna {import_month}",
+            )
+        try:
+            parsed = await asyncio.to_thread(
+                parse_erp_report,
+                content,
+                import_month,
+                cutoff_date=retail_cutoff_date,
+            )
         except ErpReportValidationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

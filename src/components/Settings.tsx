@@ -70,6 +70,17 @@ type SettingsSection = 'imports' | 'exports' | 'preferences';
 type ExportStep = 1 | 2 | 3 | 4;
 const INCENTIVE_PRODUCTS_DATASET = 'incentive_products';
 
+function localDateInputValue(value: Date): string {
+  const localValue = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
+  return localValue.toISOString().slice(0, 10);
+}
+
+function yesterdayInputValue(): string {
+  const value = new Date();
+  value.setDate(value.getDate() - 1);
+  return localDateInputValue(value);
+}
+
 export function Settings({
   theme,
   setTheme,
@@ -81,13 +92,13 @@ export function Settings({
   const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [salesReplaceConfirmed, setSalesReplaceConfirmed] = useState(false);
-  const [salesCutoff, setSalesCutoff] = useState(() => new Date().toISOString().slice(0, 10));
+  const [salesCutoff, setSalesCutoff] = useState(yesterdayInputValue);
   const [pendingSalesGeneration, setPendingSalesGeneration] = useState<ImportResponse | null>(null);
   const [salesOverrideReason, setSalesOverrideReason] = useState('');
   const [promotingSales, setPromotingSales] = useState(false);
   const [promoActualsFile, setPromoActualsFile] = useState<File | null>(null);
-  const [promoActualsMonth, setPromoActualsMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [promoActualsCutoff, setPromoActualsCutoff] = useState(() => new Date().toISOString().slice(0, 10));
+  const [promoActualsMonth, setPromoActualsMonth] = useState(() => localDateInputValue(new Date()).slice(0, 7));
+  const [promoActualsCutoff, setPromoActualsCutoff] = useState(yesterdayInputValue);
   const [promoActualsUploading, setPromoActualsUploading] = useState(false);
   const [promoActualsMessage, setPromoActualsMessage] = useState('');
   const [erpReconciliationFile, setErpReconciliationFile] = useState<File | null>(null);
@@ -738,7 +749,7 @@ export function Settings({
               <h3 className="text-sm font-bold">Verificare raport detaliat ERP</h3>
             </div>
             <p className="mb-3 text-xs text-slate-500">
-              Reconciliere read-only cu luna Retail selectată și Focus, strict de la ziua 1 până la cutoff-ul din raport. Fișierul nu înlocuiește datele Retail și nu este păstrat pe server.
+              Reconciliere read-only cu luna Retail selectată și Focus, strict de la ziua 1 până la ultima zi din snapshotul Retail. Coloanele de zile din raport sunt ignorate; fișierul nu este păstrat pe server.
             </p>
             <div className="mb-3 grid gap-2 sm:grid-cols-[180px_1fr]">
               <label className="text-[11px] font-semibold text-slate-500">

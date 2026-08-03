@@ -216,9 +216,10 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   verificare manuala.
 - Import vanzari si refresh reporting agregat.
 - Setari -> Importuri permite verificarea ocazionala, read-only, a raportului
-  detaliat ERP `.xls`/`.xlsx`. Cutoff-ul este citit din `ZileTrecute`, iar
-  toate valorile comparabile sunt recalculate strict pentru intervalul
-  1-cutoff, chiar daca snapshotul lunar Retail contine deja zile ulterioare.
+  detaliat ERP `.xls`/`.xlsx`. Cutoff-ul este ultima zi cu date din snapshotul
+  Retail activ; coloanele `ZileLuna`, `ZileTrecute` si `ZileRamase` din raport
+  sunt ignorate. Toate valorile comparabile sunt recalculate strict pentru
+  intervalul 1-cutoff.
   Verificarea compara acoperirea magazinelor si agentilor, targetul, vanzarile,
   cantitatile, bonurile si categoriile Focus, fara sa pastreze fisierul si fara
   sa modifice snapshotul. Daca foaia `Locatii` expune doar procentele Focus,
@@ -232,7 +233,8 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   configuratia si materializeaza config + surse intr-o generatie imutabila sub
   `data/promo_generations/`. Pointerul `current.json` este mutat atomic cu
   lock si hash-CAS numai dupa validare. Runtime-ul reverifica hashurile inainte
-  de folosire. Pana la cutoff raportul este sursa corectiva pentru Focus si
+  de folosire. Retururile negative sunt agregate cu vanzarile pe SiteCode/Cod,
+  iar calculul foloseste numai cantitatea neta pozitiva. Pana la cutoff raportul este sursa corectiva pentru Focus si
   exporturi;
   dupa cutoff calculul continua din regula pe bonuri.
 - Importul de vanzari este rezervat administratorilor, accepta numai Excel in

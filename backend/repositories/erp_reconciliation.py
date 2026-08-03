@@ -10,6 +10,20 @@ class ErpReconciliationRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
+    async def fetch_retail_cutoff(self, import_month: str) -> date | None:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                SELECT MAX(rad.sale_date)
+                FROM reporting_agent_day rad
+                JOIN stores s ON s.site_code = rad.site_code
+                WHERE rad.import_month = $1
+                  AND s.is_active = TRUE
+                  AND s.locatie NOT ILIKE 'TR %'
+                """,
+                import_month,
+            )
+
     async def fetch_reference(self, import_month: str, cutoff_date: date) -> dict[str, Any]:
         async with self.pool.acquire() as conn:
             snapshot = await conn.fetchrow(

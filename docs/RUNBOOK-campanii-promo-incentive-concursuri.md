@@ -86,6 +86,9 @@ Pentru sursa POS, valoarea reducerii folosește `PromoValoare Luna Curenta`
 `Promo` unitățile confirmate și valoarea reducerii, agregate peste toate
 promoțiile active. Totalurile de magazin și RM rămân exacte; distribuția la
 agent urmează aceeași alocare proporțională documentată pentru unitățile POS.
+Rândurile negative reprezintă retururi valide: cantitatea și valoarea sunt
+însumate net pe `(SiteCode, Cod)`, iar numai rezultatul net pozitiv contribuie
+la Promo și la excluderea din Incentive.
 
 Toate promoțiile active ale lunii contribuie la excluderea unităților reduse
 din Incentive, indiferent de promoția selectată vizual în Focus.
@@ -148,8 +151,10 @@ lunară rămân granularitățile oficiale.
 
 Verificarea read-only a raportului detaliat ERP din `Setări -> Importuri` nu
 înlocuiește importul POS și nu certifică Promo/Incentive. Ea limitează calculele
-Retail la 1-cutoff-ul din `ZileTrecute` și poate reconcilia totalurile Focus
-prezente în raport; valorile Promo/Incentive rămân informative deoarece fișierul
+Retail la 1-cutoff-ul ultimei zile disponibile în snapshotul Retail activ.
+Coloanele `ZileLuna`, `ZileTrecute` și `ZileRamase` din raport sunt ignorate,
+inclusiv când sunt goale. Verificarea poate reconcilia totalurile Focus prezente
+în raport; valorile Promo/Incentive rămân informative deoarece fișierul
 agregat nu conține coduri de produs, identitatea bonului și unități promo.
 
 Raportul trebuie să conțină foile `Locatii` și `Agenti`. Unele versiuni ERP

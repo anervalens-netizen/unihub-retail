@@ -149,36 +149,17 @@ async def main(args: argparse.Namespace) -> None:
 
     conn = await asyncpg.connect(db_url)
     try:
-        # Creează tabelele dacă nu există (înainte de restart backend)
-        await conn.execute(
+        tables = await conn.fetchrow(
             """
-            CREATE TABLE IF NOT EXISTS incentive_campaigns (
-                id SERIAL PRIMARY KEY,
-                month TEXT NOT NULL UNIQUE,
-                title TEXT NOT NULL,
-                subtitle TEXT,
-                description TEXT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            )
+            SELECT
+                to_regclass('public.incentive_campaigns') IS NOT NULL AS campaigns,
+                to_regclass('public.incentive_products') IS NOT NULL AS products
             """
         )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS incentive_products (
-                id SERIAL PRIMARY KEY,
-                campaign_id INTEGER NOT NULL REFERENCES incentive_campaigns(id) ON DELETE CASCADE,
-                item_code TEXT NOT NULL,
-                item_name TEXT,
-                reward_value NUMERIC(10, 2) NOT NULL,
-                valid_from DATE NOT NULL,
-                valid_to DATE NOT NULL,
-                category TEXT,
-                subcategory TEXT,
-                source_file TEXT,
-                UNIQUE (campaign_id, item_code, valid_from, valid_to)
+        if not tables or not tables["campaigns"] or not tables["products"]:
+            raise RuntimeError(
+                "Schema incentive lipseste; ruleaza migrarile aplicatiei inainte de import"
             )
-            """
-        )
 
         async with conn.transaction():
             # Upsert campanie

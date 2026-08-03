@@ -326,10 +326,10 @@ def test_validate_promo_actuals_report_rejects_no_positive_rows(
     with pytest.raises(HTTPException) as exc:
         ImportsService._validate_promo_actuals_report(b"data")
     assert exc.value.status_code == 400
-    assert exc.value.detail == "Raportul nu contine unitati promo pozitive"
+    assert exc.value.detail == "Raportul nu contine unitati promo nete pozitive"
 
 
-@pytest.mark.parametrize("quantity", [1.5, "NaN", "Infinity", -1])
+@pytest.mark.parametrize("quantity", [1.5, "NaN", "Infinity"])
 def test_validate_promo_actuals_report_rejects_invalid_quantities(
     monkeypatch: pytest.MonkeyPatch,
     quantity: object,
@@ -345,22 +345,19 @@ def test_validate_promo_actuals_report_rejects_invalid_quantities(
     assert "intregi finite" in str(exc.value.detail)
 
 
-def test_validate_promo_actuals_report_rejects_duplicate_keys(
+def test_validate_promo_actuals_report_nets_returns_for_duplicate_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     dataframe = pd.DataFrame(
         {
-            "site_code": ["S1", "S1"],
-            "item_code": ["I1", "I1"],
-            "promo_qty": [1, 2],
+            "site_code": ["S1", "S1", "S2", "S2", "S3"],
+            "item_code": ["I1", "I1", "I2", "I2", "I3"],
+            "promo_qty": [3, -1, 1, -1, -2],
         }
     )
     monkeypatch.setattr(imports_module.pd, "read_excel", lambda *args, **kwargs: dataframe)
 
-    with pytest.raises(HTTPException) as exc:
-        ImportsService._validate_promo_actuals_report(b"data")
-    assert exc.value.status_code == 400
-    assert "duplicate" in str(exc.value.detail)
+    assert ImportsService._validate_promo_actuals_report(b"data") == (1, 2)
 
 
 def test_publish_promo_generation_rejects_stale_pointer(tmp_path: Path) -> None:

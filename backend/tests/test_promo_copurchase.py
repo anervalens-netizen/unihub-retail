@@ -308,6 +308,62 @@ class TestComputePromoActualsFromReport:
         assert "s.is_active = true" in sql
 
     @pytest.mark.asyncio
+    async def test_report_returns_reduce_units_and_value_net(self, tmp_path):
+        source = tmp_path / "promo_actuals.xlsx"
+        pd.DataFrame(
+            [
+                {
+                    "SiteCode": "S1",
+                    "Cod": "CL1",
+                    "Promo Luna Curenta": 5,
+                    "PromoValoare Luna Curenta": 1000,
+                },
+                {
+                    "SiteCode": "S1",
+                    "Cod": "CL1",
+                    "Promo Luna Curenta": -2,
+                    "PromoValoare Luna Curenta": -400,
+                },
+            ]
+        ).to_excel(source, sheet_name="AccesoriPromoLunar", index=False)
+
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(
+            return_value=[
+                FakeRow(
+                    site_code="S1",
+                    item_code="CL1",
+                    promo_units=3,
+                    agent="Agent1",
+                    positive_qty=3,
+                )
+            ]
+        )
+
+        result = await compute_promo_actuals_from_report(
+            conn,
+            month="2026-06",
+            definition={
+                "actuals_source_file": str(source),
+                "actuals_sheet": "AccesoriPromoLunar",
+                "actuals_cutoff_date": "2026-06-16",
+                "start_date": date(2026, 6, 1),
+                "end_date": date(2026, 6, 30),
+            },
+            item_codes=["CL1"],
+            firma=None,
+            regional=None,
+            asm=None,
+            site_code=None,
+            agent=None,
+        )
+
+        assert result is not None
+        assert result.discounted_units == 3
+        assert result.discount_value == Decimal("120")
+        assert result.excluded_units == {("S1", "Agent1", "CL1"): 3}
+
+    @pytest.mark.asyncio
     async def test_agent_filter_is_applied_after_allocation(self, tmp_path):
         source = tmp_path / "promo_actuals.xlsx"
         pd.DataFrame(

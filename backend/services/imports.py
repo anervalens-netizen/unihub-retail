@@ -526,9 +526,7 @@ class ImportsService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Raportul trebuie sa contina coloanele SiteCode, Cod si Promo Luna Curenta",
             )
-        positive_rows = 0
-        promo_units = 0
-        seen_keys: set[tuple[str, str]] = set()
+        net_units: dict[tuple[str, str], int] = {}
         for index, raw_value in dataframe[promo_column].items():
             if raw_value is None or str(raw_value).strip() == "":
                 continue
@@ -541,11 +539,10 @@ class ImportsService:
             if (
                 not quantity_value.is_finite()
                 or quantity_value != quantity_value.to_integral_value()
-                or quantity_value < 0
             ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cantitatile promo trebuie sa fie intregi finite si nenegative",
+                    detail="Cantitatile promo trebuie sa fie intregi finite",
                 )
             quantity = int(quantity_value)
             if quantity == 0:
@@ -553,23 +550,17 @@ class ImportsService:
             if not site_code or site_code.casefold() == "nan" or not item_code or item_code.casefold() == "nan":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Fiecare cantitate promo pozitiva necesita SiteCode si Cod",
+                    detail="Fiecare cantitate promo nenula necesita SiteCode si Cod",
                 )
             key = (site_code, item_code)
-            if key in seen_keys:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Raportul promo contine chei SiteCode/Cod duplicate",
-                )
-            seen_keys.add(key)
-            positive_rows += 1
-            promo_units += quantity
-        if positive_rows == 0:
+            net_units[key] = net_units.get(key, 0) + quantity
+        positive_net_units = [quantity for quantity in net_units.values() if quantity > 0]
+        if not positive_net_units:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Raportul nu contine unitati promo pozitive",
+                detail="Raportul nu contine unitati promo nete pozitive",
             )
-        return positive_rows, promo_units
+        return len(positive_net_units), sum(positive_net_units)
 
     async def get_import_job_status(self, job_id: str) -> ImportJobStatus:
         result = await get_job_status(job_id)

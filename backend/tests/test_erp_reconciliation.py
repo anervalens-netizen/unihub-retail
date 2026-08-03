@@ -25,6 +25,7 @@ def workbook_bytes(
     days_elapsed: int = 16,
     include_store_derived_metrics: bool = False,
     store_focus_quantity: int = 3,
+    blank_day_columns: bool = False,
 ) -> bytes:
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -36,6 +37,9 @@ def workbook_bytes(
             if include_store_derived_metrics
             else ()
         ),
+        "ZileLuna",
+        "ZileTrecute",
+        "ZileRamase",
     )
     stores.append([None] * len(store_columns))
     stores.append(list(store_columns))
@@ -57,9 +61,9 @@ def workbook_bytes(
         "Folii TPU": 1,
         "Still&Protectie": 2,
         "Incarcare&Transfer": 1,
-        "ZileLuna": 31,
-        "ZileTrecute": days_elapsed,
-        "ZileRamase": 31 - days_elapsed,
+        "ZileLuna": None if blank_day_columns else 31,
+        "ZileTrecute": None if blank_day_columns else days_elapsed,
+        "ZileRamase": None if blank_day_columns else 31 - days_elapsed,
     }
     stores.append([store_values[column] for column in store_columns])
     stores.append(
@@ -153,7 +157,11 @@ def reference(*, bon2: int = 2) -> dict:
 
 
 def test_parse_erp_report_uses_detail_sheets_and_excludes_tr() -> None:
-    parsed = parse_erp_report(workbook_bytes(), "2026-07")
+    parsed = parse_erp_report(
+        workbook_bytes(blank_day_columns=True),
+        "2026-07",
+        cutoff_date=date(2026, 7, 16),
+    )
 
     assert parsed.cutoff_date == date(2026, 7, 16)
     assert list(parsed.stores) == [("S1",)]
@@ -163,9 +171,13 @@ def test_parse_erp_report_uses_detail_sheets_and_excludes_tr() -> None:
     assert parsed.stores[("S1",)]["FoliiQtty"] == Decimal("4")
 
 
-def test_parse_erp_report_rejects_month_day_mismatch() -> None:
-    with pytest.raises(ErpReportValidationError, match="luna 2026-06 are 30"):
-        parse_erp_report(workbook_bytes(), "2026-06")
+def test_parse_erp_report_rejects_cutoff_outside_selected_month() -> None:
+    with pytest.raises(ErpReportValidationError, match="Cutoff-ul Retail"):
+        parse_erp_report(
+            workbook_bytes(),
+            "2026-06",
+            cutoff_date=date(2026, 7, 16),
+        )
 
 
 def test_parse_erp_report_rejects_summary_only_store_sheet_as_validation_error() -> None:
@@ -176,7 +188,11 @@ def test_parse_erp_report_rejects_summary_only_store_sheet_as_validation_error()
             "Regenereaza raportul ERP cu foaia populata."
         ),
     ):
-        parse_erp_report(workbook_with_summary_only_stores_bytes(), "2026-07")
+        parse_erp_report(
+            workbook_with_summary_only_stores_bytes(),
+            "2026-07",
+            cutoff_date=date(2026, 7, 16),
+        )
 
 
 def test_parse_erp_report_validates_optional_store_metrics_when_present() -> None:
@@ -190,11 +206,14 @@ def test_parse_erp_report_validates_optional_store_metrics_when_present() -> Non
                 store_focus_quantity=4,
             ),
             "2026-07",
+            cutoff_date=date(2026, 7, 16),
         )
 
 
 def test_reconciliation_explains_returns_without_failing() -> None:
-    parsed = parse_erp_report(workbook_bytes(), "2026-07")
+    parsed = parse_erp_report(
+        workbook_bytes(), "2026-07", cutoff_date=date(2026, 7, 16)
+    )
     result = reconcile_erp_report(
         parsed,
         reference(),
@@ -213,7 +232,11 @@ def test_reconciliation_explains_returns_without_failing() -> None:
 
 
 def test_reconciliation_accepts_retail_snapshot_beyond_report_cutoff() -> None:
-    parsed = parse_erp_report(workbook_bytes(days_elapsed=16), "2026-07")
+    parsed = parse_erp_report(
+        workbook_bytes(days_elapsed=16),
+        "2026-07",
+        cutoff_date=date(2026, 7, 16),
+    )
     later_reference = reference()
     later_reference["retail_cutoff_date"] = date(2026, 7, 17)
 
@@ -233,7 +256,11 @@ def test_reconciliation_accepts_retail_snapshot_beyond_report_cutoff() -> None:
 
 
 def test_reconciliation_reports_bon2_difference_at_agent_level() -> None:
-    parsed = parse_erp_report(workbook_bytes(agent_bon2=3), "2026-07")
+    parsed = parse_erp_report(
+        workbook_bytes(agent_bon2=3),
+        "2026-07",
+        cutoff_date=date(2026, 7, 16),
+    )
     result = reconcile_erp_report(
         parsed,
         reference(bon2=2),
