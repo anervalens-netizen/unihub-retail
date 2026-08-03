@@ -219,22 +219,22 @@ function DonutLegendChart({
 }) {
   const legendRows = data.slice(0, 6);
   const layoutClass = sideBySide
-    ? 'grid-cols-[96px_minmax(0,1fr)] sm:grid-cols-[112px_minmax(0,1fr)]'
+    ? 'grid-cols-[104px_minmax(0,1fr)] sm:grid-cols-[112px_minmax(0,1fr)]'
     : compact
       ? '[grid-template-columns:repeat(auto-fit,minmax(min(100%,112px),1fr))]'
       : '[grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]';
 
   return (
     <div data-testid="donut-legend-layout" className={`grid min-w-0 items-center ${mobileEmphasis || sideBySide ? 'gap-1.5' : 'gap-2'} ${layoutClass}`}>
-      <div className={`mx-auto aspect-square w-full ${sideBySide ? 'max-w-24 sm:max-w-28' : compact ? mobileEmphasis ? 'max-w-28' : 'max-w-32' : 'max-w-48'}`}>
+      <div className={`mx-auto aspect-square w-full ${sideBySide ? 'max-w-26 sm:max-w-28' : compact ? mobileEmphasis ? 'max-w-28' : 'max-w-32' : 'max-w-48'}`}>
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
               data={data}
               dataKey={dataKey}
               nameKey={nameKey}
-              innerRadius={compact ? 34 : 46}
-              outerRadius={compact ? 54 : 78}
+              innerRadius={sideBySide ? 29 : compact ? 34 : 46}
+              outerRadius={sideBySide ? 46 : compact ? 54 : 78}
               paddingAngle={2}
               stroke="transparent"
             >
@@ -271,11 +271,11 @@ function DonutLegendChart({
               style={{ backgroundColor: colors[index % colors.length] }}
             />
             {sideBySide ? (
-              <span className="min-w-0 leading-tight">
-                <span className="block truncate text-[11px] font-bold text-slate-700 dark:text-slate-200" title={String(item[nameKey])}>
+              <span className="flex min-w-0 items-baseline gap-1 leading-none">
+                <span className="min-w-0 truncate text-[11px] font-bold text-slate-700 dark:text-slate-200" title={String(item[nameKey])}>
                   {String(item[nameKey])}
                 </span>
-                <span className="block text-[10px] font-semibold text-slate-500">
+                <span className="shrink-0 text-[9px] font-semibold text-slate-500">
                   {formatPercent(Number(item.share_pct ?? 0))}
                 </span>
               </span>
