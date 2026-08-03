@@ -13,8 +13,10 @@ import {
 const VIEWPORTS = [
   { width: 1023, height: 768 },
   { width: 1024, height: 768 },
+  { width: 1280, height: 800 },
   { width: 1366, height: 768 },
   { width: 1440, height: 900 },
+  { width: 1600, height: 900 },
   { width: 1920, height: 1080 },
   { width: 2560, height: 1440 },
   { width: 390, height: 844 },
@@ -22,7 +24,56 @@ const VIEWPORTS = [
 
 const HUB_ALL = {
   ...MOCK_DASHBOARD_ALL,
-  daily_last_year: [],
+  daily: [
+    { sale_date: '2026-05-01', total_sales: 18000, total_quantity: 55, receipt_count: 34 },
+    { sale_date: '2026-05-02', total_sales: 22000, total_quantity: 71, receipt_count: 42 },
+    { sale_date: '2026-05-03', total_sales: 20500, total_quantity: 66, receipt_count: 39 },
+  ],
+  daily_last_year: [
+    { sale_date: '2025-05-01', total_sales: 16500, total_quantity: 50, receipt_count: 32 },
+    { sale_date: '2025-05-02', total_sales: 19000, total_quantity: 60, receipt_count: 36 },
+    { sale_date: '2025-05-03', total_sales: 18500, total_quantity: 59, receipt_count: 35 },
+  ],
+  receipt_bucket_mix: [
+    { bucket: '0 accesorii', receipt_count: 120, share_pct: 40 },
+    { bucket: '1 accesoriu', receipt_count: 105, share_pct: 35 },
+    { bucket: '2+ accesorii', receipt_count: 75, share_pct: 25 },
+  ],
+  focus_subcategory_mix: [
+    { category: 'Protectie', sales_total: 32000, quantity_total: 210, share_pct: 42 },
+    { category: 'Incarcare', sales_total: 28000, quantity_total: 170, share_pct: 34 },
+    { category: 'Audio', sales_total: 19500, quantity_total: 120, share_pct: 24 },
+  ],
+  category_mix: [
+    { category: 'Huse si folii', sales_total: 54000, quantity_total: 240, share_pct: 43 },
+    { category: 'Incarcatoare', sales_total: 41000, quantity_total: 165, share_pct: 33 },
+    { category: 'Castile audio', sales_total: 30000, quantity_total: 95, share_pct: 24 },
+  ],
+  brand_mix: [
+    { brand: 'Apple', sales_total: 48000, quantity_total: 150, share_pct: 38 },
+    { brand: 'Samsung', sales_total: 44000, quantity_total: 180, share_pct: 35 },
+    { brand: 'Xiaomi', sales_total: 34000, quantity_total: 170, share_pct: 27 },
+  ],
+  period_comparison: {
+    current: {
+      label: 'Curent', month: '2026-05', day_range: '01-06', total_sales: 150000,
+      total_quantity: 500, total_receipts: 300, cartele_qty: 10, working_days: 6,
+      daily_average: 25000, avg_receipt_value: 500, medie_produs: 300,
+      proc_bon2acc: 60, prc_focus_acc_qty: 25,
+    },
+    previous: {
+      label: 'Luna trecuta', month: '2026-04', day_range: '01-06', total_sales: 135000,
+      total_quantity: 460, total_receipts: 280, cartele_qty: 8, working_days: 6,
+      daily_average: 22500, avg_receipt_value: 482, medie_produs: 293,
+      proc_bon2acc: 55, prc_focus_acc_qty: 22,
+    },
+    year_over_year: {
+      label: 'Anul trecut', month: '2025-05', day_range: '01-06', total_sales: 120000,
+      total_quantity: 420, total_receipts: 260, cartele_qty: 7, working_days: 6,
+      daily_average: 20000, avg_receipt_value: 462, medie_produs: 286,
+      proc_bon2acc: 52, prc_focus_acc_qty: 20,
+    },
+  },
   premium_glass: null,
   agents: [{
     import_month: '2026-05', agent: 'Ana Popescu', site_code: 'UNIRII', locatie: 'Magazin Unirii', firma: 'Firma 1',
@@ -150,6 +201,56 @@ async function assertNoPageOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
+async function assertResponsiveHubLayout(page: Page, viewportWidth: number) {
+  const summary = page.getByTestId('hub-summary-panel');
+  const donutCards = page.getByTestId('hub-donut-grid').locator(':scope > div');
+  const [summaryBox, firstDonutBox, secondDonutBox] = await Promise.all([
+    summary.boundingBox(),
+    donutCards.nth(0).boundingBox(),
+    donutCards.nth(1).boundingBox(),
+  ]);
+  expect(summaryBox).not.toBeNull();
+  expect(firstDonutBox).not.toBeNull();
+  expect(secondDonutBox).not.toBeNull();
+
+  if (viewportWidth >= 1500) {
+    expect(Math.abs((summaryBox?.y ?? 0) - (firstDonutBox?.y ?? 0))).toBeLessThanOrEqual(8);
+  } else {
+    expect(firstDonutBox?.y ?? 0).toBeGreaterThanOrEqual(
+      (summaryBox?.y ?? 0) + (summaryBox?.height ?? 0) - 4,
+    );
+  }
+
+  if (viewportWidth >= 1280) {
+    expect(Math.abs((firstDonutBox?.y ?? 0) - (secondDonutBox?.y ?? 0))).toBeLessThanOrEqual(8);
+  } else {
+    expect(secondDonutBox?.y ?? 0).toBeGreaterThan(
+      (firstDonutBox?.y ?? 0) + (firstDonutBox?.height ?? 0) - 4,
+    );
+  }
+
+  const comparisonChildren = page.getByTestId('hub-period-comparison-layout').locator(':scope > div');
+  const chartChildren = page.getByTestId('hub-chart-layout').locator(':scope > div');
+  const [tableBox, deltasBox, dailyBox, secondaryChartsBox] = await Promise.all([
+    comparisonChildren.nth(0).boundingBox(),
+    comparisonChildren.nth(1).boundingBox(),
+    chartChildren.nth(0).boundingBox(),
+    chartChildren.nth(1).boundingBox(),
+  ]);
+
+  if (viewportWidth >= 1500) {
+    expect(Math.abs((tableBox?.y ?? 0) - (deltasBox?.y ?? 0))).toBeLessThanOrEqual(8);
+    expect(Math.abs((dailyBox?.y ?? 0) - (secondaryChartsBox?.y ?? 0))).toBeLessThanOrEqual(8);
+  } else {
+    expect(deltasBox?.y ?? 0).toBeGreaterThanOrEqual((tableBox?.y ?? 0) + (tableBox?.height ?? 0) - 4);
+    expect(secondaryChartsBox?.y ?? 0).toBeGreaterThanOrEqual((dailyBox?.y ?? 0) + (dailyBox?.height ?? 0) - 4);
+  }
+
+  expect(await page.locator('[data-testid="hub-overview-layout"], [data-testid="donut-legend-layout"], [data-testid="hub-period-comparison-layout"], [data-testid="hub-chart-layout"]').evaluateAll((elements) =>
+    elements.every((element) => element.scrollWidth <= element.clientWidth + 1),
+  )).toBe(true);
+}
+
 for (const viewport of VIEWPORTS) {
   test.describe(`Wave 3 responsive ${viewport.width}x${viewport.height}`, () => {
     test.use({ viewport });
@@ -163,6 +264,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('heading', { name: 'Sales Hub' })).toBeVisible();
       await expect(page.getByRole('tab', { name: 'Luna în curs', exact: true })).toHaveAttribute('aria-selected', 'true');
       await assertNoPageOverflow(page);
+      await assertResponsiveHubLayout(page, viewport.width);
       const rmPanel = page.getByRole('heading', { name: 'RM — Regional Manager', exact: true })
         .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
       const storesPanel = page.getByRole('heading', { name: 'Magazine', exact: true })

@@ -96,9 +96,9 @@ export function Metric({
       : 'bg-slate-50 dark:bg-slate-800/60';
 
   return (
-    <div className={`rounded-2xl p-3 ${accentClasses} ${emphasize ? 'flex h-full flex-col justify-between' : ''} ${className}`}>
-      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`${emphasize ? 'mt-4 text-[2rem] leading-none' : 'mt-1 text-base leading-tight'} font-black`}>{value ?? '-'}</div>
+    <div className={`min-w-0 rounded-2xl p-3 ${accentClasses} ${emphasize ? 'flex h-full flex-col justify-between' : ''} ${className}`}>
+      <div className="break-words text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`min-w-0 break-words ${emphasize ? 'mt-4 text-[2rem] leading-none' : 'mt-1 text-base leading-tight'} font-black`}>{value ?? '-'}</div>
       {detail ? <div className="mt-2 text-xs leading-relaxed text-slate-500">{detail}</div> : null}
     </div>
   );
@@ -124,11 +124,11 @@ export function KpiPerformanceCard({
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl border p-2.5 ${tone.cardClass} ${className}`}>
+    <div className={`min-w-0 overflow-hidden rounded-3xl border p-2.5 ${tone.cardClass} ${className}`}>
       <div className="mb-1 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-wide opacity-75">{title}</div>
-          <div className="mt-0.5 text-[2rem] font-black leading-none">{formatPercent(value)}</div>
+        <div className="min-w-0">
+          <div className="break-words text-[11px] font-bold uppercase tracking-wide opacity-75">{title}</div>
+          <div className="mt-0.5 break-words text-[2rem] font-black leading-none tabular-nums">{formatPercent(value)}</div>
         </div>
         <div className="mt-1">
           <span className={`block h-3 w-3 rounded-full ${tone.badgeClass}`} />
@@ -166,7 +166,7 @@ export function CompactPieSection({
   centerValue: string;
 }) {
   return (
-    <div className="rounded-2xl bg-slate-50/80 p-3 dark:bg-slate-800/40">
+    <div className="min-w-0 rounded-2xl bg-slate-50/80 p-3 dark:bg-slate-800/40">
       <div className="mb-3 text-sm font-bold tracking-wide text-slate-600 dark:text-slate-300">{title}</div>
       {pieData.length === 0 ? (
         <div className="rounded-2xl bg-white/70 p-4 text-xs font-semibold text-slate-500 dark:bg-slate-900/30">
@@ -210,23 +210,21 @@ function DonutLegendChart({
   sideBySide?: boolean;
 }) {
   const legendRows = data.slice(0, 6);
-  const layoutClass = sideBySide
-    ? 'grid-cols-[minmax(0,180px)_minmax(0,1fr)]'
-    : compact
-      ? 'lg:grid-cols-[minmax(0,160px)_minmax(0,1fr)]'
-      : 'lg:grid-cols-[minmax(0,190px)_minmax(0,1fr)]';
+  const layoutClass = compact
+    ? '[grid-template-columns:repeat(auto-fit,minmax(min(100%,112px),1fr))]'
+    : '[grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]';
 
   return (
-    <div className={`grid gap-1.5 ${layoutClass} items-center`}>
-      <div className={`mx-auto w-full ${compact ? 'h-36 max-w-45' : 'h-48 max-w-55'}`}>
+    <div data-testid="donut-legend-layout" className={`grid min-w-0 items-center gap-2 ${layoutClass}`}>
+      <div className={`mx-auto aspect-square w-full ${compact ? 'max-w-32' : 'max-w-48'}`}>
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
               data={data}
               dataKey={dataKey}
               nameKey={nameKey}
-              innerRadius={compact ? 40 : 46}
-              outerRadius={compact ? 66 : 78}
+              innerRadius={compact ? 34 : 46}
+              outerRadius={compact ? 54 : 78}
               paddingAngle={2}
               stroke="transparent"
             >
@@ -246,11 +244,11 @@ function DonutLegendChart({
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className={sideBySide ? 'space-y-0' : compact ? 'space-y-0.5' : 'space-y-2'}>
+      <div className={`min-w-0 ${sideBySide ? 'space-y-0' : compact ? 'space-y-0.5' : 'space-y-2'}`}>
         {legendRows.map((item, index) => (
           <div
             key={`${String(item[nameKey])}-${index}`}
-            className={`flex items-center justify-between gap-2 text-xs dark:bg-slate-900/30 ${
+            className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-xs dark:bg-slate-900/30 ${
               sideBySide
                 ? 'border-b border-slate-200/70 py-2 last:border-b-0'
                 : compact
@@ -258,16 +256,14 @@ function DonutLegendChart({
                   : 'rounded-2xl bg-white/70 px-3 py-2'
             }`}
           >
-            <div className="flex min-w-0 items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: colors[index % colors.length] }}
-              />
-              <span className="text-[11px] font-semibold text-slate-500">
-                {formatPercent(Number(item.share_pct ?? 0))}
-              </span>
-              <span className="font-bold">{valueFormatter(Number(item[dataKey] ?? 0))}</span>
-            </div>
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: colors[index % colors.length] }}
+            />
+            <span className="min-w-0 break-words text-[11px] font-semibold text-slate-500">
+              {formatPercent(Number(item.share_pct ?? 0))}
+            </span>
+            <span className="min-w-0 break-words text-right font-bold tabular-nums">{valueFormatter(Number(item[dataKey] ?? 0))}</span>
           </div>
         ))}
       </div>
@@ -299,13 +295,13 @@ export function PeriodTable({
   ];
 
   return (
-    <div className="w-full overflow-hidden rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+    <div className="min-w-0 w-full overflow-hidden rounded-2xl bg-slate-50 dark:bg-slate-800/50">
       <table className="w-full table-fixed text-[11px]">
         <thead>
           <tr className="border-b border-slate-200 dark:border-slate-700">
-            <th className="py-2 pl-3 pr-2 text-left font-semibold text-slate-400 w-[22%]" />
+            <th className="w-[22%] py-2 pl-2 pr-1 text-left font-semibold text-slate-400 sm:pl-3 sm:pr-2" />
             {points.map((p) => (
-              <th key={p.label} className="py-2 px-2 text-center w-[26%]">
+              <th key={p.label} className="w-[26%] px-1 py-2 text-center sm:px-2">
                 <div className="font-bold text-slate-700 dark:text-slate-200">{p.label}</div>
                 <div className="text-[10px] font-normal text-slate-400">{p.month}</div>
                 <div className="text-[10px] font-normal text-slate-400">{p.day_range}</div>
@@ -319,9 +315,9 @@ export function PeriodTable({
               key={row.label}
               className={i % 2 === 0 ? 'bg-white/60 dark:bg-slate-900/20' : ''}
             >
-              <td className="py-1.5 pl-3 pr-2 text-slate-500 font-medium truncate">{row.label}</td>
+              <td className="break-words py-1.5 pl-2 pr-1 font-medium text-slate-500 sm:pl-3 sm:pr-2">{row.label}</td>
               {points.map((p) => (
-                <td key={p.label} className="py-1.5 px-3 text-center font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                <td key={p.label} className="break-words px-1 py-1.5 text-center font-semibold text-slate-700 tabular-nums dark:text-slate-200 sm:px-3">
                   {row.fn(p)}
                 </td>
               ))}
@@ -372,7 +368,7 @@ export function DeltaCard({
     : 'border-rose-200 bg-rose-50/80 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300';
 
   return (
-    <div className={`rounded-2xl border p-3 ${tone}`}>
+    <div className={`min-w-0 rounded-2xl border p-3 ${tone}`}>
       <div className="mb-3 text-[11px] font-bold uppercase tracking-wide">{title}</div>
       <div className="space-y-2">
         <div>
@@ -381,7 +377,7 @@ export function DeltaCard({
             <span className="opacity-60">vanzari</span>
           </div>
           <div className="mt-1 flex items-center gap-2 min-w-0">
-            <span className="text-base font-black tabular-nums truncate">{formatDeltaCurrency(salesDelta)}</span>
+            <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaCurrency(salesDelta)}</span>
             {salesPct != null && <DeltaPctBadge pct={salesPct} positive={salesPositive} />}
           </div>
         </div>
@@ -391,7 +387,7 @@ export function DeltaCard({
             <span className="opacity-60">bonuri</span>
           </div>
           <div className="mt-1 flex items-center gap-2 min-w-0">
-            <span className="text-base font-black tabular-nums truncate">{formatDeltaInt(receiptsDelta)}</span>
+            <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaInt(receiptsDelta)}</span>
             {receiptsPct != null && <DeltaPctBadge pct={receiptsPct} positive={receiptsPositive} />}
           </div>
         </div>
@@ -401,7 +397,7 @@ export function DeltaCard({
             <span className="opacity-60">cantitate</span>
           </div>
           <div className="mt-1 flex items-center gap-2 min-w-0">
-            <span className="text-base font-black tabular-nums truncate">{formatDeltaInt(quantityDelta)}</span>
+            <span className="min-w-0 break-words text-base font-black tabular-nums">{formatDeltaInt(quantityDelta)}</span>
             {quantityPct != null && <DeltaPctBadge pct={quantityPct} positive={quantityPositive} />}
           </div>
         </div>

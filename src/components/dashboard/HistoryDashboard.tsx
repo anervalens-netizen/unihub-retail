@@ -386,12 +386,13 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
         </p>
       </div>
 
-      <div className={`glass space-y-4 rounded-3xl p-4 ${mobileSection !== 'summary' ? 'hidden lg:block' : ''}`}>
+      <div className={`glass min-w-0 space-y-3 rounded-3xl p-4 ${mobileSection !== 'summary' ? 'hidden lg:block' : ''}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0"><h3 className="truncate text-sm font-bold">Overview — {selectionLabel}</h3><p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{historyStatusLabel}</p></div>
           <span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{historySummary?.last_sale_date ?? '-'}</span>
         </div>
-        <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
+        <div className="grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(520px,1.5fr)]">
+        <div className="min-w-0 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
           <div className="mb-3 grid grid-cols-3 gap-2 text-center">
             <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div><div className="mt-0.5 text-[13px] font-bold text-slate-600 dark:text-slate-300"><CompactCurrency value={Number(historySummary?.total_target ?? selectedPoint.total_target)} /></div></div>
             <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Realizat</div><div className="mt-0.5 text-[13px] font-bold text-slate-800 dark:text-slate-100"><CompactCurrency value={Number(historySummary?.total_sales ?? selectedPoint.total_sales)} /></div></div>
@@ -409,11 +410,11 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
             {historySummary?.is_month_final === false && <span className="text-slate-600 dark:text-slate-300">Forecast {formatPercent(historySummary.forecast_target_progress_pct)}</span>}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid min-w-0 items-start gap-2.5 xl:grid-cols-2 min-[1500px]:col-start-2 min-[1500px]:row-span-2 min-[1500px]:row-start-1">
           <KpiPerformanceCard title="Bonuri cu accesorii" value={historySummary?.proc_bon2acc ?? selectedPoint.proc_bon2acc} tone={getBon2AccTone(Number(historySummary?.proc_bon2acc ?? selectedPoint.proc_bon2acc ?? 0))} chartData={historyReceiptBucketChartData} dataKey="receipt_count" nameKey="bucket" formatValue={formatInt} />
           <KpiPerformanceCard title="Pondere produse Focus" value={historySummary?.prc_focus_acc_qty ?? selectedPoint.prc_focus_acc_qty} tone={getFocusTone(Number(historySummary?.prc_focus_acc_qty ?? selectedPoint.prc_focus_acc_qty ?? 0))} chartData={historyFocusSubcategoryChartData} dataKey="quantity_total" nameKey="category" formatValue={formatInt} />
         </div>
-        <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
+        <div className="grid min-w-0 gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,78px),1fr))] min-[1500px]:col-start-1 min-[1500px]:row-start-2">
           <Metric label="Bonuri" value={formatInt(historySummary?.total_receipts ?? selectedPoint.total_receipts)} className="p-2" />
           <Metric label="Accesorii nete" value={formatInt(historySummary?.total_quantity ?? selectedPoint.total_quantity)} className="p-2" />
           <Metric label="Magazine / Agenți" value={<span className="flex items-baseline gap-1.5"><span>{formatInt(historySummary?.total_stores ?? selectedPoint.total_stores)}</span><span className="text-slate-300 dark:text-slate-600">/</span><span>{formatInt(historySummary?.total_agents ?? selectedPoint.total_agents)}</span></span>} className="p-2" />
@@ -423,12 +424,13 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
           <Metric label="Val. medie bon" value={formatAmount((historySummary?.total_receipts ?? selectedPoint.total_receipts) > 0 ? Number(historySummary?.total_sales ?? selectedPoint.total_sales) / Number(historySummary?.total_receipts ?? selectedPoint.total_receipts) : 0)} className="p-2" />
           <Metric label="Cartele" value={formatInt(historySummary?.cartele_qty ?? 0)} className="p-2" />
         </div>
+        </div>
       </div>
 
-      <div className={`grid items-start gap-3 lg:grid-cols-[1.2fr_1fr] ${mobileSection !== 'details' ? 'hidden lg:grid' : ''}`}>
-        <div className="glass self-start rounded-3xl p-4">
+      <div className={`grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] ${mobileSection !== 'details' ? 'hidden lg:grid' : ''}`}>
+        <div className="glass min-w-0 self-start rounded-3xl p-4">
           <div className="mb-3 flex items-center gap-2"><CalendarRange size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Evolutie zilnica pentru {selectionLabel}</h3></div>
-          <div className="h-64 rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
+          <div className="aspect-[16/6] min-h-56 max-h-72 w-full rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
             <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <ComposedChart data={historyDailyChartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
@@ -443,7 +445,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="glass rounded-3xl p-4">
+        <div className="glass min-w-0 rounded-3xl p-4">
           <div className="mb-3 flex items-center gap-2"><PieChartIcon size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Top categorii si branduri</h3></div>
           <div className="space-y-4">
             <CompactPieSection title="Top categorii" emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta." pieData={historyCategoryMixChartData} dataKey="sales_total" nameKey="category" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(historyCategoryMixChartData, 'sales_total'))} />

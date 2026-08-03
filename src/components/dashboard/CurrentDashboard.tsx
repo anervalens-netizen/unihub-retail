@@ -167,7 +167,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
         <AiForecastPanel currentMonth={currentMonth} filters={filters} />
       ) : (
         <>
-          <div className="glass space-y-4 rounded-3xl p-4">
+          <div className="glass min-w-0 space-y-3 rounded-3xl p-4">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold">Overview — {currentMonth}</h3>
@@ -178,9 +178,9 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               </span>
             </div>
 
-            <div className="grid gap-3 xl:grid-cols-12 xl:items-start">
-              <div className="space-y-3 xl:col-span-7">
-            <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
+            <div data-testid="hub-overview-layout" className="grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(520px,1.5fr)]">
+              <div data-testid="hub-summary-panel" className="min-w-0 space-y-3">
+            <div className="min-w-0 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
               <div className="mb-3 grid grid-cols-3 gap-2 text-center">
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div>
@@ -217,7 +217,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
+            <div className="grid min-w-0 gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,78px),1fr))]">
               <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
               <Metric label="Accesorii nete" value={formatInt(summary.total_quantity)} className="p-2" />
               <Metric
@@ -231,7 +231,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               <Metric label="Val. medie bon" value={formatAmount(summary.total_receipts > 0 ? Number(summary.total_sales) / Number(summary.total_receipts) : 0)} className="p-2" />
               <Metric label="Cartele" value={formatInt(summary.cartele_qty ?? 0)} className="p-2" />
             </div>              </div>
-            <div className="grid grid-cols-2 gap-2.5 xl:col-span-5">
+            <div data-testid="hub-donut-grid" className="grid min-w-0 items-start gap-2.5 xl:grid-cols-2">
               <KpiPerformanceCard
                 title="Bonuri cu accesorii"
                 value={summary.proc_bon2acc}
@@ -263,11 +263,11 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               {!periodComparison || !comparisonDeltas ? (
                 <div className="text-xs text-slate-500">Date indisponibile pentru comparatia de perioade.</div>
               ) : (
-                <div className="grid gap-3 xl:grid-cols-12 xl:items-stretch">
-                  <div className="min-w-0 xl:col-span-9">
+                <div data-testid="hub-period-comparison-layout" className="grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+                  <div className="min-w-0">
                     <PeriodTable current={periodComparison.current} previous={periodComparison.previous} yoy={periodComparison.year_over_year} />
                   </div>
-                  <div className="grid grid-cols-2 gap-3 xl:col-span-3 xl:grid-cols-1">
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-2 min-[1500px]:grid-cols-1">
                     <DeltaCard
                       title="Vs luna trecuta"
                       salesDelta={comparisonDeltas.previousSales}
@@ -291,13 +291,13 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               )}
           </div>
 
-          <div className="grid items-start gap-3 lg:grid-cols-[1.2fr_1fr]">
-            <div className="glass self-start rounded-3xl p-4">
+          <div data-testid="hub-chart-layout" className="grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+            <div className="glass min-w-0 self-start rounded-3xl p-4">
               <div className="mb-3 flex items-center gap-2">
                 <CalendarRange size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Evolutie zilnica pentru {currentMonth}</h3>
               </div>
-              <div className="h-64 rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
+              <div className="aspect-[16/6] min-h-56 max-h-72 w-full rounded-2xl bg-slate-50/80 p-2 dark:bg-slate-800/40">
                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                   <ComposedChart data={dailyChartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
@@ -312,7 +312,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="glass rounded-3xl p-4">
+            <div className="glass min-w-0 rounded-3xl p-4">
               <div className="mb-3 flex items-center gap-2">
                 <PieChartIcon size={16} className="text-indigo-500" />
                 <h3 className="text-sm font-bold">Top categorii si branduri</h3>
