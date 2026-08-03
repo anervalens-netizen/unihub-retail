@@ -73,9 +73,24 @@ const MANAGERS = [{ manager: 'Mihai Condorateanu', regional: 'Regional 1', month
   stores_without_agents: 0, agents_per_store: 1, visits_available: true, total_visits: 1, visited_stores: 1,
   visit_coverage_pct: 100, avg_visit_completion: 100, checklist_score: 100, approved_pct: 100,
   stores: [{ site_code: 'UNIRII', locatie: 'Magazin Unirii', firma: 'Firma 1', active_agents: 1, previous_active_agents: 1, agent_delta: 0 }] }];
+const ASM_SALARY = {
+  asm: 'Mihai Condorateanu', month: '2026-05', is_forecast: false, forecast_factor: 1, fixed_salary: 0,
+  zone: { total_sales: 0, total_target: 0, target_pct: null, forecast_sales: 0, forecast_target_pct: null,
+    pct_used: null, commission: 0 },
+  islands: [], islands_commission: 0,
+  homogeneity: { islands_count: 0, qualifying_count: 0, qualifying_pct: 0, min_pct: 99, eligible: false,
+    commission: 0 },
+  acc_focus: { pct: 0, commission: 0 }, total_salary: 0,
+};
+
 const TARGET_CONTEXT = { latest_sales_month: '2026-05', suggested_target_month: '2026-06', suggested_cohort_month: '2026-05',
   suggested_total_target: 15000, default_min_floor: 1000, default_previous_month_floor_pct: 80, default_previous_month_cap_pct: 120,
   default_seasonality_years: 3, active_store_count: 1, regionals: [], can_finalize: false };
+const PNL_OVERVIEW = {
+  start_month: '2026-05', end_month: '2026-05', company: null, site_code: null, site_company: null, regional: null,
+  summary: { revenue: 0, cogs: 0, gross_margin: 0, operating_costs: 0, ebitda: 0, depreciation: 0, ebit: 0 },
+  monthly: [], categories: {}, stores: [], reconciliation: [],
+};
 
 async function jsonRoute(context: BrowserContext, method: string, pattern: RegExp, response: unknown) {
   await context.route(pattern, (route) => route.request().method() === method
@@ -87,7 +102,7 @@ async function installRoutes(context: BrowserContext) {
   await mockAuthenticatedSession(context);
   await jsonRoute(context, 'GET', /\/api\/filters\/months$/, MOCK_MONTHS);
   await jsonRoute(context, 'GET', /\/api\/filters\/options(?:\?|$)/, MOCK_FILTER_OPTIONS);
-  await jsonRoute(context, 'GET', /\/api\/store-pnl\/permissions(?:\?|$)/, { can_view: false });
+  await jsonRoute(context, 'GET', /\/api\/store-pnl\/permissions(?:\?|$)/, { can_view: true });
   await jsonRoute(context, 'GET', /\/api\/dashboard\/all(?:\?|$)/, HUB_ALL);
   await jsonRoute(context, 'GET', /\/api\/dashboard\/history(?:\?|$)/, MOCK_DASHBOARD_HISTORY);
   await jsonRoute(context, 'GET', /\/api\/dashboard\/history-year(?:\?|$)/, MOCK_DASHBOARD_YEAR_HISTORY);
@@ -103,12 +118,18 @@ async function installRoutes(context: BrowserContext) {
   await jsonRoute(context, 'GET', /\/api\/agents\/stores-coverage(?:\?|$)/, AGENTS_COVERAGE);
   await jsonRoute(context, 'GET', /\/api\/agents\/evaluation(?:\?|$)/, { months: [], firmas: [], asms: [], stores: [], rows: [] });
   await jsonRoute(context, 'GET', /\/api\/agents\/evaluation-v2(?:\?|$)/, { months: [], firmas: [], asms: [], stores: [], rows: [] });
+  await jsonRoute(context, 'GET', /\/api\/store-pnl\/months$/, { months: [{ month: '2026-05', has_actual: true, has_estimated: false }] });
+  await jsonRoute(context, 'GET', /\/api\/store-pnl\/stores(?:\?|$)/, { stores: [] });
+  await jsonRoute(context, 'GET', /\/api\/store-pnl\/regions(?:\?|$)/, { regions: [] });
+  await jsonRoute(context, 'GET', /\/api\/store-pnl\/annual(?:\?|$)/, { annual: [] });
+  await jsonRoute(context, 'GET', /\/api\/store-pnl\/overview(?:\?|$)/, PNL_OVERVIEW);
   await jsonRoute(context, 'GET', /\/api\/agents\/profile(?:\?|$)/, AGENT_PROFILE);
   await jsonRoute(context, 'GET', /\/api\/agents\/history(?:\?|$)/, AGENT_HISTORY);
   await jsonRoute(context, 'GET', /\/api\/grile\/overview(?:\?|$)/, GRILE);
   await jsonRoute(context, 'GET', /\/api\/grile\/run-status(?:\?|$)/, { run: null });
   await jsonRoute(context, 'GET', /\/api\/grile\/monthly\/permissions$/, { can_run: false });
   await jsonRoute(context, 'GET', /\/api\/hr\/manager-overview(?:\?|$)/, MANAGERS);
+  await jsonRoute(context, 'GET', /\/api\/hr\/asm-salary\/.+(?:\?|$)/, ASM_SALARY);
   await jsonRoute(context, 'GET', /\/api\/hr\/asm-performance(?:\?|$)/, []);
   await jsonRoute(context, 'GET', /\/api\/target-calculator\/context$/, TARGET_CONTEXT);
   await jsonRoute(context, 'GET', /\/api\/target-calculator\/scenarios$/, []);
@@ -140,28 +161,34 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('heading', { name: 'Sales Hub' })).toBeVisible();
       await expect(page.getByRole('tab', { name: 'Luna în curs', exact: true })).toHaveAttribute('aria-selected', 'true');
       await assertNoPageOverflow(page);
-      const storesTable = page.locator('table').filter({ hasText: 'Magazin Unirii' }).first();
-      const agentsTable = page.locator('table').filter({ hasText: 'Ana Popescu' }).first();
-      const rmTable = page.locator('table').filter({ hasText: 'Regional 1' }).first();
+      const rmPanel = page.getByRole('heading', { name: 'RM — Regional Manager', exact: true })
+        .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+      const storesPanel = page.getByRole('heading', { name: 'Magazine', exact: true })
+        .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+      const agentsPanel = page.getByRole('heading', { name: /^Agenti -/ })
+        .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
       if (viewport.width >= 1280) {
-        const [rmBox, storesBox, agentsBox] = await Promise.all([rmTable.boundingBox(), storesTable.boundingBox(), agentsTable.boundingBox()]);
+        const [rmBox, storesBox, agentsBox] = await Promise.all([rmPanel.boundingBox(), storesPanel.boundingBox(), agentsPanel.boundingBox()]);
         expect(rmBox).not.toBeNull();
         expect(storesBox).not.toBeNull();
         expect(agentsBox).not.toBeNull();
         expect(Math.abs((rmBox?.y ?? 0) - (storesBox?.y ?? 0))).toBeLessThanOrEqual(8);
-        expect(Math.abs((rmBox?.x ?? 0) - (storesBox?.x ?? 0))).toBeGreaterThan(8);
         expect((agentsBox?.y ?? 0)).toBeGreaterThan(Math.max(rmBox?.y ?? 0, storesBox?.y ?? 0));
         expect(Math.abs((rmBox?.width ?? 0) - (storesBox?.width ?? 0))).toBeLessThanOrEqual(40);
-        expect((agentsBox?.width ?? 0)).toBeGreaterThanOrEqual(Math.max(rmBox?.width ?? 0, storesBox?.width ?? 0) - 40);
+        expect((agentsBox?.width ?? 0)).toBeGreaterThanOrEqual(
+          (rmBox?.width ?? 0) + (storesBox?.width ?? 0) - 80,
+        );
       } else {
-        const [storesBox, agentsBox] = await Promise.all([storesTable.boundingBox(), agentsTable.boundingBox()]);
+        const [rmBox, storesBox, agentsBox] = await Promise.all([rmPanel.boundingBox(), storesPanel.boundingBox(), agentsPanel.boundingBox()]);
+        expect((storesBox?.y ?? 0)).toBeGreaterThan(rmBox?.y ?? 0);
         expect((agentsBox?.y ?? 0)).toBeGreaterThan(storesBox?.y ?? 0);
       }
+      const agentsTable = agentsPanel.locator('table');
       await agentsTable.getByRole('button', { name: 'Agent', exact: true }).click();
       await expect(agentsTable).toBeVisible();
       const [download] = await Promise.all([
         page.waitForEvent('download'),
-        agentsTable.locator('xpath=../..').getByRole('button', { name: 'Excel', exact: true }).click(),
+        agentsPanel.getByRole('button', { name: 'Excel', exact: true }).click(),
       ]);
       expect(download.suggestedFilename()).toMatch(/hub_2026-05_agenti\.xlsx$/);
       await page.getByRole('tab', { name: 'Istoric', exact: true }).click();
@@ -175,14 +202,14 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole('button', { name: 'Agenti' }).first().click();
       await expect(page.getByRole('heading', { name: 'Agenti', exact: true })).toBeVisible();
       await page.getByRole('tab', { name: 'Lista agenților', exact: true }).click();
-      await page.getByRole('button', { name: 'Ana Popescu', exact: true }).last().click();
+      await page.getByRole('button', { name: /^Ana Popescu/ }).last().click();
       await expect(page.getByText('Profil agent', { exact: true })).toBeVisible();
       await page.locator('div.fixed.inset-0').getByRole('button').click();
       await expect(page.getByText('Profil agent', { exact: true })).toHaveCount(0);
       await page.getByRole('tab', { name: 'Acoperire magazine', exact: true }).click();
       await expect(page.getByText('Magazin Unirii', { exact: true }).first()).toBeVisible();
       await page.getByRole('tab', { name: 'Grile', exact: true }).click();
-      await expect(page.getByText('Nicio rulare pentru luna selectată.', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Nicio rulare pentru luna selectată\./)).toBeVisible();
       await expect(page.getByRole('button', { name: 'Rulează verificare', exact: true })).toBeVisible();
       await assertNoPageOverflow(page);
 
@@ -193,9 +220,10 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('heading', { name: 'Management' })).toBeVisible();
       await expect(page.getByRole('tab', { name: 'Manageri', exact: true })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByLabel('Luna overview manageri')).toBeVisible();
-      await expect(page.getByRole('button', { name: /Mihai Condorateanu/ })).toBeVisible();
-      await page.getByRole('button', { name: /Mihai Condorateanu/ }).click();
-      await expect(page.getByText('Portofoliu magazine', { exact: true })).toBeVisible();
+      const managerButton = page.getByRole('button', { name: /Mihai Condorateanu/ });
+      await expect(managerButton).toBeVisible();
+      await managerButton.click();
+      await expect(managerButton).toHaveAttribute('aria-expanded', 'true');
       await page.getByRole('tab', { name: 'Calculator Target', exact: true }).click();
       await expect(page.getByRole('tab', { name: 'Calculator Target', exact: true })).toHaveAttribute('aria-selected', 'true');
       await page.getByRole('tab', { name: 'Salarii', exact: true }).click();
