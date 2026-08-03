@@ -278,7 +278,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               {!comparisonDeltas ? (
                 <div className="text-xs text-slate-500">Date indisponibile pentru variatiile de perioada.</div>
               ) : (
-                <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 min-[640px]:max-[1499px]:grid-cols-2 min-[1500px]:grid-rows-2">
+                <div className="grid min-w-0 flex-1 grid-cols-2 gap-3 min-[1500px]:grid-cols-1 min-[1500px]:grid-rows-2">
                   <DeltaCard
                     title="Vs luna trecuta"
                     compact
