@@ -258,7 +258,7 @@ function DonutLegendChart({
             key={`${String(item[nameKey])}-${index}`}
             className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 ${mobileEmphasis ? 'text-sm sm:text-xs' : 'text-xs'} dark:bg-slate-900/30 ${
               sideBySide
-                ? 'border-b border-slate-200/70 py-2 last:border-b-0'
+                ? 'border-b border-slate-200/70 py-1 last:border-b-0'
                 : compact
                   ? `rounded-2xl bg-white/70 ${mobileEmphasis ? 'px-3 py-1 sm:px-2.5 sm:py-0.5' : 'px-2.5 py-0.5'}`
                   : 'rounded-2xl bg-white/70 px-3 py-2'
@@ -268,9 +268,20 @@ function DonutLegendChart({
               className={`${mobileEmphasis ? 'h-3 w-3 sm:h-2.5 sm:w-2.5' : 'h-2.5 w-2.5'} shrink-0 rounded-full`}
               style={{ backgroundColor: colors[index % colors.length] }}
             />
-            <span className={`min-w-0 break-words font-semibold text-slate-500 ${mobileEmphasis ? 'text-[13px] sm:text-[11px]' : 'text-[11px]'}`}>
-              {formatPercent(Number(item.share_pct ?? 0))}
-            </span>
+            {sideBySide ? (
+              <span className="min-w-0 leading-tight">
+                <span className="block truncate text-[11px] font-bold text-slate-700 dark:text-slate-200" title={String(item[nameKey])}>
+                  {String(item[nameKey])}
+                </span>
+                <span className="block text-[10px] font-semibold text-slate-500">
+                  {formatPercent(Number(item.share_pct ?? 0))}
+                </span>
+              </span>
+            ) : (
+              <span className={`min-w-0 break-words font-semibold text-slate-500 ${mobileEmphasis ? 'text-[13px] sm:text-[11px]' : 'text-[11px]'}`}>
+                {formatPercent(Number(item.share_pct ?? 0))}
+              </span>
+            )}
             <span className="min-w-0 break-words text-right font-bold tabular-nums">{valueFormatter(Number(item[dataKey] ?? 0))}</span>
           </div>
         ))}
