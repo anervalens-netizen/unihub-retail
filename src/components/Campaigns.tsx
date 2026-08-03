@@ -55,6 +55,7 @@ import { useSortable, type SortDirection } from '../lib/useSortable';
 import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
+import { DashboardGrid, DashboardPanel, DesktopKpiGrid, PageHeader } from './common/DesktopLayout';
 import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
@@ -338,13 +339,15 @@ export function Campaigns({
         : 'Se incarca datele de focus...';
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Focus</h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Incentive, promo, concurs si folii premium folosesc luna {promoMonth}; istoricul focus se analizeaza separat.
-        </p>
-      </div>
+    <div className="w-full space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-5 lg:pb-8 xl:px-8">
+      <PageHeader
+        title="Focus"
+        description={
+          <>
+            Incentive, promo, concurs si folii premium folosesc luna {promoMonth}; istoricul focus se analizeaza separat.
+          </>
+        }
+      />
 
       <SegmentedTabs<CampaignSection>
         ariaLabel="Sectiuni Focus"
@@ -573,8 +576,9 @@ export function Campaigns({
             <>
               <IncentiveCard promoData={promoData} />
 
-          {promoData && promoData.top_agents.length > 0 && (
-            <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+              <DashboardGrid>
+                {promoData && promoData.top_agents.length > 0 && (
+                  <DashboardPanel className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Sparkles size={16} />
                 <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Agenti</span>
@@ -653,11 +657,11 @@ export function Campaigns({
                   },
                 ]}
               />
-            </div>
-          )}
+                  </DashboardPanel>
+                )}
 
-          {promoData && promoData.top_stores.length > 0 && (
-            <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+                {promoData && promoData.top_stores.length > 0 && (
+                  <DashboardPanel className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Building2 size={16} />
                 <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Magazine</span>
@@ -746,8 +750,9 @@ export function Campaigns({
                   },
                 ]}
               />
-            </div>
-          )}
+                  </DashboardPanel>
+                )}
+              </DashboardGrid>
 
               <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
             </>
@@ -1198,12 +1203,12 @@ function IncentiveCard({ promoData }: { promoData: CampaignsPromotionsResponse |
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-200 py-3 sm:grid-cols-4 dark:border-slate-700">
+      <DesktopKpiGrid className="mt-4 border-y border-slate-200 py-3 dark:border-slate-700">
         <div><div className="text-2xl font-black">{promoData ? formatInt(promoData.incentive_sold_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități vândute</div></div>
         <div><div className="text-2xl font-black text-emerald-600 dark:text-emerald-300">{promoData?.incentive_qty != null ? formatInt(promoData.incentive_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități eligibile după promo</div></div>
         <div><div className="text-2xl font-black">{promoData?.incentive_qualified_qty != null ? formatInt(promoData.incentive_qualified_qty) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">unități în magazinele calificate</div></div>
         <div><div className="text-2xl font-black text-indigo-600 dark:text-indigo-300">{promoData?.incentive_value != null ? formatCurrency(promoData.incentive_value) : '-'}</div><div className="text-[11px] font-semibold text-slate-500">incentive calculat acum</div></div>
-      </div>
+      </DesktopKpiGrid>
 
       {periods.length > 0 && (
         <div className="mt-3">
@@ -1336,7 +1341,7 @@ function CampaignMonthBar({
   currentMonth: string;
 }) {
   return (
-    <div className="glass flex items-center justify-between rounded-3xl p-3">
+    <div className="glass flex items-center justify-between rounded-3xl p-3 lg:rounded-xl lg:px-4 lg:py-2">
       <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
         <Icon size={16} />
         <span className="text-[11px] font-bold uppercase tracking-[0.22em]">{title}</span>

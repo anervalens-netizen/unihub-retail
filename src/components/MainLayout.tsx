@@ -8,6 +8,7 @@ import { cn } from '../lib/utils';
 import { ALL_TABS, type ManagementTab, type TabId } from '../lib/tabs';
 import { DesktopSidebar } from './DesktopSidebar';
 import { DesktopTopBar } from './DesktopTopBar';
+import { DesktopPageFrame } from './common/DesktopLayout';
 
 export interface AppFilters {
   firma: string;
@@ -164,11 +165,9 @@ export function MainLayout({
             'overflow-y-auto pb-24 lg:pb-6'
           )}
         >
-          {/* Container centrat — layout desktop consistent pe toate taburile
-              (ca Focus). Pe mobil nu are efect (viewport < max-w-6xl). */}
-          <div className="mx-auto w-full max-w-6xl">
+          <DesktopPageFrame>
             {children}
-          </div>
+          </DesktopPageFrame>
         </main>
       </div>
 
