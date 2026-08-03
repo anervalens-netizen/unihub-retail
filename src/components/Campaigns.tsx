@@ -55,7 +55,7 @@ import { useSortable, type SortDirection } from '../lib/useSortable';
 import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
-import { DashboardGrid, DashboardPanel, DesktopKpiGrid, PageHeader } from './common/DesktopLayout';
+import { DashboardGrid, DashboardPanel, DesktopDashboardGrid, DesktopKpiGrid, PageHeader } from './common/DesktopLayout';
 import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
@@ -404,9 +404,11 @@ export function Campaigns({
                   {promoData.calculation_warnings[0] || 'Calcul promo partial; perioada nevalidată nu este folosită pentru Incentive.'}
                 </div>
               )}
-              <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-                <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                  <BadgePercent size={16} />
+              <div className="lg:space-y-3">
+                <DesktopDashboardGrid>
+                  <DashboardPanel className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                    <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                      <BadgePercent size={16} />
                   <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Promotii</span>
                 </div>
                 <div className="mb-1">
@@ -440,10 +442,12 @@ export function Campaigns({
                     <div className="text-[10px] text-slate-500">Agenti</div>
                   </div>
                 </div>
-              </div>
+                  </DashboardPanel>
+                </DesktopDashboardGrid>
 
+                <DesktopDashboardGrid>
               {promoData.top_stores.length > 0 && (
-                <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                <DashboardPanel className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
                   <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
                     <Building2 size={16} />
                     <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Magazine</span>
@@ -496,11 +500,11 @@ export function Campaigns({
                       },
                     ]}
                   />
-                </div>
+                </DashboardPanel>
               )}
 
               {(promoData.promo_agents ?? []).length > 0 && (
-                <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                <DashboardPanel className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
                   <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
                     <Sparkles size={16} />
                     <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Agenti</span>
@@ -559,8 +563,10 @@ export function Campaigns({
                       },
                     ]}
                   />
-                </div>
+                </DashboardPanel>
               )}
+                </DesktopDashboardGrid>
+              </div>
             </>
           )}
         </>

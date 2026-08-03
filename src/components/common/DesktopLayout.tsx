@@ -69,6 +69,20 @@ export function DashboardGrid({
     </div>
   );
 }
+export function DesktopDashboardGrid({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-w-0 lg:grid lg:gap-3 xl:grid-cols-2 xl:[&>:only-child]:col-span-2", className)}>
+      {children}
+    </div>
+  );
+}
+
 
 export function DashboardPanel({
   children,
