@@ -38,6 +38,7 @@ import type { BreakdownColumn } from './dashboard/BreakdownTable';
 import { CurrentDashboard } from './dashboard/CurrentDashboard';
 import { HistoryDashboard } from './dashboard/HistoryDashboard';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
+import { PageHeader } from './common/DesktopLayout';
 
 const HISTORY_START_YEAR = 2018;
 const VisiteSubtab = lazy(async () => {
@@ -1216,13 +1217,11 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
   };
 
   return (
-    <div className="space-y-3 p-3 pb-24 lg:pb-6 pt-2">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Sales Hub</h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Luna in curs este fixata pe {currentMonth}, iar istoricul se analizeaza separat.
-        </p>
-      </div>
+    <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-3 lg:pb-6 xl:px-8">
+      <PageHeader
+        title="Sales Hub"
+        description={<>Luna in curs este fixata pe {currentMonth}, iar istoricul se analizeaza separat.</>}
+      />
 
       <SegmentedTabs<DashboardSection>
         ariaLabel="Secțiuni Sales Hub"

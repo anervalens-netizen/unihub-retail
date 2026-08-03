@@ -1,6 +1,7 @@
 import React, { type ComponentType, useCallback, useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { FirmaBadge } from './FirmaBadge';
+import { IncentiveDesktopDashboard, IncentiveDesktopHeader } from './IncentiveDesktopDashboard';
 import {
   BadgePercent,
   Building2,
@@ -55,6 +56,7 @@ import { useSortable, type SortDirection } from '../lib/useSortable';
 import { ExportTableButton } from './ExportTableButton';
 import type { AppFilters } from './MainLayout';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
+import { PageHeader } from './common/DesktopLayout';
 import { ErrorCard, LoadingCard, Metric } from './dashboard/DashboardWidgets';
 
 type CampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
@@ -338,13 +340,35 @@ export function Campaigns({
         : 'Se incarca datele de focus...';
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Focus</h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Incentive, promo, concurs si folii premium folosesc luna {promoMonth}; istoricul focus se analizeaza separat.
-        </p>
-      </div>
+    <div className={`mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2 lg:max-w-none lg:px-6 lg:pb-6 lg:pt-4`}>
+      <PageHeader
+        className={activeSection === 'incentive' || activeSection === 'promo' ? 'lg:hidden' : undefined}
+        title="Focus"
+        description={<>Incentive, promo, concurs si folii premium folosesc luna {promoMonth}; istoricul focus se analizeaza separat.</>}
+      />
+
+      {activeSection === 'incentive' && (
+        <IncentiveDesktopHeader
+          promoData={promoData}
+          months={months}
+          value={promoMonth}
+          onChange={setPromoMonth}
+          currentMonth={latestMonth}
+        />
+      )}
+
+      {activeSection === 'promo' && (
+        <IncentiveDesktopHeader
+          promoData={promoData}
+          months={months}
+          value={promoMonth}
+          onChange={setPromoMonth}
+          currentMonth={latestMonth}
+          sectionLabel="Promo"
+          title={promoData?.promo_title || 'Promo'}
+          description={promoData?.promo_description || 'Mecanismul promo activ și performanța curentă.'}
+        />
+      )}
 
       <SegmentedTabs<CampaignSection>
         ariaLabel="Sectiuni Focus"
@@ -384,7 +408,7 @@ export function Campaigns({
         <ErrorCard message={error} onRetry={() => { void currentQuery.refetch(); }} />
       ) : activeSection === 'promo' ? (
         <>
-          <CampaignMonthBar title="Promotie" icon={BadgePercent} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
+          <div className="lg:hidden"><CampaignMonthBar title="Promotie" icon={BadgePercent} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} /></div>
           {promoData && promoData.promotions.length > 1 && (
             <PromotionSelector
               promotions={promoData.promotions}
@@ -401,25 +425,25 @@ export function Campaigns({
                   {promoData.calculation_warnings[0] || 'Calcul promo partial; perioada nevalidată nu este folosită pentru Incentive.'}
                 </div>
               )}
-              <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-                <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(0,4fr)] lg:items-center lg:gap-4 lg:rounded-2xl">
+                <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400 lg:hidden">
                   <BadgePercent size={16} />
                   <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Promotii</span>
                 </div>
-                <div className="mb-1">
+                <div className="mb-1 lg:mb-0">
                   <h4 className="text-base font-black tracking-tight">{promoData.promo_title || 'Promotie'}</h4>
                   {promoData.promo_description && (
                     <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{promoData.promo_description}</p>
                   )}
                 </div>
 
-                <div className="mb-3">
+                <div className="mb-3 lg:mb-0">
                   <div className="text-3xl font-black">{formatInt(promoData.promo_qualifying_bons)}</div>
                   <div className="text-[11px] font-semibold text-slate-500">bonuri calificate</div>
                   <p className="mt-1 text-xs text-slate-500">Bonurile respectă mecanismul promoției; unitățile efective sunt raportate separat.</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
                   <div>
                     <div className="text-lg font-black text-amber-600">{formatInt(promoData.promo_discounted_units)}</div>
                     <div className="text-[10px] text-slate-500">Unități promo efective</div>
@@ -439,8 +463,9 @@ export function Campaigns({
                 </div>
               </div>
 
+              <div className="grid gap-3 xl:grid-cols-2">
               {promoData.top_stores.length > 0 && (
-                <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                <div className="glass min-w-0 rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900 lg:rounded-2xl lg:p-3">
                   <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
                     <Building2 size={16} />
                     <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Magazine</span>
@@ -497,7 +522,7 @@ export function Campaigns({
               )}
 
               {(promoData.promo_agents ?? []).length > 0 && (
-                <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+                <div className="glass min-w-0 rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900 lg:rounded-2xl lg:p-3">
                   <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
                     <Sparkles size={16} />
                     <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Agenti</span>
@@ -558,12 +583,15 @@ export function Campaigns({
                   />
                 </div>
               )}
+              </div>
             </>
           )}
         </>
       ) : activeSection === 'incentive' ? (
         <>
-          <CampaignMonthBar title="Incentive" icon={Gift} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
+          <div className="lg:hidden">
+            <CampaignMonthBar title="Incentive" icon={Gift} months={months} value={promoMonth} onChange={setPromoMonth} currentMonth={latestMonth} />
+          </div>
 
           {promoData?.incentive_calculation_status === 'invalid' ? (
             <div role="alert" className="glass rounded-3xl border border-rose-200 bg-rose-50/70 p-4 text-sm font-semibold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
@@ -571,10 +599,14 @@ export function Campaigns({
             </div>
           ) : (
             <>
-              <IncentiveCard promoData={promoData} />
+              <div className="lg:hidden">
+                <IncentiveCard promoData={promoData} />
+              </div>
+              <IncentiveDesktopDashboard promoData={promoData} month={promoMonth} />
+              <div className="grid gap-3 xl:grid-cols-2">
 
           {promoData && promoData.top_agents.length > 0 && (
-            <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+            <div className="glass min-w-0 rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900 lg:rounded-2xl lg:p-3 xl:order-2">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Sparkles size={16} />
                 <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Agenti</span>
@@ -657,7 +689,7 @@ export function Campaigns({
           )}
 
           {promoData && promoData.top_stores.length > 0 && (
-            <div className="glass rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900">
+            <div className="glass min-w-0 rounded-4xl border border-indigo-100 bg-linear-to-br from-indigo-50 via-white to-white p-4 dark:border-indigo-900/30 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-900 lg:rounded-2xl lg:p-3 xl:order-1">
               <div className="mb-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                 <Building2 size={16} />
                 <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Magazine</span>
@@ -748,8 +780,11 @@ export function Campaigns({
               />
             </div>
           )}
+              </div>
 
-              <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
+              <div className="lg:hidden">
+                <IncentiveCategoryCard promoData={promoData} month={promoMonth} />
+              </div>
             </>
           )}
         </>

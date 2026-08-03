@@ -22,6 +22,7 @@ import { ExportTableButton } from './ExportTableButton';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { usePersistentState } from '../lib/usePersistentState';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
+import { PageHeader } from './common/DesktopLayout';
 import { 
   fetchAgentsOverview, 
   fetchAgentsMovement, 
@@ -531,13 +532,11 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
   }
 
   return (
-    <div className="space-y-3 p-3 pb-24 lg:pb-6 pt-2">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Agenti</h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Analiza echipei, miscare de personal si retentie
-        </p>
-      </div>
+    <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-3 lg:pb-6">
+      <PageHeader
+        title="Agenti"
+        description="Analiza echipei, miscare de personal si retentie"
+      />
 
       <SegmentedTabs<AgentsMainTab>
         ariaLabel="Secțiuni Agenți"
@@ -557,7 +556,7 @@ export function Agents({ currentMonth, months: _months, filters }: AgentsProps) 
         </ErrorBoundary>
       ) : (
         <>
-          <div className="sticky top-2 z-20 rounded-2xl bg-white/90 p-1 shadow-sm backdrop-blur-xl dark:bg-slate-900/90">
+          <div className="sticky top-2 z-20 rounded-2xl lg:static bg-white/90 p-1 shadow-sm backdrop-blur-xl dark:bg-slate-900/90">
             <SegmentedTabs<AgentsOverviewSection>
               ariaLabel="Zone prezentare generală agenți"
               options={AGENTS_OVERVIEW_OPTIONS}

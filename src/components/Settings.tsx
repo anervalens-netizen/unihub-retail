@@ -18,6 +18,7 @@ import { ApiError, getApiErrorMessage } from '../api/client';
 import { pollImportJob } from '../lib/importJobPolling';
 import { formatMonthLabel } from '../lib/dates';
 import { SegmentedTabs } from './common/SegmentedTabs';
+import { PageHeader } from './common/DesktopLayout';
 import { TableHeaderCell } from './common/TableHeader';
 
 interface SettingsProps {
@@ -568,11 +569,8 @@ export function Settings({
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Setări</h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">Administrare aplicație</p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2 lg:max-w-none lg:space-y-4 lg:px-6 lg:py-3">
+      <PageHeader title="Setări" description="Administrare aplicație" />
 
       <SegmentedTabs<SettingsSection>
         ariaLabel="Secțiuni Setări"
@@ -599,6 +597,7 @@ export function Settings({
         </div>
       ) : section === 'imports' ? (
         <>
+          <div className="grid gap-3 xl:grid-cols-2">
           <div className="glass rounded-3xl p-4">
             <div className="mb-3 flex items-center gap-2">
               <Upload size={16} className="text-indigo-500" />
@@ -912,6 +911,7 @@ export function Settings({
               )}
             </div>
           </div>
+          </div>
         </>
       ) : (
         <div className="space-y-3">
@@ -1171,7 +1171,7 @@ export function Settings({
               </div>
             )}
           </div>
-          <div className="export-mobile-actions sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 lg:bottom-4">
+          <div className="export-mobile-actions sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 lg:bottom-4 lg:static">
             <button
               type="button"
               onClick={() => setExportStep((Math.max(1, exportStep - 1)) as ExportStep)}

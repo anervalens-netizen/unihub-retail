@@ -14,6 +14,7 @@ import {
 import type { AgentStat, DashboardSummary, PeriodComparisonPayload, RegionalStat, StoreStat } from '../../api/types';
 import type { AppFilters } from '../MainLayout';
 import { AiForecastPanel } from '../AiForecastPanel';
+import { DashboardGrid } from '../common/DesktopLayout';
 import { SegmentedTabs } from '../common/SegmentedTabs';
 import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
@@ -167,8 +168,8 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
         <AiForecastPanel currentMonth={currentMonth} filters={filters} />
       ) : (
         <>
-          <div className="glass space-y-4 rounded-3xl p-4">
-            <div className="flex items-start justify-between gap-2">
+          <div className="glass space-y-4 rounded-3xl p-4 xl:grid xl:grid-cols-12 xl:gap-3 xl:space-y-0">
+            <div className="flex items-start justify-between gap-2 xl:col-span-12">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold">Overview — {currentMonth}</h3>
                 <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{statusLabel}</p>
@@ -178,7 +179,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               </span>
             </div>
 
-            <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50">
+            <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/50 xl:col-span-7">
               <div className="mb-3 grid grid-cols-3 gap-2 text-center">
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Target</div>
@@ -215,7 +216,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5 xl:col-span-5">
               <KpiPerformanceCard
                 title="Bonuri cu accesorii"
                 value={summary.proc_bon2acc}
@@ -236,7 +237,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               />
             </div>
 
-            <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
+            <div className="grid grid-cols-4 gap-2 lg:grid-cols-8 xl:col-span-7">
               <Metric label="Bonuri" value={formatInt(summary.total_receipts)} className="p-2" />
               <Metric label="Accesorii nete" value={formatInt(summary.total_quantity)} className="p-2" />
               <Metric
@@ -337,7 +338,9 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
             </div>
           </div>
 
-          <BreakdownTable
+          <DashboardGrid>
+            <div className="min-w-0">
+              <BreakdownTable
             title="RM — Regional Manager"
             icon={<Users size={16} className="text-indigo-500" />}
             subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${regionalColumns.find((column) => column.key === regionalSort.key)?.label} (${regionalSort.direction}) · ${regionals.length} regionale`}
@@ -363,8 +366,10 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               { header: 'ProcBon2Acc', value: (row) => row.proc_bon2acc, format: 'percentPoints' },
               { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
             ]}
-          />
-          <BreakdownTable
+              />
+            </div>
+            <div className="min-w-0">
+              <BreakdownTable
             title="Magazine"
             icon={<Building2 size={16} className="text-indigo-500" />}
             subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${storeColumns.find((column) => column.key === storeSort.key)?.label} (${storeSort.direction}) · ${stores.length} magazine`}
@@ -394,7 +399,9 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
               { header: 'Agenti', value: (row) => row.nr_agenti, format: 'integer' },
               { header: 'Zile active', value: (row) => row.zile_active, format: 'integer' },
             ]}
-          />
+              />
+            </div>
+          </DashboardGrid>
           <BreakdownTable
             title="Agenti - Toti agentii"
             subtitle={`Filtrare: ${filterScopeLabel} · Sortare: ${agentColumns.find((column) => column.key === agentSort.key)?.label} (${agentSort.direction}) · ${agents.length} agenti`}

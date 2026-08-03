@@ -166,7 +166,7 @@ export function MainLayout({
         >
           {/* Container centrat — layout desktop consistent pe toate taburile
               (ca Focus). Pe mobil nu are efect (viewport < max-w-6xl). */}
-          <div className="mx-auto w-full max-w-6xl">
+          <div className="mx-auto w-full max-w-6xl lg:max-w-[1600px]">
             {children}
           </div>
         </main>
