@@ -214,6 +214,7 @@ async def fail_sales_generation(
           AND generation_token = $2::uuid
           AND owner_id = $3::uuid
           AND status = 'processing'
+          AND lease_until > now()
         RETURNING id
         """,
         snapshot_id,
@@ -447,6 +448,7 @@ async def promote_sales_generation(
               AND generation_token = $2::uuid
               AND owner_id = $3::uuid
               AND status = 'processing'
+              AND lease_until > now()
             RETURNING id
             """,
             snapshot_id,
@@ -532,7 +534,8 @@ async def rollback_sales_generation(
         source = await conn.fetchrow(
             """
             SELECT filename, rows_in_file, is_month_final, source_sha256,
-                   cutoff_date, coverage_report, manifest, source_spool_path
+                   cutoff_date, coverage_report, manifest, source_spool_path,
+                   stage_rows_sha256
             FROM import_snapshots
             WHERE id = $1
               AND import_month = $2
@@ -555,6 +558,12 @@ async def rollback_sales_generation(
             coverage_report = json.loads(coverage_report)
         rollback_manifest = dict(manifest or {})
         rollback_manifest["generation_state"] = "validated"
+        source_stage_digest = source["stage_rows_sha256"]
+        if not isinstance(source_stage_digest, str) or len(source_stage_digest) != 64:
+            raise SalesGenerationValidationError(
+                "Retained rollback generation has no verified stage digest"
+            )
+        rollback_manifest["stage_rows_sha256"] = source_stage_digest
         rollback_manifest["rollback_of_snapshot_id"] = current_snapshot_id
         rollback_manifest["rollback_source_snapshot_id"] = int(target_snapshot_id)
         rollback_manifest["anomalies"] = [

@@ -10,6 +10,17 @@ ALTER TABLE import_snapshots
         OR stage_rows_sha256 ~ '^[0-9a-f]{64}$'
     );
 
+CREATE OR REPLACE FUNCTION sales_stage_digest_scalar(p_value TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+IMMUTABLE
+AS $$
+    SELECT CASE
+        WHEN p_value IS NULL THEN 'N'
+        ELSE 'V' || octet_length(p_value)::TEXT || ':' || p_value
+    END
+$$;
+
 CREATE OR REPLACE FUNCTION sales_stage_rows_sha256(p_snapshot_id INTEGER)
 RETURNS TEXT
 LANGUAGE SQL
@@ -21,29 +32,30 @@ AS $$
             convert_to(
                 COALESCE(
                     string_agg(
-                        jsonb_build_array(
-                            row_number,
-                            import_month,
-                            sale_date,
-                            site_code,
-                            locatie,
-                            firma,
-                            regional,
-                            asm,
-                            bon_nr,
-                            item_code,
-                            item_name,
-                            brand,
-                            category,
-                            subcategory,
-                            quantity,
-                            unit_price::TEXT,
-                            total_value::TEXT,
-                            agent,
-                            is_cartela,
-                            is_return
-                        )::TEXT,
-                        E'\n'
+                        concat_ws(
+                            E'\x1f',
+                            sales_stage_digest_scalar(row_number::TEXT),
+                            sales_stage_digest_scalar(import_month),
+                            sales_stage_digest_scalar(sale_date::TEXT),
+                            sales_stage_digest_scalar(site_code),
+                            sales_stage_digest_scalar(locatie),
+                            sales_stage_digest_scalar(firma),
+                            sales_stage_digest_scalar(regional),
+                            sales_stage_digest_scalar(asm),
+                            sales_stage_digest_scalar(bon_nr),
+                            sales_stage_digest_scalar(item_code),
+                            sales_stage_digest_scalar(item_name),
+                            sales_stage_digest_scalar(brand),
+                            sales_stage_digest_scalar(category),
+                            sales_stage_digest_scalar(subcategory),
+                            sales_stage_digest_scalar(quantity::TEXT),
+                            sales_stage_digest_scalar(unit_price::TEXT),
+                            sales_stage_digest_scalar(total_value::TEXT),
+                            sales_stage_digest_scalar(agent),
+                            sales_stage_digest_scalar(is_cartela::TEXT),
+                            sales_stage_digest_scalar(is_return::TEXT)
+                        ),
+                        E'\x1e'
                         ORDER BY row_number
                     ),
                     ''
@@ -56,6 +68,62 @@ AS $$
     )
     FROM sales_import_stage_rows
     WHERE snapshot_id = p_snapshot_id
+$$;
+
+DO $$
+DECLARE
+    legacy_snapshot RECORD;
+    stage_count BIGINT;
+    stage_store_count BIGINT;
+    stage_total_quantity BIGINT;
+    stage_total_value NUMERIC;
+    stage_max_sale_date DATE;
+BEGIN
+    -- 036 manifests did not carry a full-stage digest.  Verify the controls
+    -- they did persist before retaining a post-upgrade digest; a mismatch is a
+    -- migration failure, never an implicit certification of old staging.
+    FOR legacy_snapshot IN
+        SELECT snapshot.id, snapshot.manifest
+        FROM import_snapshots snapshot
+        WHERE snapshot.manifest_sha256 IS NOT NULL
+          AND snapshot.stage_rows_sha256 IS NULL
+          AND EXISTS (
+              SELECT 1
+              FROM sales_import_stage_rows staged
+              WHERE staged.snapshot_id = snapshot.id
+          )
+    LOOP
+        SELECT COUNT(*),
+               COUNT(DISTINCT site_code),
+               COALESCE(SUM(quantity), 0),
+               COALESCE(SUM(total_value), 0),
+               MAX(sale_date)
+        INTO stage_count,
+             stage_store_count,
+             stage_total_quantity,
+             stage_total_value,
+             stage_max_sale_date
+        FROM sales_import_stage_rows
+        WHERE snapshot_id = legacy_snapshot.id;
+
+        IF legacy_snapshot.manifest IS NULL
+           OR legacy_snapshot.manifest->>'rows_imported' IS NULL
+           OR legacy_snapshot.manifest->>'store_count' IS NULL
+           OR legacy_snapshot.manifest->>'total_quantity' IS NULL
+           OR legacy_snapshot.manifest->>'total_value' IS NULL
+           OR legacy_snapshot.manifest->>'max_sale_date' IS NULL
+           OR stage_count <> (legacy_snapshot.manifest->>'rows_imported')::BIGINT
+           OR stage_store_count <> (legacy_snapshot.manifest->>'store_count')::BIGINT
+           OR stage_total_quantity <> (legacy_snapshot.manifest->>'total_quantity')::BIGINT
+           OR stage_total_value <> (legacy_snapshot.manifest->>'total_value')::NUMERIC
+           OR stage_max_sale_date::TEXT IS DISTINCT FROM legacy_snapshot.manifest->>'max_sale_date'
+        THEN
+            RAISE EXCEPTION
+                'migration 037 cannot certify legacy sales staging for snapshot % against its manifest controls',
+                legacy_snapshot.id;
+        END IF;
+    END LOOP;
+END
 $$;
 
 UPDATE import_snapshots snapshot
@@ -74,6 +142,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     actual_digest TEXT;
+    manifest_digest TEXT;
     source_digest TEXT;
     rollback_source_id INTEGER;
     stage_count BIGINT;
@@ -87,6 +156,14 @@ BEGIN
         IF stage_count <= 0 THEN
             RAISE EXCEPTION
                 'validated sales generation % has no staged rows',
+                NEW.id;
+        END IF;
+        manifest_digest := NEW.manifest->>'stage_rows_sha256';
+        IF manifest_digest IS NULL
+           OR manifest_digest !~ '^[0-9a-f]{64}$'
+           OR manifest_digest IS DISTINCT FROM actual_digest THEN
+            RAISE EXCEPTION
+                'validated sales manifest for snapshot % does not match staged rows',
                 NEW.id;
         END IF;
         NEW.stage_rows_sha256 := actual_digest;
@@ -242,6 +319,7 @@ AS $$
 DECLARE
     actual_digest TEXT;
     stored_digest TEXT;
+    manifest_digest TEXT;
     source_digest TEXT;
     manifest_payload JSONB;
     rollback_source_id INTEGER;
@@ -263,6 +341,7 @@ BEGIN
             'sales head target snapshot % is not validated',
             NEW.snapshot_id;
     END IF;
+    manifest_digest := manifest_payload->>'stage_rows_sha256';
 
     SELECT COUNT(*), sales_stage_rows_sha256(NEW.snapshot_id)
     INTO stage_count, actual_digest
@@ -293,6 +372,7 @@ BEGIN
 
         IF stage_count <= 0
            OR source_digest IS NULL
+           OR manifest_digest IS DISTINCT FROM source_digest
            OR actual_digest IS DISTINCT FROM source_digest THEN
             RAISE EXCEPTION
                 'rollback snapshot % differs from retained source %',
@@ -309,6 +389,7 @@ BEGIN
     END IF;
 
     IF stage_count <= 0
+       OR (manifest_digest IS NOT NULL AND manifest_digest IS DISTINCT FROM stored_digest)
        OR actual_digest IS DISTINCT FROM stored_digest THEN
         RAISE EXCEPTION
             'sales head target snapshot % staging digest mismatch',
@@ -336,10 +417,10 @@ END
 $$;
 
 COMMENT ON COLUMN import_snapshots.stage_rows_sha256 IS
-    'Canonical digest of staged sales rows captured at validation and verified whenever the monthly head changes.';
+    'Canonical digest of staged sales rows captured at validation and cryptographically bound by the approved manifest.';
 
 COMMENT ON FUNCTION sales_stage_rows_sha256(INTEGER) IS
-    'Canonical SHA-256 over every staged sales field in row_number order.';
+    'Canonical SHA-256 over every staged sales field in row_number order; scalar encoding matches services.sales_generation.';
 
 COMMENT ON TRIGGER trg_verify_sales_generation_head_target
     ON sales_generation_heads IS

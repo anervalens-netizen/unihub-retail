@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from pydantic import BaseModel, Field
 
 from db.connection import get_pool
-from repositories.salarii_exact import SalariiExactRepository
+from repositories.salarii import SalariiRepository
 from services.salarii import SalariiService
 from salary_identity import get_salary_person_id_key
 from schemas.salarii import SalaryAgentsSummaryResponse, SalaryHistoryResponse, SalaryRecordPublic
@@ -27,7 +27,7 @@ class SalaryExportAudit(BaseModel):
 
 async def get_salarii_service() -> SalariiService:
     pool = await get_pool()
-    repo = SalariiExactRepository(pool)
+    repo = SalariiRepository(pool)
     return SalariiService(repo)
 
 
@@ -37,7 +37,7 @@ async def get_identity_salarii_service() -> SalariiService:
         key = get_salary_person_id_key()
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="salary identity is unavailable") from exc
-    return SalariiService(SalariiExactRepository(pool), key)
+    return SalariiService(SalariiRepository(pool), key)
 
 
 @router.get("/overview")

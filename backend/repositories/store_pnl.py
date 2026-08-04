@@ -32,47 +32,64 @@ class StorePnlRepository:
         async with self.pool.acquire() as connection:
             return await connection.fetch(
                 """
-                WITH preferred_kind AS (
-                    SELECT company_name, period,
-                           CASE WHEN BOOL_OR(data_kind = 'actual')
-                               THEN 'actual' ELSE 'estimated'
-                           END AS data_kind
-                    FROM store_pnl_monthly
-                    GROUP BY company_name, period
-                ), preferred_rows AS (
+                WITH normalized_rows AS (
                     SELECT p.company_name, p.period, p.source_site_code,
                            p.source_location_name, p.category_code, p.amount,
                            p.data_kind,
-                           COALESCE(l.site_code, p.source_site_code) AS site_code,
+                           CASE
+                               WHEN p.source_site_code = '__FINANCE_UNALLOCATED__'
+                                   THEN p.source_site_code
+                               ELSE COALESCE(l.site_code, p.source_site_code)
+                           END AS canonical_site_code,
+                           CASE
+                               WHEN p.source_site_code = '__FINANCE_UNALLOCATED__'
+                                   THEN NULL
+                               ELSE l.site_code
+                           END AS linked_site_code,
                            COALESCE(s.regional, 'Nealocat') AS regional
                     FROM store_pnl_monthly p
-                    JOIN preferred_kind k
-                        ON k.company_name = p.company_name
-                       AND k.period = p.period
-                       AND k.data_kind = p.data_kind
                     LEFT JOIN store_pnl_site_links l
                         ON l.company_name = p.company_name
                        AND l.source_site_code = p.source_site_code
                     LEFT JOIN stores s
-                        ON s.site_code = COALESCE(l.site_code, p.source_site_code)
+                        ON s.site_code = CASE
+                            WHEN p.source_site_code = '__FINANCE_UNALLOCATED__'
+                                THEN NULL
+                            ELSE COALESCE(l.site_code, p.source_site_code)
+                        END
                     WHERE p.period BETWEEN $1 AND $2
-                      AND (
+                ), preferred_kind AS (
+                    SELECT company_name, period, canonical_site_code,
+                           CASE WHEN BOOL_OR(data_kind = 'actual')
+                               THEN 'actual' ELSE 'estimated'
+                           END AS data_kind
+                    FROM normalized_rows
+                    GROUP BY company_name, period, canonical_site_code
+                ), preferred_rows AS (
+                    SELECT n.*
+                    FROM normalized_rows n
+                    JOIN preferred_kind k
+                        ON k.company_name = n.company_name
+                       AND k.period = n.period
+                       AND k.canonical_site_code = n.canonical_site_code
+                       AND k.data_kind = n.data_kind
+                    WHERE (
                           (
                               $4::text IS NULL
-                              AND ($3::text IS NULL OR p.company_name = $3)
+                              AND ($3::text IS NULL OR n.company_name = $3)
                           )
-                          OR l.site_code = $4
+                          OR n.linked_site_code = $4
                           OR (
-                              l.site_code IS NULL
-                              AND p.source_site_code = $4
-                              AND p.company_name = COALESCE($5, $3)
+                              n.linked_site_code IS NULL
+                              AND n.source_site_code = $4
+                              AND n.company_name = COALESCE($5, $3)
                           )
                       )
-                      AND ($6::text IS NULL OR COALESCE(s.regional, 'Nealocat') = $6)
+                      AND ($6::text IS NULL OR n.regional = $6)
                 )
                 SELECT p.company_name, p.period, p.source_site_code,
                        p.source_location_name, p.category_code, p.amount,
-                       p.data_kind, p.site_code, p.regional
+                       p.data_kind, p.canonical_site_code AS site_code, p.regional
                 FROM preferred_rows p
                 ORDER BY p.period, p.company_name, p.source_location_name, p.category_code
                 """,
@@ -189,41 +206,58 @@ class StorePnlRepository:
         async with self.pool.acquire() as connection:
             return await connection.fetch(
                 """
-                WITH preferred_kind AS (
-                    SELECT company_name, period,
-                           CASE WHEN BOOL_OR(data_kind = 'actual')
-                               THEN 'actual' ELSE 'estimated'
-                           END AS data_kind
-                    FROM store_pnl_monthly
-                    GROUP BY company_name, period
-                ), preferred_rows AS (
+                WITH normalized_rows AS (
                     SELECT p.company_name, p.period, p.source_site_code,
                            p.category_code, p.amount, p.data_kind,
-                           COALESCE(l.site_code, p.source_site_code) AS site_code,
+                           CASE
+                               WHEN p.source_site_code = '__FINANCE_UNALLOCATED__'
+                                   THEN p.source_site_code
+                               ELSE COALESCE(l.site_code, p.source_site_code)
+                           END AS canonical_site_code,
+                           CASE
+                               WHEN p.source_site_code = '__FINANCE_UNALLOCATED__'
+                                   THEN NULL
+                               ELSE l.site_code
+                           END AS linked_site_code,
                            COALESCE(s.regional, 'Nealocat') AS regional
                     FROM store_pnl_monthly p
-                    JOIN preferred_kind k
-                        ON k.company_name = p.company_name
-                       AND k.period = p.period
-                       AND k.data_kind = p.data_kind
                     LEFT JOIN store_pnl_site_links l
                         ON l.company_name = p.company_name
                        AND l.source_site_code = p.source_site_code
                     LEFT JOIN stores s
-                        ON s.site_code = COALESCE(l.site_code, p.source_site_code)
+                        ON s.site_code = CASE
+                            WHEN p.source_site_code = '__FINANCE_UNALLOCATED__'
+                                THEN NULL
+                            ELSE COALESCE(l.site_code, p.source_site_code)
+                        END
+                ), preferred_kind AS (
+                    SELECT company_name, period, canonical_site_code,
+                           CASE WHEN BOOL_OR(data_kind = 'actual')
+                               THEN 'actual' ELSE 'estimated'
+                           END AS data_kind
+                    FROM normalized_rows
+                    GROUP BY company_name, period, canonical_site_code
+                ), preferred_rows AS (
+                    SELECT n.*
+                    FROM normalized_rows n
+                    JOIN preferred_kind k
+                        ON k.company_name = n.company_name
+                       AND k.period = n.period
+                       AND k.canonical_site_code = n.canonical_site_code
+                       AND k.data_kind = n.data_kind
                     WHERE (
                         (
                             $2::text IS NULL
-                            AND ($1::text IS NULL OR p.company_name = $1)
+                            AND ($1::text IS NULL OR n.company_name = $1)
                         )
-                        OR l.site_code = $2
+                        OR n.linked_site_code = $2
                         OR (
-                            l.site_code IS NULL
-                            AND p.source_site_code = $2
-                          AND p.company_name = COALESCE($3, $1)
+                            n.linked_site_code IS NULL
+                            AND n.source_site_code = $2
+                          AND n.company_name = COALESCE($3, $1)
                         )
                     )
-                    AND ($4::text IS NULL OR COALESCE(s.regional, 'Nealocat') = $4)
+                    AND ($4::text IS NULL OR n.regional = $4)
                 )
                 SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
                        p.category_code,
@@ -231,7 +265,7 @@ class StorePnlRepository:
                        COUNT(DISTINCT CASE
                            WHEN p.source_site_code <> '__FINANCE_UNALLOCATED__'
                            THEN COALESCE(
-                               p.site_code,
+                               p.canonical_site_code,
                                p.company_name || ':' || p.source_site_code
                            )
                        END)::integer AS store_count,

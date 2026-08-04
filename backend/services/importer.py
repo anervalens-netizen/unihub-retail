@@ -21,6 +21,7 @@ from services.reporting_refresh import (
 )
 from services.sales_generation import (
     build_sales_generation_manifest,
+    canonical_sales_stage_rows_sha256,
     canonical_json_sha256,
     compare_sales_generation_manifests,
     fenced_generation_heartbeat,
@@ -694,6 +695,10 @@ async def import_sales_dataframe(
             previous_manifest,
         )
         manifest["generation_state"] = "validated"
+        manifest["stage_rows_sha256"] = canonical_sales_stage_rows_sha256(
+            df,
+            import_month=import_month,
+        )
         manifest_sha256 = canonical_json_sha256(manifest)
         async with conn.transaction():
             await fenced_generation_heartbeat(
