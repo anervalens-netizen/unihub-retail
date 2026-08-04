@@ -10,9 +10,10 @@ created: 2026-08-03
 ## Contract și status
 
 Baseline-ul inițial al acestui runbook este
-`f9c0b1efe15686bcda532d22528e6e2644925aec`; SHA-ul P0-B se completează în
-evidence-ul de release. P0 implementează staging/shadow și garduri de scope, dar
-nu activează apply live Finance/TVA. Actualele Finance, estimările și scenariile
+`f9c0b1efe15686bcda532d22528e6e2644925aec`; P0-B a fost deployat la source SHA
+`5fba9d899f78b4160c39e50212071bf1b505619d`, CI `30946990852`, deploy
+`30947430898`. P0 implementează staging/shadow și garduri de scope, dar nu
+activează apply live Finance/TVA. Actualele Finance, estimările și scenariile
 Target finalizate rămân protejate.
 
 Registrul fiscal effective-dated este:
@@ -112,3 +113,19 @@ P0 nu demonstrează reconcilierea celor 8 grupuri salariale, nu modifică date
 live și nu declară că TVA effective-dated este activ în Finance sau în Target.
 Verificările locale de backend/mypy/teste sunt evidence de cod, nu aprobare
 pentru production.
+
+## Evidence P0-B deployat
+
+- migrarea 038:
+  `bac85ae88b6118e877e73ad444ed3895051a432069b460d802dc2b1144735488`;
+- migrarea 039:
+  `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d`;
+- `replace_month_snapshot(text)` absent live;
+- runtime: `SELECT` pe actualele P&L, fără write, generații sau secvențe;
+- zero generații Finance și rolul `unihub_finance_import` absent după deploy;
+- P&L live neschimbat: 97.687 rânduri, 569.813.991,84 RON;
+- artifact SHA-256:
+  `d9ed25e65240f75ed17ad31d8311c7c2fa328abf4176b7bae9a9e276f0eb7550`.
+
+Aceste dovezi închid numai implementarea și gardurile P0-B. Nu crea rolul
+Finance și nu promova date fără lotul operațional separat descris mai sus.

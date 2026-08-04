@@ -422,8 +422,8 @@ inventare, schimbări izolate, teste negative și QA.
 
 | Lot | Constatări | Stare | Dependență / gate de ieșire |
 | --- | --- | --- | --- |
-| P0-B | M-04, M-05 | `IN PROGRESS` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
-| P1-A | M-06, M-07, R-01, R-02 | `BLOCKED BY P0-B` | ledger/staging append-only și matrice reală de roluri |
+| P0-B | M-04, M-05 | `CLOSED LIVE 2026-08-04` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
+| P1-A | M-06, M-07, R-01, R-02 | `READY` | ledger/staging append-only și matrice reală de roluri |
 | P1-B | M-08, M-09 | `BLOCKED BY P1-A` | retain verificat înainte de terminal; reconciler/fault injection |
 | P1-C | M-10, R-03 | `READY AFTER P1-A` | CNP eliminat din runtime; apply salarial fail-closed |
 | P1-D | M-11, M-12 | `READY AFTER P1-A` | recovery Grile determinist; Google I/O nu blochează event loop |
@@ -583,3 +583,53 @@ business hashes, rollback și verdict. Următorul lot poate începe numai dacă
 candidatul curent este curat, sincronizat, verificat live și fără date
 neexplicate. Pentru P0-B, READY înseamnă cod/schema deployate și căile legacy
 închise; nu autorizează o promovare Finance live.
+
+## 15. Închidere P0-B — 2026-08-04
+
+Identitate release:
+
+- source/deploy SHA: `5fba9d899f78b4160c39e50212071bf1b505619d`;
+- formal CI: run `30946990852`, integral verde;
+- artifact SHA-256:
+  `d9ed25e65240f75ed17ad31d8311c7c2fa328abf4176b7bae9a9e276f0eb7550`;
+- formal deploy: run `30947430898`, verde;
+- backup/rollback handle verificat:
+  `/opt/Mobiup/ops/backups/retail-deploy/20260804T202108Z-9fc292819596-to-5fba9d899f78-6170dd2fbf405703`;
+- migrarea 038 SHA-256:
+  `bac85ae88b6118e877e73ad444ed3895051a432069b460d802dc2b1144735488`;
+- migrarea 039 SHA-256:
+  `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d`.
+
+Gate-uri și QA:
+
+- PostgreSQL fresh și upgrade 037 -> 039 cu granturi runtime/default sequence
+  preexistente: pass;
+- backend integrat: 1.507 pass, 7 skip; mypy 334 fișiere, Bandit,
+  detect-secrets și manifest immutable: pass;
+- Terra xhigh și Luna xhigh: GO independent pe SHA exact, zero findinguri
+  P0/P1/P2 deschise;
+- două candidate intermediare au fost refuzate înainte de publicare: Terra a
+  găsit lipsa revoke-ului direct pe secvențe în 039, iar Luna a găsit failure-ul
+  detect-secrets din testul ACL. Ambele au primit regresii și QA repetat.
+
+Dovezi live după deploy:
+
+- primary `main` la source SHA, checkout curat; backend, worker și import worker
+  active; migrarea one-shot `Result=success`;
+- funcția `replace_month_snapshot(text)` este absentă;
+- `unihub_runtime` păstrează numai `SELECT` pe `store_pnl_monthly`, fără write,
+  acces la tabelele de generații sau privilegii pe cele două secvențe;
+- rolul `unihub_finance_import` nu a fost creat și toate tabelele generaționale
+  au zero rânduri: deployul nu a făcut stage/apply/rollback Finance;
+- P&L neschimbat: 97.687 rânduri, două companii, 2017-01..2026-06,
+  total 569.813.991,84 RON, fingerprint
+  `d0506e8af8fb1730786132fb7979d870`;
+- sales neschimbat: un head, fingerprint
+  `f2bd5d1bea45a22911b4dba684fc8a78`;
+- health local/public verde, rutele administrative publice rămân 404 și
+  jurnalul serviciilor are zero warning/error în fereastra de deploy.
+
+Verdict P0-B: **CLOSED și verificat live**. M-04 și M-05 sunt închise; P1-A
+este următorul lot executabil. Promovarea Finance live rămâne **NO-GO** și cere
+rol/credential separat, authority manifest real, reconciliere, backup și
+aprobare operațională distinctă.
