@@ -442,11 +442,22 @@ break-even sunt marcate ca anomalii rosii.
 
 ## Contracte P0 la baseline-ul documentat
 
-Baseline-ul exact este `f9c0b1efe15686bcda532d22528e6e2644925aec`. Contractele de mai jos descriu numai codul integrat la acest SHA.
+Baseline-ul P0 de corectitudine este `35014c5390fc9669d91c0dc5df28db6702b01d5a`.
+Contractele de mai jos descriu codul verificat la acest SHA; publicarea și
+deployul sunt documentate separat de baseline-ul de implementare.
 
 ### Import sales: Stage -> Validate -> Promote
 
-`processing` rezervă luna și lease-ul; `validated` persistă staging, manifest, coverage și business hash; `promoting` este claim-uit atomic prin owner fencing; `completed` publică generația prin CAS și păstrează pointerul anterior; `failed` închide lotul fără date parțiale. Un worker stale nu mai poate scrie, iar spoolul rămâne până la stare terminală confirmată. Rollbackul este o promovare auditabilă către generația anterioară, nu un delete neînregistrat.
+`processing` rezervă luna și lease-ul; `validated` persistă staging, manifest,
+coverage, business hash și digestul canonic al tuturor rândurilor staged;
+`promoting` este claim-uit atomic prin owner fencing; `completed` publică
+generația prin CAS și păstrează pointerul anterior; `failed` închide lotul fără
+date parțiale. Digestul staged păstrează ordinea și multiplicitatea și codifică
+determinist `NULL`, text Unicode, date, Decimal și boolean. PostgreSQL îl
+recalculează la validare și la orice schimbare a headului, în aceeași tranzacție
+cu promovarea. Un worker stale nu mai poate scrie, iar spoolul rămâne până la
+stare terminală confirmată. Rollbackul clonează și reverifică generația
+anterioară, apoi o promovează auditabil; nu mută headul direct înapoi.
 
 ### P&L/TVA: shadow și protecție
 
@@ -504,29 +515,29 @@ parserul recupereaza categoria din cheia compusa de forma `c11-COD` inainte de
 a exclude randul.
 Codurile istorice din fisiere nu sunt fortate peste `stores.site_code`, iar
 orice luna estimata ulterior trebuie marcata explicit cu `data_kind=estimated`.
-La citire, tipul de date se alege la granularitatea companie + luna: daca
-exista orice rand `actual`, toate estimarile acelei companii-luni sunt excluse;
-altfel sunt folosite randurile `estimated`. Toate centrele de profit actuale
-raman in agregat si sunt insumate chiar daca mai multe coduri istorice indica
-acelasi magazin canonic. Pentru randurile nemapate, scope-ul include compania
-si codul-sursa, evitand coliziunea accidentala intre magazine necunoscute.
+La citire, tipul de date se alege la granularitatea companie + luna + magazin
+canonic: `actual` castiga numai pentru magazinul-luna acoperit de Finance, iar
+magazinele lipsa din aceeasi companie-luna continua sa foloseasca
+`estimated`. Bucketul `__FINANCE_UNALLOCATED__` ramane separat si intra in
+totalul companiei fara a deveni magazin. Pentru randurile nemapate, scope-ul
+include compania si codul-sursa, evitand coliziunea accidentala intre magazine
+necunoscute.
 Legaturile auditabile catre master-data Retail sunt in `store_pnl_site_links`;
 scriptul `backend/scripts/map_store_pnl_sites.py` salveaza metoda, scorul si
 starea de review, fara sa forteze codurile istorice care nu mai exista in
 `stores`. Egalitatile fuzzy raman explicit nerezolvate pentru review manual;
 randurile DB nu sunt folosite ca al doilea criteriu implicit de sortare.
 
-Lunile P&L lipsa pentru intreaga companie pot fi generate cu
+Magazinele-luna P&L lipsa pot fi generate cu
 `backend/scripts/estimate_store_pnl.py`. Modelul citeste strict read-only
 vanzarile Retail si le normalizeaza fara TVA (impartire la 1,19). Pentru o
-luna fara nicio sursa Finance, venitul estimat este exact vanzarea fara TVA,
-iar costul salarial foloseste raportul istoric dintre P&L si salariul net
+cheie magazin-luna fara sursa Finance, venitul estimat este exact vanzarea fara
+TVA, iar costul salarial foloseste raportul istoric dintre P&L si salariul net
 importat; costurile fixe folosesc mediana recenta si aceeasi luna din anul
-anterior. Cand exista P&L Finance pentru companie in luna respectiva, nu se
-adauga ori recalculeaza estimari, chiar daca detalierea nu cuprinde toate
-magazinele. Scriptul afiseaza backtestul inainte de import, scrie numai
-`data_kind=estimated` si nu suprascrie valori `actual`; importul Finance are
-prioritate la citire.
+anterior. Existenta unui magazin actual nu suprima estimarile altui magazin din
+aceeasi companie-luna. Scriptul afiseaza backtestul inainte de import, scrie
+numai `data_kind=estimated` si nu suprascrie valori `actual`; importul Finance
+are prioritate la aceeasi cheie magazin-luna.
 
 Unele fisiere Finance contin un total consolidat mai mare decat suma foii
 `Detaliere`. Importul pastreaza randurile pe magazine neschimbate si salveaza
@@ -716,12 +727,12 @@ istorice, backfill-ul a derivat acelasi ID HMAC din CNP sau din numele normaliza
 ca fallback, pastrand compatibilitatea API. Matcherul offline persista
 `person_id` pentru orice link confirmat si refuza aplicarea unei potriviri fara
 ID unic; identitatile legacy confirmate dar goale opresc backfill-ul explicit.
-Inainte de agregare, read model-ul elimina
-duplicatele complet identice. Astfel, un agent cu doua randuri de plata in
-aceeasi luna contribuie cu suma ambelor randuri, dar este numarat o singura
-data in numitor. Valorile agent-luna sub 2.000 RON sunt considerate fractii si
-sunt excluse numai din medii. Totalurile salariale, numarul de agenti si
-istoricul raman complete.
+Read model-ul nu deduplica dupa valori business. Fiecare componenta persistata,
+identificata prin randul DB si provenienta batch/source-sheet/source-row,
+contribuie la total chiar daca are aceeasi valoare ca alta componenta legitima.
+Agregarea persoana-luna insumeaza componentele, dar numara persoana o singura
+data. Valorile persoana-luna sub 2.000 RON sunt excluse numai din medii;
+totalurile, record count si istoricul raman complete.
 
 Endpointul `/salarii/summary`, folosit de cardul **Salarii vs Vanzari**,
 consolideaza afisarea pe `locatie + company_name`. Aceasta evita duplicatele
