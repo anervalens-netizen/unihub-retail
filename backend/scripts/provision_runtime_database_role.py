@@ -23,26 +23,14 @@ SALARY_LINK_COLUMNS = (
     "match_source", "confidence", "effective_from_month", "note",
     "created_at", "updated_at", "person_id",
 )
-PNL_RUNTIME_READ_ONLY_TABLE = "store_pnl_monthly"
-PNL_AUTHORITY_TABLES = (
-    "store_pnl_generations",
-    "store_pnl_generation_scopes",
-    "store_pnl_generation_rows",
-    "store_pnl_generation_heads",
-    "store_pnl_generation_ledger",
-)
-PNL_AUTHORITY_SEQUENCES = (
-    "store_pnl_monthly_id_seq",
-    "store_pnl_generation_ledger_id_seq",
-)
-PNL_WRITE_PRIVILEGES = (
-    "INSERT",
-    "UPDATE",
-    "DELETE",
-    "TRUNCATE",
-    "REFERENCES",
-    "TRIGGER",
-)
+AUTHORITY_ROLES = frozenset({
+    "unihub_web_read",
+    "unihub_business_write",
+    "unihub_sales_import",
+    "unihub_finance_import",
+    "unihub_operations",
+    "unihub_migrate",
+})
 
 
 def _runtime_credentials(database_url: str) -> tuple[str, str, str]:
@@ -61,99 +49,56 @@ def _identifier(value: str) -> str:
     return f'"{value}"'
 
 
-async def _has_any_table_privilege(
-    connection: asyncpg.Connection,
-    table: str,
-    privileges: tuple[str, ...],
-) -> bool:
-    for privilege in privileges:
-        if await connection.fetchval(
-            "SELECT has_table_privilege(current_user, $1, $2)",
-            table,
-            privilege,
-        ):
-            return True
-    return False
+async def provision(
+    owner_url: str,
+    runtime_url: str,
+    *,
+    authority_role: str,
+) -> dict[str, bool]:
+    """Attach an *existing* service LOGIN to one reviewed NOLOGIN authority.
 
-
-async def _has_any_sequence_privilege(
-    connection: asyncpg.Connection,
-    sequence: str,
-    privileges: tuple[str, ...],
-) -> bool:
-    for privilege in privileges:
-        if await connection.fetchval(
-            "SELECT has_sequence_privilege(current_user, $1, $2)",
-            sequence,
-            privilege,
-        ):
-            return True
-    return False
-
-
-async def provision(owner_url: str, runtime_url: str) -> dict[str, bool]:
+    Migration 040 owns all object grants.  This command deliberately never
+    creates a LOGIN, changes a password, grants broad/default object privileges,
+    or combines authorities.  Running ``--apply`` remains a restricted
+    service-identity operation and needs the separate operational approval.
+    """
+    if authority_role not in AUTHORITY_ROLES:
+        raise RuntimeError("Database authority role is invalid")
     role, password, database = _runtime_credentials(runtime_url)
     quoted_role = _identifier(role)
-    quoted_database = _identifier(database)
     owner = await asyncpg.connect(owner_url, command_timeout=60)
     try:
         owner_role = await owner.fetchval("SELECT current_user")
         current_database = await owner.fetchval("SELECT current_database()")
         if role == owner_role or database != current_database:
             raise RuntimeError("Runtime role must differ from the owner on the same database")
-        exists = await owner.fetchval("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=$1)", role)
-        if not exists:
-            await owner.execute(
-                f"CREATE ROLE {quoted_role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
-            )
-        password_literal = "'" + password.replace("'", "''") + "'"
-        await owner.execute(
-            f"ALTER ROLE {quoted_role} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD {password_literal}"
+        service_role = await owner.fetchrow(
+            "SELECT rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb "
+            "FROM pg_roles WHERE rolname = $1",
+            role,
         )
-        await owner.execute(f"GRANT CONNECT, TEMPORARY ON DATABASE {quoted_database} TO {quoted_role}")
-        await owner.execute(f"GRANT USAGE ON SCHEMA public TO {quoted_role}")
-        await owner.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {quoted_role}")
-        await owner.execute(f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {quoted_role}")
-        await owner.execute(f"GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {quoted_role}")
-        await owner.execute(
-            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-            f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {quoted_role}"
+        if service_role is None or not service_role["rolcanlogin"]:
+            raise RuntimeError("Existing LOGIN service role is required")
+        if any(bool(service_role[field]) for field in ("rolsuper", "rolcreaterole", "rolcreatedb")):
+            raise RuntimeError("Service LOGIN must not be privileged")
+        if not service_role["rolinherit"]:
+            raise RuntimeError("Service LOGIN must inherit exactly one database authority")
+        await owner.execute(f"GRANT { _identifier(authority_role) } TO {quoted_role}")
+        memberships = await owner.fetch(
+            """
+            SELECT parent.rolname
+            FROM pg_auth_members membership
+            JOIN pg_roles parent ON parent.oid = membership.roleid
+            JOIN pg_roles member ON member.oid = membership.member
+            WHERE member.rolname = $1
+              AND parent.rolname = ANY($2::text[])
+            ORDER BY parent.rolname
+            """,
+            role,
+            sorted(AUTHORITY_ROLES),
         )
-        await owner.execute(
-            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-            f"GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {quoted_role}"
-        )
-        await owner.execute(
-            f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-            f"GRANT EXECUTE ON FUNCTIONS TO {quoted_role}"
-        )
-        await owner.execute(f"GRANT TRUNCATE ON premium_glass_item_models TO {quoted_role}")
-        for table in ("salary_records", "agent_salary_links", "schema_meta", "schema_migrations"):
-            await owner.execute(f"REVOKE ALL ON TABLE {table} FROM {quoted_role}")
-        await owner.execute(
-            f"GRANT SELECT ({', '.join(SALARY_RECORD_COLUMNS)}) ON salary_records TO {quoted_role}"
-        )
-        await owner.execute(
-            f"GRANT SELECT ({', '.join(SALARY_LINK_COLUMNS)}) ON agent_salary_links TO {quoted_role}"
-        )
-        await owner.execute(f"GRANT SELECT ON schema_meta, schema_migrations TO {quoted_role}")
-        await owner.execute(f"REVOKE ALL ON SCHEMA salary_private FROM {quoted_role}")
-        await owner.execute(f"REVOKE ALL ON ALL TABLES IN SCHEMA salary_private FROM {quoted_role}")
-        # Keep Finance authority fenced even when this idempotent provisioner
-        # is rerun after migration 039's explicit runtime revokes.
-        await owner.execute(
-            f"REVOKE {', '.join(PNL_WRITE_PRIVILEGES)} ON TABLE "
-            f"{PNL_RUNTIME_READ_ONLY_TABLE} FROM {quoted_role}"
-        )
-        await owner.execute(
-            f"GRANT SELECT ON TABLE {PNL_RUNTIME_READ_ONLY_TABLE} TO {quoted_role}"
-        )
-        await owner.execute(
-            f"REVOKE ALL ON TABLE {', '.join(PNL_AUTHORITY_TABLES)} FROM {quoted_role}"
-        )
-        await owner.execute(
-            f"REVOKE ALL ON SEQUENCE {', '.join(PNL_AUTHORITY_SEQUENCES)} FROM {quoted_role}"
-        )
+        if [item["rolname"] for item in memberships] != [authority_role]:
+            raise RuntimeError("Service LOGIN must have exactly one database authority")
     finally:
         await owner.close()
 
@@ -163,56 +108,35 @@ async def provision(owner_url: str, runtime_url: str) -> dict[str, bool]:
             "not_superuser": not bool(await runtime.fetchval("SELECT rolsuper FROM pg_roles WHERE rolname=current_user")),
             "no_create_role": not bool(await runtime.fetchval("SELECT rolcreaterole FROM pg_roles WHERE rolname=current_user")),
             "no_create_db": not bool(await runtime.fetchval("SELECT rolcreatedb FROM pg_roles WHERE rolname=current_user")),
-            "salary_person_id_read": bool(await runtime.fetchval("SELECT has_column_privilege(current_user, 'salary_records', 'person_id', 'SELECT')")),
-            "salary_cnp_denied": not bool(await runtime.fetchval("SELECT has_column_privilege(current_user, 'salary_records', 'cnp', 'SELECT')")),
-            "link_cnp_denied": not bool(await runtime.fetchval("SELECT has_column_privilege(current_user, 'agent_salary_links', 'salary_cnp', 'SELECT')")),
             "private_schema_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'salary_private', 'USAGE')")),
             "schema_create_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'public', 'CREATE')")),
-            "store_pnl_read": bool(
+            "authority_membership": bool(
                 await runtime.fetchval(
-                    "SELECT has_table_privilege(current_user, $1, 'SELECT')",
-                    PNL_RUNTIME_READ_ONLY_TABLE,
+                    "SELECT pg_has_role(session_user, $1, 'member')", authority_role
                 )
             ),
         }
-        checks["store_pnl_write_denied"] = not await _has_any_table_privilege(
-            runtime,
-            PNL_RUNTIME_READ_ONLY_TABLE,
-            PNL_WRITE_PRIVILEGES,
-        )
-        for table in PNL_AUTHORITY_TABLES:
-            checks[f"{table}_access_denied"] = not await _has_any_table_privilege(
-                runtime,
-                table,
-                ("SELECT", *PNL_WRITE_PRIVILEGES),
-            )
-        for sequence in PNL_AUTHORITY_SEQUENCES:
-            checks[f"{sequence}_access_denied"] = not await _has_any_sequence_privilege(
-                runtime,
-                sequence,
-                ("USAGE", "SELECT", "UPDATE"),
-            )
-        await runtime.fetchval("SELECT COUNT(*) FROM salary_records")
-        await runtime.fetchval("SELECT COUNT(*) FROM schema_migrations")
-        await runtime.fetchval("SELECT COUNT(*) FROM store_pnl_monthly")
     finally:
         await runtime.close()
     if not all(checks.values()):
         raise RuntimeError("Runtime database role verification failed")
-    return checks
+    return {"authority_membership": True, **checks}
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--authority-role", choices=sorted(AUTHORITY_ROLES))
     args = parser.parse_args()
     if not args.apply:
         raise RuntimeError("Use --apply to provision the runtime database role")
+    if args.authority_role is None:
+        raise RuntimeError("--authority-role is required for a one-authority service identity")
     owner_url = os.getenv("MIGRATION_DATABASE_URL")
     runtime_url = os.getenv("RUNTIME_DATABASE_URL")
     if not owner_url or not runtime_url:
         raise RuntimeError("Migration and runtime database URLs are required")
-    checks = await provision(owner_url, runtime_url)
+    checks = await provision(owner_url, runtime_url, authority_role=args.authority_role)
     print("runtime_database_role_verified=true checks=" + str(len(checks)))
 
 

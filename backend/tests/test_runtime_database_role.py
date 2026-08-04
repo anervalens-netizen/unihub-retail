@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import asyncpg
@@ -13,11 +13,8 @@ from db.migration_runner import BASELINE_REPLAY_MIGRATIONS, load_migration_manif
 from scripts.provision_runtime_database_role import (
     SALARY_LINK_COLUMNS,
     SALARY_RECORD_COLUMNS,
-    PNL_AUTHORITY_SEQUENCES,
-    PNL_AUTHORITY_TABLES,
-    PNL_RUNTIME_READ_ONLY_TABLE,
+    AUTHORITY_ROLES,
     _runtime_credentials,
-    provision,
 )
 
 
@@ -43,9 +40,14 @@ def test_runtime_salary_grants_exclude_private_columns() -> None:
         Path(__file__).resolve().parents[1]
         / "scripts/provision_runtime_database_role.py"
     ).read_text(encoding="utf-8")
-    assert "REVOKE ALL ON SCHEMA salary_private" in source
+    assert "private_schema_denied" in source
     assert "schema_create_denied" in source
-    assert "ALTER DEFAULT PRIVILEGES IN SCHEMA public" in source
+    assert "ALTER DEFAULT PRIVILEGES" not in source
+    assert "ON ALL TABLES IN SCHEMA public" not in source
+    assert "CREATE ROLE" not in source
+    assert "ALTER ROLE" not in source
+    assert "SET ROLE" not in source
+    assert "AUTHORITY_ROLES" in source
 
 
 def test_import_activity_migration_grants_established_runtime_role() -> None:
@@ -112,51 +114,15 @@ async def test_salary_identity_contract_constraints_are_installed() -> None:
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated test database",
 )
-async def test_runtime_reprovision_preserves_finance_authority_acl_fence() -> None:
-    owner_url = os.environ["DATABASE_URL"]
-    parsed = urlsplit(owner_url)
-    runtime_role = "unihub_runtime_p0b"
-    runtime_credential = "Ab9_" * 16
-    runtime_url = urlunsplit(
-        (
-            parsed.scheme,
-            f"{runtime_role}:{quote(runtime_credential, safe='')}@{parsed.hostname}:{parsed.port}",
-            parsed.path,
-            parsed.query,
-            parsed.fragment,
-        )
-    )
-
-    first = await provision(owner_url, runtime_url)
-    second = await provision(owner_url, runtime_url)
-    assert first == second
-    assert second["store_pnl_read"]
-    assert second["store_pnl_write_denied"]
-    assert all(second[f"{table}_access_denied"] for table in PNL_AUTHORITY_TABLES)
-    assert all(second[f"{sequence}_access_denied"] for sequence in PNL_AUTHORITY_SEQUENCES)
-
-    owner = await asyncpg.connect(owner_url)
-    try:
-        assert await owner.fetchval(
-            "SELECT has_table_privilege($1, $2, 'SELECT')",
-            runtime_role,
-            PNL_RUNTIME_READ_ONLY_TABLE,
-        )
-        for privilege in ("INSERT", "UPDATE", "DELETE"):
-            assert not await owner.fetchval(
-                "SELECT has_table_privilege($1, $2, $3)",
-                runtime_role,
-                PNL_RUNTIME_READ_ONLY_TABLE,
-                privilege,
-            )
-        for table in PNL_AUTHORITY_TABLES:
-            assert not await owner.fetchval(
-                "SELECT has_table_privilege($1, $2, 'SELECT')",
-                runtime_role,
-                table,
-            )
-    finally:
-        await owner.close()
+def test_provisioner_declares_only_no_login_authority_contracts() -> None:
+    assert AUTHORITY_ROLES == {
+        "unihub_web_read",
+        "unihub_business_write",
+        "unihub_sales_import",
+        "unihub_finance_import",
+        "unihub_operations",
+        "unihub_migrate",
+    }
 
 
 @pytest.mark.anyio
