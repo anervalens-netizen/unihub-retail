@@ -116,11 +116,11 @@ async def test_runtime_reprovision_preserves_finance_authority_acl_fence() -> No
     owner_url = os.environ["DATABASE_URL"]
     parsed = urlsplit(owner_url)
     runtime_role = "unihub_runtime_p0b"
-    runtime_password = "Ab9_" * 16
+    runtime_credential = "Ab9_" * 16
     runtime_url = urlunsplit(
         (
             parsed.scheme,
-            f"{runtime_role}:{quote(runtime_password, safe='')}@{parsed.hostname}:{parsed.port}",
+            f"{runtime_role}:{quote(runtime_credential, safe='')}@{parsed.hostname}:{parsed.port}",
             parsed.path,
             parsed.query,
             parsed.fragment,
