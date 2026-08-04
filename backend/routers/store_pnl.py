@@ -9,7 +9,7 @@ from auth import AuthClaims, require_auth
 from db.connection import get_pool
 from permissions import can_access_management, require_privileged_access
 from privileged_access import STORE_PNL_ACCESS_GROUPS_ENV, has_configured_group
-from repositories.store_pnl import StorePnlRepository
+from repositories.store_pnl_effective import StorePnlEffectiveRepository
 from services.store_pnl import StorePnlService
 
 router = APIRouter(prefix="/api/store-pnl", tags=["store-pnl"])
@@ -45,7 +45,7 @@ def parse_month(value: str) -> date:
 
 
 async def get_service() -> StorePnlService:
-    return StorePnlService(StorePnlRepository(await get_pool()))
+    return StorePnlService(StorePnlEffectiveRepository(await get_pool()))
 
 
 @router.get("/permissions")
