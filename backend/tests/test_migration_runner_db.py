@@ -118,6 +118,17 @@ async def test_runner_prefers_explicit_migration_owner_url(
 
 
 @pytest.mark.asyncio
+async def test_runner_requires_migration_url_and_never_falls_back_to_runtime_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MIGRATION_DATABASE_URL", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://runtime@localhost/db")
+
+    with pytest.raises(MigrationError, match="MIGRATION_DATABASE_URL"):
+        await run_migrations()
+
+
+@pytest.mark.asyncio
 async def test_existing_database_backfills_checksums_and_applies_pending(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

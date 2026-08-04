@@ -12,6 +12,7 @@ WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker
 Environment="RETAIL_WORKER_ROLE=operations"
+Environment="UNIHUB_DB_PROCESS_AUTHORITY=operations"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5

@@ -149,6 +149,7 @@ jobs:
           touch \
             "$systemd_root/opt/Mobiup/unihub-retail/.env" \
             "$systemd_root/opt/Mobiup/unihub-retail/.env.worker" \
+            "$systemd_root/opt/Mobiup/unihub-retail/.env.import-worker" \
             "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations"
           cp /usr/bin/true "$systemd_root/usr/bin/true"
           cp /usr/bin/timeout "$systemd_root/usr/bin/timeout"

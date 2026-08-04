@@ -9,7 +9,11 @@ from typing import Any
 
 import asyncpg
 
-from db.connection import get_database_url, get_migrations_dir, get_schema_path
+from db.connection import (
+    get_migrations_dir,
+    get_schema_path,
+    verify_database_connection_authority,
+)
 
 
 MIGRATION_ADVISORY_LOCK_ID = 7_221_904_202_607_12
@@ -121,10 +125,11 @@ def _validate_applied(
 async def run_migrations(database_url: str | None = None) -> list[str]:
     manifest = load_migration_manifest()
     verify_migration_files(manifest)
+    migration_database_url = database_url or os.getenv("MIGRATION_DATABASE_URL")
+    if not migration_database_url:
+        raise MigrationError("MIGRATION_DATABASE_URL is required for migrations")
     connection = await asyncpg.connect(
-        database_url
-        or os.getenv("MIGRATION_DATABASE_URL")
-        or get_database_url(),
+        migration_database_url,
         command_timeout=120,
         server_settings={
             "application_name": "unihub-retail-migrations",
@@ -135,6 +140,7 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
     )
     applied_now: list[str] = []
     try:
+        await verify_database_connection_authority(connection)
         await connection.execute("SELECT pg_advisory_lock($1)", MIGRATION_ADVISORY_LOCK_ID)
         has_application_schema = bool(
             await connection.fetchval(

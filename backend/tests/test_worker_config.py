@@ -23,6 +23,8 @@ def test_worker_uses_bounded_serial_execution(monkeypatch: pytest.MonkeyPatch) -
     assert settings["job_completion_wait"] == 2400
     assert settings["health_check_interval"] == 30
     assert "queue_name" not in settings
+    assert worker.import_sales_background not in settings["functions"]
+    assert worker.promote_sales_background not in settings["functions"]
     monthly = next(
         entry
         for entry in settings["functions"]

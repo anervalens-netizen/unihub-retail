@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from privileged_access import privileged_access_config_errors
 from oidc_settings import hub_internal_secret_errors, oidc_config_errors
@@ -33,8 +33,75 @@ class ConfigError(RuntimeError):
 
 RuntimeRole = Literal["web", "worker", "import"]
 WorkerRole = Literal["operations", "imports"]
+DatabaseAuthority = Literal["web", "operations", "sales_import", "migrate"]
 ARQ_CONNECTION_BUDGET_SECONDS = 3
 WEB_MIN_DB_POOL_MAX_SIZE = 2
+DB_PROCESS_AUTHORITY_ENV = "UNIHUB_DB_PROCESS_AUTHORITY"
+
+
+@dataclass(frozen=True)
+class DatabaseAuthorityContract:
+    """Expected authenticated principal and its exclusive NOLOGIN authorities."""
+
+    principal: str
+    required_memberships: tuple[str, ...]
+    forbidden_memberships: tuple[str, ...]
+
+
+_ALL_DATABASE_AUTHORITIES = frozenset(
+    {
+        "unihub_web_read",
+        "unihub_business_write",
+        "unihub_operations",
+        "unihub_sales_import",
+        "unihub_finance_import",
+        "unihub_migrate",
+    }
+)
+
+DATABASE_AUTHORITY_CONTRACTS: dict[DatabaseAuthority, DatabaseAuthorityContract] = {
+    "web": DatabaseAuthorityContract(
+        principal="unihub_web",
+        required_memberships=("unihub_web_read", "unihub_business_write"),
+        forbidden_memberships=tuple(
+            sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_web_read", "unihub_business_write"})
+        ),
+    ),
+    "operations": DatabaseAuthorityContract(
+        principal="unihub_operations_worker",
+        required_memberships=("unihub_operations",),
+        forbidden_memberships=tuple(sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_operations"})),
+    ),
+    "sales_import": DatabaseAuthorityContract(
+        principal="unihub_import_worker",
+        required_memberships=("unihub_sales_import",),
+        forbidden_memberships=tuple(sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_sales_import"})),
+    ),
+    "migrate": DatabaseAuthorityContract(
+        principal="unihub_migration_runner",
+        required_memberships=("unihub_migrate",),
+        forbidden_memberships=tuple(sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_migrate"})),
+    ),
+}
+
+
+def configured_database_authority() -> DatabaseAuthority | None:
+    """Return the explicitly enabled authority check without inspecting a DSN."""
+    value = os.getenv(DB_PROCESS_AUTHORITY_ENV, "").strip().lower()
+    if not value:
+        return None
+    if value not in DATABASE_AUTHORITY_CONTRACTS:
+        raise ConfigError(
+            f"{DB_PROCESS_AUTHORITY_ENV} trebuie să fie web, operations, sales_import sau migrate"
+        )
+    return cast(DatabaseAuthority, value)
+
+
+def expected_database_authority(role: RuntimeRole) -> DatabaseAuthority:
+    return cast(
+        DatabaseAuthority,
+        {"web": "web", "worker": "operations", "import": "sales_import"}[role],
+    )
 
 
 @dataclass(frozen=True)
@@ -43,6 +110,7 @@ class RuntimeConfig:
 
     role: RuntimeRole
     worker_role: WorkerRole | None
+    database_authority: DatabaseAuthority | None
     db_pool_min_size: int
     db_pool_max_size: int
     db_statement_timeout_ms: int
@@ -115,6 +183,20 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
         errors.append("role=import necesită RETAIL_WORKER_ROLE=imports")
     if process_role == "worker" and worker_role == "imports":
         errors.append("role=worker nu poate folosi RETAIL_WORKER_ROLE=imports")
+
+    database_authority: DatabaseAuthority | None = None
+    try:
+        database_authority = configured_database_authority()
+    except ConfigError as exc:
+        errors.append(str(exc))
+    else:
+        if (
+            database_authority is not None
+            and database_authority != expected_database_authority(process_role)
+        ):
+            errors.append(
+                f"{DB_PROCESS_AUTHORITY_ENV}={database_authority} nu corespunde procesului {process_role}"
+            )
 
     db_pool_min_size = _parse_runtime_int("DB_POOL_MIN_SIZE", 3, errors, maximum=100)
     db_pool_max_size = _parse_runtime_int("DB_POOL_MAX_SIZE", 10, errors, maximum=100)
@@ -229,6 +311,7 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
     return RuntimeConfig(
         role=process_role,
         worker_role=worker_role,
+        database_authority=database_authority,
         db_pool_min_size=db_pool_min_size,
         db_pool_max_size=db_pool_max_size,
         db_statement_timeout_ms=db_statement_timeout_ms,

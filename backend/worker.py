@@ -544,10 +544,6 @@ def main() -> None:
         [import_sales_background, promote_sales_background]
         if worker_role == "imports"
         else [
-            # Păstrat temporar și aici pentru joburile legacy publicate în
-            # coada implicită înainte de separarea cozilor.
-            import_sales_background,
-            promote_sales_background,
             grile_check_background,
             func(grile_store_refresh_background, max_tries=1),
             func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),

@@ -9,6 +9,8 @@ from urllib.parse import unquote, urlparse
 
 import asyncpg
 
+from config import DATABASE_AUTHORITY_CONTRACTS, DatabaseAuthority, configured_database_authority
+
 logger = logging.getLogger(__name__)
 
 pool: asyncpg.Pool | None = None
@@ -76,6 +78,77 @@ def get_database_url() -> str:
     return database_url
 
 
+async def verify_database_connection_authority(
+    connection: asyncpg.Connection,
+    authority: DatabaseAuthority | None = None,
+) -> None:
+    """Verify the authenticated process principal and exclusive authority groups.
+
+    The check is intentionally enabled only by ``UNIHUB_DB_PROCESS_AUTHORITY``.
+    This keeps isolated tests and offline tools compatible until their explicit
+    authority contract is provisioned, while production units fail closed once
+    they declare the process authority.
+    """
+    configured = authority if authority is not None else configured_database_authority()
+    if configured is None:
+        return
+    contract = DATABASE_AUTHORITY_CONTRACTS[configured]
+    identity = await connection.fetchrow(
+        """
+        SELECT current_user::text AS current_user,
+               session_user::text AS session_user,
+               rolcanlogin,
+               rolsuper,
+               rolinherit,
+               rolcreatedb,
+               rolcreaterole,
+               rolbypassrls
+        FROM pg_roles
+        WHERE rolname = current_user
+        """
+    )
+    if identity is None:
+        raise RuntimeError("Database authority check could not resolve the authenticated principal")
+    current_user = str(identity["current_user"])
+    session_user = str(identity["session_user"])
+    if current_user != contract.principal or session_user != current_user:
+        raise RuntimeError("Database authority principal does not match this process")
+    if (
+        not bool(identity["rolcanlogin"])
+        or bool(identity["rolsuper"])
+        or bool(identity["rolinherit"])
+        or bool(identity["rolcreatedb"])
+        or bool(identity["rolcreaterole"])
+        or bool(identity["rolbypassrls"])
+    ):
+        raise RuntimeError("Database authority principal must be a non-superuser LOGIN role")
+
+    for role_name in contract.required_memberships:
+        is_member = await connection.fetchval(
+            "SELECT pg_has_role(current_user, $1, 'member')", role_name
+        )
+        if not is_member:
+            raise RuntimeError("Database authority principal lacks a required authority membership")
+    for role_name in contract.forbidden_memberships:
+        is_member = await connection.fetchval(
+            "SELECT pg_has_role(current_user, $1, 'member')", role_name
+        )
+        if is_member:
+            raise RuntimeError("Database authority principal has a forbidden cross-authority membership")
+
+
+async def verify_database_pool_authority(
+    db_pool: asyncpg.Pool,
+    authority: DatabaseAuthority | None = None,
+) -> None:
+    """Acquire a real connection before checking its authenticated DB identity."""
+    configured = authority if authority is not None else configured_database_authority()
+    if configured is None:
+        return
+    async with db_pool.acquire() as connection:
+        await verify_database_connection_authority(connection, configured)
+
+
 def get_schema_path() -> Path:
     return Path(__file__).with_name("schema_v2.sql")
 
@@ -90,7 +163,7 @@ async def init_db_pool() -> asyncpg.Pool:
         idle_transaction_timeout_ms = int(
             os.getenv("DB_IDLE_TRANSACTION_TIMEOUT_MS", "60000")
         )
-        pool = await asyncpg.create_pool(
+        created_pool = await asyncpg.create_pool(
             dsn=get_database_url(),
             min_size=int(os.getenv("DB_POOL_MIN_SIZE", "3")),
             max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10")),
@@ -104,6 +177,12 @@ async def init_db_pool() -> asyncpg.Pool:
                 ),
             },
         )
+        try:
+            await verify_database_pool_authority(created_pool)
+        except BaseException:
+            await created_pool.close()
+            raise
+        pool = created_pool
     return pool
 
 

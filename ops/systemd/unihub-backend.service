@@ -11,6 +11,7 @@ Type=simple
 User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env
+Environment="UNIHUB_DB_PROCESS_AUTHORITY=web"
 Environment="SESSION_VALKEY_PORT=6380"
 Environment="SESSION_VALKEY_DATABASE=0"
 Environment="RATE_LIMIT_VALKEY_PORT=6380"
