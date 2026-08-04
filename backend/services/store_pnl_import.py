@@ -19,6 +19,8 @@ from uuid import UUID, uuid4
 
 import asyncpg
 
+from db.connection import verify_database_connection_authority
+
 
 COMPANIES = frozenset({"Mobicell", "Mobiup"})
 HEX64 = set("0123456789abcdef")
@@ -378,8 +380,12 @@ def _scope_generation_manifest(
 
 
 async def _require_finance_import_role(connection: asyncpg.Connection) -> None:
-    if await connection.fetchval("SELECT current_user") != "unihub_finance_import":
-        raise PnlImportError("Promovarea P&L necesita rolul DB unihub_finance_import.")
+    try:
+        await verify_database_connection_authority(connection, "finance_import")
+    except RuntimeError as exc:
+        raise PnlImportError(
+            "Importul P&L necesita principalul autentificat Finance dedicat."
+        ) from exc
 
 
 async def stage_generation(
@@ -502,9 +508,10 @@ async def stage_generation(
             generation_id,
             json.dumps({"manifest_sha256": manifest_sha256}, sort_keys=True),
         )
-        await connection.execute(
-            "UPDATE store_pnl_generations SET state = 'staged' WHERE id = $1",
+        await connection.fetchval(
+            "SELECT seal_store_pnl_generation($1, $2)",
             generation_id,
+            manifest_sha256,
         )
     return StageResult(generation_id, manifest_sha256, generation_manifest)
 
@@ -653,9 +660,10 @@ async def _promote_staged_generation(
             json.dumps({"revision": int(next_revision)}, sort_keys=True),
         )
         revisions[f"{scope_key[0]}:{scope_key[1].isoformat()}"] = int(next_revision)
-    await connection.execute(
-        "UPDATE store_pnl_generations SET state = 'promoted', promoted_at = now() WHERE id = $1",
+    await connection.fetchval(
+        "SELECT complete_store_pnl_generation($1, $2)",
         generation_id,
+        expected_manifest_sha256,
     )
     return revisions
 

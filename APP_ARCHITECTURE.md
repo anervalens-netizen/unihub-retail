@@ -96,8 +96,11 @@ grupurile NOLOGIN `unihub_web_read`, `unihub_business_write`,
 `GRANT ... ON ALL` sau default grants viitoare. Loginurile de proces sunt
 `unihub_web`, `unihub_operations_worker`, `unihub_import_worker` și
 `unihub_migration_runner`; fiecare conexiune verifică principalul autentificat,
-flagurile nonprivilegiate și exact contractul de memberships înainte de lucru.
-Finance rămâne o autoritate fără LOGIN/credential până la un lot aprobat separat.
+toate membershipurile directe/tranzitive și opțiunile lor, plus flagurile
+nonprivilegiate inclusiv replication/bypass RLS. Autoritatea explicită este
+obligatorie în producție. Contractul Finance rezervă principalul
+`unihub_finance_import_worker`, dar acesta rămâne fără LOGIN/credential până la
+un lot aprobat separat. Numai sales-import primește `TEMPORARY`.
 
 Migrarea 041 mută ownershipul obiectelor aplicației la NOLOGIN
 `unihub_schema_owner`. Runnerul de migrare este `NOINHERIT`, poate face numai
@@ -106,6 +109,11 @@ Migrarea 041 mută ownershipul obiectelor aplicației la NOLOGIN
 bootstrapul de schemă nouă cer un preflight administrativ separat; web-ul și
 workerii nu pot deveni owner. Funcțiile SECURITY DEFINER controlate au owner,
 `search_path` și EXECUTE allowlist verificate.
+
+Rolul legacy `unihub_runtime` este scos din uz printr-un pas separat de cutover:
+după oprirea tuturor proceselor și verificarea absenței sesiunilor/membrilor,
+scriptul fix îl setează `NOLOGIN`. ACL-urile istorice rămân inactive; niciun
+principal nou nu poate moșteni rolul legacy.
 
 Release-ul formal este o frontiera separata: un run manual `CI` pe `main`
 impacheteaza sursa exact la `head_sha` plus `dist` verificat si publica SHA-256.

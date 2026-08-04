@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from secrets import token_urlsafe
@@ -12,6 +13,8 @@ import asyncpg
 import pytest
 
 from db.migration_runner import run_migrations
+from db.connection import get_pool, verify_database_connection_authority
+from config import DATABASE_AUTHORITY_CONTRACTS
 from scripts.provision_runtime_database_role import provision
 
 
@@ -40,6 +43,8 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
         "advance_sales_generation_head",
         "reserve_sales_import_grile_run",
         "advance_store_pnl_generation_head",
+        "seal_store_pnl_generation",
+        "complete_store_pnl_generation",
         "promote_store_pnl_shadow_generation",
         "rollback_store_pnl_shadow_pointer",
     ):
@@ -53,8 +58,10 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "CREATE ROLE unihub_schema_owner" in owner_sql
     assert "REASSIGN OWNED" not in owner_sql
     assert "namespace.nspname IN ('public', 'salary_private')" in owner_sql
+    assert owner_sql.count("= current_user::regrole") == 3
     assert "dependency.deptype = 'e'" in owner_sql
     assert "ALTER SCHEMA public OWNER TO unihub_schema_owner" in owner_sql
+    assert "public.reserve_sales_import_grile_run(text,integer)" in owner_sql
 
 
 async def _expect_denied(connection: asyncpg.Connection, sql: str, *args: object) -> None:
@@ -74,6 +81,7 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
         "web": (f"p1a_web_{uuid4().hex[:12]}", token_urlsafe(48), True),
         "migrate": (f"p1a_migrate_{uuid4().hex[:12]}", token_urlsafe(48), False),
     }
+    unexpected_role = f"p1a_extra_{uuid4().hex[:12]}"
     owner = await asyncpg.connect(owner_url)
     try:
         for principal, password, inherits in principals.values():
@@ -101,6 +109,39 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
             )
             assert all(checks.values())
 
+        web_principal, web_password, _ = principals["web"]
+        web_url = urlunsplit(
+            (
+                parsed.scheme,
+                f"{quote(web_principal)}:{quote(web_password, safe='')}@{parsed.hostname}:{parsed.port}",
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+        await owner.execute(f'ALTER ROLE "{web_principal}" BYPASSRLS')
+        with pytest.raises(RuntimeError, match="must not be privileged"):
+            await provision(
+                owner_url,
+                web_url,
+                authority_roles=frozenset(
+                    {"unihub_web_read", "unihub_business_write"}
+                ),
+            )
+        await owner.execute(f'ALTER ROLE "{web_principal}" NOBYPASSRLS')
+
+        await owner.execute(f'CREATE ROLE "{unexpected_role}" NOLOGIN')
+        await owner.execute(f'GRANT "{unexpected_role}" TO "{web_principal}"')
+        with pytest.raises(RuntimeError, match="exactly its database authority contract"):
+            await provision(
+                owner_url,
+                web_url,
+                authority_roles=frozenset(
+                    {"unihub_web_read", "unihub_business_write"}
+                ),
+            )
+        await owner.execute(f'REVOKE "{unexpected_role}" FROM "{web_principal}"')
+
         migrate_principal, migrate_password, _ = principals["migrate"]
         migrate_url = urlunsplit(
             (
@@ -121,6 +162,7 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
         finally:
             await migrate.close()
     finally:
+        await owner.execute(f'DROP ROLE IF EXISTS "{unexpected_role}"')
         for principal, _, _ in principals.values():
             await owner.execute(f'DROP ROLE IF EXISTS "{principal}"')
         await owner.close()
@@ -129,9 +171,44 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
 @pytest.mark.asyncio
 @pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE",
+)
+async def test_schema_owner_handoff_does_not_capture_foreign_owned_objects() -> None:
+    foreign_role = f"p1a_foreign_{uuid4().hex[:12]}"
+    table_name = f"p1a_foreign_{uuid4().hex[:12]}"
+    pool = await get_pool()
+    async with pool.acquire() as connection:
+        try:
+            await connection.execute(f'CREATE ROLE "{foreign_role}" NOLOGIN')
+            await connection.execute(f'CREATE TABLE public."{table_name}" (id integer)')
+            await connection.execute(
+                f'ALTER TABLE public."{table_name}" OWNER TO "{foreign_role}"'
+            )
+
+            await connection.execute(OWNER_MIGRATION.read_text(encoding="utf-8"))
+
+            assert await connection.fetchval(
+                """
+                SELECT pg_get_userbyid(class.relowner)
+                FROM pg_class AS class
+                JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
+                WHERE namespace.nspname = 'public' AND class.relname = $1
+                """,
+                table_name,
+            ) == foreign_role
+        finally:
+            await connection.execute(f'DROP TABLE IF EXISTS public."{table_name}"')
+            await connection.execute(f'DROP ROLE IF EXISTS "{foreign_role}"')
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated PostgreSQL with CREATEROLE/CREATEDB",
 )
-async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> None:
+async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Every authority uses a distinct temporary LOGIN with negative DML proof."""
     parsed = urlsplit(os.environ["DATABASE_URL"])
     database = f"p1a_authority_{uuid4().hex}_test"
@@ -195,12 +272,31 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
                     "SELECT pg_has_role(session_user, $1, 'member')", authority
                 )
 
+            for authority, principal_connection in principal_connections.items():
+                has_temporary = bool(
+                    await principal_connection.fetchval(
+                        "SELECT has_database_privilege(current_user, current_database(), 'TEMPORARY')"
+                    )
+                )
+                assert has_temporary is (authority == "unihub_sales_import")
+
             web = principal_connections["unihub_web_read"]
             business = principal_connections["unihub_business_write"]
             sales = principal_connections["unihub_sales_import"]
             finance = principal_connections["unihub_finance_import"]
             operations = principal_connections["unihub_operations"]
             migrate = principal_connections["unihub_migrate"]
+
+            # The future Finance credential is not created in production, but
+            # its authenticated principal contract is executable in isolation.
+            finance_principal, _ = test_principals["unihub_finance_import"]
+            finance_contract = DATABASE_AUTHORITY_CONTRACTS["finance_import"]
+            monkeypatch.setitem(
+                DATABASE_AUTHORITY_CONTRACTS,
+                "finance_import",
+                replace(finance_contract, principal=finance_principal),
+            )
+            await verify_database_connection_authority(finance, "finance_import")
 
             # Every row is an independent authenticated session, not SET ROLE.
             assert await web.fetchval("SELECT COUNT(*) FROM stores") == 0
@@ -333,6 +429,12 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
                 "2197-08",
                 snapshot_id,
             )
+            with pytest.raises(asyncpg.PostgresError, match="cannot be recorded as promote|lineage"):
+                await sales.fetchval(
+                    "SELECT record_sales_generation_promotion($1, NULL, $2, 1, 'rollback', 'p1a:test', NULL)",
+                    "2197-08",
+                    snapshot_id,
+                )
             auto_run_id = await sales.fetchval(
                 "SELECT reserve_sales_import_grile_run($1, $2)",
                 "2197-08",
@@ -359,6 +461,17 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
             )
 
             finance_generation = uuid4()
+            with pytest.raises(asyncpg.PostgresError, match="must start in building state"):
+                await finance.execute(
+                    """
+                    INSERT INTO store_pnl_generations (
+                        id, operation, authority_manifest_sha256, authority_manifest,
+                        generation_manifest_sha256, generation_manifest, state, promoted_at
+                    ) VALUES ($1, 'promote', repeat('8', 64), '{}'::jsonb,
+                        repeat('9', 64), '{}'::jsonb, 'promoted', now())
+                    """,
+                    uuid4(),
+                )
             await connection.execute(
                 """
                 INSERT INTO store_pnl_generations (
@@ -366,6 +479,20 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
                     generation_manifest_sha256, generation_manifest, state
                 ) VALUES ($1, 'promote', repeat('a', 64), '{}'::jsonb,
                     repeat('b', 64), '{}'::jsonb, 'building')
+                """,
+                finance_generation,
+            )
+            await _expect_denied(
+                finance,
+                "UPDATE store_pnl_generations SET state = 'promoted', promoted_at = now() WHERE id = $1",
+                finance_generation,
+            )
+            await _expect_denied(
+                finance,
+                """
+                INSERT INTO store_pnl_generation_ledger (
+                    generation_id, action, details
+                ) VALUES ($1, 'staged', '{}'::jsonb)
                 """,
                 finance_generation,
             )
@@ -403,6 +530,21 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
             ) == 1
 
             shadow_generation = uuid4()
+            with pytest.raises(asyncpg.PostgresError, match="must start unsealed and staged"):
+                await operations.execute(
+                    """
+                    INSERT INTO store_pnl_shadow_generations (
+                        id, scope, scope_sha256, input_cutoff, source_sha256, input_sha256,
+                        legacy_ruleset_sha256, effective_ruleset_sha256, legacy_model_sha256,
+                        effective_model_sha256, legacy_output_sha256, effective_output_sha256,
+                        fiscal_delta, input_or_model_delta, state, promoted_at
+                    ) VALUES ($1, '[]'::jsonb, repeat('a', 64), DATE '2197-08-01',
+                        repeat('b', 64), repeat('c', 64), repeat('d', 64), repeat('e', 64),
+                        repeat('f', 64), repeat('0', 64), repeat('1', 64), repeat('2', 64),
+                        '{}'::jsonb, '{}'::jsonb, 'promoted', now())
+                    """,
+                    uuid4(),
+                )
             await connection.execute(
                 """
                 INSERT INTO store_pnl_shadow_generations (

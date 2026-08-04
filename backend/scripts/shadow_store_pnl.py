@@ -11,15 +11,16 @@ from datetime import date
 from pathlib import Path
 from uuid import UUID
 
-import asyncpg
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+REPO_DIR = BACKEND_DIR.parent
+load_dotenv(REPO_DIR / ".env.worker")
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from scripts.estimate_store_pnl import month_date
-from db.connection import verify_database_connection_authority
+from db.connection import connect_database_url, verify_database_connection_authority
 from services.store_pnl_shadow import (
     ShadowGenerationError,
     capture_shadow,
@@ -27,9 +28,6 @@ from services.store_pnl_shadow import (
     rollback_shadow_pointer,
     stage_shadow_capture,
 )
-
-
-REPO_DIR = BACKEND_DIR.parent
 
 
 def parse_scope(value: str) -> tuple[str, date]:
@@ -44,7 +42,9 @@ async def run(args: argparse.Namespace) -> int:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise ShadowGenerationError("DATABASE_URL lipseste din .env.worker")
-    connection = await asyncpg.connect(database_url)
+    connection = await connect_database_url(
+        database_url, application_name="unihub-retail-shadow-pnl"
+    )
     try:
         await verify_database_connection_authority(connection, "operations")
         if args.promote_shadow:
@@ -99,7 +99,6 @@ def main() -> int:
     actions.add_argument("--rollback-shadow", action="store_true", help="CAS: revine pointerul shadow la generația precedentă.")
     parser.add_argument("--expected-revision", type=int, help="Revision obligatorie pentru operații CAS.")
     args = parser.parse_args()
-    load_dotenv(REPO_DIR / ".env.worker")
     return asyncio.run(run(args))
 
 

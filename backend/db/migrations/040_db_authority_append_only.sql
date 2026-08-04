@@ -9,6 +9,10 @@ DO $$
 DECLARE
     authority_name TEXT;
 BEGIN
+    EXECUTE format(
+        'REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC',
+        current_database()
+    );
     FOREACH authority_name IN ARRAY ARRAY[
         'unihub_web_read',
         'unihub_business_write',
@@ -29,9 +33,14 @@ BEGIN
                 authority_name
             );
         END IF;
-        EXECUTE format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO %I', current_database(), authority_name);
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), authority_name);
+        EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM %I', current_database(), authority_name);
         EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', authority_name);
     END LOOP;
+    EXECUTE format(
+        'GRANT TEMPORARY ON DATABASE %I TO unihub_sales_import',
+        current_database()
+    );
 END
 $$;
 
@@ -228,7 +237,7 @@ TO unihub_sales_import;
 -- are denied; table permissions are only those required to build/replay an
 -- immutable generation.
 GRANT SELECT, INSERT, DELETE ON TABLE store_pnl_monthly TO unihub_finance_import;
-GRANT SELECT, INSERT, UPDATE ON TABLE store_pnl_generations TO unihub_finance_import;
+GRANT SELECT, INSERT ON TABLE store_pnl_generations TO unihub_finance_import;
 GRANT SELECT, INSERT ON TABLE
     store_pnl_generation_scopes,
     store_pnl_generation_rows
@@ -351,7 +360,7 @@ $$;
 -- fence above.  Head/pointer/ledger mutation remains function-only.
 GRANT SELECT, INSERT ON TABLE sales_import_stage_rows TO unihub_sales_import;
 GRANT SELECT ON TABLE sales_generation_heads, sales_generation_promotions TO unihub_sales_import;
-GRANT SELECT, INSERT, UPDATE ON TABLE store_pnl_generations TO unihub_finance_import;
+GRANT SELECT, INSERT ON TABLE store_pnl_generations TO unihub_finance_import;
 GRANT SELECT, INSERT ON TABLE
     store_pnl_generation_scopes,
     store_pnl_generation_rows
@@ -366,6 +375,47 @@ GRANT SELECT, INSERT ON TABLE
     store_pnl_shadow_preimage_rows
 TO unihub_operations;
 GRANT SELECT ON TABLE store_pnl_shadow_pointer TO unihub_operations;
+
+CREATE OR REPLACE FUNCTION prevent_store_pnl_generation_history_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.state = 'building' AND NEW.promoted_at IS NULL THEN
+            RETURN NEW;
+        END IF;
+        RAISE EXCEPTION 'store_pnl generation must start in building state';
+    END IF;
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'store_pnl generation history is immutable';
+    END IF;
+    IF TG_TABLE_NAME = 'store_pnl_generations'
+       AND OLD.id IS NOT DISTINCT FROM NEW.id
+       AND OLD.operation IS NOT DISTINCT FROM NEW.operation
+       AND OLD.authority_manifest_sha256 IS NOT DISTINCT FROM NEW.authority_manifest_sha256
+       AND OLD.authority_manifest IS NOT DISTINCT FROM NEW.authority_manifest
+       AND OLD.generation_manifest_sha256 IS NOT DISTINCT FROM NEW.generation_manifest_sha256
+       AND OLD.generation_manifest IS NOT DISTINCT FROM NEW.generation_manifest
+       AND OLD.inverse_of_generation_id IS NOT DISTINCT FROM NEW.inverse_of_generation_id
+       AND OLD.created_at IS NOT DISTINCT FROM NEW.created_at
+       AND (
+           (OLD.state = 'building' AND NEW.state = 'staged'
+            AND OLD.promoted_at IS NULL AND NEW.promoted_at IS NULL)
+           OR
+           (OLD.state = 'staged' AND NEW.state = 'promoted'
+            AND OLD.promoted_at IS NULL AND NEW.promoted_at IS NOT NULL)
+       ) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'store_pnl generation history is immutable';
+END
+$$;
+
+DROP TRIGGER IF EXISTS store_pnl_generations_immutable ON store_pnl_generations;
+CREATE TRIGGER store_pnl_generations_immutable
+BEFORE INSERT OR UPDATE OR DELETE ON store_pnl_generations
+FOR EACH ROW EXECUTE FUNCTION prevent_store_pnl_generation_history_mutation();
 
 ALTER TABLE store_pnl_shadow_generations
     ADD COLUMN IF NOT EXISTS shadow_rows_sha256 TEXT,
@@ -538,6 +588,10 @@ DECLARE
     target_month TEXT;
     target_status TEXT;
     target_previous_snapshot_id INTEGER;
+    target_manifest JSONB;
+    rollback_of_snapshot_id INTEGER;
+    rollback_source_snapshot_id INTEGER;
+    source_previous_snapshot_id INTEGER;
 BEGIN
     IF TG_OP <> 'INSERT' THEN
         RAISE EXCEPTION 'sales promotion ledger is append-only';
@@ -553,8 +607,8 @@ BEGIN
         RAISE EXCEPTION 'sales promotion ledger must attest to the current CAS head';
     END IF;
 
-    SELECT import_month, status, previous_snapshot_id
-    INTO target_month, target_status, target_previous_snapshot_id
+    SELECT import_month, status, previous_snapshot_id, manifest
+    INTO target_month, target_status, target_previous_snapshot_id, target_manifest
     FROM public.import_snapshots
     WHERE id = NEW.to_snapshot_id;
     IF NOT FOUND
@@ -562,6 +616,35 @@ BEGIN
        OR target_status <> 'completed'
        OR target_previous_snapshot_id IS DISTINCT FROM NEW.from_snapshot_id THEN
         RAISE EXCEPTION 'sales promotion ledger target is not the completed CAS generation';
+    END IF;
+
+    BEGIN
+        rollback_of_snapshot_id :=
+            NULLIF(target_manifest->>'rollback_of_snapshot_id', '')::INTEGER;
+        rollback_source_snapshot_id :=
+            NULLIF(target_manifest->>'rollback_source_snapshot_id', '')::INTEGER;
+    EXCEPTION
+        WHEN invalid_text_representation THEN
+            RAISE EXCEPTION 'sales promotion ledger target has invalid rollback lineage';
+    END;
+
+    IF NEW.action = 'promote' THEN
+        IF rollback_of_snapshot_id IS NOT NULL
+           OR rollback_source_snapshot_id IS NOT NULL THEN
+            RAISE EXCEPTION 'rollback generation cannot be recorded as promote';
+        END IF;
+    ELSIF NEW.action = 'rollback' THEN
+        SELECT previous_snapshot_id
+        INTO source_previous_snapshot_id
+        FROM public.import_snapshots
+        WHERE id = NEW.from_snapshot_id;
+        IF rollback_of_snapshot_id IS DISTINCT FROM NEW.from_snapshot_id
+           OR rollback_source_snapshot_id IS NULL
+           OR source_previous_snapshot_id IS DISTINCT FROM rollback_source_snapshot_id THEN
+            RAISE EXCEPTION 'sales rollback ledger does not match retained lineage';
+        END IF;
+    ELSE
+        RAISE EXCEPTION 'sales promotion ledger action is invalid';
     END IF;
     RETURN NEW;
 END
@@ -595,6 +678,20 @@ BEGIN
            OR NEW.id <> 1
            OR NEW.revision <> OLD.revision + 1 THEN
             RAISE EXCEPTION 'store_pnl shadow pointer accepts only a revision CAS advance';
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.state <> 'staged'
+           OR NEW.promoted_at IS NOT NULL
+           OR NEW.rolled_back_at IS NOT NULL
+           OR NEW.sealed_at IS NOT NULL
+           OR NEW.shadow_rows_sha256 IS NOT NULL
+           OR NEW.shadow_row_count IS NOT NULL
+           OR NEW.preimage_rows_sha256 IS NOT NULL
+           OR NEW.preimage_row_count IS NOT NULL THEN
+            RAISE EXCEPTION 'store_pnl shadow generation must start unsealed and staged';
         END IF;
         RETURN NEW;
     END IF;
@@ -670,7 +767,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_store_pnl_shadow_generations_immutable ON store_pnl_shadow_generations;
 CREATE TRIGGER trg_store_pnl_shadow_generations_immutable
-BEFORE UPDATE OR DELETE ON store_pnl_shadow_generations
+BEFORE INSERT OR UPDATE OR DELETE ON store_pnl_shadow_generations
 FOR EACH ROW EXECUTE FUNCTION guard_store_pnl_shadow_evidence_mutation();
 DROP TRIGGER IF EXISTS trg_store_pnl_shadow_rows_immutable ON store_pnl_shadow_rows;
 CREATE TRIGGER trg_store_pnl_shadow_rows_immutable
@@ -910,9 +1007,49 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
     ledger_id BIGINT;
+    generation_state TEXT;
+    v_generation_manifest_sha256 TEXT;
+    head_revision BIGINT;
 BEGIN
     IF p_action NOT IN ('staged', 'promoted') OR p_details IS NULL THEN
         RAISE EXCEPTION 'store_pnl generation ledger parameters are invalid';
+    END IF;
+    SELECT generation.state, generation.generation_manifest_sha256
+    INTO generation_state, v_generation_manifest_sha256
+    FROM public.store_pnl_generations AS generation
+    WHERE generation.id = p_generation_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'store_pnl generation ledger target does not exist';
+    END IF;
+    IF p_action = 'staged' THEN
+        IF generation_state <> 'building'
+           OR p_company_name IS NOT NULL
+           OR p_period IS NOT NULL
+           OR p_details->>'manifest_sha256' IS DISTINCT FROM v_generation_manifest_sha256 THEN
+            RAISE EXCEPTION 'store_pnl staged ledger does not match the building generation';
+        END IF;
+    ELSE
+        SELECT revision
+        INTO head_revision
+        FROM public.store_pnl_generation_heads
+        WHERE company_name = p_company_name
+          AND period = p_period
+          AND active_generation_id = p_generation_id;
+        IF generation_state <> 'staged'
+           OR p_company_name IS NULL
+           OR p_period IS NULL
+           OR NOT EXISTS (
+                SELECT 1
+                FROM public.store_pnl_generation_scopes
+                WHERE generation_id = p_generation_id
+                  AND company_name = p_company_name
+                  AND period = p_period
+           )
+           OR head_revision IS NULL
+           OR NULLIF(p_details->>'revision', '')::BIGINT IS DISTINCT FROM head_revision THEN
+            RAISE EXCEPTION 'store_pnl promoted ledger does not attest to the current CAS head';
+        END IF;
     END IF;
     INSERT INTO public.store_pnl_generation_ledger (
         generation_id, action, company_name, period, details
@@ -920,6 +1057,107 @@ BEGIN
         p_generation_id, p_action, p_company_name, p_period, p_details
     ) RETURNING id INTO ledger_id;
     RETURN ledger_id;
+END
+$$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_store_pnl_generation_ledger_staged
+    ON store_pnl_generation_ledger (generation_id)
+    WHERE action = 'staged';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_store_pnl_generation_ledger_promoted_scope
+    ON store_pnl_generation_ledger (generation_id, company_name, period)
+    WHERE action = 'promoted';
+
+CREATE OR REPLACE FUNCTION public.seal_store_pnl_generation(
+    p_generation_id UUID,
+    p_expected_manifest_sha256 TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+    PERFORM 1
+    FROM public.store_pnl_generations
+    WHERE id = p_generation_id
+      AND state = 'building'
+      AND generation_manifest_sha256 = p_expected_manifest_sha256
+    FOR UPDATE;
+    IF NOT FOUND
+       OR NOT EXISTS (
+            SELECT 1
+            FROM public.store_pnl_generation_ledger
+            WHERE generation_id = p_generation_id AND action = 'staged'
+       )
+       OR NOT EXISTS (
+            SELECT 1
+            FROM public.store_pnl_generation_scopes
+            WHERE generation_id = p_generation_id
+       )
+       OR EXISTS (
+            SELECT 1
+            FROM public.store_pnl_generation_scopes AS scope
+            WHERE scope.generation_id = p_generation_id
+              AND scope.candidate_row_count <> (
+                    SELECT count(*)
+                    FROM public.store_pnl_generation_rows AS row
+                    WHERE row.generation_id = scope.generation_id
+                      AND row.row_set = 'candidate'
+                      AND row.company_name = scope.company_name
+                      AND row.period = scope.period
+              )
+       ) THEN
+        RAISE EXCEPTION 'store_pnl generation cannot be sealed from its evidence';
+    END IF;
+    UPDATE public.store_pnl_generations
+    SET state = 'staged'
+    WHERE id = p_generation_id AND state = 'building';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'store_pnl generation seal CAS failed';
+    END IF;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION public.complete_store_pnl_generation(
+    p_generation_id UUID,
+    p_expected_manifest_sha256 TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+    PERFORM 1
+    FROM public.store_pnl_generations
+    WHERE id = p_generation_id
+      AND state = 'staged'
+      AND generation_manifest_sha256 = p_expected_manifest_sha256
+    FOR UPDATE;
+    IF NOT FOUND
+       OR EXISTS (
+            SELECT 1
+            FROM public.store_pnl_generation_scopes AS scope
+            LEFT JOIN public.store_pnl_generation_heads AS head
+              ON head.company_name = scope.company_name
+             AND head.period = scope.period
+             AND head.active_generation_id = scope.generation_id
+            LEFT JOIN public.store_pnl_generation_ledger AS ledger
+              ON ledger.generation_id = scope.generation_id
+             AND ledger.action = 'promoted'
+             AND ledger.company_name = scope.company_name
+             AND ledger.period = scope.period
+            WHERE scope.generation_id = p_generation_id
+              AND (head.active_generation_id IS NULL OR ledger.id IS NULL)
+       ) THEN
+        RAISE EXCEPTION 'store_pnl generation completion lacks CAS head or ledger evidence';
+    END IF;
+    UPDATE public.store_pnl_generations
+    SET state = 'promoted', promoted_at = now()
+    WHERE id = p_generation_id AND state = 'staged';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'store_pnl generation completion CAS failed';
+    END IF;
 END
 $$;
 
@@ -1047,6 +1285,8 @@ REVOKE ALL ON FUNCTION
     public.reserve_sales_import_grile_run(TEXT, INTEGER),
     public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
     public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
+    public.seal_store_pnl_generation(UUID, TEXT),
+    public.complete_store_pnl_generation(UUID, TEXT),
     public.seal_store_pnl_shadow_generation(UUID),
     public.promote_store_pnl_shadow_generation(UUID, BIGINT),
     public.rollback_store_pnl_shadow_pointer(BIGINT)
@@ -1062,6 +1302,8 @@ BEGIN
             public.reserve_sales_import_grile_run(TEXT, INTEGER),
             public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
             public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
+            public.seal_store_pnl_generation(UUID, TEXT),
+            public.complete_store_pnl_generation(UUID, TEXT),
             public.seal_store_pnl_shadow_generation(UUID),
             public.promote_store_pnl_shadow_generation(UUID, BIGINT),
             public.rollback_store_pnl_shadow_pointer(BIGINT)
@@ -1077,7 +1319,9 @@ GRANT EXECUTE ON FUNCTION
 TO unihub_sales_import;
 GRANT EXECUTE ON FUNCTION
     public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
-    public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB)
+    public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
+    public.seal_store_pnl_generation(UUID, TEXT),
+    public.complete_store_pnl_generation(UUID, TEXT)
 TO unihub_finance_import;
 GRANT EXECUTE ON FUNCTION
     public.seal_store_pnl_shadow_generation(UUID),

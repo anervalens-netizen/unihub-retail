@@ -30,6 +30,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from db.connection import connect_database_url, verify_database_connection_authority  # noqa: E402
+
 from services.store_pnl_import import (  # noqa: E402
     AuthorityManifest,
     PnlImportError,
@@ -305,16 +307,18 @@ def read_authority_manifest(path: Path) -> AuthorityManifest:
 
 async def connect_finance() -> asyncpg.Connection:
     dsn = os.environ.get("FINANCE_PNL_DATABASE_URL", "")
-    required_role = os.environ.get("FINANCE_PNL_DATABASE_ROLE", "unihub_finance_import")
-    runtime_role = os.environ.get("UNIHUB_RUNTIME_ROLE", "unihub_runtime")
     if not dsn or dsn == os.environ.get("DATABASE_URL"):
         raise PnlImportError("Este necesar FINANCE_PNL_DATABASE_URL dedicat, diferit de DATABASE_URL.")
-    connection = await asyncpg.connect(dsn)
+    connection = await connect_database_url(
+        dsn, application_name="unihub-retail-finance-import"
+    )
     try:
-        actual_role = await connection.fetchval("SELECT current_user")
-        if actual_role != required_role or actual_role == runtime_role:
-            raise PnlImportError("Conexiunea P&L trebuie sa foloseasca exclusiv rolul Finance dedicat.")
+        await verify_database_connection_authority(connection, "finance_import")
         return connection
+    except RuntimeError as exc:
+        raise PnlImportError(
+            "Conexiunea P&L trebuie sa foloseasca exclusiv principalul Finance dedicat."
+        ) from exc
     except BaseException:
         await connection.close()
         raise

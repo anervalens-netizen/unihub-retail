@@ -39,13 +39,15 @@ workerul normal `operations`, import workerul `sales_import`, iar one-shotul
 `migrate`. Fișierele root-protected sunt separate: `.env`, `.env.worker`,
 `.env.import-worker`, `.env.migrations`. Fiecare conține DSN-ul unui singur
 LOGIN: `unihub_web`, `unihub_operations_worker`, `unihub_import_worker`,
-respectiv `unihub_migration_runner`. Nu copia același DSN între procese și nu
+respectiv `unihub_migration_runner`. Orice proces production fără autoritate
+explicită refuză startupul. Nu copia același DSN între procese și nu
 introduce `DATABASE_URL` ca fallback în fișierul de migrare.
 
-Ordinea de cutover este: oprește cei doi workeri; backup și business hashes;
+Ordinea de cutover este: oprește backendul și cei doi workeri; backup și business hashes;
 aplică 040/041 cu identitatea administrativă existentă; creează cele patru
 LOGIN-uri în boundary-ul operațional separat; atașează contractele exacte cu
-provisionerul; scrie DSN-urile fără a le afișa; instalează unitățile și rulează
+provisionerul; verifică zero sesiuni/membri și setează `unihub_runtime NOLOGIN`
+cu scriptul controlat; scrie DSN-urile fără a le afișa; instalează unitățile și rulează
 `daemon-reload`; execută deployul formal care repornește toate procesele. Orice
 principal/flag/membership diferit oprește startupul.
 

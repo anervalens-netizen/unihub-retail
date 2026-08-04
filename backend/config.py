@@ -33,7 +33,9 @@ class ConfigError(RuntimeError):
 
 RuntimeRole = Literal["web", "worker", "import"]
 WorkerRole = Literal["operations", "imports"]
-DatabaseAuthority = Literal["web", "operations", "sales_import", "migrate"]
+DatabaseAuthority = Literal[
+    "web", "operations", "sales_import", "finance_import", "migrate"
+]
 ARQ_CONNECTION_BUDGET_SECONDS = 3
 WEB_MIN_DB_POOL_MAX_SIZE = 2
 DB_PROCESS_AUTHORITY_ENV = "UNIHUB_DB_PROCESS_AUTHORITY"
@@ -79,6 +81,13 @@ DATABASE_AUTHORITY_CONTRACTS: dict[DatabaseAuthority, DatabaseAuthorityContract]
         required_memberships=("unihub_sales_import",),
         forbidden_memberships=tuple(sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_sales_import"})),
     ),
+    "finance_import": DatabaseAuthorityContract(
+        principal="unihub_finance_import_worker",
+        required_memberships=("unihub_finance_import",),
+        forbidden_memberships=tuple(
+            sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_finance_import"})
+        ),
+    ),
     "migrate": DatabaseAuthorityContract(
         principal="unihub_migration_runner",
         required_memberships=("unihub_migrate", "unihub_schema_owner"),
@@ -97,7 +106,8 @@ def configured_database_authority() -> DatabaseAuthority | None:
         return None
     if value not in DATABASE_AUTHORITY_CONTRACTS:
         raise ConfigError(
-            f"{DB_PROCESS_AUTHORITY_ENV} trebuie să fie web, operations, sales_import sau migrate"
+            f"{DB_PROCESS_AUTHORITY_ENV} trebuie să fie web, operations, sales_import, "
+            "finance_import sau migrate"
         )
     return cast(DatabaseAuthority, value)
 
@@ -195,6 +205,10 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
     except ConfigError as exc:
         errors.append(str(exc))
     else:
+        if database_authority is None and _is_production():
+            errors.append(
+                f"{DB_PROCESS_AUTHORITY_ENV} este obligatoriu în producție"
+            )
         if (
             database_authority is not None
             and database_authority != expected_database_authority(process_role)

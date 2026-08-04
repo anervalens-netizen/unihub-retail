@@ -91,6 +91,8 @@ async def verify_database_connection_authority(
     """
     configured = authority if authority is not None else configured_database_authority()
     if configured is None:
+        if os.getenv("UNIHUB_ENV", "development").strip().lower() == "production":
+            raise RuntimeError("Production database connections require an explicit process authority")
         return
     contract = DATABASE_AUTHORITY_CONTRACTS[configured]
     identity = await connection.fetchrow(
@@ -102,7 +104,8 @@ async def verify_database_connection_authority(
                rolinherit,
                rolcreatedb,
                rolcreaterole,
-               rolbypassrls
+               rolbypassrls,
+               rolreplication
         FROM pg_roles
         WHERE rolname = current_user
         """
@@ -120,23 +123,83 @@ async def verify_database_connection_authority(
         or bool(identity["rolcreatedb"])
         or bool(identity["rolcreaterole"])
         or bool(identity["rolbypassrls"])
+        or bool(identity["rolreplication"])
     ):
         raise RuntimeError(
             "Database authority principal flags do not match its process contract"
         )
 
-    for role_name in contract.required_memberships:
-        is_member = await connection.fetchval(
-            "SELECT pg_has_role(current_user, $1, 'member')", role_name
+    direct_memberships = await connection.fetch(
+        """
+        SELECT parent.rolname, membership.inherit_option, membership.set_option
+        FROM pg_auth_members AS membership
+        JOIN pg_roles AS parent ON parent.oid = membership.roleid
+        JOIN pg_roles AS member ON member.oid = membership.member
+        WHERE member.rolname = current_user
+        ORDER BY parent.rolname
+        """
+    )
+    expected_direct = {
+        role_name: (
+            False if configured == "migrate" else True,
+            role_name == "unihub_schema_owner",
         )
-        if not is_member:
-            raise RuntimeError("Database authority principal lacks a required authority membership")
-    for role_name in contract.forbidden_memberships:
-        is_member = await connection.fetchval(
-            "SELECT pg_has_role(current_user, $1, 'member')", role_name
+        for role_name in contract.required_memberships
+    }
+    actual_direct = {
+        str(item["rolname"]): (
+            bool(item["inherit_option"]), bool(item["set_option"])
         )
-        if is_member:
-            raise RuntimeError("Database authority principal has a forbidden cross-authority membership")
+        for item in direct_memberships
+    }
+    if actual_direct != expected_direct:
+        raise RuntimeError(
+            "Database authority principal direct memberships or options do not match its exact contract"
+        )
+
+    effective_memberships = {
+        str(item["rolname"])
+        for item in await connection.fetch(
+            """
+            SELECT candidate.rolname
+            FROM pg_roles AS candidate
+            WHERE candidate.rolname <> current_user
+              AND pg_has_role(current_user, candidate.oid, 'member')
+            ORDER BY candidate.rolname
+            """
+        )
+    }
+    if effective_memberships != set(contract.required_memberships):
+        raise RuntimeError(
+            "Database authority principal has unexpected direct or transitive memberships"
+        )
+
+
+def database_connection_options(application_name: str) -> dict[str, object]:
+    """Return the bounded asyncpg settings shared by pools and one-shot tools."""
+    statement_timeout_ms = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "120000"))
+    lock_timeout_ms = int(os.getenv("DB_LOCK_TIMEOUT_MS", "10000"))
+    idle_transaction_timeout_ms = int(
+        os.getenv("DB_IDLE_TRANSACTION_TIMEOUT_MS", "60000")
+    )
+    return {
+        "command_timeout": statement_timeout_ms / 1000,
+        "server_settings": {
+            "application_name": application_name,
+            "statement_timeout": str(statement_timeout_ms),
+            "lock_timeout": str(lock_timeout_ms),
+            "idle_in_transaction_session_timeout": str(idle_transaction_timeout_ms),
+        },
+    }
+
+
+async def connect_database_url(
+    database_url: str, *, application_name: str
+) -> asyncpg.Connection:
+    """Open a bounded one-shot application connection."""
+    return await asyncpg.connect(
+        database_url, **database_connection_options(application_name)
+    )
 
 
 async def verify_database_pool_authority(
@@ -158,26 +221,12 @@ def get_schema_path() -> Path:
 async def init_db_pool() -> asyncpg.Pool:
     global pool
     if pool is None:
-        statement_timeout_ms = int(
-            os.getenv("DB_STATEMENT_TIMEOUT_MS", "120000")
-        )
-        lock_timeout_ms = int(os.getenv("DB_LOCK_TIMEOUT_MS", "10000"))
-        idle_transaction_timeout_ms = int(
-            os.getenv("DB_IDLE_TRANSACTION_TIMEOUT_MS", "60000")
-        )
+        connection_options = database_connection_options("unihub-retail")
         created_pool = await asyncpg.create_pool(
             dsn=get_database_url(),
             min_size=int(os.getenv("DB_POOL_MIN_SIZE", "3")),
             max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10")),
-            command_timeout=statement_timeout_ms / 1000,
-            server_settings={
-                "application_name": "unihub-retail",
-                "statement_timeout": str(statement_timeout_ms),
-                "lock_timeout": str(lock_timeout_ms),
-                "idle_in_transaction_session_timeout": str(
-                    idle_transaction_timeout_ms
-                ),
-            },
+            **connection_options,
         )
         try:
             await verify_database_pool_authority(created_pool)

@@ -47,8 +47,8 @@ release-ului `v2.1.0` include:
 | 037 | `037_sales_generation_stage_integrity.sql` | `739d3da3974a247a3169e5d0bc6af57519bfbed5dff1ddaf28f15339bf207167` | digest staging, CAS și fencing sales |
 | 038 | `038_retire_replace_month_snapshot.sql` | `bac85ae88b6118e877e73ad444ed3895051a432069b460d802dc2b1144735488` | elimină bypassul legacy al snapshotului lunar |
 | 039 | `039_store_pnl_authoritative_generations.sql` | `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d` | generații Finance immutable, scope/head/ledger și pre-image |
-| 040 | `040_db_authority_append_only.sql` | `c0e2a8da157129c6fafa0470490c61f775d72d98504104573168ea37a000c454` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
-| 041 | `041_schema_owner_handoff.sql` | `02ec466328f5a997902612e0924fecea53bbad6284af6d2a87d8caec95189582` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
+| 040 | `040_db_authority_append_only.sql` | `ead426bf1eeb5a46d5aa59da1358baf8fc90ce98e94b126eea2d888241fa501a` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
+| 041 | `041_schema_owner_handoff.sql` | `539ae228ed98aa77a411ac7cef58c3298ab84a3a0de20e907060a0d2fad9cf7e` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
@@ -61,7 +61,15 @@ ambele se aplică o singură dată cu identitatea administrativă existentă, î
 de schimbarea DSN-urilor. Apoi operatorul creează separat cele patru LOGIN-uri
 de proces și rulează `provision_runtime_database_role.py --apply` pentru exact
 un contract per LOGIN. Provisionerul nu creează LOGIN, nu setează/parcurge
-parole și nu acordă privilegii pe obiecte. Nu se creează LOGIN Finance.
+parole și nu acordă privilegii pe obiecte; verifică toate membershipurile
+directe/tranzitive, opțiunile lor și toate flagurile privilegiate. Nu se creează
+LOGIN Finance; principalul rezervat pentru acel lot viitor este
+`unihub_finance_import_worker`.
+
+Cu backendul și ambii workeri opriți, `retire_legacy_database_login.py --apply`
+refuză orice sesiune sau membru rămas și setează exclusiv `unihub_runtime`
+`NOLOGIN`. `--rollback` poate restaura doar flagul LOGIN, fără schimbarea
+credentialului; nu face un manifest vechi compatibil după 040/041.
 
 Instalările noi fac preflightul administrativ pentru DB/schema/extensii, aplică
 baselineul și 001–041, apoi trec definitiv runnerul la

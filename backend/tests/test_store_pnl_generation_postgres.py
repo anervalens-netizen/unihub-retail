@@ -5,8 +5,11 @@ import asyncio
 import os
 from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 import pytest
+
+import services.store_pnl_import as store_pnl_import_module
 
 from db.connection import close_db_pool, get_pool
 from services.store_pnl_import import (
@@ -74,8 +77,15 @@ async def _reset_role(connection) -> None:
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated PostgreSQL after migration 039 is in the immutable manifest",
 )
-async def test_authoritative_generation_cas_and_inverse_rollback_preserve_estimates() -> None:
+async def test_authoritative_generation_cas_and_inverse_rollback_preserve_estimates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Two promotions sharing a preimage race; exactly one wins and rollback is inverse."""
+    monkeypatch.setattr(
+        store_pnl_import_module,
+        "verify_database_connection_authority",
+        AsyncMock(),
+    )
     pool = await get_pool()
     try:
         async with pool.acquire() as connection:

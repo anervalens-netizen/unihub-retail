@@ -8,7 +8,8 @@ import os
 import re
 from urllib.parse import unquote, urlparse
 
-import asyncpg
+from config import DATABASE_AUTHORITY_CONTRACTS
+from db.connection import connect_database_url
 
 
 ROLE_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
@@ -73,6 +74,7 @@ async def provision(
     runtime_url: str,
     *,
     authority_roles: frozenset[str],
+    expected_principal: str | None = None,
 ) -> dict[str, bool]:
     """Attach an existing service LOGIN to one exact reviewed authority contract.
 
@@ -86,20 +88,31 @@ async def provision(
     migration_contract = authority_roles == frozenset({"unihub_migrate"})
     role, password, database = _runtime_credentials(runtime_url)
     quoted_role = _identifier(role)
-    owner = await asyncpg.connect(owner_url, command_timeout=60)
+    owner = await connect_database_url(
+        owner_url, application_name="unihub-retail-authority-provisioner"
+    )
     try:
         owner_role = await owner.fetchval("SELECT current_user")
         current_database = await owner.fetchval("SELECT current_database()")
         if role == owner_role or database != current_database:
             raise RuntimeError("Runtime role must differ from the owner on the same database")
+        if expected_principal is not None and role != expected_principal:
+            raise RuntimeError("Runtime principal does not match the selected process contract")
         service_role = await owner.fetchrow(
-            "SELECT rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb "
+            "SELECT rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, "
+            "rolbypassrls, rolreplication "
             "FROM pg_roles WHERE rolname = $1",
             role,
         )
         if service_role is None or not service_role["rolcanlogin"]:
             raise RuntimeError("Existing LOGIN service role is required")
-        if any(bool(service_role[field]) for field in ("rolsuper", "rolcreaterole", "rolcreatedb")):
+        if any(
+            bool(service_role[field])
+            for field in (
+                "rolsuper", "rolcreaterole", "rolcreatedb", "rolbypassrls",
+                "rolreplication",
+            )
+        ):
             raise RuntimeError("Service LOGIN must not be privileged")
         if bool(service_role["rolinherit"]) == migration_contract:
             raise RuntimeError("Service LOGIN inheritance flag does not match its authority contract")
@@ -120,11 +133,9 @@ async def provision(
             JOIN pg_roles parent ON parent.oid = membership.roleid
             JOIN pg_roles member ON member.oid = membership.member
             WHERE member.rolname = $1
-              AND parent.rolname = ANY($2::text[])
             ORDER BY parent.rolname
             """,
             role,
-            sorted(AUTHORITY_ROLES | {SCHEMA_OWNER_ROLE}),
         )
         expected_memberships = {
             authority_role: (not migration_contract, False)
@@ -138,10 +149,31 @@ async def provision(
         }
         if actual_memberships != expected_memberships:
             raise RuntimeError("Service LOGIN must have exactly its database authority contract")
+
+        effective_memberships = {
+            str(item["rolname"])
+            for item in await owner.fetch(
+                """
+                SELECT candidate.rolname
+                FROM pg_roles AS candidate
+                JOIN pg_roles AS member ON member.rolname = $1
+                WHERE candidate.oid <> member.oid
+                  AND pg_has_role(member.oid, candidate.oid, 'member')
+                ORDER BY candidate.rolname
+                """,
+                role,
+            )
+        }
+        if effective_memberships != set(expected_memberships):
+            raise RuntimeError(
+                "Service LOGIN has unexpected direct or transitive database memberships"
+            )
     finally:
         await owner.close()
 
-    runtime = await asyncpg.connect(runtime_url, command_timeout=30)
+    runtime = await connect_database_url(
+        runtime_url, application_name="unihub-retail-authority-verification"
+    )
     try:
         authority_memberships = True
         for authority_role in sorted(authority_roles):
@@ -159,6 +191,8 @@ async def provision(
             "not_superuser": not bool(await runtime.fetchval("SELECT rolsuper FROM pg_roles WHERE rolname=current_user")),
             "no_create_role": not bool(await runtime.fetchval("SELECT rolcreaterole FROM pg_roles WHERE rolname=current_user")),
             "no_create_db": not bool(await runtime.fetchval("SELECT rolcreatedb FROM pg_roles WHERE rolname=current_user")),
+            "no_bypass_rls": not bool(await runtime.fetchval("SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user")),
+            "no_replication": not bool(await runtime.fetchval("SELECT rolreplication FROM pg_roles WHERE rolname=current_user")),
             "private_schema_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'salary_private', 'USAGE')")),
             "schema_create_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'public', 'CREATE')")),
             "authority_memberships": authority_memberships,
@@ -187,7 +221,22 @@ async def main() -> None:
     runtime_url = os.getenv("RUNTIME_DATABASE_URL")
     if not owner_url or not runtime_url:
         raise RuntimeError("Migration and runtime database URLs are required")
-    checks = await provision(owner_url, runtime_url, authority_roles=authority_roles)
+    authority_name_by_cli_roles = {
+        frozenset({"unihub_web_read", "unihub_business_write"}): "web",
+        frozenset({"unihub_operations"}): "operations",
+        frozenset({"unihub_sales_import"}): "sales_import",
+        frozenset({"unihub_finance_import"}): "finance_import",
+        frozenset({"unihub_migrate"}): "migrate",
+    }
+    selected_authority = authority_name_by_cli_roles.get(authority_roles)
+    if selected_authority is None:
+        raise RuntimeError("No authenticated principal is defined for this authority contract")
+    checks = await provision(
+        owner_url,
+        runtime_url,
+        authority_roles=authority_roles,
+        expected_principal=DATABASE_AUTHORITY_CONTRACTS[selected_authority].principal,
+    )
     print("runtime_database_role_verified=true checks=" + str(len(checks)))
 
 

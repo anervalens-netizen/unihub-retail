@@ -84,6 +84,13 @@ Seal reverifică numărul de rânduri și digestul; promote/rollback mută point
 exclusiv prin funcțiile SQL controlate și expected revision. Nici operations,
 nici Finance nu primesc write direct pe pointer.
 
+Generațiile Finance autoritative pornesc obligatoriu `building`, sunt sealed
+`staged` și devin `promoted` numai prin funcțiile controlate care verifică
+manifestul, toate headurile CAS și ledgerul per scope. Grupul Finance nu are
+UPDATE direct pe stare. Contractul autentificat rezervă
+`unihub_finance_import_worker`, dar P1-A nu creează acel LOGIN/credential și nu
+autorizează stage/apply live.
+
 ## Comenzi de verificare fără mutație Finance
 
 ~~~bash

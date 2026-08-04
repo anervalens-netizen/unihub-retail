@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+import services.store_pnl_import as store_pnl_import_module
 
 from scripts.import_store_pnl import (
     UNALLOCATED_SOURCE,
@@ -190,11 +191,17 @@ def test_stage_revalidates_authority_payload_and_hash_before_database_access() -
 
 
 @pytest.mark.anyio
-async def test_apply_rejects_runtime_database_role_before_transaction() -> None:
+async def test_apply_rejects_runtime_database_role_before_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     connection = MagicMock()
-    connection.fetchval = AsyncMock(return_value="unihub_runtime")
-    with pytest.raises(PnlImportError, match="unihub_finance_import"):
+    verify = AsyncMock(side_effect=RuntimeError("wrong principal"))
+    monkeypatch.setattr(
+        store_pnl_import_module, "verify_database_connection_authority", verify
+    )
+    with pytest.raises(PnlImportError, match="principalul autentificat Finance"):
         await apply_generation(connection, uuid4(), SHA_A)
+    verify.assert_awaited_once_with(connection, "finance_import")
     assert not connection.transaction.called
 
 

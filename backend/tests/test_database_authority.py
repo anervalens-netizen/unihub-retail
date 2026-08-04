@@ -20,7 +20,12 @@ class _AuthorityConnection:
     can_create_db: bool = False
     can_create_role: bool = False
     bypass_rls: bool = False
-    memberships: frozenset[str] = frozenset(
+    replication: bool = False
+    direct_memberships: tuple[tuple[str, bool, bool], ...] = (
+        ("unihub_business_write", True, False),
+        ("unihub_web_read", True, False),
+    )
+    effective_memberships: frozenset[str] = frozenset(
         {"unihub_web_read", "unihub_business_write"}
     )
 
@@ -34,10 +39,20 @@ class _AuthorityConnection:
             "rolcreatedb": self.can_create_db,
             "rolcreaterole": self.can_create_role,
             "rolbypassrls": self.bypass_rls,
+            "rolreplication": self.replication,
         }
 
-    async def fetchval(self, _sql: str, role_name: str) -> bool:
-        return role_name in self.memberships
+    async def fetch(self, sql: str) -> list[dict[str, object]]:
+        if "pg_auth_members" in sql:
+            return [
+                {
+                    "rolname": role_name,
+                    "inherit_option": inherit_option,
+                    "set_option": set_option,
+                }
+                for role_name, inherit_option, set_option in self.direct_memberships
+            ]
+        return [{"rolname": role_name} for role_name in self.effective_memberships]
 
 
 @pytest.mark.asyncio
@@ -50,16 +65,17 @@ async def test_web_authority_requires_exact_login_and_only_its_groups() -> None:
 @pytest.mark.asyncio
 async def test_authority_rejects_cross_authority_membership() -> None:
     connection = _AuthorityConnection(
-        memberships=frozenset(
-            {
-                "unihub_web_read",
-                "unihub_business_write",
-                "unihub_sales_import",
-            }
-        )
+        direct_memberships=(
+            ("unihub_business_write", True, False),
+            ("unihub_sales_import", True, False),
+            ("unihub_web_read", True, False),
+        ),
+        effective_memberships=frozenset(
+            {"unihub_web_read", "unihub_business_write", "unihub_sales_import"}
+        ),
     )
 
-    with pytest.raises(RuntimeError, match="forbidden cross-authority"):
+    with pytest.raises(RuntimeError, match="direct memberships"):
         await connection_module.verify_database_connection_authority(
             connection, "web"  # type: ignore[arg-type]
         )
@@ -84,13 +100,46 @@ async def test_authority_rejects_noinherit_login() -> None:
 
 
 @pytest.mark.asyncio
+async def test_authority_rejects_arbitrary_transitive_membership() -> None:
+    with pytest.raises(RuntimeError, match="unexpected direct or transitive"):
+        await connection_module.verify_database_connection_authority(
+            _AuthorityConnection(
+                effective_memberships=frozenset(
+                    {"unihub_web_read", "unihub_business_write", "pg_read_all_data"}
+                )
+            ),
+            "web",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_authority_rejects_membership_option_drift() -> None:
+    with pytest.raises(RuntimeError, match="memberships or options"):
+        await connection_module.verify_database_connection_authority(
+            _AuthorityConnection(
+                direct_memberships=(
+                    ("unihub_business_write", True, False),
+                    ("unihub_web_read", True, True),
+                )
+            ),
+            "web",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
 async def test_migration_authority_requires_noinherit_and_schema_owner_membership() -> None:
     await connection_module.verify_database_connection_authority(
         _AuthorityConnection(
             current_user="unihub_migration_runner",
             session_user="unihub_migration_runner",
             inherits=False,
-            memberships=frozenset({"unihub_migrate", "unihub_schema_owner"}),
+            direct_memberships=(
+                ("unihub_migrate", False, False),
+                ("unihub_schema_owner", False, True),
+            ),
+            effective_memberships=frozenset(
+                {"unihub_migrate", "unihub_schema_owner"}
+            ),
         ),
         "migrate",  # type: ignore[arg-type]
     )
@@ -117,6 +166,32 @@ async def test_pool_startup_checks_an_explicit_process_authority(
     verify.assert_awaited_once_with(created_pool)
 
 
+@pytest.mark.asyncio
+async def test_one_shot_connection_uses_bounded_server_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = MagicMock()
+    connect = AsyncMock(return_value=connection)
+    monkeypatch.setattr(connection_module.asyncpg, "connect", connect)
+    monkeypatch.setenv("DB_STATEMENT_TIMEOUT_MS", "9000")
+    monkeypatch.setenv("DB_LOCK_TIMEOUT_MS", "800")
+    monkeypatch.setenv("DB_IDLE_TRANSACTION_TIMEOUT_MS", "7000")
+
+    assert await connection_module.connect_database_url(
+        "postgresql://test", application_name="p1a-test"
+    ) is connection
+    connect.assert_awaited_once_with(
+        "postgresql://test",
+        command_timeout=9.0,
+        server_settings={
+            "application_name": "p1a-test",
+            "statement_timeout": "9000",
+            "lock_timeout": "800",
+            "idle_in_transaction_session_timeout": "7000",
+        },
+    )
+
+
 def test_explicit_process_authority_must_match_runtime_role(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -124,6 +199,29 @@ def test_explicit_process_authority_must_match_runtime_role(
 
     with pytest.raises(ConfigError, match="nu corespunde procesului web"):
         load_runtime_config("web")
+
+
+def test_production_runtime_requires_explicit_database_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.delenv(DB_PROCESS_AUTHORITY_ENV, raising=False)
+
+    with pytest.raises(ConfigError, match="obligatoriu în producție"):
+        load_runtime_config("web")
+
+
+@pytest.mark.asyncio
+async def test_production_connection_check_is_not_optional(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.delenv(DB_PROCESS_AUTHORITY_ENV, raising=False)
+
+    with pytest.raises(RuntimeError, match="explicit process authority"):
+        await connection_module.verify_database_connection_authority(  # type: ignore[arg-type]
+            _AuthorityConnection()
+        )
 
 
 def test_versioned_units_declare_exclusive_process_authorities() -> None:
@@ -148,4 +246,8 @@ def test_versioned_units_declare_exclusive_process_authorities() -> None:
         encoding="utf-8"
     )
     assert 'load_dotenv(REPO_DIR / ".env.worker")' in shadow_script
+    assert shadow_script.index('load_dotenv(REPO_DIR / ".env.worker")') < shadow_script.index(
+        "from db.connection import"
+    )
+    assert "connect_database_url(" in shadow_script
     assert 'verify_database_connection_authority(connection, "operations")' in shadow_script

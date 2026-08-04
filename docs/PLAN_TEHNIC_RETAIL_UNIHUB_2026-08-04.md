@@ -644,24 +644,27 @@ formal și dovezile live se completează în 16.5 după gate/QA/deploy.
 
 Migrații immutable:
 
-- 040 `c0e2a8da157129c6fafa0470490c61f775d72d98504104573168ea37a000c454`;
-- 041 `02ec466328f5a997902612e0924fecea53bbad6284af6d2a87d8caec95189582`.
+- 040 `ead426bf1eeb5a46d5aa59da1358baf8fc90ce98e94b126eea2d888241fa501a`;
+- 041 `539ae228ed98aa77a411ac7cef58c3298ab84a3a0de20e907060a0d2fad9cf7e`.
 
 Contractul rezultat:
 
 - grupuri NOLOGIN separate pentru web-read, business-write, sales import,
   Finance import, operations și migrate; grants numai pe obiecte enumerate;
-- patru LOGIN-uri de proces verificate la conectare, fără cross-membership,
-  superuser, create role/database/schema ori bypass RLS;
+- patru LOGIN-uri de proces verificate la conectare, cu set exact de membershipuri
+  directe/tranzitive și opțiuni, fără superuser, replication, create
+  role/database/schema ori bypass RLS; autoritatea lipsă este fatală în production;
 - ownerul obiectelor este NOLOGIN `unihub_schema_owner`; runnerul NOINHERIT îl
   activează numai tranzacțional cu `SET LOCAL ROLE`;
 - stagingul sales, promotion ledgerul și evidence-ul shadow sunt append-only;
+  generațiile shadow trebuie să pornească `staged` și ne-sealed;
   headurile/pointerii/ledgerul Finance se mută numai prin funcții SQL controlate
-  cu fencing, digest rehash și CAS;
+  cu fencing, digest rehash și CAS; Finance nu are UPDATE direct pe stare;
 - `authoritative_replace` păstrează reducerile față de snapshotul precedent ca
   informație și blochează numai contradicții interne ale candidatului;
-- Finance are grupul de autoritate pregătit în schemă, dar niciun LOGIN,
-  credential sau stage/apply live.
+- Finance are grupul și contractul viitorului principal
+  `unihub_finance_import_worker` pregătite, dar niciun LOGIN, credential sau
+  stage/apply live; numai sales-import primește `TEMPORARY`.
 
 ### 16.2 Dovezi pre-deploy
 
@@ -680,10 +683,11 @@ Contractul rezultat:
 
 Ordinea obligatorie este:
 
-1. oprește workerii, rulează backupul verificat și salvează business hashes;
+1. oprește backendul și ambii workeri, rulează backupul verificat și salvează business hashes;
 2. aplică 040/041 o singură dată prin identitatea administrativă existentă;
 3. creează cele patru LOGIN-uri de serviciu în boundary-ul operațional separat;
-4. atașează contractele exacte cu provisionerul și scrie separat `.env`,
+4. atașează contractele exacte cu provisionerul, verifică zero sesiuni/membri
+   legacy și setează `unihub_runtime NOLOGIN`; apoi scrie separat `.env`,
    `.env.worker`, `.env.import-worker`, `.env.migrations`, fără afișarea DSN;
 5. instalează unitățile, `daemon-reload`, apoi deployează artefactul formal;
 6. verifică principal/flags/membership, ACL negative, migrations, servicii,
@@ -700,6 +704,8 @@ de backup. După aplicarea 040/041, manifestul vechi este incompatibil și
 rollbackul de cod este refuzat deliberat; deployul păstrează candidatul și
 handle-ul în `recovery_required`, apoi execută roll-forward pe același SHA sau
 pe un candidat corectiv aprobat. Migrațiile nu se editează și nu se dau jos.
+Scriptul legacy `--rollback` reface doar flagul LOGIN pentru recovery controlat;
+nu schimbă credentiale și nu permite pornirea unui artefact cu manifest vechi.
 
 Rollbackurile business sunt inverse generations/CAS: sales clonează generația
 reținută, Finance ar crea o generație inversă numai într-un lot viitor aprobat,

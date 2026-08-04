@@ -26,6 +26,7 @@ BEGIN
         JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
         WHERE namespace.nspname IN ('public', 'salary_private')
           AND class.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+          AND class.relowner = current_user::regrole
           AND NOT EXISTS (
               SELECT 1
               FROM pg_depend AS dependency
@@ -57,6 +58,7 @@ BEGIN
         JOIN pg_namespace AS namespace ON namespace.oid = routine.pronamespace
         WHERE namespace.nspname IN ('public', 'salary_private')
           AND routine.prokind IN ('f', 'p')
+          AND routine.proowner = current_user::regrole
           AND NOT EXISTS (
               SELECT 1
               FROM pg_depend AS dependency
@@ -75,6 +77,7 @@ BEGIN
         JOIN pg_namespace AS namespace ON namespace.oid = type.typnamespace
         WHERE namespace.nspname IN ('public', 'salary_private')
           AND type.typtype IN ('d', 'e')
+          AND type.typowner = current_user::regrole
           AND NOT EXISTS (
               SELECT 1
               FROM pg_depend AS dependency
@@ -116,8 +119,11 @@ BEGIN
     FOREACH function_name IN ARRAY ARRAY[
         'public.advance_sales_generation_head(text,integer,uuid,uuid,bigint)'::regprocedure,
         'public.record_sales_generation_promotion(text,integer,integer,bigint,text,text,text)'::regprocedure,
+        'public.reserve_sales_import_grile_run(text,integer)'::regprocedure,
         'public.advance_store_pnl_generation_head(text,date,uuid,bigint,text,text)'::regprocedure,
         'public.append_store_pnl_generation_ledger(uuid,text,text,date,jsonb)'::regprocedure,
+        'public.seal_store_pnl_generation(uuid,text)'::regprocedure,
+        'public.complete_store_pnl_generation(uuid,text)'::regprocedure,
         'public.seal_store_pnl_shadow_generation(uuid)'::regprocedure,
         'public.promote_store_pnl_shadow_generation(uuid,bigint)'::regprocedure,
         'public.rollback_store_pnl_shadow_pointer(bigint)'::regprocedure
