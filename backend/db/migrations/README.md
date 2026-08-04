@@ -47,7 +47,7 @@ release-ului `v2.1.0` include:
 | 037 | `037_sales_generation_stage_integrity.sql` | `739d3da3974a247a3169e5d0bc6af57519bfbed5dff1ddaf28f15339bf207167` | digest staging, CAS și fencing sales |
 | 038 | `038_retire_replace_month_snapshot.sql` | `bac85ae88b6118e877e73ad444ed3895051a432069b460d802dc2b1144735488` | elimină bypassul legacy al snapshotului lunar |
 | 039 | `039_store_pnl_authoritative_generations.sql` | `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d` | generații Finance immutable, scope/head/ledger și pre-image |
-| 040 | `040_db_authority_append_only.sql` | `b8e3103c4013f1d0707effa53f8ebeb897734c995acff1c00d77e36a34841b14` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
+| 040 | `040_db_authority_append_only.sql` | `c0e2a8da157129c6fafa0470490c61f775d72d98504104573168ea37a000c454` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
 | 041 | `041_schema_owner_handoff.sql` | `02ec466328f5a997902612e0924fecea53bbad6284af6d2a87d8caec95189582` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.

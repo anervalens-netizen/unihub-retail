@@ -38,12 +38,13 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "REVOKE CREATE ON SCHEMA public FROM PUBLIC" in sql
     for function in (
         "advance_sales_generation_head",
+        "reserve_sales_import_grile_run",
         "advance_store_pnl_generation_head",
         "promote_store_pnl_shadow_generation",
         "rollback_store_pnl_shadow_pointer",
     ):
         assert f"FUNCTION public.{function}" in sql
-    assert sql.count("SECURITY DEFINER") >= 6
+    assert sql.count("SECURITY DEFINER") >= 7
     assert "sales staging rows are append-only; retention is a later controlled lifecycle" in sql
     assert "sales promotion ledger is append-only" in sql
     assert "store_pnl shadow evidence is append-only" in sql
@@ -248,8 +249,13 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
             await sales.execute("TRUNCATE premium_glass_item_models")
             await sales.execute("ANALYZE premium_glass_item_models")
             await sales.execute("ANALYZE reporting_agent_day")
-            assert await sales.fetchval(
-                "INSERT INTO grile_runs (run_month, source) VALUES ('2197-10', 'auto') RETURNING id"
+            await _expect_denied(
+                sales,
+                "INSERT INTO grile_runs (run_month, source) VALUES ('2197-10', 'auto')",
+            )
+            await _expect_denied(
+                sales,
+                "UPDATE grile_runs SET status = status WHERE run_month = '2197-10'",
             )
             await _expect_denied(
                 sales, "UPDATE agent_targets SET target_value = target_value WHERE false"
@@ -327,6 +333,21 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
                 "2197-08",
                 snapshot_id,
             )
+            auto_run_id = await sales.fetchval(
+                "SELECT reserve_sales_import_grile_run($1, $2)",
+                "2197-08",
+                snapshot_id,
+            )
+            assert isinstance(auto_run_id, int)
+            auto_run = await sales.fetchrow(
+                "SELECT source, source_snapshot_id, triggered_by_sub FROM grile_runs WHERE id = $1",
+                auto_run_id,
+            )
+            assert dict(auto_run) == {
+                "source": "auto",
+                "source_snapshot_id": snapshot_id,
+                "triggered_by_sub": "system:sales-import",
+            }
             await _expect_denied(
                 sales,
                 """

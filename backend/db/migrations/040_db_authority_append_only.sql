@@ -218,11 +218,10 @@ GRANT MAINTAIN ON TABLE
     reporting_item_day,
     reporting_item_month
 TO unihub_sales_import;
-GRANT SELECT, INSERT, UPDATE ON TABLE grile_runs TO unihub_sales_import;
+GRANT SELECT ON TABLE grile_runs TO unihub_sales_import;
 GRANT USAGE, SELECT ON SEQUENCE
     import_snapshots_id_seq,
-    sales_transactions_id_seq,
-    grile_runs_id_seq
+    sales_transactions_id_seq
 TO unihub_sales_import;
 
 -- Finance remains its own NOLOGIN authority.  Direct head and ledger writes
@@ -781,6 +780,50 @@ BEGIN
 END
 $$;
 
+CREATE OR REPLACE FUNCTION public.reserve_sales_import_grile_run(
+    p_import_month TEXT,
+    p_snapshot_id INTEGER
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+    run_id INTEGER;
+BEGIN
+    IF p_import_month !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' THEN
+        RAISE EXCEPTION 'sales-import Grile month is invalid';
+    END IF;
+    PERFORM 1
+    FROM public.import_snapshots
+    WHERE id = p_snapshot_id
+      AND import_month = p_import_month
+      AND status = 'completed';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'sales-import Grile snapshot is not completed for this month';
+    END IF;
+
+    UPDATE public.grile_runs
+    SET status = 'failed',
+        error_message = 'Rezervare expirata inainte de finalizare',
+        finished_at = now(),
+        heartbeat_at = now()
+    WHERE run_month = p_import_month
+      AND status IN ('queued', 'running')
+      AND COALESCE(heartbeat_at, started_at, created_at) < now() - interval '2 hours';
+
+    INSERT INTO public.grile_runs (
+        run_month, source, source_snapshot_id, triggered_by_sub, status, heartbeat_at
+    ) VALUES (
+        p_import_month, 'auto', p_snapshot_id, 'system:sales-import', 'queued', now()
+    )
+    ON CONFLICT (run_month) WHERE status IN ('queued', 'running') DO NOTHING
+    RETURNING id INTO run_id;
+    RETURN run_id;
+END
+$$;
+
 CREATE OR REPLACE FUNCTION public.advance_store_pnl_generation_head(
     p_company_name TEXT,
     p_period DATE,
@@ -1001,6 +1044,7 @@ $$;
 REVOKE ALL ON FUNCTION
     public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT),
     public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT),
+    public.reserve_sales_import_grile_run(TEXT, INTEGER),
     public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
     public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
     public.seal_store_pnl_shadow_generation(UUID),
@@ -1015,6 +1059,7 @@ BEGIN
         REVOKE ALL ON FUNCTION
             public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT),
             public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT),
+            public.reserve_sales_import_grile_run(TEXT, INTEGER),
             public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
             public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
             public.seal_store_pnl_shadow_generation(UUID),
@@ -1027,7 +1072,8 @@ $$;
 
 GRANT EXECUTE ON FUNCTION
     public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT),
-    public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT)
+    public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT),
+    public.reserve_sales_import_grile_run(TEXT, INTEGER)
 TO unihub_sales_import;
 GRANT EXECUTE ON FUNCTION
     public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
@@ -1041,6 +1087,8 @@ TO unihub_operations;
 
 COMMENT ON FUNCTION public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT) IS
     'Sales authoritative-head advance: leased writer plus revision CAS only.';
+COMMENT ON FUNCTION public.reserve_sales_import_grile_run(TEXT, INTEGER) IS
+    'Sales-import Grile reservation: completed matching snapshot and fixed auto provenance only.';
 COMMENT ON FUNCTION public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT) IS
     'Finance authoritative-head advance: staged scope plus revision/parent CAS only.';
 COMMENT ON FUNCTION public.promote_store_pnl_shadow_generation(UUID, BIGINT) IS

@@ -644,7 +644,7 @@ formal și dovezile live se completează în 16.5 după gate/QA/deploy.
 
 Migrații immutable:
 
-- 040 `b8e3103c4013f1d0707effa53f8ebeb897734c995acff1c00d77e36a34841b14`;
+- 040 `c0e2a8da157129c6fafa0470490c61f775d72d98504104573168ea37a000c454`;
 - 041 `02ec466328f5a997902612e0924fecea53bbad6284af6d2a87d8caec95189582`.
 
 Contractul rezultat:

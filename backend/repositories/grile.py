@@ -142,6 +142,17 @@ class GrileRepository:
                     """, run_month, source, source_snapshot_id, triggered_by_sub,
                 )
 
+    async def reserve_sales_import_run(
+        self, *, run_month: str, source_snapshot_id: int
+    ) -> int | None:
+        """Reserve the post-import run through the narrow DB authority boundary."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT reserve_sales_import_grile_run($1, $2)",
+                run_month,
+                source_snapshot_id,
+            )
+
     async def start_run(self, run_id: int, progress_total: int) -> bool:
         """Compatibility CAS for legacy reservation callers and tests."""
         async with self.pool.acquire() as conn:

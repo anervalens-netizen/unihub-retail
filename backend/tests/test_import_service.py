@@ -193,6 +193,7 @@ async def test_grile_check_after_import_is_best_effort(
         source="auto",
         source_snapshot_id=12,
         triggered_by_sub="system:sales-import",
+        sales_import_authority=True,
     )
 
     enqueue.side_effect = RuntimeError("Valkey unavailable")

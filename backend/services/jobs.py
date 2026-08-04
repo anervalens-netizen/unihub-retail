@@ -447,18 +447,31 @@ async def enqueue_grile_check(
     source: str = "manual",
     source_snapshot_id: int | None = None,
     triggered_by_sub: str | None = None,
+    sales_import_authority: bool = False,
 ) -> GrileEnqueueResult:
     from db.connection import get_pool
     from repositories.grile import GrileRepository
 
     db_pool = await get_pool()
     repo = GrileRepository(db_pool)
-    run_id = await repo.reserve_run(
-        run_month=month,
-        source=source,
-        source_snapshot_id=source_snapshot_id,
-        triggered_by_sub=triggered_by_sub,
-    )
+    if sales_import_authority:
+        if (
+            source != "auto"
+            or source_snapshot_id is None
+            or triggered_by_sub != "system:sales-import"
+        ):
+            raise RuntimeError("Invalid sales-import Grile reservation provenance")
+        run_id = await repo.reserve_sales_import_run(
+            run_month=month,
+            source_snapshot_id=source_snapshot_id,
+        )
+    else:
+        run_id = await repo.reserve_run(
+            run_month=month,
+            source=source,
+            source_snapshot_id=source_snapshot_id,
+            triggered_by_sub=triggered_by_sub,
+        )
     if run_id is None:
         active = await repo.get_running_run(month)
         if active is None:

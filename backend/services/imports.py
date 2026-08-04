@@ -234,6 +234,7 @@ async def trigger_grile_check_after_import(import_month: str, snapshot_id: int |
             source="auto",
             source_snapshot_id=snapshot_id,
             triggered_by_sub="system:sales-import",
+            sales_import_authority=True,
         )
         logger.info(
             "grile check %s (auto) for %s snapshot=%s run=%s",
