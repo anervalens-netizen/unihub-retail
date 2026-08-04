@@ -40,6 +40,7 @@ def _set_privileged_groups(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _set_oidc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "web")
     monkeypatch.setenv("OIDC_ISSUER", "https://issuer.example.invalid/oidc")
     monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example.invalid/oidc/jwks")
     monkeypatch.setenv("OIDC_AUDIENCE", "test-audience")

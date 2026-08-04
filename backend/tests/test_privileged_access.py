@@ -107,6 +107,7 @@ def _set_production_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     visits.touch()
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/db")
     monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "web")
     monkeypatch.setenv("VISITS_DB_PATH", str(visits))
     monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "synthetic-hmac-key-for-production-tests-abcdefghijklmnopqrstuvwxyz")
     monkeypatch.setenv("OIDC_ISSUER", "https://issuer.example.invalid/oidc")
