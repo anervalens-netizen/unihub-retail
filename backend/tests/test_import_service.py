@@ -114,6 +114,29 @@ async def test_import_job_status_maps_result_payload(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("job_id", ["sales-import:abc", "sales-promote:213:abc"])
+async def test_sales_job_status_uses_import_worker_queue(
+    monkeypatch: pytest.MonkeyPatch,
+    job_id: str,
+) -> None:
+    pool = MagicMock()
+    job = MagicMock()
+    job.status = AsyncMock(return_value=ArqJobStatus.queued)
+    job_factory = MagicMock(return_value=job)
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "Job", job_factory)
+
+    result = await jobs_service.get_job_status(job_id)
+
+    assert result.status is JobStatus.QUEUED
+    job_factory.assert_called_once_with(
+        job_id,
+        pool,
+        _queue_name=jobs_service.SALES_IMPORT_QUEUE_NAME,
+    )
+
+
+@pytest.mark.asyncio
 async def test_import_history_maps_repository_rows() -> None:
     now = datetime.now(timezone.utc)
     repo = MagicMock()

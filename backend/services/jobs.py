@@ -727,7 +727,11 @@ async def get_job_status(job_id: str) -> JobResult:
             error="Job backend unavailable",
         )
     try:
-        queue_name = SALES_IMPORT_QUEUE_NAME if job_id.startswith("sales-import:") else None
+        queue_name = (
+            SALES_IMPORT_QUEUE_NAME
+            if job_id.startswith(("sales-import:", "sales-promote:"))
+            else None
+        )
         job = Job(job_id, pool, _queue_name=queue_name) if queue_name else Job(job_id, pool)
         arq_status = await job.status()
     except ARQ_TRANSPORT_ERRORS:

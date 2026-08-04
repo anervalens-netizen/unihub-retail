@@ -126,4 +126,49 @@ test.describe('E2E: responsive mobile', () => {
     await expect(page.getByRole('navigation', { name: 'Pași export Excel' }).getByText('Pasul 1 din 4')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
   });
+
+  test('keeps ERP reconciliation details within the mobile viewport', async ({ page, context }) => {
+    await mockApiRoute(context, 'GET', /\/api\/import\/history$/, [{
+      id: 213, import_month: '2026-08', filename: 'vanzari_august.xlsx', status: 'completed',
+      rows_imported: 4226, is_month_final: false, created_at: '2026-08-04T08:46:55',
+      coverage_report: {},
+    }]);
+    await mockApiRoute(context, 'POST', /\/api\/import\/erp-reconciliation$/, {
+      status: 'differences',
+      import_month: '2026-08',
+      report_cutoff_date: '2026-08-03',
+      retail_cutoff_date: '2026-08-03',
+      cutoff_matches: true,
+      filename: 'RaportDetaliat.xls',
+      file_digest: 'a'.repeat(64),
+      report_store_count: 71,
+      retail_store_count: 71,
+      report_agent_count: 132,
+      retail_agent_count: 132,
+      metrics: [{
+        key: 'target', label: 'Target', report_value: 4400000, retail_value: 4400000,
+        difference: 0, unit: 'RON', status: 'ok', note: null,
+      }],
+      app_only_metrics: [],
+      issues: [{
+        severity: 'warning', scope: 'store', site_code: 'STORE-001', entity: 'Magazin foarte lung',
+        metric: 'Vânzări accesorii', report_value: 380774, retail_value: 380700,
+        difference: 74, note: 'Diferență de verificat',
+      }],
+      issue_count: 1,
+      omitted_issue_count: 0,
+      notes: [],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /Setari/i }).first().click();
+    await page.locator('#upload-erp-reconciliation-file').setInputFiles({
+      name: 'RaportDetaliat.xls', mimeType: 'application/vnd.ms-excel', buffer: Buffer.from('xls'),
+    });
+    await page.getByRole('button', { name: 'Verifică raportul fără import' }).click();
+    await expect(page.getByText('1 diferențe de detaliu de verificat')).toBeVisible();
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBe(0);
+  });
 });

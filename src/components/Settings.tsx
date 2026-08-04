@@ -597,8 +597,8 @@ export function Settings({
         </div>
       ) : section === 'imports' ? (
         <>
-          <div className="grid gap-3 xl:grid-cols-2">
-          <div className="glass rounded-3xl p-4">
+          <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-2">
+          <div className="glass min-w-0 rounded-3xl p-4">
             <div className="mb-3 flex items-center gap-2">
               <Upload size={16} className="text-indigo-500" />
               <h3 className="text-sm font-bold">Import fișier vânzări</h3>
@@ -742,7 +742,7 @@ export function Settings({
             )}
           </div>
 
-          <div className="glass rounded-3xl p-4">
+          <div className="glass min-w-0 rounded-3xl p-4">
             <div className="mb-1 flex items-center gap-2">
               <FileSpreadsheet size={16} className="text-sky-600" />
               <h3 className="text-sm font-bold">Verificare raport detaliat ERP</h3>
@@ -1325,7 +1325,7 @@ function PeriodDropdown({ label, summary, children }: { label: string; summary: 
 function ErpReconciliationResult({ result }: { result: ErpReconciliationResponse }) {
   const hasDifferences = result.status === 'differences';
   return (
-    <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-700">
+    <div className="mt-4 min-w-0 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-700">
       <div className={cn(
         'flex items-start gap-3 rounded-2xl border p-3',
         hasDifferences
@@ -1350,7 +1350,7 @@ function ErpReconciliationResult({ result }: { result: ErpReconciliationResponse
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {result.metrics.map((metric) => (
           <ReconciliationMetricCard key={metric.key} metric={metric} />
         ))}
@@ -1361,7 +1361,7 @@ function ErpReconciliationResult({ result }: { result: ErpReconciliationResponse
           <summary className="cursor-pointer text-xs font-bold text-amber-800 dark:text-amber-200">
             Unde sunt diferențele · {result.issue_count}
           </summary>
-          <div className="mt-2 max-h-80 overflow-auto">
+          <div className="mt-2 max-h-80 max-w-full overflow-auto">
             <table className="w-full min-w-[680px] text-left text-[11px]">
               <thead className="sticky top-0 bg-white text-slate-400 dark:bg-slate-900">
                 <tr>
