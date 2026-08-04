@@ -30,7 +30,7 @@
     "022_store_pnl_site_links.sql": "f1d5d2f4f378c08b039c5bbe9602cee6649037d77b9e2d56d4f36f860b0b19bb",
     "023_salary_private_identity_boundary.sql": "e8bbd208da17a6e604aa4310159faad376d6d9a62a9b0207d07a28dd16c99ce8",
     "024_salary_identity_contract.sql": "23a6d8a2094f02ecb30f5a636ec3731e34f2749e105c1d5eb90a4facbe3904eb",
-    "025_agent_evaluation_premium_index.sql": "fece696ba453ce531240a0f322609b467f74fb5a5fea9fcb39ca4cf20c75c3f8",
+    "025_agent_evaluation_premium_index.sql": "fece696ba453ce531240a0f322609b467f74fb5a5fea9c0f6d69d2b38a7dc3f8",
     "026_import_master_data_safety.sql": "30063b80755ed86db05cd87c9b130fa632f8ea435df7ddf8c26ce0a38d2999b7",
     "027_grile_target_sync_audit.sql": "85cfa465351184ded8cd1f0bbae8fe7a084703c92019ea9c7c6093c0d81864d2",
     "028_grile_monthly_fail_closed.sql": "6bbf34dcb10d923812fb815eb6ef76ae806422f212e893e45bd16fbdb091c2aa",
@@ -41,6 +41,7 @@
     "033_sales_generation_staging_and_fencing.sql": "b6e10b7198e01d7893fefe66f28879d8b363956e3a87be11f63e875df9193cb1",
     "034_salary_import_batch_provenance.sql": "93dae9fa15c1b891e6484a8ddecc189e3bc412f2913066619288d0fd8938ec7f",
     "035_grile_observation_fencing.sql": "4afd71ef2c8e0f215bb2687d28d07ae5a7b76ebc2625b05fe3c638a315293b5f",
-    "036_target_rule_registry.sql": "d722b1ef480b067651c37464c3462565ea2c9b4e5651c869e08932cd0c37b193"
+    "036_target_rule_registry.sql": "d722b1ef480b067651c37464c3462565ea2c9b4e5651c869e08932cd0c37b193",
+    "037_sales_generation_stage_integrity.sql": "81ae9f07aac3f980db49f4f671a59442cd2c9b6e2cf060092efa560c392b55b3"
   }
 }
