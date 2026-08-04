@@ -242,6 +242,20 @@ pointerului curent. Pentru rollback:
 4. verifică generation ID, Focus, exporturile și health; nu șterge generația
    respinsă, deoarece rămâne evidence de audit.
 
+## Autoritatea snapshotului sales
+
+Fișierul oficial lunar are politica `authoritative_replace`: scăderea de
+rows/value/quantity/receipts, dispariția unor magazine/zile sau un cutoff mai
+mic decât snapshotul precedent sunt anomalii informative păstrate în manifest,
+nu veto-uri euristice. Sunt blocante numai contradicțiile interne ale
+candidatului: lună mixtă/greșită, cutoff în afara lunii, rând după cutoff,
+schema invalidă, candidat gol ori neconcordanță staging/manifest/digest.
+
+Promotion ledgerul și stagingul sunt append-only DB-side. Headul se mută numai
+prin funcția SQL controlată cu lease owner, revision/parent și digest rehash;
+rollbackul clonează generația păstrată și publică un nou eveniment CAS. Nu se
+acordă UPDATE/DELETE direct și nu se deduplică rândurile sales identice.
+
 ## Reguli de siguranță
 
 - nu loga bonuri, nume de agenți, liste comerciale sau valori financiare;

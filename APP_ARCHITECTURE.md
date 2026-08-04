@@ -89,6 +89,24 @@ read-only starea migrations la startup si nu executa DDL sau backfill. Runnerul
 foloseste explicit `MIGRATION_DATABASE_URL`, iar bootstrap-ul nou reaplica doar
 seed-urile de date desemnate care nu pot exista in baseline-ul DDL.
 
+Autoritatea DB este separată de identitatea de login. Migrarea 040 definește
+grupurile NOLOGIN `unihub_web_read`, `unihub_business_write`,
+`unihub_sales_import`, `unihub_finance_import`, `unihub_operations` și
+`unihub_migrate`, cu grants explicite pe obiecte existente și fără
+`GRANT ... ON ALL` sau default grants viitoare. Loginurile de proces sunt
+`unihub_web`, `unihub_operations_worker`, `unihub_import_worker` și
+`unihub_migration_runner`; fiecare conexiune verifică principalul autentificat,
+flagurile nonprivilegiate și exact contractul de memberships înainte de lucru.
+Finance rămâne o autoritate fără LOGIN/credential până la un lot aprobat separat.
+
+Migrarea 041 mută ownershipul obiectelor aplicației la NOLOGIN
+`unihub_schema_owner`. Runnerul de migrare este `NOINHERIT`, poate face numai
+`SET LOCAL ROLE unihub_schema_owner` în tranzacția migrației și nu primește
+`CREATEROLE`, `CREATEDB`, superuser sau create pe schema `public`. Extensiile și
+bootstrapul de schemă nouă cer un preflight administrativ separat; web-ul și
+workerii nu pot deveni owner. Funcțiile SECURITY DEFINER controlate au owner,
+`search_path` și EXECUTE allowlist verificate.
+
 Release-ul formal este o frontiera separata: un run manual `CI` pe `main`
 impacheteaza sursa exact la `head_sha` plus `dist` verificat si publica SHA-256.
 Approval-ul one-time leaga runul, SHA-ul si digestul; entrypointul root-owned
@@ -460,9 +478,23 @@ cu promovarea. Un worker stale nu mai poate scrie, iar spoolul rămâne până l
 stare terminală confirmată. Rollbackul clonează și reverifică generația
 anterioară, apoi o promovează auditabil; nu mută headul direct înapoi.
 
+Migrarea 040 face stagingul și promotion ledgerul append-only și revocă mutarea
+directă a headului. Promote/rollback publică exclusiv prin funcții SQL
+SECURITY DEFINER cu owner fencing, digest rehash și CAS. Politica
+`authoritative_replace` tratează scăderile față de snapshotul precedent,
+dispariția unor site-days și regresia de cutoff ca evidence informativă a
+înlocuirii oficiale; blochează numai contradicții interne ale candidatului
+(lună/cutoff/schema/digest/staging). Rândurile identice rămân unități distincte.
+
 ### P&L/TVA: shadow și protecție
 
 `shadow_store_pnl.py` capturează snapshot repeatable-read cu cutoff fix pe scope `(company, period)`, compară `legacy_v2` cu `effective_v3` și salvează source/input/rule/model/output hashes, `fiscal_delta` și `input_or_model_delta`. Stările shadow sunt `staged`, `promoted`, `superseded` și `rolled_back`; pointerul este CAS pentru review și rollback, nu este consumat de citirile runtime. Actualele Finance, estimările și Target finalizat nu sunt rescrise, iar apply effective VAT este blocat la P0.
+
+Procesul shadow folosește autoritatea operations din `.env.worker`. Rândurile,
+pre-image-ul și generațiile shadow sunt append-only; seal verifică count/digest,
+iar promote/rollback mută pointerul numai prin funcțiile CAS. Autoritatea
+operations poate citi numai coloanele salariale non-CNP necesare modelului și
+nu primește acces la `salary_private`.
 
 Importul autoritativ al actualelor Finance este o generație separată de shadow
 TVA. `import_store_pnl.py --stage` cere un authority manifest extern, sursele

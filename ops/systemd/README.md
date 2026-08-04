@@ -32,6 +32,27 @@ Workerul operațional are `TimeoutStopSec=2460`, import workerul `1860`, backend
 
 Recovery-ul P0 păstrează ultima generație bună: sales folosește generation head/CAS și rollback auditabil, P&L folosește pointer/pre-image shadow fără apply runtime, iar salary batch revine tranzacțional. Dacă health sau manifestul nu se reconciliază, oprește promovarea și marchează `recovery_required`.
 
+## P1-A — identități DB per proces
+
+Unitățile declară fail-closed `UNIHUB_DB_PROCESS_AUTHORITY`: backend `web`,
+workerul normal `operations`, import workerul `sales_import`, iar one-shotul
+`migrate`. Fișierele root-protected sunt separate: `.env`, `.env.worker`,
+`.env.import-worker`, `.env.migrations`. Fiecare conține DSN-ul unui singur
+LOGIN: `unihub_web`, `unihub_operations_worker`, `unihub_import_worker`,
+respectiv `unihub_migration_runner`. Nu copia același DSN între procese și nu
+introduce `DATABASE_URL` ca fallback în fișierul de migrare.
+
+Ordinea de cutover este: oprește cei doi workeri; backup și business hashes;
+aplică 040/041 cu identitatea administrativă existentă; creează cele patru
+LOGIN-uri în boundary-ul operațional separat; atașează contractele exacte cu
+provisionerul; scrie DSN-urile fără a le afișa; instalează unitățile și rulează
+`daemon-reload`; execută deployul formal care repornește toate procesele. Orice
+principal/flag/membership diferit oprește startupul.
+
+Nu porni workerii între migrare și finalizarea cutoverului. După 040/041,
+rollbackul la sursă cu manifest vechi este deliberat refuzat; deployul păstrează
+handle-ul și candidatul la `recovery_required`, apoi cere roll-forward verificat.
+
 ## P1.4 availability și config
 
 ARQ este opțional numai pentru procesul web; PostgreSQL și sesiunea/rate-limit

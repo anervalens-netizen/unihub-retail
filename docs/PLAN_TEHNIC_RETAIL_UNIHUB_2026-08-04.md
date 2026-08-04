@@ -633,3 +633,82 @@ Verdict P0-B: **CLOSED și verificat live**. M-04 și M-05 sunt închise; P1-A
 este următorul lot executabil. Promovarea Finance live rămâne **NO-GO** și cere
 rol/credential separat, authority manifest real, reconciliere, backup și
 aprobare operațională distinctă.
+
+## 16. P1-A — DB authority și append-only
+
+### 16.1 Candidat tehnic pregătit
+
+Implementarea M-06, M-07, R-01 și R-02 pornește din `83194c653b784dce62123e7f6f655a8c94d3315f`.
+Lanțul integrat până la contractele finale este `2b944de`; SHA-ul candidatului
+formal și dovezile live se completează în 16.5 după gate/QA/deploy.
+
+Migrații immutable:
+
+- 040 `b8e3103c4013f1d0707effa53f8ebeb897734c995acff1c00d77e36a34841b14`;
+- 041 `02ec466328f5a997902612e0924fecea53bbad6284af6d2a87d8caec95189582`.
+
+Contractul rezultat:
+
+- grupuri NOLOGIN separate pentru web-read, business-write, sales import,
+  Finance import, operations și migrate; grants numai pe obiecte enumerate;
+- patru LOGIN-uri de proces verificate la conectare, fără cross-membership,
+  superuser, create role/database/schema ori bypass RLS;
+- ownerul obiectelor este NOLOGIN `unihub_schema_owner`; runnerul NOINHERIT îl
+  activează numai tranzacțional cu `SET LOCAL ROLE`;
+- stagingul sales, promotion ledgerul și evidence-ul shadow sunt append-only;
+  headurile/pointerii/ledgerul Finance se mută numai prin funcții SQL controlate
+  cu fencing, digest rehash și CAS;
+- `authoritative_replace` păstrează reducerile față de snapshotul precedent ca
+  informație și blochează numai contradicții interne ale candidatului;
+- Finance are grupul de autoritate pregătit în schemă, dar niciun LOGIN,
+  credential sau stage/apply live.
+
+### 16.2 Dovezi pre-deploy
+
+- matrice autentificată PostgreSQL, provisioner și negative ACL:
+  `31 passed`;
+- sales generation/staging, master-data safety și P&L generation/shadow:
+  `24 passed`;
+- manifestul 001–041 și checksumurile 040/041: verificate;
+- fixture-ul master-data raportează coverage global relativ la baseline, fără
+  a presupune o bază izolată goală;
+- datele production au fost doar citite la baseline: un sales head, două
+  promotions, 7.022 staged rows, zero generații Finance, zero generații shadow
+  și shadow pointer revision 0.
+
+### 16.3 Cutover autorizat și frontiera restrictivă
+
+Ordinea obligatorie este:
+
+1. oprește workerii, rulează backupul verificat și salvează business hashes;
+2. aplică 040/041 o singură dată prin identitatea administrativă existentă;
+3. creează cele patru LOGIN-uri de serviciu în boundary-ul operațional separat;
+4. atașează contractele exacte cu provisionerul și scrie separat `.env`,
+   `.env.worker`, `.env.import-worker`, `.env.migrations`, fără afișarea DSN;
+5. instalează unitățile, `daemon-reload`, apoi deployează artefactul formal;
+6. verifică principal/flags/membership, ACL negative, migrations, servicii,
+   health local/public, head/digest/fingerprints și absența mutațiilor Finance.
+
+Pasul 3–4 modifică identități/credentiale și este singura confirmare umană
+necesară. Nu se creează `unihub_finance_import` LOGIN și nu se rulează nicio
+operație Finance live.
+
+### 16.4 Rollback și limite
+
+Înainte ca migration service să pornească, rollbackul folosește handle-ul normal
+de backup. După aplicarea 040/041, manifestul vechi este incompatibil și
+rollbackul de cod este refuzat deliberat; deployul păstrează candidatul și
+handle-ul în `recovery_required`, apoi execută roll-forward pe același SHA sau
+pe un candidat corectiv aprobat. Migrațiile nu se editează și nu se dau jos.
+
+Rollbackurile business sunt inverse generations/CAS: sales clonează generația
+reținută, Finance ar crea o generație inversă numai într-un lot viitor aprobat,
+iar shadow mută doar pointerul de review după rehash. Stagingul, ledgers și
+pre-image-ul nu se șterg. P1-A nu rezolvă lifecycle-ul artefactului sales
+(P1-B), privacy/approval salary (P1-C) sau recovery Google/Grile (P1-D).
+
+### 16.5 Închidere live
+
+**PENDING** până la un singur gate CI-shaped, GO Terra + Luna pe același SHA,
+CI formal pe `main`, boundary-ul de identități, deploy, verificarea live și
+cleanup. P1-B nu începe înainte de verdictul `CLOSED LIVE` aici.

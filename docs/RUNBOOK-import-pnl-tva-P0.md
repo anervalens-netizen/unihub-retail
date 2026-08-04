@@ -61,6 +61,12 @@ Folosește `backend/scripts/shadow_store_pnl.py` pentru dry-run/capture. Snapsho
 DB este repeatable-read și are `input_cutoff` fix, aliniat la prima zi a lunii.
 Candidatele `legacy_v2` și `effective_v3` rulează pe același snapshot.
 
+Scriptul încarcă exclusiv `.env.worker`, cere principalul autentificat
+`unihub_operations_worker` și verifică membershipul exclusiv
+`unihub_operations`. Nu folosește `.env`, loginul web sau loginul Finance.
+Operations poate citi numai coloanele salariale non-CNP necesare modelului;
+schema `salary_private` rămâne inaccesibilă.
+
 Generația shadow păstrează:
 
 - scope și `scope_sha256`;
@@ -72,6 +78,11 @@ Generația shadow păstrează:
 Pointerul shadow are revision CAS și servește doar review/rollback. Citirile
 runtime P&L nu consumă pointerul, iar capture/stage nu mută
 `store_pnl_monthly`.
+
+Migrarea 040 blochează UPDATE/DELETE pe generații, rânduri și pre-image shadow.
+Seal reverifică numărul de rânduri și digestul; promote/rollback mută pointerul
+exclusiv prin funcțiile SQL controlate și expected revision. Nici operations,
+nici Finance nu primesc write direct pe pointer.
 
 ## Comenzi de verificare fără mutație Finance
 

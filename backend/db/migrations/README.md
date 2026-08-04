@@ -26,8 +26,9 @@ Workflow tipic pentru schimbare de schemă:
 2. Actualizezi `manifest.json` cu checksum-ul fisierului nou.
 3. Rulezi unitatea `unihub-retail-migrate.service` inainte de restartul web.
    Unitatea citeste exclusiv `.env.migrations`, fisier root-protected care
-   contine `MIGRATION_DATABASE_URL`/`DATABASE_URL` pentru owner. Web si worker
-   folosesc rolul non-owner din `.env`.
+   contine `MIGRATION_DATABASE_URL` pentru `unihub_migration_runner`. Runnerul
+   este NOINHERIT și activează ownerul NOLOGIN numai cu `SET LOCAL ROLE` în
+   tranzacția migrației. Web și workerii folosesc loginurile lor non-owner.
 4. Instalarile noi aplica baseline-ul inghetat, marcheaza migrations deja
    incorporate, apoi ruleaza toate delta-urile ulterioare.
 
@@ -43,10 +44,36 @@ release-ului `v2.1.0` include:
 | 034 | `034_salary_import_batch_provenance.sql` | `93dae9fa15c1b891e6484a8ddecc189e3bc412f2913066619288d0fd8938ec7f` | batch HR, source-line provenance și agregare per person_id |
 | 035 | `035_grile_observation_fencing.sql` | `4afd71ef2c8e0f215bb2687d28d07ae5a7b76ebc2625b05fe3c638a315293b5f` | observații Grile append-only, claim/CAS per magazin și proiecție curentă separată |
 | 036 | `036_target_rule_registry.sql` | `d722b1ef480b067651c37464c3462565ea2c9b4e5651c869e08932cd0c37b193` | registry Target append-only, snapshot/hash per scenariu și override auditabil |
+| 037 | `037_sales_generation_stage_integrity.sql` | `739d3da3974a247a3169e5d0bc6af57519bfbed5dff1ddaf28f15339bf207167` | digest staging, CAS și fencing sales |
+| 038 | `038_retire_replace_month_snapshot.sql` | `bac85ae88b6118e877e73ad444ed3895051a432069b460d802dc2b1144735488` | elimină bypassul legacy al snapshotului lunar |
+| 039 | `039_store_pnl_authoritative_generations.sql` | `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d` | generații Finance immutable, scope/head/ledger și pre-image |
+| 040 | `040_db_authority_append_only.sql` | `b8e3103c4013f1d0707effa53f8ebeb897734c995acff1c00d77e36a34841b14` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
+| 041 | `041_schema_owner_handoff.sql` | `02ec466328f5a997902612e0924fecea53bbad6284af6d2a87d8caec95189582` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
 Migrațiile nu activează singure TVA live sau importul salarial live. Promotion pointer-ul P&L și batchul salary sunt contracte de audit/recovery; apply-ul financiar și reconcilierea HR rămân explicit blocate la P0.
+
+## Cutover P1-A și recovery
+
+040 creează grupurile de autoritate, iar 041 preia ownershipul. La upgrade,
+ambele se aplică o singură dată cu identitatea administrativă existentă, înainte
+de schimbarea DSN-urilor. Apoi operatorul creează separat cele patru LOGIN-uri
+de proces și rulează `provision_runtime_database_role.py --apply` pentru exact
+un contract per LOGIN. Provisionerul nu creează LOGIN, nu setează/parcurge
+parole și nu acordă privilegii pe obiecte. Nu se creează LOGIN Finance.
+
+Instalările noi fac preflightul administrativ pentru DB/schema/extensii, aplică
+baselineul și 001–041, apoi trec definitiv runnerul la
+`unihub_migration_runner`; runnerul restricționat refuză bootstrapul gol.
+
+După aplicarea unei migrații, down migration și rollbackul la un manifest mai
+vechi sunt interzise. Dacă switchul de aplicație eșuează după 040/041, handle-ul
+de backup rămâne `recovery_required`, datele/headurile bune rămân neschimbate și
+se face roll-forward pe același SHA sau pe un candidat corectiv verificat. Un
+rollback de cod este permis numai înainte să pornească serviciul de migrare ori
+către un artefact cu manifest identic. Rollbackul business rămâne CAS/inverse
+generation, nu editare directă sau DELETE al evidence-ului.
 
 ## Idempotență
 

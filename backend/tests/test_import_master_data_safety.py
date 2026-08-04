@@ -240,6 +240,9 @@ async def test_complete_and_ninety_percent_files_never_deactivate_absent_stores(
     site_codes = [f"P0SAFE-{incoming_count}-{index:02d}" for index in range(10)]
     try:
         async with pool.acquire() as conn, conn.transaction():
+            baseline_active_count = await conn.fetchval(
+                "SELECT count(*) FROM stores WHERE is_active = true"
+            )
             await seed_stores(conn, site_codes)
             frame = sales_frame(site_codes[:incoming_count])
 
@@ -253,7 +256,9 @@ async def test_complete_and_ninety_percent_files_never_deactivate_absent_stores(
             assert len(statuses) == 10
             assert all(bool(row["is_active"]) for row in statuses)
             assert coverage["incoming_store_count"] == incoming_count
-            assert coverage["missing_active_store_count"] == 10 - incoming_count
+            assert coverage["missing_active_store_count"] == (
+                baseline_active_count + 10 - incoming_count
+            )
             assert coverage["store_activity_writes"] == 0
             assert all(
                 anomaly["classification"] == SalesAnomalyClassification.INFORMATIONAL.value
