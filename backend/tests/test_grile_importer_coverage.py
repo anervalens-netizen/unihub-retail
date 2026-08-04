@@ -301,12 +301,11 @@ def test_importer_path_and_input_validation_branches(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_importer_snapshot_helpers_and_path_digest(tmp_path: Path) -> None:
+async def test_importer_coverage_helper_and_path_digest(tmp_path: Path) -> None:
     conn = MagicMock()
     conn.execute = AsyncMock()
     await importer.record_coverage_report(conn, 17, {"missing": ["SITE02"]})
-    await importer.replace_month_snapshot(conn, "2099-07")
-    assert conn.execute.await_count == 2
+    assert conn.execute.await_count == 1
     assert json.loads(conn.execute.await_args_list[0].args[2]) == {"missing": ["SITE02"]}
 
     with pytest.raises(ValueError, match="at least 60"):

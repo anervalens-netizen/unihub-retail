@@ -199,9 +199,10 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   `P&L Magazine` este folosit pentru reconcilierea locatiilor lipsa numai daca
   venitul consolidat este cel putin egal cu suma detaliata; astfel, workbook-urile
   salvate accidental cu un singur magazin selectat nu reduc totalul companiei.
-  La citire, existenta oricarei valori actuale pentru o firma-luna exclude
-  estimarile acelei firme-luni, dar toate centrele de profit actuale sunt
-  insumate chiar daca mai multe coduri istorice indica acelasi magazin Retail.
+  La citire, autoritatea `actual` se decide per companie-luna-magazin canonic;
+  magazinele neacoperite păstrează estimarea, iar toate centrele de profit
+  actuale sunt însumate chiar dacă mai multe coduri istorice indică același
+  magazin Retail.
   Bucket-ul de reconciliere nealocat intra numai in totalul companiei/retelei;
   nu este expus ca magazin si nu este folosit la antrenarea estimarilor.
 - Raportarea vizitelor are cutover controlat intre SQLite si tabela FieldOps
@@ -463,6 +464,15 @@ anterioară, apoi o promovează auditabil; nu mută headul direct înapoi.
 
 `shadow_store_pnl.py` capturează snapshot repeatable-read cu cutoff fix pe scope `(company, period)`, compară `legacy_v2` cu `effective_v3` și salvează source/input/rule/model/output hashes, `fiscal_delta` și `input_or_model_delta`. Stările shadow sunt `staged`, `promoted`, `superseded` și `rolled_back`; pointerul este CAS pentru review și rollback, nu este consumat de citirile runtime. Actualele Finance, estimările și Target finalizat nu sunt rescrise, iar apply effective VAT este blocat la P0.
 
+Importul autoritativ al actualelor Finance este o generație separată de shadow
+TVA. `import_store_pnl.py --stage` cere un authority manifest extern, sursele
+exacte și rolul DB dedicat `unihub_finance_import`; persistă candidatele și
+pre-image-ul immutable, control totals, coverage, revision/parent și hashurile
+sursei/manifestului. Promovarea verifică head/pre-image prin lock + CAS,
+înlocuiește numai `actual` și păstrează `estimated`; rollbackul este o generație
+inversă nouă. În baseline-ul P0-B, CLI-ul blochează operațional promote și
+rollback înainte de conectarea DB: implementarea nu este aprobare de apply live.
+
 ### Salarii: preflight -> dry-run -> apply controlat
 
 `import_salary_records.py` validează ambele companii, CNP exact 13 cifre plus checksum, conflicte de nume și provenance source-line înainte de write. Manifestul nu conține CNP; insertul de identitate și salary records este tranzacțional, iar faultul produce rollback total. Componentele distincte rămân permise pe source rows distincte și read model-ul agregă după `person_id`. Importul live este NO-GO până la reconcilierea HR a celor 8 grupuri; nu există reconciliere sau delete automat.
@@ -508,8 +518,10 @@ distributie rămâne aplicat și la citire ca gardă suplimentară.
 
 P&L-ul financiar lunar pe magazin este pastrat in `store_pnl_monthly` la
 granularitatea companie, luna, cod istoric de locatie si categorie contabila.
-Importul din `backend/scripts/import_store_pnl.py` deduplica fisierele identice,
-alege snapshotul anual cu cea mai buna acoperire si importa numai valori reale.
+Importul din `backend/scripts/import_store_pnl.py` nu selectează surse după
+densitate, cale sau nume. Authority manifestul declară exact revision, parent,
+cutoff, scope, source SHA, coverage și control totals; orice fișier nedeclarat,
+mutat sau modificat este refuzat înainte de staging.
 Pentru blocurile Finance deplasate in care coloanele de identificare sunt goale,
 parserul recupereaza categoria din cheia compusa de forma `c11-COD` inainte de
 a exclude randul.
@@ -547,7 +559,13 @@ sau magazin. Reconcilierea este acceptata numai daca venitul sumarului este cel
 putin egal cu detalierea; foile salvate cu un singur magazin selectat sunt
 respinse ca total consolidat.
 
-P0 nu activează încă această cale de aplicare: `estimate_store_pnl.py` rămâne legacy pentru citiri/estimări, iar normalizarea effective-dated este disponibilă numai în shadow. Aplicarea Finance/TVA live este blocată până la pre-image, diff, control totals și aprobare separată; actualele și scenariile Target finalizate rămân protejate.
+P0-B implementează stagingul generațional pentru actualele Finance, dar nu
+activează aplicarea: `--apply-generation` și `--rollback-generation` sunt
+blocate operațional înainte de DB. `estimate_store_pnl.py` rămâne separat pentru
+estimări, iar normalizarea effective-dated este disponibilă numai în shadow.
+Orice apply Finance/TVA live cere reconcilierea ambelor companii, backup,
+pre-image, diff, control totals și aprobare separată; actualele și scenariile
+Target finalizate rămân protejate.
 
 ### AI Forecast
 

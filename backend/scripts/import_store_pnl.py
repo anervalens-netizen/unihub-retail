@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Auditeaza si importa P&L-urile lunare pe magazin.
+"""Stage Finance-authorized P&L generations; P0-B promotion is disabled.
 
-Implicit ruleaza read-only. Foloseste ``--apply`` numai dupa verificarea
-raportului; scriptul importa exclusiv valori reale si nu genereaza estimari.
+This tool deliberately has no filename/density selection and never consults
+``DATABASE_URL``.  A staged bundle is accepted only when every observed source
+matches the external authority manifest byte-for-byte.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import json
 import os
 import sys
 from collections import defaultdict
@@ -17,10 +19,29 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from typing import Sequence
+from uuid import UUID
 
 import asyncpg
 import xlrd
 from dotenv import load_dotenv
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from services.store_pnl_import import (  # noqa: E402
+    AuthorityManifest,
+    PnlImportError,
+    PnlRow,
+    PnlScope,
+    apply_generation,
+    parse_authority_manifest,
+    rollback_generation,
+    stage_generation,
+    validate_scope_candidate,
+)
+
 
 REPO_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = REPO_DIR / "data" / "P&L"
@@ -31,28 +52,14 @@ UNALLOCATED_LOCATION = "Diferenta consolidat Finance nealocata pe magazine"
 
 
 @dataclass(frozen=True)
-class PnlRow:
-    company_name: str
-    period: date
-    source_site_code: str
-    source_location_name: str
-    category_code: str
-    category_name: str
-    amount: Decimal
-    source_file: str
-    source_sha256: str
-
-
-@dataclass(frozen=True)
 class WorkbookData:
     path: Path
+    source_file: str
     sha256: str
     company_name: str
     periods: tuple[date, ...]
     rows: tuple[PnlRow, ...]
     consolidated_rows: tuple[PnlRow, ...]
-    populated_months: int
-    numeric_cells: int
 
 
 def money(value: float) -> Decimal:
@@ -65,23 +72,30 @@ def company_from_title(value: object) -> str:
         return "Mobicell"
     if "MOBIUP" in title:
         return "Mobiup"
-    raise ValueError(f"Companie necunoscuta in titlul P&L: {value!r}")
+    raise PnlImportError(f"Companie necunoscuta in titlul P&L: {value!r}")
 
 
 def detail_category(detail: xlrd.sheet.Sheet, row_index: int) -> str:
     direct = str(detail.cell_value(row_index, 1)).strip().lower()
     if direct in VALID_CODES:
         return direct
-    # Unele exporturi Finance lasa coloanele A/B goale pentru blocurile finale,
-    # dar pastreaza cheia auditabila in coloana F (de exemplu ``c11-ACM``).
     composite = str(detail.cell_value(row_index, 5)).strip().lower()
     inferred = composite.split("-", 1)[0]
     return inferred if inferred in VALID_CODES else direct
 
 
 def parse_workbook(path: Path, root: Path) -> WorkbookData:
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    workbook = xlrd.open_workbook(path)
+    """Parse the exact bytes whose digest is compared with authority.
+
+    ``xlrd`` receives the already-hashed bytes, so a concurrent file mutation
+    cannot make the parser consume different content than the authenticated
+    source hash.
+    """
+    if path.is_symlink() or not path.is_file():
+        raise PnlImportError(f"Sursa Finance trebuie sa fie fisier regulat: {path}")
+    payload = path.read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+    workbook = xlrd.open_workbook(file_contents=payload)
     summary = workbook.sheet_by_name("P&L Magazine")
     detail = workbook.sheet_by_name("Detaliere")
     company = company_from_title(summary.cell_value(0, 1))
@@ -92,7 +106,7 @@ def parse_workbook(path: Path, root: Path) -> WorkbookData:
         moment = xlrd.xldate_as_datetime(value, workbook.datemode)
         periods.append(date(moment.year, moment.month, 1))
 
-    source_file = str(path.relative_to(root))
+    source_file = path.relative_to(root).as_posix()
     rows: list[PnlRow] = []
     months_with_values: set[date] = set()
     for row_index in range(1, detail.nrows):
@@ -108,7 +122,6 @@ def parse_workbook(path: Path, root: Path) -> WorkbookData:
             value = detail.cell_value(row_index, 6 + month_index)
             if not isinstance(value, (int, float)) or isinstance(value, bool):
                 continue
-            # A month containing only template zeroes is not an actual month.
             if abs(float(value)) > 1e-9:
                 months_with_values.add(period)
             rows.append(
@@ -124,26 +137,18 @@ def parse_workbook(path: Path, root: Path) -> WorkbookData:
                     source_sha256=digest,
                 )
             )
-
-    # Remove template cells from months without any real amount.
     rows = [row for row in rows if row.period in months_with_values]
     consolidated_rows = parse_consolidated_rows(
-        summary,
-        company,
-        periods,
-        source_file,
-        digest,
-        months_with_values,
+        summary, company, periods, source_file, digest, months_with_values
     )
     return WorkbookData(
         path=path,
+        source_file=source_file,
         sha256=digest,
         company_name=company,
         periods=tuple(periods),
         rows=tuple(rows),
         consolidated_rows=tuple(consolidated_rows),
-        populated_months=len(months_with_values),
-        numeric_cells=len(rows),
     )
 
 
@@ -151,52 +156,28 @@ def summary_category_code(code_value: object, name_value: object) -> str | None:
     code = str(code_value).strip().lower()
     if code in VALID_CODES:
         return code
-    # Summary-only subtotals (for example v10 "alte venituri din exploatare")
-    # are not store P&L accounting categories and must not overwrite v3.
     if code and not code.replace(".", "", 1).isdigit():
         return None
     normalized = " ".join(str(name_value).lower().split())
-    if "venituri din vanzari cartele" in normalized:
-        return "v1"
-    if "venituri din accesor" in normalized:
-        return "v11"
-    if "venituri din incarcare" in normalized:
-        return "v2"
-    if "alte venituri" in normalized:
-        return "v3"
-    if "marfa cartele" in normalized:
-        return "c1"
-    if "marfa accesori" in normalized:
-        return "c11"
-    if "cheltuieli cu incarcare" in normalized:
-        return "c2"
-    if "cost salari" in normalized:
-        return "c3"
-    if "chirii" in normalized:
-        return "c4"
-    if "utilit" in normalized:
-        return "c5"
-    if "alte costuri" in normalized:
-        return "c6"
-    if "amortizare" in normalized:
-        return "a1"
-    return None
+    labels = (
+        ("venituri din vanzari cartele", "v1"), ("venituri din accesor", "v11"),
+        ("venituri din incarcare", "v2"), ("alte venituri", "v3"),
+        ("marfa cartele", "c1"), ("marfa accesori", "c11"),
+        ("cheltuieli cu incarcare", "c2"), ("cost salari", "c3"),
+        ("chirii", "c4"), ("utilit", "c5"), ("alte costuri", "c6"),
+        ("amortizare", "a1"),
+    )
+    return next((category for label, category in labels if label in normalized), None)
 
 
 def parse_consolidated_rows(
     summary: xlrd.sheet.Sheet,
     company: str,
-    periods: list[date],
+    periods: Sequence[date],
     source_file: str,
     digest: str,
     populated_months: set[date],
 ) -> list[PnlRow]:
-    """Read the Finance consolidated totals without rewriting store detail.
-
-    Some workbooks reconcile to company totals that contain locations absent
-    from ``Detaliere``. The delta is persisted as an explicit unallocated
-    Finance bucket so company P&L remains faithful to the supplied workbook.
-    """
     rows: list[PnlRow] = []
     for row_index in range(summary.nrows):
         category = summary_category_code(summary.cell_value(row_index, 2), summary.cell_value(row_index, 3))
@@ -208,383 +189,216 @@ def parse_consolidated_rows(
             if period not in populated_months or not isinstance(value, (int, float)) or isinstance(value, bool):
                 continue
             rows.append(PnlRow(
-                company_name=company,
-                period=period,
-                source_site_code=UNALLOCATED_SOURCE,
-                source_location_name=UNALLOCATED_LOCATION,
-                category_code=category,
-                category_name=category_name,
-                amount=money(float(value)),
-                source_file=source_file,
-                source_sha256=digest,
+                company_name=company, period=period, source_site_code=UNALLOCATED_SOURCE,
+                source_location_name=UNALLOCATED_LOCATION, category_code=category,
+                category_name=category_name, amount=money(float(value)),
+                source_file=source_file, source_sha256=digest,
             ))
     return rows
 
 
-def discover(input_dir: Path) -> tuple[list[WorkbookData], list[tuple[Path, Path]]]:
-    unique: dict[str, WorkbookData] = {}
-    duplicates: list[tuple[Path, Path]] = []
-    for path in sorted(input_dir.rglob("*.xls")):
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        if digest in unique:
-            duplicates.append((path, unique[digest].path))
-            continue
-        unique[digest] = parse_workbook(path, input_dir)
-    return list(unique.values()), duplicates
+def discover(input_dir: Path) -> list[WorkbookData]:
+    root = input_dir.resolve()
+    if not root.is_dir():
+        raise PnlImportError(f"Director Finance inexistent: {input_dir}")
+    paths = sorted(root.rglob("*.xls"))
+    if not paths:
+        raise PnlImportError("Nu exista fisiere .xls in directorul Finance declarat.")
+    return [parse_workbook(path, root) for path in paths]
 
 
-def select_snapshots(workbooks: list[WorkbookData]) -> tuple[list[WorkbookData], list[WorkbookData]]:
-    groups: dict[tuple[str, int], list[WorkbookData]] = defaultdict(list)
-    for workbook in workbooks:
-        years = {period.year for period in workbook.periods}
-        if len(years) != 1:
-            raise ValueError(f"Fisier cu ani amestecati: {workbook.path}")
-        groups[(workbook.company_name, next(iter(years)))].append(workbook)
-
-    selected: list[WorkbookData] = []
-    superseded: list[WorkbookData] = []
-    for candidates in groups.values():
-        candidates.sort(key=lambda item: (item.populated_months, item.numeric_cells, str(item.path)))
-        selected.append(candidates[-1])
-        superseded.extend(candidates[:-1])
-    return sorted(selected, key=lambda item: (item.company_name, item.periods[0])), superseded
-
-
-def merged_rows(selected: list[WorkbookData]) -> list[PnlRow]:
+def merged_rows(rows: Sequence[PnlRow]) -> list[PnlRow]:
     result: dict[tuple[str, date, str, str], PnlRow] = {}
-    for workbook in selected:
-        for row in workbook.rows:
-            key = (row.company_name, row.period, row.source_site_code, row.category_code)
-            if key in result:
-                previous = result[key]
-                result[key] = PnlRow(
-                    company_name=row.company_name,
-                    period=row.period,
-                    source_site_code=row.source_site_code,
-                    source_location_name=previous.source_location_name,
-                    category_code=row.category_code,
-                    category_name=previous.category_name,
-                    amount=previous.amount + row.amount,
-                    source_file=row.source_file,
-                    source_sha256=row.source_sha256,
-                )
-            else:
-                result[key] = row
-    return sorted(result.values(), key=lambda row: (row.period, row.company_name, row.source_site_code, row.category_code))
+    for row in rows:
+        key = (row.company_name, row.period, row.source_site_code, row.category_code)
+        previous = result.get(key)
+        if previous is None:
+            result[key] = row
+            continue
+        if (previous.source_file, previous.source_sha256) != (row.source_file, row.source_sha256):
+            raise PnlImportError("Nu sunt permise linii P&L mixate intre surse.")
+        result[key] = PnlRow(
+            company_name=row.company_name, period=row.period,
+            source_site_code=row.source_site_code,
+            source_location_name=previous.source_location_name,
+            category_code=row.category_code, category_name=previous.category_name,
+            amount=previous.amount + row.amount, source_file=row.source_file,
+            source_sha256=row.source_sha256,
+        )
+    return sorted(result.values(), key=lambda row: (row.company_name, row.period, row.source_site_code, row.category_code))
 
 
-def unallocated_rows(detail_rows: list[PnlRow], workbooks: list[WorkbookData]) -> list[PnlRow]:
-    """Return trustworthy Finance consolidated-minus-detail deltas.
+def unallocated_rows(detail_rows: Sequence[PnlRow], workbook: WorkbookData, scope: PnlScope) -> list[PnlRow]:
+    """Calculate only a same-bundle consolidated-minus-detail delta.
 
-    ``P&L Magazine`` is driven by an Excel location selector. Some supplied
-    snapshots were saved with one store selected, while ``Detaliere`` still
-    contains the complete company data. A summary can therefore be used as a
-    company total only when its revenue is at least the selected detail total.
-    Among valid snapshots, prefer the most complete one for that month.
+    A summary lower than its own detail is not silently ignored: that bundle is
+    invalid as a complete Finance snapshot.
     """
-    detailed_totals: dict[tuple[str, date, str], Decimal] = defaultdict(Decimal)
+    company, period = scope
+    detailed_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
     for row in detail_rows:
-        detailed_totals[(row.company_name, row.period, row.category_code)] += row.amount
-
-    candidates: dict[tuple[str, date], list[tuple[WorkbookData, list[PnlRow]]]] = defaultdict(list)
-    for workbook in workbooks:
-        by_period: dict[date, list[PnlRow]] = defaultdict(list)
-        for total in workbook.consolidated_rows:
-            by_period[total.period].append(total)
-        for period, totals in by_period.items():
-            detail_revenue = sum(
-                detailed_totals[(workbook.company_name, period, code)]
-                for code in REVENUE_CODES
-            )
-            summary_revenue = sum(
-                total.amount for total in totals if total.category_code in REVENUE_CODES
-            )
-            # A lower summary is a store-filtered worksheet, not a consolidated
-            # company total. The one-cent tolerance only absorbs Excel rounding.
-            if summary_revenue + Decimal("0.01") < detail_revenue:
-                continue
-            candidates[(workbook.company_name, period)].append((workbook, totals))
-
+        detailed_totals[row.category_code] += row.amount
+    totals = [row for row in workbook.consolidated_rows if (row.company_name, row.period) == scope]
+    if not totals:
+        return []
+    summary_revenue = sum((row.amount for row in totals if row.category_code in REVENUE_CODES), Decimal("0.00"))
+    detail_revenue = sum((detailed_totals[code] for code in REVENUE_CODES), Decimal("0.00"))
+    if summary_revenue + Decimal("0.01") < detail_revenue:
+        raise PnlImportError(f"Consolidatul Finance este sub detaliu pentru {company} {period:%Y-%m}.")
     result: list[PnlRow] = []
-    for period_candidates in candidates.values():
-        workbook, totals = max(
-            period_candidates,
-            key=lambda item: (item[0].populated_months, item[0].numeric_cells, str(item[0].path)),
-        )
-        for total in totals:
-            delta = total.amount - detailed_totals[(total.company_name, total.period, total.category_code)]
-            if abs(delta) <= Decimal("0.01"):
-                continue
-            result.append(PnlRow(
-                company_name=total.company_name,
-                period=total.period,
-                source_site_code=UNALLOCATED_SOURCE,
-                source_location_name=UNALLOCATED_LOCATION,
-                category_code=total.category_code,
-                category_name=total.category_name,
-                amount=delta,
-                source_file=total.source_file,
-                source_sha256=total.source_sha256,
-            ))
-    return sorted(result, key=lambda row: (row.period, row.company_name, row.category_code))
+    for total in totals:
+        delta = total.amount - detailed_totals[total.category_code]
+        if abs(delta) <= Decimal("0.01"):
+            continue
+        result.append(PnlRow(
+            company_name=total.company_name, period=total.period,
+            source_site_code=UNALLOCATED_SOURCE,
+            source_location_name=UNALLOCATED_LOCATION,
+            category_code=total.category_code, category_name=total.category_name,
+            amount=delta, source_file=total.source_file, source_sha256=total.source_sha256,
+        ))
+    return result
 
 
-def print_audit(selected: list[WorkbookData], superseded: list[WorkbookData], duplicates: list[tuple[Path, Path]], rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
-    print(f"Duplicate binare: {len(duplicates)}")
-    for duplicate, original in duplicates:
-        print(f"  DUPLICAT {duplicate} == {original}")
-    print(f"Snapshot-uri depasite: {len(superseded)}")
-    for workbook in sorted(superseded, key=lambda item: str(item.path)):
-        print(f"  DEPASIT {workbook.path.name}: {workbook.populated_months} luni")
-    print("Snapshot-uri selectate:")
-    for workbook in selected:
-        periods = sorted({row.period for row in workbook.rows})
-        span = f"{periods[0]:%Y-%m}..{periods[-1]:%Y-%m}" if periods else "fara date"
-        print(f"  {workbook.company_name}: {workbook.path.name} ({span}, {len(workbook.rows)} valori)")
+def materialize_authority_rows(
+    workbooks: Sequence[WorkbookData], authority: AuthorityManifest
+) -> dict[PnlScope, list[PnlRow]]:
+    """Return one complete, non-mixed candidate for every declared scope."""
+    by_source: dict[tuple[str, str], WorkbookData] = {}
+    for workbook in workbooks:
+        source_key = (workbook.source_file, workbook.sha256)
+        if source_key in by_source:
+            raise PnlImportError("Authority nu permite duplicate binare ori cai ambigue.")
+        by_source[source_key] = workbook
+    declared = {(scope.source_path, scope.source_sha256) for scope in authority.scopes}
+    if set(by_source) != declared:
+        raise PnlImportError("Sursele observate nu sunt exact sursele declarate de Finance.")
 
-    by_period: dict[date, list[PnlRow]] = defaultdict(list)
-    for row in rows:
-        by_period[row.period].append(row)
-    print("Acoperire extrasa:")
-    for period, period_rows in sorted(by_period.items()):
-        companies = sorted({row.company_name for row in period_rows})
-        sites = len({(row.company_name, row.source_site_code) for row in period_rows})
-        print(f"  {period:%Y-%m}: {len(period_rows)} valori, {sites} magazine, {', '.join(companies)}")
-    print(f"Diferente consolidat Finance nealocate pe magazine: {len(reconciliation)} valori")
-
-PnlScope = tuple[str, date]
-PnlBusinessKey = tuple[str, date, str, str]
-
-
-def replacement_scopes(rows: list[PnlRow]) -> list[PnlScope]:
-    return sorted({(row.company_name, row.period) for row in rows})
-
-
-def candidate_business_keys(rows: list[PnlRow]) -> set[PnlBusinessKey]:
-    keys = {
-        (
-            row.company_name,
-            row.period,
-            row.source_site_code,
-            row.category_code,
-        )
-        for row in rows
-    }
-    if len(keys) != len(rows):
-        raise RuntimeError("Batchul P&L contine chei business duplicate.")
-    return keys
+    scopes_by_source: dict[tuple[str, str], list[PnlScope]] = defaultdict(list)
+    authority_by_scope = {scope.key: scope for scope in authority.scopes}
+    for scope in authority.scopes:
+        scopes_by_source[(scope.source_path, scope.source_sha256)].append(scope.key)
+    candidates: dict[PnlScope, list[PnlRow]] = {}
+    for source_key, workbook in by_source.items():
+        declared_scopes = set(scopes_by_source[source_key])
+        observed_scopes = {(row.company_name, row.period) for row in workbook.rows}
+        if observed_scopes != declared_scopes:
+            raise PnlImportError("Fisierul Finance contine luni neaprobate sau lipsesc luni declarate.")
+        for scope_key in declared_scopes:
+            scope = authority_by_scope[scope_key]
+            if workbook.company_name != scope.company_name:
+                raise PnlImportError("Compania din sursa Finance nu corespunde authority manifest.")
+            detail = merged_rows([row for row in workbook.rows if (row.company_name, row.period) == scope_key])
+            candidate = [*detail, *unallocated_rows(detail, workbook, scope_key)]
+            validate_scope_candidate(scope, candidate)
+            candidates[scope_key] = candidate
+    return candidates
 
 
-def coverage_regressions(
-    current_rows: list[asyncpg.Record | dict],
-    candidate_rows: list[PnlRow],
-) -> list[PnlBusinessKey]:
-    candidate = candidate_business_keys(candidate_rows)
-    current = {
-        (
-            row["company_name"],
-            row["period"],
-            row["source_site_code"],
-            row["category_code"],
-        )
-        for row in current_rows
-    }
-    return sorted(current - candidate)
-
-
-def scope_totals(rows: list[PnlRow]) -> dict[PnlScope, tuple[int, Decimal]]:
-    totals: dict[PnlScope, tuple[int, Decimal]] = {}
-    for row in rows:
-        scope = (row.company_name, row.period)
-        count, amount = totals.get(scope, (0, Decimal("0")))
-        totals[scope] = (count + 1, amount + row.amount)
-    return totals
-
-
-async def load_current_actual_rows(
-    connection: asyncpg.Connection,
-    scopes: list[PnlScope],
-) -> list[asyncpg.Record]:
-    current: list[asyncpg.Record] = []
-    for company, period in scopes:
-        current.extend(
-            await connection.fetch(
-                """
-                SELECT company_name, period, source_site_code, category_code, amount
-                FROM store_pnl_monthly
-                WHERE data_kind = 'actual'
-                  AND company_name = $1
-                  AND period = $2
-                """,
-                company,
-                period,
-            )
-        )
-    return current
-
-
-def print_scope_comparison(
-    current_rows: list[asyncpg.Record],
-    candidate_rows: list[PnlRow],
-) -> None:
-    current_by_scope: dict[PnlScope, tuple[int, Decimal]] = {}
-    for row in current_rows:
-        scope = (row["company_name"], row["period"])
-        count, amount = current_by_scope.get(scope, (0, Decimal("0")))
-        current_by_scope[scope] = (count + 1, amount + Decimal(row["amount"]))
-    candidate_by_scope = scope_totals(candidate_rows)
-    print("Comparatie inventar DB pentru scope-ul exact:")
-    for scope in sorted(candidate_by_scope):
-        old_count, old_amount = current_by_scope.get(scope, (0, Decimal("0")))
-        new_count, new_amount = candidate_by_scope[scope]
-        company, period = scope
-        print(
-            f"  {company} {period:%Y-%m}: "
-            f"{old_count} -> {new_count} valori; "
-            f"{old_amount:.2f} -> {new_amount:.2f} RON"
-        )
-
-
-async def audit_database_coverage(
-    connection: asyncpg.Connection,
-    candidate_rows: list[PnlRow],
-) -> None:
-    scopes = replacement_scopes(candidate_rows)
-    current = await load_current_actual_rows(connection, scopes)
-    print_scope_comparison(current, candidate_rows)
-    missing = coverage_regressions(current, candidate_rows)
-    if missing:
-        preview = ", ".join(
-            f"{company}/{period:%Y-%m}/{site}/{category}"
-            for company, period, site, category in missing[:10]
-        )
-        raise RuntimeError(
-            "Importul ar reduce acoperirea actuala P&L in scope-ul declarat: "
-            f"{len(missing)} chei lipsa ({preview})."
-        )
-
-
-async def dry_run_database_audit(rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
-    database_url = os.environ.get("DATABASE_URL", "")
-    if not database_url:
-        print("Dry-run DB omis: DATABASE_URL lipseste; aplicarea ramane blocata.")
-        return
-    connection = await asyncpg.connect(database_url)
+def read_authority_manifest(path: Path) -> AuthorityManifest:
     try:
-        await audit_database_coverage(connection, [*rows, *reconciliation])
+        payload = json.loads(path.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PnlImportError(f"Authority manifest invalid: {path}") from exc
+    return parse_authority_manifest(payload)
+
+
+async def connect_finance() -> asyncpg.Connection:
+    dsn = os.environ.get("FINANCE_PNL_DATABASE_URL", "")
+    required_role = os.environ.get("FINANCE_PNL_DATABASE_ROLE", "unihub_finance_import")
+    runtime_role = os.environ.get("UNIHUB_RUNTIME_ROLE", "unihub_runtime")
+    if not dsn or dsn == os.environ.get("DATABASE_URL"):
+        raise PnlImportError("Este necesar FINANCE_PNL_DATABASE_URL dedicat, diferit de DATABASE_URL.")
+    connection = await asyncpg.connect(dsn)
+    try:
+        actual_role = await connection.fetchval("SELECT current_user")
+        if actual_role != required_role or actual_role == runtime_role:
+            raise PnlImportError("Conexiunea P&L trebuie sa foloseasca exclusiv rolul Finance dedicat.")
+        return connection
+    except BaseException:
+        await connection.close()
+        raise
+
+
+def operational_apply_no_go() -> None:
+    raise PnlImportError(
+        "P0-B operational NO-GO: promote/rollback P&L raman dezactivate pana la aprobarea live separata."
+    )
+
+
+async def run_stage(input_dir: Path, authority_path: Path) -> None:
+    authority = read_authority_manifest(authority_path)
+    candidates = materialize_authority_rows(discover(input_dir), authority)
+    connection = await connect_finance()
+    try:
+        result = await stage_generation(connection, authority, candidates)
+    finally:
+        await connection.close()
+    print(json.dumps({
+        "generation_id": str(result.generation_id),
+        "generation_manifest_sha256": result.generation_manifest_sha256,
+        "authority_manifest_sha256": authority.sha256,
+        "scopes": [f"{company}:{period.isoformat()}" for company, period in sorted(candidates)],
+    }, sort_keys=True))
+
+
+async def run_apply(generation_id: UUID, expected_manifest_sha256: str) -> None:
+    operational_apply_no_go()
+    connection = await connect_finance()
+    try:
+        print(json.dumps(await apply_generation(connection, generation_id, expected_manifest_sha256), sort_keys=True))
     finally:
         await connection.close()
 
 
-async def replace_rows(
-    connection: asyncpg.Connection,
-    candidate_rows: list[PnlRow],
-) -> None:
-    scopes = replacement_scopes(candidate_rows)
-    if not scopes:
-        raise RuntimeError("Batchul P&L nu contine niciun scope importabil.")
-    candidate_business_keys(candidate_rows)
-    expected = scope_totals(candidate_rows)
-
-    async with connection.transaction():
-        await audit_database_coverage(connection, candidate_rows)
-        for company, period in scopes:
-            await connection.execute(
-                """
-                DELETE FROM store_pnl_monthly
-                WHERE company_name = $1
-                  AND period = $2
-                  AND data_kind IN ('actual', 'estimated')
-                """,
-                company,
-                period,
-            )
-
-        await connection.executemany(
-            """
-            INSERT INTO store_pnl_monthly (
-                company_name, period, source_site_code, source_location_name,
-                category_code, category_name, amount, data_kind, source_file, source_sha256
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'actual', $8, $9)
-            """,
-            [
-                (
-                    row.company_name,
-                    row.period,
-                    row.source_site_code,
-                    row.source_location_name,
-                    row.category_code,
-                    row.category_name,
-                    row.amount,
-                    row.source_file,
-                    row.source_sha256,
-                )
-                for row in candidate_rows
-            ],
-        )
-
-        for company, period in scopes:
-            persisted = await connection.fetchrow(
-                """
-                SELECT COUNT(*)::integer AS row_count,
-                       COALESCE(SUM(amount), 0)::numeric AS total_amount
-                FROM store_pnl_monthly
-                WHERE company_name = $1
-                  AND period = $2
-                  AND data_kind = 'actual'
-                """,
-                company,
-                period,
-            )
-            expected_count, expected_amount = expected[(company, period)]
-            if (
-                persisted is None
-                or persisted["row_count"] != expected_count
-                or Decimal(persisted["total_amount"]) != expected_amount
-            ):
-                raise RuntimeError(
-                    f"Control totals P&L esuat pentru {company} {period:%Y-%m}."
-                )
-
-
-async def apply_rows(rows: list[PnlRow], reconciliation: list[PnlRow]) -> None:
-    database_url = os.environ.get("DATABASE_URL", "")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL lipseste din .env")
-    candidate_rows = [*rows, *reconciliation]
-    connection = await asyncpg.connect(database_url)
+async def run_rollback(generation_id: UUID, expected_manifest_sha256: str) -> None:
+    operational_apply_no_go()
+    connection = await connect_finance()
     try:
-        await replace_rows(connection, candidate_rows)
-        print(f"Import finalizat: {len(rows)} valori detaliate + {len(reconciliation)} diferente consolidate actuale.")
+        result = await rollback_generation(connection, generation_id, expected_manifest_sha256)
     finally:
         await connection.close()
+    print(json.dumps({"generation_id": str(result.generation_id), "generation_manifest_sha256": result.generation_manifest_sha256}, sort_keys=True))
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Auditeaza/importa P&L lunar pe magazin.")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Stageaza bundle-uri P&L explicit aprobate de Finance.")
+    operation = parser.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--stage", action="store_true", help="Stage immutable din authority manifest.")
+    operation.add_argument("--apply-generation", type=UUID, metavar="UUID", help="Promoveaza generatie staged (P0-B NO-GO).")
+    operation.add_argument("--rollback-generation", type=UUID, metavar="UUID", help="Publica generatie inversa (P0-B NO-GO).")
+    parser.add_argument("--authority-manifest", type=Path)
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--apply", action="store_true", help="Scrie valorile in PostgreSQL.")
-    args = parser.parse_args()
-    load_dotenv(REPO_DIR / ".env")
+    parser.add_argument("--expected-manifest-sha", metavar="SHA256")
+    return parser
 
-    workbooks, duplicates = discover(args.input_dir)
-    selected, superseded = select_snapshots(workbooks)
-    rows = merged_rows(selected)
-    # Consolidated totals may come from an older, still trustworthy snapshot
-    # even when a newer detail snapshot was saved with one store selected.
-    reconciliation = unallocated_rows(rows, workbooks)
-    print_audit(selected, superseded, duplicates, rows, reconciliation)
-    if args.apply:
-        asyncio.run(apply_rows(rows, reconciliation))
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    load_dotenv(REPO_DIR / ".env")
+    if args.stage:
+        if args.authority_manifest is None:
+            raise PnlImportError("--stage necesita --authority-manifest.")
+        if args.expected_manifest_sha is not None:
+            raise PnlImportError("--expected-manifest-sha se foloseste numai pentru promote/rollback.")
+        asyncio.run(run_stage(args.input_dir, args.authority_manifest))
     else:
-        asyncio.run(dry_run_database_audit(rows, reconciliation))
-        print("Dry-run: baza de date nu a fost modificata.")
+        if args.authority_manifest is not None:
+            raise PnlImportError("Authority manifest se foloseste numai la --stage.")
+        if not args.expected_manifest_sha:
+            raise PnlImportError("Promote/rollback necesita --expected-manifest-sha.")
+        generation_id = args.apply_generation or args.rollback_generation
+        assert generation_id is not None
+        if args.apply_generation:
+            asyncio.run(run_apply(generation_id, args.expected_manifest_sha))
+        else:
+            asyncio.run(run_rollback(generation_id, args.expected_manifest_sha))
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (ValueError, RuntimeError, xlrd.XLRDError) as exc:
+    except (PnlImportError, ValueError, xlrd.XLRDError) as exc:
         print(f"EROARE: {exc}", file=sys.stderr)
         raise SystemExit(1)

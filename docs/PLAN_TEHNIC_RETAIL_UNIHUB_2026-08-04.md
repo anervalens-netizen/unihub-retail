@@ -407,3 +407,179 @@ Dovezi live după deploy:
 
 Verdict P0-A: **CLOSED și verificat live**. M-04 și M-05 rămân P0-B, fără
 extinderea retroactivă a acestui lot.
+
+## 14. Plan de execuție rămas — baseline 2026-08-04
+
+Această secțiune este backlogul executabil după P0-A. Ordinea este impusă de
+dependențele de date și recovery, nu doar de severitatea etichetată în audit.
+Fiecare lot are maximum doi writeri în paralel, ownership de fișiere disjunct,
+integrare unică și QA independent pe SHA-ul integrat. Sol păstrează ownership
+pentru contract, manifestul de migrări, integrare, release și verificarea live;
+Terra xhigh execută state machines/schema cu risc mare, iar Luna xhigh execută
+inventare, schimbări izolate, teste negative și QA.
+
+### 14.1 Stare și ordine
+
+| Lot | Constatări | Stare | Dependență / gate de ieșire |
+| --- | --- | --- | --- |
+| P0-B | M-04, M-05 | `IN PROGRESS` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
+| P1-A | M-06, M-07, R-01, R-02 | `BLOCKED BY P0-B` | ledger/staging append-only și matrice reală de roluri |
+| P1-B | M-08, M-09 | `BLOCKED BY P1-A` | retain verificat înainte de terminal; reconciler/fault injection |
+| P1-C | M-10, R-03 | `READY AFTER P1-A` | CNP eliminat din runtime; apply salarial fail-closed |
+| P1-D | M-11, M-12 | `READY AFTER P1-A` | recovery Grile determinist; Google I/O nu blochează event loop |
+| P2-A | M-13, R-06, R-17, R-19, R-20 | `BACKLOG` | preflight/decompression/streaming/containment/capability |
+| P2-B | M-16, R-04, R-05, R-10 | `BACKLOG` | cohortă și structură istorică explicită |
+| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `BACKLOG` | caps, scheduler global, startup și load evidence |
+| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `BACKLOG` | hardening/scalare/calitate/cleanup cu inventar separat |
+
+Note de rutare:
+
+- M-12 este executat cu recovery Grile, deși auditul îl etichetează P2;
+- R-02 intră în P1-A deoarece rolul Finance dedicat depinde de matricea DB;
+- R-09 nu înseamnă automat mai mulți workeri; întâi se demonstrează bugetul DB,
+  rate-limit shared și shutdown corect;
+- M-17 se implementează numai după confirmarea modelului de scope business;
+- constatările minore intră în lotul care atinge componenta; restul rămân P3.
+
+### 14.2 P0-B — contract înghețat după auditul static și live
+
+#### M-04: eliminarea bypassului vânzări
+
+Baseline verificat pe primary:
+
+- `public.replace_month_snapshot(text)` există, owner `unihub`;
+- `PUBLIC` și `unihub_runtime` au `EXECUTE`;
+- `pg_stat_statements` arată cinci apeluri normalizate de la resetarea statisticii
+  din 2026-07-28; nu există timestamp per apel și nu se presupune recența;
+- singurul consumator checked-in este `backend/scripts/import_historical.py`;
+- nu există unitate systemd/timer sau call-site web/worker checked-in;
+- toate cele 16 luni istorice 2023-09..2024-12 sunt deja `completed`.
+
+Implementare:
+
+1. `import_historical.py` devine validator offline, fără conexiune DB, output
+   convertit sau mod de promovare. Exporturile legacy nu exprimă `is_cartela`;
+   un converter viitor cere contract separat, apoi Stage -> Validate -> Promote.
+2. Se elimină helperul Python și testele care legitimează apelul legacy.
+3. Migrarea 038 revocă `EXECUTE` de la `PUBLIC`/runtime și elimină funcția.
+   Baseline-ul și migrațiile istorice rămân nemodificate.
+4. Fresh DB și upgrade 037 -> 038 verifică absența funcției și zero mutații la
+   un apel refuzat. Riscul mai larg de DML runtime rămâne P1-A, nu este ascuns.
+
+Rollback: roll-forward; codul vechi nu se reactivează. O nevoie legitimă de
+reimport istoric produce generație nouă prin fluxul canonic și nu recreează
+funcția.
+
+#### M-05: autoritate Finance explicită și legată de bytes
+
+Euristica `populated_months` / `numeric_cells` / cale și `--apply` liber se
+elimină. Contractul are două artefacte:
+
+1. `authority manifest`, furnizat/aprobat extern, cu exact un bundle declarat
+   per `(company, period)`, `revision_id`, `parent_revision_id`, cutoff,
+   SHA-256 sursă, snapshot complet, coverage și control totals;
+2. `generation manifest`, produs la staging, care leagă authority hash,
+   source hashes, scope-uri, hashul canonic al rândurilor, preimage-ul live și
+   revision/head așteptat. Rândurile candidate sunt persistate immutable.
+
+Interfața devine:
+
+- `--stage --authority-manifest FILE`: acceptă numai sursele declarate; detail
+  și consolidat trebuie să provină din același bundle;
+- `--apply-generation UUID --expected-manifest-sha SHA`: citește numai
+  stagingul, ia lockuri per scope în ordine stabilă și face CAS pe head,
+  parent revision și preimage;
+- apply cere ambele companii reconciliate și rol Finance dedicat; în P0-B este
+  implementat și testat, dar rămâne operațional **NO-GO**;
+- promovarea înlocuiește numai `actual`; rândurile `estimated` nu sunt șterse;
+- orice mismatch lasă headul și datele live nemodificate.
+
+Migrarea 039 adaugă generații, scope-uri, stage rows, head-uri și ledger. Primul
+staging peste date legacy captează un baseline/preimage și refuză apply dacă
+acesta se schimbă. Rollbackul este o generație inversă nouă cu CAS; nu mută
+pointerul înapoi și nu atinge estimările.
+
+Teste blocante:
+
+- vechi complet + corecție nouă: numai revizia declarată este eligibilă;
+- source rename/modificare, workbook nedeclarat sau detail/summary mix: refuz;
+- aceeași cheie cu altă valoare este detectată prin hash, nu prin coverage;
+- lipsă companie, snapshot parțial, head/preimage stale: refuz;
+- două promovări concurente: exact una câștigă;
+- fault după delete/control mismatch: rollback tranzacțional, head neschimbat;
+- estimările magazinelor neacoperite rămân bit-identice;
+- rollback inverse generation are predecessor și CAS verificat.
+
+### 14.3 Ownership P0-B și porți de integrare
+
+| Lane | Model | Ownership | Interdicții |
+| --- | --- | --- | --- |
+| M-04 | Luna xhigh | script istoric, helper, migrarea 038, teste dedicate | fără manifest/docs/commit/deploy |
+| M-05 | Terra xhigh | service/state machine P&L, CLI, migrarea 039, teste dedicate | fără manifest/docs/commit/deploy |
+| integrare | Sol | contract, migration manifest, docs, conflicte, gate complet | un singur candidate SHA |
+| QA | Luna xhigh + Terra xhigh | review read-only pe SHA integrat și scenarii negative | fără fix direct pe candidatul QA |
+
+Ordinea porților:
+
+1. teste țintite per lane și `git diff --check`;
+2. manifest checksum și validare migrations;
+3. upgrade 037 -> 039 și fresh DB cu rolurile reale;
+4. testele P&L/sales/import, apoi backend complet o singură dată;
+5. typecheck/lint/build numai dacă diff-ul le activează;
+6. QA independent pe SHA integrat; orice fix produce SHA nou și re-aduce QA;
+7. backup verificat, formal CI pe `main`, artefactul exact al runului, migrare
+   one-shot, restart backend/worker numai dacă e necesar;
+8. live: funcția absentă, ACL confirmat, schema 039, business hashes sales/P&L
+   neschimbate și health verde. Nu se execută apply Finance sau reimport sales.
+
+### 14.4 Loturile următoare — descompunere executabilă
+
+#### P1-A — DB authority și append-only
+
+- contract de roluri: web-read/business-write/import-finance/operations/migrate;
+- privileges explicite, fără grants globale pe viitor; upgrade compatibil;
+- promotion ledger, staged rows și shadow evidence protejate DB-side;
+- head mutations numai prin API SQL controlat/CAS;
+- politica sales `authoritative_replace` separă anomaliile informative de
+  contradicțiile structurale blocante;
+- test de matrice autentificat cu fiecare rol live-equivalent.
+
+#### P1-B — lifecycle artefact sales
+
+- path unic/content-addressed și ownership durabil;
+- retain + hash + fsync/readback preced terminalul DB;
+- stare intermediară și reconciler idempotent;
+- retention calculat din head/predecessor/ledger;
+- fault injection move/chmod/disk-full/crash și recovery demonstrat.
+
+#### P1-C — salary privacy și approval
+
+- citirile runtime numai prin `person_id`; CNP numai în `salary_private`;
+- backfill/reconcile fără CNP în output sau manifest;
+- artifact de aprobare legat de exact manifest/perioade/ambele companii;
+- gate tehnic pentru cele opt grupuri cunoscute și review independent;
+- dump/API/log scan negativ înainte de orice decizie de live apply.
+
+#### P1-D — Grile recovery și Google isolation
+
+- checkpoint fenced înainte de orice Google I/O;
+- adapter sincron în thread/subproces bounded, backoff async și cancellation;
+- reconciler startup + periodic pentru `running`/`uncertain`;
+- crash după primul clear ajunge la rollback verificat sau recovery-required cu
+  alertă; niciun retry automat peste stare incertă.
+
+#### P2 și P3
+
+P2 se livrează în trei candidate separate: boundaries/upload/streaming,
+cohorte istorice, apoi Dashboard/export/startup/load. P3 începe cu inventare
+read-only pentru scope organizațional, roluri OS/DB, query plans, dependencies,
+strict TS și cleanup; fiecare remediere primește gate proporțional și nu se
+comasează într-un mega-release.
+
+### 14.5 Condiție de continuare
+
+După fiecare lot se actualizează această secțiune cu SHA, checksumuri, comenzi,
+business hashes, rollback și verdict. Următorul lot poate începe numai dacă
+candidatul curent este curat, sincronizat, verificat live și fără date
+neexplicate. Pentru P0-B, READY înseamnă cod/schema deployate și căile legacy
+închise; nu autorizează o promovare Finance live.

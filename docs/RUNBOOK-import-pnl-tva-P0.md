@@ -9,9 +9,10 @@ created: 2026-08-03
 
 ## Contract și status
 
-Baseline-ul acestui runbook este `f9c0b1efe15686bcda532d22528e6e2644925aec`.
-P0 implementează numai staging/shadow și garduri de scope. Nu există apply live
-Finance/TVA activat prin acest lot. Actualele Finance, estimările și scenariile
+Baseline-ul inițial al acestui runbook este
+`f9c0b1efe15686bcda532d22528e6e2644925aec`; SHA-ul P0-B se completează în
+evidence-ul de release. P0 implementează staging/shadow și garduri de scope, dar
+nu activează apply live Finance/TVA. Actualele Finance, estimările și scenariile
 Target finalizate rămân protejate.
 
 Registrul fiscal effective-dated este:
@@ -27,8 +28,31 @@ Orice aplicare live necesită un lot separat, cu aprobare explicită.
 Scope-ul este lista exactă de perechi `(company, period)` din batch. Importul
 nu șterge anul întreg, cealaltă companie sau alte luni. Bucketul
 `__FINANCE_UNALLOCATED__` este înlocuit numai în aceeași pereche company-period.
-Coverage-ul curent este comparat cu candidatele, iar scăderea unei chei
-existente blochează promovarea.
+Authority manifestul trebuie să declare snapshot complet, ambele companii,
+revision/parent, cutoff, source SHA, coverage și control totals. O corecție
+oficială completă poate elimina chei vechi; diferența este hashuită și auditată,
+nu este înlocuită cu euristica „workbook mai dens”.
+
+## Generația autoritativă Finance
+
+`backend/scripts/import_store_pnl.py` acceptă numai aceste operații:
+
+- `--stage --authority-manifest FILE --input-dir DIR` pentru staging immutable;
+- `--apply-generation UUID --expected-manifest-sha SHA256` și
+  `--rollback-generation UUID --expected-manifest-sha SHA256`, ambele blocate
+  operațional în P0-B înainte de conectarea DB.
+
+Stagingul cere `FINANCE_PNL_DATABASE_URL`, diferit de `DATABASE_URL`, și rolul
+exact `unihub_finance_import`. Directorul de input trebuie să conțină exact
+sursele declarate; parserul hash-uiește bytes înainte de parse, refuză symlink,
+rename, source/hash mismatch, luni nedeclarate și mix detail/summary între
+revizii. Candidatele, pre-image-ul și ledgerul sunt immutable. Apply-ul intern
+verificat folosește stagingul, nu recitește filesystemul; lockurile per scope,
+revision/parent și pre-image hash formează CAS-ul.
+
+Nu crea rolul/credentialul Finance și nu rula staging/apply pe primary în acest
+lot. Acestea cer decizie operațională separată. Codul și schema se verifică pe
+PostgreSQL izolat cu rolul de test omonim.
 
 ## Shadow și provenance
 
@@ -57,7 +81,7 @@ backend/venv/bin/python backend/scripts/shadow_store_pnl.py \
   --scope Mobiup:YYYY-MM --scope Mobicell:YYYY-MM
 ~~~
 
-Comanda este dry-run implicit. `--promote-shadow` și `--rollback-shadow` mută
+Comanda shadow este dry-run implicit. `--promote-shadow` și `--rollback-shadow` mută
 numai pointerul shadow prin CAS și afișează explicit `effective_apply: BLOCKED`.
 Nu există `--apply` pentru shadow. Calea
 `estimate_store_pnl.py --apply --effective-vat` este blocată înainte de
@@ -77,10 +101,12 @@ conectarea DB la baseline P0.
 
 ## Recovery și limite
 
-Rollbackul P0 este pointer CAS către generația anterioară sau restore din
-pre-image într-un lot separat; nu se editează migrațiile istorice și nu se
-execută down migration destructivă. Dacă snapshotul sau hashes nu pot fi
-reconciliate, starea este `recovery_required` și rămâne generația bună.
+Rollbackul shadow este pointer CAS. Rollbackul unei generații Finance creează o
+generație inversă nouă din pre-image și o promovează numai dacă headul și CAS-ul
+încă se potrivesc; nu mută headul înapoi și nu atinge `estimated`. Nu se editează
+migrațiile istorice și nu se execută down migration destructivă. Dacă snapshotul
+sau hashurile nu pot fi reconciliate, apply-ul eșuează tranzacțional și rămâne
+generația bună.
 
 P0 nu demonstrează reconcilierea celor 8 grupuri salariale, nu modifică date
 live și nu declară că TVA effective-dated este activ în Finance sau în Target.

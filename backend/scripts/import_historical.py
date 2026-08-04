@@ -1,244 +1,227 @@
 #!/usr/bin/env python3
-"""
-Import batch pentru fișierele istorice de vânzări 2023 Q4 + 2024.
+"""Validate legacy sales workbooks without touching the database.
 
-Fișierele vechi (pre-2025) nu au coloanele Agent, Categorie, SubCategorie:
-  - Agent      → '-'  (agent necunoscut pentru date istorice)
-  - Categorie  → None
-  - SubCategorie → None
-  - is_cartela → False (nu putem detecta fără Categorie; presupunem vânzare normală)
+Legacy workbooks predate the current sales-import contract and do not contain
+``Agent``, ``Categorie`` or ``SubCategorie``.  This tool only normalizes those
+files in memory for strict offline validation and reporting.  It never creates
+a canonical workbook and never promises that the source can be reimported.
+Any future reimport requires a separately approved converter that expresses
+``is_cartela`` explicitly.
 
-Optimizare batch: rebuild_agent_lifecycle_reporting se apelează o singură dată la final,
-nu la fiecare lună ca în importerul normal.
+Examples::
 
-Rulare:
-    cd /opt/Mobiup/unihub/backend
-    python scripts/import_historical.py [--dry-run]
+    python scripts/import_historical.py
+    python scripts/import_historical.py --input-dir /path/to/historical
 """
 from __future__ import annotations
 
 import argparse
-import asyncio
-import os
-import sys
+from dataclasses import dataclass
+import math
 from pathlib import Path
 
-# Încarcă .env înainte de orice import local
-from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import asyncpg
 import pandas as pd
 
-from services.importer import (
-    filter_asm_rows,
-    detect_month,
-    is_month_final,
-    reserve_snapshot,
-    upsert_stores,
-    replace_month_snapshot,
-    insert_transactions,
-)
-from services.reporting_refresh import (
-    rebuild_reporting_month,
-    rebuild_agent_lifecycle_reporting,
-)
 
 BASE = Path(__file__).resolve().parent.parent.parent / "data" / "vanzari 2022, 2023 si 2024"
 
 OLD_COLUMNS = [
-    "Data", "SiteCode", "ItemCode", "ItemName", "Cantitate", "Brand",
-    "Pret", "Valoare", "Locatie", "Firma", "ASM", "Regional", "Nr",
+    "Data",
+    "SiteCode",
+    "ItemCode",
+    "ItemName",
+    "Cantitate",
+    "Brand",
+    "Pret",
+    "Valoare",
+    "Locatie",
+    "Firma",
+    "ASM",
+    "Regional",
+    "Nr",
 ]
 
+MAX_QUANTITY = 2_147_483_647
+MAX_MONEY = 99_999_999.99
 
-def load_historical_df(path: Path) -> pd.DataFrame:
-    """Citește un fișier vechi (fără Agent/Categorie/SubCategorie) și adaugă coloanele lipsă."""
-    df = pd.read_excel(str(path), sheet_name="MobiUp_MobiCell", engine=None)
-    df = df.rename(columns=lambda v: str(v).strip())
 
-    missing = [c for c in OLD_COLUMNS if c not in df.columns]
+@dataclass(frozen=True, slots=True)
+class HistoricalFileReport:
+    """Validation result for one source workbook."""
+
+    source: Path
+    import_month: str
+    rows_in_file: int
+    rows_without_valid_asm: int
+    stores: int
+
+
+def _normalize_firma(value: object) -> str:
+    cleaned = str(value or "").strip()
+    if cleaned.lower() == "mobiup":
+        return "Mobiup"
+    if cleaned.lower() == "mobicell":
+        return "MobiCell"
+    return cleaned
+
+
+def _validate_numeric_column(
+    df: pd.DataFrame,
+    column: str,
+    *,
+    integer: bool = False,
+) -> pd.Series:
+    values = pd.to_numeric(df[column], errors="coerce")
+    invalid = values.isna() | ~values.map(lambda value: math.isfinite(float(value)))
+    if integer:
+        invalid = invalid | ~values.map(
+            lambda value: bool(pd.isna(value)) or float(value).is_integer()
+        )
+        invalid = invalid | (values.abs() > MAX_QUANTITY)
+    else:
+        invalid = invalid | (values.abs() > MAX_MONEY)
+    if bool(invalid.any()):
+        label = "Cantitate" if integer else column
+        raise ValueError(f"Coloana {label} conține valori invalide.")
+    return values.astype("int64") if integer else values
+
+
+def _validate_identifiers(df: pd.DataFrame) -> None:
+    # Rows without an ASM are intentionally ignored by the canonical Retail
+    # import (TR locations / unallocated agents), so they remain valid source
+    # rows for this offline validator.
+    importable = df[~df["ASM"].fillna("").astype(str).str.strip().isin(["", "-"])]
+    required = ("SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "Regional", "Nr")
+    missing = [
+        column
+        for column in required
+        if importable[column]
+        .map(lambda value: bool(pd.isna(value)) or not str(value).strip())
+        .any()
+    ]
     if missing:
-        raise ValueError(f"Lipsesc coloane obligatorii: {missing}")
+        raise ValueError(
+            "Fișierul conține identificatori obligatorii lipsă: " + ", ".join(missing)
+        )
+
+    metadata_columns = ["Locatie", "Firma", "Regional", "ASM"]
+    if not importable.empty:
+        grouped = importable.groupby("SiteCode", dropna=False)[metadata_columns]
+        conflicting = int((grouped.nunique(dropna=False) > 1).any(axis=1).sum())
+        if conflicting:
+            raise ValueError(
+                f"Fișierul conține metadate contradictorii pentru {conflicting} magazine."
+            )
+
+
+def load_historical_df(path: Path | str) -> pd.DataFrame:
+    """Load and strictly validate one legacy workbook.
+
+    The returned frame contains only source columns.  Missing canonical fields
+    are deliberately not synthesized: doing so would make a later workbook
+    import ambiguous, especially for ``is_cartela``.
+    """
+
+    source = Path(path)
+    df = pd.read_excel(str(source), sheet_name="MobiUp_MobiCell", engine=None)
+    df = df.rename(columns=lambda value: str(value).strip())
+
+    missing = [column for column in OLD_COLUMNS if column not in df.columns]
+    if missing:
+        raise ValueError(f"Lipsesc coloane obligatorii: {', '.join(missing)}")
 
     df = df[OLD_COLUMNS].copy()
-    df["Data"] = pd.to_datetime(df["Data"], format="%d.%m.%Y", errors="raise").dt.date
-    df["Cantitate"] = pd.to_numeric(df["Cantitate"], errors="raise").astype(int)
-    df["Pret"] = pd.to_numeric(df["Pret"], errors="coerce").fillna(0)
-    df["Valoare"] = pd.to_numeric(df["Valoare"], errors="coerce").fillna(0)
-    df["Nr"] = df["Nr"].fillna("").map(lambda v: str(v).strip())
-    for col in ["SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "ASM", "Regional"]:
-        df[col] = df[col].fillna("").map(lambda v: str(v).strip())
+    try:
+        df["Data"] = pd.to_datetime(
+            df["Data"], format="%d.%m.%Y", errors="raise"
+        ).dt.date
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Coloana Data conține valori invalide.") from exc
 
-    # Brand: NaN din celule goale → None (altfel asyncpg primește float pe coloană TEXT)
+    df["Cantitate"] = _validate_numeric_column(df, "Cantitate", integer=True)
+    df["Pret"] = _validate_numeric_column(df, "Pret")
+    df["Valoare"] = _validate_numeric_column(df, "Valoare")
+
+    df["Nr"] = df["Nr"].fillna("").map(lambda value: str(value).strip())
+    for column in ["SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "ASM", "Regional"]:
+        df[column] = df[column].fillna("").map(lambda value: str(value).strip())
+    df["Firma"] = df["Firma"].map(_normalize_firma)
     df["Brand"] = df["Brand"].where(pd.notna(df["Brand"]), None)
-    df["Brand"] = df["Brand"].map(lambda v: str(v).strip() if isinstance(v, str) else v)
+    df["Brand"] = df["Brand"].map(lambda value: str(value).strip() if isinstance(value, str) else value)
 
-    # Coloane lipsă față de formatul curent (post-2025)
-    df["Agent"] = "-"
-    df["Categorie"] = None
-    df["SubCategorie"] = None
-    # is_cartela=False: fără Categorie nu putem detecta; presupunem vânzare normală
-    # (is_cartela=True ar exclude rândurile din toate rapoartele)
-    df["is_cartela"] = False
-    df["is_return"] = df["Cantitate"] < 0
+    _validate_identifiers(df)
 
-    return df
+    return df[OLD_COLUMNS].copy()
 
 
-def collect_files() -> list[Path]:
-    """Colectează fișierele din 2023/ și 2024/, sortate cronologic după folder + nume."""
+def detect_month(df: pd.DataFrame) -> str:
+    """Return the single business month represented by a validated frame."""
+
+    months = sorted({value.strftime("%Y-%m") for value in df["Data"]})
+    if len(months) != 1:
+        raise ValueError(f"Fișierul conține mai multe luni: {months}")
+    return months[0]
+
+
+def collect_files(base_dir: Path | str = BASE) -> list[Path]:
+    """Collect legacy workbooks from the historical 2023 and 2024 folders."""
+
+    root = Path(base_dir)
     files: list[Path] = []
-    for year_dir in [BASE / "2023", BASE / "2024"]:
+    for year in ("2023", "2024"):
+        year_dir = root / year
         if year_dir.exists():
             files.extend(sorted(year_dir.glob("*.xlsx")))
     return files
 
 
-async def reconcile_lifecycle(conn: asyncpg.Connection) -> None:
-    """Atomically rebuild lifecycle even when a retry imports no new month."""
-    async with conn.transaction():
-        await rebuild_agent_lifecycle_reporting(conn)
+def validate_historical_file(path: Path | str) -> HistoricalFileReport:
+    """Validate a workbook and return metadata without writing any file."""
 
-
-async def import_one(
-    conn: asyncpg.Connection,
-    path: Path,
-    imported_months: set[str],
-    dry_run: bool,
-) -> tuple[str | None, int]:
-    """
-    Importă un fișier istoric.
-    Returnează (import_month, rows_imported) sau (None, 0) dacă sărit.
-    NU apelează rebuild_agent_lifecycle_reporting — se face o singură dată la final.
-    """
-    df = load_historical_df(path)
-    rows_total = len(df)
-
-    df, rows_filtered = filter_asm_rows(df)
-    if df.empty:
-        print(f"  SKIP — nicio linie cu ASM valid după filtrare")
-        return None, 0
-
-    import_month = detect_month(df)
-
-    if import_month in imported_months:
-        print(f"  SKIP — {import_month} deja importat în DB")
-        return None, 0
-
-    print(f"  Luna detectată: {import_month} | {rows_total:,} total | {rows_filtered:,} filtrate | {len(df):,} de importat")
-
-    if dry_run:
-        print(f"  [DRY RUN] s-ar importa {len(df):,} rânduri")
-        return import_month, len(df)
-
-    snapshot_id = await reserve_snapshot(
-        conn,
-        import_month=import_month,
-        filename=path.name,
-        rows_in_file=rows_total,
+    source = Path(path)
+    df = load_historical_df(source)
+    valid_asm = ~df["ASM"].fillna("").astype(str).str.strip().isin(["", "-"])
+    return HistoricalFileReport(
+        source=source,
+        import_month=detect_month(df),
+        rows_in_file=len(df),
+        rows_without_valid_asm=int((~valid_asm).sum()),
+        stores=int(df.loc[valid_asm, "SiteCode"].nunique()),
     )
 
+
+def process_files(input_dir: Path | str = BASE) -> list[HistoricalFileReport]:
+    """Validate all historical sources and return their offline reports."""
+
+    return [validate_historical_file(path) for path in collect_files(input_dir)]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Validează offline fișierele istorice de vânzări"
+    )
+    parser.add_argument("--input-dir", type=Path, default=BASE)
+    return parser
+
+
+def main(input_dir: Path = BASE) -> int:
     try:
-        async with conn.transaction():
-            await upsert_stores(conn, df, import_month)
-            await replace_month_snapshot(conn, import_month)
-            rows_imported = await insert_transactions(conn, df, snapshot_id, import_month)
-            await rebuild_reporting_month(conn, import_month)
+        reports = process_files(input_dir)
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"EROARE — {exc}")
+        return 1
 
-            await conn.execute(
-                """
-                UPDATE import_snapshots
-                SET status = 'completed',
-                    rows_imported = $2,
-                    is_month_final = $3,
-                    error_message = NULL,
-                    heartbeat_at = now(),
-                    finished_at = now()
-                WHERE id = $1
-                """,
-                snapshot_id,
-                rows_imported,
-                is_month_final(import_month),
-            )
-    except Exception as exc:
-        await conn.execute(
-            """
-            UPDATE import_snapshots
-            SET status = 'failed', rows_imported = 0, error_message = $2,
-                heartbeat_at = now(), finished_at = now()
-            WHERE id = $1
-            """,
-            snapshot_id,
-            str(exc)[:500],
+    print(f"VALIDATED: {len(reports)} fișiere; fără conexiune sau mutații DB")
+    for report in reports:
+        print(
+            f"  {report.source.name}: {report.import_month} | "
+            f"{report.rows_in_file:,} rânduri | "
+            f"{report.rows_without_valid_asm:,} fără ASM valid | "
+            f"{report.stores:,} magazine"
         )
-        raise
-
-    return import_month, rows_imported
-
-
-async def main(dry_run: bool) -> None:
-    db_url = os.environ.get("DATABASE_URL", "")
-    if not db_url:
-        print("EROARE: DATABASE_URL lipsește din .env")
-        sys.exit(1)
-
-    conn = await asyncpg.connect(db_url)
-    try:
-        rows = await conn.fetch(
-            "SELECT import_month FROM import_snapshots WHERE status = 'completed'"
-        )
-        imported_months: set[str] = {r["import_month"] for r in rows}
-        print(f"Luni deja în DB: {sorted(imported_months)}\n")
-
-        files = collect_files()
-        print(f"Fișiere găsite: {len(files)}")
-        if dry_run:
-            print("  *** MOD DRY RUN — nu se scrie nimic în DB ***")
-        print()
-
-        results: list[tuple[str, int]] = []
-        errors: list[tuple[str, str]] = []
-
-        for path in files:
-            print(f"[{path.parent.name}/{path.name}]")
-            try:
-                month, rows_imported = await import_one(conn, path, imported_months, dry_run)
-                if month:
-                    imported_months.add(month)
-                    results.append((month, rows_imported))
-                    print(f"  {'[DRY RUN] ' if dry_run else ''}OK — {rows_imported:,} rânduri")
-            except Exception as exc:
-                print(f"  EROARE — {exc}")
-                errors.append((path.name, str(exc)))
-            print()
-
-        if not dry_run:
-            print("Reconciliez reporting lifecycle din toate lunile completed...")
-            await reconcile_lifecycle(conn)
-            print("  Done.\n")
-
-        print("=" * 50)
-        print(f"Importate: {len(results)} luni | Erori: {len(errors)}")
-        print(f"Total rânduri: {sum(r for _, r in results):,}")
-        if results:
-            print("\nLuni importate:")
-            for month, r in sorted(results):
-                print(f"  {month}: {r:,} rânduri")
-        if errors:
-            print(f"\nErori:")
-            for fname, err in errors:
-                print(f"  {fname}: {err}")
-
-    finally:
-        await conn.close()
+    return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Import batch fișiere istorice vânzări 2023-2024")
-    parser.add_argument("--dry-run", action="store_true", help="Simulează fără a scrie în DB")
-    args = parser.parse_args()
-    asyncio.run(main(dry_run=args.dry_run))
+    args = build_parser().parse_args()
+    raise SystemExit(main(args.input_dir))

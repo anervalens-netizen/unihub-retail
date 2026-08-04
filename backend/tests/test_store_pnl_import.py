@@ -1,180 +1,213 @@
+from __future__ import annotations
+
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
 from scripts.import_store_pnl import (
-    PnlRow,
     UNALLOCATED_SOURCE,
     WorkbookData,
-    candidate_business_keys,
-    coverage_regressions,
+    build_parser,
     detail_category,
+    materialize_authority_rows,
     merged_rows,
-    replace_rows,
-    replacement_scopes,
-    select_snapshots,
     unallocated_rows,
+)
+from services.store_pnl_import import (
+    PnlImportError,
+    PnlRow,
+    _scope_generation_manifest,
+    _replace_actual_scope,
+    apply_generation,
+    canonical_sha256,
+    coverage_regressions,
+    coverage_sha256,
+    parse_authority_manifest,
+    rows_sha256,
+    stage_generation,
+    validate_scope_candidate,
 )
 
 
-def workbook(path: str, months: int, cells: int) -> WorkbookData:
-    row = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v1", "Venit", Decimal("1.00"), path, "a" * 64)
-    return WorkbookData(Path(path), "a" * 64, "Mobiup", (date(2025, 1, 1),), (row,), (), months, cells)
+PERIOD = date(2026, 7, 1)
+SHA_A = "a" * 64
+SHA_B = "b" * 64
 
 
-def test_select_snapshots_prefers_most_complete_file() -> None:
-    early = workbook("early.xls", 2, 20)
-    late = workbook("late.xls", 10, 100)
-    selected, superseded = select_snapshots([early, late])
-    assert selected == [late]
-    assert superseded == [early]
+def row(
+    *,
+    company: str = "Mobiup",
+    source_file: str = "approved.xls",
+    source_sha256: str = SHA_A,
+    site: str = "SITE",
+    category: str = "v1",
+    amount: str = "100.00",
+) -> PnlRow:
+    return PnlRow(
+        company, PERIOD, site, "Magazin", category, "Venit", Decimal(amount), source_file, source_sha256
+    )
+
+
+def authority(rows: list[PnlRow], *, revision: str = "r2", parent: str = "legacy"):
+    assert rows
+    first = rows[0]
+    payload = {
+        "version": 1,
+        "approval_id": "FIN-2026-07-approved",
+        "scopes": [{
+            "company_name": first.company_name,
+            "period": first.period.isoformat(),
+            "revision_id": revision,
+            "parent_revision_id": parent,
+            "cutoff": "2026-07-31",
+            "source_path": first.source_file,
+            "source_sha256": first.source_sha256,
+            "complete_snapshot": True,
+            "expected_row_count": len(rows),
+            "expected_total_amount": str(sum((item.amount for item in rows), Decimal("0.00"))),
+            "coverage_sha256": coverage_sha256(rows),
+        }],
+    }
+    return parse_authority_manifest(payload)
+
+
+def workbook(
+    rows: list[PnlRow],
+    *,
+    source_file: str = "approved.xls",
+    source_sha256: str = SHA_A,
+    consolidated: list[PnlRow] | None = None,
+) -> WorkbookData:
+    return WorkbookData(
+        Path(source_file), source_file, source_sha256, rows[0].company_name if rows else "Mobiup",
+        (PERIOD,), tuple(rows), tuple(consolidated or ()),
+    )
 
 
 def test_detail_category_recovers_shifted_finance_rows() -> None:
     sheet = MagicMock()
-    sheet.cell_value.side_effect = lambda _row, column: {
-        1: "",
-        5: "c11-ACM",
-    }.get(column, "")
-
+    sheet.cell_value.side_effect = lambda _row, column: {1: "", 5: "c11-ACM"}.get(column, "")
     assert detail_category(sheet, 421) == "c11"
 
 
-def test_merged_rows_sums_duplicate_accounting_lines() -> None:
-    one = workbook("one.xls", 1, 1)
-    two = workbook("two.xls", 1, 1)
-    rows = merged_rows([one, two])
-    assert len(rows) == 1
-    assert rows[0].amount == Decimal("2.00")
+def test_authority_hash_is_recomputable_from_exact_persisted_payload() -> None:
+    manifest = authority([row()])
+    assert manifest.payload["scopes"][0]["complete_snapshot"] is True
+    assert canonical_sha256(manifest.payload) == manifest.sha256
 
 
-def test_unallocated_rows_preserve_finance_consolidated_total() -> None:
-    detail = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v11", "Venit", Decimal("90.00"), "file.xls", "a" * 64)
-    total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("100.00"), "file.xls", "a" * 64)
-    source = WorkbookData(Path("file.xls"), "a" * 64, "Mobiup", (date(2025, 1, 1),), (detail,), (total,), 1, 1)
-
-    rows = unallocated_rows([detail], [source])
-
-    assert len(rows) == 1
-    assert rows[0].source_site_code == UNALLOCATED_SOURCE
-    assert rows[0].amount == Decimal("10.00")
+def test_candidate_rejects_row_from_undeclared_source_even_when_business_key_matches() -> None:
+    manifest = authority([row()])
+    foreign = row(source_file="foreign.xls")
+    with pytest.raises(PnlImportError, match="exact.*sursa authority"):
+        validate_scope_candidate(manifest.scopes[0], [foreign])
 
 
-def test_unallocated_rows_reject_store_filtered_summary() -> None:
-    detail = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v11", "Venit", Decimal("100.00"), "late.xls", "a" * 64)
-    filtered_total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("10.00"), "late.xls", "a" * 64)
-    source = WorkbookData(Path("late.xls"), "a" * 64, "Mobiup", (date(2025, 1, 1),), (detail,), (filtered_total,), 10, 100)
+def test_authority_and_candidate_reject_non_finite_money() -> None:
+    payload = authority([row()]).payload
+    payload["scopes"][0]["expected_total_amount"] = "NaN"
+    with pytest.raises(PnlImportError, match="finit"):
+        parse_authority_manifest(payload)
 
-    assert unallocated_rows([detail], [source]) == []
-
-
-def test_unallocated_rows_can_use_older_valid_consolidated_snapshot() -> None:
-    detail = PnlRow("Mobiup", date(2025, 1, 1), "SITE", "Magazin", "v11", "Venit", Decimal("100.00"), "late.xls", "a" * 64)
-    valid_total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("120.00"), "early.xls", "b" * 64)
-    filtered_total = PnlRow("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "Total", "v11", "Venit", Decimal("10.00"), "late.xls", "a" * 64)
-    early = WorkbookData(Path("early.xls"), "b" * 64, "Mobiup", (date(2025, 1, 1),), (), (valid_total,), 7, 70)
-    late = WorkbookData(Path("late.xls"), "a" * 64, "Mobiup", (date(2025, 1, 1),), (detail,), (filtered_total,), 10, 100)
-
-    rows = unallocated_rows([detail], [early, late])
-
-    assert len(rows) == 1
-    assert rows[0].amount == Decimal("20.00")
-    assert rows[0].source_file == "early.xls"
+    manifest = authority([row()])
+    with pytest.raises(PnlImportError, match="finite"):
+        validate_scope_candidate(manifest.scopes[0], [row(amount="NaN")])
 
 
-def test_replacement_scope_is_exact_company_period() -> None:
-    rows = [
-        PnlRow(
-            company,
-            period,
-            "SITE",
-            "Magazin",
-            "v1",
-            "Venit",
-            Decimal("1.00"),
-            "file.xls",
-            "a" * 64,
-        )
-        for company, period in (
-            ("Mobiup", date(2025, 1, 1)),
-            ("Mobiup", date(2025, 3, 1)),
-            ("Mobicell", date(2025, 1, 1)),
-        )
-    ]
-
-    assert replacement_scopes(rows) == [
-        ("Mobicell", date(2025, 1, 1)),
-        ("Mobiup", date(2025, 1, 1)),
-        ("Mobiup", date(2025, 3, 1)),
-    ]
+def test_authority_requires_exact_sources_and_rejects_source_rename() -> None:
+    approved = row()
+    manifest = authority([approved])
+    renamed = workbook([row(source_file="renamed.xls")], source_file="renamed.xls")
+    with pytest.raises(PnlImportError, match="Sursele observate"):
+        materialize_authority_rows([renamed], manifest)
 
 
-def test_coverage_regression_blocks_missing_existing_key() -> None:
-    candidate = workbook("candidate.xls", 1, 1).rows[0]
-    current = [
-        {
-            "company_name": "Mobiup",
-            "period": date(2025, 1, 1),
-            "source_site_code": "SITE",
-            "category_code": "v1",
-        },
-        {
-            "company_name": "Mobiup",
-            "period": date(2025, 1, 1),
-            "source_site_code": "SITE",
-            "category_code": "c1",
-        },
-    ]
-
-    assert coverage_regressions(current, [candidate]) == [
-        ("Mobiup", date(2025, 1, 1), "SITE", "c1")
-    ]
+def test_authority_rejects_mutated_and_undeclared_bundle() -> None:
+    approved = row()
+    manifest = authority([approved])
+    changed = workbook([row(source_sha256=SHA_B)], source_sha256=SHA_B)
+    extra = workbook([row(source_file="extra.xls", source_sha256=SHA_B)], source_file="extra.xls", source_sha256=SHA_B)
+    with pytest.raises(PnlImportError, match="Sursele observate"):
+        materialize_authority_rows([changed], manifest)
+    with pytest.raises(PnlImportError, match="Sursele observate"):
+        materialize_authority_rows([workbook([approved]), extra], manifest)
 
 
+def test_same_business_key_changed_amount_changes_generation_hash() -> None:
+    original = row(amount="100.00")
+    correction = row(amount="101.00")
+    assert rows_sha256([original]) != rows_sha256([correction])
 
-def test_missing_unallocated_bucket_is_a_coverage_regression() -> None:
-    candidate = workbook("candidate.xls", 1, 1).rows[0]
-    current = [
-        {
-            "company_name": "Mobiup",
-            "period": date(2025, 1, 1),
-            "source_site_code": UNALLOCATED_SOURCE,
-            "category_code": "v1",
-        }
-    ]
 
-    assert coverage_regressions(current, [candidate]) == [
-        ("Mobiup", date(2025, 1, 1), UNALLOCATED_SOURCE, "v1")
-    ]
+def test_complete_snapshot_records_removed_keys_instead_of_using_coverage_heuristic() -> None:
+    old = row(category="c1", amount="10.00")
+    candidate = row(category="v1", amount="100.00")
+    manifest = authority([candidate])
+    scope_manifest = _scope_generation_manifest(manifest.scopes[0], [candidate], [old], 4)
+    assert coverage_regressions([old], [candidate]) == [("Mobiup", PERIOD, "SITE", "c1")]
+    assert scope_manifest["removed_business_key_count"] == 1
 
-def test_duplicate_candidate_business_key_is_rejected() -> None:
-    candidate = workbook("candidate.xls", 1, 1).rows[0]
-    with pytest.raises(RuntimeError, match="chei business duplicate"):
-        candidate_business_keys([candidate, candidate])
+
+def test_unallocated_delta_cannot_mix_a_second_workbook() -> None:
+    detail = row(amount="90.00")
+    total = row(site=UNALLOCATED_SOURCE, amount="100.00")
+    source = workbook([detail], consolidated=[total])
+    delta = unallocated_rows([detail], source, ("Mobiup", PERIOD))
+    assert len(delta) == 1
+    assert delta[0].amount == Decimal("10.00")
+    assert delta[0].source_file == "approved.xls"
+
+
+def test_materialize_rejects_unapproved_month_from_same_source() -> None:
+    approved = row()
+    manifest = authority([approved])
+    unexpected = PnlRow("Mobiup", date(2026, 8, 1), "SITE", "Magazin", "v1", "Venit", Decimal("1.00"), "approved.xls", SHA_A)
+    with pytest.raises(PnlImportError, match="luni neaprobate"):
+        materialize_authority_rows([workbook([approved, unexpected])], manifest)
+
+
+def test_stage_requires_both_finance_companies_before_database_access() -> None:
+    manifest = authority([row()])
+    connection = MagicMock()
+    with pytest.raises(PnlImportError, match="ambele companii"):
+        __import__("asyncio").run(stage_generation(connection, manifest, {manifest.scopes[0].key: [row()]}))
+    assert not connection.fetchval.called
 
 
 @pytest.mark.anyio
-async def test_replace_rows_deletes_only_exact_scope_and_verifies_totals() -> None:
-    candidate = workbook("candidate.xls", 1, 1).rows[0]
+async def test_apply_rejects_runtime_database_role_before_transaction() -> None:
     connection = MagicMock()
-    connection.transaction.return_value.__aenter__ = AsyncMock(return_value=None)
-    connection.transaction.return_value.__aexit__ = AsyncMock(return_value=False)
-    connection.fetch = AsyncMock(return_value=[])
+    connection.fetchval = AsyncMock(return_value="unihub_runtime")
+    with pytest.raises(PnlImportError, match="unihub_finance_import"):
+        await apply_generation(connection, uuid4(), SHA_A)
+    assert not connection.transaction.called
+
+
+@pytest.mark.anyio
+async def test_replace_actual_scope_never_deletes_or_inserts_estimates() -> None:
+    connection = MagicMock()
     connection.execute = AsyncMock()
     connection.executemany = AsyncMock()
-    connection.fetchrow = AsyncMock(
-        return_value={"row_count": 1, "total_amount": Decimal("1.00")}
-    )
+    await _replace_actual_scope(connection, ("Mobiup", PERIOD), [row()])
+    delete_sql = connection.execute.await_args.args[0]
+    insert_sql = connection.executemany.await_args.args[0]
+    assert "data_kind = 'actual'" in delete_sql
+    assert "estimated" not in delete_sql
+    assert "'actual'" in insert_sql
 
-    await replace_rows(connection, [candidate])
 
-    delete_call = connection.execute.await_args
-    assert delete_call is not None
-    assert "company_name = $1" in delete_call.args[0]
-    assert "period = $2" in delete_call.args[0]
-    assert delete_call.args[1:] == ("Mobiup", date(2025, 1, 1))
-    assert "make_date" not in delete_call.args[0]
-    assert "__FINANCE_UNALLOCATED__" not in delete_call.args[0]
+def test_legacy_apply_flag_is_not_an_interface() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--apply"])
+
+
+def test_merged_rows_preserves_single_source_and_sums_accounting_lines() -> None:
+    first = row(amount="1.00")
+    second = row(amount="2.00")
+    merged = merged_rows([first, second])
+    assert len(merged) == 1
+    assert merged[0].amount == Decimal("3.00")

@@ -441,10 +441,6 @@ async def record_coverage_report(
     )
 
 
-async def replace_month_snapshot(conn: asyncpg.Connection, import_month: str) -> None:
-    await conn.execute("SELECT replace_month_snapshot($1)", import_month)
-
-
 async def reserve_snapshot(
     conn: asyncpg.Connection,
     import_month: str,
