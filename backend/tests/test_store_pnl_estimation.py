@@ -5,6 +5,7 @@ from scripts.estimate_store_pnl import (
     CATEGORY_NAMES,
     REVENUE_CODES,
     build_estimates,
+    all_missing_targets,
     estimate_replacement_scopes,
     predict_amount,
 )
@@ -35,6 +36,25 @@ def test_existing_finance_store_month_is_never_supplemented() -> None:
     estimates = build_estimates(actual, sales, [], stores, {("Mobicell", period, "ACTUAL")}, causal=False)
 
     assert estimates == []
+
+
+def test_all_missing_targets_keeps_sales_for_stores_without_finance_actual() -> None:
+    period = date(2026, 3, 1)
+    actual = [
+        {
+            "company_name": "Mobicell",
+            "period": period,
+            "site_code": "ACTUAL",
+        }
+    ]
+    sales = [
+        {"company_name": "Mobicell", "period": period, "site_code": "ACTUAL", "amount": 1_000},
+        {"company_name": "Mobicell", "period": period, "site_code": "MISSING", "amount": 2_000},
+    ]
+
+    assert all_missing_targets(actual, sales, input_cutoff=date(2026, 4, 1)) == {
+        ("Mobicell", period, "MISSING")
+    }
 
 
 def test_missing_store_revenue_equals_sales_without_vat() -> None:

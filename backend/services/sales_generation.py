@@ -66,6 +66,51 @@ def _canonical_sales_row(row: Any) -> dict[str, Any]:
     }
 
 
+def _stage_digest_scalar(value: Any) -> str:
+    """Match ``sales_stage_digest_scalar`` in migration 037 byte for byte."""
+    if value is None or pd.isna(value):
+        return "N"
+    text = str(value)
+    return f"V{len(text.encode('utf-8'))}:{text}"
+
+
+def canonical_sales_stage_rows_sha256(df: pd.DataFrame, *, import_month: str) -> str:
+    """Digest every persisted staging field in its source row order.
+
+    This is intentionally separate from the business manifest hash: it covers
+    source metadata as well as business fields and binds ordered row
+    multiplicity.  PostgreSQL recomputes the identical representation before
+    accepting validation or a head move.
+    """
+    canonical_rows: list[str] = []
+    for row_number, row in enumerate(df.itertuples(index=False), start=1):
+        sale_date = row.Data.isoformat()
+        values = (
+            row_number,
+            import_month,
+            sale_date,
+            str(row.SiteCode),
+            str(row.Locatie),
+            str(row.Firma),
+            str(row.Regional),
+            str(row.ASM),
+            str(row.Nr),
+            str(row.ItemCode),
+            str(row.ItemName),
+            None if pd.isna(row.Brand) else str(row.Brand),
+            None if pd.isna(row.Categorie) else str(row.Categorie),
+            None if pd.isna(row.SubCategorie) else str(row.SubCategorie),
+            int(row.Cantitate),
+            f"{_money(row.Pret):.2f}",
+            f"{_money(row.Valoare):.2f}",
+            str(row.Agent),
+            str(bool(row.is_cartela)).lower(),
+            str(bool(row.is_return)).lower(),
+        )
+        canonical_rows.append("\x1f".join(_stage_digest_scalar(value) for value in values))
+    return sha256("\x1e".join(canonical_rows).encode("utf-8")).hexdigest()
+
+
 def build_sales_generation_manifest(
     df: pd.DataFrame,
     *,

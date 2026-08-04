@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from auth import AuthClaims
@@ -6,11 +7,13 @@ from fastapi import HTTPException, Request
 from fastapi.routing import APIRoute
 from routers.store_pnl import (
     can_access_store_pnl,
+    get_service,
     pnl_permissions,
     require_store_pnl_owner,
     router,
     validate_company,
 )
+from repositories.store_pnl import StorePnlRepository
 
 
 def claims(email: str, groups: list[str] | None = None) -> AuthClaims:
@@ -74,3 +77,16 @@ def test_store_pnl_company_filter_is_closed_to_known_values() -> None:
     with pytest.raises(HTTPException) as exc_info:
         validate_company("Other")
     assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_store_pnl_service_uses_the_canonical_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = object()
+    monkeypatch.setattr("routers.store_pnl.get_pool", AsyncMock(return_value=pool))
+
+    service = await get_service()
+
+    assert isinstance(service.repository, StorePnlRepository)
+    assert service.repository.pool is pool

@@ -16,6 +16,8 @@ TEST_SITE = "PNLPREF"
 TEST_OLD_SOURCE = "PNLPREF-OLD"
 TEST_OLD_COMPANY_SOURCE = "PNLPREF-MOBIUP"
 TEST_UNMAPPED_SOURCE = "PNL-UNMAPPED"
+TEST_ESTIMATED_SITE = "PNLPREF-ESTIMATED"
+UNALLOCATED_SOURCE = "__FINANCE_UNALLOCATED__"
 TEST_OLD_COMPANY_PERIOD = date(2096, 7, 1)
 TEST_PERIOD = date(2097, 7, 1)
 
@@ -29,19 +31,25 @@ async def _reset_fixture() -> None:
     pool = await get_pool()
     async with pool.acquire() as connection:
         await connection.execute(
-            "DELETE FROM store_pnl_monthly WHERE source_site_code = ANY($1::text[])",
+            "DELETE FROM store_pnl_monthly WHERE source_site_code = ANY($1::text[]) OR (period = $2 AND source_site_code = $3)",
             [
                 TEST_SITE,
                 TEST_OLD_SOURCE,
                 TEST_OLD_COMPANY_SOURCE,
                 TEST_UNMAPPED_SOURCE,
+                TEST_ESTIMATED_SITE,
             ],
+            TEST_PERIOD,
+            UNALLOCATED_SOURCE,
         )
         await connection.execute(
             "DELETE FROM store_pnl_site_links WHERE source_site_code = ANY($1::text[])",
-            [TEST_SITE, TEST_OLD_SOURCE, TEST_OLD_COMPANY_SOURCE],
+            [TEST_SITE, TEST_OLD_SOURCE, TEST_OLD_COMPANY_SOURCE, TEST_ESTIMATED_SITE],
         )
-        await connection.execute("DELETE FROM stores WHERE site_code = $1", TEST_SITE)
+        await connection.execute(
+            "DELETE FROM stores WHERE site_code = ANY($1::text[])",
+            [TEST_SITE, TEST_ESTIMATED_SITE],
+        )
 
 
 @pytest.mark.anyio
@@ -59,6 +67,16 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                           'P&L Test Region', 'P&L Test ASM', '2097-07', '2097-07')
                 """,
                 TEST_SITE,
+            )
+            await connection.execute(
+                """
+                INSERT INTO stores (
+                    site_code, locatie, firma, regional, asm,
+                    first_seen_month, last_seen_month
+                ) VALUES ($1, 'P&L estimated test', 'Mobicell',
+                          'P&L Test Region', 'P&L Test ASM', '2097-07', '2097-07')
+                """,
+                TEST_ESTIMATED_SITE,
             )
             await connection.executemany(
                 """
@@ -82,6 +100,13 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                         "P&L previous-company history",
                         TEST_SITE,
                         "manual_alias",
+                    ),
+                    (
+                        "Mobicell",
+                        TEST_ESTIMATED_SITE,
+                        "P&L estimated test",
+                        TEST_ESTIMATED_SITE,
+                        "exact_code",
                     ),
                 ],
             )
@@ -112,6 +137,39 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                         Decimal("20.00"),
                         "mobiup-unmapped.xlsx",
                         "u" * 64,
+                    ),
+                ],
+            )
+            await connection.executemany(
+                """
+                INSERT INTO store_pnl_monthly (
+                    company_name, period, source_site_code,
+                    source_location_name, category_code, category_name,
+                    amount, data_kind, source_file, source_sha256
+                ) VALUES ('Mobicell', $1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """,
+                [
+                    (
+                        TEST_PERIOD,
+                        TEST_ESTIMATED_SITE,
+                        "P&L estimated test",
+                        "v1",
+                        "Revenue",
+                        Decimal("200.00"),
+                        "estimated",
+                        "estimated-store.xlsx",
+                        "s" * 64,
+                    ),
+                    (
+                        TEST_PERIOD,
+                        UNALLOCATED_SOURCE,
+                        "Finance unallocated",
+                        "v3",
+                        "Other revenue",
+                        Decimal("25.00"),
+                        "actual",
+                        "finance-unallocated.xlsx",
+                        "f" * 64,
                     ),
                 ],
             )
@@ -174,6 +232,18 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
         assert matching[0]["amount"] == Decimal("125.00")
         assert matching[0]["site_code"] == TEST_SITE
 
+        estimated = [row for row in rows if row["site_code"] == TEST_ESTIMATED_SITE]
+        assert len(estimated) == 1
+        assert estimated[0]["data_kind"] == "estimated"
+        assert estimated[0]["amount"] == Decimal("200.00")
+
+        unallocated = [
+            row for row in rows if row["source_site_code"] == UNALLOCATED_SOURCE
+        ]
+        assert len(unallocated) == 1
+        assert unallocated[0]["data_kind"] == "actual"
+        assert unallocated[0]["site_code"] == UNALLOCATED_SOURCE
+
         filtered_out = await StorePnlRepository(pool).rows(
             TEST_PERIOD,
             TEST_PERIOD,
@@ -182,10 +252,22 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
         )
         assert all(row["source_site_code"] != TEST_SITE for row in filtered_out)
 
+        regional_rows = await StorePnlRepository(pool).rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            "Mobicell",
+            regional="P&L Test Region",
+        )
+        assert {(row["site_code"], row["data_kind"]) for row in regional_rows} == {
+            (TEST_SITE, "actual"),
+            (TEST_ESTIMATED_SITE, "estimated"),
+        }
+
         stores = await StorePnlRepository(pool).stores("Mobicell")
         store = next(row for row in stores if row["site_code"] == TEST_SITE)
         assert store["company_name"] == "Mobicell"
         assert store["location"] == "P&L precedence test"
+        assert all(row["site_code"] != UNALLOCATED_SOURCE for row in stores)
 
         all_stores = await StorePnlRepository(pool).stores(None)
         unmapped = [
@@ -226,8 +308,33 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
             if row["category_code"] == "v1"
         }
         assert revenues[2096]["amount"] == Decimal("80.00")
-        assert revenues[2097]["amount"] == Decimal("125.00")
-        assert all(row["is_estimated"] is False for row in revenues.values())
+        assert revenues[2097]["amount"] == Decimal("902.00")
+        assert revenues[2096]["is_estimated"] is False
+        assert revenues[2097]["is_estimated"] is True
+
+        annual_company_rows = await StorePnlRepository(pool).annual_rows("Mobicell", None)
+        company_revenue = next(
+            row for row in annual_company_rows if row["year"] == 2097 and row["category_code"] == "v1"
+        )
+        assert company_revenue["amount"] == Decimal("325.00")
+        assert company_revenue["store_count"] == 2
+        assert company_revenue["is_estimated"] is True
+        unallocated_annual = next(
+            row for row in annual_company_rows if row["year"] == 2097 and row["category_code"] == "v3"
+        )
+        assert unallocated_annual["amount"] == Decimal("25.00")
+        assert unallocated_annual["store_count"] == 0
+
+        annual_regional_rows = await StorePnlRepository(pool).annual_rows(
+            "Mobicell",
+            None,
+            regional="P&L Test Region",
+        )
+        regional_revenue = next(
+            row for row in annual_regional_rows if row["category_code"] == "v1"
+        )
+        assert regional_revenue["amount"] == Decimal("325.00")
+        assert regional_revenue["store_count"] == 2
 
         service = StorePnlService(StorePnlRepository(pool))
         overview = await service.overview(
@@ -237,8 +344,16 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
             TEST_SITE,
         )
         assert overview["site_code"] == TEST_SITE
-        assert overview["summary"]["revenue"] == 125.0
-        assert len(overview["stores"]) == 1
+        assert overview["summary"]["revenue"] == 902.0
+        assert len(overview["stores"]) == 2
+
+        company_overview = await service.overview(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            "Mobicell",
+        )
+        assert company_overview["summary"]["revenue"] == 360.0
+        assert all(store["source_site_code"] != UNALLOCATED_SOURCE for store in company_overview["stores"])
 
         annual = await service.annual("Mobicell", TEST_SITE)
         assert annual == [
@@ -257,16 +372,16 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
             },
             {
                 "year": "2097",
-                "revenue": 125.0,
+                "revenue": 902.0,
                 "cogs": 0.0,
-                "gross_margin": 125.0,
+                "gross_margin": 902.0,
                 "operating_costs": 0.0,
-                "ebitda": 125.0,
+                "ebitda": 902.0,
                 "depreciation": 0.0,
-                "ebit": 125.0,
+                "ebit": 902.0,
                 "store_count": 1,
                 "month_count": 1,
-                "is_estimated": False,
+                "is_estimated": True,
             }
         ]
     finally:

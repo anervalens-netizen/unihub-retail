@@ -383,12 +383,16 @@ def all_missing_targets(
     input_cutoff: date | None = None,
 ) -> set[tuple[str, date, str]]:
     today = (input_cutoff or date.today()).replace(day=1)
-    actual_company_months = {(row["company_name"], row["period"]) for row in actual}
+    actual_store_months = {
+        (row["company_name"], row["period"], row["site_code"])
+        for row in actual
+    }
     return {
         (row["company_name"], row["period"], row["site_code"])
         for row in sales_rows
         if date(2018, 1, 1) <= row["period"] < today and as_decimal(row["amount"]) > ZERO
-        and (row["company_name"], row["period"]) not in actual_company_months
+        and (row["company_name"], row["period"], row["site_code"])
+        not in actual_store_months
     }
 
 

@@ -23,11 +23,10 @@ def _salary_scope(
 ) -> tuple[str, str, list[Any]]:
     params = list(initial_params or [])
     conditions = list(initial_conditions or [])
-    join_block = (
-        f"LEFT JOIN stores st ON st.site_code = {salary_alias}.site_code"
-        if regional is not None or asm is not None
-        else ""
-    )
+    # Organizational scope is a semi-join: it filters salary components but
+    # never changes their cardinality. A report component is identified by its
+    # persisted salary row/provenance, not its business-valued columns.
+    join_block = ""
 
     def col(name: str) -> str:
         return f"{salary_alias}.{name}" if salary_alias else name
@@ -49,10 +48,20 @@ def _salary_scope(
             add(f"{col('site_code')} = ANY(${{position}}::TEXT[])", site_codes)
         elif site_codes:
             add(f"{col('site_code')} = ${{position}}", site_codes[0])
+    store_conditions: list[str] = []
     if regional:
-        add("st.regional = ${position}", regional)
+        params.append(regional)
+        store_conditions.append(f"st.regional = ${len(params)}")
     if asm:
-        add("st.asm = ${position}", asm)
+        params.append(asm)
+        store_conditions.append(f"st.asm = ${len(params)}")
+    if store_conditions:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM stores st "
+            f"WHERE st.site_code = {col('site_code')} AND "
+            + " AND ".join(store_conditions)
+            + ")"
+        )
     if year is not None:
         add(f"{col('year')} = ${{position}}", year)
     if month is not None:
@@ -85,7 +94,8 @@ class SalariiRepository:
         )
         salary_base_cte = f"""
             WITH salary_base AS (
-                SELECT DISTINCT
+                SELECT
+                    sr.id AS salary_row_id,
                     sr.year,
                     sr.month,
                     sr.full_name,
@@ -180,7 +190,8 @@ class SalariiRepository:
             return await conn.fetch(
                 f"""
                 WITH salary_base AS (
-                    SELECT DISTINCT
+                    SELECT
+                        sr.id AS salary_row_id,
                         sr.year,
                         sr.month,
                         sr.full_name,
@@ -225,7 +236,8 @@ class SalariiRepository:
             return await conn.fetch(
                 f"""
                 WITH salary_base AS (
-                    SELECT DISTINCT
+                    SELECT
+                        sr.id AS salary_row_id,
                         sr.year,
                         sr.month,
                         sr.full_name,
@@ -273,8 +285,9 @@ class SalariiRepository:
             month=month,
         )
         agent_months_cte = f"""
-                WITH salary_dedup AS (
-                    SELECT DISTINCT
+                WITH salary_rows AS (
+                    SELECT
+                        sr.id AS salary_row_id,
                         sr.year,
                         sr.month,
                         sr.full_name,
@@ -289,9 +302,9 @@ class SalariiRepository:
                 ),
                 salary_identified AS (
                     SELECT
-                        sd.*,
-                        sd.person_id AS agent_key
-                    FROM salary_dedup sd
+                        sr.*,
+                        sr.person_id AS agent_key
+                    FROM salary_rows sr
                 ),
                 agent_months AS (
                     SELECT
@@ -382,12 +395,6 @@ class SalariiRepository:
         async with self.pool.acquire() as conn:
             return await conn.fetch(
                 f"""
-                WITH salary_dedup AS (
-                    SELECT DISTINCT
-                        year, month, company_name, site_code, locatie, total_salary
-                    FROM salary_records sr
-                    WHERE person_id = $1
-                )
                 SELECT
                     year,
                     month,
@@ -395,7 +402,8 @@ class SalariiRepository:
                     SUM(total_salary) AS total_salary,
                     site_code,
                     locatie
-                FROM salary_dedup
+                FROM salary_records
+                WHERE person_id = $1
                 GROUP BY year, month, company_name, site_code, locatie
                 ORDER BY year DESC, month DESC, company_name, locatie
                 """,
@@ -426,16 +434,7 @@ class SalariiRepository:
         *,
         person_id: str,
     ) -> list[asyncpg.Record]:
-        async with self.pool.acquire() as conn:
-            return await conn.fetch(
-                f"""
-                SELECT year, month, company_name, total_salary, site_code, locatie
-                FROM salary_records sr
-                WHERE person_id = $1
-                ORDER BY year DESC, month DESC, company_name
-                """,
-                person_id,
-            )
+        return await self.fetch_agent_history_by_person_id(person_id)
 
     async def fetch_latest_month(
         self,
@@ -483,7 +482,8 @@ class SalariiRepository:
             return await conn.fetch(
                 f"""
                 WITH salary_rows AS (
-                    SELECT DISTINCT
+                    SELECT
+                        s.id AS salary_row_id,
                         s.site_code,
                         s.locatie,
                         s.company_name,
@@ -585,7 +585,8 @@ class SalariiRepository:
             return await conn.fetch(
                 f"""
                 WITH salary_rows AS (
-                    SELECT DISTINCT
+                    SELECT
+                        sr.id AS salary_row_id,
                         sr.year,
                         sr.month,
                         sr.full_name,

@@ -41,6 +41,7 @@
     "033_sales_generation_staging_and_fencing.sql": "b6e10b7198e01d7893fefe66f28879d8b363956e3a87be11f63e875df9193cb1",
     "034_salary_import_batch_provenance.sql": "93dae9fa15c1b891e6484a8ddecc189e3bc412f2913066619288d0fd8938ec7f",
     "035_grile_observation_fencing.sql": "4afd71ef2c8e0f215bb2687d28d07ae5a7b76ebc2625b05fe3c638a315293b5f",
-    "036_target_rule_registry.sql": "d722b1ef480b067651c37464c3462565ea2c9b4e5651c869e08932cd0c37b193"
+    "036_target_rule_registry.sql": "d722b1ef480b067651c37464c3462565ea2c9b4e5651c869e08932cd0c37b193",
+    "037_sales_generation_stage_integrity.sql": "739d3da3974a247a3169e5d0bc6af57519bfbed5dff1ddaf28f15339bf207167"
   }
 }
