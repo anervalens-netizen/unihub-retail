@@ -1158,6 +1158,7 @@ export function AgentEvaluationSubtab({
 
           <div className="space-y-2 lg:hidden">
             {rows.map((row) => <AgentLegacyMobileCard key={`${row.month}:${row.site_code}:${row.agent}:legacy-mobile`} row={row} />)}
+            {!loading && rows.length === 0 && <p className="rounded-2xl border border-slate-200 p-6 text-center text-sm text-slate-400 dark:border-slate-700">Fără agenți pentru filtrele selectate.</p>}
           </div>
 
           <div className="hidden rounded-2xl border border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/40 lg:block lg:overflow-hidden">
