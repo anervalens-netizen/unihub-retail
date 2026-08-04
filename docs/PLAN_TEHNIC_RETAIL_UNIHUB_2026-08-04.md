@@ -371,3 +371,39 @@ Limitări și rutare:
 - PR rămâne Draft până la push, verificarea GitHub și decizia de merge/deploy.
 
 Verdict local P0-A: **READY pentru publicarea candidatului în Draft PR**.
+
+## 13. Închidere P0-A — 2026-08-04
+
+Închiderea de mai jos supersedează numai starea operațională din secțiunea 12;
+preflight-ul și valorile sale rămân dovezi istorice nemodificate.
+
+- code SHA P0-A: `35014c5390fc9669d91c0dc5df28db6702b01d5a`;
+- merge PR #122: `526c96545694d5051ba80a7782c51c8d341c3138`;
+- release source SHA: `668452e286a78ef2de5206d9a6a1edd26f8e86a7`;
+- formal CI: run `30940026372`, integral verde;
+- release artifact SHA-256:
+  `4302f926bbae4e5cd9b147060c0fd3deb5a8c7d34554a75d938c803520c3358e`;
+- formal deploy: run `30940326348`, attempt 2, verde;
+- migration 037 SHA-256:
+  `739d3da3974a247a3169e5d0bc6af57519bfbed5dff1ddaf28f15339bf207167`.
+
+Prima execuție CI (`30939220001`) a expus două porți preexistente, remediate
+în release source SHA: checksum-ul 037 lipsea din baseline-ul detect-secrets,
+iar empty-state-ul analizei agenților lipsea pe mobil în modul legacy. După
+remediere: scannerul exact CI, typecheck și toate cele 51 teste Playwright au
+trecut local; runul formal a trecut backend, frontend și runner isolation.
+
+Dovezi live după deploy:
+
+- primary pe release source SHA, checkout curat și aliniat cu `origin/main` la
+  momentul deployului;
+- backend, worker și import worker active; migrarea one-shot `Result=success`;
+- `/livez` și `/readyz` verzi local și public;
+- migrarea 037 înregistrată cu checksum-ul din manifest;
+- ambele snapshoturi staged reținute și head-ul activ își recompută exact
+  digestul stocat;
+- `unihub_runtime` nu are `UPDATE` pe `sales_import_stage_rows`;
+- jurnalul serviciilor nu conține warning/error post-deploy.
+
+Verdict P0-A: **CLOSED și verificat live**. M-04 și M-05 rămân P0-B, fără
+extinderea retroactivă a acestui lot.
