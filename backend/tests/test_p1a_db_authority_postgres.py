@@ -33,6 +33,7 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT" in sql
     assert "ON ALL TABLES IN SCHEMA" not in sql
     assert "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL" in sql
+    assert "REVOKE CREATE ON SCHEMA public FROM PUBLIC" in sql
     for function in (
         "advance_sales_generation_head",
         "advance_store_pnl_generation_head",
