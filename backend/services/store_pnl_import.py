@@ -185,8 +185,6 @@ def parse_authority_manifest(payload: object) -> AuthorityManifest:
             raise PnlImportError("expected_total_amount este invalid.") from exc
         if not expected_total.is_finite():
             raise PnlImportError("expected_total_amount trebuie sa fie finit.")
-        if not expected_total.is_finite():
-            raise PnlImportError("expected_total_amount trebuie sa fie finit.")
         if not _is_sha256(raw.get("coverage_sha256")):
             raise PnlImportError("coverage_sha256 trebuie sa fie SHA-256 lowercase.")
         scope = AuthorityScope(
@@ -389,6 +387,12 @@ async def stage_generation(
     authority: AuthorityManifest,
     candidates: Mapping[PnlScope, Sequence[PnlRow]],
 ) -> StageResult:
+    try:
+        canonical_authority = parse_authority_manifest(authority.payload)
+    except PnlImportError as exc:
+        raise PnlImportError("Authority manifest nu mai corespunde payloadului validat.") from exc
+    if canonical_authority != authority:
+        raise PnlImportError("Authority manifest nu mai corespunde payloadului validat.")
     if {scope.company_name for scope in authority.scopes} != COMPANIES:
         raise PnlImportError("Stagingul Finance necesita batch reconciliat pentru ambele companii.")
     await _require_finance_import_role(connection)

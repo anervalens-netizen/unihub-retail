@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -175,6 +176,16 @@ def test_stage_requires_both_finance_companies_before_database_access() -> None:
     connection = MagicMock()
     with pytest.raises(PnlImportError, match="ambele companii"):
         __import__("asyncio").run(stage_generation(connection, manifest, {manifest.scopes[0].key: [row()]}))
+    assert not connection.fetchval.called
+
+
+def test_stage_revalidates_authority_payload_and_hash_before_database_access() -> None:
+    manifest = replace(authority([row()]), sha256=SHA_B)
+    connection = MagicMock()
+    with pytest.raises(PnlImportError, match="nu mai corespunde payloadului"):
+        __import__("asyncio").run(
+            stage_generation(connection, manifest, {manifest.scopes[0].key: [row()]})
+        )
     assert not connection.fetchval.called
 
 

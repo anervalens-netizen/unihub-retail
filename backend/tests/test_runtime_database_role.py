@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
+import asyncpg
 import pytest
 
 from db.connection import get_pool
 from scripts.provision_runtime_database_role import (
     SALARY_LINK_COLUMNS,
     SALARY_RECORD_COLUMNS,
+    PNL_AUTHORITY_SEQUENCES,
+    PNL_AUTHORITY_TABLES,
+    PNL_RUNTIME_READ_ONLY_TABLE,
     _runtime_credentials,
+    provision,
 )
 
 
@@ -97,3 +103,55 @@ async def test_salary_identity_contract_constraints_are_installed() -> None:
         "agent_salary_links_person_id_fkey",
         "agent_salary_links_identity_state",
     } <= names
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated test database",
+)
+async def test_runtime_reprovision_preserves_finance_authority_acl_fence() -> None:
+    owner_url = os.environ["DATABASE_URL"]
+    parsed = urlsplit(owner_url)
+    runtime_role = "unihub_runtime_p0b"
+    runtime_password = "Ab9_" * 16
+    runtime_url = urlunsplit(
+        (
+            parsed.scheme,
+            f"{runtime_role}:{quote(runtime_password, safe='')}@{parsed.hostname}:{parsed.port}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+    first = await provision(owner_url, runtime_url)
+    second = await provision(owner_url, runtime_url)
+    assert first == second
+    assert second["store_pnl_read"]
+    assert second["store_pnl_write_denied"]
+    assert all(second[f"{table}_access_denied"] for table in PNL_AUTHORITY_TABLES)
+    assert all(second[f"{sequence}_access_denied"] for sequence in PNL_AUTHORITY_SEQUENCES)
+
+    owner = await asyncpg.connect(owner_url)
+    try:
+        assert await owner.fetchval(
+            "SELECT has_table_privilege($1, $2, 'SELECT')",
+            runtime_role,
+            PNL_RUNTIME_READ_ONLY_TABLE,
+        )
+        for privilege in ("INSERT", "UPDATE", "DELETE"):
+            assert not await owner.fetchval(
+                "SELECT has_table_privilege($1, $2, $3)",
+                runtime_role,
+                PNL_RUNTIME_READ_ONLY_TABLE,
+                privilege,
+            )
+        for table in PNL_AUTHORITY_TABLES:
+            assert not await owner.fetchval(
+                "SELECT has_table_privilege($1, $2, 'SELECT')",
+                runtime_role,
+                table,
+            )
+    finally:
+        await owner.close()

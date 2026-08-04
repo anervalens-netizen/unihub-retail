@@ -23,6 +23,26 @@ SALARY_LINK_COLUMNS = (
     "match_source", "confidence", "effective_from_month", "note",
     "created_at", "updated_at", "person_id",
 )
+PNL_RUNTIME_READ_ONLY_TABLE = "store_pnl_monthly"
+PNL_AUTHORITY_TABLES = (
+    "store_pnl_generations",
+    "store_pnl_generation_scopes",
+    "store_pnl_generation_rows",
+    "store_pnl_generation_heads",
+    "store_pnl_generation_ledger",
+)
+PNL_AUTHORITY_SEQUENCES = (
+    "store_pnl_monthly_id_seq",
+    "store_pnl_generation_ledger_id_seq",
+)
+PNL_WRITE_PRIVILEGES = (
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "TRUNCATE",
+    "REFERENCES",
+    "TRIGGER",
+)
 
 
 def _runtime_credentials(database_url: str) -> tuple[str, str, str]:
@@ -39,6 +59,36 @@ def _identifier(value: str) -> str:
     if not ROLE_RE.fullmatch(value):
         raise RuntimeError("Database identifier is invalid")
     return f'"{value}"'
+
+
+async def _has_any_table_privilege(
+    connection: asyncpg.Connection,
+    table: str,
+    privileges: tuple[str, ...],
+) -> bool:
+    for privilege in privileges:
+        if await connection.fetchval(
+            "SELECT has_table_privilege(current_user, $1, $2)",
+            table,
+            privilege,
+        ):
+            return True
+    return False
+
+
+async def _has_any_sequence_privilege(
+    connection: asyncpg.Connection,
+    sequence: str,
+    privileges: tuple[str, ...],
+) -> bool:
+    for privilege in privileges:
+        if await connection.fetchval(
+            "SELECT has_sequence_privilege(current_user, $1, $2)",
+            sequence,
+            privilege,
+        ):
+            return True
+    return False
 
 
 async def provision(owner_url: str, runtime_url: str) -> dict[str, bool]:
@@ -89,6 +139,21 @@ async def provision(owner_url: str, runtime_url: str) -> dict[str, bool]:
         await owner.execute(f"GRANT SELECT ON schema_meta, schema_migrations TO {quoted_role}")
         await owner.execute(f"REVOKE ALL ON SCHEMA salary_private FROM {quoted_role}")
         await owner.execute(f"REVOKE ALL ON ALL TABLES IN SCHEMA salary_private FROM {quoted_role}")
+        # Keep Finance authority fenced even when this idempotent provisioner
+        # is rerun after migration 039's explicit runtime revokes.
+        await owner.execute(
+            f"REVOKE {', '.join(PNL_WRITE_PRIVILEGES)} ON TABLE "
+            f"{PNL_RUNTIME_READ_ONLY_TABLE} FROM {quoted_role}"
+        )
+        await owner.execute(
+            f"GRANT SELECT ON TABLE {PNL_RUNTIME_READ_ONLY_TABLE} TO {quoted_role}"
+        )
+        await owner.execute(
+            f"REVOKE ALL ON TABLE {', '.join(PNL_AUTHORITY_TABLES)} FROM {quoted_role}"
+        )
+        await owner.execute(
+            f"REVOKE ALL ON SEQUENCE {', '.join(PNL_AUTHORITY_SEQUENCES)} FROM {quoted_role}"
+        )
     finally:
         await owner.close()
 
@@ -103,9 +168,33 @@ async def provision(owner_url: str, runtime_url: str) -> dict[str, bool]:
             "link_cnp_denied": not bool(await runtime.fetchval("SELECT has_column_privilege(current_user, 'agent_salary_links', 'salary_cnp', 'SELECT')")),
             "private_schema_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'salary_private', 'USAGE')")),
             "schema_create_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'public', 'CREATE')")),
+            "store_pnl_read": bool(
+                await runtime.fetchval(
+                    "SELECT has_table_privilege(current_user, $1, 'SELECT')",
+                    PNL_RUNTIME_READ_ONLY_TABLE,
+                )
+            ),
         }
+        checks["store_pnl_write_denied"] = not await _has_any_table_privilege(
+            runtime,
+            PNL_RUNTIME_READ_ONLY_TABLE,
+            PNL_WRITE_PRIVILEGES,
+        )
+        for table in PNL_AUTHORITY_TABLES:
+            checks[f"{table}_access_denied"] = not await _has_any_table_privilege(
+                runtime,
+                table,
+                ("SELECT", *PNL_WRITE_PRIVILEGES),
+            )
+        for sequence in PNL_AUTHORITY_SEQUENCES:
+            checks[f"{sequence}_access_denied"] = not await _has_any_sequence_privilege(
+                runtime,
+                sequence,
+                ("USAGE", "SELECT", "UPDATE"),
+            )
         await runtime.fetchval("SELECT COUNT(*) FROM salary_records")
         await runtime.fetchval("SELECT COUNT(*) FROM schema_migrations")
+        await runtime.fetchval("SELECT COUNT(*) FROM store_pnl_monthly")
     finally:
         await runtime.close()
     if not all(checks.values()):
