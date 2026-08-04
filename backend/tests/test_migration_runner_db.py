@@ -28,17 +28,19 @@ class _Connection:
         tracking_exists: bool = True,
         checksum_exists: bool = True,
         rows: dict[str, str | None] | None = None,
+        owner_elevation_succeeds: bool = True,
     ) -> None:
         self.has_schema = has_schema
         self.tracking_exists = tracking_exists
         self.checksum_exists = checksum_exists
         self.rows = rows or {}
+        self.owner_elevation_succeeds = owner_elevation_succeeds
         self.executed: list[str] = []
         self.closed = False
 
     async def fetchval(self, sql: str) -> bool:
         if "current_user = 'unihub_schema_owner'" in sql:
-            return True
+            return self.owner_elevation_succeeds
         if "sales_transactions" in sql:
             return self.has_schema
         if "to_regclass('public.schema_migrations')" in sql:
@@ -133,6 +135,39 @@ async def test_migration_authority_sets_local_stable_owner(
 
     assert await run_migrations("postgresql://unused") == []
     assert "SET LOCAL ROLE unihub_schema_owner" in connection.executed
+
+
+@pytest.mark.asyncio
+async def test_migration_authority_fails_if_local_owner_is_not_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    manifest = runner.load_migration_manifest()
+    connection = _Connection(
+        rows=dict(manifest.checksums), owner_elevation_succeeds=False
+    )
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
+    monkeypatch.setattr(runner, "verify_database_connection_authority", AsyncMock())
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    with pytest.raises(MigrationError, match="schema-owner elevation"):
+        await run_migrations("postgresql://unused")
+
+
+@pytest.mark.asyncio
+async def test_restricted_migration_authority_refuses_empty_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    connection = _Connection(has_schema=False)
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
+    monkeypatch.setattr(runner, "verify_database_connection_authority", AsyncMock())
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    with pytest.raises(MigrationError, match="administrative extension/schema preflight"):
+        await run_migrations("postgresql://unused")
 
 
 @pytest.mark.asyncio
