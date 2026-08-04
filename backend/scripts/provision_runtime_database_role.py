@@ -8,7 +8,7 @@ import os
 import re
 from urllib.parse import unquote, urlparse
 
-from config import DATABASE_AUTHORITY_CONTRACTS
+from config import DATABASE_AUTHORITY_CONTRACTS, DatabaseAuthority
 from db.connection import connect_database_url
 
 
@@ -231,7 +231,7 @@ async def main() -> None:
     runtime_url = os.getenv("RUNTIME_DATABASE_URL")
     if not owner_url or not runtime_url:
         raise RuntimeError("Migration and runtime database URLs are required")
-    authority_name_by_cli_roles = {
+    authority_name_by_cli_roles: dict[frozenset[str], DatabaseAuthority] = {
         frozenset({"unihub_web_read", "unihub_business_write"}): "web",
         frozenset({"unihub_operations"}): "operations",
         frozenset({"unihub_sales_import"}): "sales_import",
