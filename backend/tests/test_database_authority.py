@@ -108,7 +108,7 @@ async def test_pool_startup_checks_an_explicit_process_authority(
     monkeypatch.setattr(connection_module, "pool", None)
     monkeypatch.setenv(
         "DATABASE_URL",
-        "postgresql://unihub_test:test@127.0.0.1:55432/unihub_test",
+        "postgresql://unihub_test:test@127.0.0.1:55432/unihub_test",  # pragma: allowlist secret
     )
     monkeypatch.setenv("UNIHUB_TEST_DATABASE", "1")
     monkeypatch.setenv(DB_PROCESS_AUTHORITY_ENV, "web")
