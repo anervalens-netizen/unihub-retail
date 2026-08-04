@@ -601,6 +601,15 @@ async def rollback_sales_generation(
             int(new_snapshot_id),
             int(target_snapshot_id),
         )
+        await conn.execute(
+            """
+            UPDATE import_snapshots
+            SET stage_rows_sha256 = $2
+            WHERE id = $1 AND stage_rows_sha256 IS NULL
+            """,
+            int(new_snapshot_id),
+            source_stage_digest,
+        )
         rows_imported, revision = await promote_sales_generation(
             conn,
             snapshot_id=int(new_snapshot_id),

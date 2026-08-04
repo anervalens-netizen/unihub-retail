@@ -53,6 +53,8 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "sales staging rows are append-only; retention is a later controlled lifecycle" in sql
     assert "sales promotion ledger is append-only" in sql
     assert "store_pnl shadow evidence is append-only" in sql
+    assert "category_name, amount" in sql
+    assert "NOBYPASSRLS NOREPLICATION" in sql
 
     owner_sql = OWNER_MIGRATION.read_text(encoding="utf-8")
     assert "CREATE ROLE unihub_schema_owner" in owner_sql
@@ -62,6 +64,7 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "dependency.deptype = 'e'" in owner_sql
     assert "ALTER SCHEMA public OWNER TO unihub_schema_owner" in owner_sql
     assert "public.reserve_sales_import_grile_run(text,integer)" in owner_sql
+    assert "acl.grantee NOT IN (proowner, item.grantee)" in owner_sql
 
 
 async def _expect_denied(connection: asyncpg.Connection, sql: str, *args: object) -> None:
@@ -80,6 +83,7 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
     principals = {
         "web": (f"p1a_web_{uuid4().hex[:12]}", token_urlsafe(48), True),
         "migrate": (f"p1a_migrate_{uuid4().hex[:12]}", token_urlsafe(48), False),
+        "invalid": (f"p1a_invalid_{uuid4().hex[:12]}", token_urlsafe(48), True),
     }
     unexpected_role = f"p1a_extra_{uuid4().hex[:12]}"
     owner = await asyncpg.connect(owner_url)
@@ -109,6 +113,35 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
             )
             assert all(checks.values())
 
+        invalid_principal, invalid_password, _ = principals["invalid"]
+        invalid_url = urlunsplit(
+            (
+                parsed.scheme,
+                f"{quote(invalid_principal)}:{quote(invalid_password, safe='')}@{parsed.hostname}:{parsed.port}",
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+        await owner.execute(f'CREATE ROLE "{unexpected_role}" NOLOGIN')
+        await owner.execute(f'GRANT "{unexpected_role}" TO "{invalid_principal}"')
+        with pytest.raises(RuntimeError, match="exactly its database authority contract"):
+            await provision(
+                owner_url,
+                invalid_url,
+                authority_roles=frozenset(
+                    {"unihub_web_read", "unihub_business_write"}
+                ),
+            )
+        assert not await owner.fetchval(
+            "SELECT pg_has_role($1, 'unihub_web_read', 'member')",
+            invalid_principal,
+        )
+        assert not await owner.fetchval(
+            "SELECT pg_has_role($1, 'unihub_business_write', 'member')",
+            invalid_principal,
+        )
+
         web_principal, web_password, _ = principals["web"]
         web_url = urlunsplit(
             (
@@ -130,7 +163,6 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
             )
         await owner.execute(f'ALTER ROLE "{web_principal}" NOBYPASSRLS')
 
-        await owner.execute(f'CREATE ROLE "{unexpected_role}" NOLOGIN')
         await owner.execute(f'GRANT "{unexpected_role}" TO "{web_principal}"')
         with pytest.raises(RuntimeError, match="exactly its database authority contract"):
             await provision(
@@ -401,11 +433,29 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
             )
 
             digest = await connection.fetchval("SELECT sales_stage_rows_sha256($1)", snapshot_id)
+            with pytest.raises(
+                asyncpg.PostgresError,
+                match="lacks validated stage controls",
+            ):
+                await sales.fetchrow(
+                    "SELECT * FROM advance_sales_generation_head($1, $2, $3, $4, 0)",
+                    "2197-08",
+                    snapshot_id,
+                    token,
+                    owner,
+                )
             await connection.execute(
                 """
                     UPDATE import_snapshots
                     SET manifest = jsonb_build_object(
-                            'generation_state', 'validated', 'stage_rows_sha256', $2::text
+                            'generation_state', 'validated',
+                            'stage_rows_sha256', $2::text,
+                            'rows_imported', 1,
+                            'store_count', 1,
+                            'total_quantity', 1,
+                            'total_value', 1.00,
+                            'max_sale_date', '2197-08-01',
+                            'anomalies', '[]'::jsonb
                     ),
                     manifest_sha256 = repeat('a', 64)
                 WHERE id = $1
@@ -496,6 +546,11 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 """,
                 finance_generation,
             )
+            assert await finance.fetchval(
+                "SELECT append_store_pnl_generation_ledger($1, 'staged', NULL, NULL, $2::jsonb)",
+                finance_generation,
+                '{"manifest_sha256":"' + ("b" * 64) + '"}',
+            )
             await connection.execute(
                 """
                 INSERT INTO store_pnl_generation_scopes (
@@ -509,6 +564,23 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 """,
                 finance_generation,
             )
+            await finance.execute(
+                """
+                INSERT INTO store_pnl_generation_rows (
+                    generation_id, row_set, company_name, period, source_site_code,
+                    source_location_name, category_code, category_name, amount,
+                    source_file, source_sha256
+                ) VALUES ($1, 'candidate', 'Mobiup', DATE '2197-08-01', 'P1A',
+                    'P1-A', 'v1', 'Venit', 1.00, 'p1a.xls', repeat('a', 64))
+                """,
+                finance_generation,
+            )
+            with pytest.raises(asyncpg.PostgresError, match="cannot be sealed from its evidence"):
+                await finance.execute(
+                    "SELECT seal_store_pnl_generation($1, $2)",
+                    finance_generation,
+                    "b" * 64,
+                )
             await connection.execute(
                 "UPDATE store_pnl_generations SET state = 'staged' WHERE id = $1",
                 finance_generation,

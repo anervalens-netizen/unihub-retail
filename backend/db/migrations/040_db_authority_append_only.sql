@@ -24,12 +24,12 @@ BEGIN
     LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = authority_name) THEN
             EXECUTE format(
-                'CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT',
+                'CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION',
                 authority_name
             );
         ELSE
             EXECUTE format(
-                'ALTER ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT',
+                'ALTER ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION',
                 authority_name
             );
         END IF;
@@ -797,11 +797,20 @@ AS $$
 DECLARE
     current_snapshot_id INTEGER;
     current_revision BIGINT;
+    snapshot_manifest JSONB;
+    stored_stage_digest TEXT;
+    actual_stage_digest TEXT;
+    stage_row_count BIGINT;
+    stage_store_count BIGINT;
+    stage_total_quantity BIGINT;
+    stage_total_value NUMERIC;
+    stage_max_sale_date DATE;
 BEGIN
     IF p_import_month !~ '^[0-9]{4}-[0-9]{2}$' OR p_expected_revision < 0 THEN
         RAISE EXCEPTION 'sales head CAS parameters are invalid';
     END IF;
-    PERFORM 1
+    SELECT manifest, stage_rows_sha256
+    INTO snapshot_manifest, stored_stage_digest
     FROM public.import_snapshots
     WHERE id = p_snapshot_id
       AND import_month = p_import_month
@@ -812,6 +821,33 @@ BEGIN
     FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'sales head target is not the current leased generation';
+    END IF;
+    SELECT COUNT(*), COUNT(DISTINCT site_code), COALESCE(SUM(quantity), 0),
+           COALESCE(SUM(total_value), 0), MAX(sale_date),
+           public.sales_stage_rows_sha256(p_snapshot_id)
+    INTO stage_row_count, stage_store_count, stage_total_quantity,
+         stage_total_value, stage_max_sale_date, actual_stage_digest
+    FROM public.sales_import_stage_rows
+    WHERE snapshot_id = p_snapshot_id;
+    IF snapshot_manifest IS NULL
+       OR snapshot_manifest->>'generation_state' NOT IN ('validated', 'promoting')
+       OR stored_stage_digest IS NULL
+       OR stored_stage_digest IS DISTINCT FROM actual_stage_digest
+       OR snapshot_manifest->>'stage_rows_sha256' IS DISTINCT FROM actual_stage_digest
+       OR NULLIF(snapshot_manifest->>'rows_imported', '')::BIGINT IS DISTINCT FROM stage_row_count
+       OR NULLIF(snapshot_manifest->>'store_count', '')::BIGINT IS DISTINCT FROM stage_store_count
+       OR NULLIF(snapshot_manifest->>'total_quantity', '')::BIGINT IS DISTINCT FROM stage_total_quantity
+       OR NULLIF(snapshot_manifest->>'total_value', '')::NUMERIC IS DISTINCT FROM stage_total_value
+       OR snapshot_manifest->>'max_sale_date' IS DISTINCT FROM stage_max_sale_date::TEXT
+       OR (CASE
+            WHEN jsonb_typeof(COALESCE(snapshot_manifest->'anomalies', '[]'::JSONB)) = 'array'
+            THEN jsonb_path_exists(
+                COALESCE(snapshot_manifest->'anomalies', '[]'::JSONB),
+                '$[*] ? (@.blocking == true)'
+            )
+            ELSE TRUE
+          END) THEN
+        RAISE EXCEPTION 'sales head target lacks validated stage controls';
     END IF;
 
     SELECT head.snapshot_id, head.revision
@@ -1067,6 +1103,96 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_store_pnl_generation_ledger_promoted_scope
     ON store_pnl_generation_ledger (generation_id, company_name, period)
     WHERE action = 'promoted';
 
+CREATE OR REPLACE FUNCTION public.store_pnl_generation_rows_sha256(
+    p_generation_id UUID,
+    p_row_set TEXT,
+    p_company_name TEXT,
+    p_period DATE
+)
+RETURNS TEXT
+LANGUAGE SQL
+STABLE
+STRICT
+SET search_path = pg_catalog, public
+AS $$
+    SELECT encode(
+        digest(
+            convert_to(
+                COALESCE(
+                    string_agg(
+                        concat_ws(
+                            E'\x1f',
+                            'V' || octet_length(company_name) || ':' || company_name,
+                            'V' || octet_length(period::TEXT) || ':' || period::TEXT,
+                            'V' || octet_length(source_site_code) || ':' || source_site_code,
+                            'V' || octet_length(source_location_name) || ':' || source_location_name,
+                            'V' || octet_length(category_code) || ':' || category_code,
+                            'V' || octet_length(category_name) || ':' || category_name,
+                            'V' || octet_length(amount::TEXT) || ':' || amount::TEXT,
+                            'V' || octet_length(source_file) || ':' || source_file,
+                            'V' || octet_length(source_sha256) || ':' || source_sha256
+                        ),
+                        E'\x1e'
+                        ORDER BY company_name COLLATE "C", period,
+                                 source_site_code COLLATE "C", category_code COLLATE "C"
+                    ),
+                    ''
+                ),
+                'UTF8'
+            ),
+            'sha256'
+        ),
+        'hex'
+    )
+    FROM public.store_pnl_generation_rows
+    WHERE generation_id = p_generation_id
+      AND row_set = p_row_set
+      AND company_name = p_company_name
+      AND period = p_period
+$$;
+
+CREATE OR REPLACE FUNCTION public.store_pnl_generation_coverage_sha256(
+    p_generation_id UUID,
+    p_company_name TEXT,
+    p_period DATE
+)
+RETURNS TEXT
+LANGUAGE SQL
+STABLE
+STRICT
+SET search_path = pg_catalog, public
+AS $$
+    SELECT encode(
+        digest(
+            convert_to(
+                COALESCE(
+                    string_agg(
+                        concat_ws(
+                            E'\x1f',
+                            'V' || octet_length(company_name) || ':' || company_name,
+                            'V' || octet_length(period::TEXT) || ':' || period::TEXT,
+                            'V' || octet_length(source_site_code) || ':' || source_site_code,
+                            'V' || octet_length(category_code) || ':' || category_code
+                        ),
+                        E'\x1e'
+                        ORDER BY company_name COLLATE "C", period,
+                                 source_site_code COLLATE "C", category_code COLLATE "C"
+                    ),
+                    ''
+                ),
+                'UTF8'
+            ),
+            'sha256'
+        ),
+        'hex'
+    )
+    FROM public.store_pnl_generation_rows
+    WHERE generation_id = p_generation_id
+      AND row_set = 'candidate'
+      AND company_name = p_company_name
+      AND period = p_period
+$$;
+
 CREATE OR REPLACE FUNCTION public.seal_store_pnl_generation(
     p_generation_id UUID,
     p_expected_manifest_sha256 TEXT
@@ -1098,14 +1224,34 @@ BEGIN
             SELECT 1
             FROM public.store_pnl_generation_scopes AS scope
             WHERE scope.generation_id = p_generation_id
-              AND scope.candidate_row_count <> (
-                    SELECT count(*)
+              AND (scope.candidate_row_count IS DISTINCT FROM (
+                    SELECT count(*)::INTEGER
                     FROM public.store_pnl_generation_rows AS row
                     WHERE row.generation_id = scope.generation_id
                       AND row.row_set = 'candidate'
                       AND row.company_name = scope.company_name
                       AND row.period = scope.period
               )
+              OR scope.candidate_total_amount IS DISTINCT FROM (
+                    SELECT COALESCE(SUM(row.amount), 0)::NUMERIC(16, 2)
+                    FROM public.store_pnl_generation_rows AS row
+                    WHERE row.generation_id = scope.generation_id
+                      AND row.row_set = 'candidate'
+                      AND row.company_name = scope.company_name
+                      AND row.period = scope.period
+              )
+              OR scope.candidate_rows_sha256 IS DISTINCT FROM
+                    public.store_pnl_generation_rows_sha256(
+                        scope.generation_id, 'candidate', scope.company_name, scope.period
+                    )
+              OR scope.candidate_coverage_sha256 IS DISTINCT FROM
+                    public.store_pnl_generation_coverage_sha256(
+                        scope.generation_id, scope.company_name, scope.period
+                    )
+              OR scope.preimage_sha256 IS DISTINCT FROM
+                    public.store_pnl_generation_rows_sha256(
+                        scope.generation_id, 'preimage', scope.company_name, scope.period
+                    ))
        ) THEN
         RAISE EXCEPTION 'store_pnl generation cannot be sealed from its evidence';
     END IF;
@@ -1280,6 +1426,10 @@ END
 $$;
 
 REVOKE ALL ON FUNCTION
+    public.store_pnl_shadow_rows_sha256(UUID),
+    public.store_pnl_shadow_preimage_rows_sha256(UUID),
+    public.store_pnl_generation_rows_sha256(UUID, TEXT, TEXT, DATE),
+    public.store_pnl_generation_coverage_sha256(UUID, TEXT, DATE),
     public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT),
     public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT),
     public.reserve_sales_import_grile_run(TEXT, INTEGER),
@@ -1297,6 +1447,10 @@ DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unihub_runtime') THEN
         REVOKE ALL ON FUNCTION
+            public.store_pnl_shadow_rows_sha256(UUID),
+            public.store_pnl_shadow_preimage_rows_sha256(UUID),
+            public.store_pnl_generation_rows_sha256(UUID, TEXT, TEXT, DATE),
+            public.store_pnl_generation_coverage_sha256(UUID, TEXT, DATE),
             public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT),
             public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT),
             public.reserve_sales_import_grile_run(TEXT, INTEGER),

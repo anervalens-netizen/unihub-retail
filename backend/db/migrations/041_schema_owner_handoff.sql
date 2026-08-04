@@ -7,10 +7,12 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unihub_schema_owner') THEN
         CREATE ROLE unihub_schema_owner
-            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
+            NOBYPASSRLS NOREPLICATION;
     ELSE
         ALTER ROLE unihub_schema_owner
-            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
+            NOBYPASSRLS NOREPLICATION;
     END IF;
 END
 $$;
@@ -114,35 +116,46 @@ ALTER DEFAULT PRIVILEGES FOR ROLE unihub_schema_owner IN SCHEMA salary_private
 
 DO $$
 DECLARE
-    function_name REGPROCEDURE;
+    item RECORD;
 BEGIN
-    FOREACH function_name IN ARRAY ARRAY[
-        'public.advance_sales_generation_head(text,integer,uuid,uuid,bigint)'::regprocedure,
-        'public.record_sales_generation_promotion(text,integer,integer,bigint,text,text,text)'::regprocedure,
-        'public.reserve_sales_import_grile_run(text,integer)'::regprocedure,
-        'public.advance_store_pnl_generation_head(text,date,uuid,bigint,text,text)'::regprocedure,
-        'public.append_store_pnl_generation_ledger(uuid,text,text,date,jsonb)'::regprocedure,
-        'public.seal_store_pnl_generation(uuid,text)'::regprocedure,
-        'public.complete_store_pnl_generation(uuid,text)'::regprocedure,
-        'public.seal_store_pnl_shadow_generation(uuid)'::regprocedure,
-        'public.promote_store_pnl_shadow_generation(uuid,bigint)'::regprocedure,
-        'public.rollback_store_pnl_shadow_pointer(bigint)'::regprocedure
-    ]
+    FOR item IN
+        SELECT expected.function_name::REGPROCEDURE AS function_name,
+               expected.grantee::REGROLE AS grantee
+        FROM (VALUES
+            ('public.advance_sales_generation_head(text,integer,uuid,uuid,bigint)', 'unihub_sales_import'),
+            ('public.record_sales_generation_promotion(text,integer,integer,bigint,text,text,text)', 'unihub_sales_import'),
+            ('public.reserve_sales_import_grile_run(text,integer)', 'unihub_sales_import'),
+            ('public.advance_store_pnl_generation_head(text,date,uuid,bigint,text,text)', 'unihub_finance_import'),
+            ('public.append_store_pnl_generation_ledger(uuid,text,text,date,jsonb)', 'unihub_finance_import'),
+            ('public.seal_store_pnl_generation(uuid,text)', 'unihub_finance_import'),
+            ('public.complete_store_pnl_generation(uuid,text)', 'unihub_finance_import'),
+            ('public.seal_store_pnl_shadow_generation(uuid)', 'unihub_operations'),
+            ('public.promote_store_pnl_shadow_generation(uuid,bigint)', 'unihub_operations'),
+            ('public.rollback_store_pnl_shadow_pointer(bigint)', 'unihub_operations')
+        ) AS expected(function_name, grantee)
     LOOP
         IF NOT EXISTS (
             SELECT 1
             FROM pg_proc
-            WHERE oid = function_name
+            WHERE oid = item.function_name
               AND proowner = 'unihub_schema_owner'::regrole
               AND prosecdef
-              AND proconfig @> ARRAY['search_path=pg_catalog, public']
+              AND proconfig = ARRAY['search_path=pg_catalog, public']
+              AND EXISTS (
+                  SELECT 1
+                  FROM aclexplode(COALESCE(proacl, acldefault('f', proowner))) AS acl
+                  WHERE acl.grantee = item.grantee
+                    AND acl.privilege_type = 'EXECUTE'
+                    AND NOT acl.is_grantable
+              )
               AND NOT EXISTS (
                   SELECT 1
                   FROM aclexplode(COALESCE(proacl, acldefault('f', proowner))) AS acl
-                  WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'
+                  WHERE acl.privilege_type = 'EXECUTE'
+                    AND acl.grantee NOT IN (proowner, item.grantee)
               )
         ) THEN
-            RAISE EXCEPTION 'controlled definer function ownership or ACL mismatch: %', function_name;
+            RAISE EXCEPTION 'controlled definer function ownership or ACL mismatch: %', item.function_name;
         END IF;
     END LOOP;
 END

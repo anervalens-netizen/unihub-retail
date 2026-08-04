@@ -644,8 +644,8 @@ formal și dovezile live se completează în 16.5 după gate/QA/deploy.
 
 Migrații immutable:
 
-- 040 `ead426bf1eeb5a46d5aa59da1358baf8fc90ce98e94b126eea2d888241fa501a`;
-- 041 `539ae228ed98aa77a411ac7cef58c3298ab84a3a0de20e907060a0d2fad9cf7e`.
+- 040 `57650ba43c1474a547b7820d30a0660b377473defba5434252819cb4f7f08ab9`;
+- 041 `3ef80c2fbd3b5fb3d68c019d34c17cb17a96b19fc9d7da2e845b96ee8a9587e3`.
 
 Contractul rezultat:
 
@@ -659,7 +659,10 @@ Contractul rezultat:
 - stagingul sales, promotion ledgerul și evidence-ul shadow sunt append-only;
   generațiile shadow trebuie să pornească `staged` și ne-sealed;
   headurile/pointerii/ledgerul Finance se mută numai prin funcții SQL controlate
-  cu fencing, digest rehash și CAS; Finance nu are UPDATE direct pe stare;
+  cu fencing, digest rehash și CAS; seal-ul Finance recompută în DB row hash,
+  coverage, count, total și pre-image, iar sales CAS reverifică starea validată,
+  digestul, control totals și absența contradicțiilor blocking; Finance nu are
+  UPDATE direct pe stare;
 - `authoritative_replace` păstrează reducerile față de snapshotul precedent ca
   informație și blochează numai contradicții interne ale candidatului;
 - Finance are grupul și contractul viitorului principal
@@ -715,6 +718,8 @@ pre-image-ul nu se șterg. P1-A nu rezolvă lifecycle-ul artefactului sales
 
 ### 16.5 Închidere live
 
-**PENDING** până la un singur gate CI-shaped, GO Terra + Luna pe același SHA,
-CI formal pe `main`, boundary-ul de identități, deploy, verificarea live și
-cleanup. P1-B nu începe înainte de verdictul `CLOSED LIVE` aici.
+**PENDING OPERATIONAL CUTOVER** până la un singur gate CI-shaped, GO Terra + Luna
+pe același SHA, CI formal pe `main`, boundary-ul de identități, deploy,
+verificarea live și cleanup. Acest marker este dovada explicită că nu declarăm
+prematur live closure; nu este un defect al candidatului pre-deploy. P1-B nu
+începe înainte de verdictul `CLOSED LIVE` aici.

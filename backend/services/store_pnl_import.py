@@ -229,16 +229,46 @@ def row_payload(row: PnlRow) -> dict[str, Any]:
     }
 
 
-def normalized_rows(rows: Iterable[PnlRow]) -> list[dict[str, Any]]:
-    payload = [row_payload(row) for row in rows]
-    return sorted(
-        payload,
-        key=lambda item: json.dumps(_canonical_value(item), separators=(",", ":"), sort_keys=True),
+def _digest_scalar(value: object) -> str:
+    if isinstance(value, Decimal):
+        text = format(value, "f")
+    elif isinstance(value, date):
+        text = value.isoformat()
+    else:
+        text = str(value)
+    return f"V{len(text.encode('utf-8'))}:{text}"
+
+
+def _row_digest_payload(row: PnlRow) -> str:
+    return "\x1f".join(
+        _digest_scalar(value)
+        for value in (
+            row.company_name,
+            row.period,
+            row.source_site_code,
+            row.source_location_name,
+            row.category_code,
+            row.category_name,
+            row.amount,
+            row.source_file,
+            row.source_sha256,
+        )
     )
 
 
+def normalized_rows(rows: Iterable[PnlRow]) -> list[dict[str, Any]]:
+    return [
+        row_payload(row)
+        for row in sorted(rows, key=business_key)
+    ]
+
+
 def rows_sha256(rows: Iterable[PnlRow]) -> str:
-    return canonical_sha256(normalized_rows(rows))
+    payload = "\x1e".join(
+        _row_digest_payload(row)
+        for row in sorted(rows, key=business_key)
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def business_key(row: PnlRow) -> PnlBusinessKey:
@@ -246,17 +276,11 @@ def business_key(row: PnlRow) -> PnlBusinessKey:
 
 
 def coverage_sha256(rows: Iterable[PnlRow]) -> str:
-    return canonical_sha256(
-        [
-            {
-                "company_name": company,
-                "period": period,
-                "source_site_code": site,
-                "category_code": category,
-            }
-            for company, period, site, category in sorted({business_key(row) for row in rows})
-        ]
+    payload = "\x1e".join(
+        "\x1f".join(_digest_scalar(value) for value in key)
+        for key in sorted({business_key(row) for row in rows})
     )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def ensure_unique_business_keys(rows: Sequence[PnlRow]) -> None:

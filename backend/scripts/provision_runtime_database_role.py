@@ -91,89 +91,99 @@ async def provision(
     owner = await connect_database_url(
         owner_url, application_name="unihub-retail-authority-provisioner"
     )
+    runtime = None
     try:
-        owner_role = await owner.fetchval("SELECT current_user")
-        current_database = await owner.fetchval("SELECT current_database()")
-        if role == owner_role or database != current_database:
-            raise RuntimeError("Runtime role must differ from the owner on the same database")
-        if expected_principal is not None and role != expected_principal:
-            raise RuntimeError("Runtime principal does not match the selected process contract")
-        service_role = await owner.fetchrow(
-            "SELECT rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, "
-            "rolbypassrls, rolreplication "
-            "FROM pg_roles WHERE rolname = $1",
-            role,
+        # Authenticate the existing LOGIN before changing memberships. The
+        # catalog mutation itself is one transaction, so any exact-contract
+        # verification failure rolls every GRANT back.
+        runtime = await connect_database_url(
+            runtime_url, application_name="unihub-retail-authority-verification"
         )
-        if service_role is None or not service_role["rolcanlogin"]:
-            raise RuntimeError("Existing LOGIN service role is required")
-        if any(
-            bool(service_role[field])
-            for field in (
-                "rolsuper", "rolcreaterole", "rolcreatedb", "rolbypassrls",
-                "rolreplication",
+        async with owner.transaction():
+            owner_role = await owner.fetchval("SELECT current_user")
+            current_database = await owner.fetchval("SELECT current_database()")
+            if role == owner_role or database != current_database:
+                raise RuntimeError("Runtime role must differ from the owner on the same database")
+            if expected_principal is not None and role != expected_principal:
+                raise RuntimeError("Runtime principal does not match the selected process contract")
+            service_role = await owner.fetchrow(
+                "SELECT rolcanlogin, rolinherit, rolsuper, rolcreaterole, rolcreatedb, "
+                "rolbypassrls, rolreplication "
+                "FROM pg_roles WHERE rolname = $1",
+                role,
             )
-        ):
-            raise RuntimeError("Service LOGIN must not be privileged")
-        if bool(service_role["rolinherit"]) == migration_contract:
-            raise RuntimeError("Service LOGIN inheritance flag does not match its authority contract")
-        for authority_role in sorted(authority_roles):
-            options = "INHERIT FALSE, SET FALSE" if migration_contract else "INHERIT TRUE, SET FALSE"
-            await owner.execute(
-                f"GRANT {_identifier(authority_role)} TO {quoted_role} WITH {options}"
-            )
-        if migration_contract:
-            await owner.execute(
-                f"GRANT {_identifier(SCHEMA_OWNER_ROLE)} TO {quoted_role} "
-                "WITH INHERIT FALSE, SET TRUE"
-            )
-        memberships = await owner.fetch(
-            """
-            SELECT parent.rolname, membership.inherit_option, membership.set_option
-            FROM pg_auth_members membership
-            JOIN pg_roles parent ON parent.oid = membership.roleid
-            JOIN pg_roles member ON member.oid = membership.member
-            WHERE member.rolname = $1
-            ORDER BY parent.rolname
-            """,
-            role,
-        )
-        expected_memberships = {
-            authority_role: (not migration_contract, False)
-            for authority_role in authority_roles
-        }
-        if migration_contract:
-            expected_memberships[SCHEMA_OWNER_ROLE] = (False, True)
-        actual_memberships = {
-            item["rolname"]: (bool(item["inherit_option"]), bool(item["set_option"]))
-            for item in memberships
-        }
-        if actual_memberships != expected_memberships:
-            raise RuntimeError("Service LOGIN must have exactly its database authority contract")
-
-        effective_memberships = {
-            str(item["rolname"])
-            for item in await owner.fetch(
+            if service_role is None or not service_role["rolcanlogin"]:
+                raise RuntimeError("Existing LOGIN service role is required")
+            if any(
+                bool(service_role[field])
+                for field in (
+                    "rolsuper", "rolcreaterole", "rolcreatedb", "rolbypassrls",
+                    "rolreplication",
+                )
+            ):
+                raise RuntimeError("Service LOGIN must not be privileged")
+            if bool(service_role["rolinherit"]) == migration_contract:
+                raise RuntimeError("Service LOGIN inheritance flag does not match its authority contract")
+            for authority_role in sorted(authority_roles):
+                options = "INHERIT FALSE, SET FALSE" if migration_contract else "INHERIT TRUE, SET FALSE"
+                await owner.execute(
+                    f"GRANT {_identifier(authority_role)} TO {quoted_role} WITH {options}"
+                )
+            if migration_contract:
+                await owner.execute(
+                    f"GRANT {_identifier(SCHEMA_OWNER_ROLE)} TO {quoted_role} "
+                    "WITH INHERIT FALSE, SET TRUE"
+                )
+            memberships = await owner.fetch(
                 """
-                SELECT candidate.rolname
-                FROM pg_roles AS candidate
-                JOIN pg_roles AS member ON member.rolname = $1
-                WHERE candidate.oid <> member.oid
-                  AND pg_has_role(member.oid, candidate.oid, 'member')
-                ORDER BY candidate.rolname
+                SELECT parent.rolname, membership.inherit_option, membership.set_option
+                FROM pg_auth_members membership
+                JOIN pg_roles parent ON parent.oid = membership.roleid
+                JOIN pg_roles member ON member.oid = membership.member
+                WHERE member.rolname = $1
+                ORDER BY parent.rolname
                 """,
                 role,
             )
-        }
-        if effective_memberships != set(expected_memberships):
-            raise RuntimeError(
-                "Service LOGIN has unexpected direct or transitive database memberships"
-            )
+            expected_memberships = {
+                authority_role: (not migration_contract, False)
+                for authority_role in authority_roles
+            }
+            if migration_contract:
+                expected_memberships[SCHEMA_OWNER_ROLE] = (False, True)
+            actual_memberships = {
+                item["rolname"]: (bool(item["inherit_option"]), bool(item["set_option"]))
+                for item in memberships
+            }
+            if actual_memberships != expected_memberships:
+                raise RuntimeError("Service LOGIN must have exactly its database authority contract")
+
+            effective_memberships = {
+                str(item["rolname"])
+                for item in await owner.fetch(
+                    """
+                    SELECT candidate.rolname
+                    FROM pg_roles AS candidate
+                    JOIN pg_roles AS member ON member.rolname = $1
+                    WHERE candidate.oid <> member.oid
+                      AND pg_has_role(member.oid, candidate.oid, 'member')
+                    ORDER BY candidate.rolname
+                    """,
+                    role,
+                )
+            }
+            if effective_memberships != set(expected_memberships):
+                raise RuntimeError(
+                    "Service LOGIN has unexpected direct or transitive database memberships"
+                )
+    except BaseException:
+        if runtime is not None:
+            await runtime.close()
+        raise
     finally:
         await owner.close()
 
-    runtime = await connect_database_url(
-        runtime_url, application_name="unihub-retail-authority-verification"
-    )
+    assert runtime is not None
     try:
         authority_memberships = True
         for authority_role in sorted(authority_roles):

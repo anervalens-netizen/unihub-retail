@@ -114,11 +114,21 @@ async def test_runner_prefers_explicit_migration_owner_url(
     connect = AsyncMock(return_value=connection)
     monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://owner@localhost/db")
     monkeypatch.setenv("DATABASE_URL", "postgresql://runtime@localhost/db")
+    monkeypatch.setenv("DB_STATEMENT_TIMEOUT_MS", "91000")
+    monkeypatch.setenv("DB_LOCK_TIMEOUT_MS", "9000")
+    monkeypatch.setenv("DB_IDLE_TRANSACTION_TIMEOUT_MS", "45000")
     monkeypatch.setattr(runner.asyncpg, "connect", connect)
 
     assert await run_migrations() == []
     assert connect.await_args is not None
     assert connect.await_args.args[0] == "postgresql://owner@localhost/db"
+    assert connect.await_args.kwargs["command_timeout"] == 91
+    assert connect.await_args.kwargs["server_settings"] == {
+        "application_name": "unihub-retail-migrations",
+        "statement_timeout": "91000",
+        "lock_timeout": "9000",
+        "idle_in_transaction_session_timeout": "45000",
+    }
 
 
 @pytest.mark.asyncio

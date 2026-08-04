@@ -69,8 +69,9 @@ UTC. Datetime naive este refuzat; duratele/cooldown-urile folosesc monotonic.
 
 Pool-ul PostgreSQL seteaza server-side `statement_timeout=120s`,
 `lock_timeout=10s` si `idle_in_transaction_session_timeout=60s` implicit.
-Valorile sunt configurabile prin `.env`; `command_timeout` asyncpg este aliniat
-cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
+Valorile sunt configurabile prin `.env`; poolurile, conexiunile one-shot și
+migration runnerul folosesc același builder, iar `command_timeout` asyncpg este
+aliniat cu timeoutul de statement pentru a nu lasa query-uri abandonate sa continue.
 Fiecare ruta Dashboard creeaza inainte de dependency/pool resolution un deadline
 monotonic unic (`DASHBOARD_REQUEST_DEADLINE_MS`, implicit 2500 ms, maximum
 3000 ms). Acelasi buget limiteaza `pool.acquire()` si fiecare
@@ -100,7 +101,9 @@ toate membershipurile directe/tranzitive și opțiunile lor, plus flagurile
 nonprivilegiate inclusiv replication/bypass RLS. Autoritatea explicită este
 obligatorie în producție. Contractul Finance rezervă principalul
 `unihub_finance_import_worker`, dar acesta rămâne fără LOGIN/credential până la
-un lot aprobat separat. Numai sales-import primește `TEMPORARY`.
+un lot aprobat separat. Provisionarea autentifică LOGIN-ul înainte de schimbare
+și aplică/verifică toate membershipurile într-o singură tranzacție. Numai
+sales-import primește `TEMPORARY`.
 
 Migrarea 041 mută ownershipul obiectelor aplicației la NOLOGIN
 `unihub_schema_owner`. Runnerul de migrare este `NOINHERIT`, poate face numai
@@ -481,8 +484,9 @@ coverage, business hash și digestul canonic al tuturor rândurilor staged;
 generația prin CAS și păstrează pointerul anterior; `failed` închide lotul fără
 date parțiale. Digestul staged păstrează ordinea și multiplicitatea și codifică
 determinist `NULL`, text Unicode, date, Decimal și boolean. PostgreSQL îl
-recalculează la validare și la orice schimbare a headului, în aceeași tranzacție
-cu promovarea. Un worker stale nu mai poate scrie, iar spoolul rămâne până la
+recalculează la validare și la orice schimbare a headului; funcția CAS verifică
+și state-ul validat/promoting, control totals și lipsa anomaliilor blocking, în
+aceeași tranzacție cu promovarea. Un worker stale nu mai poate scrie, iar spoolul rămâne până la
 stare terminală confirmată. Rollbackul clonează și reverifică generația
 anterioară, apoi o promovează auditabil; nu mută headul direct înapoi.
 
@@ -508,7 +512,9 @@ Importul autoritativ al actualelor Finance este o generație separată de shadow
 TVA. `import_store_pnl.py --stage` cere un authority manifest extern, sursele
 exacte și rolul DB dedicat `unihub_finance_import`; persistă candidatele și
 pre-image-ul immutable, control totals, coverage, revision/parent și hashurile
-sursei/manifestului. Promovarea verifică head/pre-image prin lock + CAS,
+sursei/manifestului. Seal-ul SQL recalculează din rândurile persistate candidate
+row hash, coverage, count, total și pre-image hash înainte de `staged`, folosind
+aceeași codificare scalară UTF-8 length-prefixed ca serviciul. Promovarea verifică head/pre-image prin lock + CAS,
 înlocuiește numai `actual` și păstrează `estimated`; rollbackul este o generație
 inversă nouă. În baseline-ul P0-B, CLI-ul blochează operațional promote și
 rollback înainte de conectarea DB: implementarea nu este aprobare de apply live.

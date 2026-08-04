@@ -11,6 +11,7 @@ import asyncpg
 
 from config import configured_database_authority
 from db.connection import (
+    database_connection_options,
     get_migrations_dir,
     get_schema_path,
     verify_database_connection_authority,
@@ -138,13 +139,7 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
         raise MigrationError("MIGRATION_DATABASE_URL is required for migrations")
     connection = await asyncpg.connect(
         migration_database_url,
-        command_timeout=120,
-        server_settings={
-            "application_name": "unihub-retail-migrations",
-            "statement_timeout": "120000",
-            "lock_timeout": "10000",
-            "idle_in_transaction_session_timeout": "60000",
-        },
+        **database_connection_options("unihub-retail-migrations"),
     )
     applied_now: list[str] = []
     try:
