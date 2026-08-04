@@ -309,7 +309,18 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
                 "SELECT promote_store_pnl_shadow_generation($1, 0)", shadow_success
             ) == 1
 
-            await migrate.execute("CREATE TABLE p1a_migrate_role_proof (id integer)")
+            await migrate.execute("ALTER TABLE stores ADD COLUMN p1a_owner_proof integer")
+            await migrate.execute("ALTER TABLE stores DROP COLUMN p1a_owner_proof")
+            async with migrate.transaction():
+                await migrate.execute("SET LOCAL ROLE unihub_migrate")
+                await migrate.execute(
+                    "CREATE FUNCTION p1a_migrate_default_acl_proof() RETURNS integer "
+                    "LANGUAGE SQL AS 'SELECT 1'"
+                )
+            await _expect_denied(web, "SELECT p1a_migrate_default_acl_proof()")
+            async with migrate.transaction():
+                await migrate.execute("SET LOCAL ROLE unihub_migrate")
+                await migrate.execute("DROP FUNCTION p1a_migrate_default_acl_proof()")
         finally:
             for principal_connection in principal_connections.values():
                 await principal_connection.close()

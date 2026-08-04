@@ -16,7 +16,7 @@ class _AuthorityConnection:
     session_user: str = "unihub_web"
     can_login: bool = True
     superuser: bool = False
-    inherits: bool = False
+    inherits: bool = True
     can_create_db: bool = False
     can_create_role: bool = False
     bypass_rls: bool = False
@@ -72,6 +72,14 @@ async def test_authority_rejects_set_role_instead_of_authenticated_principal() -
     with pytest.raises(RuntimeError, match="principal does not match"):
         await connection_module.verify_database_connection_authority(
             connection, "web"  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_authority_rejects_noinherit_login() -> None:
+    with pytest.raises(RuntimeError, match="inheriting LOGIN role"):
+        await connection_module.verify_database_connection_authority(
+            _AuthorityConnection(inherits=False), "web"  # type: ignore[arg-type]
         )
 
 

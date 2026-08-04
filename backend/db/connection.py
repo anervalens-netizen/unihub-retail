@@ -116,12 +116,14 @@ async def verify_database_connection_authority(
     if (
         not bool(identity["rolcanlogin"])
         or bool(identity["rolsuper"])
-        or bool(identity["rolinherit"])
+        or not bool(identity["rolinherit"])
         or bool(identity["rolcreatedb"])
         or bool(identity["rolcreaterole"])
         or bool(identity["rolbypassrls"])
     ):
-        raise RuntimeError("Database authority principal must be a non-superuser LOGIN role")
+        raise RuntimeError(
+            "Database authority principal must be a non-superuser inheriting LOGIN role"
+        )
 
     for role_name in contract.required_memberships:
         is_member = await connection.fetchval(

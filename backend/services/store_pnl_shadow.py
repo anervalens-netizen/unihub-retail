@@ -458,6 +458,10 @@ async def stage_shadow_capture(
                     for row in capture.preimage_rows
                 ],
             )
+        await connection.fetchval(
+            "SELECT seal_store_pnl_shadow_generation($1)",
+            generation_id,
+        )
     return generation_id
 
 
@@ -469,55 +473,23 @@ async def promote_shadow_generation(
 ) -> int:
     """CAS-update the review pointer; runtime P&L remains untouched."""
     async with connection.transaction():
-        pointer = await connection.fetchrow(
-            """
-            SELECT active_generation_id, previous_generation_id, revision
-            FROM store_pnl_shadow_pointer WHERE id = 1 FOR UPDATE
-            """
-        )
-        if pointer is None:
-            raise ShadowGenerationError("Shadow pointer lipseste; migrarea nu este completa.")
-        if pointer["revision"] != expected_revision:
-            raise PointerRevisionMismatch(
-                f"Revision asteptata {expected_revision}, curenta {pointer['revision']}."
+        try:
+            revision = await connection.fetchval(
+                "SELECT promote_store_pnl_shadow_generation($1, $2)",
+                generation_id,
+                expected_revision,
             )
-        state = await connection.fetchval(
-            "SELECT state FROM store_pnl_shadow_generations WHERE id = $1",
-            generation_id,
-        )
-        if state != "staged":
-            raise ShadowGenerationError("Poate fi promovat numai un shadow generation staged.")
-        active = pointer["active_generation_id"]
-        new_revision = expected_revision + 1
-        await connection.execute(
-            """
-            UPDATE store_pnl_shadow_pointer
-            SET active_generation_id = $1, previous_generation_id = $2,
-                revision = $3, updated_at = now()
-            WHERE id = 1
-            """,
-            generation_id,
-            active,
-            new_revision,
-        )
-        await connection.execute(
-            """
-            UPDATE store_pnl_shadow_generations
-            SET state = 'promoted', promoted_at = now()
-            WHERE id = $1
-            """,
-            generation_id,
-        )
-        if active is not None:
-            await connection.execute(
-                """
-                UPDATE store_pnl_shadow_generations
-                SET state = 'superseded'
-                WHERE id = $1 AND state = 'promoted'
-                """,
-                active,
-            )
-    return new_revision
+        except asyncpg.PostgresError as exc:
+            if "pointer revision changed" in str(exc):
+                raise PointerRevisionMismatch(
+                    "Revision shadow concurenta; promovarea a fost refuzata."
+                ) from None
+            raise ShadowGenerationError(
+                "Generatia shadow nu poate fi promovata; sealul, starea sau digestul nu corespund."
+            ) from None
+    if revision is None:
+        raise ShadowGenerationError("Promovarea shadow nu a returnat o revizie.")
+    return int(revision)
 
 
 async def rollback_shadow_pointer(
@@ -527,49 +499,22 @@ async def rollback_shadow_pointer(
 ) -> int:
     """CAS-rollback to the immediately prior review generation, exactly once."""
     async with connection.transaction():
-        pointer = await connection.fetchrow(
-            """
-            SELECT active_generation_id, previous_generation_id, revision
-            FROM store_pnl_shadow_pointer WHERE id = 1 FOR UPDATE
-            """
-        )
-        if pointer is None:
-            raise ShadowGenerationError("Shadow pointer lipseste; migrarea nu este completa.")
-        if pointer["revision"] != expected_revision:
-            raise PointerRevisionMismatch(
-                f"Revision asteptata {expected_revision}, curenta {pointer['revision']}."
+        try:
+            revision = await connection.fetchval(
+                "SELECT rollback_store_pnl_shadow_pointer($1)",
+                expected_revision,
             )
-        active, previous = pointer["active_generation_id"], pointer["previous_generation_id"]
-        if active is None or previous is None:
-            raise ShadowGenerationError("Nu exista o generatie precedenta pentru rollback.")
-        new_revision = expected_revision + 1
-        await connection.execute(
-            """
-            UPDATE store_pnl_shadow_pointer
-            SET active_generation_id = $1, previous_generation_id = NULL,
-                revision = $2, updated_at = now()
-            WHERE id = 1
-            """,
-            previous,
-            new_revision,
-        )
-        await connection.execute(
-            """
-            UPDATE store_pnl_shadow_generations
-            SET state = 'rolled_back', rolled_back_at = now()
-            WHERE id = $1
-            """,
-            active,
-        )
-        await connection.execute(
-            """
-            UPDATE store_pnl_shadow_generations
-            SET state = 'promoted', promoted_at = now()
-            WHERE id = $1
-            """,
-            previous,
-        )
-    return new_revision
+        except asyncpg.PostgresError as exc:
+            if "pointer revision changed" in str(exc):
+                raise PointerRevisionMismatch(
+                    "Revision shadow concurenta; rollbackul a fost refuzat."
+                ) from None
+            raise ShadowGenerationError(
+                "Pointerul shadow nu are un predecessor valid pentru rollback."
+            ) from None
+    if revision is None:
+        raise ShadowGenerationError("Rollbackul shadow nu a returnat o revizie.")
+    return int(revision)
 
 
 def apply_effective_generation(*_args: Any, **_kwargs: Any) -> None:

@@ -9,6 +9,7 @@ from typing import Any
 
 import asyncpg
 
+from config import configured_database_authority
 from db.connection import (
     get_migrations_dir,
     get_schema_path,
@@ -40,6 +41,11 @@ ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
 
 class MigrationError(RuntimeError):
     pass
+
+
+async def _activate_migration_owner(connection: asyncpg.Connection) -> None:
+    if configured_database_authority() == "migrate":
+        await connection.execute("SET LOCAL ROLE unihub_migrate")
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +154,7 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
             )
         )
         async with connection.transaction():
+            await _activate_migration_owner(connection)
             if not has_application_schema:
                 await connection.execute(get_schema_path().read_text(encoding="utf-8"))
             await connection.execute(TRACKING_SQL)
@@ -206,6 +213,7 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
                 continue
             sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
             async with connection.transaction():
+                await _activate_migration_owner(connection)
                 await connection.execute(sql)
                 await connection.execute(
                     "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",

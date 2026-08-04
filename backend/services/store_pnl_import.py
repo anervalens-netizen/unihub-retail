@@ -497,11 +497,8 @@ async def stage_generation(
                     """,
                     preimage_values,
                 )
-        await connection.execute(
-            """
-            INSERT INTO store_pnl_generation_ledger (generation_id, action, details)
-            VALUES ($1, 'staged', $2::jsonb)
-            """,
+        await connection.fetchval(
+            "SELECT append_store_pnl_generation_ledger($1, 'staged', NULL, NULL, $2::jsonb)",
             generation_id,
             json.dumps({"manifest_sha256": manifest_sha256}, sort_keys=True),
         )
@@ -609,14 +606,11 @@ async def _promote_staged_generation(
         if head is None:
             if scope["expected_head_revision"] != 0 or scope["parent_revision_id"] != "legacy":
                 raise PnlGenerationConflict("Head Finance lipseste sau parentul legacy este stale.")
-            next_revision = 1
-        else:
-            if (
-                int(head["revision"]) != scope["expected_head_revision"]
-                or head["revision_id"] != scope["parent_revision_id"]
-            ):
-                raise PnlGenerationConflict("Head Finance este stale; generatia nu poate promova.")
-            next_revision = int(head["revision"]) + 1
+        elif (
+            int(head["revision"]) != scope["expected_head_revision"]
+            or head["revision_id"] != scope["parent_revision_id"]
+        ):
+            raise PnlGenerationConflict("Head Finance este stale; generatia nu poate promova.")
         candidate_rows = await _generation_rows(connection, generation_id, "candidate", scope_key)
         count, total = scope_totals(candidate_rows)
         if (
@@ -629,36 +623,36 @@ async def _promote_staged_generation(
         persisted = await _actual_rows(connection, scope_key)
         if rows_sha256(persisted) != scope["candidate_rows_sha256"]:
             raise PnlGenerationConflict("Post-write hash P&L nu corespunde generatiei staged.")
-        if head is None:
-            await connection.execute(
+        try:
+            next_revision = await connection.fetchval(
                 """
-                INSERT INTO store_pnl_generation_heads (
-                    company_name, period, active_generation_id, revision, revision_id
-                ) VALUES ($1,$2,$3,$4,$5)
+                SELECT advance_store_pnl_generation_head($1, $2, $3, $4, $5, $6)
                 """,
-                scope_key[0], scope_key[1], generation_id, next_revision, scope["revision_id"],
+                scope_key[0],
+                scope_key[1],
+                generation_id,
+                int(scope["expected_head_revision"]),
+                scope["parent_revision_id"],
+                scope["revision_id"],
             )
-        else:
-            await connection.execute(
-                """
-                UPDATE store_pnl_generation_heads
-                SET active_generation_id = $3, revision = $4, revision_id = $5,
-                    updated_at = now()
-                WHERE company_name = $1 AND period = $2
-                """,
-                scope_key[0], scope_key[1], generation_id, next_revision, scope["revision_id"],
-            )
-        await connection.execute(
+        except asyncpg.PostgresError:
+            raise PnlGenerationConflict(
+                "Head Finance este stale; CAS-ul controlat a refuzat promovarea."
+            ) from None
+        if next_revision is None:
+            raise PnlGenerationConflict("CAS-ul Finance nu a returnat o revizie.")
+        await connection.fetchval(
             """
-            INSERT INTO store_pnl_generation_ledger (generation_id, action, company_name, period, details)
-            VALUES ($1, 'promoted', $2, $3, $4::jsonb)
+            SELECT append_store_pnl_generation_ledger(
+                $1, 'promoted', $2, $3, $4::jsonb
+            )
             """,
             generation_id,
             scope_key[0],
             scope_key[1],
-            json.dumps({"revision": next_revision}, sort_keys=True),
+            json.dumps({"revision": int(next_revision)}, sort_keys=True),
         )
-        revisions[f"{scope_key[0]}:{scope_key[1].isoformat()}"] = next_revision
+        revisions[f"{scope_key[0]}:{scope_key[1].isoformat()}"] = int(next_revision)
     await connection.execute(
         "UPDATE store_pnl_generations SET state = 'promoted', promoted_at = now() WHERE id = $1",
         generation_id,
@@ -790,8 +784,8 @@ async def rollback_generation(
                         """,
                         [(inverse_id, row_set, *row_payload(row).values()) for row in rows],
                     )
-        await connection.execute(
-            "INSERT INTO store_pnl_generation_ledger (generation_id, action, details) VALUES ($1, 'staged', $2::jsonb)",
+        await connection.fetchval(
+            "SELECT append_store_pnl_generation_ledger($1, 'staged', NULL, NULL, $2::jsonb)",
             inverse_id, json.dumps({"rollback_of": str(source_generation_id), "manifest_sha256": inverse_sha}, sort_keys=True),
         )
         await connection.execute(

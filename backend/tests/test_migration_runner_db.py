@@ -118,6 +118,22 @@ async def test_runner_prefers_explicit_migration_owner_url(
 
 
 @pytest.mark.asyncio
+async def test_migration_authority_sets_local_stable_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    manifest = runner.load_migration_manifest()
+    connection = _Connection(rows=dict(manifest.checksums))
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
+    monkeypatch.setattr(runner, "verify_database_connection_authority", AsyncMock())
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    assert await run_migrations("postgresql://unused") == []
+    assert "SET LOCAL ROLE unihub_migrate" in connection.executed
+
+
+@pytest.mark.asyncio
 async def test_runner_requires_migration_url_and_never_falls_back_to_runtime_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -274,48 +274,31 @@ async def _advance_sales_head(
     *,
     import_month: str,
     snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
     expected_revision: int,
 ) -> tuple[int | None, int]:
-    head = await conn.fetchrow(
-        """
-        SELECT snapshot_id, revision
-        FROM sales_generation_heads
-        WHERE import_month = $1
-        FOR UPDATE
-        """,
-        import_month,
-    )
-    if head is None:
-        if expected_revision != 0:
-            raise SalesGenerationConflictError("Sales generation head disappeared")
-        await conn.execute(
+    try:
+        head = await conn.fetchrow(
             """
-            INSERT INTO sales_generation_heads (import_month, snapshot_id, revision)
-            VALUES ($1, $2, 1)
+            SELECT previous_snapshot_id, revision
+            FROM advance_sales_generation_head($1, $2, $3::uuid, $4::uuid, $5)
             """,
             import_month,
             snapshot_id,
+            generation_token,
+            owner_id,
+            expected_revision,
         )
-        return None, 1
-    current_revision = int(head["revision"])
-    if current_revision != expected_revision:
-        raise SalesGenerationConflictError("Sales generation head changed before promote")
-    new_revision = current_revision + 1
-    updated = await conn.fetchval(
-        """
-        UPDATE sales_generation_heads
-        SET snapshot_id = $2, revision = $3, updated_at = now()
-        WHERE import_month = $1 AND revision = $4
-        RETURNING snapshot_id
-        """,
-        import_month,
-        snapshot_id,
-        new_revision,
-        expected_revision,
+    except asyncpg.PostgresError as exc:
+        raise SalesGenerationConflictError("Sales generation head CAS failed") from exc
+    if head is None:
+        raise SalesGenerationConflictError("Sales generation head CAS returned no result")
+    previous_snapshot_id = head["previous_snapshot_id"]
+    return (
+        int(previous_snapshot_id) if previous_snapshot_id is not None else None,
+        int(head["revision"]),
     )
-    if updated is None:
-        raise SalesGenerationConflictError("Sales generation head CAS failed")
-    return int(head["snapshot_id"]), new_revision
 
 
 async def _verify_stage_controls(
@@ -410,6 +393,8 @@ async def promote_sales_generation(
             conn,
             import_month=import_month,
             snapshot_id=snapshot_id,
+            generation_token=generation_token,
+            owner_id=owner_id,
             expected_revision=int(row["expected_head_revision"]),
         )
         await _upsert_stores_from_stage(
@@ -461,12 +446,11 @@ async def promote_sales_generation(
         )
         if updated is None:
             raise SalesGenerationConflictError("Stale worker cannot finalize promoted generation")
-        await conn.execute(
+        await conn.fetchval(
             """
-            INSERT INTO sales_generation_promotions (
-                import_month, from_snapshot_id, to_snapshot_id,
-                head_revision, action, requested_by_sub, override_reason
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            SELECT record_sales_generation_promotion(
+                $1, $2, $3, $4, $5, $6, $7
+            )
             """,
             import_month,
             previous_snapshot_id,
@@ -475,18 +459,6 @@ async def promote_sales_generation(
             action,
             actor,
             reason,
-        )
-        retained = [snapshot_id]
-        if previous_snapshot_id is not None:
-            retained.append(previous_snapshot_id)
-        await conn.execute(
-            """
-            DELETE FROM sales_import_stage_rows
-            WHERE import_month = $1
-              AND NOT (snapshot_id = ANY($2::integer[]))
-            """,
-            import_month,
-            retained,
         )
     return rows_imported, revision
 

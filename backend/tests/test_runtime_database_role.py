@@ -11,6 +11,7 @@ import pytest
 from db.connection import get_migrations_dir, get_pool, get_schema_path
 from db.migration_runner import BASELINE_REPLAY_MIGRATIONS, load_migration_manifest
 from scripts.provision_runtime_database_role import (
+    AUTHORITY_CONTRACTS,
     SALARY_LINK_COLUMNS,
     SALARY_RECORD_COLUMNS,
     AUTHORITY_ROLES,
@@ -122,6 +123,13 @@ def test_provisioner_declares_only_no_login_authority_contracts() -> None:
         "unihub_finance_import",
         "unihub_operations",
         "unihub_migrate",
+    }
+    assert AUTHORITY_CONTRACTS == {
+        frozenset({"unihub_web_read", "unihub_business_write"}),
+        frozenset({"unihub_sales_import"}),
+        frozenset({"unihub_finance_import"}),
+        frozenset({"unihub_operations"}),
+        frozenset({"unihub_migrate"}),
     }
 
 
