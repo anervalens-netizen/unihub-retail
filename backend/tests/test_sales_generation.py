@@ -3,16 +3,22 @@ from __future__ import annotations
 import os
 from datetime import date
 from uuid import uuid4
+from unittest.mock import AsyncMock
 
 import pandas as pd
 import pytest
 
+import services.importer as importer
+import services.sales_generation_flow as sales_generation_flow
 from db.connection import close_db_pool, get_pool
 from services.importer import import_sales_dataframe
 from services.sales_generation import (
     SalesGenerationConflictError,
+    SalesAnomalyClassification,
+    SalesPolicyValidationError,
     build_sales_generation_manifest,
     compare_sales_generation_manifests,
+    manifest_requires_override,
 )
 from services.sales_generation_flow import (
     claim_validated_sales_generation,
@@ -87,7 +93,7 @@ def test_business_hash_preserves_duplicate_row_multiplicity() -> None:
     assert duplicate_manifest["receipt_count"] == 1
 
 
-def test_receipt_identity_includes_site_and_site_day_regressions_are_blocking() -> None:
+def test_authoritative_replace_classifies_snapshot_differences_as_informational() -> None:
     previous = manifest(sales_frame(include_second_row=True), cutoff=date(2099, 11, 2))
     missing_site_day = manifest(sales_frame(), cutoff=date(2099, 11, 2))
     regressed_cutoff = manifest(sales_frame(), cutoff=date(2099, 11, 1))
@@ -99,9 +105,53 @@ def test_receipt_identity_includes_site_and_site_day_regressions_are_blocking() 
         "rows_imported_regression",
         "receipt_count_regression",
     }
-    assert all(item["blocking"] for item in missing_anomalies)
+    assert all(
+        item["classification"] == SalesAnomalyClassification.INFORMATIONAL.value
+        and item["blocking"] is False
+        for item in missing_anomalies
+    )
+    by_code = {item["code"]: item for item in missing_anomalies}
+    assert by_code["site_day_disappeared"]["classification"] == (
+        SalesAnomalyClassification.INFORMATIONAL.value
+    )
+    assert by_code["site_day_disappeared"]["blocking"] is False
+    assert by_code["rows_imported_regression"]["classification"] == (
+        SalesAnomalyClassification.INFORMATIONAL.value
+    )
+    assert by_code["rows_imported_regression"]["blocking"] is False
+    assert manifest_requires_override({"anomalies": missing_anomalies}) is False
     cutoff_anomalies = compare_sales_generation_manifests(regressed_cutoff, previous)
-    assert "cutoff_regression" in {item["code"] for item in cutoff_anomalies}
+    cutoff = {item["code"]: item for item in cutoff_anomalies}
+    assert cutoff["cutoff_regression"]["classification"] == (
+        SalesAnomalyClassification.INFORMATIONAL.value
+    )
+    assert cutoff["cutoff_regression"]["blocking"] is False
+    assert manifest_requires_override({"anomalies": cutoff_anomalies}) is False
+
+
+def test_authoritative_replace_allows_informational_metric_regression() -> None:
+    previous = manifest(sales_frame(), cutoff=date(2099, 11, 1))
+    incoming_frame = sales_frame()
+    incoming_frame.loc[0, "Valoare"] = 1
+    incoming = manifest(incoming_frame, cutoff=date(2099, 11, 1))
+
+    anomalies = compare_sales_generation_manifests(incoming, previous)
+
+    assert {item["code"] for item in anomalies} == {"total_value_regression"}
+    assert anomalies[0]["classification"] == SalesAnomalyClassification.INFORMATIONAL.value
+    assert anomalies[0]["blocking"] is False
+    assert manifest_requires_override({"anomalies": anomalies}) is False
+
+
+def test_structural_manifest_contradiction_is_explicit() -> None:
+    frame = sales_frame()
+
+    with pytest.raises(SalesPolicyValidationError) as exc_info:
+        manifest(frame, cutoff=date(2099, 12, 1))
+
+    anomaly = exc_info.value.anomalies[0]
+    assert anomaly["code"] == "cutoff_month_mismatch"
+    assert anomaly["classification"] == SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value
 
 
 async def cleanup_generation_data(conn: object) -> None:
@@ -233,6 +283,70 @@ async def test_stage_promote_fencing_and_rollback_are_atomic() -> None:
                 TEST_MONTH,
             )
             assert [row["action"] for row in actions] == ["promote", "promote", "rollback"]
+    finally:
+        async with pool.acquire() as conn:
+            await cleanup_generation_data(conn)
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_authoritative_replace_promotes_snapshot_regressions_without_override_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = await get_pool()
+    monkeypatch.setattr(importer, "rebuild_reporting_month", AsyncMock())
+    monkeypatch.setattr(importer, "rebuild_agent_lifecycle_reporting", AsyncMock())
+    monkeypatch.setattr(sales_generation_flow, "rebuild_reporting_month", AsyncMock())
+    monkeypatch.setattr(sales_generation_flow, "rebuild_agent_lifecycle_reporting", AsyncMock())
+    try:
+        async with pool.acquire() as conn:
+            await cleanup_generation_data(conn)
+            await import_sales_dataframe(
+                conn,
+                sales_frame(include_second_row=True),
+                "authoritative-first.xlsx",
+                source_sha256="c" * 64,
+                cutoff_date=date(2099, 11, 2),
+                requested_by_sub="test:authoritative-first",
+            )
+            candidate = await import_sales_dataframe(
+                conn,
+                sales_frame(),
+                "authoritative-candidate.xlsx",
+                source_sha256="d" * 64,
+                cutoff_date=date(2099, 11, 2),
+                stage_only=True,
+                requested_by_sub="test:authoritative-candidate",
+            )
+
+            assert candidate.manifest is not None
+            assert manifest_requires_override(candidate.manifest) is False
+            assert all(
+                anomaly["classification"] == SalesAnomalyClassification.INFORMATIONAL.value
+                for anomaly in candidate.manifest["anomalies"]
+            )
+            rows_imported, revision = await promote_sales_generation(
+                conn,
+                snapshot_id=candidate.snapshot_id,
+                generation_token=str(candidate.generation_token),
+                owner_id=str(candidate.owner_id),
+                expected_manifest_sha256=str(candidate.manifest_sha256),
+                requested_by_sub="test:authoritative-promote",
+            )
+
+            assert await conn.fetchval(
+                "SELECT snapshot_id FROM sales_generation_heads WHERE import_month = $1",
+                TEST_MONTH,
+            ) == candidate.snapshot_id
+            assert (rows_imported, revision) == (1, 2)
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM sales_transactions WHERE import_month = $1",
+                TEST_MONTH,
+            ) == 1
     finally:
         async with pool.acquire() as conn:
             await cleanup_generation_data(conn)

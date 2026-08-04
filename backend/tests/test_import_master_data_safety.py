@@ -18,6 +18,7 @@ from services.importer import (
     import_sales_file,
     upsert_stores,
 )
+from services.sales_generation import SalesAnomalyClassification, SalesPolicyValidationError
 
 
 pytestmark = [
@@ -160,8 +161,13 @@ async def assert_rejected_workbook_has_no_database_effects(
         import_month=import_month,
     )
 
-    with pytest.raises(ValueError, match=error_pattern):
+    with pytest.raises(SalesPolicyValidationError, match=error_pattern) as exc_info:
         await import_sales_file(conn, sales_workbook(frame), filename)
+
+    assert all(
+        anomaly["classification"] == SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value
+        for anomaly in exc_info.value.anomalies
+    )
 
     assert await store_state(conn, site_code) == before
     assert await import_month_state(
@@ -219,6 +225,10 @@ async def test_complete_and_ninety_percent_files_never_deactivate_absent_stores(
             assert coverage["incoming_store_count"] == incoming_count
             assert coverage["missing_active_store_count"] == 10 - incoming_count
             assert coverage["store_activity_writes"] == 0
+            assert all(
+                anomaly["classification"] == SalesAnomalyClassification.INFORMATIONAL.value
+                for anomaly in coverage["anomalies"]
+            )
     finally:
         async with pool.acquire() as conn:
             await conn.execute(

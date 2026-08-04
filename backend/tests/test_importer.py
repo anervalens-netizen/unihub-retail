@@ -17,6 +17,7 @@ from services.importer import (
     load_targets_dataframe,
     normalize_firma,
 )
+from services.sales_generation import SalesAnomalyClassification, SalesPolicyValidationError
 
 
 def sales_workbook(rows: list[dict]) -> bytes:
@@ -126,13 +127,22 @@ def test_load_sales_dataframe_rejects_duplicate_raw_excel_headers() -> None:
     sheet.cell(row=1, column=3, value="SiteCode")
     workbook.save(output)
 
-    with pytest.raises(ValueError, match="antete duplicate"):
+    with pytest.raises(SalesPolicyValidationError, match="antete duplicate") as exc_info:
         load_sales_dataframe(output.getvalue())
+
+    assert exc_info.value.anomalies[0]["code"] == "duplicate_headers"
+    assert (
+        exc_info.value.anomalies[0]["classification"]
+        == SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value
+    )
 
 
 def test_load_sales_dataframe_rejects_missing_required_identifier() -> None:
-    with pytest.raises(ValueError, match="identificatori obligatorii"):
+    with pytest.raises(SalesPolicyValidationError, match="identificatori obligatorii") as exc_info:
         load_sales_dataframe(sales_workbook([sales_row(Agent=None)]))
+
+    assert exc_info.value.anomalies[0]["code"] == "missing_required_identifiers"
+    assert exc_info.value.anomalies[0]["blocking"] is True
 
 
 def test_load_sales_dataframe_ignores_missing_identifier_on_excluded_row() -> None:
@@ -154,13 +164,16 @@ def test_load_sales_dataframe_ignores_missing_identifier_on_excluded_row() -> No
 
 
 def test_load_sales_dataframe_rejects_conflicting_store_metadata() -> None:
-    with pytest.raises(ValueError, match="contradictorii"):
+    with pytest.raises(SalesPolicyValidationError, match="contradictorii") as exc_info:
         load_sales_dataframe(
             sales_workbook(
                 [sales_row(), sales_row(Nr="BON2", Locatie="Alt magazin")]
             )
         )
 
+    anomaly = exc_info.value.anomalies[0]
+    assert anomaly["code"] == "contradictory_store_metadata"
+    assert anomaly["classification"] == SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value
 
 def test_detect_month_rejects_mixed_months() -> None:
     frame = pd.DataFrame({"Data": [date(2099, 7, 1), date(2099, 8, 1)]})

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from enum import Enum
 from hashlib import sha256
 import json
 import re
-from typing import Any
+from typing import Any, Mapping
 import unicodedata
 
 import asyncpg
@@ -20,12 +22,75 @@ DEFAULT_VALUE_REGRESSION_PCT = Decimal("10")
 DEFAULT_QUANTITY_REGRESSION_PCT = Decimal("10")
 
 
+class SalesAnomalyClassification(str, Enum):
+    """Authoritative-replace anomaly classes persisted in the manifest."""
+
+    INFORMATIONAL = "informational"
+    STRUCTURAL_CONTRADICTION = "structural_contradiction"
+
+
+@dataclass(frozen=True, slots=True)
+class SalesAnomaly:
+    code: str
+    classification: SalesAnomalyClassification
+    message: str
+    details: Mapping[str, Any]
+
+    @property
+    def blocking(self) -> bool:
+        return self.classification is SalesAnomalyClassification.STRUCTURAL_CONTRADICTION
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "classification": self.classification.value,
+            # Kept for consumers of the pre-classification manifest contract.
+            "blocking": self.blocking,
+            **dict(self.details),
+            "message": self.message,
+        }
+
+
+def make_sales_anomaly(
+    code: str,
+    classification: SalesAnomalyClassification,
+    message: str,
+    **details: Any,
+) -> dict[str, Any]:
+    return SalesAnomaly(code, classification, message, details).as_dict()
+
+
+class SalesPolicyValidationError(ValueError):
+    """A structural contradiction that must not enter authoritative live data."""
+
+    def __init__(self, anomalies: SalesAnomaly | Mapping[str, Any] | list[Mapping[str, Any]]) -> None:
+        if isinstance(anomalies, SalesAnomaly):
+            values = [anomalies.as_dict()]
+        elif isinstance(anomalies, Mapping):
+            values = [dict(anomalies)]
+        else:
+            values = [dict(item) for item in anomalies]
+        if not values:
+            raise ValueError("At least one sales policy anomaly is required")
+        self.anomalies = tuple(values)
+        super().__init__("; ".join(str(item["message"]) for item in values))
+
+
 class SalesGenerationConflictError(RuntimeError):
     """The caller no longer owns the generation/head it attempted to mutate."""
 
 
-class SalesGenerationValidationError(ValueError):
-    """The staged generation cannot be promoted without an explicit override."""
+class SalesGenerationValidationError(SalesPolicyValidationError):
+    """A staged generation has a structural contradiction or integrity failure."""
+
+    def __init__(self, message: str, *, code: str = "generation_validation") -> None:
+        super().__init__(
+            make_sales_anomaly(
+                code,
+                SalesAnomalyClassification.STRUCTURAL_CONTRADICTION,
+                message,
+            )
+        )
 
 
 def canonical_json_sha256(payload: Any) -> str:
@@ -120,19 +185,54 @@ def build_sales_generation_manifest(
     rows_filtered: int,
 ) -> dict[str, Any]:
     if not SOURCE_SHA256_RE.fullmatch(source_sha256):
-        raise ValueError("source_sha256 must be a lowercase SHA-256 digest")
+        raise SalesPolicyValidationError(
+            make_sales_anomaly(
+                "invalid_source_sha256",
+                SalesAnomalyClassification.STRUCTURAL_CONTRADICTION,
+                "source_sha256 must be a lowercase SHA-256 digest",
+            )
+        )
     if df.empty:
-        raise ValueError("Sales generation cannot be empty")
+        raise SalesPolicyValidationError(
+            make_sales_anomaly(
+                "empty_generation",
+                SalesAnomalyClassification.STRUCTURAL_CONTRADICTION,
+                "Sales generation cannot be empty",
+            )
+        )
 
     months = {value.strftime("%Y-%m") for value in df["Data"]}
     if len(months) != 1:
-        raise ValueError("Sales generation must contain exactly one month")
+        raise SalesPolicyValidationError(
+            make_sales_anomaly(
+                "mixed_import_months",
+                SalesAnomalyClassification.STRUCTURAL_CONTRADICTION,
+                "Sales generation must contain exactly one month",
+                months=sorted(months),
+            )
+        )
     import_month = next(iter(months))
     if cutoff_date.strftime("%Y-%m") != import_month:
-        raise ValueError("Cutoff date must belong to the imported month")
+        raise SalesPolicyValidationError(
+            make_sales_anomaly(
+                "cutoff_month_mismatch",
+                SalesAnomalyClassification.STRUCTURAL_CONTRADICTION,
+                "Cutoff date must belong to the imported month",
+                import_month=import_month,
+                cutoff_date=cutoff_date.isoformat(),
+            )
+        )
     maximum_sale_date = max(df["Data"])
     if maximum_sale_date > cutoff_date:
-        raise ValueError("Sales generation contains rows after the declared cutoff")
+        raise SalesPolicyValidationError(
+            make_sales_anomaly(
+                "row_after_cutoff",
+                SalesAnomalyClassification.STRUCTURAL_CONTRADICTION,
+                "Sales generation contains rows after the declared cutoff",
+                max_sale_date=maximum_sale_date.isoformat(),
+                cutoff_date=cutoff_date.isoformat(),
+            )
+        )
 
     canonical_rows: list[str] = []
     receipts: set[tuple[str, str, str, str]] = set()
@@ -213,17 +313,17 @@ def _drop_pct(current: Decimal, previous: Decimal) -> Decimal:
     return ((previous - current) * Decimal("100") / previous).quantize(Decimal("0.01"))
 
 
-def compare_sales_generation_manifests(
+def classify_authoritative_replace_anomalies(
     incoming: dict[str, Any],
     previous: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     if previous is None:
         return [
-            {
-                "code": "first_generation_review",
-                "blocking": False,
-                "message": "Prima generație a lunii necesită review-ul cutoffului și control totals.",
-            }
+            make_sales_anomaly(
+                "first_generation_review",
+                SalesAnomalyClassification.INFORMATIONAL,
+                "Prima generație a lunii necesită review-ul cutoffului și control totals.",
+            )
         ]
 
     anomalies: list[dict[str, Any]] = []
@@ -231,13 +331,13 @@ def compare_sales_generation_manifests(
     previous_cutoff = date.fromisoformat(str(previous["cutoff_date"]))
     if incoming_cutoff < previous_cutoff:
         anomalies.append(
-            {
-                "code": "cutoff_regression",
-                "blocking": True,
-                "previous": previous_cutoff.isoformat(),
-                "incoming": incoming_cutoff.isoformat(),
-                "message": "Cutofful generației noi este mai vechi decât cutofful promovat.",
-            }
+            make_sales_anomaly(
+                "cutoff_regression",
+                SalesAnomalyClassification.INFORMATIONAL,
+                "Cutofful generației noi este mai vechi decât cutofful promovat; raportul curent rămâne autoritativ.",
+                previous=previous_cutoff.isoformat(),
+                incoming=incoming_cutoff.isoformat(),
+            )
         )
 
     previous_site_days = {
@@ -252,13 +352,13 @@ def compare_sales_generation_manifests(
     missing_site_days = sorted(previous_site_days - incoming_site_days)
     if missing_site_days:
         anomalies.append(
-            {
-                "code": "site_day_disappeared",
-                "blocking": True,
-                "count": len(missing_site_days),
-                "site_days": [f"{site_code}:{sale_date}" for site_code, sale_date in missing_site_days],
-                "message": "Cel puțin un site-day observat anterior a dispărut.",
-            }
+            make_sales_anomaly(
+                "site_day_disappeared",
+                SalesAnomalyClassification.INFORMATIONAL,
+                "Cel puțin un site-day observat anterior a dispărut; raportul curent rămâne autoritativ.",
+                count=len(missing_site_days),
+                site_days=[f"{site_code}:{sale_date}" for site_code, sale_date in missing_site_days],
+            )
         )
 
     comparisons = (
@@ -273,21 +373,38 @@ def compare_sales_generation_manifests(
         regression = _drop_pct(current, old)
         if regression > threshold:
             anomalies.append(
-                {
-                    "code": f"{key}_regression",
-                    "blocking": True,
-                    "previous": str(previous.get(key, 0)),
-                    "incoming": str(incoming.get(key, 0)),
-                    "drop_pct": f"{regression:.2f}",
-                    "threshold_pct": f"{threshold:.2f}",
-                    "message": f"{key} a regresat peste pragul configurat.",
-                }
+                make_sales_anomaly(
+                    f"{key}_regression",
+                    SalesAnomalyClassification.INFORMATIONAL,
+                    f"{key} a regresat peste pragul configurat; necesită review înainte de reconciliere.",
+                    previous=str(previous.get(key, 0)),
+                    incoming=str(incoming.get(key, 0)),
+                    drop_pct=f"{regression:.2f}",
+                    threshold_pct=f"{threshold:.2f}",
+                )
             )
     return anomalies
 
 
+def compare_sales_generation_manifests(
+    incoming: dict[str, Any],
+    previous: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Backward-compatible name for the authoritative-replace policy."""
+    return classify_authoritative_replace_anomalies(incoming, previous)
+
+
+def manifest_has_structural_contradictions(manifest: Mapping[str, Any]) -> bool:
+    for item in manifest.get("anomalies", []):
+        classification = item.get("classification")
+        if classification == SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value:
+            return True
+    return False
+
+
 def manifest_requires_override(manifest: dict[str, Any]) -> bool:
-    return any(bool(item.get("blocking")) for item in manifest.get("anomalies", []))
+    """Compatibility predicate; structural contradictions are not overrideable."""
+    return manifest_has_structural_contradictions(manifest)
 
 
 async def stage_sales_generation_rows(

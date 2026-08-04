@@ -383,9 +383,9 @@ async def promote_sales_generation(
         if isinstance(manifest, str):
             manifest = json.loads(manifest)
         manifest = dict(manifest or {})
-        if manifest_requires_override(manifest) and (not reason or len(reason) < 10):
+        if manifest_requires_override(manifest):
             raise SalesGenerationValidationError(
-                "Anomaliile blocante necesită un motiv explicit de minimum 10 caractere"
+                "Promovarea este blocată de contradicții structurale ale generației"
             )
         await _verify_stage_controls(conn, snapshot_id=snapshot_id, manifest=manifest)
         import_month = str(row["import_month"])
@@ -541,6 +541,7 @@ async def rollback_sales_generation(
         rollback_manifest["anomalies"] = [
             {
                 "code": "operator_rollback",
+                "classification": "informational",
                 "blocking": False,
                 "message": "Generație recreată din predecesorul reținut pentru rollback.",
             }

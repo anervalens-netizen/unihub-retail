@@ -20,11 +20,14 @@ from services.reporting_refresh import (
     rebuild_reporting_month,
 )
 from services.sales_generation import (
+    SalesAnomalyClassification,
+    SalesPolicyValidationError,
     build_sales_generation_manifest,
     canonical_sales_stage_rows_sha256,
     canonical_json_sha256,
     compare_sales_generation_manifests,
     fenced_generation_heartbeat,
+    make_sales_anomaly,
     stage_sales_generation_rows,
 )
 from services.sales_generation_flow import (
@@ -77,6 +80,21 @@ class ImportAlreadyRunningError(RuntimeError):
     pass
 
 
+def _raise_structural_contradiction(
+    code: str,
+    message: str,
+    **details: Any,
+) -> None:
+    raise SalesPolicyValidationError(
+        make_sales_anomaly(
+            code,
+            SalesAnomalyClassification.STRUCTURAL_CONTRADICTION,
+            message,
+            **details,
+        )
+    )
+
+
 async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
     """Close leases left by a worker stop before ARQ retries queued imports.
 
@@ -126,14 +144,22 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
         }
     )
     if duplicate_headers:
-        raise ValueError("Fișierul conține antete duplicate.")
+        _raise_structural_contradiction(
+            "duplicate_headers",
+            "Fișierul conține antete duplicate.",
+            headers=duplicate_headers,
+        )
 
     df = pd.read_excel(content, engine=None)
     normalized_columns = [str(value).strip() for value in df.columns]
     df.columns = normalized_columns
     missing = [column for column in SALES_COLUMNS if column not in df.columns]
     if missing:
-        raise ValueError(f"Lipsesc coloane obligatorii: {', '.join(missing)}")
+        _raise_structural_contradiction(
+            "missing_required_columns",
+            f"Lipsesc coloane obligatorii: {', '.join(missing)}",
+            columns=missing,
+        )
 
     df = df[SALES_COLUMNS].copy()
     try:
@@ -141,7 +167,13 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
             df["Data"], format="%d.%m.%Y", errors="raise"
         ).dt.date
     except (TypeError, ValueError) as exc:
-        raise ValueError("Coloana Data conține valori invalide.") from exc
+        try:
+            _raise_structural_contradiction(
+                "invalid_sale_date",
+                "Coloana Data conține valori invalide.",
+            )
+        except SalesPolicyValidationError as validation_error:
+            raise validation_error from exc
 
     quantity = pd.to_numeric(df["Cantitate"], errors="coerce")
     invalid_quantity = quantity.isna() | ~quantity.map(
@@ -152,7 +184,10 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     )
     out_of_range_quantity = quantity.abs() > 2_147_483_647
     if bool((invalid_quantity | fractional_quantity | out_of_range_quantity).any()):
-        raise ValueError("Coloana Cantitate conține valori invalide.")
+        _raise_structural_contradiction(
+            "invalid_quantity",
+            "Coloana Cantitate conține valori invalide.",
+        )
     df["Cantitate"] = quantity.astype("int64")
 
     for column in ("Pret", "Valoare"):
@@ -162,7 +197,11 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
         )
         out_of_range = numeric.abs() > 99_999_999.99
         if bool((invalid | out_of_range).any()):
-            raise ValueError(f"Coloana {column} conține valori monetare invalide.")
+            _raise_structural_contradiction(
+                "invalid_money",
+                f"Coloana {column} conține valori monetare invalide.",
+                column=column,
+            )
         df[column] = numeric
     df["Nr"] = df["Nr"].fillna("").map(lambda value: str(value).strip())
     for column in ["SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "ASM", "Regional", "Agent"]:
@@ -180,12 +219,28 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
 
 def validate_sales_dataframe(df: pd.DataFrame) -> None:
     """Reject ambiguous or lossy input before reserving or mutating a snapshot."""
+    duplicate_columns = sorted(
+        {str(column) for column in df.columns if list(df.columns).count(column) > 1}
+    )
+    if duplicate_columns:
+        _raise_structural_contradiction(
+            "duplicate_headers",
+            "Fișierul conține antete duplicate.",
+            headers=duplicate_columns,
+        )
     missing_columns = [column for column in SALES_COLUMNS if column not in df.columns]
     if missing_columns:
-        raise ValueError(f"Lipsesc coloane obligatorii: {', '.join(missing_columns)}")
+        _raise_structural_contradiction(
+            "missing_required_columns",
+            f"Lipsesc coloane obligatorii: {', '.join(missing_columns)}",
+            columns=missing_columns,
+        )
 
     if df["Data"].isna().any():
-        raise ValueError("Coloana Data conține valori invalide.")
+        _raise_structural_contradiction(
+            "invalid_sale_date",
+            "Coloana Data conține valori invalide.",
+        )
     quantity = pd.to_numeric(df["Cantitate"], errors="coerce")
     invalid_quantity = quantity.isna() | ~quantity.map(
         lambda value: math.isfinite(float(value))
@@ -200,14 +255,21 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
             | (quantity.abs() > 2_147_483_647)
         ).any()
     ):
-        raise ValueError("Coloana Cantitate conține valori invalide.")
+        _raise_structural_contradiction(
+            "invalid_quantity",
+            "Coloana Cantitate conține valori invalide.",
+        )
     for column in ("Pret", "Valoare"):
         numeric = pd.to_numeric(df[column], errors="coerce")
         invalid = numeric.isna() | ~numeric.map(
             lambda value: math.isfinite(float(value))
         )
         if bool((invalid | (numeric.abs() > 99_999_999.99)).any()):
-            raise ValueError(f"Coloana {column} conține valori monetare invalide.")
+            _raise_structural_contradiction(
+                "invalid_money",
+                f"Coloana {column} conține valori monetare invalide.",
+                column=column,
+            )
 
     # Rows without an assigned ASM are deliberately excluded from Retail
     # imports (TR locations / unallocated agents).  Do not make an ignored row
@@ -234,9 +296,11 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
         .any()
     ]
     if invalid_required:
-        raise ValueError(
+        _raise_structural_contradiction(
+            "missing_required_identifiers",
             "Fișierul conține identificatori obligatorii lipsă: "
-            + ", ".join(invalid_required)
+            + ", ".join(invalid_required),
+            columns=invalid_required,
         )
 
     # The source export has no stable line identifier.  Equal values across the
@@ -251,8 +315,16 @@ def validate_sales_dataframe(df: pd.DataFrame) -> None:
         grouped = valid_structure.groupby("SiteCode", dropna=False)[metadata_columns]
         conflicting_sites = int((grouped.nunique(dropna=False) > 1).any(axis=1).sum())
     if conflicting_sites:
-        raise ValueError(
-            f"Fișierul conține metadate contradictorii pentru {conflicting_sites} magazine."
+        conflicting_site_codes = sorted(
+            str(site_code)
+            for site_code, group in valid_structure.groupby("SiteCode", dropna=False)
+            if (group[metadata_columns].nunique(dropna=False) > 1).any()
+        )
+        _raise_structural_contradiction(
+            "contradictory_store_metadata",
+            f"Fișierul conține metadate contradictorii pentru {conflicting_sites} magazine.",
+            store_count=conflicting_sites,
+            store_codes=conflicting_site_codes,
         )
 
 
@@ -318,7 +390,7 @@ async def build_import_coverage_report(
             return None
         return round(numerator / denominator * 100, 2)
 
-    return {
+    report = {
         "incoming_store_count": len(incoming),
         "company_count": int(df["Firma"].nunique()),
         "active_store_count_before": len(active),
@@ -335,6 +407,48 @@ async def build_import_coverage_report(
         "new_store_set_sha256": _site_set_digest(new_sites),
         "store_activity_writes": 0,
     }
+    informational_anomalies: list[dict[str, Any]] = []
+    if missing_active:
+        informational_anomalies.append(
+            make_sales_anomaly(
+                "missing_active_stores",
+                SalesAnomalyClassification.INFORMATIONAL,
+                "Magazine active anterior lipsesc din fișierul cumulativ; nu sunt dezactivate automat.",
+                count=len(missing_active),
+                set_sha256=report["missing_active_set_sha256"],
+            )
+        )
+    if missing_prior:
+        informational_anomalies.append(
+            make_sales_anomaly(
+                "missing_prior_snapshot_stores",
+                SalesAnomalyClassification.INFORMATIONAL,
+                "Magazine din snapshotul anterior lipsesc din fișierul curent; necesită review.",
+                count=len(missing_prior),
+                set_sha256=report["missing_prior_set_sha256"],
+            )
+        )
+    if new_sites:
+        informational_anomalies.append(
+            make_sales_anomaly(
+                "new_stores",
+                SalesAnomalyClassification.INFORMATIONAL,
+                "Fișierul conține magazine noi față de master data.",
+                count=len(new_sites),
+                set_sha256=report["new_store_set_sha256"],
+            )
+        )
+    if metadata_changes:
+        informational_anomalies.append(
+            make_sales_anomaly(
+                "master_store_metadata_changed",
+                SalesAnomalyClassification.INFORMATIONAL,
+                "Metadatele magazinelor diferă de master data activă; actualizarea este auditabilă la promote.",
+                count=metadata_changes,
+            )
+        )
+    report["anomalies"] = informational_anomalies
+    return report
 
 
 def normalize_firma(value: str) -> str:
@@ -361,7 +475,11 @@ def filter_asm_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
 def detect_month(df: pd.DataFrame) -> str:
     months = df["Data"].map(lambda value: value.strftime("%Y-%m")).unique().tolist()
     if len(months) != 1:
-        raise ValueError(f"Fișierul conține mai multe luni: {months}")
+        _raise_structural_contradiction(
+            "mixed_import_months",
+            f"Fișierul conține mai multe luni: {months}",
+            months=months,
+        )
     return str(months[0])
 
 
@@ -651,7 +769,11 @@ async def import_sales_dataframe(
 
     df, rows_filtered = filter_asm_rows(df)
     if df.empty:
-        raise ValueError("Fișierul nu conține rânduri cu ASM valid după filtrare.")
+        _raise_structural_contradiction(
+            "empty_after_filter",
+            "Fișierul nu conține rânduri cu ASM valid după filtrare.",
+            rows_filtered=rows_filtered,
+        )
 
     import_month = detect_month(df)
     month_final = is_month_final(import_month)
@@ -690,6 +812,16 @@ async def import_sales_dataframe(
             manifest,
             previous_manifest,
         )
+        if rows_filtered:
+            manifest["anomalies"].append(
+                make_sales_anomaly(
+                    "rows_filtered",
+                    SalesAnomalyClassification.INFORMATIONAL,
+                    "Rândurile fără ASM valid sunt excluse din Retail și păstrate ca anomalie informativă.",
+                    count=rows_filtered,
+                )
+            )
+        manifest["anomalies"].extend(coverage_report.get("anomalies", []))
         manifest["generation_state"] = "validated"
         manifest["stage_rows_sha256"] = canonical_sales_stage_rows_sha256(
             df,
