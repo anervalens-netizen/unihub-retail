@@ -3,11 +3,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
+from uuid import uuid4
 
 import asyncpg
 import pytest
 
-from db.connection import get_pool
+from db.connection import get_migrations_dir, get_pool, get_schema_path
+from db.migration_runner import BASELINE_REPLAY_MIGRATIONS, load_migration_manifest
 from scripts.provision_runtime_database_role import (
     SALARY_LINK_COLUMNS,
     SALARY_RECORD_COLUMNS,
@@ -155,3 +157,89 @@ async def test_runtime_reprovision_preserves_finance_authority_acl_fence() -> No
             )
     finally:
         await owner.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated test database",
+)
+async def test_upgrade_037_to_039_revokes_preexisting_runtime_sequence_acl() -> None:
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    database = f"p0b_acl_{uuid4().hex}_test"
+    maintenance_url = urlunsplit(
+        (parsed.scheme, parsed.netloc, "/postgres", parsed.query, parsed.fragment)
+    )
+    upgrade_url = urlunsplit(
+        (parsed.scheme, parsed.netloc, f"/{database}", parsed.query, parsed.fragment)
+    )
+    maintenance = await asyncpg.connect(maintenance_url)
+    role_created = False
+    try:
+        await maintenance.execute(f'CREATE DATABASE "{database}"')
+        role_exists = await maintenance.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='unihub_runtime')"
+        )
+        if not role_exists:
+            await maintenance.execute(
+                "CREATE ROLE unihub_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"
+            )
+            role_created = True
+
+        upgrade = await asyncpg.connect(upgrade_url)
+        try:
+            manifest = load_migration_manifest()
+            migrations_dir = get_migrations_dir()
+            await upgrade.execute(get_schema_path().read_text(encoding="utf-8"))
+            replay = [
+                name
+                for name in manifest.checksums
+                if name in BASELINE_REPLAY_MIGRATIONS
+                or (manifest.incorporated_through < name <= "037_sales_generation_stage_integrity.sql")
+            ]
+            for name in replay:
+                await upgrade.execute((migrations_dir / name).read_text(encoding="utf-8"))
+
+            await upgrade.execute(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
+                "TO unihub_runtime"
+            )
+            await upgrade.execute(
+                "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public "
+                "TO unihub_runtime"
+            )
+            await upgrade.execute(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+                "GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO unihub_runtime"
+            )
+            for name in (
+                "038_retire_replace_month_snapshot.sql",
+                "039_store_pnl_authoritative_generations.sql",
+            ):
+                await upgrade.execute((migrations_dir / name).read_text(encoding="utf-8"))
+
+            assert await upgrade.fetchval(
+                "SELECT to_regprocedure('public.replace_month_snapshot(text)') IS NULL"
+            )
+            assert not await upgrade.fetchval(
+                "SELECT has_table_privilege('unihub_runtime', 'store_pnl_monthly', 'INSERT')"
+            )
+            for table in PNL_AUTHORITY_TABLES:
+                assert not await upgrade.fetchval(
+                    "SELECT has_table_privilege('unihub_runtime', $1, 'SELECT')",
+                    table,
+                )
+            for sequence in PNL_AUTHORITY_SEQUENCES:
+                for privilege in ("USAGE", "SELECT", "UPDATE"):
+                    assert not await upgrade.fetchval(
+                        "SELECT has_sequence_privilege('unihub_runtime', $1, $2)",
+                        sequence,
+                        privilege,
+                    )
+        finally:
+            await upgrade.close()
+    finally:
+        await maintenance.execute(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
+        if role_created:
+            await maintenance.execute("DROP ROLE IF EXISTS unihub_runtime")
+        await maintenance.close()

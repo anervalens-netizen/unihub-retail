@@ -196,7 +196,11 @@ BEGIN
                             store_pnl_generation_heads,
                             store_pnl_generation_ledger
             FROM unihub_runtime;
-        REVOKE INSERT, UPDATE, DELETE ON TABLE store_pnl_monthly FROM unihub_runtime;
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+            ON TABLE store_pnl_monthly FROM unihub_runtime;
+        REVOKE ALL ON SEQUENCE store_pnl_monthly_id_seq,
+                               store_pnl_generation_ledger_id_seq
+            FROM unihub_runtime;
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unihub_finance_import') THEN
         GRANT SELECT, INSERT, UPDATE ON TABLE store_pnl_generations,
