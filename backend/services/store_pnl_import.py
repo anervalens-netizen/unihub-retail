@@ -353,14 +353,13 @@ async def _actual_rows(connection: asyncpg.Connection, scope: PnlScope) -> list[
     return [_record_to_row(record) for record in records]
 
 
-async def _head(connection: asyncpg.Connection, scope: PnlScope, *, lock: bool = False) -> Mapping[str, Any] | None:
+async def _head(connection: asyncpg.Connection, scope: PnlScope) -> Mapping[str, Any] | None:
     company, period = scope
-    suffix = " FOR UPDATE" if lock else ""
     return await connection.fetchrow(
-        f"""
+        """
         SELECT company_name, period, active_generation_id, revision, revision_id
         FROM store_pnl_generation_heads
-        WHERE company_name = $1 AND period = $2{suffix}
+        WHERE company_name = $1 AND period = $2
         """,
         company,
         period,
@@ -603,7 +602,7 @@ async def _promote_staged_generation(
     generation = await connection.fetchrow(
         """
         SELECT state, generation_manifest_sha256
-        FROM store_pnl_generations WHERE id = $1 FOR UPDATE
+        FROM store_pnl_generations WHERE id = $1
         """,
         generation_id,
     )
@@ -630,7 +629,7 @@ async def _promote_staged_generation(
     for scope in scopes:
         scope_key = (scope["company_name"], scope["period"])
         await _lock_scope(connection, scope_key)
-        head = await _head(connection, scope_key, lock=True)
+        head = await _head(connection, scope_key)
         current_rows = await _actual_rows(connection, scope_key)
         if rows_sha256(current_rows) != scope["preimage_sha256"]:
             raise PnlGenerationConflict("Preimage P&L este stale; generatia nu poate promova.")
@@ -718,7 +717,7 @@ async def rollback_generation(
         source = await connection.fetchrow(
             """
             SELECT generation_manifest_sha256, state
-            FROM store_pnl_generations WHERE id = $1 FOR UPDATE
+            FROM store_pnl_generations WHERE id = $1
             """,
             source_generation_id,
         )
@@ -742,7 +741,7 @@ async def rollback_generation(
         for source_scope in source_scopes:
             key = (source_scope["company_name"], source_scope["period"])
             await _lock_scope(connection, key)
-            head = await _head(connection, key, lock=True)
+            head = await _head(connection, key)
             if head is None or head["active_generation_id"] != source_generation_id:
                 raise PnlGenerationConflict("Headul P&L nu mai indica generatia ceruta pentru rollback.")
             current = await _actual_rows(connection, key)
@@ -820,9 +819,10 @@ async def rollback_generation(
             "SELECT append_store_pnl_generation_ledger($1, 'staged', NULL, NULL, $2::jsonb)",
             inverse_id, json.dumps({"rollback_of": str(source_generation_id), "manifest_sha256": inverse_sha}, sort_keys=True),
         )
-        await connection.execute(
-            "UPDATE store_pnl_generations SET state = 'staged' WHERE id = $1",
+        await connection.fetchval(
+            "SELECT seal_store_pnl_generation($1, $2)",
             inverse_id,
+            inverse_sha,
         )
         await _promote_staged_generation(connection, inverse_id, inverse_sha)
     return StageResult(inverse_id, inverse_sha, inverse_manifest)

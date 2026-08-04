@@ -99,8 +99,10 @@ async def test_authoritative_generation_cas_and_inverse_rollback_preserve_estima
                 "DO $$ BEGIN EXECUTE format('GRANT unihub_finance_import TO %I', current_user); END $$"
             )
             await connection.execute(
-                "GRANT SELECT, INSERT, UPDATE ON store_pnl_generations, store_pnl_generation_heads "
-                "TO unihub_finance_import"
+                "GRANT SELECT, INSERT ON store_pnl_generations TO unihub_finance_import"
+            )
+            await connection.execute(
+                "GRANT SELECT ON store_pnl_generation_heads TO unihub_finance_import"
             )
             await connection.execute(
                 "GRANT SELECT, INSERT ON store_pnl_generation_scopes, store_pnl_generation_rows, "
