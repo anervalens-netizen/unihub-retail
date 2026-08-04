@@ -46,6 +46,7 @@ class DatabaseAuthorityContract:
     principal: str
     required_memberships: tuple[str, ...]
     forbidden_memberships: tuple[str, ...]
+    requires_inherit: bool = True
 
 
 _ALL_DATABASE_AUTHORITIES = frozenset(
@@ -56,6 +57,7 @@ _ALL_DATABASE_AUTHORITIES = frozenset(
         "unihub_sales_import",
         "unihub_finance_import",
         "unihub_migrate",
+        "unihub_schema_owner",
     }
 )
 
@@ -79,8 +81,11 @@ DATABASE_AUTHORITY_CONTRACTS: dict[DatabaseAuthority, DatabaseAuthorityContract]
     ),
     "migrate": DatabaseAuthorityContract(
         principal="unihub_migration_runner",
-        required_memberships=("unihub_migrate",),
-        forbidden_memberships=tuple(sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_migrate"})),
+        required_memberships=("unihub_migrate", "unihub_schema_owner"),
+        forbidden_memberships=tuple(
+            sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_migrate", "unihub_schema_owner"})
+        ),
+        requires_inherit=False,
     ),
 }
 

@@ -12,10 +12,12 @@ import asyncpg
 import pytest
 
 from db.migration_runner import run_migrations
+from scripts.provision_runtime_database_role import provision
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "db/migrations/040_db_authority_append_only.sql"
+OWNER_MIGRATION = ROOT / "db/migrations/041_schema_owner_handoff.sql"
 AUTHORITIES = (
     "unihub_web_read",
     "unihub_business_write",
@@ -46,10 +48,81 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "sales promotion ledger is append-only" in sql
     assert "store_pnl shadow evidence is append-only" in sql
 
+    owner_sql = OWNER_MIGRATION.read_text(encoding="utf-8")
+    assert "CREATE ROLE unihub_schema_owner" in owner_sql
+    assert "REASSIGN OWNED" not in owner_sql
+    assert "namespace.nspname IN ('public', 'salary_private')" in owner_sql
+    assert "dependency.deptype = 'e'" in owner_sql
+    assert "ALTER SCHEMA public OWNER TO unihub_schema_owner" in owner_sql
+
 
 async def _expect_denied(connection: asyncpg.Connection, sql: str, *args: object) -> None:
     with pytest.raises(asyncpg.InsufficientPrivilegeError):
         await connection.execute(sql, *args)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE",
+)
+async def test_service_login_provisioner_applies_exact_membership_options() -> None:
+    owner_url = os.environ["DATABASE_URL"]
+    parsed = urlsplit(owner_url)
+    principals = {
+        "web": (f"p1a_web_{uuid4().hex[:12]}", token_urlsafe(48), True),
+        "migrate": (f"p1a_migrate_{uuid4().hex[:12]}", token_urlsafe(48), False),
+    }
+    owner = await asyncpg.connect(owner_url)
+    try:
+        for principal, password, inherits in principals.values():
+            flag = "INHERIT" if inherits else "NOINHERIT"
+            await owner.execute(
+                f'CREATE ROLE "{principal}" LOGIN NOSUPERUSER NOCREATEDB '
+                f'NOCREATEROLE {flag} PASSWORD {quote(password)!r}'
+            )
+        for contract, authority_roles in (
+            ("web", frozenset({"unihub_web_read", "unihub_business_write"})),
+            ("migrate", frozenset({"unihub_migrate"})),
+        ):
+            principal, password, _ = principals[contract]
+            runtime_url = urlunsplit(
+                (
+                    parsed.scheme,
+                    f"{quote(principal)}:{quote(password, safe='')}@{parsed.hostname}:{parsed.port}",
+                    parsed.path,
+                    parsed.query,
+                    parsed.fragment,
+                )
+            )
+            checks = await provision(
+                owner_url, runtime_url, authority_roles=authority_roles
+            )
+            assert all(checks.values())
+
+        migrate_principal, migrate_password, _ = principals["migrate"]
+        migrate_url = urlunsplit(
+            (
+                parsed.scheme,
+                f"{quote(migrate_principal)}:{quote(migrate_password, safe='')}@{parsed.hostname}:{parsed.port}",
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+        migrate = await asyncpg.connect(migrate_url)
+        try:
+            await _expect_denied(migrate, "CREATE TABLE p1a_provisioner_denied(id integer)")
+            async with migrate.transaction():
+                await migrate.execute("SET LOCAL ROLE unihub_schema_owner")
+                await migrate.execute("CREATE TABLE p1a_provisioner_owner(id integer)")
+                await migrate.execute("DROP TABLE p1a_provisioner_owner")
+        finally:
+            await migrate.close()
+    finally:
+        for principal, _, _ in principals.values():
+            await owner.execute(f'DROP ROLE IF EXISTS "{principal}"')
+        await owner.close()
 
 
 @pytest.mark.asyncio
@@ -71,7 +144,8 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
     existing_roles = {
         row["rolname"]
         for row in await maintenance.fetch(
-            "SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])", list(AUTHORITIES)
+            "SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])",
+            [*AUTHORITIES, "unihub_schema_owner"],
         )
     }
     test_principals = {
@@ -84,12 +158,24 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
         await run_migrations(database_url)
         connection = await asyncpg.connect(database_url)
         try:
-            await connection.execute(MIGRATION.read_text(encoding="utf-8"))
             for authority, (principal, password) in test_principals.items():
+                inheritance = "NOINHERIT" if authority == "unihub_migrate" else "INHERIT"
                 await connection.execute(
-                    f'CREATE ROLE "{principal}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT PASSWORD {quote(password)!r}'
+                    f'CREATE ROLE "{principal}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE {inheritance} PASSWORD {quote(password)!r}'
                 )
-                await connection.execute(f'GRANT "{authority}" TO "{principal}"')
+                membership = (
+                    "INHERIT FALSE, SET FALSE"
+                    if authority == "unihub_migrate"
+                    else "INHERIT TRUE, SET FALSE"
+                )
+                await connection.execute(
+                    f'GRANT "{authority}" TO "{principal}" WITH {membership}'
+                )
+                if authority == "unihub_migrate":
+                    await connection.execute(
+                        f'GRANT unihub_schema_owner TO "{principal}" '
+                        "WITH INHERIT FALSE, SET TRUE"
+                    )
                 principal_url = urlunsplit(
                     (
                         parsed.scheme,
@@ -121,7 +207,57 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
 
             # business-write may create online work, but cannot read import evidence.
             await business.execute("INSERT INTO tasks (title) VALUES ('P1-A role matrix')")
+            await business.execute(
+                "INSERT INTO visits_snapshot (asm, month) VALUES ('P1-A', '2197-08')"
+            )
             await _expect_denied(business, "SELECT * FROM sales_import_stage_rows")
+            await _expect_denied(
+                business,
+                "UPDATE grile_store_observations SET error_code = error_code WHERE false",
+            )
+
+            # Real operations surfaces include reference reads, Grile DML and
+            # their owned sequences; they still cannot use import authority.
+            assert await operations.fetchval("SELECT COUNT(*) FROM stores") == 0
+            await connection.execute(
+                "INSERT INTO stores (site_code, locatie, firma, regional, asm, "
+                "first_seen_month, last_seen_month) "
+                "VALUES ('P1A', 'P1-A', 'Mobiup', 'R', 'A', '2197-08', '2197-08')"
+            )
+            assert await operations.fetchval(
+                "INSERT INTO grile_runs (run_month) VALUES ('2197-09') RETURNING id"
+            )
+            await operations.execute(
+                """
+                INSERT INTO agent_targets (import_month, site_code, agent, target_value)
+                VALUES ('2197-09', 'P1A', 'Agent', 1)
+                ON CONFLICT (import_month, site_code, agent) DO UPDATE
+                SET target_value = EXCLUDED.target_value
+                """
+            )
+            await _expect_denied(
+                operations,
+                "UPDATE grile_store_observations SET error_code = error_code WHERE false",
+            )
+            await _expect_denied(
+                operations, "DELETE FROM grile_runs WHERE run_month = '2197-09'"
+            )
+            await _expect_denied(operations, "SELECT * FROM sales_import_stage_rows")
+
+            # Reporting rebuild needs explicit TRUNCATE/MAINTAIN, not table ownership.
+            await sales.execute("TRUNCATE premium_glass_item_models")
+            await sales.execute("ANALYZE premium_glass_item_models")
+            await sales.execute("ANALYZE reporting_agent_day")
+            assert await sales.fetchval(
+                "INSERT INTO grile_runs (run_month, source) VALUES ('2197-10', 'auto') RETURNING id"
+            )
+            await _expect_denied(
+                sales, "UPDATE agent_targets SET target_value = target_value WHERE false"
+            )
+            await _expect_denied(
+                sales,
+                "UPDATE reporting_agent_day SET total_sales = total_sales WHERE false",
+            )
 
             token = uuid4()
             owner = uuid4()
@@ -165,9 +301,9 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
             digest = await connection.fetchval("SELECT sales_stage_rows_sha256($1)", snapshot_id)
             await connection.execute(
                 """
-                UPDATE import_snapshots
-                SET manifest = jsonb_build_object(
-                        'generation_state', 'validated', 'stage_rows_sha256', $2
+                    UPDATE import_snapshots
+                    SET manifest = jsonb_build_object(
+                            'generation_state', 'validated', 'stage_rows_sha256', $2::text
                     ),
                     manifest_sha256 = repeat('a', 64)
                 WHERE id = $1
@@ -309,17 +445,21 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
                 "SELECT promote_store_pnl_shadow_generation($1, 0)", shadow_success
             ) == 1
 
-            await migrate.execute("ALTER TABLE stores ADD COLUMN p1a_owner_proof integer")
-            await migrate.execute("ALTER TABLE stores DROP COLUMN p1a_owner_proof")
+            await _expect_denied(
+                migrate, "ALTER TABLE stores ADD COLUMN p1a_owner_proof integer"
+            )
+            await _expect_denied(web, "SET ROLE unihub_schema_owner")
             async with migrate.transaction():
-                await migrate.execute("SET LOCAL ROLE unihub_migrate")
+                await migrate.execute("SET LOCAL ROLE unihub_schema_owner")
+                await migrate.execute("ALTER TABLE stores ADD COLUMN p1a_owner_proof integer")
+                await migrate.execute("ALTER TABLE stores DROP COLUMN p1a_owner_proof")
                 await migrate.execute(
                     "CREATE FUNCTION p1a_migrate_default_acl_proof() RETURNS integer "
                     "LANGUAGE SQL AS 'SELECT 1'"
                 )
             await _expect_denied(web, "SELECT p1a_migrate_default_acl_proof()")
             async with migrate.transaction():
-                await migrate.execute("SET LOCAL ROLE unihub_migrate")
+                await migrate.execute("SET LOCAL ROLE unihub_schema_owner")
                 await migrate.execute("DROP FUNCTION p1a_migrate_default_acl_proof()")
         finally:
             for principal_connection in principal_connections.values():
@@ -332,4 +472,6 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated() -> No
         for authority in AUTHORITIES:
             if authority not in existing_roles:
                 await maintenance.execute(f'DROP ROLE IF EXISTS "{authority}"')
+        if "unihub_schema_owner" not in existing_roles:
+            await maintenance.execute("DROP ROLE IF EXISTS unihub_schema_owner")
         await maintenance.close()

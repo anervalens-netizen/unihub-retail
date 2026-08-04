@@ -37,6 +37,8 @@ class _Connection:
         self.closed = False
 
     async def fetchval(self, sql: str) -> bool:
+        if "current_user = 'unihub_schema_owner'" in sql:
+            return True
         if "sales_transactions" in sql:
             return self.has_schema
         if "to_regclass('public.schema_migrations')" in sql:
@@ -130,7 +132,7 @@ async def test_migration_authority_sets_local_stable_owner(
     monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
 
     assert await run_migrations("postgresql://unused") == []
-    assert "SET LOCAL ROLE unihub_migrate" in connection.executed
+    assert "SET LOCAL ROLE unihub_schema_owner" in connection.executed
 
 
 @pytest.mark.asyncio

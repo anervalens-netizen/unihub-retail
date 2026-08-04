@@ -191,17 +191,29 @@ requires_isolated_db = pytest.mark.skipif(
 async def _reset() -> None:
     pool = await get_pool()
     async with pool.acquire() as connection:
-        await connection.execute(
-            """
-            UPDATE store_pnl_shadow_pointer
-            SET active_generation_id = NULL, previous_generation_id = NULL, revision = 0
-            WHERE id = 1
-            """
+        triggers = (
+            ("store_pnl_shadow_pointer", "trg_store_pnl_shadow_pointer_cas"),
+            ("store_pnl_shadow_generations", "trg_store_pnl_shadow_generations_immutable"),
+            ("store_pnl_shadow_rows", "trg_store_pnl_shadow_rows_immutable"),
+            ("store_pnl_shadow_preimage_rows", "trg_store_pnl_shadow_preimage_rows_immutable"),
         )
-        await connection.execute(
-            "DELETE FROM store_pnl_shadow_generations WHERE scope_sha256 = $1",
-            _capture().scope_sha256,
-        )
+        for table, trigger in triggers:
+            await connection.execute(f"ALTER TABLE {table} DISABLE TRIGGER {trigger}")
+        try:
+            await connection.execute(
+                """
+                UPDATE store_pnl_shadow_pointer
+                SET active_generation_id = NULL, previous_generation_id = NULL, revision = 0
+                WHERE id = 1
+                """
+            )
+            await connection.execute(
+                "DELETE FROM store_pnl_shadow_generations WHERE scope_sha256 = $1",
+                _capture().scope_sha256,
+            )
+        finally:
+            for table, trigger in reversed(triggers):
+                await connection.execute(f"ALTER TABLE {table} ENABLE TRIGGER {trigger}")
         await connection.execute(
             "DELETE FROM store_pnl_monthly WHERE company_name = $1 AND period = $2",
             COMPANY,

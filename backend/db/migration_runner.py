@@ -45,7 +45,9 @@ class MigrationError(RuntimeError):
 
 async def _activate_migration_owner(connection: asyncpg.Connection) -> None:
     if configured_database_authority() == "migrate":
-        await connection.execute("SET LOCAL ROLE unihub_migrate")
+        await connection.execute("SET LOCAL ROLE unihub_schema_owner")
+        if await connection.fetchval("SELECT current_user = 'unihub_schema_owner'") is not True:
+            raise MigrationError("Migration schema-owner elevation failed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +155,10 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
                 "SELECT to_regclass('public.sales_transactions') IS NOT NULL"
             )
         )
+        if configured_database_authority() == "migrate" and not has_application_schema:
+            raise MigrationError(
+                "Fresh bootstrap requires the administrative extension/schema preflight"
+            )
         async with connection.transaction():
             await _activate_migration_owner(connection)
             if not has_application_schema:
@@ -180,6 +186,7 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
                         filename,
                         manifest.checksums[filename],
                     )
+                    applied[filename] = manifest.checksums[filename]
             if not has_application_schema:
                 incorporated_names = [
                     name
@@ -197,6 +204,7 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
                         filename,
                         manifest.checksums[filename],
                     )
+                    applied[filename] = manifest.checksums[filename]
                 await connection.execute(
                     """
                     INSERT INTO schema_meta (schema_name, schema_hash, applied_at)
@@ -205,8 +213,6 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
                     """,
                     manifest.baseline_hash,
                 )
-
-        applied = await _tracking_rows(connection)
         _validate_applied(applied, manifest, allow_missing_checksums=False)
         for filename, checksum in manifest.checksums.items():
             if filename in applied:
@@ -220,6 +226,7 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
                     filename,
                     checksum,
                 )
+            applied[filename] = checksum
             applied_now.append(filename)
         return applied_now
     finally:

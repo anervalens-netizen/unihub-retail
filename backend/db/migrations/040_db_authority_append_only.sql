@@ -100,6 +100,8 @@ GRANT SELECT ON TABLE
     ai_forecast_store_day,
     ai_forecast_store_month,
     store_targets,
+    agent_targets,
+    premium_glass_item_models,
     store_pnl_monthly,
     store_pnl_site_links,
     target_calculator_rule_sets,
@@ -111,7 +113,9 @@ GRANT SELECT ON TABLE
     leave_requests,
     attendance_records,
     store_scores,
+    store_activity_events,
     visits_snapshot,
+    error_logs,
     grile_sheets,
     grile_runs,
     grile_store_status,
@@ -151,13 +155,34 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
     incentive_campaigns,
     incentive_products
 TO unihub_business_write;
+GRANT UPDATE ON TABLE stores TO unihub_business_write;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+    focus_products,
+    visits_snapshot,
+    error_logs
+TO unihub_business_write;
+GRANT SELECT, INSERT, UPDATE ON TABLE
+    grile_runs,
+    grile_store_refreshes,
+    grile_monthly_operations,
+    grile_monthly_manifests,
+    grile_monthly_reset_items,
+    grile_agent_target_sync_runs
+TO unihub_business_write;
 GRANT USAGE, SELECT ON SEQUENCE
     tasks_id_seq,
     leave_requests_id_seq,
     attendance_records_id_seq,
     store_scores_id_seq,
     store_activity_events_id_seq,
-    target_scenarios_id_seq
+    target_scenarios_id_seq,
+    error_logs_id_seq,
+    grile_runs_id_seq,
+    grile_store_refreshes_id_seq,
+    grile_monthly_operations_id_seq,
+    grile_monthly_manifests_id_seq,
+    grile_monthly_reset_items_id_seq,
+    grile_agent_target_sync_runs_id_seq
 TO unihub_business_write;
 
 -- The sales worker may stage/replace the sales projection, but never mutate an
@@ -166,8 +191,12 @@ GRANT SELECT, INSERT, UPDATE ON TABLE import_snapshots TO unihub_sales_import;
 GRANT SELECT, INSERT ON TABLE sales_import_stage_rows TO unihub_sales_import;
 GRANT SELECT ON TABLE sales_generation_heads, sales_generation_promotions TO unihub_sales_import;
 GRANT SELECT, INSERT, DELETE ON TABLE sales_transactions TO unihub_sales_import;
-GRANT SELECT, INSERT, UPDATE ON TABLE stores, focus_products, store_targets TO unihub_sales_import;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+GRANT SELECT, INSERT, UPDATE ON TABLE stores TO unihub_sales_import;
+GRANT SELECT ON TABLE focus_products TO unihub_sales_import;
+GRANT INSERT, TRUNCATE, MAINTAIN ON TABLE
+    premium_glass_item_models
+TO unihub_sales_import;
+GRANT SELECT, INSERT, DELETE ON TABLE
     reporting_agent_day,
     reporting_agent_lifecycle_month,
     reporting_agent_month,
@@ -178,10 +207,22 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
     reporting_item_day,
     reporting_item_month
 TO unihub_sales_import;
+GRANT MAINTAIN ON TABLE
+    reporting_agent_day,
+    reporting_agent_lifecycle_month,
+    reporting_agent_month,
+    reporting_agent_profile,
+    reporting_cartela_day,
+    reporting_category_month,
+    reporting_focus_item_month,
+    reporting_item_day,
+    reporting_item_month
+TO unihub_sales_import;
+GRANT SELECT, INSERT, UPDATE ON TABLE grile_runs TO unihub_sales_import;
 GRANT USAGE, SELECT ON SEQUENCE
     import_snapshots_id_seq,
     sales_transactions_id_seq,
-    store_activity_events_id_seq
+    grile_runs_id_seq
 TO unihub_sales_import;
 
 -- Finance remains its own NOLOGIN authority.  Direct head and ledger writes
@@ -207,25 +248,51 @@ GRANT SELECT, INSERT ON TABLE
     store_pnl_shadow_preimage_rows
 TO unihub_operations;
 GRANT SELECT ON TABLE store_pnl_shadow_pointer TO unihub_operations;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+GRANT SELECT ON TABLE
+    team_leaders,
+    stores,
+    historical_monthly_sales,
+    reporting_agent_month,
+    reporting_item_day,
+    reporting_item_month,
+    store_targets,
+    agent_targets,
+    grile_sheets,
+    store_pnl_monthly,
+    store_pnl_site_links
+TO unihub_operations;
+GRANT SELECT (
+    id, year, month, full_name, total_salary, company_name, site_code,
+    locatie, created_at, person_id
+) ON salary_records TO unihub_operations;
+GRANT SELECT, INSERT, UPDATE ON TABLE
     grile_runs,
     grile_store_status,
     grile_store_current_status,
-    grile_store_observations,
     grile_store_projection_generations,
     grile_store_refreshes,
-    grile_run_store_generations,
     grile_monthly_operations,
     grile_monthly_manifests,
     grile_monthly_reset_items,
-    grile_agent_target_sync_runs,
-    visits_snapshot,
-    error_logs
+    grile_agent_target_sync_runs
+TO unihub_operations;
+GRANT SELECT, INSERT ON TABLE
+    grile_store_observations,
+    grile_run_store_generations
+TO unihub_operations;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE agent_targets TO unihub_operations;
+GRANT USAGE, SELECT ON SEQUENCE
+    grile_runs_id_seq,
+    grile_store_observations_id_seq,
+    grile_store_refreshes_id_seq,
+    grile_monthly_operations_id_seq,
+    grile_monthly_manifests_id_seq,
+    grile_monthly_reset_items_id_seq,
+    grile_agent_target_sync_runs_id_seq
 TO unihub_operations;
 
--- Migration authority owns application DDL after the controlled handoff near
--- the end of this migration. Future migrations execute as this NOLOGIN role.
-GRANT CREATE ON SCHEMA public TO unihub_migrate;
+-- Migration authority is a non-owning process marker. A separate NOLOGIN
+-- schema owner is installed by the ownership-handoff migration.
 
 -- Existing broad runtime ACLs are fenced away from safety-critical evidence.
 -- Other legacy application grants are intentionally not inferred here: their
@@ -651,10 +718,10 @@ BEGIN
         RAISE EXCEPTION 'sales head target is not the current leased generation';
     END IF;
 
-    SELECT snapshot_id, revision
+    SELECT head.snapshot_id, head.revision
     INTO current_snapshot_id, current_revision
-    FROM public.sales_generation_heads
-    WHERE import_month = p_import_month
+    FROM public.sales_generation_heads AS head
+    WHERE head.import_month = p_import_month
     FOR UPDATE;
     IF NOT FOUND THEN
         IF p_expected_revision <> 0 THEN
@@ -668,12 +735,12 @@ BEGIN
     IF current_revision <> p_expected_revision THEN
         RAISE EXCEPTION 'sales generation head changed before promote';
     END IF;
-    UPDATE public.sales_generation_heads
+    UPDATE public.sales_generation_heads AS head
     SET snapshot_id = p_snapshot_id,
         revision = current_revision + 1,
         updated_at = now()
-    WHERE import_month = p_import_month
-      AND revision = p_expected_revision;
+    WHERE head.import_month = p_import_month
+      AND head.revision = p_expected_revision;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'sales generation head CAS failed';
     END IF;
@@ -971,92 +1038,6 @@ GRANT EXECUTE ON FUNCTION
     public.promote_store_pnl_shadow_generation(UUID, BIGINT),
     public.rollback_store_pnl_shadow_pointer(BIGINT)
 TO unihub_operations;
-
--- Make the NOLOGIN migration authority the durable owner of application
--- objects. Extension-owned objects are excluded. The runner authenticates as
--- its dedicated LOGIN, verifies that identity, then SET LOCAL ROLEs to this
--- authority so future objects have the same stable owner and default ACLs.
-DO $$
-DECLARE
-    item RECORD;
-    command TEXT;
-BEGIN
-    FOR item IN
-        SELECT class.relkind, class.oid::regclass AS object_name
-        FROM pg_class AS class
-        JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
-        WHERE namespace.nspname = 'public'
-          AND class.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
-          AND NOT EXISTS (
-              SELECT 1
-              FROM pg_depend AS dependency
-              WHERE dependency.classid = 'pg_class'::regclass
-                AND dependency.objid = class.oid
-                AND dependency.deptype = 'e'
-          )
-        ORDER BY CASE class.relkind
-            WHEN 'r' THEN 1
-            WHEN 'p' THEN 1
-            WHEN 'f' THEN 1
-            WHEN 'S' THEN 2
-            ELSE 3
-        END, class.oid
-    LOOP
-        command := CASE item.relkind
-            WHEN 'S' THEN 'ALTER SEQUENCE '
-            WHEN 'v' THEN 'ALTER VIEW '
-            WHEN 'm' THEN 'ALTER MATERIALIZED VIEW '
-            WHEN 'f' THEN 'ALTER FOREIGN TABLE '
-            ELSE 'ALTER TABLE '
-        END;
-        EXECUTE command || item.object_name || ' OWNER TO unihub_migrate';
-    END LOOP;
-
-    FOR item IN
-        SELECT routine.oid::regprocedure AS object_name
-        FROM pg_proc AS routine
-        JOIN pg_namespace AS namespace ON namespace.oid = routine.pronamespace
-        WHERE namespace.nspname = 'public'
-          AND routine.prokind IN ('f', 'p')
-          AND NOT EXISTS (
-              SELECT 1
-              FROM pg_depend AS dependency
-              WHERE dependency.classid = 'pg_proc'::regclass
-                AND dependency.objid = routine.oid
-                AND dependency.deptype = 'e'
-          )
-        ORDER BY routine.oid
-    LOOP
-        EXECUTE 'ALTER ROUTINE ' || item.object_name || ' OWNER TO unihub_migrate';
-    END LOOP;
-
-    FOR item IN
-        SELECT format('%I.%I', namespace.nspname, type.typname) AS object_name
-        FROM pg_type AS type
-        JOIN pg_namespace AS namespace ON namespace.oid = type.typnamespace
-        WHERE namespace.nspname = 'public'
-          AND type.typtype IN ('d', 'e')
-          AND NOT EXISTS (
-              SELECT 1
-              FROM pg_depend AS dependency
-              WHERE dependency.classid = 'pg_type'::regclass
-                AND dependency.objid = type.oid
-                AND dependency.deptype = 'e'
-          )
-        ORDER BY type.oid
-    LOOP
-        EXECUTE 'ALTER TYPE ' || item.object_name || ' OWNER TO unihub_migrate';
-    END LOOP;
-END
-$$;
-
-ALTER SCHEMA public OWNER TO unihub_migrate;
-ALTER DEFAULT PRIVILEGES FOR ROLE unihub_migrate IN SCHEMA public
-    REVOKE ALL ON TABLES FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE unihub_migrate IN SCHEMA public
-    REVOKE ALL ON SEQUENCES FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE unihub_migrate IN SCHEMA public
-    REVOKE ALL ON FUNCTIONS FROM PUBLIC;
 
 COMMENT ON FUNCTION public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT) IS
     'Sales authoritative-head advance: leased writer plus revision CAS only.';

@@ -77,10 +77,23 @@ async def test_authority_rejects_set_role_instead_of_authenticated_principal() -
 
 @pytest.mark.asyncio
 async def test_authority_rejects_noinherit_login() -> None:
-    with pytest.raises(RuntimeError, match="inheriting LOGIN role"):
+    with pytest.raises(RuntimeError, match="flags do not match"):
         await connection_module.verify_database_connection_authority(
             _AuthorityConnection(inherits=False), "web"  # type: ignore[arg-type]
         )
+
+
+@pytest.mark.asyncio
+async def test_migration_authority_requires_noinherit_and_schema_owner_membership() -> None:
+    await connection_module.verify_database_connection_authority(
+        _AuthorityConnection(
+            current_user="unihub_migration_runner",
+            session_user="unihub_migration_runner",
+            inherits=False,
+            memberships=frozenset({"unihub_migrate", "unihub_schema_owner"}),
+        ),
+        "migrate",  # type: ignore[arg-type]
+    )
 
 
 @pytest.mark.asyncio
@@ -130,3 +143,9 @@ def test_versioned_units_declare_exclusive_process_authorities() -> None:
     )
     assert "EnvironmentFile=/opt/Mobiup/unihub-retail/.env.import-worker" in import_unit
     assert ".env.worker" not in import_unit
+
+    shadow_script = (root / "backend/scripts/shadow_store_pnl.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'load_dotenv(REPO_DIR / ".env.worker")' in shadow_script
+    assert 'verify_database_connection_authority(connection, "operations")' in shadow_script

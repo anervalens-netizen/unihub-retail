@@ -23,6 +23,17 @@ SALARY_LINK_COLUMNS = (
     "match_source", "confidence", "effective_from_month", "note",
     "created_at", "updated_at", "person_id",
 )
+PNL_AUTHORITY_TABLES = (
+    "store_pnl_generations",
+    "store_pnl_generation_scopes",
+    "store_pnl_generation_rows",
+    "store_pnl_generation_heads",
+    "store_pnl_generation_ledger",
+)
+PNL_AUTHORITY_SEQUENCES = (
+    "store_pnl_monthly_id_seq",
+    "store_pnl_generation_ledger_id_seq",
+)
 AUTHORITY_ROLES = frozenset({
     "unihub_web_read",
     "unihub_business_write",
@@ -38,6 +49,7 @@ AUTHORITY_CONTRACTS = frozenset({
     frozenset({"unihub_operations"}),
     frozenset({"unihub_migrate"}),
 })
+SCHEMA_OWNER_ROLE = "unihub_schema_owner"
 
 
 def _runtime_credentials(database_url: str) -> tuple[str, str, str]:
@@ -71,6 +83,7 @@ async def provision(
     """
     if authority_roles not in AUTHORITY_CONTRACTS:
         raise RuntimeError("Database authority contract is invalid")
+    migration_contract = authority_roles == frozenset({"unihub_migrate"})
     role, password, database = _runtime_credentials(runtime_url)
     quoted_role = _identifier(role)
     owner = await asyncpg.connect(owner_url, command_timeout=60)
@@ -88,13 +101,21 @@ async def provision(
             raise RuntimeError("Existing LOGIN service role is required")
         if any(bool(service_role[field]) for field in ("rolsuper", "rolcreaterole", "rolcreatedb")):
             raise RuntimeError("Service LOGIN must not be privileged")
-        if not service_role["rolinherit"]:
-            raise RuntimeError("Service LOGIN must inherit its database authority contract")
+        if bool(service_role["rolinherit"]) == migration_contract:
+            raise RuntimeError("Service LOGIN inheritance flag does not match its authority contract")
         for authority_role in sorted(authority_roles):
-            await owner.execute(f"GRANT {_identifier(authority_role)} TO {quoted_role}")
+            options = "INHERIT FALSE, SET FALSE" if migration_contract else "INHERIT TRUE, SET FALSE"
+            await owner.execute(
+                f"GRANT {_identifier(authority_role)} TO {quoted_role} WITH {options}"
+            )
+        if migration_contract:
+            await owner.execute(
+                f"GRANT {_identifier(SCHEMA_OWNER_ROLE)} TO {quoted_role} "
+                "WITH INHERIT FALSE, SET TRUE"
+            )
         memberships = await owner.fetch(
             """
-            SELECT parent.rolname
+            SELECT parent.rolname, membership.inherit_option, membership.set_option
             FROM pg_auth_members membership
             JOIN pg_roles parent ON parent.oid = membership.roleid
             JOIN pg_roles member ON member.oid = membership.member
@@ -103,9 +124,19 @@ async def provision(
             ORDER BY parent.rolname
             """,
             role,
-            sorted(AUTHORITY_ROLES),
+            sorted(AUTHORITY_ROLES | {SCHEMA_OWNER_ROLE}),
         )
-        if {item["rolname"] for item in memberships} != set(authority_roles):
+        expected_memberships = {
+            authority_role: (not migration_contract, False)
+            for authority_role in authority_roles
+        }
+        if migration_contract:
+            expected_memberships[SCHEMA_OWNER_ROLE] = (False, True)
+        actual_memberships = {
+            item["rolname"]: (bool(item["inherit_option"]), bool(item["set_option"]))
+            for item in memberships
+        }
+        if actual_memberships != expected_memberships:
             raise RuntimeError("Service LOGIN must have exactly its database authority contract")
     finally:
         await owner.close()
@@ -119,6 +150,11 @@ async def provision(
                     "SELECT pg_has_role(session_user, $1, 'member')", authority_role
                 )
             )
+        schema_owner_membership = bool(
+            await runtime.fetchval(
+                "SELECT pg_has_role(session_user, $1, 'member')", SCHEMA_OWNER_ROLE
+            )
+        )
         checks = {
             "not_superuser": not bool(await runtime.fetchval("SELECT rolsuper FROM pg_roles WHERE rolname=current_user")),
             "no_create_role": not bool(await runtime.fetchval("SELECT rolcreaterole FROM pg_roles WHERE rolname=current_user")),
@@ -126,6 +162,7 @@ async def provision(
             "private_schema_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'salary_private', 'USAGE')")),
             "schema_create_denied": not bool(await runtime.fetchval("SELECT has_schema_privilege(current_user, 'public', 'CREATE')")),
             "authority_memberships": authority_memberships,
+            "schema_owner_membership": schema_owner_membership == migration_contract,
         }
     finally:
         await runtime.close()

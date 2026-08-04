@@ -12,6 +12,8 @@ from db.connection import get_migrations_dir, get_pool, get_schema_path
 from db.migration_runner import BASELINE_REPLAY_MIGRATIONS, load_migration_manifest
 from scripts.provision_runtime_database_role import (
     AUTHORITY_CONTRACTS,
+    PNL_AUTHORITY_SEQUENCES,
+    PNL_AUTHORITY_TABLES,
     SALARY_LINK_COLUMNS,
     SALARY_RECORD_COLUMNS,
     AUTHORITY_ROLES,

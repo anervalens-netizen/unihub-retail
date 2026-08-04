@@ -85,9 +85,17 @@ def sales_frame() -> pd.DataFrame:
 
 async def cleanup(conn: asyncpg.Connection) -> None:
     await conn.execute(
-        "DELETE FROM sales_generation_promotions WHERE import_month = $1",
-        TEST_MONTH,
+        "ALTER TABLE sales_generation_promotions DISABLE TRIGGER trg_sales_generation_promotions_immutable"
     )
+    try:
+        await conn.execute(
+            "DELETE FROM sales_generation_promotions WHERE import_month = $1",
+            TEST_MONTH,
+        )
+    finally:
+        await conn.execute(
+            "ALTER TABLE sales_generation_promotions ENABLE TRIGGER trg_sales_generation_promotions_immutable"
+        )
     await conn.execute(
         "DELETE FROM sales_generation_heads WHERE import_month = $1",
         TEST_MONTH,
@@ -101,9 +109,17 @@ async def cleanup(conn: asyncpg.Connection) -> None:
         TEST_MONTH,
     )
     await conn.execute(
-        "DELETE FROM import_snapshots WHERE import_month = $1",
-        TEST_MONTH,
+        "ALTER TABLE sales_import_stage_rows DISABLE TRIGGER trg_sales_stage_mutation"
     )
+    try:
+        await conn.execute(
+            "DELETE FROM import_snapshots WHERE import_month = $1",
+            TEST_MONTH,
+        )
+    finally:
+        await conn.execute(
+            "ALTER TABLE sales_import_stage_rows ENABLE TRIGGER trg_sales_stage_mutation"
+        )
 
 
 def test_stage_digest_preserves_order_and_duplicate_multiplicity() -> None:
@@ -193,7 +209,7 @@ async def test_validated_stage_digest_is_immutable_and_required_by_head() -> Non
             assert rows_imported == 2
             assert revision == 1
 
-            with pytest.raises(asyncpg.PostgresError, match="retained sales staging"):
+            with pytest.raises(asyncpg.PostgresError, match="append-only"):
                 await conn.execute(
                     "DELETE FROM sales_import_stage_rows WHERE snapshot_id = $1",
                     staged.snapshot_id,
@@ -258,6 +274,9 @@ async def test_validation_rejects_stage_changed_after_source_digest() -> None:
                     import_month=TEST_MONTH,
                 )
                 await conn.execute(
+                    "ALTER TABLE sales_import_stage_rows DISABLE TRIGGER trg_sales_stage_mutation"
+                )
+                await conn.execute(
                     """
                     WITH removed AS (
                         DELETE FROM sales_import_stage_rows
@@ -280,6 +299,9 @@ async def test_validation_rejects_stage_changed_after_source_digest() -> None:
                     FROM removed
                     """,
                     snapshot_id,
+                )
+                await conn.execute(
+                    "ALTER TABLE sales_import_stage_rows ENABLE TRIGGER trg_sales_stage_mutation"
                 )
                 with pytest.raises(
                     asyncpg.PostgresError,
@@ -395,7 +417,7 @@ async def test_037_upgrade_verifies_legacy_controls_before_rollback_flow() -> No
             assert await conn.fetchval(
                 "SELECT COUNT(*) FROM sales_import_stage_rows WHERE snapshot_id = $1",
                 first.snapshot_id,
-            ) == 0
+            ) == len(sales_frame())
             assert third.generation_token is not None
             assert third.manifest_sha256 is not None
             rollback_snapshot_id, rollback_rows, rollback_revision = await rollback_sales_generation(

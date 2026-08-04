@@ -156,9 +156,17 @@ def test_structural_manifest_contradiction_is_explicit() -> None:
 
 async def cleanup_generation_data(conn: object) -> None:
     await conn.execute(  # type: ignore[attr-defined]
-        "DELETE FROM sales_generation_promotions WHERE import_month = $1",
-        TEST_MONTH,
+        "ALTER TABLE sales_generation_promotions DISABLE TRIGGER trg_sales_generation_promotions_immutable"
     )
+    try:
+        await conn.execute(  # type: ignore[attr-defined]
+            "DELETE FROM sales_generation_promotions WHERE import_month = $1",
+            TEST_MONTH,
+        )
+    finally:
+        await conn.execute(  # type: ignore[attr-defined]
+            "ALTER TABLE sales_generation_promotions ENABLE TRIGGER trg_sales_generation_promotions_immutable"
+        )
     await conn.execute(  # type: ignore[attr-defined]
         "DELETE FROM sales_generation_heads WHERE import_month = $1",
         TEST_MONTH,
@@ -172,9 +180,17 @@ async def cleanup_generation_data(conn: object) -> None:
         TEST_MONTH,
     )
     await conn.execute(  # type: ignore[attr-defined]
-        "DELETE FROM import_snapshots WHERE import_month = $1",
-        TEST_MONTH,
+        "ALTER TABLE sales_import_stage_rows DISABLE TRIGGER trg_sales_stage_mutation"
     )
+    try:
+        await conn.execute(  # type: ignore[attr-defined]
+            "DELETE FROM import_snapshots WHERE import_month = $1",
+            TEST_MONTH,
+        )
+    finally:
+        await conn.execute(  # type: ignore[attr-defined]
+            "ALTER TABLE sales_import_stage_rows ENABLE TRIGGER trg_sales_stage_mutation"
+        )
 
 
 @pytest.mark.asyncio

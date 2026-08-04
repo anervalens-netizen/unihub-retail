@@ -66,6 +66,36 @@ def sales_workbook(frame: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+async def delete_snapshots_for_test(
+    conn: asyncpg.Connection, sql: str, *args: object
+) -> None:
+    """Owner-only cleanup; application roles never receive this bypass."""
+    await conn.execute(
+        "ALTER TABLE sales_import_stage_rows DISABLE TRIGGER trg_sales_stage_mutation"
+    )
+    try:
+        await conn.execute(sql, *args)
+    finally:
+        await conn.execute(
+            "ALTER TABLE sales_import_stage_rows ENABLE TRIGGER trg_sales_stage_mutation"
+        )
+
+
+async def delete_promotions_for_test(conn: asyncpg.Connection, import_month: str) -> None:
+    await conn.execute(
+        "ALTER TABLE sales_generation_promotions DISABLE TRIGGER trg_sales_generation_promotions_immutable"
+    )
+    try:
+        await conn.execute(
+            "DELETE FROM sales_generation_promotions WHERE import_month = $1",
+            import_month,
+        )
+    finally:
+        await conn.execute(
+            "ALTER TABLE sales_generation_promotions ENABLE TRIGGER trg_sales_generation_promotions_immutable"
+        )
+
+
 async def store_state(
     conn: asyncpg.Connection,
     site_code: str,
@@ -290,7 +320,8 @@ async def test_conflicting_store_metadata_is_rejected_before_any_database_write(
             await conn.execute(
                 "DELETE FROM sales_transactions WHERE site_code = $1", site_code
             )
-            await conn.execute(
+            await delete_snapshots_for_test(
+                conn,
                 "DELETE FROM import_snapshots WHERE filename IN ($1, $2)",
                 filename,
                 f"existing-{filename}",
@@ -316,13 +347,12 @@ async def test_identical_rows_are_preserved_as_separate_sales_facts(
     )
     try:
         async with pool.acquire() as conn:
-            await conn.execute(
-                "DELETE FROM sales_generation_promotions WHERE import_month = '2098-04'"
-            )
+            await delete_promotions_for_test(conn, "2098-04")
             await conn.execute(
                 "DELETE FROM sales_generation_heads WHERE import_month = '2098-04'"
             )
-            await conn.execute(
+            await delete_snapshots_for_test(
+                conn,
                 "DELETE FROM import_snapshots WHERE import_month = '2098-04'"
             )
             await seed_stores(conn, [site_code])
@@ -351,13 +381,12 @@ async def test_identical_rows_are_preserved_as_separate_sales_facts(
             await conn.execute(
                 "DELETE FROM sales_transactions WHERE site_code = $1", site_code
             )
-            await conn.execute(
-                "DELETE FROM sales_generation_promotions WHERE import_month = '2098-04'"
-            )
+            await delete_promotions_for_test(conn, "2098-04")
             await conn.execute(
                 "DELETE FROM sales_generation_heads WHERE import_month = '2098-04'"
             )
-            await conn.execute(
+            await delete_snapshots_for_test(
+                conn,
                 "DELETE FROM import_snapshots WHERE filename = $1",
                 filename,
             )
@@ -405,7 +434,9 @@ async def test_historical_import_inserts_new_store_inactive() -> None:
     finally:
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM stores WHERE site_code = $1", site_code)
-            await conn.execute("DELETE FROM import_snapshots WHERE filename = $1", marker)
+            await delete_snapshots_for_test(
+                conn, "DELETE FROM import_snapshots WHERE filename = $1", marker
+            )
         await close_db_pool()
 
 
