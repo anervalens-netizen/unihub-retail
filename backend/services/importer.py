@@ -390,7 +390,7 @@ async def build_import_coverage_report(
             return None
         return round(numerator / denominator * 100, 2)
 
-    report = {
+    report: dict[str, Any] = {
         "incoming_store_count": len(incoming),
         "company_count": int(df["Firma"].nunique()),
         "active_store_count_before": len(active),
