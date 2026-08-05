@@ -362,11 +362,6 @@ async def insert_records(
         ):
             raise ValueError("Provenance salariala incompleta; batchul nu poate fi aplicat")
 
-    person_id_key = get_salary_person_id_key()
-    identified_records = [
-        (record, make_salary_person_id(record.cnp, record.full_name, person_id_key))
-        for record in records
-    ]
     batch_id = str(uuid4())
     if manifest is None:
         sources = []
@@ -401,6 +396,11 @@ async def insert_records(
         applied_by=applied_by,
     )
     _validate_records_match_manifest(records, safe_manifest)
+    person_id_key = get_salary_person_id_key()
+    identified_records = [
+        (record, make_salary_person_id(record.cnp, record.full_name, person_id_key))
+        for record in records
+    ]
     manifest_json = json.dumps(safe_envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     envelope_sha256 = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
 
