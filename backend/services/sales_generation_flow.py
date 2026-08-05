@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 import json
 from typing import Any
@@ -98,11 +99,17 @@ async def attach_sales_generation_source(
     generation_token: str,
     owner_id: str,
     source_spool_path: str,
+    source_sha256: str | None = None,
+    source_byte_size: int | None = None,
 ) -> None:
     updated = await conn.fetchval(
         """
         UPDATE import_snapshots
-        SET source_spool_path = $4, heartbeat_at = now()
+        SET source_spool_path = $4,
+            source_artifact_state = 'artifact_retaining',
+            source_artifact_sha256 = COALESCE($5, source_sha256),
+            source_artifact_bytes = COALESCE($6, source_artifact_bytes),
+            heartbeat_at = now()
         WHERE id = $1
           AND generation_token = $2::uuid
           AND owner_id = $3::uuid
@@ -114,9 +121,49 @@ async def attach_sales_generation_source(
         generation_token,
         owner_id,
         source_spool_path,
+        source_sha256,
+        source_byte_size,
     )
     if updated is None:
         raise SalesGenerationConflictError("Sales source cannot be attached by a stale worker")
+
+
+async def mark_sales_generation_artifact_retained(
+    conn: asyncpg.Connection,
+    *,
+    snapshot_id: int,
+    generation_token: str,
+    owner_id: str,
+    retained_path: str,
+    source_sha256: str,
+    source_byte_size: int,
+) -> None:
+    updated = await conn.fetchval(
+        """
+        UPDATE import_snapshots
+        SET source_spool_path = $4,
+            source_artifact_retained_path = $4,
+            source_artifact_state = 'artifact_retained',
+            source_artifact_sha256 = $5,
+            source_artifact_bytes = $6,
+            source_artifact_retained_at = now(),
+            heartbeat_at = now()
+        WHERE id = $1
+          AND generation_token = $2::uuid
+          AND owner_id = $3::uuid
+          AND status = 'processing'
+          AND source_artifact_state = 'artifact_retaining'
+        RETURNING id
+        """,
+        snapshot_id,
+        generation_token,
+        owner_id,
+        retained_path,
+        source_sha256,
+        source_byte_size,
+    )
+    if updated is None:
+        raise SalesGenerationConflictError("Sales artifact retain fence was lost")
 
 
 async def claim_validated_sales_generation(
@@ -140,6 +187,7 @@ async def claim_validated_sales_generation(
               AND manifest_sha256 = $3
               AND status = 'processing'
               AND manifest->>'generation_state' = 'validated'
+              AND source_artifact_state = 'artifact_retained'
             FOR UPDATE
         ), updated AS (
             UPDATE import_snapshots snap
@@ -361,8 +409,11 @@ async def promote_sales_generation(
     async with conn.transaction():
         row = await conn.fetchrow(
             """
-            SELECT id, import_month, manifest, manifest_sha256,
-                   expected_head_revision, is_month_final
+            SELECT id, import_month, manifest, manifest_sha256, source_sha256,
+                   expected_head_revision, is_month_final,
+                   source_artifact_required, source_artifact_state,
+                   source_artifact_sha256, source_artifact_bytes,
+                   source_artifact_retained_path
             FROM import_snapshots
             WHERE id = $1
               AND generation_token = $2::uuid
@@ -383,6 +434,24 @@ async def promote_sales_generation(
         if isinstance(manifest, str):
             manifest = json.loads(manifest)
         manifest = dict(manifest or {})
+        if row["source_artifact_required"]:
+            if (
+                row["source_artifact_state"] != "artifact_retained"
+                or row["source_artifact_sha256"] != row["source_sha256"]
+                or row["source_artifact_bytes"] is None
+                or not row["source_artifact_retained_path"]
+            ):
+                raise SalesGenerationValidationError(
+                    "Promovarea cere un artefact sales reținut și verificat"
+                )
+            from services.jobs import verify_sales_import_artifact
+
+            await asyncio.to_thread(
+                verify_sales_import_artifact,
+                str(row["source_artifact_retained_path"]),
+                str(row["source_sha256"]),
+                int(row["source_artifact_bytes"]),
+            )
         if manifest_requires_override(manifest):
             raise SalesGenerationValidationError(
                 "Promovarea este blocată de contradicții structurale ale generației"
@@ -507,7 +576,10 @@ async def rollback_sales_generation(
             """
             SELECT filename, rows_in_file, is_month_final, source_sha256,
                    cutoff_date, coverage_report, manifest, source_spool_path,
-                   stage_rows_sha256
+                   stage_rows_sha256, source_artifact_required,
+                   source_artifact_state, source_artifact_sha256,
+                   source_artifact_bytes, source_artifact_retained_path,
+                   source_artifact_retained_at
             FROM import_snapshots
             WHERE id = $1
               AND import_month = $2
@@ -556,11 +628,15 @@ async def rollback_sales_generation(
                 is_month_final, source_sha256, cutoff_date, manifest,
                 manifest_sha256, generation_token, owner_id, lease_until,
                 expected_head_revision, previous_snapshot_id, coverage_report,
-                source_spool_path, heartbeat_at
+                source_spool_path, heartbeat_at, source_artifact_required,
+                source_artifact_state, source_artifact_sha256,
+                source_artifact_bytes, source_artifact_retained_path,
+                source_artifact_retained_at
             ) VALUES (
                 $1, $2, $3, $4, 'processing', $5, $6, $7, $8::jsonb,
                 $9, $10::uuid, $11::uuid, now() + interval '2 hours',
-                $12, $13, $14::jsonb, $15, now()
+                $12, $13, $14::jsonb, $15, now(), $16,
+                $17, $18, $19, $20, $21
             )
             RETURNING id
             """,
@@ -579,6 +655,12 @@ async def rollback_sales_generation(
             current_snapshot_id,
             json.dumps(dict(coverage_report or {}), ensure_ascii=False, sort_keys=True),
             source["source_spool_path"],
+            bool(source["source_artifact_required"]),
+            source["source_artifact_state"],
+            source["source_artifact_sha256"],
+            source["source_artifact_bytes"],
+            source["source_artifact_retained_path"],
+            source["source_artifact_retained_at"],
         )
         if new_snapshot_id is None:
             raise SalesGenerationConflictError("Rollback generation could not be reserved")

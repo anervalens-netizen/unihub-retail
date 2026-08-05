@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date
+from hashlib import sha256
 import json
 import logging
 import os
@@ -19,6 +20,7 @@ from services.jobs import (
     read_sales_import_spool_file,
     remove_sales_import_spool_file,
     retain_sales_import_spool_file,
+    stage_sales_import_spool_file,
 )
 
 
@@ -38,6 +40,7 @@ async def import_sales_background(
     from dataclasses import asdict
     from services.importer import import_sales_file
     from services.sales_generation_flow import attach_sales_generation_source
+    from services.sales_generation_flow import mark_sales_generation_artifact_retained
 
     spool_path: str | None = None
     staged = False
@@ -61,12 +64,21 @@ async def import_sales_background(
     try:
         if isinstance(file_reference, bytes):
             file_content = legacy_content
+            source_digest = sha256(file_content).hexdigest()
+            spool_path = str(
+                await asyncio.to_thread(
+                    stage_sales_import_spool_file,
+                    file_content,
+                    source_digest,
+                )
+            )
         else:
             assert spool_path is not None
+            source_digest = digest_or_filename
             file_content = await asyncio.to_thread(
                 read_sales_import_spool_file,
                 spool_path,
-                digest_or_filename,
+                source_digest,
             )
         conn = ctx.get("db_conn")
         if conn is None:
@@ -80,29 +92,10 @@ async def import_sales_background(
                     cutoff_date=cutoff,
                     stage_only=True,
                     requested_by_sub=actor,
+                    source_artifact_required=True,
                 )
                 staged = True
-                if spool_path is not None:
-                    assert result.generation_token is not None
-                    assert result.owner_id is not None
-                    await attach_sales_generation_source(
-                        conn,
-                        snapshot_id=result.snapshot_id,
-                        generation_token=result.generation_token,
-                        owner_id=result.owner_id,
-                        source_spool_path=spool_path,
-                    )
-        else:
-            result = await import_sales_file(
-                conn,
-                file_content,
-                filename=filename,
-                cutoff_date=cutoff,
-                stage_only=True,
-                requested_by_sub=actor,
-            )
-            staged = True
-            if spool_path is not None:
+                assert spool_path is not None
                 assert result.generation_token is not None
                 assert result.owner_id is not None
                 await attach_sales_generation_source(
@@ -111,7 +104,66 @@ async def import_sales_background(
                     generation_token=result.generation_token,
                     owner_id=result.owner_id,
                     source_spool_path=spool_path,
+                    source_sha256=source_digest,
+                    source_byte_size=len(file_content),
                 )
+                retained_path = await asyncio.to_thread(
+                    retain_sales_import_spool_file,
+                    spool_path,
+                    import_month=result.import_month,
+                    snapshot_id=result.snapshot_id,
+                    expected_digest=source_digest,
+                    expected_bytes=len(file_content),
+                )
+                await mark_sales_generation_artifact_retained(
+                    conn,
+                    snapshot_id=result.snapshot_id,
+                    generation_token=result.generation_token,
+                    owner_id=result.owner_id,
+                    retained_path=str(retained_path),
+                    source_sha256=source_digest,
+                    source_byte_size=len(file_content),
+                )
+        else:
+            result = await import_sales_file(
+                conn,
+                file_content,
+                filename=filename,
+                cutoff_date=cutoff,
+                stage_only=True,
+                requested_by_sub=actor,
+                source_artifact_required=True,
+            )
+            staged = True
+            assert spool_path is not None
+            assert result.generation_token is not None
+            assert result.owner_id is not None
+            await attach_sales_generation_source(
+                conn,
+                snapshot_id=result.snapshot_id,
+                generation_token=result.generation_token,
+                owner_id=result.owner_id,
+                source_spool_path=spool_path,
+                source_sha256=source_digest,
+                source_byte_size=len(file_content),
+            )
+            retained_path = await asyncio.to_thread(
+                retain_sales_import_spool_file,
+                spool_path,
+                import_month=result.import_month,
+                snapshot_id=result.snapshot_id,
+                expected_digest=source_digest,
+                expected_bytes=len(file_content),
+            )
+            await mark_sales_generation_artifact_retained(
+                conn,
+                snapshot_id=result.snapshot_id,
+                generation_token=result.generation_token,
+                owner_id=result.owner_id,
+                retained_path=str(retained_path),
+                source_sha256=source_digest,
+                source_byte_size=len(file_content),
+            )
         return asdict(result)
     finally:
         if spool_path is not None and not staged:
@@ -154,10 +206,6 @@ async def promote_sales_background(
                         expected_manifest_sha256=manifest_sha256,
                         new_owner_id=owner_id,
                     )
-                source_spool_path = await conn.fetchval(
-                    "SELECT source_spool_path FROM import_snapshots WHERE id = $1",
-                    snapshot_id,
-                )
                 rows_imported, _ = await promote_sales_generation(
                     conn,
                     snapshot_id=snapshot_id,
@@ -197,30 +245,6 @@ async def promote_sales_background(
             if row is None:
                 raise RuntimeError("Promoted sales generation cannot be read back")
             import_month = str(row["import_month"])
-            if source_spool_path:
-                try:
-                    retained_path = await asyncio.to_thread(
-                        retain_sales_import_spool_file,
-                        str(source_spool_path),
-                        import_month=import_month,
-                        snapshot_id=snapshot_id,
-                    )
-                    await conn.execute(
-                        """
-                        UPDATE import_snapshots
-                        SET source_spool_path = $4
-                        WHERE id = $1
-                          AND generation_token = $2::uuid
-                          AND owner_id = $3::uuid
-                          AND status = 'completed'
-                        """,
-                        snapshot_id,
-                        generation_token,
-                        owner_id,
-                        str(retained_path),
-                    )
-                except Exception:
-                    logger.exception("Failed to retain terminal sales source snapshot=%s", snapshot_id)
 
         from routers.filters import clear_filter_options_cache
         from services.imports import trigger_grile_check_after_import

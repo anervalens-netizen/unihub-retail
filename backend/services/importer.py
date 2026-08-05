@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -35,6 +36,13 @@ from services.sales_generation_flow import (
     load_current_sales_manifest,
     persist_validated_sales_generation,
     promote_sales_generation,
+)
+from services.jobs import (
+    SalesImportArtifactConflictError,
+    SalesImportArtifactError,
+    cleanup_sales_import_retained_artifacts,
+    retain_sales_import_spool_file,
+    verify_sales_import_artifact,
 )
 
 SALES_COLUMNS = [
@@ -103,6 +111,7 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
     for explicit promotion after a worker restart; a stale promoting claim is
     returned to validated so the operator can retry it safely.
     """
+    artifact_recovered = await _reconcile_sales_artifacts(pool)
     async with pool.acquire() as conn:
         async with conn.transaction():
             recovered = await conn.fetch(
@@ -117,6 +126,7 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
                     manifest = jsonb_set(manifest, '{generation_state}', '"validated"'::jsonb, true)
                 WHERE status = 'processing'
                   AND manifest->>'generation_state' = 'promoting'
+                  AND source_artifact_state IS NULL
                   AND (
                         (lease_until IS NOT NULL AND lease_until <= now())
                         OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
@@ -134,6 +144,7 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
                     finished_at = now()
                 WHERE status = 'processing'
                   AND COALESCE(manifest->>'generation_state', '') NOT IN ('validated', 'promoting')
+                  AND COALESCE(source_artifact_state, '') NOT IN ('artifact_retaining', 'artifact_retained')
                   AND (
                         (lease_until IS NOT NULL AND lease_until <= now())
                         OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
@@ -141,7 +152,143 @@ async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
                 RETURNING id
                 """
             )
-    return [int(row["id"]) for row in [*recovered, *closed]]
+    return [*artifact_recovered, *[int(row["id"]) for row in [*recovered, *closed]]]
+
+
+async def _reconcile_sales_artifacts(pool: asyncpg.Pool) -> list[int]:
+    """Retry only fenced artifact work; never promote a generation at startup."""
+    async with pool.acquire() as conn:
+        candidates = await conn.fetch(
+            """
+            SELECT id, generation_token, owner_id, import_month, source_spool_path,
+                   source_sha256, source_artifact_bytes
+            FROM import_snapshots
+            WHERE status = 'processing'
+              AND source_artifact_state IN ('artifact_retaining', 'artifact_retained')
+            """
+        )
+    reconciled: list[int] = []
+    for candidate in candidates:
+        snapshot_id = int(candidate["id"])
+        try:
+            retained = await asyncio.to_thread(
+                retain_sales_import_spool_file,
+                str(candidate["source_spool_path"]),
+                import_month=str(candidate["import_month"]),
+                snapshot_id=snapshot_id,
+                expected_digest=str(candidate["source_sha256"]),
+                expected_bytes=(
+                    int(candidate["source_artifact_bytes"])
+                    if candidate["source_artifact_bytes"] is not None
+                    else None
+                ),
+            )
+            size = await asyncio.to_thread(
+                verify_sales_import_artifact,
+                str(retained),
+                str(candidate["source_sha256"]),
+                int(candidate["source_artifact_bytes"])
+                if candidate["source_artifact_bytes"] is not None
+                else None,
+            )
+            async with pool.acquire() as conn:
+                updated = await conn.fetchval(
+                    """
+                    UPDATE import_snapshots
+                    SET source_spool_path = $4,
+                        source_artifact_retained_path = $4,
+                        source_artifact_state = 'artifact_retained',
+                        source_artifact_sha256 = $5,
+                        source_artifact_bytes = $6,
+                        source_artifact_retained_at = COALESCE(source_artifact_retained_at, now()),
+                        heartbeat_at = now(),
+                        manifest = CASE
+                            WHEN manifest->>'generation_state' = 'promoting'
+                            THEN jsonb_set(manifest, '{generation_state}', '"validated"'::jsonb, true)
+                            ELSE manifest
+                        END,
+                        lease_until = now() + interval '2 hours'
+                    WHERE id = $1 AND generation_token = $2::uuid
+                      AND owner_id = $3::uuid AND status = 'processing'
+                      AND source_artifact_state IN ('artifact_retaining', 'artifact_retained')
+                    RETURNING id
+                    """,
+                    snapshot_id,
+                    str(candidate["generation_token"]),
+                    str(candidate["owner_id"]),
+                    str(retained),
+                    str(candidate["source_sha256"]),
+                    size,
+                )
+            if updated is not None:
+                reconciled.append(snapshot_id)
+        except (SalesImportArtifactConflictError, SalesImportArtifactError) as exc:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE import_snapshots
+                    SET status = 'failed', rows_imported = 0,
+                        error_message = $4, finished_at = now(), heartbeat_at = now(),
+                        lease_until = now(), source_artifact_state = 'recovery_required'
+                    WHERE id = $1 AND generation_token = $2::uuid
+                      AND owner_id = $3::uuid AND status = 'processing'
+                    """,
+                    snapshot_id,
+                    str(candidate["generation_token"]),
+                    str(candidate["owner_id"]),
+                    f"Sales artifact recovery required: {type(exc).__name__}",
+                )
+            reconciled.append(snapshot_id)
+        except OSError as exc:
+            # Transient filesystem failures leave the validated candidate
+            # retryable through an exact-source re-upload. No auto-promotion.
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE import_snapshots
+                    SET source_artifact_state = NULL,
+                        source_artifact_sha256 = NULL,
+                        source_artifact_bytes = NULL,
+                        source_artifact_retained_at = NULL,
+                        source_artifact_retained_path = NULL,
+                        manifest = CASE
+                            WHEN manifest->>'generation_state' = 'promoting'
+                            THEN jsonb_set(manifest, '{generation_state}', '"validated"'::jsonb, true)
+                            ELSE manifest
+                        END,
+                        error_message = $4,
+                        heartbeat_at = now(),
+                        lease_until = now()
+                    WHERE id = $1 AND generation_token = $2::uuid
+                      AND owner_id = $3::uuid AND status = 'processing'
+                    """,
+                    snapshot_id,
+                    str(candidate["generation_token"]),
+                    str(candidate["owner_id"]),
+                    f"Sales artifact retain retryable: {type(exc).__name__}",
+                )
+            reconciled.append(snapshot_id)
+
+    async with pool.acquire() as conn:
+        roots = await conn.fetch(
+            """
+            SELECT DISTINCT COALESCE(s.source_artifact_retained_path, s.source_spool_path) AS path
+            FROM import_snapshots s
+            WHERE s.id IN (
+                SELECT snapshot_id FROM sales_generation_heads
+                UNION SELECT previous_snapshot_id FROM sales_generation_heads
+                UNION SELECT from_snapshot_id FROM sales_generation_promotions
+                UNION SELECT to_snapshot_id FROM sales_generation_promotions
+                UNION SELECT id FROM import_snapshots
+                      WHERE status = 'processing'
+                        AND source_artifact_state = 'artifact_retained'
+            )
+              AND COALESCE(s.source_artifact_retained_path, s.source_spool_path) IS NOT NULL
+            """
+        )
+    keep_paths = {str(row["path"]) for row in roots}
+    await asyncio.to_thread(cleanup_sales_import_retained_artifacts, keep_paths)
+    return reconciled
 
 
 def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
@@ -592,6 +739,7 @@ async def reserve_snapshot(
     cutoff_date: date | None = None,
     generation_token: str | None = None,
     owner_id: str | None = None,
+    source_artifact_required: bool = False,
     lease_seconds: int = 2 * 60 * 60,
 ) -> int:
     generation_token = generation_token or str(uuid4())
@@ -630,11 +778,12 @@ async def reserve_snapshot(
                 is_month_final, heartbeat_at, source_sha256, cutoff_date,
                 generation_token, owner_id, lease_until,
                 expected_head_revision, previous_snapshot_id
+                , source_artifact_required
             )
             VALUES (
                 $1, $2, $3, 'processing', $4, now(), $5, $6,
                 $7::uuid, $8::uuid, now() + make_interval(secs => $9),
-                $10, $11
+                $10, $11, $12
             )
             ON CONFLICT (import_month)
                 WHERE status = 'processing'
@@ -652,6 +801,7 @@ async def reserve_snapshot(
             lease_seconds,
             expected_head_revision,
             previous_snapshot_id,
+            source_artifact_required,
         )
     if row is None:
         raise ImportAlreadyRunningError(
@@ -787,6 +937,7 @@ async def import_sales_dataframe(
     stage_only: bool = False,
     requested_by_sub: str = "direct-execution",
     override_reason: str | None = None,
+    source_artifact_required: bool = False,
 ) -> ImportResult:
     validate_sales_dataframe(df)
     rows_in_file_total = len(df)
@@ -820,6 +971,7 @@ async def import_sales_dataframe(
         cutoff_date=declared_cutoff,
         generation_token=generation_token,
         owner_id=owner_id,
+        source_artifact_required=source_artifact_required,
     )
     validated = False
     try:
@@ -928,6 +1080,7 @@ async def import_sales_file(
     stage_only: bool = False,
     requested_by_sub: str = "direct-execution",
     override_reason: str | None = None,
+    source_artifact_required: bool = False,
 ) -> ImportResult:
     if isinstance(source, bytes):
         digest = sha256(source).hexdigest()
@@ -943,6 +1096,7 @@ async def import_sales_file(
         stage_only=stage_only,
         requested_by_sub=requested_by_sub,
         override_reason=override_reason,
+        source_artifact_required=source_artifact_required,
     )
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from hashlib import sha256
 from contextlib import suppress
@@ -121,6 +122,15 @@ class GrileTargetSyncEnqueueResult:
 _VALKEY_SETTINGS: Optional[RedisSettings] = None
 SALES_IMPORT_QUEUE_NAME = "arq:retail:imports"
 DEFAULT_SALES_IMPORT_SPOOL_MAX_AGE_SECONDS = 24 * 60 * 60
+_SALES_ARTIFACT_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+
+
+class SalesImportArtifactError(RuntimeError):
+    pass
+
+
+class SalesImportArtifactConflictError(SalesImportArtifactError):
+    pass
 
 
 def get_sales_import_spool_dir() -> Path:
@@ -133,25 +143,95 @@ def get_sales_import_spool_dir() -> Path:
     return path.resolve()
 
 
+def _sales_spool_path(path: str | Path) -> Path:
+    root = get_sales_import_spool_dir()
+    raw = Path(path)
+    if raw.is_symlink():
+        raise SalesImportArtifactError("Sales import spool symlink is not allowed")
+    candidate = raw.resolve()
+    if not candidate.is_relative_to(root):
+        raise ValueError("Sales import spool path escapes the configured directory")
+    return candidate
+
+
+def _artifact_digest_from_path(path: Path) -> str:
+    digest = path.name.rsplit(".", 1)[0]
+    if not _SALES_ARTIFACT_DIGEST.fullmatch(digest):
+        raise SalesImportArtifactError("Sales import artifact name is not content-addressed")
+    return digest
+
+
+def _file_digest_and_size(path: Path) -> tuple[str, int]:
+    if not path.exists() or not path.is_file() or path.is_symlink():
+        raise SalesImportArtifactError("Sales import artifact is not a regular file")
+    digest = sha256()
+    size = 0
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as source:
+        os.fsync(source.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def verify_sales_import_artifact(
+    path: str | Path,
+    expected_digest: str,
+    expected_bytes: int | None = None,
+) -> int:
+    candidate = _sales_spool_path(path)
+    digest, size = _file_digest_and_size(candidate)
+    if digest != expected_digest or (expected_bytes is not None and size != expected_bytes):
+        raise SalesImportArtifactError("Sales import artifact integrity check failed")
+    return size
+
+
 def stage_sales_import_spool_file(content: bytes, digest: str) -> Path:
+    if not _SALES_ARTIFACT_DIGEST.fullmatch(digest):
+        raise ValueError("Invalid sales import source digest")
     spool_dir = get_sales_import_spool_dir()
     spool_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    spool_dir.chmod(0o700)
     destination = spool_dir / f"{digest}.upload"
     temporary = spool_dir / f".{digest}.{uuid4().hex}.tmp"
+    if destination.exists():
+        actual_digest, actual_size = _file_digest_and_size(destination)
+        if actual_digest != digest or actual_size != len(content):
+            raise SalesImportArtifactConflictError("Conflicting content-addressed sales source")
+        destination.chmod(0o600)
+        _fsync_file(destination)
+        _fsync_directory(spool_dir)
+        return destination
     try:
         temporary.write_bytes(content)
         temporary.chmod(0o600)
+        _fsync_file(temporary)
+        actual_digest, actual_size = _file_digest_and_size(temporary)
+        if actual_digest != digest or actual_size != len(content):
+            raise SalesImportArtifactError("Staged sales source integrity check failed")
         temporary.replace(destination)
+        destination.chmod(0o600)
+        _fsync_file(destination)
+        _fsync_directory(spool_dir)
     finally:
         temporary.unlink(missing_ok=True)
     return destination
 
 
 def remove_sales_import_spool_file(path: str | Path) -> None:
-    candidate = Path(path).resolve()
-    spool_dir = get_sales_import_spool_dir()
-    if not candidate.is_relative_to(spool_dir):
-        raise ValueError("Sales import spool path escapes the configured directory")
+    candidate = _sales_spool_path(path)
     candidate.unlink(missing_ok=True)
 
 
@@ -160,31 +240,62 @@ def retain_sales_import_spool_file(
     *,
     import_month: str,
     snapshot_id: int,
+    expected_digest: str | None = None,
+    expected_bytes: int | None = None,
 ) -> Path:
-    candidate = Path(path).resolve()
+    candidate = _sales_spool_path(path)
     spool_dir = get_sales_import_spool_dir()
-    if not candidate.is_relative_to(spool_dir):
-        raise ValueError("Sales import spool path escapes the configured directory")
-    retained_dir = spool_dir / "retained" / import_month
+    digest = expected_digest or _artifact_digest_from_path(candidate)
+    if not _SALES_ARTIFACT_DIGEST.fullmatch(digest):
+        raise ValueError("Invalid sales import artifact digest")
+    retained_dir = spool_dir / "retained"
     retained_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    destination = retained_dir / f"{snapshot_id}-{candidate.stem}.source"
+    retained_dir.chmod(0o700)
+    destination = _sales_spool_path(retained_dir / f"{digest}.source")
+    if destination.exists():
+        actual_digest, actual_size = _file_digest_and_size(destination)
+        if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
+            raise SalesImportArtifactConflictError("Conflicting retained sales artifact")
+        destination.chmod(0o600)
+        _fsync_file(destination)
+        if candidate != destination and candidate.exists():
+            candidate.unlink()
+            _fsync_directory(candidate.parent)
+        _fsync_directory(retained_dir)
+        return destination
+    if not candidate.exists():
+        raise SalesImportArtifactError("Sales source disappeared before retain")
+    actual_digest, actual_size = _file_digest_and_size(candidate)
+    if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
+        raise SalesImportArtifactError("Sales source integrity check failed before retain")
     candidate.replace(destination)
     destination.chmod(0o600)
-    retained = sorted(
-        (item for item in retained_dir.glob("*.source") if item.is_file()),
-        key=lambda item: item.stat().st_mtime_ns,
-        reverse=True,
-    )
-    for expired in retained[2:]:
-        expired.unlink(missing_ok=True)
+    _fsync_file(destination)
+    _fsync_directory(retained_dir)
+    actual_digest, actual_size = _file_digest_and_size(destination)
+    if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
+        raise SalesImportArtifactError("Retained sales artifact readback failed")
     return destination
 
 
+def cleanup_sales_import_retained_artifacts(keep_paths: set[str]) -> int:
+    root = get_sales_import_spool_dir()
+    retained_dir = root / "retained"
+    if not retained_dir.exists():
+        return 0
+    keep = {_sales_spool_path(path) for path in keep_paths}
+    removed = 0
+    for candidate in retained_dir.rglob("*.source"):
+        if candidate.resolve() not in keep:
+            candidate.unlink(missing_ok=True)
+            removed += 1
+    if removed:
+        _fsync_directory(retained_dir)
+    return removed
+
+
 def read_sales_import_spool_file(path: str, expected_digest: str) -> bytes:
-    candidate = Path(path).resolve()
-    spool_dir = get_sales_import_spool_dir()
-    if not candidate.is_relative_to(spool_dir):
-        raise ValueError("Sales import spool path escapes the configured directory")
+    candidate = _sales_spool_path(path)
     content = candidate.read_bytes()
     if sha256(content).hexdigest() != expected_digest:
         raise ValueError("Sales import spool integrity check failed")
