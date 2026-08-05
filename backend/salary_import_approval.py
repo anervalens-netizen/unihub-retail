@@ -86,6 +86,7 @@ class ValidatedApproval:
     manifest_sha256: str
     artifact_sha256: str
     applied_by: str
+    signed_artifact: dict[str, Any]
     _proof: object = field(default=None, repr=False, compare=False)
 
     def require_cryptographic_validation(self) -> None:
@@ -93,6 +94,17 @@ class ValidatedApproval:
             raise SalaryImportApprovalError(
                 "Approval was not produced by cryptographic signature validation"
             )
+        _verify_reviewer_signature(
+            self.signed_artifact,
+            trusted_reviewer_keys=load_trusted_reviewer_keys(),
+        )
+        signed_metadata = {
+            key: self.signed_artifact[key] for key in _APPROVAL_METADATA_KEYS
+        }
+        if signed_metadata != self.metadata:
+            raise SalaryImportApprovalError("Signed approval metadata changed after validation")
+        if canonical_json_sha256(self.signed_artifact) != self.artifact_sha256:
+            raise SalaryImportApprovalError("Signed approval artifact changed after validation")
 
     def envelope(self) -> dict[str, Any]:
         return build_audit_envelope(
@@ -361,8 +373,9 @@ def validate_approval_artifact(
         metadata=metadata,
         manifest=normalized_manifest,
         manifest_sha256=manifest_sha256,
-        artifact_sha256="",
+        artifact_sha256=canonical_json_sha256(dict(artifact)),
         applied_by=_require_nonblank(applied_by, "applied_by"),
+        signed_artifact=dict(artifact),
         _proof=_VALIDATED_APPROVAL_PROOF,
     )
 
@@ -391,14 +404,7 @@ def load_and_validate_approval_artifact(
         applied_by=applied_by,
         trusted_reviewer_keys=trusted_reviewer_keys,
     )
-    return ValidatedApproval(
-        metadata=validated.metadata,
-        manifest=validated.manifest,
-        manifest_sha256=validated.manifest_sha256,
-        artifact_sha256=canonical_json_sha256(dict(artifact)),
-        applied_by=validated.applied_by,
-        _proof=_VALIDATED_APPROVAL_PROOF,
-    )
+    return validated
 
 
 def require_apply_inputs(expected_manifest_sha256: str | None, approval_artifact: Path | None) -> None:

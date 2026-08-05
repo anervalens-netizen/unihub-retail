@@ -7,7 +7,6 @@ from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
 
 import pandas as pd
 import pytest
@@ -49,6 +48,14 @@ TRUSTED_REVIEWER_KEYS = {
         )
     ).decode("ascii")
 }
+
+
+@pytest.fixture(autouse=True)
+def _trusted_salary_reviewer_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "SALARY_APPROVAL_REVIEWER_PUBLIC_KEYS_JSON",
+        json.dumps(TRUSTED_REVIEWER_KEYS),
+    )
 CNP_A = "9000000000007"
 CNP_B = "9000000000015"
 CNP_C = "9000000000023"
@@ -133,14 +140,6 @@ def approved_batch(
         expected_manifest_sha256=manifest_sha256,
         applied_by=applied_by,
         trusted_reviewer_keys=TRUSTED_REVIEWER_KEYS,
-    )
-    # In-memory validation has no source artifact bytes; tests bind a synthetic
-    # artifact digest before exercising the DB write envelope.
-    approval = replace(
-        approval,
-        artifact_sha256=canonical_json_sha256(
-            {"manifest": manifest_sha256, "test_nonce": uuid4().hex}
-        ),
     )
     return manifest, approval
 
@@ -312,6 +311,19 @@ async def test_salary_import_rejects_directly_constructed_approval() -> None:
             manifest=manifest,
             applied_by="test:forged",
             approval=forged,
+        )
+
+    tampered = replace(
+        approval,
+        signed_artifact={**approval.signed_artifact, "decision": "rejected"},
+    )
+    with pytest.raises(SalaryImportApprovalError, match="signature is invalid"):
+        await insert_records(
+            MagicMock(),
+            records,
+            manifest=manifest,
+            applied_by="test:forged",
+            approval=tampered,
         )
 
 
