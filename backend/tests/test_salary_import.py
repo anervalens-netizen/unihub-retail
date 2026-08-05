@@ -6,7 +6,7 @@ import os
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pandas as pd
@@ -30,6 +30,7 @@ from salary_import_approval import (
     APPROVAL_SCHEMA_VERSION,
     KNOWN_GROUPS_TOTAL,
     REQUIRED_COMPANIES,
+    SalaryImportApprovalError,
     ValidatedApproval,
     canonical_json_bytes,
     canonical_json_sha256,
@@ -290,6 +291,28 @@ def test_dry_run_manifest_contains_both_sources_control_totals_and_hashes() -> N
 async def test_insert_salary_records_rejects_empty_batch() -> None:
     with pytest.raises(ValueError, match="Nu exista randuri valide"):
         await insert_records(None, [])  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_salary_import_rejects_directly_constructed_approval() -> None:
+    record = make_record()
+    counterpart = make_record(
+        company_name="Mobicell",
+        source_file="mobicell.xlsx",
+        source_sha256="b" * 64,
+    )
+    records = [record, counterpart]
+    manifest, approval = approved_batch(records, applied_by="test:forged")
+    forged = replace(approval, _proof=None)
+
+    with pytest.raises(SalaryImportApprovalError, match="cryptographic signature validation"):
+        await insert_records(
+            MagicMock(),
+            records,
+            manifest=manifest,
+            applied_by="test:forged",
+            approval=forged,
+        )
 
 
 @pytest.mark.asyncio

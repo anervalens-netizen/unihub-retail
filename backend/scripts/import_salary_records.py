@@ -393,6 +393,7 @@ async def insert_records(
     manifest_sha256 = canonical_json_sha256(safe_manifest)
     if not isinstance(approval, ValidatedApproval):
         raise SalaryImportApprovalError("A cryptographically validated approval is required for writes")
+    approval.require_cryptographic_validation()
     safe_envelope = validate_audit_envelope(
         approval.envelope(),
         manifest=safe_manifest,

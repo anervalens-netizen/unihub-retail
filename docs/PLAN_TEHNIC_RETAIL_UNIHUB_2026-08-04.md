@@ -942,7 +942,7 @@ Porți locale pe candidatul sursă:
 - runtime/dev lock `--require-hashes`, import smoke, `pip check`, `pip-audit`
   strict, secret scan și Bandit regression gate verzi;
 - checksum migrare 043:
-  `bf997d5e2f74aa3b464ac0cc0c8529247cfc63b1ed5af7d7ff231fb339b9064d`;
+  `28a5673b5559e773e4a94d3a52392fb3d5b3887e0b51cb4cb60b4361cdffba65`;
   checksum migrare 044:
   `762c6352f8a00deb6989bd24ffac5ebefc9d537817233507d92e8dd4422d7a1c`;
   checksum migrare 045:

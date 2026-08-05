@@ -10,7 +10,7 @@ import os
 import re
 import unicodedata
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +24,7 @@ AUDIT_ENVELOPE_VERSION = 1
 KNOWN_GROUPS_TOTAL = 8
 REQUIRED_COMPANIES = ("Mobiup", "Mobicell")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_VALIDATED_APPROVAL_PROOF = object()
 
 TRUSTED_REVIEWER_KEYS_ENV = "SALARY_APPROVAL_REVIEWER_PUBLIC_KEYS_JSON"
 
@@ -85,6 +86,13 @@ class ValidatedApproval:
     manifest_sha256: str
     artifact_sha256: str
     applied_by: str
+    _proof: object = field(default=None, repr=False, compare=False)
+
+    def require_cryptographic_validation(self) -> None:
+        if self._proof is not _VALIDATED_APPROVAL_PROOF:
+            raise SalaryImportApprovalError(
+                "Approval was not produced by cryptographic signature validation"
+            )
 
     def envelope(self) -> dict[str, Any]:
         return build_audit_envelope(
@@ -355,6 +363,7 @@ def validate_approval_artifact(
         manifest_sha256=manifest_sha256,
         artifact_sha256="",
         applied_by=_require_nonblank(applied_by, "applied_by"),
+        _proof=_VALIDATED_APPROVAL_PROOF,
     )
 
 
@@ -388,6 +397,7 @@ def load_and_validate_approval_artifact(
         manifest_sha256=validated.manifest_sha256,
         artifact_sha256=canonical_json_sha256(dict(artifact)),
         applied_by=validated.applied_by,
+        _proof=_VALIDATED_APPROVAL_PROOF,
     )
 
 
