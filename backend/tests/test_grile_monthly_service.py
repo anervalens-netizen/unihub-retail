@@ -2868,7 +2868,9 @@ async def test_adapter_rollback_records_fencing_restore_and_confirmation_failure
 ) -> None:
     first = entry(site_code="SITE01")
     second = entry(site_code="SITE02", sheet_id="sheet-2", store="Mall")
-    snapshots = {item.site_code: {"value_ranges": []} for item in (first, second)}
+    snapshots: dict[str, dict[str, Any]] = {
+        item.site_code: {"value_ranges": []} for item in (first, second)
+    }
     intent = AsyncMock(side_effect=[None, {"fence_epoch": 4}])
     confirm = AsyncMock(return_value=True)
     restore = AsyncMock()
@@ -3261,7 +3263,7 @@ def test_reset_backup_rejects_invalid_payload_and_snapshot_hash(tmp_path: Path) 
         grile._read_reset_backup(item)
     assert exc_info.value.code == "backup_invalid"
 
-    snapshot = {"value_ranges": []}
+    snapshot: dict[str, Any] = {"value_ranges": []}
     path.write_text(
         json.dumps({"snapshot": snapshot, "snapshot_sha256": "0" * 64}),
         encoding="utf-8",
