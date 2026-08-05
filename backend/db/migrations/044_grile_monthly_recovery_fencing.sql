@@ -61,15 +61,5 @@ WHERE operation.status = 'running'
         AND item.recovery_code = 'recovery_required'
   );
 
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unihub_runtime') THEN
-        GRANT SELECT, INSERT, UPDATE
-            ON TABLE grile_monthly_operations, grile_monthly_reset_items
-            TO unihub_runtime;
-        GRANT USAGE, SELECT, UPDATE
-            ON SEQUENCE grile_monthly_reset_items_id_seq
-            TO unihub_runtime;
-    END IF;
-END
-$$;
+-- ACL-urile P1-A existente pe tabele sunt suficiente pentru coloanele noi.
+-- Nu reintroducem granturi către rolul legacy unihub_runtime.

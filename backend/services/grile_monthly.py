@@ -432,9 +432,15 @@ async def _google_request(
 
 def _company_from_values(registry_key: str | None, fallback: str | None) -> str:
     raw = (registry_key or "").split("/", 1)[0].strip() or (fallback or "").strip()
-    if raw.casefold() == "mobicell":
+    normalized = raw.casefold()
+    if normalized == "mobicell":
         return "Mobicell"
-    return "Mobiup"
+    if normalized == "mobiup":
+        return "Mobiup"
+    raise MonthlyIntegrityError(
+        "unknown_company",
+        "Grile registry company is missing or unsupported",
+    )
 
 
 def _store_from_values(registry_key: str | None, fallback: str | None) -> str:

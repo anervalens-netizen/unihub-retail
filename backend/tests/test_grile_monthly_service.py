@@ -250,6 +250,20 @@ async def test_load_entries_normalizes_registry_and_filters() -> None:
         await grile.load_entries(pool, only="missing")
 
 
+@pytest.mark.parametrize(
+    ("registry_key", "fallback"),
+    [("Unknown/Store", "Mobiup"), (None, ""), (None, None)],
+)
+def test_grile_company_mapping_rejects_unknown_or_blank(
+    registry_key: str | None,
+    fallback: str | None,
+) -> None:
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        grile._company_from_values(registry_key, fallback)
+
+    assert exc_info.value.code == "unknown_company"
+
+
 def test_operation_serialization_and_number_helpers() -> None:
     assert grile._operation_to_dict(None) is None
     assert grile._operation_to_dict({"id": 1, "result": '{"ok": true}'}) == {
