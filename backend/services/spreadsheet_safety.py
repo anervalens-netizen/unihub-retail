@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Iterable
-from xml.etree import ElementTree
+from defusedxml import ElementTree
 
 
 _DANGEROUS_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")

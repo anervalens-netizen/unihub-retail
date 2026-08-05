@@ -68,9 +68,14 @@ Backend:
 ```bash
 cd backend
 python3 -m venv venv
-venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+venv/bin/pip install --require-hashes -r requirements-dev.lock
 cd ..
 ```
+
+`requirements.lock` este lockfile-ul runtime, iar `requirements-dev.lock` este
+supersetul folosit local și în CI. Regenerează-le cu Python 3.12 și
+`pip-compile --generate-hashes` numai după modificarea fișierelor sursă
+`requirements*.txt`.
 
 ## Pornire dezvoltare
 

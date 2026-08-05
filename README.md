@@ -156,10 +156,15 @@ Cerințe: Node.js 22, Python 3.12+ și Docker pentru testele PostgreSQL izolate.
 cp .env.example .env
 npm ci
 python3 -m venv backend/venv
-backend/venv/bin/pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+backend/venv/bin/pip install --require-hashes -r backend/requirements-dev.lock
 npm run dev
 npm run dev:backend
 ```
+
+Producția instalează strict `backend/requirements.lock`; dezvoltarea și CI
+folosesc supersetul `backend/requirements-dev.lock`. Fișierele `.txt` sunt
+sursele editabile, iar lockfile-urile se regenerează cu Python 3.12 și
+`pip-compile --generate-hashes` după orice schimbare de dependențe.
 
 Folosește numai o bază locală dedicată. Instrucțiunile complete, inclusiv
 configurația OIDC și protecțiile DB, sunt în `LOCAL_SETUP.md`.

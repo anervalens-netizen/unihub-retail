@@ -8,6 +8,7 @@ import {
   Line,
   ResponsiveContainer,
   Tooltip,
+  type TooltipContentProps,
   XAxis,
   YAxis,
 } from 'recharts';
@@ -87,19 +88,7 @@ interface AgentDetailsProps {
   currentMonth: string;
 }
 
-interface ChartTooltipEntry {
-  color?: string;
-  dataKey?: string | number;
-  name?: string | number;
-  payload?: unknown;
-  value?: unknown;
-}
-
-interface ChartTooltipProps {
-  active?: boolean;
-  label?: string | number;
-  payload?: readonly ChartTooltipEntry[];
-}
+type ChartTooltipProps = TooltipContentProps<number | string, number | string>;
 
 function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
   const { data: profile, isLoading: profileLoading } = useQuery({
@@ -789,7 +778,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
                   tickLine={false}
                   tick={{ fontSize: 10, fill: '#64748b' }}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={CustomTooltip} />
                 <Legend 
                   wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} 
                   iconType="circle"

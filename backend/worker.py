@@ -69,7 +69,7 @@ async def import_sales_background(
 
     token = bind_request_id(request_id) if request_id else None
     cutoff = date.fromisoformat(cutoff_date_iso) if cutoff_date_iso else None
-    actor = requested_by_sub or "legacy-direct"
+    actor = requested_by_sub or "unknown"
     try:
         verified_size = await asyncio.to_thread(
             verify_sales_import_artifact,
@@ -405,6 +405,7 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
         raise ValueError("Invalid persisted Grile monthly operation identity")
     persisted_operation_id = operation_id
 
+    token = bind_request_id(f"grile-monthly:{persisted_operation_id}")
     session_task = asyncio.current_task()
     sessions = ctx.setdefault("grile_monthly_sessions", {})
     sessions[session_task] = persisted_operation_id
@@ -466,6 +467,7 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
             raise
     finally:
         sessions.pop(session_task, None)
+        reset_request_id(token)
 
 
 async def grile_agent_targets_background(

@@ -373,6 +373,7 @@ async def test_promote_sales_generation_enqueues_without_web_db_claim(
 
     assert result.job_id == "promotion:1"
     assert pool.acquire.call_count == 0
+    assert enqueue.await_args is not None
     enqueue.assert_awaited_once_with(
         snapshot_id=7,
         generation_token="a" * 36,

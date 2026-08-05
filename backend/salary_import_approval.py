@@ -430,7 +430,7 @@ def scan_runtime_salary_surfaces(repo_root: Path) -> None:
                     identifier = node.attr
                 if identifier and identifier.casefold() in {"cnp", "salary_cnp"}:
                     violations.append(
-                        f"{path.relative_to(repo_root)}:{node.lineno}:{identifier.casefold()}"
+                        f"{path.relative_to(repo_root)}:{getattr(node, 'lineno', 0)}:{identifier.casefold()}"
                     )
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
                     literal = node.value.casefold()
@@ -438,7 +438,7 @@ def scan_runtime_salary_surfaces(repo_root: Path) -> None:
                         r"history/\s*\{\s*cnp\s*\}", literal
                     ):
                         violations.append(
-                            f"{path.relative_to(repo_root)}:{node.lineno}:raw_identity_literal"
+                            f"{path.relative_to(repo_root)}:{getattr(node, 'lineno', 0)}:raw_identity_literal"
                         )
         else:
             for line_number, line in enumerate(text.splitlines(), start=1):

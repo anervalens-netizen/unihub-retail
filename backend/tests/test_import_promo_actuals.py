@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from fastapi import HTTPException, UploadFile
+from openpyxl import Workbook
 
 import services.imports as imports_module
 from services.imports import ImportsService
@@ -17,8 +18,16 @@ def service() -> ImportsService:
     return ImportsService(repo=object(), pool=object())  # type: ignore[arg-type]
 
 
-def upload(content: bytes = b"promo-report", filename: str | None = "promo.xlsx") -> UploadFile:
-    return UploadFile(file=BytesIO(content), filename=filename)
+def workbook_bytes() -> bytes:
+    workbook = Workbook()
+    workbook.active["A1"] = "promo"
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def upload(content: bytes | None = None, filename: str | None = "promo.xlsx") -> UploadFile:
+    return UploadFile(file=BytesIO(content if content is not None else workbook_bytes()), filename=filename)
 
 
 def configure_paths(
@@ -171,8 +180,9 @@ async def test_promo_actuals_persists_file_and_updates_only_matching_promotions(
         staticmethod(lambda _: (3, 7)),
     )
 
+    report_content = workbook_bytes()
     result = await service().import_promo_actuals(
-        file=upload(content=b"valid-promo-data", filename="PROMO.XLSX"),
+        file=upload(content=report_content, filename="PROMO.XLSX"),
         import_month="2026-06",
         cutoff_date=date(2026, 6, 15),
     )
@@ -196,7 +206,7 @@ async def test_promo_actuals_persists_file_and_updates_only_matching_promotions(
     stored = json.loads(generated_config_path.read_text(encoding="utf-8"))
     active = next(item for item in stored["promotions"] if item["key"] == "active")
     destination = Path(active["actuals_source_file"])
-    assert destination.read_bytes() == b"valid-promo-data"
+    assert destination.read_bytes() == report_content
     assert destination.suffix == ".xlsx"
     assert active["actuals_sheet"] == "AccesoriPromoLunar"
     assert active["actuals_cutoff_date"] == "2026-06-15"
@@ -225,7 +235,7 @@ async def test_promo_actuals_removes_saved_file_when_no_promotion_matches(
 
     with pytest.raises(HTTPException) as exc:
         await service().import_promo_actuals(
-            file=upload(content=b"orphan"),
+            file=upload(),
             import_month="2026-06",
             cutoff_date=date(2026, 6, 15),
         )

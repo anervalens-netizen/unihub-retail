@@ -103,6 +103,60 @@ async def reserve(
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            stale = await conn.fetchrow(
+                """
+                SELECT id
+                FROM grile_monthly_operations
+                WHERE closing_month = $1
+                  AND status = 'running'
+                  AND (
+                      execution_lease_until <= now()
+                      OR (
+                          execution_lease_until IS NULL
+                          AND heartbeat_at < now() - interval '2 hours'
+                      )
+                  )
+                ORDER BY created_at DESC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                month,
+            )
+            if stale is not None:
+                stale_id = int(stale["id"])
+                await conn.execute(
+                    """
+                    UPDATE grile_monthly_reset_items
+                    SET status = 'uncertain',
+                        checkpoint_phase = 'recovery_required',
+                        recovery_code = 'recovery_required',
+                        rollback_status = CASE
+                            WHEN rollback_status = 'restored' THEN rollback_status
+                            ELSE 'failed'
+                        END,
+                        error_message = COALESCE(error_message, 'stale_operation_recovery_required'),
+                        updated_at = now()
+                    WHERE operation_id = $1
+                      AND status IN ('running', 'completed', 'uncertain')
+                      AND rollback_status IS DISTINCT FROM 'restored'
+                    """,
+                    stale_id,
+                )
+                await conn.execute(
+                    """
+                    UPDATE grile_monthly_operations
+                    SET status = 'failed',
+                        error_message = 'stale_operation_recovery_required',
+                        reconciliation_classification = 'recovery_required',
+                        reconciled_at = now(),
+                        finished_at = now(),
+                        heartbeat_at = now(),
+                        execution_lease_until = NULL
+                    WHERE id = $1 AND status = 'running'
+                    """,
+                    stale_id,
+                )
+
             active = await conn.fetchrow(
                 f"""
                 SELECT {_OPERATION_COLUMNS}
@@ -645,6 +699,8 @@ async def mark_cancelled_uncertain(
                 """,
                 operation_id,
                 error_message,
+                execution_owner,
+                execution_epoch,
             )
             row = await conn.fetchrow(
                 """
@@ -1274,7 +1330,12 @@ async def claim_reconciliation_candidates(
                 limit,
                 lease_seconds,
             )
-    return [operation_to_dict(row) for row in rows if operation_to_dict(row) is not None]
+    operations: list[dict[str, Any]] = []
+    for row in rows:
+        operation = operation_to_dict(row)
+        if operation is not None:
+            operations.append(operation)
+    return operations
 
 
 async def mark_reconciliation_result(

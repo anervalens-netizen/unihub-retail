@@ -26,7 +26,8 @@ class _Acquire:
 @pytest.mark.asyncio
 async def test_tasks_repository_uses_bounded_stable_pagination() -> None:
     connection = AsyncMock()
-    connection.fetch.return_value = [{"id": 7, "total_count": 12}]
+    connection.fetchval.return_value = 12
+    connection.fetch.return_value = [{"id": 7}]
     pool = MagicMock()
     pool.acquire.return_value = _Acquire(connection)
 
@@ -38,10 +39,12 @@ async def test_tasks_repository_uses_bounded_stable_pagination() -> None:
         offset=6,
     )
 
-    assert rows == [{"id": 7, "total_count": 12}]
+    assert rows == [{"id": 7}]
     assert total == 12
+    count_sql, count_status, count_assignee, count_site = connection.fetchval.await_args.args
+    assert "SELECT COUNT(*) FROM tasks" in count_sql
+    assert (count_status, count_assignee, count_site) == ("deschis", "%Ana%", "S1")
     sql, status, assignee, site_code, limit, offset = connection.fetch.await_args.args
-    assert "COUNT(*) OVER() AS total_count" in sql
     assert "ORDER BY" in sql and "id ASC" in sql
     assert "LIMIT $4 OFFSET $5" in sql
     assert (status, assignee, site_code, limit, offset) == ("deschis", "%Ana%", "S1", 3, 6)
@@ -50,6 +53,7 @@ async def test_tasks_repository_uses_bounded_stable_pagination() -> None:
 @pytest.mark.asyncio
 async def test_hr_repository_uses_bounded_stable_pagination() -> None:
     connection = AsyncMock()
+    connection.fetchval.return_value = 9
     connection.fetch.return_value = []
     pool = MagicMock()
     pool.acquire.return_value = _Acquire(connection)
@@ -62,9 +66,11 @@ async def test_hr_repository_uses_bounded_stable_pagination() -> None:
     )
 
     assert rows == []
-    assert total == 0
+    assert total == 9
+    count_sql, count_status, count_agent = connection.fetchval.await_args.args
+    assert "SELECT COUNT(*) FROM leave_requests" in count_sql
+    assert (count_status, count_agent) == ("pending", "%Ana%")
     sql, status, agent_name, limit, offset = connection.fetch.await_args.args
-    assert "COUNT(*) OVER() AS total_count" in sql
     assert "ORDER BY created_at DESC, id DESC" in sql
     assert "LIMIT $3 OFFSET $4" in sql
     assert (status, agent_name, limit, offset) == ("pending", "%Ana%", 4, 8)

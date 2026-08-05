@@ -17,7 +17,7 @@ Environment="SESSION_VALKEY_DATABASE=0"
 Environment="RATE_LIMIT_VALKEY_PORT=6380"
 Environment="RATE_LIMIT_VALKEY_DATABASE=1"
 ExecStartPre=/usr/bin/timeout 90 /usr/bin/bash -c 'until (: >/dev/tcp/127.0.0.1/6380) 2>/dev/null; do sleep 1; done'
-ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 9898 --workers 1 --no-proxy-headers
+ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 9898 --workers 2 --no-proxy-headers
 Restart=always
 RestartSec=5
 TimeoutStartSec=120

@@ -382,7 +382,7 @@ async def test_queue_down_fails_monthly_reservation_without_hanging(
         assert row["status"] == "failed"
         operation_id = int(row["id"])
         assert row["job_id"] == f"grile-monthly:{operation_id}"
-        assert "coada" in str(row["error_message"])
+        assert row["error_message"] == jobs.MONTHLY_QUEUE_PUBLISH_FAILED
     finally:
         async with pool.acquire() as conn:
             await conn.execute(

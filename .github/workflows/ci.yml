@@ -62,14 +62,14 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
+            backend/requirements.lock
+            backend/requirements-dev.lock
 
       - name: Prepare Python environment
         run: |
           python -m venv venv
           venv/bin/pip install --disable-pip-version-check --quiet \
-            -r requirements.txt -r requirements-dev.txt
+            --require-hashes -r requirements-dev.lock
 
       - name: Runtime dependency smoke
         run: |
@@ -78,12 +78,12 @@ jobs:
           runtime_venv="$runtime_root/venv"
           python -m venv "$runtime_venv"
           "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet \
-            -r requirements.txt
+            --require-hashes -r requirements.lock
           "$runtime_venv/bin/pip" check
           "$runtime_venv/bin/python" -c "import auth; import main; import worker"
 
       - name: Python dependency vulnerability audit
-        run: venv/bin/pip-audit -r requirements.txt --strict --progress-spinner off
+        run: venv/bin/pip-audit -r requirements.lock --strict --progress-spinner off
 
       - name: Tracked secret regression scan
         working-directory: .

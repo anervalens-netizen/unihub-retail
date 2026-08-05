@@ -2432,6 +2432,7 @@ async def test_reconciler_crash_after_clear_restores_once(
     assert await grile.reconcile_monthly_operations(object(), adapter) == 1
     assert adapter.writes == ["restore"]
     result.assert_awaited_once()
+    assert result.await_args is not None
     assert result.await_args.kwargs["classification"] == "rolled_back"
     assert confirm.await_count == 1
 
@@ -2461,6 +2462,7 @@ async def test_reconciler_legacy_unknown_is_fail_closed_without_google_write(
 
     assert await grile.reconcile_monthly_operations(object(), NoGoogle()) == 1
     recovery.assert_awaited_once()
+    assert result.await_args is not None
     assert result.await_args.kwargs["classification"] == "recovery_required"
 
 

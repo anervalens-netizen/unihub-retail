@@ -59,13 +59,19 @@ class TasksRepository:
             idx += 1
 
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        params.extend([limit, offset])
         async with self.pool.acquire() as conn:
+            total = int(
+                await conn.fetchval(
+                    f"SELECT COUNT(*) FROM tasks {where}",
+                    *params,
+                )
+                or 0
+            )
+            page_params = [*params, limit, offset]
             rows = await conn.fetch(
                 f"""
                 SELECT id, title, assignee, site_code, deadline::text, status, source, source_meta,
-                       created_at::text, updated_at::text,
-                       COUNT(*) OVER() AS total_count
+                       created_at::text, updated_at::text
                 FROM tasks
                 {where}
                 ORDER BY
@@ -75,9 +81,8 @@ class TasksRepository:
                     id ASC
                 LIMIT ${idx} OFFSET ${idx + 1}
                 """,
-                *params,
+                *page_params,
             )
-        total = int(rows[0]["total_count"]) if rows else 0
         return rows, total
 
     async def update_task(self, task_id: int, data: dict[str, Any]) -> asyncpg.Record | None:

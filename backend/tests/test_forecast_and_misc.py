@@ -24,28 +24,28 @@ class TestForecastFactor:
     @pytest.mark.asyncio
     async def test_final_month(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=True, last_sale_day=31, days_in_month=31)
+        conn.fetchrow.return_value = FakeRow(is_final=True, last_sale_date="2026-05-31", business_factor=1.4)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 1.0
 
     @pytest.mark.asyncio
     async def test_partial_month(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_day=15, days_in_month=30)
+        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_date="2026-05-15", business_factor=2.0)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 2.0
 
     @pytest.mark.asyncio
     async def test_no_last_sale_day(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_day=None, days_in_month=31)
+        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_date=None, business_factor=2.0)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 1.0
 
     @pytest.mark.asyncio
-    async def test_zero_last_sale_day(self):
+    async def test_missing_business_calendar_does_not_invent_extrapolation(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_day=0, days_in_month=31)
+        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_date="2026-05-15", business_factor=None)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 1.0
 
@@ -58,17 +58,9 @@ class TestVisitsReportImport:
     @pytest.mark.asyncio
     async def test_undated_visit_is_returned_in_explicit_bucket(self, monkeypatch):
         from services.visits_report import VisitsReportService
-        import services.visits_report as visits_report_module
-
-        monkeypatch.setattr(
-            visits_report_module,
-            "get_visits_read_source",
-            lambda: "sqlite",
-        )
 
         repo = MagicMock()
-        repo.db_exists.return_value = True
-        repo.query_tree.return_value = [
+        repo.query_tree = AsyncMock(return_value=[
             {
                 "id": "visit-1",
                 "team_leader_name": "TL",
@@ -83,7 +75,7 @@ class TestVisitsReportImport:
                 "foto3": None,
                 "foto4": None,
             }
-        ]
+        ])
         service = VisitsReportService(repo)
         service._resolve_store_scope = AsyncMock(return_value=({}, None))
 

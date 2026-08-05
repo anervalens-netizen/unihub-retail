@@ -153,6 +153,8 @@ async def test_incentive_export_handles_missing_campaign_multiple_periods_and_un
             },
             "include_closed_stores": True,
             "selected_days": [1, 20],
+            "limit": 50001,
+            "include_total_count": False,
         }
     ]
     assert result["rows"] == [

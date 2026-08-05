@@ -686,11 +686,15 @@ async def mark_reset_item_running(
     *,
     operation_id: int,
     site_code: str,
+    execution_owner: str | None = None,
+    execution_epoch: int | None = None,
 ) -> bool:
     return await persist_reset_item_claim(
         pool,
         operation_id=operation_id,
         site_code=site_code,
+        execution_owner=execution_owner,
+        execution_epoch=execution_epoch,
     )
 
 

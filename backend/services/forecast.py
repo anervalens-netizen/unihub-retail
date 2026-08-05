@@ -13,33 +13,61 @@ from typing import Any
 
 
 async def get_forecast_factor(conn: Any, month: str) -> float:
-    """Factor de extrapolare: zile_luna / ultima_zi_vanzari.
+    """Returnează factorul ponderat de calendarul business al forecastului.
 
-    Returnează 1.0 dacă luna e finalizată (nu mai extrapolăm).
-    Folosit pentru a proiecta vânzările parțiale ale lunii curente la
-    valoarea estimată finală — util pentru scoruri CRM și performanța ASM.
+    Pentru o lună parțială folosim distribuția zilnică din ultima rulare AI
+    finalizată, nu raportul implicit zile calendaristice/zi curentă. Dacă
+    modelul business lipsește sau nu are greutate până la cutoff, nu inventăm
+    extrapolare: factorul rămâne 1.0.
     """
     meta = await conn.fetchrow(
         """
+        WITH month_meta AS (
+            SELECT
+                COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
+                MAX(rid.sale_date) AS last_sale_date
+            FROM import_snapshots snap
+            LEFT JOIN (
+                SELECT MAX(sale_date) AS sale_date
+                FROM reporting_item_day
+                WHERE import_month = $1
+            ) rid ON true
+            WHERE snap.import_month = $1
+        ),
+        latest_business_run AS (
+            SELECT run.id
+            FROM ai_forecast_runs run
+            WHERE run.status = 'completed'
+              AND run.metric = 'sales_value'
+              AND run.horizon = 'current_month'
+              AND run.forecast_month = $1
+            ORDER BY run.generated_at DESC, run.id DESC
+            LIMIT 1
+        ),
+        business_weights AS (
+            SELECT
+                SUM(GREATEST(day.forecast_sales, 0)) AS total_weight,
+                SUM(GREATEST(day.forecast_sales, 0)) FILTER (
+                    WHERE day.forecast_date <= month_meta.last_sale_date
+                ) AS elapsed_weight
+            FROM ai_forecast_store_day day
+            JOIN latest_business_run run ON run.id = day.run_id
+            CROSS JOIN month_meta
+        )
         SELECT
-            COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
-            EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
-            EXTRACT(DAY FROM (
-                date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
-                + INTERVAL '1 month - 1 day'
-            ))::INT AS days_in_month
-        FROM import_snapshots snap
-        LEFT JOIN (
-            SELECT MAX(sale_date) AS sale_date
-            FROM reporting_item_day
-            WHERE import_month = $1
-        ) rid ON true
-        WHERE snap.import_month = $1
+            month_meta.is_final,
+            month_meta.last_sale_date,
+            CASE
+                WHEN business_weights.total_weight > 0
+                 AND business_weights.elapsed_weight > 0
+                THEN business_weights.total_weight / business_weights.elapsed_weight
+                ELSE NULL
+            END AS business_factor
+        FROM month_meta
+        CROSS JOIN business_weights
         """,
         month,
     )
-    if meta and not meta["is_final"] and meta["last_sale_day"]:
-        last_day = int(meta["last_sale_day"])
-        days_in_month = int(meta["days_in_month"] or last_day)
-        return days_in_month / last_day if last_day > 0 else 1.0
+    if meta and not meta["is_final"] and meta["last_sale_date"] and meta["business_factor"]:
+        return max(1.0, float(meta["business_factor"]))
     return 1.0

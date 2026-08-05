@@ -58,7 +58,7 @@ class HrService:
     async def get_asm_performance(self, month: str, regional: str | None) -> list[dict]:
         pg_rows = await self.repo.get_asm_performance_rows(month, regional)
         snapshot_rows = await self.repo.get_visits_snapshot(month)
-        sqlite_map = {r["asm"]: dict(r) for r in snapshot_rows}
+        visits_map = {r["asm"]: dict(r) for r in snapshot_rows}
 
         async with self.repo.pool.acquire() as conn:
             forecast_factor = await get_forecast_factor(conn, month)
@@ -67,7 +67,7 @@ class HrService:
         result = []
         for pg in pg_rows:
             asm = pg["asm"]
-            sq = sqlite_map.get(asm, {})
+            sq = visits_map.get(asm, {})
             total_sales = float(pg["total_sales"] or 0)
             total_target = float(pg["total_target"] or 0)
             forecast_sales = total_sales * forecast_factor

@@ -261,7 +261,7 @@ class ExportsService:
         include_closed_stores = bool(request.get("include_closed_stores", False))
 
         if dataset == "incentive_products":
-            result = await self._build_incentive_products_report(
+            incentive_result = await self._build_incentive_products_report(
                 months=months,
                 filters=self._normalize_filters(request.get("filters") or {}),
                 include_closed_stores=include_closed_stores,
@@ -269,7 +269,7 @@ class ExportsService:
                 row_limit=row_limit,
                 preview_limit=preview_limit,
             )
-            return result
+            return incentive_result
 
         dimensions = self._valid_keys(
             request.get("dimensions"),
@@ -428,16 +428,16 @@ class ExportsService:
         rows = list(rows_by_key.values())
         rows.sort(key=lambda row: tuple(str(row.get(dim) or "") for dim in dimensions))
         self._validate_export_budget(len(rows), len(columns), operation="Raportul")
-        result = {
+        standard_result = {
             "columns": columns,
             "rows": [self._public_row(row, columns) for row in rows[:preview_limit] if preview_limit is not None]
             if preview_limit is not None
             else [self._public_row(row, columns) for row in rows],
         }
         if preview_limit is None:
-            return result, len(rows)
+            return standard_result, len(rows)
         total_count = self._record_total_count(total_records)
-        return result, total_count if total_count is not None else max(len(total_records), len(rows))
+        return standard_result, total_count if total_count is not None else max(len(total_records), len(rows))
 
     async def _build_incentive_products_report(
         self,

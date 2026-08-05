@@ -443,7 +443,7 @@ async def enqueue_sales_import(
     filename: str,
     *,
     cutoff_date: str | None = None,
-    requested_by_sub: str = "legacy-direct",
+    requested_by_sub: str = "unknown",
 ) -> Job:
     pool = await _require_arq_pool()
     digest = sha256(file_content).hexdigest()

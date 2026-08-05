@@ -58,21 +58,26 @@ class HrRepository:
             params.append(f"%{agent_name}%")
             idx += 1
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        params.extend([limit, offset])
         async with self.pool.acquire() as conn:
+            total = int(
+                await conn.fetchval(
+                    f"SELECT COUNT(*) FROM leave_requests {where}",
+                    *params,
+                )
+                or 0
+            )
+            page_params = [*params, limit, offset]
             rows = await conn.fetch(
                 f"""
                 SELECT id, agent_name, start_date::text, end_date::text, leave_type, notes,
-                       status, created_at::text, updated_at::text,
-                       COUNT(*) OVER() AS total_count
+                       status, created_at::text, updated_at::text
                 FROM leave_requests
                 {where}
                 ORDER BY created_at DESC, id DESC
                 LIMIT ${idx} OFFSET ${idx + 1}
                 """,
-                *params,
+                *page_params,
             )
-        total = int(rows[0]["total_count"]) if rows else 0
         return rows, total
 
     async def get_agent_performance(self, agent_name: str) -> list[asyncpg.Record]:

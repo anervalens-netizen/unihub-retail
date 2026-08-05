@@ -180,10 +180,7 @@ async def test_lifespan_cleanup_continues_after_cleanup_failure(
     monkeypatch.setattr(main, "attach_db_error_handler", lambda _pool: None)
     monkeypatch.setattr(main, "verify_migrations_current", AsyncMock())
     monkeypatch.setattr(main, "prewarm_pool", AsyncMock())
-    monkeypatch.setattr(main, "sync_visits_snapshot", AsyncMock(return_value=0))
-    monkeypatch.setattr(main, "prewarm_special_cards_cache", lambda: None)
     monkeypatch.setattr(main, "get_arq_pool", AsyncMock())
-    monkeypatch.setattr(main, "update_business_metrics", AsyncMock())
 
     async def close_arq() -> None:
         events.append("arq")
