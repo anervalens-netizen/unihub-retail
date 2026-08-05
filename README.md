@@ -143,9 +143,10 @@ produce 409 înainte de orice scenariu sau revision write.
 
 P2 adaugă faze fixe pentru Grile, raport PostgreSQL read-only, export XLSX
 spooled/chunked, LCP/INP cu cardinalitate limitată și gate browser PWA
-N -> N+1 -> rollback. Acestea nu închid singure acceptanța de performanță:
-fereastra de 7 zile cu minimum 100 requesturi per rută rămâne deschisă, iar P3
-nu începe până la măsurarea ei. Baseline-ul și limitele sunt în
+N -> N+1 -> rollback. Fereastra de 7 zile cu minimum 100 requesturi per rută
+rămâne criteriu separat de acceptanță SLO în trafic real; nu este finding în
+registrul tehnic M/R/N și nu blochează loturile P2/P3 definite în secțiunea 14
+din planul tehnic 2026-08-04. Baseline-ul și limitele sunt în
 [`docs/PERFORMANCE_REVIEW_2026-07-22.md`](docs/PERFORMANCE_REVIEW_2026-07-22.md).
 
 ## Setup local

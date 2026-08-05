@@ -2893,6 +2893,8 @@ async def reconcile_monthly_operations(
                             snapshot,
                         )
                         restored = True
+                    except asyncio.CancelledError:
+                        raise
                     except BaseException:  # noqa: BLE001 - recovery is fail-closed
                         restored = False
                     confirmed = await persist_reset_rollback_confirmation(
