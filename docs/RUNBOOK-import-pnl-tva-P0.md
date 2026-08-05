@@ -43,8 +43,9 @@ nu este înlocuită cu euristica „workbook mai dens”.
   `--rollback-generation UUID --expected-manifest-sha SHA256`, ambele blocate
   operațional în P0-B înainte de conectarea DB.
 
-Stagingul cere `FINANCE_PNL_DATABASE_URL`, diferit de `DATABASE_URL`, și rolul
-exact `unihub_finance_import`. Directorul de input trebuie să conțină exact
+Stagingul cere `FINANCE_PNL_DATABASE_URL`, diferit de `DATABASE_URL`, și
+principalul exact `unihub_finance_import_worker`, membru exclusiv al autorității
+`unihub_finance_import`. Directorul de input trebuie să conțină exact
 sursele declarate; parserul hash-uiește bytes înainte de parse, refuză symlink,
 rename, source/hash mismatch, luni nedeclarate și mix detail/summary între
 revizii. Candidatele, pre-image-ul și ledgerul sunt immutable. Apply-ul intern

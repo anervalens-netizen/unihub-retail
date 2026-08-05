@@ -644,7 +644,7 @@ formal și dovezile live se completează în 16.5 după gate/QA/deploy.
 
 Migrații immutable:
 
-- 040 `57650ba43c1474a547b7820d30a0660b377473defba5434252819cb4f7f08ab9`;
+- 040 `3dffd6209fa931a87d3cceb14a6951f4b6c3b0cd7fa36fc45ae47ad84233be22`;
 - 041 `3ef80c2fbd3b5fb3d68c019d34c17cb17a96b19fc9d7da2e845b96ee8a9587e3`.
 
 Contractul rezultat:
@@ -652,8 +652,9 @@ Contractul rezultat:
 - grupuri NOLOGIN separate pentru web-read, business-write, sales import,
   Finance import, operations și migrate; grants numai pe obiecte enumerate;
 - patru LOGIN-uri de proces verificate la conectare, cu set exact de membershipuri
-  directe/tranzitive și opțiuni, fără superuser, replication, create
-  role/database/schema ori bypass RLS; autoritatea lipsă este fatală în production;
+  directe/tranzitive și opțiuni, fără granturi directe, default ACL, obiecte
+  deținute, superuser, replication, create role/database/schema ori bypass RLS;
+  autoritatea lipsă este fatală în production;
 - ownerul obiectelor este NOLOGIN `unihub_schema_owner`; runnerul NOINHERIT îl
   activează numai tranzacțional cu `SET LOCAL ROLE`;
 - stagingul sales, promotion ledgerul și evidence-ul shadow sunt append-only;

@@ -316,6 +316,7 @@ async def connect_finance() -> asyncpg.Connection:
         await verify_database_connection_authority(connection, "finance_import")
         return connection
     except RuntimeError as exc:
+        await connection.close()
         raise PnlImportError(
             "Conexiunea P&L trebuie sa foloseasca exclusiv principalul Finance dedicat."
         ) from exc

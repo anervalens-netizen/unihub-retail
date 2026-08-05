@@ -9,7 +9,10 @@ import re
 from urllib.parse import unquote, urlparse
 
 from config import DATABASE_AUTHORITY_CONTRACTS, DatabaseAuthority
-from db.connection import connect_database_url
+from db.connection import (
+    connect_database_url,
+    database_principal_has_direct_authority,
+)
 
 
 ROLE_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
@@ -124,6 +127,10 @@ async def provision(
                 raise RuntimeError("Service LOGIN must not be privileged")
             if bool(service_role["rolinherit"]) == migration_contract:
                 raise RuntimeError("Service LOGIN inheritance flag does not match its authority contract")
+            if await database_principal_has_direct_authority(owner, role):
+                raise RuntimeError(
+                    "Service LOGIN must not have direct grants, default privileges, or ownership"
+                )
             for authority_role in sorted(authority_roles):
                 options = "INHERIT FALSE, SET FALSE" if migration_contract else "INHERIT TRUE, SET FALSE"
                 await owner.execute(

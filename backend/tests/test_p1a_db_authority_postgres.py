@@ -13,7 +13,11 @@ import asyncpg
 import pytest
 
 from db.migration_runner import run_migrations
-from db.connection import get_pool, verify_database_connection_authority
+from db.connection import (
+    database_principal_has_direct_authority,
+    get_pool,
+    verify_database_connection_authority,
+)
 from config import DATABASE_AUTHORITY_CONTRACTS
 from scripts.provision_runtime_database_role import provision
 
@@ -55,6 +59,11 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "store_pnl shadow evidence is append-only" in sql
     assert "category_name, amount" in sql
     assert "NOBYPASSRLS NOREPLICATION" in sql
+    assert "ON salary_records TO unihub_operations" not in sql
+    assert (
+        "REVOKE ALL ON SEQUENCE store_pnl_generation_ledger_id_seq\n"
+        "FROM PUBLIC, unihub_web_read, unihub_business_write, unihub_sales_import,"
+    ) in sql
 
     owner_sql = OWNER_MIGRATION.read_text(encoding="utf-8")
     assert "CREATE ROLE unihub_schema_owner" in owner_sql
@@ -84,8 +93,10 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
         "web": (f"p1a_web_{uuid4().hex[:12]}", token_urlsafe(48), True),
         "migrate": (f"p1a_migrate_{uuid4().hex[:12]}", token_urlsafe(48), False),
         "invalid": (f"p1a_invalid_{uuid4().hex[:12]}", token_urlsafe(48), True),
+        "direct": (f"p1a_direct_{uuid4().hex[:12]}", token_urlsafe(48), True),
     }
     unexpected_role = f"p1a_extra_{uuid4().hex[:12]}"
+    directly_owned_table = f"p1a_direct_owned_{uuid4().hex[:12]}"
     owner = await asyncpg.connect(owner_url)
     try:
         for principal, password, inherits in principals.values():
@@ -142,6 +153,45 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
             invalid_principal,
         )
 
+        direct_principal, direct_password, _ = principals["direct"]
+        direct_url = urlunsplit(
+            (
+                parsed.scheme,
+                f"{quote(direct_principal)}:{quote(direct_password, safe='')}@{parsed.hostname}:{parsed.port}",
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+        await owner.execute(f'GRANT SELECT ON TABLE stores TO "{direct_principal}"')
+        with pytest.raises(RuntimeError, match="direct grants, default privileges, or ownership"):
+            await provision(
+                owner_url,
+                direct_url,
+                authority_roles=frozenset(
+                    {"unihub_web_read", "unihub_business_write"}
+                ),
+            )
+        assert not await owner.fetchval(
+            "SELECT pg_has_role($1, 'unihub_web_read', 'member')",
+            direct_principal,
+        )
+        await owner.execute(f'REVOKE SELECT ON TABLE stores FROM "{direct_principal}"')
+
+        await owner.execute(f'CREATE TABLE "{directly_owned_table}" (id integer)')
+        await owner.execute(
+            f'ALTER TABLE "{directly_owned_table}" OWNER TO "{direct_principal}"'
+        )
+        with pytest.raises(RuntimeError, match="direct grants, default privileges, or ownership"):
+            await provision(
+                owner_url,
+                direct_url,
+                authority_roles=frozenset(
+                    {"unihub_web_read", "unihub_business_write"}
+                ),
+            )
+        await owner.execute(f'DROP TABLE "{directly_owned_table}"')
+
         web_principal, web_password, _ = principals["web"]
         web_url = urlunsplit(
             (
@@ -194,6 +244,7 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
         finally:
             await migrate.close()
     finally:
+        await owner.execute(f'DROP TABLE IF EXISTS "{directly_owned_table}"')
         await owner.execute(f'DROP ROLE IF EXISTS "{unexpected_role}"')
         for principal, _, _ in principals.values():
             await owner.execute(f'DROP ROLE IF EXISTS "{principal}"')
@@ -303,6 +354,10 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 assert await principal_connection.fetchval(
                     "SELECT pg_has_role(session_user, $1, 'member')", authority
                 )
+                assert not await database_principal_has_direct_authority(
+                    connection,
+                    principal,
+                )
 
             for authority, principal_connection in principal_connections.items():
                 has_temporary = bool(
@@ -372,6 +427,15 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 operations, "DELETE FROM grile_runs WHERE run_month = '2197-09'"
             )
             await _expect_denied(operations, "SELECT * FROM sales_import_stage_rows")
+            await _expect_denied(operations, "SELECT * FROM salary_records")
+            await _expect_denied(operations, "SELECT * FROM historical_monthly_sales")
+            await _expect_denied(operations, "SELECT * FROM store_pnl_site_links")
+
+            # Ledger numbering is owned by the definer function, not Finance.
+            await _expect_denied(
+                finance,
+                "SELECT nextval('store_pnl_generation_ledger_id_seq')",
+            )
 
             # Reporting rebuild needs explicit TRUNCATE/MAINTAIN, not table ownership.
             await sales.execute("TRUNCATE premium_glass_item_models")

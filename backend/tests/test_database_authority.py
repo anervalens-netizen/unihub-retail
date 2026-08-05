@@ -28,6 +28,7 @@ class _AuthorityConnection:
     effective_memberships: frozenset[str] = frozenset(
         {"unihub_web_read", "unihub_business_write"}
     )
+    direct_authority: bool = False
 
     async def fetchrow(self, _sql: str) -> dict[str, object]:
         return {
@@ -53,6 +54,9 @@ class _AuthorityConnection:
                 for role_name, inherit_option, set_option in self.direct_memberships
             ]
         return [{"rolname": role_name} for role_name in self.effective_memberships]
+
+    async def fetchval(self, _sql: str, _principal: str) -> bool:
+        return self.direct_authority
 
 
 @pytest.mark.asyncio
@@ -108,6 +112,15 @@ async def test_authority_rejects_arbitrary_transitive_membership() -> None:
                     {"unihub_web_read", "unihub_business_write", "pg_read_all_data"}
                 )
             ),
+            "web",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_authority_rejects_direct_acl_or_object_ownership() -> None:
+    with pytest.raises(RuntimeError, match="direct grants, default privileges, or ownership"):
+        await connection_module.verify_database_connection_authority(
+            _AuthorityConnection(direct_authority=True),
             "web",  # type: ignore[arg-type]
         )
 

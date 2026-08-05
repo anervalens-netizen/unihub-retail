@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 import services.store_pnl_import as store_pnl_import_module
+import scripts.import_store_pnl as import_store_pnl_script
 
 from scripts.import_store_pnl import (
     UNALLOCATED_SOURCE,
@@ -203,6 +204,31 @@ async def test_apply_rejects_runtime_database_role_before_transaction(
         await apply_generation(connection, uuid4(), SHA_A)
     verify.assert_awaited_once_with(connection, "finance_import")
     assert not connection.transaction.called
+
+
+@pytest.mark.anyio
+async def test_finance_connection_is_closed_when_authority_verification_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = MagicMock()
+    connection.close = AsyncMock()
+    monkeypatch.setenv("FINANCE_PNL_DATABASE_URL", "postgresql://finance.invalid/test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://runtime.invalid/test")
+    monkeypatch.setattr(
+        import_store_pnl_script,
+        "connect_database_url",
+        AsyncMock(return_value=connection),
+    )
+    monkeypatch.setattr(
+        import_store_pnl_script,
+        "verify_database_connection_authority",
+        AsyncMock(side_effect=RuntimeError("wrong principal")),
+    )
+
+    with pytest.raises(PnlImportError, match="principalul Finance dedicat"):
+        await import_store_pnl_script.connect_finance()
+
+    connection.close.assert_awaited_once()
 
 
 @pytest.mark.anyio

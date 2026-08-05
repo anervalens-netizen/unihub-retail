@@ -259,20 +259,14 @@ GRANT SELECT ON TABLE store_pnl_shadow_pointer TO unihub_operations;
 GRANT SELECT ON TABLE
     team_leaders,
     stores,
-    historical_monthly_sales,
     reporting_agent_month,
     reporting_item_day,
     reporting_item_month,
     store_targets,
     agent_targets,
     grile_sheets,
-    store_pnl_monthly,
-    store_pnl_site_links
+    store_pnl_monthly
 TO unihub_operations;
-GRANT SELECT (
-    id, year, month, full_name, total_salary, company_name, site_code,
-    locatie, created_at, person_id
-) ON salary_records TO unihub_operations;
 GRANT SELECT, INSERT, UPDATE ON TABLE
     grile_runs,
     grile_store_status,
@@ -330,6 +324,9 @@ REVOKE ALL ON TABLE
     store_pnl_shadow_preimage_rows,
     store_pnl_shadow_pointer
 FROM unihub_sales_import, unihub_finance_import, unihub_operations;
+REVOKE ALL ON SEQUENCE store_pnl_generation_ledger_id_seq
+FROM PUBLIC, unihub_web_read, unihub_business_write, unihub_sales_import,
+    unihub_finance_import, unihub_operations, unihub_migrate;
 REVOKE UPDATE, DELETE ON TABLE sales_import_stage_rows FROM unihub_sales_import;
 
 DO $$
