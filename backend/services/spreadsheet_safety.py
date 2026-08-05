@@ -2,13 +2,95 @@
 from __future__ import annotations
 
 import math
+import io
+import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Iterable
+from xml.etree import ElementTree
 
 
 _DANGEROUS_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
+_OLE_COMPOUND_MAGIC = bytes.fromhex("d0cf11e0a1b11ae1")
+
+
+class SpreadsheetUploadError(ValueError):
+    """The uploaded spreadsheet exceeded a structural safety boundary."""
+
+
+@dataclass(frozen=True)
+class SpreadsheetUploadLimits:
+    max_members: int = 2_048
+    max_member_bytes: int = 64 * 1024 * 1024
+    max_uncompressed_bytes: int = 256 * 1024 * 1024
+    max_compression_ratio: int = 100
+    max_cells: int = 2_000_000
+
+
+def validate_spreadsheet_upload(
+    content: bytes,
+    suffix: str,
+    *,
+    limits: SpreadsheetUploadLimits | None = None,
+) -> None:
+    """Validate file signature and bounded XLSX expansion before parsing."""
+
+    normalized_suffix = suffix.casefold()
+    if normalized_suffix == ".xls":
+        if not content.startswith(_OLE_COMPOUND_MAGIC):
+            raise SpreadsheetUploadError("Fișierul .xls are o semnătură invalidă")
+        return
+    if normalized_suffix != ".xlsx":
+        raise SpreadsheetUploadError("Format spreadsheet neacceptat")
+    if not content.startswith(b"PK"):
+        raise SpreadsheetUploadError("Fișierul .xlsx are o semnătură invalidă")
+
+    policy = limits or SpreadsheetUploadLimits()
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            members = archive.infolist()
+            if len(members) > policy.max_members:
+                raise SpreadsheetUploadError("Workbook-ul conține prea mulți membri ZIP")
+            names = {member.filename for member in members}
+            if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
+                raise SpreadsheetUploadError("Structura XLSX obligatorie lipsește")
+
+            expanded = 0
+            compressed = 0
+            for member in members:
+                if member.flag_bits & 0x1:
+                    raise SpreadsheetUploadError("Workbook-urile ZIP criptate nu sunt acceptate")
+                if member.file_size > policy.max_member_bytes:
+                    raise SpreadsheetUploadError("Un membru XLSX depășește limita permisă")
+                expanded += member.file_size
+                compressed += member.compress_size
+                if expanded > policy.max_uncompressed_bytes:
+                    raise SpreadsheetUploadError("Workbook-ul depășește bugetul decomprimat")
+            if expanded > max(compressed, 1) * policy.max_compression_ratio:
+                raise SpreadsheetUploadError("Raportul de compresie XLSX este excesiv")
+
+            cell_count = 0
+            worksheets = [
+                member
+                for member in members
+                if member.filename.startswith("xl/worksheets/")
+                and member.filename.endswith(".xml")
+            ]
+            for worksheet in worksheets:
+                with archive.open(worksheet) as stream:
+                    for _event, element in ElementTree.iterparse(stream, events=("end",)):
+                        if element.tag.rsplit("}", 1)[-1] == "c":
+                            cell_count += 1
+                            if cell_count > policy.max_cells:
+                                raise SpreadsheetUploadError(
+                                    "Workbook-ul depășește limita de celule"
+                                )
+                        element.clear()
+    except SpreadsheetUploadError:
+        raise
+    except (zipfile.BadZipFile, OSError, ElementTree.ParseError) as exc:
+        raise SpreadsheetUploadError("Workbook-ul XLSX este corupt") from exc
 
 
 @dataclass(frozen=True)

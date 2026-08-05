@@ -24,6 +24,10 @@ from schemas.erp_reconciliation import (
     ErpReconciliationResponse,
 )
 from services.dashboard.queries import _fetch_promo_incentive_summary
+from services.spreadsheet_safety import (
+    SpreadsheetUploadError,
+    validate_spreadsheet_upload,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -762,6 +766,17 @@ class ErpReconciliationService:
             )
         if not content:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raportul este gol")
+        try:
+            await asyncio.to_thread(
+                validate_spreadsheet_upload,
+                content,
+                Path(file.filename).suffix,
+            )
+        except SpreadsheetUploadError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
         try:
             date.fromisoformat(f"{import_month}-01")
         except ValueError as exc:

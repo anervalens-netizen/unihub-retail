@@ -10,13 +10,49 @@ from openpyxl import Workbook, load_workbook
 
 from services.spreadsheet_safety import (
     TrustedFormula,
+    SpreadsheetUploadError,
+    SpreadsheetUploadLimits,
     append_openpyxl_row,
     csv_cell_value,
     google_sheets_value,
     sanitize_dataframe_text,
     sanitize_spreadsheet_text,
     spreadsheet_cell_value,
+    validate_spreadsheet_upload,
 )
+
+
+def workbook_bytes(rows: int = 1) -> bytes:
+    workbook = Workbook()
+    for index in range(rows):
+        workbook.active.cell(row=index + 1, column=1, value=index)
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def test_xlsx_structural_preflight_accepts_bounded_workbook() -> None:
+    validate_spreadsheet_upload(workbook_bytes(2), ".xlsx")
+
+
+def test_spreadsheet_preflight_rejects_signature_and_cell_budget() -> None:
+    with pytest.raises(SpreadsheetUploadError, match="semnătură"):
+        validate_spreadsheet_upload(b"not-a-workbook", ".xlsx")
+    with pytest.raises(SpreadsheetUploadError, match="celule"):
+        validate_spreadsheet_upload(
+            workbook_bytes(2),
+            ".xlsx",
+            limits=SpreadsheetUploadLimits(max_cells=1),
+        )
+
+
+def test_spreadsheet_preflight_rejects_expansion_budget() -> None:
+    with pytest.raises(SpreadsheetUploadError, match="decomprimat"):
+        validate_spreadsheet_upload(
+            workbook_bytes(),
+            ".xlsx",
+            limits=SpreadsheetUploadLimits(max_uncompressed_bytes=1),
+        )
 
 
 @pytest.mark.parametrize(

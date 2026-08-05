@@ -48,6 +48,10 @@ from services.product_lists import (
     normalize_column_name,
     resolve_path,
 )
+from services.spreadsheet_safety import (
+    SpreadsheetUploadError,
+    validate_spreadsheet_upload,
+)
 
 logger = logging.getLogger(__name__)
 DEFAULT_MAX_SALES_UPLOAD_BYTES = 32 * 1024 * 1024
@@ -278,6 +282,17 @@ class ImportsService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Fisierul este gol",
             )
+        try:
+            await asyncio.to_thread(
+                validate_spreadsheet_upload,
+                content,
+                Path(file.filename).suffix,
+            )
+        except SpreadsheetUploadError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
 
         if cutoff_date is not None:
             source_sha256 = hashlib.sha256(content).hexdigest()
@@ -393,6 +408,17 @@ class ImportsService:
             )
         if not content:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raportul este gol")
+        try:
+            await asyncio.to_thread(
+                validate_spreadsheet_upload,
+                content,
+                Path(file.filename).suffix,
+            )
+        except SpreadsheetUploadError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
 
         data_dir = get_data_dir()
         expected_pointer_sha256 = _promo_pointer_sha256(data_dir)

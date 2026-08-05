@@ -20,6 +20,13 @@ from services.imports import ImportsService
 from services.jobs import JobResult, JobStatus
 
 
+@pytest.fixture(autouse=True)
+def bypass_structural_preflight_for_business_flow_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(imports_module, "validate_spreadsheet_upload", lambda *_args: None)
+
+
 def _service(pool: object | None = None) -> ImportsService:
     repo = MagicMock()
     repo.get_validated_sales_generation = AsyncMock(return_value=None)

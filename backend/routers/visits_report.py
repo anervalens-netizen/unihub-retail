@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import mimetypes
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -59,14 +60,31 @@ async def get_visit_photo(
     filename: str,
     svc: VisitsReportService = Depends(get_visits_service),
 ) -> FileResponse:
-    if "/" in filename or "\\" in filename or ".." in visit_id or ".." in filename:
+    if (
+        not visit_id
+        or not filename
+        or Path(visit_id).name != visit_id
+        or Path(filename).name != filename
+        or "/" in filename
+        or "\\" in filename
+        or "\\" in visit_id
+        or ".." in visit_id
+        or ".." in filename
+    ):
         raise HTTPException(status_code=400, detail="Invalid path.")
 
-    photo_path = svc.repo.photo_path(visit_id, filename).resolve()
+    visit = await svc.get_visit_detail(visit_id)
+    if filename not in visit.photos:
+        raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
+
+    raw_photo_path = svc.repo.photo_path(visit_id, filename)
+    if raw_photo_path.is_symlink():
+        raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
+    photo_path = raw_photo_path.resolve()
     images_dir = svc.repo.images_dir_path().resolve()
-    if not str(photo_path).startswith(str(images_dir)):
+    if not photo_path.is_relative_to(images_dir):
         raise HTTPException(status_code=400, detail="Invalid path.")
-    if not photo_path.exists():
+    if not photo_path.is_file():
         raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
 
     mime, _ = mimetypes.guess_type(filename)
