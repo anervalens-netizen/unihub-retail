@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import threading
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
+import services.grile_monthly as grile_monthly
 from services.grile_monthly_google import GoogleSyncAdapter, call_with_backoff
 from repositories.grile_monthly_operations import prepare_reset_clear
 
@@ -122,6 +124,26 @@ async def test_destructive_adapter_call_is_never_retried():
             destructive=True,
         )
     assert calls == ["clear"]
+
+
+@pytest.mark.asyncio
+async def test_monthly_google_wrapper_sets_deadline_below_operation_lease(monkeypatch):
+    call = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr(grile_monthly, "call_with_backoff", call)
+
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    await grile_monthly._google_request(
+        object(),
+        "clear",
+        {"spreadsheet_id": "sheet", "ranges": ["Grila!A1"]},
+        label="clear",
+        destructive=True,
+    )
+
+    deadline = call.await_args.kwargs["deadline"]
+    assert started < deadline <= started + grile_monthly.GOOGLE_OPERATION_DEADLINE_SECONDS + 0.1
+    assert grile_monthly.GOOGLE_OPERATION_DEADLINE_SECONDS < 300
 
 
 @pytest.mark.asyncio

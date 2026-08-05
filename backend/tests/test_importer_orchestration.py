@@ -273,6 +273,8 @@ async def test_import_sales_file_delegates_loaded_dataframe(
         requested_by_sub="direct-execution",
         override_reason=None,
         source_artifact_required=False,
+        source_artifact_path=None,
+        source_artifact_bytes=None,
     )
 
 

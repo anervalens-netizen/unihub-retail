@@ -347,26 +347,6 @@ class HrRepository:
                 str(months),
             )
 
-    async def get_current_month_meta(self) -> asyncpg.Record | None:
-        async with self.pool.acquire() as conn:
-            return await conn.fetchrow(
-                """
-                SELECT
-                    COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
-                    EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
-                    EXTRACT(DAY FROM (
-                        date_trunc('month', now()) + INTERVAL '1 month - 1 day'
-                    ))::INT AS days_in_month
-                FROM import_snapshots snap
-                LEFT JOIN (
-                    SELECT MAX(sale_date) AS sale_date
-                    FROM reporting_item_day
-                    WHERE import_month = to_char(now(), 'YYYY-MM')
-                ) rid ON true
-                WHERE snap.import_month = to_char(now(), 'YYYY-MM')
-                """,
-            )
-
     async def get_asm_store_breakdown(self, asm_name: str, month: str) -> list[asyncpg.Record]:
         """Date pe magazin (insulă) pentru un ASM și o lună, pentru grila salarială.
 

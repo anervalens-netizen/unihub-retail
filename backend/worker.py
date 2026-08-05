@@ -93,7 +93,6 @@ async def import_sales_background(
 ) -> dict:
     from dataclasses import asdict
     from services.importer import import_sales_file
-    from services.sales_generation_flow import attach_sales_generation_source
     from services.sales_generation_flow import mark_sales_generation_artifact_retained
 
     staged = False
@@ -134,20 +133,13 @@ async def import_sales_background(
                     stage_only=True,
                     requested_by_sub=actor,
                     source_artifact_required=True,
+                    source_artifact_path=spool_path,
+                    source_artifact_bytes=verified_size,
                 )
                 staged = True
                 assert spool_path is not None
                 assert result.generation_token is not None
                 assert result.owner_id is not None
-                await attach_sales_generation_source(
-                    conn,
-                    snapshot_id=result.snapshot_id,
-                    generation_token=result.generation_token,
-                    owner_id=result.owner_id,
-                    source_spool_path=spool_path,
-                    source_sha256=source_digest,
-                    source_byte_size=verified_size,
-                )
                 retained_path = await asyncio.to_thread(
                     retain_sales_import_spool_file,
                     spool_path,
@@ -174,20 +166,13 @@ async def import_sales_background(
                 stage_only=True,
                 requested_by_sub=actor,
                 source_artifact_required=True,
+                source_artifact_path=spool_path,
+                source_artifact_bytes=verified_size,
             )
             staged = True
             assert spool_path is not None
             assert result.generation_token is not None
             assert result.owner_id is not None
-            await attach_sales_generation_source(
-                conn,
-                snapshot_id=result.snapshot_id,
-                generation_token=result.generation_token,
-                owner_id=result.owner_id,
-                source_spool_path=spool_path,
-                source_sha256=source_digest,
-                source_byte_size=verified_size,
-            )
             retained_path = await asyncio.to_thread(
                 retain_sales_import_spool_file,
                 spool_path,

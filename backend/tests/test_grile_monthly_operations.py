@@ -215,8 +215,11 @@ async def test_reset_checkpoint_claim_and_finish_are_compare_and_set() -> None:
         async with pool.acquire() as conn:
             operation_id = await conn.fetchval(
                 """
-                INSERT INTO grile_monthly_operations (op, closing_month, dry_run, status)
-                VALUES ('reset', $1, false, 'running')
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, dry_run, status,
+                    execution_owner, execution_epoch, execution_lease_until
+                )
+                VALUES ('reset', $1, false, 'running', 'worker-a', 1, now() + interval '5 minutes')
                 RETURNING id
                 """,
                 month,
@@ -231,8 +234,14 @@ async def test_reset_checkpoint_claim_and_finish_are_compare_and_set() -> None:
         )
 
         claims = await asyncio.gather(
-            mark_reset_item_running(pool, operation_id=operation_id, site_code="SITE01"),
-            mark_reset_item_running(pool, operation_id=operation_id, site_code="SITE01"),
+            mark_reset_item_running(
+                pool, operation_id=operation_id, site_code="SITE01",
+                execution_owner="worker-a", execution_epoch=1,
+            ),
+            mark_reset_item_running(
+                pool, operation_id=operation_id, site_code="SITE01",
+                execution_owner="worker-a", execution_epoch=1,
+            ),
         )
         assert sorted(claims) == [False, True]
 
@@ -241,12 +250,16 @@ async def test_reset_checkpoint_claim_and_finish_are_compare_and_set() -> None:
             operation_id=operation_id,
             site_code="SITE01",
             status="completed",
+            execution_owner="worker-a",
+            execution_epoch=1,
         ) is True
         assert await finish_reset_item(
             pool,
             operation_id=operation_id,
             site_code="SITE01",
             status="error",
+            execution_owner="worker-a",
+            execution_epoch=1,
             error_message="late worker",
         ) is False
 
@@ -274,8 +287,11 @@ async def test_failed_reset_rollback_is_uncertain_and_blocks_retry() -> None:
         async with pool.acquire() as conn:
             operation_id = await conn.fetchval(
                 """
-                INSERT INTO grile_monthly_operations (op, closing_month, dry_run, status)
-                VALUES ('reset', $1, false, 'running')
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, dry_run, status,
+                    execution_owner, execution_epoch, execution_lease_until
+                )
+                VALUES ('reset', $1, false, 'running', 'worker-a', 1, now() + interval '5 minutes')
                 RETURNING id
                 """,
                 month,
@@ -292,12 +308,16 @@ async def test_failed_reset_rollback_is_uncertain_and_blocks_retry() -> None:
             pool,
             operation_id=operation_id,
             site_code="SITE01",
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
         assert await record_reset_item_rollback(
             pool,
             operation_id=operation_id,
             site_code="SITE01",
             restored=False,
+            execution_owner="worker-a",
+            execution_epoch=1,
             error_message="reset_rollback_failed",
         )
         await fail_monthly_operation(

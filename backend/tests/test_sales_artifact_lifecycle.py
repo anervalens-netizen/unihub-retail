@@ -13,6 +13,7 @@ import services.jobs as jobs
 from db.connection import close_db_pool, get_pool
 from services.sales_generation import SalesGenerationValidationError
 from services.sales_generation_flow import promote_sales_generation
+from services.importer import _reconcile_sales_artifacts, reserve_snapshot
 
 
 def _artifact(tmp_path: Path, content: bytes = b"sales source") -> tuple[Path, str]:
@@ -202,6 +203,60 @@ async def test_database_rejects_terminal_required_generation_without_artifact() 
             assert await conn.fetchval(
                 "SELECT status FROM import_snapshots WHERE id = $1", snapshot_id
             ) == "processing"
+            await conn.execute("DELETE FROM import_snapshots WHERE id = $1", snapshot_id)
+    finally:
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_artifact_intent_is_persisted_before_validation_and_reconciled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    pool = await get_pool()
+    month = "2099-07"
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM import_snapshots WHERE import_month = $1", month)
+            snapshot_id = await reserve_snapshot(
+                conn,
+                month,
+                "artifact-window.xlsx",
+                1,
+                source_sha256=digest,
+                source_artifact_required=True,
+                source_artifact_path=str(source),
+                source_artifact_bytes=12,
+            )
+            row = await conn.fetchrow(
+                """
+                SELECT source_spool_path, source_artifact_state, manifest
+                FROM import_snapshots WHERE id = $1
+                """,
+                snapshot_id,
+            )
+            assert dict(row) == {
+                "source_spool_path": str(source),
+                "source_artifact_state": "artifact_retaining",
+                "manifest": None,
+            }
+
+        assert snapshot_id in await _reconcile_sales_artifacts(pool)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT status, source_artifact_state FROM import_snapshots WHERE id = $1",
+                snapshot_id,
+            )
+            assert dict(row) == {
+                "status": "failed",
+                "source_artifact_state": "artifact_retained",
+            }
             await conn.execute("DELETE FROM import_snapshots WHERE id = $1", snapshot_id)
     finally:
         await close_db_pool()

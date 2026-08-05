@@ -4,6 +4,7 @@ from typing import Any
 import asyncpg
 
 from services.receipt_identity import canonical_receipt_identity_sql
+from services.forecast import business_forecast_factor_ctes
 
 
 class DashboardRepository:
@@ -80,6 +81,7 @@ class DashboardRepository:
                     SELECT MAX(sale_date) AS last_sale_date
                     FROM filtered_days
                 ),
+                {business_forecast_factor_ctes()},
                 cartele_summary AS (
                     SELECT
                         COALESCE(SUM(c.total_quantity), 0)::INT AS cartele_qty
@@ -99,17 +101,13 @@ class DashboardRepository:
                     END AS target_progress_pct,
                     CASE
                         WHEN COALESCE(mm.is_month_final, true) = false
-                             AND ls.last_sale_date IS NOT NULL
-                             AND EXTRACT(DAY FROM ls.last_sale_date) > 0
-                        THEN ROUND(ss.total_sales / EXTRACT(DAY FROM ls.last_sale_date) * mm.days_in_month, 2)
+                        THEN ROUND(ss.total_sales * fm.forecast_factor, 2)
                         ELSE ss.total_sales
                     END AS forecast_sales,
                     CASE
                         WHEN COALESCE(ts.total_target, 0) > 0
                              AND COALESCE(mm.is_month_final, true) = false
-                             AND ls.last_sale_date IS NOT NULL
-                             AND EXTRACT(DAY FROM ls.last_sale_date) > 0
-                        THEN ROUND((ss.total_sales / EXTRACT(DAY FROM ls.last_sale_date) * mm.days_in_month) * 100.0 / ts.total_target, 2)
+                        THEN ROUND((ss.total_sales * fm.forecast_factor) * 100.0 / ts.total_target, 2)
                         WHEN COALESCE(ts.total_target, 0) > 0
                         THEN ROUND(ss.total_sales * 100.0 / ts.total_target, 2)
                         ELSE NULL
@@ -136,6 +134,7 @@ class DashboardRepository:
                 LEFT JOIN month_meta mm ON mm.import_month = ss.month
                 LEFT JOIN last_sale ls ON true
                 LEFT JOIN cartele_summary cs ON true
+                CROSS JOIN forecast_meta fm
                 """,
                 *params,
             )

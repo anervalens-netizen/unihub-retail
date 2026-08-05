@@ -258,7 +258,7 @@ class ImportsService:
         file: UploadFile,
         *,
         cutoff_date: date | None = None,
-        requested_by_sub: str = "legacy-direct",
+        requested_by_sub: str = "unknown",
     ) -> ImportJobStatus:
         if not file.filename:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fișier invalid")
@@ -346,15 +346,12 @@ class ImportsService:
                     ),
                 )
 
-        if cutoff_date is None and requested_by_sub == "legacy-direct":
-            job = await enqueue_sales_import(content, filename=file.filename)
-        else:
-            job = await enqueue_sales_import(
-                content,
-                filename=file.filename,
-                cutoff_date=cutoff_date.isoformat() if cutoff_date else None,
-                requested_by_sub=requested_by_sub,
-            )
+        job = await enqueue_sales_import(
+            content,
+            filename=file.filename,
+            cutoff_date=cutoff_date.isoformat() if cutoff_date else None,
+            requested_by_sub=requested_by_sub,
+        )
         job_status = await get_job_status(job.job_id)
         return _to_public_import_status(job_status)
 

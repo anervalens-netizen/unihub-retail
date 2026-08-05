@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-
 import asyncpg
 from prometheus_client import Gauge
+
+from business_clock import business_today
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ retail_active_campaigns_products = Gauge(
 
 
 async def update_business_metrics(pool: asyncpg.Pool) -> None:
-    month = datetime.now().strftime("%Y-%m")
+    month = business_today().strftime("%Y-%m")
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(

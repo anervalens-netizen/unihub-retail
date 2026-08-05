@@ -25,6 +25,7 @@ import type {
   AiForecastStoreRow,
 } from '../api/types';
 import { formatAmount, formatInt, formatPercent } from '../lib/formatters';
+import { formatIsoDateTime, isIsoWeekendDate } from '../lib/dates';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { queryKeys } from '../lib/queryKeys';
 import type { AppFilters } from './MainLayout';
@@ -95,19 +96,8 @@ function riskLabel(deltaPct: number | null) {
   return 'In ritm';
 }
 
-function isWeekendDate(value: string) {
-  const day = new Date(`${value}T00:00:00`).getDay();
-  return day === 0 || day === 6;
-}
-
 function formatGeneratedAt(value: string | undefined): string {
-  if (!value) return '—';
-  return new Intl.DateTimeFormat('ro-RO', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
+  return formatIsoDateTime(value);
 }
 
 function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
@@ -116,7 +106,7 @@ function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
     return {
       day: point.forecast_date.slice(-2),
       date: point.forecast_date,
-      isWeekend: isWeekendDate(point.forecast_date),
+      isWeekend: isIsoWeekendDate(point.forecast_date),
       forecastDaily: point.forecast_sales,
       actualDaily: hasActual ? point.actual_sales : null,
       cumulativeForecast: point.cumulative_forecast,

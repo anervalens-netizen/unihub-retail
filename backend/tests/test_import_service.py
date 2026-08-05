@@ -77,7 +77,12 @@ async def test_sales_import_is_always_queued(
 
     assert result.job_id == "sales-import:abc"
     assert result.status == "queued"
-    enqueue.assert_awaited_once_with(b"valid", filename="sales.xlsx")
+    enqueue.assert_awaited_once_with(
+        b"valid",
+        filename="sales.xlsx",
+        cutoff_date=None,
+        requested_by_sub="unknown",
+    )
 
 
 @pytest.mark.asyncio

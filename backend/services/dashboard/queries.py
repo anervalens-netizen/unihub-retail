@@ -27,6 +27,7 @@ from services.dashboard_specials import (
     parse_promotion_definition,
 )
 from services.filters import build_scoped_params, scoped_clauses
+from services.forecast import business_forecast_factor_ctes, get_forecast_factor
 from services.incentive_db import get_incentive_campaign
 from services.promo_copurchase import (
     PromoCoPurchaseResult,
@@ -334,49 +335,11 @@ async def _get_store_incentive_multipliers(
         clauses.append("ram.sale_date <= $2")
     clauses.extend(query_clauses)
 
-    if cutoff_date is not None:
-        meta_row = await conn.fetchrow(
-            """
-            SELECT
-                false AS is_final,
-                EXTRACT(DAY FROM MAX(sale_date))::INT AS last_sale_day,
-                EXTRACT(DAY FROM (
-                    date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
-                    + INTERVAL '1 month - 1 day'
-                ))::INT AS days_in_month
-            FROM reporting_item_day
-            WHERE import_month = $1
-              AND sale_date <= $2
-            """,
-            month,
-            cutoff_date,
-        )
-    else:
-        meta_row = await conn.fetchrow(
-            """
-        SELECT
-            COALESCE(BOOL_OR(snap.is_month_final), true) AS is_final,
-            EXTRACT(DAY FROM MAX(rid.sale_date))::INT AS last_sale_day,
-            EXTRACT(DAY FROM (
-                date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
-                + INTERVAL '1 month - 1 day'
-            ))::INT AS days_in_month
-        FROM import_snapshots snap
-        LEFT JOIN (
-            SELECT MAX(sale_date) AS sale_date
-            FROM reporting_item_day
-            WHERE import_month = $1
-        ) rid ON true
-        WHERE snap.import_month = $1
-            """,
-            month,
-        )
-    if meta_row and not meta_row["is_final"] and meta_row["last_sale_day"]:
-        last_day = int(meta_row["last_sale_day"])
-        days_in_month = int(meta_row["days_in_month"] or last_day)
-        forecast_factor = days_in_month / last_day if last_day > 0 else 1.0
-    else:
-        forecast_factor = 1.0
+    forecast_factor = await get_forecast_factor(
+        conn,
+        month,
+        cutoff_date=cutoff_date,
+    )
 
     source_table = "reporting_agent_day" if cutoff_date is not None else "reporting_agent_month"
     rows = await conn.fetch(
@@ -467,27 +430,7 @@ async def _fetch_store_stats_rows(
             {_scope_join(current_scope)}
             WHERE {" AND ".join(clauses)}
         ),
-        forecast_meta AS (
-            SELECT
-                CASE
-                    WHEN COALESCE(bool_and(snap.is_month_final), true) = false
-                        AND EXTRACT(DAY FROM MAX(rid.sale_date)) > 0
-                    THEN
-                        EXTRACT(DAY FROM (
-                            date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
-                            + INTERVAL '1 month - 1 day'
-                        ))::NUMERIC
-                        / EXTRACT(DAY FROM MAX(rid.sale_date))::NUMERIC
-                    ELSE 1::NUMERIC
-                END AS forecast_factor
-            FROM import_snapshots snap
-            LEFT JOIN (
-                SELECT MAX(sale_date) AS sale_date
-                FROM reporting_item_day
-                WHERE import_month = $1
-            ) rid ON true
-            WHERE snap.import_month = $1
-        ),
+        {business_forecast_factor_ctes()},
         return_summary AS (
             SELECT
                 st.import_month,
@@ -968,27 +911,7 @@ async def _fetch_regional_stats(
                 AND stg.site_code = rs.site_code
             GROUP BY rs.regional
         ),
-        forecast_meta AS (
-            SELECT
-                CASE
-                    WHEN COALESCE(bool_and(snap.is_month_final), true) = false
-                        AND EXTRACT(DAY FROM MAX(rid.sale_date)) > 0
-                    THEN
-                        EXTRACT(DAY FROM (
-                            date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
-                            + INTERVAL '1 month - 1 day'
-                        ))::NUMERIC
-                        / EXTRACT(DAY FROM MAX(rid.sale_date))::NUMERIC
-                    ELSE 1::NUMERIC
-                END AS forecast_factor
-            FROM import_snapshots snap
-            LEFT JOIN (
-                SELECT MAX(sale_date) AS sale_date
-                FROM reporting_item_day
-                WHERE import_month = $1
-            ) rid ON true
-            WHERE snap.import_month = $1
-        ),
+        {business_forecast_factor_ctes()},
         return_summary AS (
             SELECT
                 s.regional,

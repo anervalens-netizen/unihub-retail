@@ -11,6 +11,7 @@ from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
+from business_clock import business_now
 from services.spreadsheet_safety import append_openpyxl_row
 
 from repositories.exports import ExportsRepository
@@ -696,7 +697,7 @@ class ExportsService:
         append_openpyxl_row(cfg, ["Dataset", DATASETS[request["dataset"]]["label"]])
         append_openpyxl_row(cfg, ["Luni", ", ".join(request["months"])])
         append_openpyxl_row(cfg, ["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
-        append_openpyxl_row(cfg, ["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
+        append_openpyxl_row(cfg, ["Generat", business_now().strftime("%Y-%m-%d %H:%M")])
         append_openpyxl_row(cfg, ["Randuri", len(rows)])
         for cell in cfg[1]:
             cell.font = Font(bold=True)
@@ -843,7 +844,7 @@ class ExportsService:
         append_openpyxl_row(cfg, ["Metrici zilnice", ", ".join(DAILY_EVOLUTION_METRICS[item].label for item in metrics)])
         append_openpyxl_row(cfg, ["Niveluri", ", ".join(str(COMPARISON_LEVELS[item]["label"]) for item in levels)])
         append_openpyxl_row(cfg, ["Include magazine inchise", "Da" if include_closed_stores else "Nu"])
-        append_openpyxl_row(cfg, ["Generat", datetime.now().strftime("%Y-%m-%d %H:%M")])
+        append_openpyxl_row(cfg, ["Generat", business_now().strftime("%Y-%m-%d %H:%M")])
         append_openpyxl_row(cfg, ["Randuri", total_rows])
         for cell in cfg[1]:
             cell.font = Font(bold=True)

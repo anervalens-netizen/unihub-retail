@@ -122,6 +122,25 @@ export function formatIsoDate(
   }).format(date);
 }
 
+export function formatIsoDateTime(value: string | null | undefined): string {
+  const date = value ? parseIsoDate(value) : null;
+  if (!date) return '—';
+  return new Intl.DateTimeFormat('ro-RO', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: EUROPE_BUCHAREST_TIME_ZONE,
+  }).format(date);
+}
+
+export function isIsoWeekendDate(value: string): boolean {
+  const date = parseIsoCalendarDate(value);
+  if (!date) return false;
+  const day = date.getUTCDay();
+  return day === 0 || day === 6;
+}
+
 export function formatIsoMonth(
   value: string | null | undefined,
   options: IsoDateFormatOptions = { month: 'short', year: '2-digit' },

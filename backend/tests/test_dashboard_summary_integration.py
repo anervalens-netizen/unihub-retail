@@ -12,6 +12,7 @@ Guarded by UNIHUB_TEST_DATABASE=1 so they only run under run_tests_isolated.sh.
 from __future__ import annotations
 
 import os
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -190,6 +191,8 @@ async def _seed_target(conn: asyncpg.Connection, *, site_code: str, target_value
 
 
 async def _cleanup(conn: asyncpg.Connection) -> None:
+    await conn.execute("DELETE FROM ai_forecast_runs WHERE forecast_month = $1", _TEST_MONTH)
+    await conn.execute("DELETE FROM reporting_item_day WHERE import_month = $1", _TEST_MONTH)
     await conn.execute("DELETE FROM reporting_cartela_day WHERE import_month = $1", _TEST_MONTH)
     await conn.execute("DELETE FROM sales_transactions WHERE import_month = $1", _TEST_MONTH)
     await conn.execute("DELETE FROM reporting_agent_day WHERE import_month = $1", _TEST_MONTH)
@@ -375,10 +378,7 @@ async def test_cartela_respects_site_code_scope() -> None:
             await _cleanup(conn)
 
 
-async def test_forecast_math_partial_month() -> None:
-    """For a partial month (is_month_final=false, last sale day=6, days_in_month=31):
-    forecast_sales == total_sales / 6 * 31.
-    """
+async def test_forecast_without_business_calendar_does_not_invent_growth() -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await _cleanup(conn)
@@ -399,11 +399,70 @@ async def test_forecast_math_partial_month() -> None:
             assert row["is_month_final"] is False
             assert row["imported_day_of_month"] == 6, f"imported_day_of_month should be 6, got {row['imported_day_of_month']}"
             assert row["days_in_month"] == 31, f"days_in_month should be 31 (May), got {row['days_in_month']}"
-            total_sales = row["total_sales"]
-            expected_forecast = (total_sales / Decimal("6") * Decimal("31")).quantize(Decimal("0.01"))
-            assert row["forecast_sales"] == expected_forecast, (
-                f"forecast_sales should be {expected_forecast} (={total_sales}/6*31), got {row['forecast_sales']}"
+            assert row["forecast_sales"] == row["total_sales"]
+        finally:
+            await _cleanup(conn)
+
+
+async def test_forecast_uses_latest_business_daily_distribution() -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _cleanup(conn)
+        await _seed_stores(conn)
+        await _seed_snapshot(conn, is_month_final=False)
+        await _seed_reporting_day(
+            conn,
+            site_code=_SITE_A,
+            day=6,
+            total_sales=Decimal("1100.00"),
+            total_quantity=10,
+        )
+        await conn.execute(
+            """
+            INSERT INTO reporting_item_day (
+                import_month, sale_date, site_code, locatie, firma, regional, asm,
+                agent, item_code, item_name, total_sales, net_quantity,
+                positive_quantity, return_quantity, receipt_count
+            ) VALUES ($1, DATE '2099-05-06', $2, 'Test Loc', 'Mobiup',
+                      'Andrei Stancu', 'Andrei Stancu', 'Agent Test', 'ITEM',
+                      'Produs', 1100, 10, 10, 0, 1)
+            """,
+            _TEST_MONTH,
+            _SITE_A,
+        )
+        run_id = await conn.fetchval(
+            """
+            INSERT INTO ai_forecast_runs (
+                forecast_month, source_month, metric, horizon,
+                model_name, model_mode, variant, status
+            ) VALUES ($1, $1, 'sales_value', 'current_month',
+                      'test', 'deterministic', 'business-calendar', 'completed')
+            RETURNING id
+            """,
+            _TEST_MONTH,
+        )
+        await conn.executemany(
+            """
+            INSERT INTO ai_forecast_store_day (
+                run_id, forecast_date, site_code, forecast_sales
+            ) VALUES ($1, $2, $3, $4)
+            """,
+            [
+                (run_id, date(2099, 5, 6), _SITE_A, Decimal("600.00")),
+                (run_id, date(2099, 5, 31), _SITE_A, Decimal("600.00")),
+            ],
+        )
+
+        try:
+            clauses, cartela_clauses, params = _build_clauses_no_scope(_TEST_MONTH)
+            row = await DashboardRepository(pool).fetch_summary(
+                clauses,
+                params,
+                cartela_clauses,
+                current_scope=False,
             )
+            assert row is not None
+            assert row["forecast_sales"] == Decimal("2200.00")
         finally:
             await _cleanup(conn)
 

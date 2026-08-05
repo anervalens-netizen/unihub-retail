@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from business_clock import business_now
+
 # Scope-uri minime, read-only (vezi docs/grile-integration-plan.md)
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -202,7 +204,7 @@ def analyze_grila(
             if d:
                 days_from_supl.add(d)
 
-    today = as_of or datetime.now()
+    today = as_of or business_now()
     days_elapsed = max(today.day - 1, 0)
     covered = 0
     missing_days: list[int] = []

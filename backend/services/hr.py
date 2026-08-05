@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import datetime
-
 from fastapi import HTTPException
 
+from business_clock import business_today
 from repositories.hr import HrRepository
 from services.asm_salary import compute_asm_salary
 from services.forecast import get_forecast_factor
@@ -149,21 +148,16 @@ class HrService:
     async def get_asm_performance_history(self, asm_name: str, months: int = 6) -> list[dict]:
         pg_rows = await self.repo.get_asm_history_rows(asm_name, months)
         snapshot_hist = await self.repo.get_visits_snapshot_history(asm_name, months)
-        sqlite_map = {r["month"]: dict(r) for r in snapshot_hist}
+        visits_map = {r["month"]: dict(r) for r in snapshot_hist}
 
-        current_month = await self.repo.get_current_month_meta()
-        if current_month and not current_month["is_final"] and current_month["last_sale_day"]:
-            last_day = int(current_month["last_sale_day"])
-            days_in_month = int(current_month["days_in_month"] or last_day)
-            forecast_factor = days_in_month / last_day if last_day > 0 else 1.0
-        else:
-            forecast_factor = 1.0
-        this_month = datetime.date.today().strftime("%Y-%m")
+        this_month = business_today().strftime("%Y-%m")
+        async with self.repo.pool.acquire() as conn:
+            forecast_factor = await get_forecast_factor(conn, this_month)
 
         result = []
         for pg in pg_rows:
             m = pg["import_month"]
-            sq = sqlite_map.get(m, {})
+            sq = visits_map.get(m, {})
             total_sales = float(pg["total_sales"] or 0)
             total_target = float(pg["total_target"] or 0)
             is_current = m == this_month and forecast_factor > 1.001

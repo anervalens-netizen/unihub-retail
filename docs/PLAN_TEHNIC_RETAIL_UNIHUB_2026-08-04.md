@@ -215,7 +215,9 @@ PR #122 rămâne Draft până când sunt adevărate simultan:
 ### 6.3 CNP boundary și salary apply gate
 
 - toate citirile folosesc `person_id`;
-- CNP rămâne numai în `salary_private`;
+- `salary_private` rămâne sursa canonică pentru CNP; copia legacy din
+  `salary_records.cnp` este excepția controlată de decizia H-01, inaccesibilă
+  rolului runtime și nu poate fi ștearsă fără aprobarea separată cerută de H-01;
 - backfill/reconcile fără CNP în loguri, manifests sau diff;
 - aplicarea oficială impune tehnic manifestul pentru ambele companii și
   rezolvarea grupurilor cunoscute, nu doar runbook NO-GO;
@@ -554,7 +556,9 @@ Ordinea porților:
 
 #### P1-C — salary privacy și approval
 
-- citirile runtime numai prin `person_id`; CNP numai în `salary_private`;
+- citirile runtime numai prin `person_id`; CNP canonic în `salary_private`, iar
+  copia legacy reținută conform H-01 rămâne revocată rolului runtime până la o
+  contracție distructivă aprobată separat;
 - backfill/reconcile fără CNP în output sau manifest;
 - artifact de aprobare legat de exact manifest/perioade/ambele companii;
 - gate tehnic pentru cele opt grupuri cunoscute și review independent;
@@ -890,7 +894,7 @@ nu dispoziții suplimentare.
 | M-07 | demonstrat deja | ledgers/staging/head sunt protejate append-only DB-side |
 | M-08 | implementat | artefact sales content-addressed, `0600`, hash, fsync și readback înainte de terminal DB |
 | M-09 | implementat | stare intermediară, reconciler idempotent și retention head/predecessor/ledger |
-| M-10 | implementat | salary approval leagă exact manifestul, ambele companii, reconcilierea 8/8/0 și reviewer distinct |
+| M-10 | implementat | salary approval leagă exact manifestul, ambele companii, reconcilierea 8/8/0 și reviewer distinct; `salary_private` este canonic, iar copia legacy CNP rămâne excepție controlată H-01 fără acces runtime și fără ștergere neautorizată |
 | M-11 | implementat | Grile are owner/epoch/lease și checkpoint înainte de Google I/O |
 | M-12 | implementat | Google I/O rulează prin adapter thread-affine bounded; reconcilerul nu reia automat starea incertă |
 | M-13 | implementat | XLS/XLSX au signature, ZIP/XML, expanded-bytes, ratio, member și cell budgets |

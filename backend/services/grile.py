@@ -19,6 +19,7 @@ from typing import Any, Mapping
 
 import asyncpg
 
+from business_clock import business_today
 from repositories.grile import GrileRepository
 from services.grile_metrics import GrileStoreRefreshTimings
 from services.grile_sheets import (
@@ -440,7 +441,7 @@ async def resolve_month(pool: asyncpg.Pool, month: str | None) -> str:
     if month:
         return month
     repo = GrileRepository(pool)
-    return await repo.get_latest_data_month() or datetime.now().strftime("%Y-%m")
+    return await repo.get_latest_data_month() or business_today().strftime("%Y-%m")
 
 
 async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
@@ -622,7 +623,7 @@ def _completed_days_for_month(month: str, *, today: date | None = None) -> int |
     except (ValueError, TypeError):
         return None
 
-    today = today or datetime.now().date()
+    today = today or business_today()
     if (year, month_num) == (today.year, today.month):
         return max(today.day - 1, 0)
     if (year, month_num) > (today.year, today.month):

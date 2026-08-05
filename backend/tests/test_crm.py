@@ -11,12 +11,14 @@ def anyio_backend():
 
 
 @pytest.mark.anyio
-async def test_calculate_scores_returns_list(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("services.crm.get_visits_read_source", lambda: "sqlite")
+async def test_calculate_scores_returns_list():
+    from unittest.mock import AsyncMock, patch
+
     pool = await get_pool()
     repo = CrmRepository(pool)
     svc = CrmService(repo, pool)
-    result = await svc.calculate_scores_for_month("2026-03")
+    with patch("services.crm._query_visits_by_store_postgres", AsyncMock(return_value={})):
+        result = await svc.calculate_scores_for_month("2026-03")
     assert isinstance(result, list)
     if result:
         row = result[0]

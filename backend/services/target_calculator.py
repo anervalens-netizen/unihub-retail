@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
-from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from typing import Any, TypedDict
@@ -13,6 +12,7 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from business_clock import business_today
 from services.spreadsheet_safety import append_openpyxl_row
 
 from repositories.target_calculator import (
@@ -1847,7 +1847,7 @@ class TargetCalculatorService:
         output = BytesIO()
         workbook.save(output)
         output.seek(0)
-        stamp = datetime.now().strftime("%Y%m%d")
+        stamp = business_today().strftime("%Y%m%d")
         return output, f"targete_{scenario['target_month']}_scenariu_{scenario_id}_{stamp}.xlsx"
 
     async def get_store_detail(self, scenario_id: int, site_code: str) -> dict[str, Any]:

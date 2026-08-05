@@ -324,6 +324,8 @@ async def test_operation_state_helpers_issue_expected_updates() -> None:
         operation_id=1,
         site_code="SITE01",
         status="completed",
+        execution_owner="worker-a",
+        execution_epoch=1,
     )
 
     assert previous == {"status": "completed"}
@@ -1066,6 +1068,8 @@ async def test_reset_preflight_timeout_has_zero_destructive_effects(
             closing_month_key="2026-06",
             next_month_key="2026-07",
             approved_manifest_id=31,
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
     assert exc_info.value.code == "google_timeout"
     assert service.clear_calls == 0
@@ -1098,6 +1102,8 @@ async def test_reset_live_success_requires_backup_and_verifies_every_clear(
         closing_month_key="2026-06",
         next_month_key="2026-07",
         approved_manifest_id=31,
+        execution_owner="worker-a",
+        execution_epoch=1,
     )
 
     assert report_path == grile.build_reset_report_path(tmp_path, "Iulie 2026")
@@ -1149,6 +1155,8 @@ async def test_reset_month_live_failure_marks_checkpoint(
             closing_month_key="2026-06",
             next_month_key="2026-07",
             approved_manifest_id=31,
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
 
     assert exc_info.value.code == "rolled_back"
@@ -1312,12 +1320,16 @@ async def test_repository_delegates_and_invalid_reservation(
         site_code="SITE01",
         backup_path="backup.json",
         backup_sha256="a" * 64,
+        execution_owner="worker-a",
+        execution_epoch=1,
     ) is True
     assert await grile.record_reset_item_rollback(
         pool,
         operation_id=1,
         site_code="SITE01",
         restored=True,
+        execution_owner="worker-a",
+        execution_epoch=1,
     ) is True
 
 
@@ -1905,6 +1917,8 @@ async def test_live_reset_checkpoint_failures_are_fail_closed(
             closing_month_key="2026-06",
             next_month_key="2026-07",
             approved_manifest_id=31,
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
     assert exc_info.value.code == expected_code
     if failure == "backup":
@@ -1945,6 +1959,8 @@ async def test_live_reset_rollback_failure_is_uncertain(
             closing_month_key="2026-06",
             next_month_key="2026-07",
             approved_manifest_id=31,
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
     assert exc_info.value.code == "uncertain"
 
@@ -1982,6 +1998,8 @@ async def test_live_reset_output_failure_restores_all_google_values(
             closing_month_key="2026-06",
             next_month_key="2026-07",
             approved_manifest_id=31,
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
     assert exc_info.value.code == "rolled_back"
     assert service.state == original_state
@@ -2359,6 +2377,8 @@ async def test_live_reset_cancelled_after_clear_completes_verified_rollback(
             closing_month_key="2026-06",
             next_month_key="2026-07",
             approved_manifest_id=31,
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
 
     assert exc_info.value.code == "rolled_back"
@@ -2502,6 +2522,8 @@ async def test_live_reset_cancelled_with_unverified_restore_is_uncertain(
             closing_month_key="2026-06",
             next_month_key="2026-07",
             approved_manifest_id=31,
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
 
     assert exc_info.value.code == "uncertain"

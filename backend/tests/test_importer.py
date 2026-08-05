@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -188,6 +189,15 @@ def test_company_normalization_and_month_finality() -> None:
     assert normalize_firma("Alta Firma") == "Alta Firma"
     assert is_month_final("2000-01") is True
     assert is_month_final("9999-12") is False
+
+
+def test_month_finality_uses_bucharest_business_midnight() -> None:
+    class FixedClock:
+        def now(self) -> datetime:
+            return datetime(2026, 4, 1, 0, 30, tzinfo=ZoneInfo("Europe/Bucharest"))
+
+    assert is_month_final("2026-03", clock=FixedClock()) is True
+    assert is_month_final("2026-04", clock=FixedClock()) is False
 
 
 def write_targets_workbook(path: Path) -> None:

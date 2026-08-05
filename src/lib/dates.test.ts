@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   formatIsoDate,
   formatIsoDateInput,
+  formatIsoDateTime,
   formatIsoMonth,
   formatMonthLabel,
   formatMonthSpanLabel,
   getCurrentYearMonth,
+  isIsoWeekendDate,
   shiftIsoDate,
   shiftMonth,
 } from './dates';
@@ -39,6 +41,7 @@ describe('date helpers', () => {
   it('formats ISO dates and months safely in Europe/Bucharest', () => {
     expect(formatIsoDate('2026-07-31')).toBe('31 iul.');
     expect(formatIsoDate('2026-07-31T22:30:00Z')).toBe('1 aug.');
+    expect(formatIsoDateTime('2026-07-31T22:30:00Z')).toContain('01.08');
     expect(formatIsoMonth('2026-07', { month: 'long', year: 'numeric' })).toBe('iulie 2026');
     expect(formatIsoDate('2026-02-30')).toBe('—');
     expect(formatIsoMonth('2026-13')).toBe('—');
@@ -47,5 +50,7 @@ describe('date helpers', () => {
   it('formats date inputs and calendar shifts independently of host timezone', () => {
     expect(formatIsoDateInput(new Date('2026-07-31T21:30:00Z'))).toBe('2026-08-01');
     expect(shiftIsoDate('2026-03-01', -1)).toBe('2026-02-28');
+    expect(isIsoWeekendDate('2026-08-01')).toBe(true);
+    expect(isIsoWeekendDate('2026-08-03')).toBe(false);
   });
 });

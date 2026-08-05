@@ -86,16 +86,18 @@ async def test_stores_get_active():
 
 
 @pytest.mark.anyio
-async def test_crm_service_scores(monkeypatch: pytest.MonkeyPatch):
+async def test_crm_service_scores():
+    from unittest.mock import AsyncMock, patch
+
     from services.crm import CrmService
     from repositories.crm import CrmRepository
     from db.connection import get_pool
 
-    monkeypatch.setattr("services.crm.get_visits_read_source", lambda: "sqlite")
     pool = await get_pool()
     repo = CrmRepository(pool)
     svc = CrmService(repo, pool)
-    scores = await svc.calculate_scores_for_month("2026-03")
+    with patch("services.crm._query_visits_by_store_postgres", AsyncMock(return_value={})):
+        scores = await svc.calculate_scores_for_month("2026-03")
     assert isinstance(scores, list)
 
 

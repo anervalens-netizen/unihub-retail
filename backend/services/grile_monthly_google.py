@@ -14,8 +14,10 @@ from pathlib import Path
 import threading
 from typing import Any, Callable, Mapping
 
+from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+import httplib2
 
 
 SCOPES = [
@@ -24,6 +26,7 @@ SCOPES = [
 ]
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _TRANSIENT = {429, 500, 502, 503, 504}
+GOOGLE_HTTP_TIMEOUT_SECONDS = 90
 
 
 class GoogleAdapterClosed(RuntimeError):
@@ -48,9 +51,13 @@ def _default_service_factory() -> tuple[Any, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Service account Google lipsa: {path}")
     credentials = Credentials.from_service_account_file(str(path), scopes=SCOPES)
+    transport = AuthorizedHttp(
+        credentials,
+        http=httplib2.Http(timeout=GOOGLE_HTTP_TIMEOUT_SECONDS),
+    )
     return (
-        build("sheets", "v4", credentials=credentials, cache_discovery=False),
-        build("drive", "v3", credentials=credentials, cache_discovery=False),
+        build("sheets", "v4", http=transport, cache_discovery=False),
+        build("drive", "v3", http=transport, cache_discovery=False),
     )
 
 

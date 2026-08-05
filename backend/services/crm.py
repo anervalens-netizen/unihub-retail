@@ -1,41 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import sqlite3
 from typing import Any
 
 import asyncpg
 
-from config import (
-    get_visits_db_path,
-    get_visits_read_source,
-    visits_shadow_compare_enabled,
-)
 from repositories.crm import CrmRepository
 from services.forecast import get_forecast_factor
-from services.visits_shadow import compare_visit_result, record_visit_shadow_error
-
-
-def _query_visits_by_store(year_month: str) -> dict[str, dict[str, Any]]:
-    con = sqlite3.connect(get_visits_db_path())
-    con.row_factory = sqlite3.Row
-    cur = con.execute(
-        """
-        SELECT
-            magazin AS site_code,
-            COUNT(*) AS nr_vizite,
-            ROUND(AVG(completion_pct), 1) AS avg_completion
-        FROM visits
-        WHERE substr(data_raport, 1, 7) = ?
-          AND magazin IS NOT NULL AND magazin != ''
-        GROUP BY magazin
-        """,
-        (year_month,),
-    )
-    result = {r["site_code"]: dict(r) for r in cur.fetchall()}
-    con.close()
-    return result
 
 
 async def _query_visits_by_store_postgres(
@@ -69,24 +40,7 @@ class CrmService:
 
         async with self.pool.acquire() as conn:
             forecast_factor = await get_forecast_factor(conn, month)
-            source = get_visits_read_source()
-
-            async def sqlite_reader() -> dict[str, dict[str, Any]]:
-                loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(None, _query_visits_by_store, month)
-
-            async def postgres_reader() -> dict[str, dict[str, Any]]:
-                return await _query_visits_by_store_postgres(conn, month)
-
-            primary_reader = postgres_reader if source == "postgres" else sqlite_reader
-            shadow_reader = sqlite_reader if source == "postgres" else postgres_reader
-            visit_map = await primary_reader()
-            if visits_shadow_compare_enabled():
-                try:
-                    shadow_map = await shadow_reader()
-                    compare_visit_result("crm", visit_map, shadow_map)
-                except Exception:
-                    record_visit_shadow_error("crm")
+            visit_map = await _query_visits_by_store_postgres(conn, month)
 
         rows = await self.repo.get_kpi_data_for_month(month, prev_month)
 

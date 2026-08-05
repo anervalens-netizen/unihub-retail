@@ -986,27 +986,40 @@ async def record_reset_item_backup(
     site_code: str,
     backup_path: str,
     backup_sha256: str,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            UPDATE grile_monthly_reset_items
+            UPDATE grile_monthly_reset_items AS item
             SET backup_path = $3,
                 backup_sha256 = $4,
                 checkpoint_phase = 'snapshot_persisted',
                 recovery_code = NULL,
                 updated_at = now()
-            WHERE operation_id = $1
-              AND site_code = $2
-              AND status = 'pending'
-              AND backup_path IS NULL
-              AND backup_sha256 IS NULL
+            WHERE item.operation_id = $1
+              AND item.site_code = $2
+              AND item.status = 'pending'
+              AND item.backup_path IS NULL
+              AND item.backup_sha256 IS NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM grile_monthly_operations operation
+                  WHERE operation.id = item.operation_id
+                    AND operation.status = 'running'
+                    AND operation.execution_owner = $5
+                    AND operation.execution_epoch = $6
+                    AND operation.execution_lease_until > now()
+              )
             RETURNING id
             """,
             operation_id,
             site_code,
             backup_path,
             backup_sha256,
+            execution_owner,
+            execution_epoch,
         )
     return row is not None
 
@@ -1017,26 +1030,38 @@ async def record_reset_item_rollback(
     operation_id: int,
     site_code: str,
     restored: bool,
+    execution_owner: str,
+    execution_epoch: int,
     error_message: str | None = None,
 ) -> bool:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            UPDATE grile_monthly_reset_items
+            UPDATE grile_monthly_reset_items AS item
             SET status = CASE WHEN $3 THEN 'error' ELSE 'uncertain' END,
                 rollback_status = CASE WHEN $3 THEN 'restored' ELSE 'failed' END,
                 restored_at = CASE WHEN $3 THEN now() ELSE NULL END,
                 error_message = $4,
                 updated_at = now()
-            WHERE operation_id = $1
-              AND site_code = $2
-              AND status IN ('running', 'completed', 'error')
+            WHERE item.operation_id = $1
+              AND item.site_code = $2
+              AND item.status IN ('running', 'completed', 'error')
+              AND EXISTS (
+                  SELECT 1
+                  FROM grile_monthly_operations operation
+                  WHERE operation.id = item.operation_id
+                    AND operation.execution_owner = $5
+                    AND operation.execution_epoch = $6
+                    AND operation.execution_lease_until > now()
+              )
             RETURNING id
             """,
             operation_id,
             site_code,
             restored,
             error_message,
+            execution_owner,
+            execution_epoch,
         )
     return row is not None
 
@@ -1047,13 +1072,15 @@ async def finish_reset_item(
     operation_id: int,
     site_code: str,
     status: Literal["completed", "error", "skipped"],
+    execution_owner: str,
+    execution_epoch: int,
     error_message: str | None = None,
 ) -> bool:
     expected_status = "pending" if status == "skipped" else "running"
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            UPDATE grile_monthly_reset_items
+            UPDATE grile_monthly_reset_items AS item
             SET status = $3,
                 checkpoint_phase = CASE
                     WHEN $3 = 'completed' THEN 'clear_verified'
@@ -1063,7 +1090,16 @@ async def finish_reset_item(
                 error_message = $4,
                 completed_at = CASE WHEN $3 IN ('completed', 'skipped') THEN now() ELSE completed_at END,
                 updated_at = now()
-            WHERE operation_id = $1 AND site_code = $2 AND status = $5
+            WHERE item.operation_id = $1 AND item.site_code = $2 AND item.status = $5
+              AND EXISTS (
+                  SELECT 1
+                  FROM grile_monthly_operations operation
+                  WHERE operation.id = item.operation_id
+                    AND operation.status = 'running'
+                    AND operation.execution_owner = $6
+                    AND operation.execution_epoch = $7
+                    AND operation.execution_lease_until > now()
+              )
             RETURNING id
             """,
             operation_id,
@@ -1071,6 +1107,8 @@ async def finish_reset_item(
             status,
             error_message,
             expected_status,
+            execution_owner,
+            execution_epoch,
         )
     return row is not None
 

@@ -24,28 +24,28 @@ class TestForecastFactor:
     @pytest.mark.asyncio
     async def test_final_month(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=True, last_sale_date="2026-05-31", business_factor=1.4)
+        conn.fetchrow.return_value = FakeRow(business_factor=1.0)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 1.0
 
     @pytest.mark.asyncio
     async def test_partial_month(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_date="2026-05-15", business_factor=2.0)
+        conn.fetchrow.return_value = FakeRow(business_factor=2.0)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 2.0
 
     @pytest.mark.asyncio
     async def test_no_last_sale_day(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_date=None, business_factor=2.0)
+        conn.fetchrow.return_value = FakeRow(business_factor=1.0)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 1.0
 
     @pytest.mark.asyncio
     async def test_missing_business_calendar_does_not_invent_extrapolation(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_date="2026-05-15", business_factor=None)
+        conn.fetchrow.return_value = FakeRow(business_factor=None)
         result = await get_forecast_factor(conn, "2026-05")
         assert result == 1.0
 

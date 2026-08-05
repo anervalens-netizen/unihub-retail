@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 from hashlib import sha256
 from io import BytesIO
@@ -16,6 +16,7 @@ from uuid import uuid4
 import asyncpg
 import pandas as pd
 
+from business_clock import BusinessClock, business_today
 from services.reporting_refresh import (
     rebuild_agent_lifecycle_reporting,
     rebuild_reporting_month,
@@ -207,7 +208,27 @@ async def _reconcile_sales_artifacts(pool: asyncpg.Pool) -> list[int]:
                             THEN jsonb_set(manifest, '{generation_state}', '"validated"'::jsonb, true)
                             ELSE manifest
                         END,
-                        lease_until = now() + interval '2 hours'
+                        status = CASE
+                            WHEN manifest->>'generation_state' IN ('validated', 'promoting')
+                            THEN status ELSE 'failed'
+                        END,
+                        rows_imported = CASE
+                            WHEN manifest->>'generation_state' IN ('validated', 'promoting')
+                            THEN rows_imported ELSE 0
+                        END,
+                        error_message = CASE
+                            WHEN manifest->>'generation_state' IN ('validated', 'promoting')
+                            THEN error_message
+                            ELSE 'Import interrupted before validation; exact-source retry permitted'
+                        END,
+                        finished_at = CASE
+                            WHEN manifest->>'generation_state' IN ('validated', 'promoting')
+                            THEN finished_at ELSE now()
+                        END,
+                        lease_until = CASE
+                            WHEN manifest->>'generation_state' IN ('validated', 'promoting')
+                            THEN now() + interval '2 hours' ELSE now()
+                        END
                     WHERE id = $1 AND generation_token = $2::uuid
                       AND owner_id = $3::uuid AND status = 'processing'
                       AND source_artifact_state IN ('artifact_retaining', 'artifact_retained')
@@ -653,12 +674,11 @@ def detect_month(df: pd.DataFrame) -> str:
     return str(months[0])
 
 
-def is_month_final(import_month: str) -> bool:
+def is_month_final(import_month: str, *, clock: BusinessClock | None = None) -> bool:
     """A month is final if we're uploading in a later month.
     E.g. uploading 2026-03 data on 2026-04-01 means march is final.
     """
-    now = datetime.now(timezone.utc)
-    current = now.strftime("%Y-%m")
+    current = business_today(clock).strftime("%Y-%m")
     return import_month < current
 
 
@@ -740,12 +760,21 @@ async def reserve_snapshot(
     generation_token: str | None = None,
     owner_id: str | None = None,
     source_artifact_required: bool = False,
+    source_artifact_path: str | None = None,
+    source_artifact_bytes: int | None = None,
     lease_seconds: int = 2 * 60 * 60,
 ) -> int:
     generation_token = generation_token or str(uuid4())
     owner_id = owner_id or str(uuid4())
     if lease_seconds < 60:
         raise ValueError("Sales generation lease must be at least 60 seconds")
+    if source_artifact_required and (
+        not source_artifact_path
+        or source_sha256 is None
+        or source_artifact_bytes is None
+        or source_artifact_bytes < 0
+    ):
+        raise ValueError("Required sales artifact metadata is incomplete")
     async with conn.transaction():
         await conn.execute(
             """
@@ -778,12 +807,15 @@ async def reserve_snapshot(
                 is_month_final, heartbeat_at, source_sha256, cutoff_date,
                 generation_token, owner_id, lease_until,
                 expected_head_revision, previous_snapshot_id
-                , source_artifact_required
+                , source_artifact_required, source_spool_path,
+                source_artifact_state, source_artifact_sha256, source_artifact_bytes
             )
             VALUES (
                 $1, $2, $3, 'processing', $4, now(), $5, $6,
                 $7::uuid, $8::uuid, now() + make_interval(secs => $9),
-                $10, $11, $12
+                $10, $11, $12, $13,
+                CASE WHEN $12 THEN 'artifact_retaining' ELSE NULL END,
+                CASE WHEN $12 THEN $5 ELSE NULL END, $14
             )
             ON CONFLICT (import_month)
                 WHERE status = 'processing'
@@ -802,6 +834,8 @@ async def reserve_snapshot(
             expected_head_revision,
             previous_snapshot_id,
             source_artifact_required,
+            source_artifact_path,
+            source_artifact_bytes,
         )
     if row is None:
         raise ImportAlreadyRunningError(
@@ -938,6 +972,8 @@ async def import_sales_dataframe(
     requested_by_sub: str = "direct-execution",
     override_reason: str | None = None,
     source_artifact_required: bool = False,
+    source_artifact_path: str | None = None,
+    source_artifact_bytes: int | None = None,
 ) -> ImportResult:
     validate_sales_dataframe(df)
     rows_in_file_total = len(df)
@@ -972,6 +1008,8 @@ async def import_sales_dataframe(
         generation_token=generation_token,
         owner_id=owner_id,
         source_artifact_required=source_artifact_required,
+        source_artifact_path=source_artifact_path,
+        source_artifact_bytes=source_artifact_bytes,
     )
     validated = False
     try:
@@ -1081,6 +1119,8 @@ async def import_sales_file(
     requested_by_sub: str = "direct-execution",
     override_reason: str | None = None,
     source_artifact_required: bool = False,
+    source_artifact_path: str | None = None,
+    source_artifact_bytes: int | None = None,
 ) -> ImportResult:
     if isinstance(source, bytes):
         digest = sha256(source).hexdigest()
@@ -1097,6 +1137,8 @@ async def import_sales_file(
         requested_by_sub=requested_by_sub,
         override_reason=override_reason,
         source_artifact_required=source_artifact_required,
+        source_artifact_path=source_artifact_path,
+        source_artifact_bytes=source_artifact_bytes,
     )
 
 

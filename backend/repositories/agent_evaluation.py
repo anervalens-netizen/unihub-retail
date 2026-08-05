@@ -48,6 +48,32 @@ sale_month_days AS (
     WHERE import_month IN (SELECT import_month FROM selected_months)
     GROUP BY import_month
 ),
+latest_business_runs AS (
+    SELECT DISTINCT ON (run.forecast_month)
+        run.forecast_month AS import_month,
+        run.id
+    FROM ai_forecast_runs run
+    WHERE run.forecast_month IN (SELECT import_month FROM selected_months)
+      AND run.status = 'completed'
+      AND run.metric = 'sales_value'
+      AND run.horizon = 'current_month'
+    ORDER BY run.forecast_month, run.generated_at DESC, run.id DESC
+),
+business_weights AS (
+    SELECT
+        run.import_month,
+        SUM(GREATEST(day.forecast_sales, 0)) AS total_weight,
+        SUM(GREATEST(day.forecast_sales, 0)) FILTER (
+            WHERE day.forecast_date <= to_date(
+                run.import_month || '-' || LPAD(smd.last_sale_day::TEXT, 2, '0'),
+                'YYYY-MM-DD'
+            )
+        ) AS elapsed_weight
+    FROM latest_business_runs run
+    JOIN ai_forecast_store_day day ON day.run_id = run.id
+    LEFT JOIN sale_month_days smd ON smd.import_month = run.import_month
+    GROUP BY run.import_month, smd.last_sale_day
+),
 month_meta AS (
     SELECT
         sm.import_month,
@@ -59,13 +85,9 @@ month_meta AS (
         ))::INT AS days_in_month,
         CASE
             WHEN COALESCE(BOOL_AND(snap.is_month_final), true) = false
-                 AND COALESCE(smd.last_sale_day, 0) > 0
-            THEN
-                EXTRACT(DAY FROM (
-                    date_trunc('month', to_date(sm.import_month || '-01', 'YYYY-MM-DD'))
-                    + INTERVAL '1 month - 1 day'
-                ))::NUMERIC
-                / COALESCE(smd.last_sale_day, 1)::NUMERIC
+                 AND weights.total_weight > 0
+                 AND weights.elapsed_weight > 0
+            THEN GREATEST(1::NUMERIC, weights.total_weight / weights.elapsed_weight)
             ELSE 1::NUMERIC
         END AS forecast_factor,
         CASE
@@ -80,7 +102,8 @@ month_meta AS (
     FROM selected_months sm
     LEFT JOIN import_snapshots snap ON snap.import_month = sm.import_month
     LEFT JOIN sale_month_days smd ON smd.import_month = sm.import_month
-    GROUP BY sm.import_month, smd.last_sale_day
+    LEFT JOIN business_weights weights ON weights.import_month = sm.import_month
+    GROUP BY sm.import_month, smd.last_sale_day, weights.total_weight, weights.elapsed_weight
 ),
 location_working_days AS (
     SELECT
