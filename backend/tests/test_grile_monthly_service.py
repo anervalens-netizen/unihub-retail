@@ -2367,6 +2367,71 @@ async def test_run_monthly_op_reports_lost_completion_lease(
 
 
 @pytest.mark.asyncio
+async def test_monthly_operation_renews_lease_until_work_completes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    heartbeat = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", heartbeat)
+    release = asyncio.Event()
+
+    async def operation() -> grile.MonthlyExecution:
+        await release.wait()
+        return grile.MonthlyExecution(Path("final.xlsx"), {"status": "verified"})
+
+    task = asyncio.create_task(
+        grile._run_with_monthly_lease(
+            object(),
+            11,
+            execution_owner="worker-a",
+            execution_epoch=3,
+            operation=operation(),
+            heartbeat_interval=0,
+        )
+    )
+    while heartbeat.await_count < 2:
+        await asyncio.sleep(0)
+    release.set()
+    result = await task
+
+    assert result.path == Path("final.xlsx")
+    assert heartbeat.await_count >= 2
+    assert heartbeat.await_args is not None
+    assert heartbeat.await_args.kwargs == {
+        "execution_owner": "worker-a",
+        "execution_epoch": 3,
+    }
+
+
+@pytest.mark.asyncio
+async def test_monthly_operation_aborts_when_heartbeat_loses_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    heartbeat = AsyncMock(return_value=False)
+    monkeypatch.setattr(grile, "heartbeat_monthly_operation", heartbeat)
+    cancelled = asyncio.Event()
+
+    async def operation() -> grile.MonthlyExecution:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+        raise AssertionError("unreachable")
+
+    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
+        await grile._run_with_monthly_lease(
+            object(),
+            12,
+            execution_owner="worker-a",
+            execution_epoch=4,
+            operation=operation(),
+            heartbeat_interval=0,
+        )
+
+    assert exc_info.value.code == "operation_lease_lost"
+    assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
 async def test_live_reset_cancelled_after_clear_completes_verified_rollback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Coroutine, Literal
 from uuid import uuid4
 
 import asyncpg
@@ -98,6 +98,7 @@ from services.grile_monthly_integrity import (
 )
 
 GOOGLE_OPERATION_DEADLINE_SECONDS = 120.0
+MONTHLY_OPERATION_HEARTBEAT_SECONDS = 60.0
 
 RO_MONTHS = [
     "", "Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
@@ -577,6 +578,50 @@ async def heartbeat_monthly_operation(
         execution_owner=execution_owner,
         execution_epoch=execution_epoch,
     )
+
+
+async def _run_with_monthly_lease(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    execution_owner: str,
+    execution_epoch: int,
+    operation: Coroutine[Any, Any, MonthlyExecution],
+    heartbeat_interval: float = MONTHLY_OPERATION_HEARTBEAT_SECONDS,
+) -> MonthlyExecution:
+    """Keep the DB lease alive and abort work immediately when its fence is lost."""
+
+    async def monitor() -> None:
+        while True:
+            await asyncio.sleep(heartbeat_interval)
+            alive = await heartbeat_monthly_operation(
+                pool,
+                operation_id,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
+            )
+            if not alive:
+                raise MonthlyIntegrityError(
+                    "operation_lease_lost",
+                    "Monthly operation lease was lost",
+                )
+
+    operation_task: asyncio.Task[MonthlyExecution] = asyncio.create_task(operation)
+    heartbeat_task = asyncio.create_task(monitor())
+    try:
+        done, _ = await asyncio.wait(
+            {operation_task, heartbeat_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if operation_task in done:
+            return await operation_task
+        operation_task.cancel()
+        await asyncio.gather(operation_task, return_exceptions=True)
+        await heartbeat_task
+        raise AssertionError("Lease monitor exited without a result")
+    finally:
+        heartbeat_task.cancel()
+        await asyncio.gather(heartbeat_task, return_exceptions=True)
 
 
 async def finish_monthly_operation(
@@ -3046,8 +3091,9 @@ async def run_monthly_op(
             )
             if not alive:
                 raise MonthlyIntegrityError("operation_lease_lost", "Monthly operation lease was lost")
+        operation_call: Coroutine[Any, Any, MonthlyExecution]
         if op == "finalize":
-            execution = await _finalize_month_execution(
+            operation_call = _finalize_month_execution(
                 pool,
                 month_label,
                 month_key=month,
@@ -3057,7 +3103,7 @@ async def run_monthly_op(
                 google_adapter=google_adapter,
             )
         elif op == "archive":
-            execution = await _archive_month_execution(
+            operation_call = _archive_month_execution(
                 pool,
                 month_label,
                 month_key=month,
@@ -3067,7 +3113,7 @@ async def run_monthly_op(
                 google_adapter=google_adapter,
             )
         else:
-            execution = await _reset_month_execution(
+            operation_call = _reset_month_execution(
                 pool,
                 closing_month=month_label,
                 next_month=ro_month_label(next_ym(month)),
@@ -3082,6 +3128,16 @@ async def run_monthly_op(
                 execution_owner=execution_owner,
                 execution_epoch=execution_epoch,
             )
+        if operation_id is not None:
+            execution = await _run_with_monthly_lease(
+                pool,
+                operation_id,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
+                operation=operation_call,
+            )
+        else:
+            execution = await operation_call
         if operation_id is not None and not (
             op == "reset" and not dry_run and approved_manifest_id is not None
         ):
