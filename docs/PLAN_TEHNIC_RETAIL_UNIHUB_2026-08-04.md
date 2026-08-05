@@ -645,7 +645,8 @@ formal și dovezile live se completează în 16.5 după gate/QA/deploy.
 Migrații immutable:
 
 - 040 `59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9`;
-- 041 `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311`.
+- 041 `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311`;
+- 042 `6e120625c69ff8528bec5074782e822ba8b7c8828ed1dbb71dc1c97919013cb4`.
 
 Contractul rezultat:
 
@@ -669,6 +670,10 @@ Contractul rezultat:
   head CAS, ledger și complete pentru toate scope-urile ambelor companii;
 - `authoritative_replace` păstrează reducerile față de snapshotul precedent ca
   informație și blochează numai contradicții interne ale candidatului;
+- sursa externă `fieldops_visits` păstrează ownerul ei și permite webului numai
+  SELECT owner-issued, non-grantable prin `unihub_web_read`; 042 refuză orice
+  privilegiu prin `unihub_business_write`, LOGIN-ul web direct, PUBLIC,
+  ACL-uri columnare sau membershipuri moștenite;
 - Finance are grupul și contractul viitorului principal
   `unihub_finance_import_worker` pregătite, dar niciun LOGIN, credential sau
   stage/apply live; numai sales-import primește `TEMPORARY`.
@@ -679,7 +684,7 @@ Contractul rezultat:
   `31 passed`;
 - sales generation/staging, master-data safety și P&L generation/shadow:
   `24 passed`;
-- manifestul 001–041 și checksumurile 040/041: verificate;
+- manifestul 001–042 și checksumurile 040/041/042: verificate;
 - fixture-ul master-data raportează coverage global relativ la baseline, fără
   a presupune o bază izolată goală;
 - datele production au fost doar citite la baseline: un sales head, două
@@ -695,9 +700,11 @@ Ordinea obligatorie este:
    cu `UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP=1` doar în procesul de cutover și
    fără `UNIHUB_DB_PROCESS_AUTHORITY`; nu persista flagul în `.env`/systemd;
 3. creează cele patru LOGIN-uri de serviciu în boundary-ul operațional separat;
-4. atașează contractele exacte cu provisionerul, verifică zero sesiuni/membri
-   legacy și setează `unihub_runtime NOLOGIN`; apoi scrie separat `.env`,
-   `.env.worker`, `.env.import-worker`, `.env.migrations`, fără afișarea DSN;
+4. atașează contractele exacte cu provisionerul; ownerul FieldOps acordă
+   SELECT către autoritatea web-read după existența ei; verifică zero
+   sesiuni/membri legacy și setează `unihub_runtime NOLOGIN`; apoi scrie separat
+   `.env`, `.env.worker`, `.env.import-worker`, `.env.migrations`, fără
+   afișarea DSN;
 5. instalează unitățile, `daemon-reload`, apoi deployează artefactul formal;
 6. verifică principal/flags/membership, ACL negative, migrations, servicii,
    health local/public, head/digest/fingerprints și absența mutațiilor Finance.
@@ -708,8 +715,11 @@ nicio operație Finance live.
 
 Runnerul acceptă pasul 2 numai dacă identitatea curentă și cea de sesiune sunt
 același superuser, baza existentă este tracked cu checksums până la 039 și
-exact 040/041 sunt restante. Orice alt set, fresh bootstrap, role switch,
-principal neprivilegiat sau reutilizare după 041 este refuzată.
+toate migrările de la 040 încolo sunt restante. Invocarea bootstrap aplică
+exclusiv 040/041 și se oprește; 042 și orice migrare ulterioară rămân pentru
+runnerul restricționat după provisionare și grantul ownerului FieldOps. Fresh
+bootstrap, istoric incomplet, orice migrare post-039 deja aplicată, role switch,
+principal neprivilegiat sau reutilizare după 041 sunt refuzate.
 
 ### 16.4 Rollback și limite
 

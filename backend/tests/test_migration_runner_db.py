@@ -137,9 +137,12 @@ async def test_real_admin_authority_cutover_replays_exact_040_041(
         assert await connection.fetchval(
             "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
         )
+        cutover_and_later = [
+            name for name in manifest.checksums if name >= "040_"
+        ]
         await connection.execute(
             "DELETE FROM schema_migrations WHERE filename = ANY($1::text[])",
-            sorted(AUTHORITY_CUTOVER_MIGRATIONS),
+            cutover_and_later,
         )
     finally:
         await connection.close()
@@ -162,6 +165,10 @@ async def test_real_admin_authority_cutover_replays_exact_040_041(
             name: manifest.checksums[name]
             for name in sorted(AUTHORITY_CUTOVER_MIGRATIONS)
         }
+        assert not await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = $1)",
+            "042_fieldops_visits_web_authority.sql",
+        )
     finally:
         await connection.close()
 
@@ -244,7 +251,7 @@ async def test_restricted_migration_authority_refuses_empty_bootstrap(
 
 
 @pytest.mark.asyncio
-async def test_admin_authority_cutover_bootstrap_accepts_only_pending_040_041(
+async def test_admin_authority_cutover_bootstrap_applies_only_040_041(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import db.migration_runner as runner
@@ -254,7 +261,7 @@ async def test_admin_authority_cutover_bootstrap_accepts_only_pending_040_041(
         rows={
             name: checksum
             for name, checksum in manifest.checksums.items()
-            if name not in AUTHORITY_CUTOVER_MIGRATIONS
+            if name < "040_"
         }
     )
     authority_verify = AsyncMock()
@@ -268,7 +275,11 @@ async def test_admin_authority_cutover_bootstrap_accepts_only_pending_040_041(
         "040_db_authority_append_only.sql",
         "041_schema_owner_handoff.sql",
     ]
-    assert connection.rows == manifest.checksums
+    assert connection.rows == {
+        name: checksum
+        for name, checksum in manifest.checksums.items()
+        if name <= "041_schema_owner_handoff.sql"
+    }
     authority_verify.assert_not_awaited()
 
 
@@ -320,7 +331,7 @@ async def test_admin_authority_cutover_rejects_untracked_database(
 @pytest.mark.parametrize(
     ("connection", "message"),
     [
-        (_Connection(rows={}), "exactly migrations 040 and 041"),
+        (_Connection(rows={}), "every migration through 039"),
         (_Connection(rows={}, superuser=False), "administrative superuser"),
     ],
 )
@@ -338,7 +349,7 @@ async def test_admin_authority_cutover_bootstrap_fails_closed(
         connection.rows = {
             name: checksum
             for name, checksum in manifest.checksums.items()
-            if name not in AUTHORITY_CUTOVER_MIGRATIONS
+            if name < "040_"
         }
     monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
     monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)

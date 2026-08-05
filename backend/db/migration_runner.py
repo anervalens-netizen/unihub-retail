@@ -157,8 +157,10 @@ async def _verify_authority_cutover_bootstrap(
 
     The new migration LOGIN cannot exist before 040 creates its authority
     groups and 041 creates the stable schema owner. This explicit bridge is
-    deliberately unusable for fresh installs, any other pending set, a
-    configured process authority, or a non-superuser/session-role switch.
+    deliberately unusable for fresh installs, an incomplete pre-040 history,
+    any post-039 migration already applied, a configured process authority, or
+    a non-superuser/session-role switch. Later manifest migrations may exist,
+    but the bootstrap invocation applies only 040 and 041.
     """
     if configured_database_authority() is not None:
         raise MigrationError(
@@ -192,10 +194,15 @@ async def _verify_authority_cutover_bootstrap(
         )
     applied = await _tracking_rows(connection)
     _validate_applied(applied, manifest, allow_missing_checksums=False)
-    pending = set(manifest.checksums) - set(applied)
-    if pending != set(AUTHORITY_CUTOVER_MIGRATIONS):
+    ordered_names = list(manifest.checksums)
+    first_cutover_index = min(
+        ordered_names.index(filename) for filename in AUTHORITY_CUTOVER_MIGRATIONS
+    )
+    expected_applied = set(ordered_names[:first_cutover_index])
+    if set(applied) != expected_applied:
         raise MigrationError(
-            "Authority cutover bootstrap is valid only when exactly migrations 040 and 041 are pending"
+            "Authority cutover bootstrap requires every migration through 039 "
+            "applied and every migration from 040 onward pending"
         )
 
 
@@ -212,7 +219,8 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
     applied_now: list[str] = []
     try:
         await connection.execute("SELECT pg_advisory_lock($1)", MIGRATION_ADVISORY_LOCK_ID)
-        if _authority_cutover_bootstrap_enabled():
+        cutover_bootstrap = _authority_cutover_bootstrap_enabled()
+        if cutover_bootstrap:
             await _verify_authority_cutover_bootstrap(connection, manifest)
         else:
             await verify_database_connection_authority(connection)
@@ -282,6 +290,8 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
         _validate_applied(applied, manifest, allow_missing_checksums=False)
         for filename, checksum in manifest.checksums.items():
             if filename in applied:
+                continue
+            if cutover_bootstrap and filename not in AUTHORITY_CUTOVER_MIGRATIONS:
                 continue
             sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
             async with connection.transaction():

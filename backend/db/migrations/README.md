@@ -49,7 +49,7 @@ release-ului `v2.1.0` include:
 | 039 | `039_store_pnl_authoritative_generations.sql` | `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d` | generații Finance immutable, scope/head/ledger și pre-image |
 | 040 | `040_db_authority_append_only.sql` | `59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
 | 041 | `041_schema_owner_handoff.sql` | `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
-| 042 | `042_fieldops_visits_web_authority.sql` | `371692161ff24c8877dc2e31c72bef772c190ffe41b9bf4eef63c78a33028e9c` | impune unicul ACL tabelar web owner-issued SELECT-only la sursa PostgreSQL FieldOps, fără PUBLIC/DML tabelar ori columnar sau însușirea sursei externe |
+| 042 | `042_fieldops_visits_web_authority.sql` | `6e120625c69ff8528bec5074782e822ba8b7c8828ed1dbb71dc1c97919013cb4` | impune unicul ACL tabelar web owner-issued SELECT-only la sursa PostgreSQL FieldOps, fără PUBLIC/DML tabelar ori columnar sau însușirea sursei externe |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
@@ -63,11 +63,16 @@ de schimbarea DSN-urilor. Invocarea de cutover setează numai pentru acel proces
 `UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP=1`, fără
 `UNIHUB_DB_PROCESS_AUTHORITY`; flagul nu se scrie în `.env*` sau în unități.
 Runnerul acceptă excepția numai pentru un superuser autentificat direct, pe o
-bază existentă cu checksums complete până la 039 și exact 040/041 restante.
-Refuză fresh bootstrap, alt set restant, role switch, principal neprivilegiat
-sau reutilizarea după 041. Apoi operatorul creează separat cele patru LOGIN-uri
-de proces și rulează `provision_runtime_database_role.py --apply` pentru exact
-un contract per LOGIN. Provisionerul nu creează LOGIN, nu setează/parcurge
+bază existentă cu checksums complete până la 039 și toate migrările de la 040
+încolo restante. Invocarea bootstrap aplică exclusiv 040/041 și se oprește,
+chiar dacă manifestul conține 042 sau migrări ulterioare. Refuză fresh
+bootstrap, istoric parțial, o migrare post-039 deja aplicată, role switch,
+principal neprivilegiat sau reutilizarea după 041. Apoi operatorul creează
+separat cele patru LOGIN-uri de proces și rulează
+`provision_runtime_database_role.py --apply` pentru exact un contract per
+LOGIN. Ownerul FieldOps acordă SELECT după ce 040 a creat autoritatea, iar 042
+rulează ulterior prin identitatea restricționată de migrare. Provisionerul nu
+creează LOGIN, nu setează/parcurge
 parole și nu acordă privilegii pe obiecte; refuză orice grant direct, default
 ACL sau obiect deținut de LOGIN și verifică toate membershipurile
 directe/tranzitive, opțiunile lor și toate flagurile privilegiate. Schimbarea
