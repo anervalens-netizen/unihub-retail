@@ -89,6 +89,8 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "attribute.attacl" in fieldops_sql
     assert "has_any_column_privilege" in fieldops_sql
     assert "effective column DML is forbidden" in fieldops_sql
+    assert "unihub_business_write effective privileges are forbidden" in fieldops_sql
+    assert "unihub_web effective DML is forbidden" in fieldops_sql
     assert "acl.grantor = relation.relowner" in fieldops_sql
     assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read" in fieldops_sql
     assert "CREATE TABLE" not in fieldops_sql
@@ -722,6 +724,44 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
                 f'REVOKE UPDATE (id) ON TABLE public.fieldops_visits '
                 f'FROM "{inherited_writer}"'
             )
+            await fieldops.execute(
+                "GRANT INSERT ON TABLE public.fieldops_visits "
+                "TO unihub_business_write"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="business_write.*privileges.*forbidden",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE INSERT ON TABLE public.fieldops_visits "
+                "FROM unihub_business_write"
+            )
+            await fieldops.execute(
+                "GRANT UPDATE (id) ON TABLE public.fieldops_visits "
+                "TO unihub_business_write"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="column privileges.*forbidden|business_write",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE UPDATE (id) ON TABLE public.fieldops_visits "
+                "FROM unihub_business_write"
+            )
         finally:
             await fieldops.close()
 
@@ -743,6 +783,11 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
             ):
                 assert not await owner.fetchval(
                     "SELECT has_table_privilege('unihub_web_read', "
+                    "'public.fieldops_visits', $1)",
+                    privilege,
+                )
+                assert not await owner.fetchval(
+                    "SELECT has_table_privilege('unihub_business_write', "
                     "'public.fieldops_visits', $1)",
                     privilege,
                 )

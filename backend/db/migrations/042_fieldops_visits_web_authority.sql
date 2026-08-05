@@ -46,7 +46,8 @@ BEGIN
     END IF;
 
     -- Require one owner-issued, non-grantable SELECT ACL and nothing else on
-    -- the web authority. Effective DML or PUBLIC grants are never tolerated.
+    -- the web-read authority. The web LOGIN also inherits business-write, so
+    -- that authority must remain entirely absent from this external source.
     IF EXISTS (
         SELECT 1
         FROM pg_class AS relation
@@ -72,6 +73,22 @@ BEGIN
             COALESCE(relation.relacl, acldefault('r', relation.relowner))
         ) AS acl
         WHERE relation.oid = 'public.fieldops_visits'::regclass
+          AND (
+              acl.grantee = 'unihub_business_write'::regrole
+              OR acl.grantee = to_regrole('unihub_web')
+          )
+    ) THEN
+        RAISE EXCEPTION
+            'unihub_business_write or direct unihub_web privileges are forbidden on public.fieldops_visits';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_class AS relation
+        CROSS JOIN LATERAL aclexplode(
+            COALESCE(relation.relacl, acldefault('r', relation.relowner))
+        ) AS acl
+        WHERE relation.oid = 'public.fieldops_visits'::regclass
           AND acl.grantee = 0
     ) THEN
         RAISE EXCEPTION
@@ -85,10 +102,15 @@ BEGIN
         WHERE attribute.attrelid = 'public.fieldops_visits'::regclass
           AND attribute.attnum > 0
           AND NOT attribute.attisdropped
-          AND acl.grantee IN (0, 'unihub_web_read'::regrole)
+          AND acl.grantee IN (
+              0,
+              'unihub_web_read'::regrole,
+              'unihub_business_write'::regrole,
+              to_regrole('unihub_web')
+          )
     ) THEN
         RAISE EXCEPTION
-            'column privileges for unihub_web_read or PUBLIC are forbidden on public.fieldops_visits';
+            'column privileges for web authorities or PUBLIC are forbidden on public.fieldops_visits';
     END IF;
 
     IF has_table_privilege('unihub_web_read', 'public.fieldops_visits', 'INSERT')
@@ -112,6 +134,51 @@ BEGIN
        ) THEN
         RAISE EXCEPTION
             'unihub_web_read effective column DML is forbidden on public.fieldops_visits';
+    END IF;
+
+    IF has_table_privilege('unihub_business_write', 'public.fieldops_visits', 'SELECT')
+       OR has_table_privilege('unihub_business_write', 'public.fieldops_visits', 'INSERT')
+       OR has_table_privilege('unihub_business_write', 'public.fieldops_visits', 'UPDATE')
+       OR has_table_privilege('unihub_business_write', 'public.fieldops_visits', 'DELETE')
+       OR has_table_privilege('unihub_business_write', 'public.fieldops_visits', 'TRUNCATE')
+       OR has_table_privilege('unihub_business_write', 'public.fieldops_visits', 'REFERENCES')
+       OR has_table_privilege('unihub_business_write', 'public.fieldops_visits', 'TRIGGER')
+       OR has_any_column_privilege(
+           'unihub_business_write', 'public.fieldops_visits', 'SELECT'
+       )
+       OR has_any_column_privilege(
+           'unihub_business_write', 'public.fieldops_visits', 'INSERT'
+       )
+       OR has_any_column_privilege(
+           'unihub_business_write', 'public.fieldops_visits', 'UPDATE'
+       )
+       OR has_any_column_privilege(
+           'unihub_business_write', 'public.fieldops_visits', 'REFERENCES'
+       ) THEN
+        RAISE EXCEPTION
+            'unihub_business_write effective privileges are forbidden on public.fieldops_visits';
+    END IF;
+
+    IF to_regrole('unihub_web') IS NOT NULL
+       AND (
+           has_table_privilege('unihub_web', 'public.fieldops_visits', 'INSERT')
+           OR has_table_privilege('unihub_web', 'public.fieldops_visits', 'UPDATE')
+           OR has_table_privilege('unihub_web', 'public.fieldops_visits', 'DELETE')
+           OR has_table_privilege('unihub_web', 'public.fieldops_visits', 'TRUNCATE')
+           OR has_table_privilege('unihub_web', 'public.fieldops_visits', 'REFERENCES')
+           OR has_table_privilege('unihub_web', 'public.fieldops_visits', 'TRIGGER')
+           OR has_any_column_privilege(
+               'unihub_web', 'public.fieldops_visits', 'INSERT'
+           )
+           OR has_any_column_privilege(
+               'unihub_web', 'public.fieldops_visits', 'UPDATE'
+           )
+           OR has_any_column_privilege(
+               'unihub_web', 'public.fieldops_visits', 'REFERENCES'
+           )
+       ) THEN
+        RAISE EXCEPTION
+            'unihub_web effective DML is forbidden on public.fieldops_visits';
     END IF;
 END
 $$;
