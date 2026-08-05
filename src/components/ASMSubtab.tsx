@@ -16,13 +16,13 @@ import {
   WalletCards,
 } from 'lucide-react';
 import { fetchManagerOverview, type ManagerOverview } from '../api/hr';
-import { formatMonthLabel } from '../lib/dates';
+import { formatMonthLabel, getCurrentYearMonth } from '../lib/dates';
 import { cn } from '../lib/utils';
 import { AsmSalaryGrila } from './AsmSalaryGrila';
 import { FirmaBadge } from './FirmaBadge';
 import { SortableTableHeader, TableHeaderCell } from './common/TableHeader';
 
-const TODAY_MONTH = new Date().toISOString().slice(0, 7);
+const TODAY_MONTH = getCurrentYearMonth();
 const SALARY_GRILA_MANAGERS = new Set(['Mihai Condorateanu']);
 const NUMBER = new Intl.NumberFormat('ro-RO');
 

@@ -16,7 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
 import { ApiError, getApiErrorMessage } from '../api/client';
 import { pollImportJob } from '../lib/importJobPolling';
-import { formatMonthLabel } from '../lib/dates';
+import { formatIsoDateInput, getCurrentYearMonth, shiftIsoDate, formatMonthLabel } from '../lib/dates';
 import { SegmentedTabs } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
 import { TableHeaderCell } from './common/TableHeader';
@@ -71,15 +71,8 @@ type SettingsSection = 'imports' | 'exports' | 'preferences';
 type ExportStep = 1 | 2 | 3 | 4;
 const INCENTIVE_PRODUCTS_DATASET = 'incentive_products';
 
-function localDateInputValue(value: Date): string {
-  const localValue = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
-  return localValue.toISOString().slice(0, 10);
-}
-
 function yesterdayInputValue(): string {
-  const value = new Date();
-  value.setDate(value.getDate() - 1);
-  return localDateInputValue(value);
+  return shiftIsoDate(formatIsoDateInput(), -1);
 }
 
 export function Settings({
@@ -98,7 +91,7 @@ export function Settings({
   const [salesOverrideReason, setSalesOverrideReason] = useState('');
   const [promotingSales, setPromotingSales] = useState(false);
   const [promoActualsFile, setPromoActualsFile] = useState<File | null>(null);
-  const [promoActualsMonth, setPromoActualsMonth] = useState(() => localDateInputValue(new Date()).slice(0, 7));
+  const [promoActualsMonth, setPromoActualsMonth] = useState(getCurrentYearMonth);
   const [promoActualsCutoff, setPromoActualsCutoff] = useState(yesterdayInputValue);
   const [promoActualsUploading, setPromoActualsUploading] = useState(false);
   const [promoActualsMessage, setPromoActualsMessage] = useState('');
@@ -178,7 +171,7 @@ export function Settings({
     setErpReconciliationMonth((current) => (
       erpReconciliationMonths.includes(current)
         ? current
-        : erpReconciliationMonths[0]
+        : erpReconciliationMonths[0] ?? ''
     ));
   }, [erpReconciliationMonths]);
 
@@ -190,17 +183,18 @@ export function Settings({
         if (cancelled) return;
         setCatalog(catalogData);
         setMonths(monthData);
-        if (monthData[0]) {
-          setSelectedYears((current) => current.length > 0 ? current : [monthData[0].slice(0, 4)]);
-          setSelectedMonthNumbers((current) => current.length > 0 ? current : [monthData[0].slice(5, 7)]);
+        const firstMonth = monthData[0];
+        if (firstMonth) {
+          setSelectedYears((current) => current.length > 0 ? current : [firstMonth.slice(0, 4)]);
+          setSelectedMonthNumbers((current) => current.length > 0 ? current : [firstMonth.slice(5, 7)]);
         }
         const defaultDataset = catalogData.datasets.find((item) => item.key === exportDataset) ?? catalogData.datasets[0];
         if (defaultDataset) {
           setExportDataset(defaultDataset.key);
           setExportDimensions((current) => current.length > 0 ? current : defaultDataset.dimensions.map((item) => item.key));
         }
-        if (monthData[0]) {
-          const options = await getFilterOptions(monthData[0]);
+        if (firstMonth) {
+          const options = await getFilterOptions(firstMonth);
           if (!cancelled) setFilterOptions(options);
         }
       })
@@ -234,7 +228,8 @@ export function Settings({
     if (availableMonthNumbers.length === 0) return;
     setSelectedMonthNumbers((current) => {
       const valid = current.filter((month) => availableMonthNumbers.includes(month));
-      return valid.length > 0 ? valid : [availableMonthNumbers[0]];
+      const firstMonthNumber = availableMonthNumbers[0];
+      return valid.length > 0 ? valid : firstMonthNumber ? [firstMonthNumber] : [];
     });
   }, [availableMonthNumbers]);
 
@@ -1206,7 +1201,7 @@ function ExportWorkflow({ step, onChange }: { step: ExportStep; onChange: (step:
   return (
     <nav aria-label="Pași export Excel" className="glass rounded-2xl p-2">
       <div className="p-1 lg:hidden">
-        <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500"><span>Pasul {step} din 4</span><span>{steps[step - 1].label}</span></div>
+        <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500"><span>Pasul {step} din 4</span><span>{steps[step - 1]?.label ?? ''}</span></div>
         <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${step * 25}%` }} /></div>
       </div>
       <ol className="hidden grid-cols-2 gap-2 lg:grid lg:grid-cols-4">

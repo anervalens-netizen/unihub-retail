@@ -14,9 +14,9 @@ interface Props {
   data: SalaryEvolutionPoint[];
 }
 
-function formatCurrency(val: any): string {
+function formatCurrency(val: unknown): string {
   if (val === undefined || val === null) return '0';
-  const value = typeof val === 'string' ? parseFloat(val) : val;
+  const value = typeof val === 'string' ? parseFloat(val) : typeof val === 'number' ? val : Number(val);
   if (isNaN(value)) return '0';
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
@@ -71,7 +71,7 @@ export function SalaryAreaChart({ data }: Props) {
           width={56}
         />
         <Tooltip
-          formatter={(value: number) => [formatCurrency(value) + ' RON', '']}
+          formatter={(value) => [formatCurrency(value) + ' RON', '']}
           contentStyle={{
             background: '#1e293b',
             border: 'none',

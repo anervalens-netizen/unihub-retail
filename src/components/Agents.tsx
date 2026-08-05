@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Search, Users, Activity, TrendingUp, UserPlus, UserMinus, UserCheck, RefreshCw, ChevronDown, ChevronUp, Award, LayoutGrid, Store, X } from 'lucide-react';
 import {
   Bar,
@@ -30,9 +30,11 @@ import {
   fetchAgentProfile,
   fetchAgentHistory,
   fetchStoreCoverage,
-  AgentsQuery,
-  AgentListItem,
-  StoreCoverageItem
+  type AgentsQuery,
+  type AgentHistoryPoint,
+  type AgentListItem,
+  type AgentMovementPoint,
+  type StoreCoverageItem,
 } from '../api/agents';
 
 // formatters
@@ -83,6 +85,20 @@ function hasNoSelectedAgent(value: string | null): boolean {
 interface AgentDetailsProps {
   agent: string;
   currentMonth: string;
+}
+
+interface ChartTooltipEntry {
+  color?: string;
+  dataKey?: string | number;
+  name?: string | number;
+  payload?: unknown;
+  value?: unknown;
+}
+
+interface ChartTooltipProps {
+  active?: boolean;
+  label?: string | number;
+  payload?: readonly ChartTooltipEntry[];
 }
 
 function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
@@ -203,8 +219,9 @@ function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
                   tickFormatter={(val) => `${val / 1000}k`}
                 />
                 <Tooltip 
-                  content={({ active, payload, label }: any) => {
+                  content={({ active, payload, label }: ChartTooltipProps) => {
                     if (active && payload && payload.length) {
+                      const point = payload[0]?.payload as AgentHistoryPoint | undefined;
                       return (
                         <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
                           <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
@@ -212,16 +229,16 @@ function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
                           </p>
                           <div className="space-y-1">
                             <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Vanzari: <span className="font-bold text-slate-900 dark:text-white">{nf.format(payload[0].payload.total_sales)}</span>
+                              Vanzari: <span className="font-bold text-slate-900 dark:text-white">{nf.format(point?.total_sales ?? 0)}</span>
                             </div>
                             <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Cantitate: <span className="font-bold text-slate-900 dark:text-white">{nfNum.format(payload[0].payload.total_quantity)}</span>
+                              Cantitate: <span className="font-bold text-slate-900 dark:text-white">{nfNum.format(point?.total_quantity ?? 0)}</span>
                             </div>
                             <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Bonuri: <span className="font-bold text-slate-900 dark:text-white">{payload[0].payload.receipt_count}</span>
+                              Bonuri: <span className="font-bold text-slate-900 dark:text-white">{point?.receipt_count ?? 0}</span>
                             </div>
                             <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Magazine: <span className="font-bold text-slate-900 dark:text-white">{payload[0].payload.active_store_count}</span>
+                              Magazine: <span className="font-bold text-slate-900 dark:text-white">{point?.active_store_count ?? 0}</span>
                             </div>
                           </div>
                         </div>
@@ -254,7 +271,7 @@ interface AgentDrawerProps {
 function AgentDrawer({ agent, currentMonth, isOpen, onClose }: AgentDrawerProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  function handleOverlayClick(e: React.MouseEvent) {
+  function handleOverlayClick(e: MouseEvent<HTMLDivElement>) {
     if (e.target === overlayRef.current) onClose();
   }
 
@@ -302,9 +319,9 @@ interface AgentsProps {
   filters: AppFilters;
 }
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label }: ChartTooltipProps) {
   if (active && payload && payload.length) {
-    const point = payload[0]?.payload;
+    const point = payload[0]?.payload as AgentMovementPoint | undefined;
     return (
       <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
         <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
@@ -316,7 +333,7 @@ function CustomTooltip({ active, payload, label }: any) {
           </p>
         )}
         <div className="space-y-1">
-          {payload.map((entry: any, i: number) => (
+          {payload.map((entry, i) => (
             <div key={i} className="flex items-center gap-3">
               <div
                 className="h-2 w-2 rounded-full"
@@ -326,7 +343,7 @@ function CustomTooltip({ active, payload, label }: any) {
                 {entry.name}:
               </span>
               <span className="text-sm font-bold text-slate-900 dark:text-white">
-                {entry.dataKey === 'churned_negative' ? Math.abs(entry.value) : entry.value}
+                {entry.dataKey === 'churned_negative' ? Math.abs(Number(entry.value ?? 0)) : String(entry.value ?? '')}
               </span>
             </div>
           ))}

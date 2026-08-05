@@ -29,6 +29,7 @@ import {
   type PnlMonthlyPoint,
   type PnlStoreOption,
 } from "../api/storePnl";
+import { formatIsoMonth, getCurrentYearMonth } from "../lib/dates";
 import { TableHeaderCell } from "./common/TableHeader";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -57,19 +58,15 @@ const compactMoney = new Intl.NumberFormat("ro-RO", {
 });
 
 export function monthLabel(value: string): string {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return "—";
-  return new Intl.DateTimeFormat("ro-RO", {
-    month: "short",
-    year: "2-digit",
-  }).format(new Date(`${value}-01T00:00:00`));
+  return formatIsoMonth(value);
 }
 
 export function defaultPnlRange(
   months: string[],
-  now = new Date(),
+  now?: Date,
 ): { start: string; end: string } {
   const available = [...months].sort();
-  const currentYear = String(now.getFullYear());
+  const currentYear = getCurrentYearMonth(now).slice(0, 4);
   let selected = available.filter((month) => month.startsWith(`${currentYear}-`));
   if (!selected.length && available.length) {
     const latestYear = available[available.length - 1]?.slice(0, 4);
@@ -198,6 +195,9 @@ export function PnlSubtab() {
       ebitPct: pct(current.ebit, previous.ebit),
     };
   }, [data]);
+  const singleReconciliation = data?.reconciliation.length === 1
+    ? data.reconciliation[0]
+    : undefined;
   const reconciliationWarnings = useMemo(() => (
     data?.reconciliation.filter((item) => (
       item.retail_sales_net !== 0
@@ -399,9 +399,9 @@ export function PnlSubtab() {
               icon={Building2}
             />
             </div>
-            {data.reconciliation.length === 1 && data.reconciliation[0].pnl_to_net_sales_pct !== null && (
+            {singleReconciliation && singleReconciliation.pnl_to_net_sales_pct !== null && (
               <div className="border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-700">
-                Vânzări Retail fără TVA: {money.format(data.reconciliation[0].retail_sales_net)} · Venit P&amp;L / vânzări nete: {data.reconciliation[0].pnl_to_net_sales_pct?.toFixed(1)}%
+                Vânzări Retail fără TVA: {money.format(singleReconciliation.retail_sales_net)} · Venit P&amp;L / vânzări nete: {singleReconciliation.pnl_to_net_sales_pct.toFixed(1)}%
               </div>
             )}
             {monthlyVariance && (

@@ -22,6 +22,7 @@ import {
 } from '../api/grile';
 import { FirmaBadge } from './FirmaBadge';
 import { GrileMonthlyPanel } from './GrileMonthlyPanel';
+import { parseIsoTimestamp } from '../lib/dates';
 import { cn } from '../lib/utils';
 
 const NUMBER = new Intl.NumberFormat('ro-RO');
@@ -65,8 +66,9 @@ function matchesFilter(s: GrileStore, f: StatusFilter): boolean {
 
 function relTime(iso: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
-  const diff = Date.now() - d.getTime();
+  const timestamp = parseIsoTimestamp(iso);
+  if (timestamp === null) return '—';
+  const diff = Date.now() - timestamp;
   const h = Math.floor(diff / 3_600_000);
   if (h < 1) return `${Math.max(1, Math.floor(diff / 60_000))}m`;
   if (h < 24) return `acum ${h}h`;

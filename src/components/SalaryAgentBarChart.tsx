@@ -19,9 +19,9 @@ function formatMonth(year: number, month: number): string {
   return `${months[month - 1]}-${String(year).slice(2)}`;
 }
 
-function formatCurrency(val: any): string {
+function formatCurrency(val: unknown): string {
   if (val === undefined || val === null) return '0';
-  const value = typeof val === 'string' ? parseFloat(val) : val;
+  const value = typeof val === 'string' ? parseFloat(val) : typeof val === 'number' ? val : Number(val);
   if (isNaN(value)) return '0';
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
   return value.toFixed(0);
@@ -30,7 +30,11 @@ function formatCurrency(val: any): string {
 const COLOR_MOBICELL = '#6366f1';
 const COLOR_MOBIUP = '#10b981';
 
-function SalaryTooltip({ active, payload, label }: any) {
+function SalaryTooltip({ active, payload, label }: {
+  active?: boolean;
+  payload?: Array<{ value?: unknown }>;
+  label?: string | number;
+}) {
   if (!active || !payload?.length) return null;
   const value = Number(payload[0]?.value ?? 0);
 

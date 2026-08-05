@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Wallet, TrendingUp } from 'lucide-react';
 import { fetchAsmSalary, type AsmSalaryBreakdown } from '../api/hr';
-import { formatMonthLabel } from '../lib/dates';
+import { formatMonthLabel, getCurrentYearMonth } from '../lib/dates';
 import { TableHeaderCell } from './common/TableHeader';
 
-const TODAY_MONTH = new Date().toISOString().slice(0, 7);
+const TODAY_MONTH = getCurrentYearMonth();
 
 function ron(n: number): string {
   return `${n.toLocaleString('ro-RO', { maximumFractionDigits: 0 })} lei`;

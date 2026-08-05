@@ -25,6 +25,7 @@ import { getFilterOptions } from '../api/filters';
 import { FirmaBadge } from './FirmaBadge';
 import type { AppFilters } from './MainLayout';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
+import { formatIsoDate, formatIsoMonth } from '../lib/dates';
 import { cn } from '../lib/utils';
 import { queryKeys } from '../lib/queryKeys';
 
@@ -140,6 +141,7 @@ function VisitDrawer({
   });
   const detail: VisitDetail | null = detailQuery.data ?? null;
   const loading = detailQuery.isPending;
+  const currentPhoto = detail?.photos[photoIdx] ?? null;
 
   useEffect(() => {
     setPhotoIdx(0);
@@ -192,10 +194,10 @@ function VisitDrawer({
         {!loading && detail && (
           <div className="flex-1 space-y-4 p-4">
             {/* photos */}
-            {detail.photos.length > 0 && (
+            {currentPhoto && (
               <div className="overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
                 <AuthImage
-                  src={getVisitPhotoUrl(detail.id, detail.photos[photoIdx])}
+                  src={getVisitPhotoUrl(detail.id, currentPhoto)}
                   alt={`foto ${photoIdx + 1}`}
                   className="h-56 w-full object-cover"
                 />
@@ -353,7 +355,7 @@ type FlatVisit = VisitSummaryItem & { date: string };
 function VisitLeaf({ visit, onOpen }: { visit: FlatVisit; onOpen: (id: string) => void }) {
   const dayLabel =
     visit.date && visit.date !== '—'
-      ? new Date(visit.date + 'T12:00:00').toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })
+      ? formatIsoDate(visit.date)
       : null;
   return (
     <button
@@ -509,7 +511,7 @@ function MonthPicker({
       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
     >
       {months.map((m) => {
-        const label = new Date(m + '-01').toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
+        const label = formatIsoMonth(m, { month: 'long', year: 'numeric' });
         return (
           <option key={m} value={m}>
             {label.charAt(0).toUpperCase() + label.slice(1)}
@@ -535,7 +537,8 @@ export function VisiteSubtab({ currentMonth, months }: VisiteSubtabProps) {
   // when tree loads, default to the latest month with visits
   useEffect(() => {
     if (availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
-      setSelectedMonth(availableMonths[0]);
+      const latestMonth = availableMonths[0];
+      if (latestMonth) setSelectedMonth(latestMonth);
     }
   }, [availableMonths, selectedMonth]);
 
