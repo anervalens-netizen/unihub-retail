@@ -56,8 +56,10 @@ cu scriptul controlat; scrie DSN-urile fără a le afișa; instalează unități
 principal/flag/membership diferit oprește startupul.
 
 Flagul de bootstrap nu se persistă în niciun `.env` sau unit. Runnerul îl
-acceptă doar când exact 040/041 sunt restante pe baza existentă, sub
-superuserul autentificat direct; după 041 devine automat inutilizabil.
+acceptă doar când baza existentă are istoricul complet până la 039 și toate
+migrările de la 040 încolo sunt restante, sub superuserul autentificat direct.
+Invocarea aplică exclusiv 040/041 și lasă 042+ runnerului restricționat; după
+041 bootstrapul devine automat inutilizabil.
 
 Nu porni workerii între migrare și finalizarea cutoverului. După 040/041,
 rollbackul la sursă cu manifest vechi este deliberat refuzat; deployul păstrează
