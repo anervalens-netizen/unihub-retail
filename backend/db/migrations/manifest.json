@@ -47,6 +47,6 @@
     "039_store_pnl_authoritative_generations.sql": "4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d",
     "040_db_authority_append_only.sql": "59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9",
     "041_schema_owner_handoff.sql": "a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311",
-    "042_fieldops_visits_web_authority.sql": "b0b7f282f66a695580787aa66221ecd855eb585bd8f0cd88517de088406f5dce"
+    "042_fieldops_visits_web_authority.sql": "371692161ff24c8877dc2e31c72bef772c190ffe41b9bf4eef63c78a33028e9c"
   }
 }

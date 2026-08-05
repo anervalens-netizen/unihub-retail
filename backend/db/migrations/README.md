@@ -49,7 +49,7 @@ release-ului `v2.1.0` include:
 | 039 | `039_store_pnl_authoritative_generations.sql` | `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d` | generații Finance immutable, scope/head/ledger și pre-image |
 | 040 | `040_db_authority_append_only.sql` | `59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
 | 041 | `041_schema_owner_handoff.sql` | `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
-| 042 | `042_fieldops_visits_web_authority.sql` | `b0b7f282f66a695580787aa66221ecd855eb585bd8f0cd88517de088406f5dce` | impune unicul ACL web owner-issued SELECT-only la sursa PostgreSQL FieldOps, fără PUBLIC/DML sau însușirea sursei externe |
+| 042 | `042_fieldops_visits_web_authority.sql` | `371692161ff24c8877dc2e31c72bef772c190ffe41b9bf4eef63c78a33028e9c` | impune unicul ACL tabelar web owner-issued SELECT-only la sursa PostgreSQL FieldOps, fără PUBLIC/DML tabelar ori columnar sau însușirea sursei externe |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
@@ -79,8 +79,9 @@ LOGIN Finance; principalul rezervat pentru acel lot viitor este
 `fieldops_visits` rămâne sursă externă. Dacă ownerul DB este diferit de
 `unihub_schema_owner`, el acordă explicit `SELECT` către `unihub_web_read`
 înainte de 042. Migrarea restricționată verifică grantul și refuză fail-closed
-dacă lipsește. Refuză grant option, alt grantor, orice ACL `PUBLIC` și orice DML
-efectiv; nu schimbă ownerul și nu cere superuser.
+dacă lipsește. Refuză grant option, alt grantor, orice ACL `PUBLIC`, orice ACL
+columnar pentru web/PUBLIC și orice DML efectiv, inclusiv moștenit; nu schimbă
+ownerul și nu cere superuser.
 
 Cu backendul și ambii workeri opriți, `retire_legacy_database_login.py --apply`
 refuză orice sesiune sau membru rămas și setează exclusiv `unihub_runtime`

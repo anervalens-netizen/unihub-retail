@@ -86,6 +86,9 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "FieldOps owner must grant SELECT" in fieldops_sql
     assert "PUBLIC privileges are forbidden" in fieldops_sql
     assert "effective DML is forbidden" in fieldops_sql
+    assert "attribute.attacl" in fieldops_sql
+    assert "has_any_column_privilege" in fieldops_sql
+    assert "effective column DML is forbidden" in fieldops_sql
     assert "acl.grantor = relation.relowner" in fieldops_sql
     assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read" in fieldops_sql
     assert "CREATE TABLE" not in fieldops_sql
@@ -465,6 +468,8 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
     database = f"p1a_fieldops_{uuid4().hex}_test"
     fieldops_owner = f"p1a_fieldops_owner_{uuid4().hex[:12]}"
     migrate_principal = f"p1a_migrate_{uuid4().hex[:12]}"
+    delegated_grantor = f"p1a_fieldops_grantor_{uuid4().hex[:12]}"
+    inherited_writer = f"p1a_fieldops_parent_{uuid4().hex[:12]}"
     fieldops_password = token_urlsafe(48)
     migrate_password = token_urlsafe(48)
     maintenance_url = urlunsplit(
@@ -510,6 +515,8 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
                 f'CREATE ROLE "{migrate_principal}" LOGIN NOSUPERUSER NOCREATEDB '
                 f'NOCREATEROLE NOINHERIT PASSWORD {quote(migrate_password)!r}'
             )
+            await owner.execute(f'CREATE ROLE "{delegated_grantor}" NOLOGIN')
+            await owner.execute(f'CREATE ROLE "{inherited_writer}" NOLOGIN')
             await owner.execute(
                 "CREATE TABLE public.fieldops_visits (id BIGINT PRIMARY KEY)"
             )
@@ -559,6 +566,53 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
         fieldops = await asyncpg.connect(fieldops_url)
         try:
             await fieldops.execute(
+                "GRANT SELECT ON TABLE public.fieldops_visits "
+                "TO unihub_web_read WITH GRANT OPTION"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="FieldOps owner must grant SELECT|exactly owner-issued",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE SELECT ON TABLE public.fieldops_visits FROM unihub_web_read"
+            )
+            await fieldops.execute(
+                f'GRANT SELECT ON TABLE public.fieldops_visits '
+                f'TO "{delegated_grantor}" WITH GRANT OPTION'
+            )
+        finally:
+            await fieldops.close()
+
+        owner = await asyncpg.connect(database_url)
+        try:
+            await owner.execute(f'SET ROLE "{delegated_grantor}"')
+            await owner.execute(
+                "GRANT SELECT ON TABLE public.fieldops_visits TO unihub_web_read"
+            )
+            await owner.execute("RESET ROLE")
+        finally:
+            await owner.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="FieldOps owner must grant SELECT|exactly owner-issued",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                f'REVOKE SELECT ON TABLE public.fieldops_visits '
+                f'FROM "{delegated_grantor}" CASCADE'
+            )
+            await fieldops.execute(
                 "GRANT SELECT, INSERT ON TABLE public.fieldops_visits "
                 "TO unihub_web_read"
             )
@@ -593,6 +647,81 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
             await fieldops.execute(
                 "REVOKE SELECT ON TABLE public.fieldops_visits FROM PUBLIC"
             )
+            await fieldops.execute(
+                "GRANT UPDATE (id) ON TABLE public.fieldops_visits "
+                "TO unihub_web_read WITH GRANT OPTION"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="column privileges.*forbidden",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE UPDATE (id) ON TABLE public.fieldops_visits "
+                "FROM unihub_web_read"
+            )
+            await fieldops.execute(
+                "GRANT INSERT (id) ON TABLE public.fieldops_visits TO PUBLIC"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="column privileges.*forbidden",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE INSERT (id) ON TABLE public.fieldops_visits FROM PUBLIC"
+            )
+            await fieldops.execute(
+                f'GRANT UPDATE (id) ON TABLE public.fieldops_visits '
+                f'TO "{inherited_writer}"'
+            )
+        finally:
+            await fieldops.close()
+
+        owner = await asyncpg.connect(database_url)
+        try:
+            await owner.execute(
+                f'GRANT "{inherited_writer}" TO unihub_web_read '
+                "WITH INHERIT TRUE, SET FALSE"
+            )
+            assert await owner.fetchval(
+                "SELECT has_any_column_privilege('unihub_web_read', "
+                "'public.fieldops_visits', 'UPDATE')"
+            )
+        finally:
+            await owner.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="effective column DML is forbidden",
+        ):
+            await run_migrations(migrate_url)
+
+        owner = await asyncpg.connect(database_url)
+        try:
+            await owner.execute(
+                f'REVOKE "{inherited_writer}" FROM unihub_web_read'
+            )
+        finally:
+            await owner.close()
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                f'REVOKE UPDATE (id) ON TABLE public.fieldops_visits '
+                f'FROM "{inherited_writer}"'
+            )
         finally:
             await fieldops.close()
 
@@ -623,6 +752,8 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
         await maintenance.execute(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
         await maintenance.execute(f'DROP ROLE IF EXISTS "{migrate_principal}"')
         await maintenance.execute(f'DROP ROLE IF EXISTS "{fieldops_owner}"')
+        await maintenance.execute(f'DROP ROLE IF EXISTS "{delegated_grantor}"')
+        await maintenance.execute(f'DROP ROLE IF EXISTS "{inherited_writer}"')
         for authority in AUTHORITIES:
             if authority not in existing_roles:
                 await maintenance.execute(f'DROP ROLE IF EXISTS "{authority}"')

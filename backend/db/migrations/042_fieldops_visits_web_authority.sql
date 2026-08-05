@@ -78,6 +78,19 @@ BEGIN
             'PUBLIC privileges are forbidden on public.fieldops_visits';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+        FROM pg_attribute AS attribute
+        CROSS JOIN LATERAL aclexplode(attribute.attacl) AS acl
+        WHERE attribute.attrelid = 'public.fieldops_visits'::regclass
+          AND attribute.attnum > 0
+          AND NOT attribute.attisdropped
+          AND acl.grantee IN (0, 'unihub_web_read'::regrole)
+    ) THEN
+        RAISE EXCEPTION
+            'column privileges for unihub_web_read or PUBLIC are forbidden on public.fieldops_visits';
+    END IF;
+
     IF has_table_privilege('unihub_web_read', 'public.fieldops_visits', 'INSERT')
        OR has_table_privilege('unihub_web_read', 'public.fieldops_visits', 'UPDATE')
        OR has_table_privilege('unihub_web_read', 'public.fieldops_visits', 'DELETE')
@@ -86,6 +99,19 @@ BEGIN
        OR has_table_privilege('unihub_web_read', 'public.fieldops_visits', 'TRIGGER') THEN
         RAISE EXCEPTION
             'unihub_web_read effective DML is forbidden on public.fieldops_visits';
+    END IF;
+
+    IF has_any_column_privilege(
+           'unihub_web_read', 'public.fieldops_visits', 'INSERT'
+       )
+       OR has_any_column_privilege(
+           'unihub_web_read', 'public.fieldops_visits', 'UPDATE'
+       )
+       OR has_any_column_privilege(
+           'unihub_web_read', 'public.fieldops_visits', 'REFERENCES'
+       ) THEN
+        RAISE EXCEPTION
+            'unihub_web_read effective column DML is forbidden on public.fieldops_visits';
     END IF;
 END
 $$;
