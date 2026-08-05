@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -34,11 +35,20 @@ import pandas as pd
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from salary_import_approval import (
+    SalaryImportApprovalError,
+    ValidatedApproval,
+    build_audit_envelope,
+    canonical_json_sha256,
+    load_and_validate_approval_artifact,
+    require_apply_inputs,
+    scan_runtime_salary_surfaces,
+    validate_audit_envelope,
+    validate_dry_run_manifest,
+)
 from salary_identity import get_salary_person_id_key, make_salary_person_id
 
 REPO_DIR = Path(__file__).resolve().parents[2]
-load_dotenv(REPO_DIR / ".env.migrations")
-load_dotenv(REPO_DIR / ".env")
 
 
 LOCATION_ALIASES: dict[tuple[str, str], str | None] = {
@@ -303,12 +313,40 @@ def build_dry_run_manifest(
     }
 
 
+def _validate_records_match_manifest(records: list[SalaryRecord], manifest: Mapping[str, Any]) -> None:
+    if tuple(sorted({record.company_name for record in records})) != tuple(sorted(REQUIRED_COMPANIES)):
+        raise ValueError("Batchul salarial nu acopera exact ambele companii")
+    manifest_companies = {
+        str(company["company_name"]): company
+        for company in manifest["companies"]
+    }
+    for company_name in REQUIRED_COMPANIES:
+        company_records = [record for record in records if record.company_name == company_name]
+        company_manifest = manifest_companies[company_name]
+        if len(company_records) != company_manifest["row_count"]:
+            raise ValueError("Manifestul nu corespunde numarului de randuri")
+        if any(record.source_file != company_manifest["source_file"] for record in company_records):
+            raise ValueError("Manifestul nu corespunde fisierului sursa")
+        if any(record.source_sha256 != company_manifest["source_sha256"] for record in company_records):
+            raise ValueError("Manifestul nu corespunde hashului sursei")
+        total = sum((record.total_salary for record in company_records), Decimal("0"))
+        if f"{total:.2f}" != company_manifest["control_total"]:
+            raise ValueError("Manifestul nu corespunde totalului de control")
+        if sum(1 for record in company_records if record.site_code) != company_manifest.get("mapped_site_rows"):
+            raise ValueError("Manifestul nu corespunde maparii magazinelor")
+        unmapped = sorted({record.locatie for record in company_records if not record.site_code})
+        if unmapped != company_manifest.get("unmapped_locations", []):
+            raise ValueError("Manifestul nu corespunde locatiilor nemapate")
+
+
 async def insert_records(
     conn: asyncpg.Connection,
     records: list[SalaryRecord],
     *,
     manifest: dict[str, Any] | None = None,
     applied_by: str = "test:salary-import",
+    approval: ValidatedApproval | Mapping[str, Any] | None = None,
+    approval_envelope: Mapping[str, Any] | None = None,
 ) -> None:
     if not records:
         raise ValueError("Nu exista randuri valide de importat.")
@@ -353,8 +391,23 @@ async def insert_records(
             "row_count": len(records),
             "control_total": f"{sum((item.total_salary for item in records), Decimal('0')):.2f}",
         }
-    manifest_json = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    manifest_sha256 = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
+    safe_manifest = validate_dry_run_manifest(manifest)
+    manifest_sha256 = canonical_json_sha256(safe_manifest)
+    if approval_envelope is None and isinstance(approval, ValidatedApproval):
+        approval_envelope = approval.envelope()
+    elif approval_envelope is None and isinstance(approval, Mapping):
+        approval_envelope = approval
+    if approval_envelope is None:
+        raise SalaryImportApprovalError("A validated approval envelope is required for writes")
+    safe_envelope = validate_audit_envelope(
+        approval_envelope,
+        manifest=safe_manifest,
+        manifest_sha256=manifest_sha256,
+        applied_by=applied_by,
+    )
+    _validate_records_match_manifest(records, safe_manifest)
+    manifest_json = json.dumps(safe_envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    envelope_sha256 = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
 
     async with conn.transaction():
         existing_people = await conn.fetch(
@@ -386,7 +439,7 @@ async def insert_records(
             records[0].year,
             records[0].month,
             manifest_json,
-            manifest_sha256,
+            envelope_sha256,
             applied_by.strip(),
         )
         await conn.executemany(
@@ -456,11 +509,20 @@ async def main() -> None:
     parser.add_argument("--mobicell-file", type=Path, required=True)
     parser.add_argument("--apply", action="store_true", help="Scrie in DB. Fara flag ruleaza dry-run.")
     parser.add_argument("--applied-by", required=True, help="Identitatea operatorului pentru manifestul auditabil.")
+    parser.add_argument("--expected-manifest-sha256", help="SHA-256 exact al manifestului dry-run aprobat.")
+    parser.add_argument("--approval-artifact", type=Path, help="Artifactul JSON de aprobare independenta.")
     args = parser.parse_args()
+
+    if args.apply:
+        require_apply_inputs(args.expected_manifest_sha256, args.approval_artifact)
+    scan_runtime_salary_surfaces(REPO_DIR)
+
+    load_dotenv(REPO_DIR / ".env.migrations")
+    load_dotenv(REPO_DIR / ".env")
 
     db_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not db_url:
-        print("EROARE: DATABASE_URL lipseste din .env", file=sys.stderr)
+        print("EROARE: DATABASE_URL lipseste", file=sys.stderr)
         sys.exit(1)
 
     for file_path in (args.mobiup_file, args.mobicell_file):
@@ -511,6 +573,7 @@ async def main() -> None:
         ]
         if not args.apply:
             print("DRY RUN MANIFEST: " + json.dumps(manifest, ensure_ascii=False, sort_keys=True))
+            print("DRY RUN MANIFEST SHA-256: " + canonical_json_sha256(manifest))
             if missing_companies:
                 raise ValueError("Batch HR incomplet: ambele firme sunt obligatorii")
             print("DRY RUN: nu s-a scris nimic. Adauga --apply pentru import.")
@@ -519,7 +582,27 @@ async def main() -> None:
             raise ValueError("Batch HR incomplet: ambele firme sunt obligatorii")
         if not records:
             raise ValueError("Nu exista randuri valide de importat.")
-        await insert_records(conn, records, manifest=manifest, applied_by=args.applied_by)
+        manifest_sha256 = canonical_json_sha256(manifest)
+        validated_approval = load_and_validate_approval_artifact(
+            args.approval_artifact,
+            manifest=manifest,
+            expected_manifest_sha256=args.expected_manifest_sha256,
+            applied_by=args.applied_by,
+        )
+        audit_envelope = build_audit_envelope(
+            manifest,
+            manifest_sha256,
+            validated_approval.metadata,
+            validated_approval.artifact_sha256,
+            args.applied_by,
+        )
+        await insert_records(
+            conn,
+            records,
+            manifest=manifest,
+            applied_by=args.applied_by,
+            approval_envelope=audit_envelope,
+        )
         print(f"Import finalizat pentru {args.year}-{args.month:02d}: {len(records)} randuri.")
     finally:
         await conn.close()
