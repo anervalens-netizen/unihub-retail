@@ -570,11 +570,13 @@ Ordinea porților:
 
 #### P2 și P3
 
-P2 se livrează în trei candidate separate: boundaries/upload/streaming,
-cohorte istorice, apoi Dashboard/export/startup/load. P3 începe cu inventare
-read-only pentru scope organizațional, roluri OS/DB, query plans, dependencies,
-strict TS și cleanup; fiecare remediere primește gate proporțional și nu se
-comasează într-un mega-release.
+P2 păstrează trei domenii de verificare: boundaries/upload/streaming, cohorte
+istorice și Dashboard/export/startup/load. Ele pot intra într-un singur candidat
+consolidat dacă ownershipul fișierelor este disjunct și porțile țintite rămân
+clare; nu se forțează trei release-uri. P3 începe read-only, în paralel, cu
+inventare pentru scope organizațional, roluri OS/DB, query plans, dependencies,
+strict TS și cleanup. Remedierile se integrează în următorul candidat util, cu
+gate proporțional, fără câte un release sau handoff per finding.
 
 ### 14.5 Condiție de continuare
 
