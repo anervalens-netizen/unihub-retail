@@ -187,7 +187,10 @@ async def claim_validated_sales_generation(
               AND manifest_sha256 = $3
               AND status = 'processing'
               AND manifest->>'generation_state' = 'validated'
-              AND source_artifact_state = 'artifact_retained'
+              AND (
+                    NOT source_artifact_required
+                    OR source_artifact_state = 'artifact_retained'
+              )
             FOR UPDATE
         ), updated AS (
             UPDATE import_snapshots snap

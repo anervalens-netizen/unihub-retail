@@ -20,6 +20,14 @@ from scripts.import_salary_records import (
     validate_records,
 )
 from salary_identity import make_salary_person_id
+from salary_import_approval import (
+    APPROVAL_ARTIFACT_TYPE,
+    KNOWN_GROUPS_TOTAL,
+    REQUIRED_COMPANIES,
+    ValidatedApproval,
+    canonical_json_sha256,
+    validate_approval_artifact,
+)
 
 
 TEST_PERSON_ID_KEY = "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz"
@@ -51,6 +59,61 @@ def make_record(
         source_row=source_row,
         source_sha256=source_sha256,
     )
+
+
+def approved_batch(
+    records: list[SalaryRecord], *, applied_by: str
+) -> tuple[dict[str, object], ValidatedApproval]:
+    companies: list[dict[str, object]] = []
+    for company_name in REQUIRED_COMPANIES:
+        company_records = [record for record in records if record.company_name == company_name]
+        assert company_records
+        companies.append(
+            {
+                "company_name": company_name,
+                "source_file": company_records[0].source_file,
+                "source_sha256": company_records[0].source_sha256,
+                "row_count": len(company_records),
+                "control_total": f"{sum((item.total_salary for item in company_records), Decimal('0')):.2f}",
+                "mapped_site_rows": sum(1 for item in company_records if item.site_code),
+                "unmapped_locations": sorted(
+                    {item.locatie for item in company_records if not item.site_code}
+                ),
+            }
+        )
+    manifest: dict[str, object] = {
+        "manifest_version": 1,
+        "year": records[0].year,
+        "month": records[0].month,
+        "companies": companies,
+        "row_count": len(records),
+        "control_total": f"{sum((item.total_salary for item in records), Decimal('0')):.2f}",
+    }
+    manifest_sha256 = canonical_json_sha256(manifest)
+    approval = validate_approval_artifact(
+        {
+            "artifact_type": APPROVAL_ARTIFACT_TYPE,
+            "schema_version": 1,
+            "decision": "approved",
+            "manifest_sha256": manifest_sha256,
+            "year": records[0].year,
+            "month": records[0].month,
+            "companies": list(REQUIRED_COMPANIES),
+            "known_groups_total": KNOWN_GROUPS_TOTAL,
+            "resolved_groups_count": KNOWN_GROUPS_TOTAL,
+            "unresolved_groups_count": 0,
+            "reviewer": "test:independent-reviewer",
+            "approval_timestamp": "2099-01-01T00:00:00+00:00",
+            "approval_reference": "test:approved-batch",
+        },
+        manifest=manifest,
+        expected_manifest_sha256=manifest_sha256,
+        applied_by=applied_by,
+    )
+    # In-memory validation has no source artifact bytes; tests bind a synthetic
+    # artifact digest before exercising the DB write envelope.
+    approval = replace(approval, artifact_sha256="d" * 64)
+    return manifest, approval
 
 
 def test_validate_cnp_requires_thirteen_digits_and_checksum() -> None:
@@ -243,6 +306,15 @@ async def test_salary_import_rolls_back_identity_after_post_insert_fault(
     pool = await get_pool()
     try:
         record = make_record(cnp=CNP_C)
+        counterpart = make_record(
+            cnp=CNP_A,
+            full_name="Agent Counterpart",
+            company_name="Mobicell",
+            source_file="mobicell.xlsx",
+            source_sha256="b" * 64,
+        )
+        records = [record, counterpart]
+        manifest, approval = approved_batch(records, applied_by="test:salary-import")
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 7")
             await conn.execute(
@@ -250,7 +322,12 @@ async def test_salary_import_rolls_back_identity_after_post_insert_fault(
                 CNP_C,
             )
             with pytest.raises(RuntimeError, match="injected after identity insert"):
-                await insert_records(FaultAfterIdentityInsert(conn), [record])
+                await insert_records(
+                    FaultAfterIdentityInsert(conn),
+                    records,
+                    manifest=manifest,
+                    approval=approval,
+                )
             assert await conn.fetchval(
                 "SELECT COUNT(*) FROM salary_private.people WHERE cnp = $1",
                 CNP_C,
@@ -324,8 +401,30 @@ async def test_salary_import_replaces_only_selected_month_and_companies(
                 source_row=2,
                 source_sha256="c" * 64,
             )
+            replacement_mobicell = SalaryRecord(
+                year=2099,
+                month=7,
+                full_name="Mobicell pastrat",
+                cnp=CNP_B,
+                total_salary=Decimal("2000"),
+                company_name="Mobicell",
+                site_code=None,
+                locatie="Test",
+                source_file="mobicell.xlsx",
+                source_row=2,
+                source_sha256="b" * 64,
+            )
+            replacements = [replacement, replacement_mobicell]
+            manifest, approval = approved_batch(
+                replacements, applied_by="test:salary-import"
+            )
             async with conn.transaction():
-                await insert_records(conn, [replacement])
+                await insert_records(
+                    conn,
+                    replacements,
+                    manifest=manifest,
+                    approval=approval,
+                )
             rows = await conn.fetch(
                 """
                 SELECT full_name, company_name, total_salary, person_id
@@ -365,12 +464,30 @@ async def test_salary_components_persist_by_source_row_and_aggregate_by_person(
     person_id = make_salary_person_id(CNP_A, "Agent Test", TEST_PERSON_ID_KEY)
     first = replace(make_record(cnp=CNP_A), month=8, source_row=2)
     second = replace(first, source_row=3, total_salary=Decimal("1250.00"))
+    counterpart = replace(
+        make_record(
+            cnp=CNP_B,
+            full_name="Agent Counterpart",
+            company_name="Mobicell",
+            source_file="mobicell.xlsx",
+            source_sha256="b" * 64,
+        ),
+        month=8,
+    )
+    records = [first, second, counterpart]
+    manifest, approval = approved_batch(records, applied_by="test:components")
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 8")
             await conn.execute("DELETE FROM salary_private.people WHERE person_id = $1", person_id)
-            await insert_records(conn, [first, second], applied_by="test:components")
+            await insert_records(
+                conn,
+                records,
+                manifest=manifest,
+                approval=approval,
+                applied_by="test:components",
+            )
             result = await conn.fetchrow(
                 """
                 SELECT COUNT(*)::integer AS component_count,
@@ -407,6 +524,18 @@ async def test_salary_existing_identity_name_conflict_has_zero_writes(
     monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", TEST_PERSON_ID_KEY)
     person_id = make_salary_person_id(CNP_B, "Alt Nume", TEST_PERSON_ID_KEY)
     record = replace(make_record(cnp=CNP_B), month=9, source_sha256="b" * 64)
+    counterpart = replace(
+        make_record(
+            cnp=CNP_A,
+            full_name="Agent Counterpart",
+            company_name="Mobicell",
+            source_file="mobicell.xlsx",
+            source_sha256="a" * 64,
+        ),
+        month=9,
+    )
+    records = [record, counterpart]
+    manifest, approval = approved_batch(records, applied_by="test:conflict")
     pool = await get_pool()
     try:
         async with pool.acquire() as conn:
@@ -421,7 +550,13 @@ async def test_salary_existing_identity_name_conflict_has_zero_writes(
                 CNP_B,
             )
             with pytest.raises(ValueError, match="zero scrieri"):
-                await insert_records(conn, [record], applied_by="test:conflict")
+                await insert_records(
+                    conn,
+                    records,
+                    manifest=manifest,
+                    approval=approval,
+                    applied_by="test:conflict",
+                )
             assert await conn.fetchval(
                 "SELECT COUNT(*) FROM salary_records WHERE year = 2099 AND month = 9"
             ) == 0

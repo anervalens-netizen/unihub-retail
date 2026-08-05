@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import asyncpg
 
 import services.jobs as jobs
+from db.connection import close_db_pool, get_pool
 from services.sales_generation import SalesGenerationValidationError
 from services.sales_generation_flow import promote_sales_generation
 
@@ -167,6 +170,41 @@ async def test_required_generation_cannot_promote_without_retained_metadata() ->
             expected_manifest_sha256="a" * 64,
             requested_by_sub="test:artifact",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_database_rejects_terminal_required_generation_without_artifact() -> None:
+    pool = await get_pool()
+    month = "2099-06"
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM import_snapshots WHERE import_month = $1", month)
+            snapshot_id = await conn.fetchval(
+                """
+                INSERT INTO import_snapshots (
+                    import_month, filename, status, rows_in_file, rows_imported,
+                    source_sha256, source_artifact_required
+                ) VALUES ($1, 'artifact-fence.xlsx', 'processing', 1, 0, $2, true)
+                RETURNING id
+                """,
+                month,
+                "a" * 64,
+            )
+            with pytest.raises(asyncpg.PostgresError, match="retained source artifact"):
+                await conn.execute(
+                    "UPDATE import_snapshots SET status = 'completed' WHERE id = $1",
+                    snapshot_id,
+                )
+            assert await conn.fetchval(
+                "SELECT status FROM import_snapshots WHERE id = $1", snapshot_id
+            ) == "processing"
+            await conn.execute("DELETE FROM import_snapshots WHERE id = $1", snapshot_id)
+    finally:
+        await close_db_pool()
 
 
 class _AsyncContext:
