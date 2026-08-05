@@ -49,7 +49,7 @@ release-ului `v2.1.0` include:
 | 039 | `039_store_pnl_authoritative_generations.sql` | `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d` | generații Finance immutable, scope/head/ledger și pre-image |
 | 040 | `040_db_authority_append_only.sql` | `59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
 | 041 | `041_schema_owner_handoff.sql` | `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
-| 042 | `042_fieldops_visits_web_authority.sql` | `bcd7d79ddd6b47e48567a6fb136f6bda02f25469f51642601ba0c1093f7e4b21` | acordă web-read acces SELECT-only la sursa PostgreSQL FieldOps existentă, fără a crea/însuși sursa externă |
+| 042 | `042_fieldops_visits_web_authority.sql` | `b8f71f975e697e6e6160e3a258d595fc36e93c89e73c268cfc59cb2a3962e81f` | verifică/acordă web-read SELECT-only la sursa PostgreSQL FieldOps existentă, fără a crea/însuși sursa externă |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
@@ -75,6 +75,11 @@ membershipurilor este tranzacțională și un contract inexact nu lasă granturi
 parțiale. Nu se creează
 LOGIN Finance; principalul rezervat pentru acel lot viitor este
 `unihub_finance_import_worker`.
+
+`fieldops_visits` rămâne sursă externă. Dacă ownerul DB este diferit de
+`unihub_schema_owner`, el acordă explicit `SELECT` către `unihub_web_read`
+înainte de 042. Migrarea restricționată verifică grantul și refuză fail-closed
+dacă lipsește; nu schimbă ownerul, nu cere superuser și nu acordă DML.
 
 Cu backendul și ambii workeri opriți, `retire_legacy_database_login.py --apply`
 refuză orice sesiune sau membru rămas și setează exclusiv `unihub_runtime`

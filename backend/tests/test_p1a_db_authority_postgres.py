@@ -82,6 +82,8 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
 
     fieldops_sql = FIELDOPS_AUTHORITY_MIGRATION.read_text(encoding="utf-8")
     assert "to_regclass('public.fieldops_visits') IS NOT NULL" in fieldops_sql
+    assert "SELECT WITH GRANT OPTION" in fieldops_sql
+    assert "FieldOps owner must grant SELECT" in fieldops_sql
     assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read" in fieldops_sql
     assert "CREATE TABLE" not in fieldops_sql
 
@@ -445,6 +447,153 @@ async def test_schema_owner_handoff_does_not_capture_foreign_owned_objects() -> 
         finally:
             await connection.execute(f'DROP TABLE IF EXISTS public."{table_name}"')
             await connection.execute(f'DROP ROLE IF EXISTS "{foreign_role}"')
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE/CREATEDB",
+)
+async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_migrate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """042 fails closed, then succeeds unchanged after the real owner pregrants."""
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    database = f"p1a_fieldops_{uuid4().hex}_test"
+    fieldops_owner = f"p1a_fieldops_owner_{uuid4().hex[:12]}"
+    migrate_principal = f"p1a_migrate_{uuid4().hex[:12]}"
+    fieldops_password = token_urlsafe(48)
+    migrate_password = token_urlsafe(48)
+    maintenance_url = urlunsplit(
+        (parsed.scheme, parsed.netloc, "/postgres", parsed.query, parsed.fragment)
+    )
+    database_url = urlunsplit(
+        (parsed.scheme, parsed.netloc, f"/{database}", parsed.query, parsed.fragment)
+    )
+
+    def principal_url(principal: str, password: str) -> str:
+        return urlunsplit(
+            (
+                parsed.scheme,
+                f"{quote(principal)}:{quote(password, safe='')}@{parsed.hostname}:{parsed.port}",
+                f"/{database}",
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+
+    fieldops_url = principal_url(fieldops_owner, fieldops_password)
+    migrate_url = principal_url(migrate_principal, migrate_password)
+    maintenance = await asyncpg.connect(maintenance_url)
+    existing_roles = {
+        row["rolname"]
+        for row in await maintenance.fetch(
+            "SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])",
+            [*AUTHORITIES, "unihub_schema_owner"],
+        )
+    }
+    try:
+        monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+        await maintenance.execute(f'CREATE DATABASE "{database}"')
+        await run_migrations(database_url)
+
+        owner = await asyncpg.connect(database_url)
+        try:
+            await owner.execute(
+                f'CREATE ROLE "{fieldops_owner}" LOGIN NOSUPERUSER NOCREATEDB '
+                f'NOCREATEROLE INHERIT PASSWORD {quote(fieldops_password)!r}'
+            )
+            await owner.execute(
+                f'CREATE ROLE "{migrate_principal}" LOGIN NOSUPERUSER NOCREATEDB '
+                f'NOCREATEROLE NOINHERIT PASSWORD {quote(migrate_password)!r}'
+            )
+            await owner.execute(
+                "CREATE TABLE public.fieldops_visits (id BIGINT PRIMARY KEY)"
+            )
+            await owner.execute(
+                f'ALTER TABLE public.fieldops_visits OWNER TO "{fieldops_owner}"'
+            )
+            await owner.execute(
+                "DELETE FROM schema_migrations WHERE filename = $1",
+                FIELDOPS_AUTHORITY_MIGRATION.name,
+            )
+        finally:
+            await owner.close()
+
+        checks = await provision(
+            database_url,
+            migrate_url,
+            authority_roles=frozenset({"unihub_migrate"}),
+        )
+        assert all(checks.values())
+        migrate_contract = DATABASE_AUTHORITY_CONTRACTS["migrate"]
+        monkeypatch.setitem(
+            DATABASE_AUTHORITY_CONTRACTS,
+            "migrate",
+            replace(migrate_contract, principal=migrate_principal),
+        )
+        monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="FieldOps owner must grant SELECT",
+        ):
+            await run_migrations(migrate_url)
+
+        owner = await asyncpg.connect(database_url)
+        try:
+            assert await owner.fetchval(
+                "SELECT COUNT(*) FROM schema_migrations WHERE filename = $1",
+                FIELDOPS_AUTHORITY_MIGRATION.name,
+            ) == 0
+            assert await owner.fetchval(
+                "SELECT pg_get_userbyid(relowner) FROM pg_class "
+                "WHERE oid = 'public.fieldops_visits'::regclass"
+            ) == fieldops_owner
+        finally:
+            await owner.close()
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "GRANT SELECT ON TABLE public.fieldops_visits TO unihub_web_read"
+            )
+        finally:
+            await fieldops.close()
+
+        assert await run_migrations(migrate_url) == [
+            FIELDOPS_AUTHORITY_MIGRATION.name
+        ]
+        owner = await asyncpg.connect(database_url)
+        try:
+            assert await owner.fetchval(
+                "SELECT pg_get_userbyid(relowner) FROM pg_class "
+                "WHERE oid = 'public.fieldops_visits'::regclass"
+            ) == fieldops_owner
+            assert await owner.fetchval(
+                "SELECT has_table_privilege('unihub_web_read', "
+                "'public.fieldops_visits', 'SELECT')"
+            )
+            for privilege in (
+                "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"
+            ):
+                assert not await owner.fetchval(
+                    "SELECT has_table_privilege('unihub_web_read', "
+                    "'public.fieldops_visits', $1)",
+                    privilege,
+                )
+        finally:
+            await owner.close()
+    finally:
+        await maintenance.execute(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
+        await maintenance.execute(f'DROP ROLE IF EXISTS "{migrate_principal}"')
+        await maintenance.execute(f'DROP ROLE IF EXISTS "{fieldops_owner}"')
+        for authority in AUTHORITIES:
+            if authority not in existing_roles:
+                await maintenance.execute(f'DROP ROLE IF EXISTS "{authority}"')
+        if "unihub_schema_owner" not in existing_roles:
+            await maintenance.execute("DROP ROLE IF EXISTS unihub_schema_owner")
+        await maintenance.close()
 
 
 @pytest.mark.asyncio
