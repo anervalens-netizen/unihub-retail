@@ -70,6 +70,7 @@ async def test_sales_import_is_always_queued(
     )
     monkeypatch.setattr(imports_service, "enqueue_sales_import", enqueue)
     monkeypatch.setattr(imports_service, "get_job_status", status)
+    monkeypatch.setattr(imports_service, "validate_spreadsheet_upload", lambda *_args: None)
     upload = UploadFile(file=BytesIO(b"valid"), filename="sales.xlsx")
 
     result = await service().import_sales(upload)
@@ -225,6 +226,7 @@ async def test_failed_content_hash_can_be_retried(
         assert call.kwargs["_queue_name"] == jobs_service.SALES_IMPORT_QUEUE_NAME
         assert isinstance(call.args[1], str)
         assert call.args[2] == jobs_service.sha256(b"same content").hexdigest()
+        assert call.args[3] == len(b"same content")
         assert b"same content" not in call.args
 
 
@@ -276,6 +278,7 @@ async def test_sales_import_spools_bytes_outside_valkey_payload(
     assert spool_path.read_bytes() == b"excel bytes"
     assert call.args[0] == "import_sales_background"
     assert call.args[2] == jobs_service.sha256(b"excel bytes").hexdigest()
-    assert call.args[3] == "sales.xlsx"
+    assert call.args[3] == len(b"excel bytes")
+    assert call.args[4] == "sales.xlsx"
     assert call.kwargs["_queue_name"] == jobs_service.SALES_IMPORT_QUEUE_NAME
     assert b"excel bytes" not in call.args

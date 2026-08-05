@@ -19,8 +19,8 @@ def test_clear_filter_options_cache_is_safe() -> None:
 def visit_service(images_dir: Path, photos: list[str]) -> MagicMock:
     service = MagicMock()
     service.get_visit_detail = AsyncMock(return_value=SimpleNamespace(photos=photos))
-    service.repo.images_dir_path.return_value = images_dir
-    service.repo.photo_path.side_effect = lambda visit_id, filename: images_dir / visit_id / filename
+    service.images_dir_path.return_value = images_dir
+    service.photo_path.side_effect = lambda visit_id, filename: images_dir / visit_id / filename
     return service
 
 

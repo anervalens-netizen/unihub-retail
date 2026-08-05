@@ -27,9 +27,29 @@ class HrService:
             raise HTTPException(status_code=404, detail="Cerere negăsită")
         return dict(row)
 
-    async def list_leave_requests(self, status: str | None, agent_name: str | None) -> list[dict]:
-        rows = await self.repo.list_leave_requests(status, agent_name)
-        return [dict(r) for r in rows]
+    async def list_leave_requests(
+        self,
+        status: str | None,
+        agent_name: str | None,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        rows, total = await self.repo.list_leave_requests(
+            status,
+            agent_name,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "items": [
+                {key: value for key, value in dict(row).items() if key != "total_count"}
+                for row in rows
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
     async def get_agent_performance(self, agent_name: str) -> list[dict]:
         rows = await self.repo.get_agent_performance(agent_name)

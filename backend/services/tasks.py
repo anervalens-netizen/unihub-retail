@@ -22,9 +22,27 @@ class TasksService:
         assignee: str | None,
         site_code: str | None,
         only_mine: str | None = None,
-    ) -> list[dict[str, Any]]:
-        rows = await self.repo.list_tasks(status, assignee, site_code, only_mine)
-        return [dict(r) for r in rows]
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        rows, total = await self.repo.list_tasks(
+            status,
+            assignee,
+            site_code,
+            only_mine,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "items": [
+                {key: value for key, value in dict(row).items() if key != "total_count"}
+                for row in rows
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
     async def update_task(self, task_id: int, data: dict[str, Any]) -> dict[str, Any]:
         if not data:

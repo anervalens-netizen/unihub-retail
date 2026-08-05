@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date
-from hashlib import sha256
 import json
 import logging
 import os
@@ -20,7 +19,7 @@ from services.jobs import (
     read_sales_import_spool_file,
     remove_sales_import_spool_file,
     retain_sales_import_spool_file,
-    stage_sales_import_spool_file,
+    verify_sales_import_artifact,
 )
 
 
@@ -45,9 +44,10 @@ async def _grile_monthly_reconciliation_loop(ctx: dict) -> None:
 
 async def import_sales_background(
     ctx: dict,
-    file_reference: bytes | str,
-    digest_or_filename: str,
-    filename_or_request_id: str | None = None,
+    spool_path: str,
+    source_digest: str,
+    source_byte_size: int,
+    filename: str,
     request_id: str | None = None,
     cutoff_date_iso: str | None = None,
     requested_by_sub: str | None = None,
@@ -57,44 +57,31 @@ async def import_sales_background(
     from services.sales_generation_flow import attach_sales_generation_source
     from services.sales_generation_flow import mark_sales_generation_artifact_retained
 
-    spool_path: str | None = None
     staged = False
-    if isinstance(file_reference, bytes):
-        # Compatibilitate pentru joburile publicate înainte de migrarea la
-        # spool: bytes, filename, request_id.
-        legacy_content = file_reference
-        filename = digest_or_filename
-        legacy_request_id = filename_or_request_id
-        if request_id is None:
-            request_id = legacy_request_id
-    else:
-        spool_path = file_reference
-        if not filename_or_request_id:
-            raise ValueError("Sales import filename is missing")
-        filename = filename_or_request_id
+    if not isinstance(spool_path, str) or not spool_path:
+        raise ValueError("Sales import worker requires a durable spool path")
+    if not isinstance(source_digest, str) or not source_digest:
+        raise ValueError("Sales import worker requires a source digest")
+    if isinstance(source_byte_size, bool) or not isinstance(source_byte_size, int) or source_byte_size < 0:
+        raise ValueError("Sales import worker requires a valid source size")
+    if not filename:
+        raise ValueError("Sales import filename is missing")
 
     token = bind_request_id(request_id) if request_id else None
     cutoff = date.fromisoformat(cutoff_date_iso) if cutoff_date_iso else None
     actor = requested_by_sub or "legacy-direct"
     try:
-        if isinstance(file_reference, bytes):
-            file_content = legacy_content
-            source_digest = sha256(file_content).hexdigest()
-            spool_path = str(
-                await asyncio.to_thread(
-                    stage_sales_import_spool_file,
-                    file_content,
-                    source_digest,
-                )
-            )
-        else:
-            assert spool_path is not None
-            source_digest = digest_or_filename
-            file_content = await asyncio.to_thread(
-                read_sales_import_spool_file,
-                spool_path,
-                source_digest,
-            )
+        verified_size = await asyncio.to_thread(
+            verify_sales_import_artifact,
+            spool_path,
+            source_digest,
+            source_byte_size,
+        )
+        file_content = await asyncio.to_thread(
+            read_sales_import_spool_file,
+            spool_path,
+            source_digest,
+        )
         conn = ctx.get("db_conn")
         if conn is None:
             from db.connection import get_pool
@@ -120,7 +107,7 @@ async def import_sales_background(
                     owner_id=result.owner_id,
                     source_spool_path=spool_path,
                     source_sha256=source_digest,
-                    source_byte_size=len(file_content),
+                    source_byte_size=verified_size,
                 )
                 retained_path = await asyncio.to_thread(
                     retain_sales_import_spool_file,
@@ -128,7 +115,7 @@ async def import_sales_background(
                     import_month=result.import_month,
                     snapshot_id=result.snapshot_id,
                     expected_digest=source_digest,
-                    expected_bytes=len(file_content),
+                    expected_bytes=verified_size,
                 )
                 await mark_sales_generation_artifact_retained(
                     conn,
@@ -137,7 +124,7 @@ async def import_sales_background(
                     owner_id=result.owner_id,
                     retained_path=str(retained_path),
                     source_sha256=source_digest,
-                    source_byte_size=len(file_content),
+                    source_byte_size=verified_size,
                 )
         else:
             result = await import_sales_file(
@@ -160,7 +147,7 @@ async def import_sales_background(
                 owner_id=result.owner_id,
                 source_spool_path=spool_path,
                 source_sha256=source_digest,
-                source_byte_size=len(file_content),
+                source_byte_size=verified_size,
             )
             retained_path = await asyncio.to_thread(
                 retain_sales_import_spool_file,
@@ -168,7 +155,7 @@ async def import_sales_background(
                 import_month=result.import_month,
                 snapshot_id=result.snapshot_id,
                 expected_digest=source_digest,
-                expected_bytes=len(file_content),
+                expected_bytes=verified_size,
             )
             await mark_sales_generation_artifact_retained(
                 conn,
@@ -177,7 +164,7 @@ async def import_sales_background(
                 owner_id=result.owner_id,
                 retained_path=str(retained_path),
                 source_sha256=source_digest,
-                source_byte_size=len(file_content),
+                source_byte_size=verified_size,
             )
         return asdict(result)
     finally:
@@ -407,50 +394,17 @@ async def grile_store_refresh_background(
             reset_request_id(token)
 
 
-async def grile_monthly_background(
-    ctx: dict,
-    operation_id: int | str,
-    legacy_month: str | None = None,
-    legacy_only: str | None = None,
-    legacy_dry_run: bool | None = None,
-    legacy_triggered_by_email: str | None = None,
-    legacy_operation_id: int | None = None,
-    request_id: str | None = None,
-) -> dict:
+async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
     """Inchidere luna grile: ruleaza operatiile native din Retail.
 
     Ruleaza in worker fiindca operatia poate dura minute (peste timeout-ul de
     edge Cloudflare). Rezultatul (output + exit_code) e citit din rezultatul
     jobului arq de catre UI (`/api/grile/monthly/job/{id}`).
     """
-    if isinstance(operation_id, bool):
-        raise ValueError("Invalid Grile monthly operation identity")
-    if isinstance(operation_id, int):
-        if any(
-            value is not None
-            for value in (
-                legacy_month,
-                legacy_only,
-                legacy_dry_run,
-                legacy_triggered_by_email,
-                legacy_operation_id,
-            )
-        ):
-            raise ValueError("Unexpected legacy Grile monthly payload")
-        persisted_operation_id = operation_id
-    else:
-        # Jobs published before v2.0.1 carry the full request payload. The DB
-        # reservation remains authoritative: normalize only its immutable id
-        # and never authorize or execute from the legacy email/op arguments.
-        if isinstance(legacy_operation_id, bool) or not isinstance(
-            legacy_operation_id, int
-        ):
-            raise ValueError("Legacy Grile monthly job has no operation identity")
-        persisted_operation_id = legacy_operation_id
-    if persisted_operation_id <= 0:
-        raise ValueError("Invalid Grile monthly operation identity")
+    if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
+        raise ValueError("Invalid persisted Grile monthly operation identity")
+    persisted_operation_id = operation_id
 
-    token = bind_request_id(request_id) if request_id else None
     session_task = asyncio.current_task()
     sessions = ctx.setdefault("grile_monthly_sessions", {})
     sessions[session_task] = persisted_operation_id
@@ -481,10 +435,7 @@ async def grile_monthly_background(
                 mark_monthly_operation_cancelled_uncertain(
                     pool,
                     persisted_operation_id,
-                    error_message=(
-                        "Operatia lunara Grile a fost anulata; "
-                        "efectele destructive neconfirmate sunt uncertain"
-                    ),
+                    error_message="monthly_operation_cancelled_uncertain",
                 )
             )
             try:
@@ -505,7 +456,7 @@ async def grile_monthly_background(
                 await fail_monthly_operation(
                     pool,
                     persisted_operation_id,
-                    error_message="Operatia lunara Grile a esuat neasteptat in worker",
+                    error_message="monthly_operation_worker_failed",
                 )
             except Exception:  # noqa: BLE001 - preserve the original worker failure
                 logger.exception(
@@ -515,8 +466,6 @@ async def grile_monthly_background(
             raise
     finally:
         sessions.pop(session_task, None)
-        if token is not None:
-            reset_request_id(token)
 
 
 async def grile_agent_targets_background(

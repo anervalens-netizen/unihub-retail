@@ -27,8 +27,10 @@ async def test_create_and_list_task():
     await asyncio.sleep(0)  # yield control
     
     # Make sure we can list tasks
-    tasks = await svc.list_tasks(status=None, assignee=None, site_code=None)
-    assert isinstance(tasks, list)
+    tasks = await svc.list_tasks(status=None, assignee=None, site_code=None, limit=10, offset=0)
+    assert tasks["limit"] == 10
+    assert tasks["offset"] == 0
+    assert isinstance(tasks["items"], list)
 
     # Clean up
     async with pool.acquire() as conn:

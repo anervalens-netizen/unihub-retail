@@ -51,10 +51,12 @@ async def test_list_leave_requests():
     pool = await get_pool()
     repo = HrRepository(pool)
     svc = HrService(repo)
-    rows = await svc.list_leave_requests(status=None, agent_name=None)
-    assert isinstance(rows, list)
-    if rows:
-        row = rows[0]
+    page = await svc.list_leave_requests(status=None, agent_name=None, limit=10, offset=0)
+    assert page["limit"] == 10
+    assert page["offset"] == 0
+    assert isinstance(page["items"], list)
+    if page["items"]:
+        row = page["items"][0]
         assert "agent_name" in row
         assert "status" in row
         assert "start_date" in row

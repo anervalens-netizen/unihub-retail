@@ -1,13 +1,11 @@
-import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Awaitable, Callable
-from functools import partial
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
 
-from config import get_visits_read_source, visits_shadow_compare_enabled
+from config import get_visits_images_dir
 from db.connection import get_pool
 from models import (
     TeamLeaderGroup,
@@ -20,10 +18,8 @@ from models import (
     VisitTreeResponse,
 )
 from retail_filters import distribution_location_clause
-from repositories.visits_report import VisitsReportRepository
 from repositories.visits_report_postgres import VisitsReportPostgresRepository
 from services.filters import normalize_filter
-from services.visits_shadow import compare_visit_result, record_visit_shadow_error
 
 logger = logging.getLogger(__name__)
 
@@ -38,62 +34,37 @@ def _split_filter_values(value: str | None) -> list[str]:
 class VisitsReportService:
     def __init__(
         self,
-        repo: VisitsReportRepository,
-        postgres_repo: VisitsReportPostgresRepository | None = None,
+        repo: VisitsReportPostgresRepository,
+        images_dir: Path | None = None,
     ):
         self.repo = repo
-        self.postgres_repo = postgres_repo or VisitsReportPostgresRepository(
-            images_dir=repo.images_dir
-        )
+        self.images_dir = images_dir or get_visits_images_dir()
 
-    async def _dual_read(
-        self,
-        operation: str,
-        sqlite_reader: Callable[[], Awaitable[Any]],
-        postgres_reader: Callable[[], Awaitable[Any]],
-    ) -> Any:
-        source = get_visits_read_source()
-        primary_reader = postgres_reader if source == "postgres" else sqlite_reader
-        shadow_reader = sqlite_reader if source == "postgres" else postgres_reader
-        if not visits_shadow_compare_enabled():
-            try:
-                return await primary_reader()
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.exception("Primary Retail visit read failed operation=%s", operation)
-                raise HTTPException(
-                    status_code=503,
-                    detail="Datele de vizite nu sunt disponibile momentan.",
-                ) from exc
-
-        read_results: tuple[Any, Any] = await asyncio.gather(
-            primary_reader(),
-            shadow_reader(),
-            return_exceptions=True,
-        )
-        primary: Any = read_results[0]
-        shadow: Any = read_results[1]
-        if isinstance(primary, BaseException):
-            if isinstance(primary, HTTPException):
-                raise primary
-            logger.error(
-                "Primary Retail visit read failed operation=%s",
-                operation,
-                exc_info=(type(primary), primary, primary.__traceback__),
-            )
+    async def _read(self, operation: str, reader: Any) -> Any:
+        try:
+            return await reader()
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("FieldOps PostgreSQL visit read failed operation=%s", operation)
             raise HTTPException(
                 status_code=503,
                 detail="Datele de vizite nu sunt disponibile momentan.",
-            ) from primary
-        if isinstance(shadow, BaseException):
-            try:
-                raise shadow
-            except Exception:
-                record_visit_shadow_error(operation)
-        else:
-            compare_visit_result(operation, primary, shadow)
-        return primary
+            ) from None
+
+    def get_photo_filenames(self, visit_id: str) -> list[str]:
+        return self._photo_repository().get_photo_filenames(visit_id)
+
+    def photo_path(self, visit_id: str, filename: str) -> Path:
+        return self._photo_repository().photo_path(visit_id, filename)
+
+    def images_dir_path(self) -> Path:
+        return self.images_dir
+
+    def _photo_repository(self):
+        from repositories.visits_report import VisitsReportRepository
+
+        return VisitsReportRepository(images_dir=self.images_dir)
 
     async def get_visits_report(
         self,
@@ -111,32 +82,14 @@ class VisitsReportService:
         }
         store_metadata, site_codes = await self._resolve_store_scope(filters)
 
-        async def sqlite_reader() -> dict[str, Any]:
-            if not self.repo.db_exists():
-                raise HTTPException(
-                    status_code=503,
-                    detail="Baza de date vizite nu este disponibila.",
-                )
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                None,
-                partial(
-                    self.repo.query_sqlite,
-                    month,
-                    filters,
-                    store_metadata=store_metadata,
-                    site_codes=site_codes,
-                ),
-            )
-
         async def postgres_reader() -> dict[str, Any]:
-            return await self.postgres_repo.query_report(
+            return await self.repo.query_report(
                 month,
                 store_metadata=store_metadata,
                 site_codes=site_codes,
             )
 
-        result = await self._dual_read("report", sqlite_reader, postgres_reader)
+        result = await self._read("report", postgres_reader)
 
         report_rows = [
             VisitReportRow(
@@ -180,32 +133,14 @@ class VisitsReportService:
         }
         store_metadata, site_codes = await self._resolve_store_scope(filters)
 
-        async def sqlite_reader() -> list[dict[str, Any]]:
-            if not self.repo.db_exists():
-                raise HTTPException(
-                    status_code=503,
-                    detail="Baza de date vizite nu este disponibila.",
-                )
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                None,
-                partial(
-                    self.repo.query_tree,
-                    filters,
-                    month=month,
-                    store_metadata=store_metadata,
-                    site_codes=site_codes,
-                ),
-            )
-
         async def postgres_reader() -> list[dict[str, Any]]:
-            return await self.postgres_repo.query_tree(
+            return await self.repo.query_tree(
                 month=month,
                 store_metadata=store_metadata,
                 site_codes=site_codes,
             )
 
-        rows = await self._dual_read("tree", sqlite_reader, postgres_reader)
+        rows = await self._read("tree", postgres_reader)
 
         # Group by the team leader who made the visit (snapshot `team_leader_name`),
         # not by the store's current ASM.
@@ -294,23 +229,14 @@ class VisitsReportService:
         return metadata, list(metadata) if has_scope_filter else None
 
     async def get_visit_detail(self, visit_id: str) -> VisitDetail:
-        async def sqlite_reader() -> dict[str, Any] | None:
-            if not self.repo.db_exists():
-                raise HTTPException(
-                    status_code=503,
-                    detail="Baza de date vizite nu este disponibila.",
-                )
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, self.repo.query_visit, visit_id)
-
         async def postgres_reader() -> dict[str, Any] | None:
-            return await self.postgres_repo.query_visit(visit_id)
+            return await self.repo.query_visit(visit_id)
 
-        row = await self._dual_read("detail", sqlite_reader, postgres_reader)
+        row = await self._read("detail", postgres_reader)
         if row is None:
             raise HTTPException(status_code=404, detail="Vizita nu a fost gasita.")
 
-        photos = self.repo.get_photo_filenames(visit_id)
+        photos = self.get_photo_filenames(visit_id)
 
         def _b(v: Any) -> bool:
             return bool(v) if v is not None else False

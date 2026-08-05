@@ -33,7 +33,10 @@ class TasksRepository:
         assignee: str | None,
         site_code: str | None,
         only_mine: str | None = None,
-    ) -> list[asyncpg.Record]:
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[asyncpg.Record], int]:
         clauses = []
         params: list[Any] = []
         idx = 1
@@ -56,20 +59,26 @@ class TasksRepository:
             idx += 1
 
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.extend([limit, offset])
         async with self.pool.acquire() as conn:
-            return await conn.fetch(
+            rows = await conn.fetch(
                 f"""
                 SELECT id, title, assignee, site_code, deadline::text, status, source, source_meta,
-                       created_at::text, updated_at::text
+                       created_at::text, updated_at::text,
+                       COUNT(*) OVER() AS total_count
                 FROM tasks
                 {where}
                 ORDER BY
                     CASE status WHEN 'deschis' THEN 0 WHEN 'in_lucru' THEN 1 ELSE 2 END,
                     deadline ASC NULLS LAST,
-                    created_at DESC
+                    created_at DESC,
+                    id ASC
+                LIMIT ${idx} OFFSET ${idx + 1}
                 """,
                 *params,
             )
+        total = int(rows[0]["total_count"]) if rows else 0
+        return rows, total
 
     async def update_task(self, task_id: int, data: dict[str, Any]) -> asyncpg.Record | None:
         sets = []

@@ -123,6 +123,7 @@ _VALKEY_SETTINGS: Optional[RedisSettings] = None
 SALES_IMPORT_QUEUE_NAME = "arq:retail:imports"
 DEFAULT_SALES_IMPORT_SPOOL_MAX_AGE_SECONDS = 24 * 60 * 60
 _SALES_ARTIFACT_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+MONTHLY_QUEUE_PUBLISH_FAILED = "monthly_queue_publish_failed"
 
 
 class SalesImportArtifactError(RuntimeError):
@@ -459,6 +460,7 @@ async def enqueue_sales_import(
         "import_sales_background",
         str(spool_path),
         digest,
+        len(file_content),
         filename,
         get_request_id(),
         cutoff_date,
@@ -740,7 +742,6 @@ async def enqueue_grile_monthly(
             pool,
             "grile_monthly_background",
             reservation.operation_id,
-            request_id=get_request_id(),
             _job_id=job_id,
         )
         if job is None:
@@ -755,7 +756,7 @@ async def enqueue_grile_monthly(
         await fail_monthly_operation(
             db_pool,
             reservation.operation_id,
-            error_message="Jobul lunar Grile nu a putut fi adaugat in coada",
+            error_message=MONTHLY_QUEUE_PUBLISH_FAILED,
         )
         raise
 

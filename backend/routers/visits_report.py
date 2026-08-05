@@ -11,15 +11,13 @@ from models import (
     VisitReportResponse,
     VisitTreeResponse,
 )
-from repositories.visits_report import VisitsReportRepository
 from repositories.visits_report_postgres import VisitsReportPostgresRepository
 from services.visits_report import VisitsReportService
 
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
 
 async def get_visits_service() -> VisitsReportService:
-    repo = VisitsReportRepository()
-    return VisitsReportService(repo, VisitsReportPostgresRepository())
+    return VisitsReportService(VisitsReportPostgresRepository())
 
 
 @router.get("", response_model=VisitReportResponse)
@@ -77,11 +75,11 @@ async def get_visit_photo(
     if filename not in visit.photos:
         raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
 
-    raw_photo_path = svc.repo.photo_path(visit_id, filename)
+    raw_photo_path = svc.photo_path(visit_id, filename)
     if raw_photo_path.is_symlink():
         raise HTTPException(status_code=404, detail="Poza nu a fost gasita.")
     photo_path = raw_photo_path.resolve()
-    images_dir = svc.repo.images_dir_path().resolve()
+    images_dir = svc.images_dir_path().resolve()
     if not photo_path.is_relative_to(images_dir):
         raise HTTPException(status_code=400, detail="Invalid path.")
     if not photo_path.is_file():

@@ -97,7 +97,6 @@ async def test_h11_monthly_enqueue_persists_job_id_before_queue_publish(
         "grile_monthly_background",
         42,
     )
-    assert queue.enqueue_job.await_args.kwargs["request_id"] is None
     assert queue.enqueue_job.await_args.kwargs["_job_id"] == "grile-monthly:42"
 
 
@@ -174,7 +173,7 @@ async def test_h11_monthly_enqueue_handles_publish_uncertainty_without_retry(
         fail.assert_awaited_once_with(
             db_pool,
             44,
-            error_message="Jobul lunar Grile nu a putut fi adaugat in coada",
+            error_message="monthly_queue_publish_failed",
         )
 
     assert events == ["reserve", "attach", "enqueue"]
@@ -222,7 +221,6 @@ async def test_monthly_worker_accepts_only_persisted_operation_identity(
     result = await worker.grile_monthly_background(
         {},
         operation_id=51,
-        request_id=None,
     )
 
     assert result == {"status": "success"}
@@ -243,44 +241,22 @@ async def test_monthly_worker_marks_unexpected_failure_terminal(
         await worker.grile_monthly_background(
             {"db_pool": db_pool},
             operation_id=53,
-            request_id=None,
         )
 
     fail.assert_awaited_once_with(
         db_pool,
         53,
-        error_message="Operatia lunara Grile a esuat neasteptat in worker",
+        error_message="monthly_operation_worker_failed",
     )
 
 
-async def test_monthly_worker_normalizes_already_queued_legacy_payload(
+async def test_monthly_worker_rejects_legacy_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = AsyncMock(return_value={"status": "success"})
     monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
 
-    result = await worker.grile_monthly_background(
-        {},
-        "finalize",
-        "2099-05",
-        None,
-        False,
-        "ignored-legacy-identity",
-        52,
-        "legacy-request-id",
-    )
-
-    assert result == {"status": "success"}
-    run.assert_awaited_once_with(operation_id=52)
-
-
-async def test_monthly_worker_rejects_legacy_payload_without_reservation_id(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    run = AsyncMock(return_value={"status": "success"})
-    monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
-
-    with pytest.raises(ValueError, match="no operation identity"):
+    with pytest.raises(TypeError):
         await worker.grile_monthly_background(
             {},
             "finalize",
@@ -288,7 +264,6 @@ async def test_monthly_worker_rejects_legacy_payload_without_reservation_id(
             None,
             False,
             "ignored-legacy-identity",
-            None,
             "legacy-request-id",
         )
 
@@ -312,14 +287,10 @@ async def test_monthly_worker_sigterm_marks_unconfirmed_reset_uncertain(
         await worker.grile_monthly_background(
             {"db_pool": db_pool},
             operation_id=54,
-            request_id=None,
         )
 
     mark_uncertain.assert_awaited_once_with(
         db_pool,
         54,
-        error_message=(
-            "Operatia lunara Grile a fost anulata; "
-            "efectele destructive neconfirmate sunt uncertain"
-        ),
+        error_message="monthly_operation_cancelled_uncertain",
     )

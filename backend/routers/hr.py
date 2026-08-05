@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from auth import AuthClaims
 from db.connection import get_pool
@@ -15,20 +16,71 @@ router = APIRouter(prefix="/api/hr", tags=["hr"])
 logger = logging.getLogger(__name__)
 
 
-class LeaveRequestCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class LeaveRequestItem(BaseModel):
+    id: int
     agent_name: str
     start_date: str
     end_date: str
     leave_type: str
     notes: str | None = None
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class LeaveRequestListResponse(BaseModel):
+    items: list[LeaveRequestItem]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
+
+
+def _trim_text(value: str, *, field_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} must not be blank")
+    return normalized
+
+
+def _valid_date(value: str) -> str:
+    date.fromisoformat(value)
+    return value
+
+
+class LeaveRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_name: str = Field(min_length=1, max_length=120)
+    start_date: str = Field(min_length=10, max_length=10)
+    end_date: str = Field(min_length=10, max_length=10)
+    leave_type: str = Field(min_length=1, max_length=64)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("agent_name", "leave_type")
+    @classmethod
+    def normalize_text(cls, value: str, info) -> str:
+        return _trim_text(value, field_name=info.field_name)
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_date(cls, value: str) -> str:
+        return _valid_date(value)
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
 
 
 class LeaveStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: str
+    status: str = Field(min_length=1, max_length=16)
+
+    @field_validator("status")
+    @classmethod
+    def normalize_status(cls, value: str) -> str:
+        return _trim_text(value, field_name="status")
 
 
 async def get_hr_service() -> HrService:
@@ -37,13 +89,15 @@ async def get_hr_service() -> HrService:
     return HrService(repo)
 
 
-@router.get("/leave-requests")
+@router.get("/leave-requests", response_model=LeaveRequestListResponse)
 async def get_leave_requests(
-    status: str | None = Query(None),
-    agent_name: str | None = Query(None),
+    status: str | None = Query(None, min_length=1, max_length=16),
+    agent_name: str | None = Query(None, min_length=1, max_length=120),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100_000),
     svc: HrService = Depends(get_hr_service),
 ):
-    return await svc.list_leave_requests(status, agent_name)
+    return await svc.list_leave_requests(status, agent_name, limit=limit, offset=offset)
 
 
 @router.post("/leave-requests")
@@ -51,7 +105,7 @@ async def post_leave_request(
     body: LeaveRequestCreate,
     svc: HrService = Depends(get_hr_service),
 ):
-    return await svc.create_leave_request(body.model_dump())
+    return await svc.create_leave_request(body.model_dump(mode="json"))
 
 
 @router.patch("/leave-requests/{request_id}")
