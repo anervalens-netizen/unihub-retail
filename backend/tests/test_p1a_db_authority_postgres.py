@@ -299,6 +299,116 @@ async def test_service_login_provisioner_applies_exact_membership_options(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated PostgreSQL with CREATEROLE",
 )
+async def test_authenticated_runtime_rejects_all_shared_dependency_acl_surfaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_url = os.environ["DATABASE_URL"]
+    parsed = urlsplit(owner_url)
+    principal = f"p1a_catalog_{uuid4().hex[:12]}"
+    password = token_urlsafe(48)
+    fdw_name = f"p1a_fdw_{uuid4().hex[:12]}"
+    server_name = f"p1a_server_{uuid4().hex[:12]}"
+    table_name = f"p1a_column_{uuid4().hex[:12]}"
+    large_object_oid: int | None = None
+    runtime_url = urlunsplit(
+        (
+            parsed.scheme,
+            f"{quote(principal)}:{quote(password, safe='')}@{parsed.hostname}:{parsed.port}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+    owner = await asyncpg.connect(owner_url)
+    runtime: asyncpg.Connection | None = None
+    try:
+        await owner.execute(
+            f'CREATE ROLE "{principal}" LOGIN NOSUPERUSER NOCREATEDB '
+            f'NOCREATEROLE INHERIT PASSWORD {quote(password)!r}'
+        )
+        checks = await provision(
+            owner_url,
+            runtime_url,
+            authority_roles=frozenset(
+                {"unihub_web_read", "unihub_business_write"}
+            ),
+        )
+        assert all(checks.values())
+        web_contract = DATABASE_AUTHORITY_CONTRACTS["web"]
+        monkeypatch.setitem(
+            DATABASE_AUTHORITY_CONTRACTS,
+            "web",
+            replace(web_contract, principal=principal),
+        )
+        runtime = await asyncpg.connect(runtime_url)
+        assert not await database_principal_has_direct_authority(runtime, principal)
+
+        async def assert_rejected(grant_sql: str, revoke_sql: str) -> None:
+            await owner.execute(grant_sql)
+            try:
+                assert await database_principal_has_direct_authority(runtime, principal)
+                with pytest.raises(
+                    RuntimeError,
+                    match="direct grants, default privileges, or ownership",
+                ):
+                    await verify_database_connection_authority(runtime, "web")
+            finally:
+                await owner.execute(revoke_sql)
+            assert not await database_principal_has_direct_authority(runtime, principal)
+
+        await assert_rejected(
+            f'GRANT USAGE ON LANGUAGE plpgsql TO "{principal}"',
+            f'REVOKE USAGE ON LANGUAGE plpgsql FROM "{principal}"',
+        )
+        await assert_rejected(
+            f'GRANT CREATE ON TABLESPACE pg_default TO "{principal}"',
+            f'REVOKE CREATE ON TABLESPACE pg_default FROM "{principal}"',
+        )
+        await assert_rejected(
+            f'GRANT SET ON PARAMETER work_mem TO "{principal}"',
+            f'REVOKE SET ON PARAMETER work_mem FROM "{principal}"',
+        )
+
+        await owner.execute(f'CREATE FOREIGN DATA WRAPPER "{fdw_name}" NO HANDLER')
+        await assert_rejected(
+            f'GRANT USAGE ON FOREIGN DATA WRAPPER "{fdw_name}" TO "{principal}"',
+            f'REVOKE USAGE ON FOREIGN DATA WRAPPER "{fdw_name}" FROM "{principal}"',
+        )
+        await owner.execute(
+            f'CREATE SERVER "{server_name}" FOREIGN DATA WRAPPER "{fdw_name}"'
+        )
+        await assert_rejected(
+            f'GRANT USAGE ON FOREIGN SERVER "{server_name}" TO "{principal}"',
+            f'REVOKE USAGE ON FOREIGN SERVER "{server_name}" FROM "{principal}"',
+        )
+
+        large_object_oid = int(await owner.fetchval("SELECT lo_create(0)"))
+        await assert_rejected(
+            f'GRANT SELECT ON LARGE OBJECT {large_object_oid} TO "{principal}"',
+            f'REVOKE SELECT ON LARGE OBJECT {large_object_oid} FROM "{principal}"',
+        )
+        await owner.execute(f'CREATE TABLE "{table_name}" (value integer)')
+        await assert_rejected(
+            f'GRANT SELECT (value) ON TABLE "{table_name}" TO "{principal}"',
+            f'REVOKE SELECT (value) ON TABLE "{table_name}" FROM "{principal}"',
+        )
+    finally:
+        if runtime is not None:
+            await runtime.close()
+        await owner.execute(f'DROP SERVER IF EXISTS "{server_name}"')
+        await owner.execute(f'DROP FOREIGN DATA WRAPPER IF EXISTS "{fdw_name}"')
+        await owner.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        if large_object_oid is not None:
+            await owner.fetchval("SELECT lo_unlink($1)", large_object_oid)
+        await owner.execute(f'DROP ROLE IF EXISTS "{principal}"')
+        await owner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE",
+)
 async def test_schema_owner_handoff_does_not_capture_foreign_owned_objects() -> None:
     foreign_role = f"p1a_foreign_{uuid4().hex[:12]}"
     table_name = f"p1a_foreign_{uuid4().hex[:12]}"

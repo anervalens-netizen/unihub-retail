@@ -654,7 +654,9 @@ Contractul rezultat:
 - patru LOGIN-uri de proces verificate la conectare, cu set exact de membershipuri
   directe/tranzitive și opțiuni, fără granturi directe, default ACL, obiecte
   deținute, superuser, replication, create role/database/schema ori bypass RLS;
-  autoritatea lipsă este fatală în production;
+  detectorul folosește dependențele ACL/owner canonice `pg_shdepend`, inclusiv
+  language, large object, tablespace, FDW/server și parameter ACL; autoritatea
+  lipsă sau suplimentară este fatală în production;
 - ownerul obiectelor este NOLOGIN `unihub_schema_owner`; runnerul NOINHERIT îl
   activează numai tranzacțional cu `SET LOCAL ROLE`;
 - stagingul sales, promotion ledgerul și evidence-ul shadow sunt append-only;
@@ -700,8 +702,8 @@ Ordinea obligatorie este:
    health local/public, head/digest/fingerprints și absența mutațiilor Finance.
 
 Pasul 3–4 modifică identități/credentiale și este singura confirmare umană
-necesară. Nu se creează `unihub_finance_import` LOGIN și nu se rulează nicio
-operație Finance live.
+necesară. Nu se creează LOGIN `unihub_finance_import_worker` și nu se rulează
+nicio operație Finance live.
 
 Runnerul acceptă pasul 2 numai dacă identitatea curentă și cea de sesiune sunt
 același superuser, baza existentă este tracked cu checksums până la 039 și

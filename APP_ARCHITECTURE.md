@@ -99,7 +99,9 @@ grupurile NOLOGIN `unihub_web_read`, `unihub_business_write`,
 `unihub_migration_runner`; fiecare conexiune verifică principalul autentificat,
 toate membershipurile directe/tranzitive și opțiunile lor, absența oricărui
 grant direct/default ACL/obiect deținut de LOGIN, plus flagurile nonprivilegiate
-inclusiv replication/bypass RLS. Autoritatea explicită este
+inclusiv replication/bypass RLS. Scanarea `pg_shdepend` acoperă generic toate
+clasele ACL/owner, inclusiv language, large object, tablespace, FDW/server,
+column și parameter ACL. Autoritatea explicită este
 obligatorie în producție. Contractul Finance rezervă principalul
 `unihub_finance_import_worker`, dar acesta rămâne fără LOGIN/credential până la
 un lot aprobat separat. Provisionarea autentifică LOGIN-ul înainte de schimbare

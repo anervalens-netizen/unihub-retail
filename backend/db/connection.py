@@ -33,73 +33,15 @@ async def database_principal_has_direct_authority(
             """
             WITH target AS (
                 SELECT oid FROM pg_roles WHERE rolname = $1
-            ),
-            direct_acl AS (
-                SELECT 1
-                FROM pg_database AS object
-                CROSS JOIN target
-                CROSS JOIN LATERAL aclexplode(object.datacl) AS acl
-                WHERE object.datname = current_database()
-                  AND acl.grantee = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_namespace AS object
-                CROSS JOIN target
-                CROSS JOIN LATERAL aclexplode(object.nspacl) AS acl
-                WHERE acl.grantee = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_class AS object
-                CROSS JOIN target
-                CROSS JOIN LATERAL aclexplode(object.relacl) AS acl
-                WHERE acl.grantee = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_proc AS object
-                CROSS JOIN target
-                CROSS JOIN LATERAL aclexplode(object.proacl) AS acl
-                WHERE acl.grantee = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_type AS object
-                CROSS JOIN target
-                CROSS JOIN LATERAL aclexplode(object.typacl) AS acl
-                WHERE acl.grantee = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_default_acl AS object
-                CROSS JOIN target
-                CROSS JOIN LATERAL aclexplode(object.defaclacl) AS acl
-                WHERE acl.grantee = target.oid
-            ),
-            owned_authority AS (
-                SELECT 1
-                FROM pg_database AS object CROSS JOIN target
-                WHERE object.datname = current_database()
-                  AND object.datdba = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_namespace AS object CROSS JOIN target
-                WHERE object.nspowner = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_class AS object CROSS JOIN target
-                WHERE object.relowner = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_proc AS object CROSS JOIN target
-                WHERE object.proowner = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_type AS object CROSS JOIN target
-                WHERE object.typowner = target.oid
-                UNION ALL
-                SELECT 1
-                FROM pg_default_acl AS object CROSS JOIN target
-                WHERE object.defaclrole = target.oid
             )
-            SELECT EXISTS (SELECT 1 FROM direct_acl)
-                OR EXISTS (SELECT 1 FROM owned_authority)
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_shdepend AS dependency
+                CROSS JOIN target
+                WHERE dependency.refclassid = 'pg_authid'::regclass
+                  AND dependency.refobjid = target.oid
+                  AND dependency.deptype IN ('a', 'o')
+            )
             """,
             principal,
         )
