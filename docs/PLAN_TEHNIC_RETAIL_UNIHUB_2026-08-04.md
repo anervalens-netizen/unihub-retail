@@ -424,13 +424,13 @@ inventare, schimbări izolate, teste negative și QA.
 | --- | --- | --- | --- |
 | P0-B | M-04, M-05 | `CLOSED LIVE 2026-08-04` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
 | P1-A | M-06, M-07, R-01, R-02 | `CLOSED LIVE 2026-08-05` | dovezi complete în 16.5 |
-| P1-B | M-08, M-09 | `IN PROGRESS` | hotfix recovery 2fe9277; rămân retain/reconciler/fault injection complete |
-| P1-C | M-10, R-03 | `READY` | CNP eliminat din runtime; apply salarial fail-closed |
-| P1-D | M-11, M-12 | `READY` | recovery Grile determinist; Google I/O nu blochează event loop |
-| P2-A | M-13, R-06, R-17, R-19, R-20 | `QUEUED IN FINAL GOAL` | preflight/decompression/streaming/containment/capability |
-| P2-B | M-16, R-04, R-05, R-10 | `QUEUED IN FINAL GOAL` | cohortă și structură istorică explicită |
-| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `QUEUED IN FINAL GOAL` | caps, scheduler global, startup și load evidence |
-| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `FINAL QUEUED PHASE` | hardening/scalare/calitate/cleanup cu inventar separat |
+| P1-B | M-08, M-09 | `CANDIDATE 7cb8375` | retain/hash/fsync/readback, stare intermediară, reconciler, retenție și fault injection |
+| P1-C | M-10, R-03 | `CANDIDATE 7cb8375` | boundary privat, manifest aprobat exact, 8/8/0 și review independent; apply live blocat |
+| P1-D | M-11, M-12 | `CANDIDATE 7cb8375` | checkpoint/lease/epoch fenced, adapter thread-affine și reconciler determinist |
+| P2-A | M-13, R-06, R-17, R-19, R-20 | `CANDIDATE 7cb8375` | preflight/decompression/cell budgets, containment foto și capability existente verificate |
+| P2-B | M-16, R-04, R-05, R-10 | `CANDIDATE 7cb8375` | scope istoric explicit, mapare companie fail-closed și cohorte verificate |
+| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `CANDIDATE 7cb8375` | export caps/spool, startup bounded, 2 workeri web și query-plan evidence |
+| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `CANDIDATE 7cb8375` | lock cu hashuri, strict TS, timezone, forecast business, payload cleanup și paging bounded |
 
 Note de rutare:
 
@@ -871,3 +871,80 @@ vizite, iar health local/public este verde. Pentru închiderea operațională a
 snapshotului 214, operatorul reîncarcă o singură dată exact același fișier cu
 cutoff `2026-08-04`; UI trebuie să afișeze manifestul deja validat și butonul de
 promovare. Promovarea rămâne explicită și nu este executată automat de hotfix.
+
+### 16.7 Candidat consolidat P1-B -> P3 — 2026-08-05
+
+SHA-ul sursă local verificat este
+`7cb8375ef559a866d8944c60c22b9f416c8c36c4`. Registrul de mai jos este
+registrul unic de dispoziție; mențiunile anterioare din document sunt istoric,
+nu dispoziții suplimentare.
+
+| Finding | Dispoziție unică | Dovadă / justificare |
+| --- | --- | --- |
+| M-01 | demonstrat deja | integritatea staging/promote și multiplicitatea au fost închise în P0-A |
+| M-02 | demonstrat deja | autoritatea P&L per magazin-lună a fost închisă în P0-A |
+| M-03 | demonstrat deja | identitatea/proveniența salarială a fost închisă în P0-A |
+| M-04 | demonstrat deja | bypassul `replace_month_snapshot` este eliminat și revocat live |
+| M-05 | demonstrat deja | Finance folosește generații/manifest/CAS; live apply rămâne NO-GO |
+| M-06 | demonstrat deja | authority roles și matricea ACL au fost închise live în P1-A |
+| M-07 | demonstrat deja | ledgers/staging/head sunt protejate append-only DB-side |
+| M-08 | implementat | artefact sales content-addressed, `0600`, hash, fsync și readback înainte de terminal DB |
+| M-09 | implementat | stare intermediară, reconciler idempotent și retention head/predecessor/ledger |
+| M-10 | implementat | salary approval leagă exact manifestul, ambele companii, reconcilierea 8/8/0 și reviewer distinct |
+| M-11 | implementat | Grile are owner/epoch/lease și checkpoint înainte de Google I/O |
+| M-12 | implementat | Google I/O rulează prin adapter thread-affine bounded; reconcilerul nu reia automat starea incertă |
+| M-13 | implementat | XLS/XLSX au signature, ZIP/XML, expanded-bytes, ratio, member și cell budgets |
+| M-14 | implementat | exporturile au caps 50.000 rânduri, 1.000.000 celule și 64 MiB estimate, cu spool/chunks |
+| M-15 | implementat | startupul web nu mai face sync/prewarm business; ARQ rămâne degradabil |
+| M-16 | implementat | scope-urile istorice domină explicit prin `site_code`; compania Grile necunoscută este refuzată |
+| M-17 | neaplicabil justificat | nu este confirmat un model multi-tenant; utilizatorii autorizați au scope Retail global, deci nu se inventează segmentare |
+| M-18 | neaplicabil justificat | schimbarea identității OS a serviciului este limită restrictivă `AGENTS.md`; hardeningul existent rămâne, fără mutație neautorizată |
+| M-19 | implementat | backendul pornește cu 2 workeri web; operations/import sunt deja servicii separate, fiecare cu concurență bounded |
+| R-01 | demonstrat deja | contractele DB least-privilege au fost verificate live în P1-A |
+| R-02 | demonstrat deja | rolul Finance dedicat este implementat; credentialul live nu este creat |
+| R-03 | implementat | scanul negativ de privacy și gate-ul de aprobare salarială sunt fail-closed |
+| R-04 | demonstrat deja | `site_code` domină scope-ul istoric în exporturi/dashboard |
+| R-05 | demonstrat deja | cohortele curent/istoric sunt separate în fixtures și query-uri canonice |
+| R-06 | implementat | fotografiile sunt legate de vizita DB, cale canonică, fișier regulat și non-symlink |
+| R-07 | implementat | preview-ul nu mai construiește exportul complet |
+| R-08 | implementat | daily/incentive export folosesc limite DB și livrare XLSX spooled |
+| R-09 | implementat | bugetul DB permite 2 workeri web, cu session/rate-limit shared și shutdown bounded |
+| R-10 | demonstrat deja | P&L/ERP/HR folosesc atribute curente sau snapshoturi/effective dates explicite |
+| R-11 | implementat | lucrul greu a fost scos din lifespan; readiness nu depinde de refresh business |
+| R-12 | demonstrat deja | EXPLAIN/BUFFERS pe DB izolat: agent-day 9,639 ms; item-day 316,855 ms, ambele sub 2.500 ms |
+| R-13 | implementat | forecastul parțial folosește distribuția zilnică din ultima rulare business, nu extrapolare calendaristică implicită |
+| R-14 | implementat | datele UI folosesc helperi Europe/Bucharest testați determinist |
+| R-15 | implementat | `any`-urile de producție din lane-ul Agents/salary chart au fost eliminate, strict TS extins |
+| R-16 | implementat | runtime/dev Python au lockfile-uri complete cu hashuri și CI instalează `--require-hashes` |
+| R-17 | implementat | XML-ul XLSX neîncrezător folosește `defusedxml`; formulele/hyperlinkurile neîncrezătoare rămân neutralizate |
+| R-18 | implementat | payloadurile ARQ sales/Grile transportă identități persistate, nu bytes sau stări business complete |
+| R-19 | demonstrat deja | `/metrics`, docs și OpenAPI răspund public 404; health rămâne separat |
+| R-20 | demonstrat deja | capabilitățile/rate-limit-urile Grile și write boundaries sunt deja aplicate |
+| N-01 | implementat | runtime Visits este PostgreSQL-only; proiecția HR se reîmprospătează în worker sub advisory lock, fără fallback SQLite |
+| N-02 | implementat | Tasks/HR au inputuri typed, limite și envelope de paginare cu count separat corect la pagini goale |
+| N-03 | implementat | erorile worker Grile persistă coduri finite, fără excepții necontrolate în stare |
+| N-04 | implementat | jobul Grile leagă request context determinist de `operation_id` |
+| N-05 | implementat | actorul sales implicit ambiguu este `unknown`, nu o identitate legacy inventată |
+| N-06 | implementat | denumirile stale `sqlite_map` au fost înlocuite cu `visits_map` |
+| N-07 | implementat | tooltipurile Recharts și modulele P3 trec typecheck complet/strict fără `any` local |
+| N-08 | implementat | warningurile ESLint locale nefolosite au fost eliminate; lint are zero warnings |
+| N-09 | demonstrat deja | cache-ul filtrelor este invalidat prin versiune DB cross-process, nu memorie locală |
+
+Porți locale pe candidatul sursă:
+
+- PostgreSQL 18 + Valkey izolate, migrări fresh 014..044: `1589 passed, 7 skipped`;
+- frontend: 34 fișiere / 245 teste; `typecheck`, `typecheck:strict`, lint și build verzi;
+- mypy: 346 fișiere, zero erori; 133 teste backend țintite post-fix verzi;
+- runtime/dev lock `--require-hashes`, import smoke, `pip check`, `pip-audit`
+  strict, secret scan și Bandit regression gate verzi;
+- checksum migrare 043:
+  `bf997d5e2f74aa3b464ac0cc0c8529247cfc63b1ed5af7d7ff231fb339b9064d`;
+  checksum migrare 044:
+  `762c6352f8a00deb6989bd24ffac5ebefc9d537817233507d92e8dd4422d7a1c`;
+- lock runtime:
+  `bdabff0b5e7f4931d386f1b95d92dd3c9499a716e5de7e65ba8935c62d2a213f`;
+  lock dev: `052ab1469d523d16a1639a702e13180fc528335e098987616a3cd61f0bd358ce`.
+
+Snapshotul sales 214 și Finance/salary live apply nu sunt mutate de candidat.
+Auditul independent exact-SHA, CI-ul formal, deployul, probele live cu doi
+workeri și dovada de rollback sunt porțile rămase înainte de `CLOSED LIVE`.
