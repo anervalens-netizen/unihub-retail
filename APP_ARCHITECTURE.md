@@ -491,8 +491,13 @@ date parțiale. Digestul staged păstrează ordinea și multiplicitatea și codi
 determinist `NULL`, text Unicode, date, Decimal și boolean. PostgreSQL îl
 recalculează la validare și la orice schimbare a headului; funcția CAS verifică
 și state-ul validat/promoting, control totals și lipsa anomaliilor blocking, în
-aceeași tranzacție cu promovarea. Un worker stale nu mai poate scrie, iar spoolul rămâne până la
-stare terminală confirmată. Rollbackul clonează și reverifică generația
+aceeași tranzacție cu promovarea. Un worker stale nu mai poate scrie. Hotfixul
+`2fe927794d302a3c5d14a4f2d345e6f27c546fb0` recuperează după pierderea
+rezultatului ARQ o generație `validated` numai când bytes hash și cutoff sunt
+identice: reface atomic spool-ul content-addressed și returnează manifestul
+existent fără enqueue sau mutarea headului. Garanția completă retain +
+fsync/readback înainte de terminal, reconcilerul și fault injection rămân P1-B;
+nu se declară încă lifecycle complet. Rollbackul clonează și reverifică generația
 anterioară, apoi o promovează auditabil; nu mută headul direct înapoi.
 
 Migrarea 040 face stagingul și promotion ledgerul append-only și revocă mutarea

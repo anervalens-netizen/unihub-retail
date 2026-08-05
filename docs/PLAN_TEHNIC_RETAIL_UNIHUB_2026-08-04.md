@@ -408,9 +408,9 @@ Dovezi live după deploy:
 Verdict P0-A: **CLOSED și verificat live**. M-04 și M-05 rămân P0-B, fără
 extinderea retroactivă a acestui lot.
 
-## 14. Plan de execuție rămas — baseline 2026-08-04
+## 14. Plan de execuție rămas — actualizat 2026-08-05
 
-Această secțiune este backlogul executabil după P0-A. Ordinea este impusă de
+Această secțiune este backlogul executabil după închiderea P1-A. Ordinea este impusă de
 dependențele de date și recovery, nu doar de severitatea etichetată în audit.
 Fiecare lot are maximum doi writeri în paralel, ownership de fișiere disjunct,
 integrare unică și QA independent pe SHA-ul integrat. Sol păstrează ownership
@@ -423,14 +423,14 @@ inventare, schimbări izolate, teste negative și QA.
 | Lot | Constatări | Stare | Dependență / gate de ieșire |
 | --- | --- | --- | --- |
 | P0-B | M-04, M-05 | `CLOSED LIVE 2026-08-04` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
-| P1-A | M-06, M-07, R-01, R-02 | `READY` | ledger/staging append-only și matrice reală de roluri |
-| P1-B | M-08, M-09 | `BLOCKED BY P1-A` | retain verificat înainte de terminal; reconciler/fault injection |
-| P1-C | M-10, R-03 | `READY AFTER P1-A` | CNP eliminat din runtime; apply salarial fail-closed |
-| P1-D | M-11, M-12 | `READY AFTER P1-A` | recovery Grile determinist; Google I/O nu blochează event loop |
-| P2-A | M-13, R-06, R-17, R-19, R-20 | `BACKLOG` | preflight/decompression/streaming/containment/capability |
-| P2-B | M-16, R-04, R-05, R-10 | `BACKLOG` | cohortă și structură istorică explicită |
-| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `BACKLOG` | caps, scheduler global, startup și load evidence |
-| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `BACKLOG` | hardening/scalare/calitate/cleanup cu inventar separat |
+| P1-A | M-06, M-07, R-01, R-02 | `CLOSED LIVE 2026-08-05` | dovezi complete în 16.5 |
+| P1-B | M-08, M-09 | `IN PROGRESS` | hotfix recovery 2fe9277; rămân retain/reconciler/fault injection complete |
+| P1-C | M-10, R-03 | `READY` | CNP eliminat din runtime; apply salarial fail-closed |
+| P1-D | M-11, M-12 | `READY` | recovery Grile determinist; Google I/O nu blochează event loop |
+| P2-A | M-13, R-06, R-17, R-19, R-20 | `QUEUED IN FINAL GOAL` | preflight/decompression/streaming/containment/capability |
+| P2-B | M-16, R-04, R-05, R-10 | `QUEUED IN FINAL GOAL` | cohortă și structură istorică explicită |
+| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `QUEUED IN FINAL GOAL` | caps, scheduler global, startup și load evidence |
+| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `FINAL QUEUED PHASE` | hardening/scalare/calitate/cleanup cu inventar separat |
 
 Note de rutare:
 
@@ -583,6 +583,40 @@ business hashes, rollback și verdict. Următorul lot poate începe numai dacă
 candidatul curent este curat, sincronizat, verificat live și fără date
 neexplicate. Pentru P0-B, READY înseamnă cod/schema deployate și căile legacy
 închise; nu autorizează o promovare Finance live.
+
+### 14.6 Mod accelerat pentru închiderea completă P1-B -> P3
+
+Tot backlogul rămas se execută într-un singur goal persistent. P1-B, P1-C,
+P1-D, P2-A/B/C și P3 sunt faze interne și checkpointuri de integrare, nu
+goal-uri sau handoff-uri separate. Agentul continuă autonom până când P3 este
+`CLOSED LIVE`, cu excepția unei limite restrictive reale din `AGENTS.md`.
+
+Reguli de eficiență fără reducerea calității:
+
+- Luna xhigh este executorul implicit pentru inventare/call graph, fixtures,
+  implementări mecanice bine delimitate, teste negative, verificări statice și
+  documentație. Scrie numai în worktree izolat, cu interdicție explicită pentru
+  `.env*`, credentials, keys, secrets, CNP și date production;
+- Terra xhigh se folosește numai pentru schema/state-machine/concurrency/ACL cu
+  risc mare și pentru review arhitectural sau audit exact-SHA unde independența
+  chiar aduce valoare. Nu dubla mecanic munca Luna;
+- Sol/root păstrează contractul, ordinea migrărilor, maximum doi writeri cu
+  fișiere disjuncte, integrarea, Git, release, deploy, live evidence și cleanup;
+- se combină schimbările compatibile în cât mai puțini candidați integrați.
+  Fiecare lane rulează o singură poartă țintită; full gate și CI formal se
+  rulează numai pe candidați consolidați care urmează să fie deployați;
+- dovezile exacte încă valide se reutilizează. Nu se repetă build/test/CI pe
+  conținut neschimbat, docs-only nu pornește CI și nu se creează PR-uri sau
+  release-uri ceremoniale;
+- inventarele P2/P3 pot rula read-only în paralel cu implementarea P1, dar
+  mutațiile păstrează ordinea dependențelor. Findingurile intră direct în
+  candidatul următor, fără oprire între faze;
+- QA final pe același SHA este Luna xhigh + Terra xhigh. Orice finding care
+  schimbă sursa produce SHA nou și repetă numai porțile invalidate;
+- Finance și salary live apply, credentiale/identități noi și operații
+  ireversibile rămân în afara autonomiei implicite și cer exact confirmarea
+  prevăzută de `AGENTS.md`. Implementarea, testele și deployul gardurilor nu se
+  opresc din acest motiv.
 
 ## 15. Închidere P0-B — 2026-08-04
 
@@ -808,3 +842,30 @@ Backup și rollback:
 
 Verdict P1-A: **CLOSED LIVE**. M-06, M-07, R-01 și R-02 sunt închise integral.
 Finance live rămâne **NO-GO**. P1-B nu a fost început în acest goal.
+
+### 16.6 Hotfix operațional sales import — 2026-08-05
+
+La reîncărcarea fișierului `Vanzari_MobiUp_MobiCell (77).xlsx`, cutoff
+`2026-08-04`, UI a raportat eronat că există deja un import în curs. Dovezile
+live au arătat că primul job reușise: snapshotul 214 era `processing` cu
+manifest `validated`, 5.674 rânduri staged, headul 213/revizia 2 și datele live
+neschimbate. Rezultatul ARQ efemer nu mai era recuperabil de UI, iar retry-ul
+cu același digest a eșuat pe lease și a eliminat spool-ul comun al candidatului.
+
+Hotfixul `2fe927794d302a3c5d14a4f2d345e6f27c546fb0`:
+
+- caută înainte de enqueue o generație `validated` cu exact același SHA-256 al
+  fișierului și același cutoff;
+- reface atomic spool-ul content-addressed din bytes reîncărcați și verifică
+  egalitatea căii cu sursa legată în DB;
+- returnează manifestul și tokenul generației existente ca rezultat `complete`,
+  fără al doilea job, fără alt staging și fără schimbarea headului live;
+- refuză fail-closed dacă sursa validată indică altă cale.
+
+Poarta locală: 47 teste trecute, 6 skip-uri DB izolate și mypy verde pe
+repository/service/jobs. Commitul este pe `main`, sincronizat și deployat
+direct pe primary; backendul a fost restartat, startupul a sincronizat 14
+vizite, iar health local/public este verde. Pentru închiderea operațională a
+snapshotului 214, operatorul reîncarcă o singură dată exact același fișier cu
+cutoff `2026-08-04`; UI trebuie să afișeze manifestul deja validat și butonul de
+promovare. Promovarea rămâne explicită și nu este executată automat de hotfix.
