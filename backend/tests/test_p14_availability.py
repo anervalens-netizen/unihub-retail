@@ -221,9 +221,6 @@ async def test_lifespan_allows_arq_port_down_and_logs_degraded(
     monkeypatch.setattr(main, "attach_db_error_handler", lambda _pool: None)
     monkeypatch.setattr(main, "verify_migrations_current", AsyncMock())
     monkeypatch.setattr(main, "prewarm_pool", AsyncMock())
-    monkeypatch.setattr(main, "sync_visits_snapshot", AsyncMock(return_value=0))
-    monkeypatch.setattr(main, "prewarm_special_cards_cache", lambda: None)
-    monkeypatch.setattr(main, "update_business_metrics", AsyncMock())
     monkeypatch.setattr(main, "detach_db_error_handler", AsyncMock())
     monkeypatch.setattr(main, "close_db_pool", AsyncMock())
     monkeypatch.setattr(main, "close_rate_limit_runtime", AsyncMock())
@@ -242,6 +239,9 @@ async def test_lifespan_allows_arq_port_down_and_logs_degraded(
     create_pool.assert_awaited_once()
     assert "arq worker pool unavailable; queue endpoints degraded" in caplog.text
     assert "arq worker pool initialized" not in caplog.text
+    assert not hasattr(main, "sync_visits_snapshot")
+    assert not hasattr(main, "prewarm_special_cards_cache")
+    assert not hasattr(main, "update_business_metrics")
 
 
 @pytest.mark.asyncio

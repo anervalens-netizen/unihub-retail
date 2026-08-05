@@ -18,6 +18,8 @@ class ExportsRepository:
         filters: dict[str, list[str]],
         include_closed_stores: bool,
         selected_days: list[int] | None = None,
+        limit: int | None = None,
+        include_total_count: bool = False,
     ) -> list[asyncpg.Record]:
         """Return incentive sales at the store-product grain used by Focus."""
         params: list[Any] = [month]
@@ -45,6 +47,32 @@ class ExportsRepository:
             clauses.append(f"EXTRACT(DAY FROM agg.sale_date)::INT = ANY(${len(params)}::INT[])")
 
         item_source = "reporting_item_day"
+        if limit is not None and limit < 1:
+            raise ValueError("Export row limit must be positive")
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f" LIMIT ${len(params)}"
+        else:
+            limit_clause = ""
+
+        report_count_cte = """
+                , report_count AS (
+                    SELECT COUNT(*)::INT AS total_count
+                    FROM (
+                        SELECT
+                            import_month,
+                            category,
+                            subcategory,
+                            item_code,
+                            item_name,
+                            reward_value
+                        FROM product_rows
+                        GROUP BY import_month, category, subcategory, item_code, item_name, reward_value
+                    ) grouped_rows
+                )
+        """ if include_total_count else ""
+        report_count_select = ", report_count.total_count AS total_count" if include_total_count else ""
+        report_count_join = "CROSS JOIN report_count" if include_total_count else ""
 
         async with self.pool.acquire() as conn:
             return await conn.fetch(
@@ -62,33 +90,39 @@ class ExportsRepository:
                     FROM sales_transactions
                     WHERE import_month = $1
                     GROUP BY import_month, item_code
+                ),
+                product_rows AS (
+                    SELECT
+                        agg.import_month,
+                        agg.site_code,
+                        agg.item_code,
+                        COALESCE(MAX(ip.item_name), MAX(agg.item_name), agg.item_code) AS item_name,
+                        COALESCE(MAX(categories.category), 'Necategorizat') AS category,
+                        COALESCE(MAX(categories.subcategory), 'Necategorizat') AS subcategory,
+                        MAX(ip.reward_value) AS reward_value,
+                        ip.valid_from,
+                        ip.valid_to,
+                        COALESCE(SUM(agg.net_quantity), 0)::INT AS net_quantity,
+                        COALESCE(SUM(agg.positive_quantity), 0)::INT AS positive_quantity,
+                        COALESCE(SUM(agg.return_quantity), 0)::INT AS return_quantity
+                    FROM {item_source} agg
+                    JOIN stores s ON s.site_code = agg.site_code
+                    JOIN incentive_campaigns campaign ON campaign.month = agg.import_month
+                    JOIN incentive_products ip
+                        ON ip.campaign_id = campaign.id
+                        AND ip.item_code = agg.item_code
+                        AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
+                    LEFT JOIN item_categories categories
+                        ON categories.import_month = agg.import_month
+                        AND categories.item_code = agg.item_code
+                    WHERE {" AND ".join(clauses)}
+                    GROUP BY agg.import_month, agg.site_code, agg.item_code, ip.valid_from, ip.valid_to
                 )
-                SELECT
-                    agg.import_month,
-                    agg.site_code,
-                    agg.item_code,
-                    COALESCE(MAX(ip.item_name), MAX(agg.item_name), agg.item_code) AS item_name,
-                    COALESCE(MAX(categories.category), 'Necategorizat') AS category,
-                    COALESCE(MAX(categories.subcategory), 'Necategorizat') AS subcategory,
-                    MAX(ip.reward_value) AS reward_value,
-                    ip.valid_from,
-                    ip.valid_to,
-                    COALESCE(SUM(agg.net_quantity), 0)::INT AS net_quantity,
-                    COALESCE(SUM(agg.positive_quantity), 0)::INT AS positive_quantity,
-                    COALESCE(SUM(agg.return_quantity), 0)::INT AS return_quantity
-                FROM {item_source} agg
-                JOIN stores s ON s.site_code = agg.site_code
-                JOIN incentive_campaigns campaign ON campaign.month = agg.import_month
-                JOIN incentive_products ip
-                    ON ip.campaign_id = campaign.id
-                    AND ip.item_code = agg.item_code
-                    AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
-                LEFT JOIN item_categories categories
-                    ON categories.import_month = agg.import_month
-                    AND categories.item_code = agg.item_code
-                WHERE {" AND ".join(clauses)}
-                GROUP BY agg.import_month, agg.site_code, agg.item_code, ip.valid_from, ip.valid_to
-                ORDER BY category, subcategory, agg.item_code, agg.site_code
+                {report_count_cte}
+                SELECT product_rows.*{report_count_select}
+                FROM product_rows
+                {report_count_join}
+                ORDER BY category, subcategory, item_code, site_code{limit_clause}
                 """,
                 *params,
             )
@@ -105,6 +139,8 @@ class ExportsRepository:
         selected_days: list[int] | None = None,
         period: str | None = None,
         include_campaign_metrics: bool = True,
+        limit: int | None = None,
+        include_total_count: bool = False,
     ) -> list[asyncpg.Record]:
         dataset_fields = {
             "agents": [
@@ -203,6 +239,14 @@ class ExportsRepository:
         excluded_units_param = len(params)
         params.append(include_campaign_metrics)
         campaign_metrics_param = len(params)
+        if limit is not None and limit < 1:
+            raise ValueError("Export row limit must be positive")
+        total_count_select = ", COUNT(*) OVER() AS total_count" if include_total_count else ""
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f" LIMIT ${len(params)}"
+        else:
+            limit_clause = ""
 
         fields = dataset_fields[dataset]
         field_select = ",\n                ".join(f"{expr} AS {alias}" for alias, expr in fields)
@@ -547,6 +591,7 @@ class ExportsRepository:
                     COALESCE(c.incentive_bonus, 0) AS incentive_bonus,
                     COALESCE(c.promo_sales, 0) AS promo_sales,
                     COALESCE(c.promo_quantity, 0)::INT AS promo_quantity
+                    {total_count_select}
                 FROM base b
                 LEFT JOIN targets t
                     ON {join_conditions}
@@ -554,7 +599,7 @@ class ExportsRepository:
                 LEFT JOIN campaign_base c
                     ON {" AND ".join(f"c.{alias} IS NOT DISTINCT FROM b.{alias}" for alias, _ in fields)}
                     AND c.period_key IS NOT DISTINCT FROM b.period_key
-                ORDER BY {", ".join("b." + alias for alias, _ in fields)}, b.period_key NULLS FIRST
+                ORDER BY {", ".join("b." + alias for alias, _ in fields)}, b.period_key NULLS FIRST{limit_clause}
                 """,
                 *params,
             )
@@ -569,6 +614,7 @@ class ExportsRepository:
         campaign_exclusions_by_month: dict[str, dict[tuple[str, str, str], int]] | None = None,
         selected_days: list[int] | None = None,
         include_campaign_metrics: bool = False,
+        limit: int | None = None,
     ) -> list[asyncpg.Record]:
         params: list[Any] = [months]
         clauses = [
@@ -605,6 +651,13 @@ class ExportsRepository:
         promo_codes_param = len(params)
         params.append(include_campaign_metrics)
         campaign_metrics_param = len(params)
+        if limit is not None and limit < 1:
+            raise ValueError("Export row limit must be positive")
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f" LIMIT ${len(params)}"
+        else:
+            limit_clause = ""
 
         async with self.pool.acquire() as conn:
             return await conn.fetch(
@@ -665,7 +718,7 @@ class ExportsRepository:
                 LEFT JOIN campaign
                     ON campaign.import_month = base.import_month
                     AND campaign.sale_date = base.sale_date
-                ORDER BY day_of_month ASC, import_month ASC
+                ORDER BY day_of_month ASC, import_month ASC{limit_clause}
                 """,
                 *params,
             )
@@ -680,6 +733,7 @@ class ExportsRepository:
         campaign_codes_by_month: dict[str, list[str]] | None = None,
         selected_days: list[int] | None = None,
         include_campaign_metrics: bool = False,
+        limit: int | None = None,
     ) -> list[asyncpg.Record]:
         level_fields = {
             "general": [],
@@ -736,6 +790,13 @@ class ExportsRepository:
         promo_codes_param = len(params)
         params.append(include_campaign_metrics)
         campaign_metrics_param = len(params)
+        if limit is not None and limit < 1:
+            raise ValueError("Export row limit must be positive")
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f" LIMIT ${len(params)}"
+        else:
+            limit_clause = ""
 
         fields = level_fields[level]
         field_select = ",\n                    ".join(f"{expr} AS {alias}" for alias, expr in fields)
@@ -750,6 +811,7 @@ class ExportsRepository:
             " AND ".join(f"campaign.{alias} IS NOT DISTINCT FROM base.{alias}" for alias, _ in fields)
             or "true"
         )
+        dimension_count_select = ", ".join(alias for alias, _ in fields) or "1"
 
         async with self.pool.acquire() as conn:
             return await conn.fetch(
@@ -772,6 +834,13 @@ class ExportsRepository:
                     JOIN stores s ON s.site_code = agg.site_code
                     WHERE {" AND ".join(clauses)}
                     GROUP BY {group_prefix}agg.import_month, day_of_month
+                ),
+                dimension_count AS (
+                    SELECT COUNT(*)::INT AS total_dimensions
+                    FROM (
+                        SELECT DISTINCT {dimension_count_select}
+                        FROM base
+                    ) dimensions
                 ),
                 promo_codes AS (
                     SELECT import_month, item_code
@@ -806,13 +875,15 @@ class ExportsRepository:
                     COALESCE(campaign.incentive_quantity, 0)::INT AS incentive_quantity,
                     COALESCE(campaign.incentive_bonus, 0) AS incentive_bonus,
                     COALESCE(campaign.promo_sales, 0) AS promo_sales,
-                    COALESCE(campaign.promo_quantity, 0)::INT AS promo_quantity
+                    COALESCE(campaign.promo_quantity, 0)::INT AS promo_quantity,
+                    dimension_count.total_dimensions AS total_dimensions
                 FROM base
+                CROSS JOIN dimension_count
                 LEFT JOIN campaign
                     ON {campaign_join}
                     AND campaign.import_month = base.import_month
                     AND campaign.day_of_month = base.day_of_month
-                ORDER BY {order_clause}
+                ORDER BY {order_clause}{limit_clause}
                 """,
                 *params,
             )

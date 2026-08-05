@@ -63,9 +63,6 @@ from session_auth import (
     router as session_router,
 )
 from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, health, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
-from services.dashboard_specials import prewarm_special_cards_cache
-from services.retail_metrics import update_business_metrics
-from services.visits_sync import sync_visits_snapshot
 from services.jobs import close_arq_pool, get_arq_pool
 
 logger = logging.getLogger(__name__)
@@ -102,18 +99,11 @@ async def lifespan(app: FastAPI):
         await verify_migrations_current(current_pool)
         logger.info("Database migrations verified current (read-only)")
         await prewarm_pool()
-        current_pool = await get_pool()
-        async with current_pool.acquire() as conn:
-            synced = await sync_visits_snapshot(conn)
-            logger.info("visits_snapshot synced at boot: %d rows", synced)
-        prewarm_special_cards_cache()
         arq_pool = await get_arq_pool()
         if arq_pool is None:
             logger.warning("arq worker pool unavailable; queue endpoints degraded")
         else:
             logger.info("arq worker pool initialized")
-        current_pool = await get_pool()
-        await update_business_metrics(current_pool)
         yield
     finally:
         try:

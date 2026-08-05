@@ -41,6 +41,11 @@ class ColumnDef:
 
 XLSX_SPOOL_MAX_MEMORY_BYTES = 8 * 1024 * 1024
 XLSX_STREAM_CHUNK_BYTES = 256 * 1024
+EXPORT_MAX_ROWS = 50_000
+EXPORT_MAX_CELLS = 1_000_000
+EXPORT_MAX_ESTIMATED_BYTES = 64 * 1024 * 1024
+EXPORT_ESTIMATED_BYTES_PER_CELL = 128
+EXPORT_MAX_PREVIEW_ROWS = 500
 
 
 @dataclass
@@ -218,18 +223,32 @@ class ExportsService:
         }
 
     async def preview(self, request: dict[str, Any]) -> dict[str, Any]:
+        limit = self._preview_limit(request)
         if request.get("export_mode") == "daily_comparison":
-            return await self._preview_daily_comparison(request)
-        result = await self.build_report(request)
-        limit = int(request.get("preview_limit") or 100)
+            return await self._preview_daily_comparison(request, limit=limit)
+        result, total_rows = await self._build_report(
+            request,
+            row_limit=limit + 1,
+            preview_limit=limit,
+        )
         return {
             "columns": result["columns"],
-            "rows": result["rows"][:limit],
-            "total_rows": len(result["rows"]),
-            "truncated": len(result["rows"]) > limit,
+            "rows": result["rows"],
+            "total_rows": total_rows,
+            "truncated": total_rows > limit,
         }
 
     async def build_report(self, request: dict[str, Any]) -> dict[str, Any]:
+        result, _ = await self._build_report(request, row_limit=EXPORT_MAX_ROWS + 1)
+        return result
+
+    async def _build_report(
+        self,
+        request: dict[str, Any],
+        *,
+        row_limit: int,
+        preview_limit: int | None = None,
+    ) -> tuple[dict[str, Any], int]:
         dataset = str(request.get("dataset") or "")
         if dataset not in DATASETS:
             raise ExportValidationError("Dataset invalid.")
@@ -242,12 +261,15 @@ class ExportsService:
         include_closed_stores = bool(request.get("include_closed_stores", False))
 
         if dataset == "incentive_products":
-            return await self._build_incentive_products_report(
+            result = await self._build_incentive_products_report(
                 months=months,
                 filters=self._normalize_filters(request.get("filters") or {}),
                 include_closed_stores=include_closed_stores,
                 selected_days=selected_days,
+                row_limit=row_limit,
+                preview_limit=preview_limit,
             )
+            return result
 
         dimensions = self._valid_keys(
             request.get("dimensions"),
@@ -298,13 +320,40 @@ class ExportsService:
             campaign_exclusions_by_month=campaign_exclusions_by_month,
             selected_days=selected_days,
             include_campaign_metrics=total_has_campaign_metrics,
+            limit=row_limit,
+            include_total_count=preview_limit is not None,
         )
+        if preview_limit is None and len(total_records) > EXPORT_MAX_ROWS:
+            raise ExportValidationError("Exportul depaseste limita de randuri.")
+        visible_records = total_records[:preview_limit] if preview_limit is not None else total_records
         rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
-        for record in total_records:
+        for record in visible_records:
             row = self._base_row(record, dimensions, metrics)
             rows_by_key[self._row_key(record, dataset)] = row
 
+        max_days = len(selected_days) if selected_days else self._max_days_for_months(months)
+        max_columns = (
+            len(dimensions)
+            + len(metrics)
+            + len(months) * len(monthly_metrics)
+            + max_days * len(daily_metrics)
+        )
+        self._validate_export_budget(
+            len(rows_by_key),
+            max_columns,
+            operation="Raportul",
+        )
+
         period_loaders: dict[str, Any] = {}
+        period_limit = min(
+            EXPORT_MAX_ROWS + 1,
+            max(
+                1,
+                (preview_limit or EXPORT_MAX_ROWS)
+                * max(1, len(months) * max(1, len(monthly_metrics) + len(daily_metrics))),
+            )
+            + 1,
+        )
         if monthly_metrics:
             period_loaders["month"] = self.repo.fetch_report_rows(
                 dataset=dataset,
@@ -316,6 +365,7 @@ class ExportsService:
                 selected_days=selected_days,
                 period="month",
                 include_campaign_metrics=monthly_has_campaign_metrics,
+                limit=period_limit,
             )
         if daily_metrics:
             period_loaders["day"] = self.repo.fetch_report_rows(
@@ -328,6 +378,7 @@ class ExportsService:
                 selected_days=selected_days,
                 period="day",
                 include_campaign_metrics=False,
+                limit=period_limit,
             )
 
         period_records: dict[str, list[Any]] = {}
@@ -346,6 +397,14 @@ class ExportsService:
                 await asyncio.gather(*tasks.values(), return_exceptions=True)
                 raise
             period_records = dict(zip(names, results, strict=True))
+
+        for name, records in period_records.items():
+            if preview_limit is None and len(records) > EXPORT_MAX_ROWS:
+                raise ExportValidationError(
+                    f"Exportul depaseste limita de randuri pentru evolutia {name}."
+                )
+            if preview_limit is not None:
+                period_records[name] = records[:period_limit]
 
         if monthly_metrics:
             self._attach_period_metrics(
@@ -368,10 +427,17 @@ class ExportsService:
         columns = self._build_columns(dataset, dimensions, metrics, months, monthly_metrics, rows_by_key, daily_metrics)
         rows = list(rows_by_key.values())
         rows.sort(key=lambda row: tuple(str(row.get(dim) or "") for dim in dimensions))
-        return {
+        self._validate_export_budget(len(rows), len(columns), operation="Raportul")
+        result = {
             "columns": columns,
-            "rows": [self._public_row(row, columns) for row in rows],
+            "rows": [self._public_row(row, columns) for row in rows[:preview_limit] if preview_limit is not None]
+            if preview_limit is not None
+            else [self._public_row(row, columns) for row in rows],
         }
+        if preview_limit is None:
+            return result, len(rows)
+        total_count = self._record_total_count(total_records)
+        return result, total_count if total_count is not None else max(len(total_records), len(rows))
 
     async def _build_incentive_products_report(
         self,
@@ -380,7 +446,9 @@ class ExportsService:
         filters: dict[str, list[str]],
         include_closed_stores: bool,
         selected_days: list[int] | None,
-    ) -> dict[str, Any]:
+        row_limit: int,
+        preview_limit: int | None,
+    ) -> tuple[dict[str, Any], int]:
         columns = [
             {"key": "month", "label": "Luna", "type": "text", "group": "Perioada"},
             {"key": "category", "label": "Categorie", "type": "text", "group": "Produs"},
@@ -410,7 +478,11 @@ class ExportsService:
             return ",".join(values) if values else None
 
         rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+        total_rows = 0
         for month in months:
+            remaining = row_limit - len(rows_by_key)
+            if remaining <= 0:
+                raise ExportValidationError("Exportul incentive depaseste limita de randuri.")
             async with pool.acquire() as conn:
                 campaign = await get_incentive_campaign(conn, month)
             if campaign is None:
@@ -427,6 +499,8 @@ class ExportsService:
                         site_code_value,
                         item_code_value,
                     )
+                    if key not in period_exclusions and len(period_exclusions) >= EXPORT_MAX_ROWS:
+                        raise ExportValidationError("Exportul incentive depaseste limita de randuri.")
                     period_exclusions[key] = period_exclusions.get(key, 0) + units
             else:
                 requested_days = set(selected_days or range(1, 32))
@@ -442,6 +516,8 @@ class ExportsService:
                     )
                     for (site_code_value, _agent, item_code_value), units in period_result.get(month, {}).items():
                         key = (period["valid_from"].isoformat(), site_code_value, item_code_value)
+                        if key not in period_exclusions and len(period_exclusions) >= EXPORT_MAX_ROWS:
+                            raise ExportValidationError("Exportul incentive depaseste limita de randuri.")
                         period_exclusions[key] = period_exclusions.get(key, 0) + units
             async with pool.acquire() as conn:
                 multipliers, achievements = await _get_store_incentive_multipliers(
@@ -459,8 +535,20 @@ class ExportsService:
                 filters=filters,
                 include_closed_stores=include_closed_stores,
                 selected_days=selected_days,
+                limit=(
+                    min(remaining, EXPORT_MAX_ROWS + 1)
+                    if preview_limit is None or len(rows_by_key) < preview_limit
+                    else 1
+                ),
+                include_total_count=preview_limit is not None,
             )
+            month_total = self._record_total_count(records)
+            total_rows += month_total if month_total is not None else len(records)
+            if preview_limit is None and len(records) > remaining - 1:
+                raise ExportValidationError("Exportul incentive depaseste limita de randuri.")
             for record in records:
+                if preview_limit is not None and len(rows_by_key) >= preview_limit:
+                    break
                 reward = Decimal(record["reward_value"] or 0)
                 row_key = (
                     month,
@@ -526,7 +614,11 @@ class ExportsService:
         rows.sort(key=lambda row: (
             str(row["month"]), str(row["category"]), str(row["subcategory"]), str(row["item_code"])
         ))
-        return {"columns": columns, "rows": rows}
+        visible_rows = rows[:preview_limit] if preview_limit is not None else rows
+        self._validate_export_budget(len(visible_rows), len(columns), operation="Exportul incentive")
+        return {"columns": columns, "rows": visible_rows}, (
+            total_rows if preview_limit is not None else len(rows)
+        )
 
     async def build_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
         """Compatibility helper for in-process callers and focused tests."""
@@ -555,7 +647,10 @@ class ExportsService:
                 campaign_exclusions_by_month={},
                 selected_days=selected_days,
                 include_campaign_metrics=False,
+                limit=EXPORT_MAX_ROWS + 1,
             )
+            if len(daily_rows) > EXPORT_MAX_ROWS:
+                raise ExportValidationError("Exportul depaseste limita de randuri pentru evolutia zilnica.")
         return await asyncio.to_thread(
             self._render_table_xlsx,
             request,
@@ -622,7 +717,12 @@ class ExportsService:
         )
         return self._spool_workbook(wb, self._safe_filename(str(filename)))
 
-    async def _preview_daily_comparison(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def _preview_daily_comparison(
+        self,
+        request: dict[str, Any],
+        *,
+        limit: int,
+    ) -> dict[str, Any]:
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
         campaign_codes_by_month: dict[str, list[str]] = {}
         preview_level = "general" if "general" in levels else levels[0]
@@ -633,20 +733,23 @@ class ExportsService:
             include_closed_stores=include_closed_stores,
             campaign_codes_by_month=campaign_codes_by_month,
             selected_days=selected_days,
+            limit=limit + 1,
         )
+        records = records[: limit + 1]
         table = self._daily_comparison_table(
             level=preview_level,
             months=months,
             metrics=metrics,
             records=records,
             selected_days=selected_days,
+            row_limit=limit,
         )
-        limit = int(request.get("preview_limit") or 100)
+        total_rows = int(table.get("total_rows", len(table["rows"])))
         return {
             "columns": table["columns"],
             "rows": table["rows"][:limit],
-            "total_rows": len(table["rows"]),
-            "truncated": len(table["rows"]) > limit,
+            "total_rows": total_rows,
+            "truncated": total_rows > limit,
         }
 
     async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> XlsxArtifact:
@@ -663,7 +766,12 @@ class ExportsService:
                     include_closed_stores=include_closed_stores,
                     campaign_codes_by_month=campaign_codes_by_month,
                     selected_days=selected_days,
+                    limit=EXPORT_MAX_ROWS + 1,
                 )
+                if len(records) > EXPORT_MAX_ROWS:
+                    raise ExportValidationError(
+                        f"Comparatia depaseste limita de randuri pentru nivelul {level}."
+                    )
                 return level, records
 
         level_records = await asyncio.gather(*(load_level(level) for level in levels))
@@ -678,6 +786,15 @@ class ExportsService:
                 selected_days=selected_days,
             )
             tables.append((level, table))
+        self._validate_export_budget(
+            sum(int(table.get("total_rows", len(table["rows"]))) for _, table in tables),
+            max((len(table["columns"]) for _, table in tables), default=0),
+            operation="Comparatia zilnica",
+            cells=sum(
+                int(table.get("total_rows", len(table["rows"]))) * len(table["columns"])
+                for _, table in tables
+            ),
+        )
         return await asyncio.to_thread(
             self._render_daily_comparison_xlsx,
             request,
@@ -745,6 +862,8 @@ class ExportsService:
         try:
             wb.save(stream)
             size = stream.tell()
+            if size > EXPORT_MAX_ESTIMATED_BYTES:
+                raise ExportValidationError("Fisierul XLSX depaseste limita de dimensiune estimata.")
             stream.seek(0)
             return XlsxArtifact(stream=stream, filename=filename, size=size)
         except Exception:
@@ -882,6 +1001,7 @@ class ExportsService:
         months: list[str],
         filters: dict[str, list[str]],
         selected_days: list[int] | None = None,
+        max_entries: int = EXPORT_MAX_ROWS,
     ) -> dict[str, dict[tuple[str, str, str], int]]:
         pool = getattr(self.repo, "pool", None)
         if pool is None:
@@ -949,8 +1069,19 @@ class ExportsService:
                                 )
                             result = evaluation.result
                             for key, units in result.excluded_units.items():
+                                if key not in month_units and len(month_units) >= max_entries:
+                                    raise ExportValidationError(
+                                        "Excluderile Promo depasesc limita de randuri a exportului."
+                                    )
                                 month_units[key] = month_units.get(key, 0) + units
                     if month_units:
+                        if (
+                            len(month_units) > max_entries
+                            or sum(len(items) for items in out.values()) + len(month_units) > max_entries
+                        ):
+                            raise ExportValidationError(
+                                "Excluderile Promo depasesc limita de randuri a exportului."
+                            )
                         out[month] = month_units
                     continue
                 context = await _load_dashboard_campaign_context(
@@ -967,6 +1098,12 @@ class ExportsService:
                         f"Export indisponibil pentru {month}: excluderile Promo nu pot fi validate complet."
                     )
                 if context.promo_excluded_units:
+                    if len(context.promo_excluded_units) > max_entries or sum(
+                        len(items) for items in out.values()
+                    ) + len(context.promo_excluded_units) > max_entries:
+                        raise ExportValidationError(
+                            "Excluderile Promo depasesc limita de randuri a exportului."
+                        )
                     out[month] = {
                         (str(site), str(agent), str(item)): int(units)
                         for (site, agent, item), units in context.promo_excluded_units.items()
@@ -981,6 +1118,67 @@ class ExportsService:
             "asms": ["regional", "asm"],
         }[dataset]
         return tuple(row[field] for field in key_fields)
+
+    def _preview_limit(self, request: dict[str, Any]) -> int:
+        try:
+            limit = int(request.get("preview_limit") or 100)
+        except (TypeError, ValueError) as exc:
+            raise ExportValidationError("Limita preview este invalida.") from exc
+        if not 1 <= limit <= EXPORT_MAX_PREVIEW_ROWS:
+            raise ExportValidationError(
+                f"Preview-ul este limitat la maxim {EXPORT_MAX_PREVIEW_ROWS} randuri."
+            )
+        return limit
+
+    @staticmethod
+    def _record_total_count(records: list[Any]) -> int | None:
+        if not records:
+            return None
+        try:
+            value = records[0]["total_count"]
+        except (KeyError, IndexError, TypeError):
+            return None
+        try:
+            return max(0, int(value)) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _record_total_dimensions(records: list[Any]) -> int | None:
+        if not records:
+            return None
+        try:
+            value = records[0]["total_dimensions"]
+        except (KeyError, IndexError, TypeError):
+            return None
+        try:
+            return max(0, int(value)) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _validate_export_budget(
+        self,
+        row_count: int,
+        column_count: int,
+        *,
+        operation: str,
+        cells: int | None = None,
+    ) -> None:
+        if row_count > EXPORT_MAX_ROWS:
+            raise ExportValidationError(
+                f"{operation} depaseste limita de {EXPORT_MAX_ROWS} randuri."
+            )
+        cell_count = cells if cells is not None else row_count * max(1, column_count)
+        if cell_count > EXPORT_MAX_CELLS:
+            raise ExportValidationError(
+                f"{operation} depaseste limita de {EXPORT_MAX_CELLS} celule."
+            )
+        estimated_bytes = 4096 + cell_count * EXPORT_ESTIMATED_BYTES_PER_CELL
+        if estimated_bytes > EXPORT_MAX_ESTIMATED_BYTES:
+            raise ExportValidationError(
+                f"{operation} depaseste limita de dimensiune estimata "
+                f"({EXPORT_MAX_ESTIMATED_BYTES} bytes)."
+            )
 
     def _public_row(self, row: dict[str, Any], columns: list[dict[str, str]]) -> dict[str, Any]:
         return {column["key"]: self._json_value(row.get(column["key"])) for column in columns}
@@ -1022,6 +1220,7 @@ class ExportsService:
         metrics: list[str],
         records: list[Any],
         selected_days: list[int] | None = None,
+        row_limit: int | None = None,
     ) -> dict[str, Any]:
         dimensions = list(COMPARISON_LEVELS[level]["dimensions"])
         columns: list[dict[str, str]] = [
@@ -1074,6 +1273,17 @@ class ExportsService:
             dimension_labels[()] = {}
         max_day = self._max_days_for_months(months)
         days = selected_days or list(range(1, max_day + 1))
+        total_dimensions = self._record_total_dimensions(records)
+        if total_dimensions is None:
+            total_dimensions = max(1, len(dimension_labels)) if level == "general" else len(dimension_labels)
+        elif level == "general":
+            total_dimensions = max(1, total_dimensions)
+        total_rows = total_dimensions * len(days)
+        self._validate_export_budget(
+            min(total_rows, row_limit) if row_limit is not None else total_rows,
+            len(columns),
+            operation="Preview-ul comparatiei" if row_limit is not None else "Comparatia zilnica",
+        )
         rows: list[dict[str, Any]] = []
 
         for dim_key in sorted(dimension_labels, key=lambda item: tuple(str(value or "") for value in item)):
@@ -1105,11 +1315,16 @@ class ExportsService:
                                 row[f"delta:{metric}"] = None
                                 row[f"delta_pct:{metric}"] = None
                 rows.append(row)
+                if row_limit is not None and len(rows) >= row_limit:
+                    break
+            if row_limit is not None and len(rows) >= row_limit:
+                break
 
         return {
             "columns": columns,
             "rows": [self._public_row(row, columns) for row in rows],
             "max_day": max_day,
+            "total_rows": total_rows,
         }
 
     def _selected_days(self, request: dict[str, Any]) -> list[int] | None:
