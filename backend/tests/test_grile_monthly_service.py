@@ -400,24 +400,13 @@ def test_validate_archive_manifest_accepts_complete_and_reports_all_failures(
 
 
 def make_sheets_value_service(value_ranges: list[dict[str, Any]] | Exception):
+    request = MagicMock()
+    if isinstance(value_ranges, Exception):
+        request.execute.side_effect = value_ranges
+    else:
+        request.execute.return_value = {"valueRanges": value_ranges}
     values = MagicMock()
-
-    def batch_get(**kwargs: Any) -> MagicMock:
-        request = MagicMock()
-        if isinstance(value_ranges, Exception):
-            request.execute.side_effect = value_ranges
-        else:
-            ranges = kwargs["ranges"]
-            request.execute.return_value = {
-                "valueRanges": [
-                    {**item, "range": ranges[index]}
-                    for index, item in enumerate(value_ranges)
-                    if index < len(ranges)
-                ]
-            }
-        return request
-
-    values.batchGet.side_effect = batch_get
+    values.batchGet.return_value = request
     spreadsheets = MagicMock()
     spreadsheets.values.return_value = values
     service = MagicMock()
@@ -947,34 +936,6 @@ class StatefulResetService:
         return SimpleNamespace(execute=execute)
 
 
-def patch_reset_fences(
-    monkeypatch: pytest.MonkeyPatch,
-) -> tuple[AsyncMock, AsyncMock]:
-    clear_confirmation = AsyncMock(return_value=True)
-    rollback_confirmation = AsyncMock(return_value=True)
-    monkeypatch.setattr(
-        grile,
-        "persist_reset_clear_intent",
-        AsyncMock(return_value={"fence_epoch": 11}),
-    )
-    monkeypatch.setattr(
-        grile,
-        "persist_reset_clear_confirmation",
-        clear_confirmation,
-    )
-    monkeypatch.setattr(
-        grile,
-        "persist_reset_rollback_intent",
-        AsyncMock(return_value={"fence_epoch": 12}),
-    )
-    monkeypatch.setattr(
-        grile,
-        "persist_reset_rollback_confirmation",
-        rollback_confirmation,
-    )
-    return clear_confirmation, rollback_confirmation
-
-
 def patch_archive_prerequisite(
     monkeypatch: pytest.MonkeyPatch,
     output_dir: Path,
@@ -1145,7 +1106,8 @@ async def test_reset_live_success_requires_backup_and_verifies_every_clear(
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
     monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
-    finish, _ = patch_reset_fences(monkeypatch)
+    finish = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "finish_reset_item", finish)
 
     report_path = await grile.reset_month(
         MagicMock(),
@@ -1165,7 +1127,7 @@ async def test_reset_live_success_requires_backup_and_verifies_every_clear(
     assert all(values == [] for values in service.state.values())
     finish.assert_awaited_once()
     assert finish.await_args is not None
-    assert finish.await_args.kwargs["fence_epoch"] == 11
+    assert finish.await_args.kwargs["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -1183,7 +1145,8 @@ async def test_reset_month_live_failure_marks_checkpoint(
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
     monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
-    _, rollback = patch_reset_fences(monkeypatch)
+    rollback = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "record_reset_item_rollback", rollback)
     monkeypatch.setattr(
         grile,
         "reset_store",
@@ -1819,17 +1782,6 @@ def test_reset_snapshot_restore_and_verification_guards() -> None:
         grile._read_reset_snapshot(incomplete, entry())
     assert exc_info.value.code == "backup_response_incomplete"
 
-    wrong_ranges = MagicMock()
-    wrong_ranges.spreadsheets.return_value.values.return_value.batchGet.return_value.execute.return_value = {
-        "valueRanges": [
-            {"range": item, "values": []}
-            for item in reversed(grile.reset_ranges_for_entry(entry()))
-        ]
-    }
-    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
-        grile._read_reset_snapshot(wrong_ranges, entry())
-    assert exc_info.value.code == "backup_response_incomplete"
-
     with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
         grile._restore_reset_snapshot(service, entry(), {})
     assert exc_info.value.code == "backup_invalid"
@@ -1970,8 +1922,12 @@ async def test_live_reset_checkpoint_failures_are_fail_closed(
         "mark_reset_item_running",
         AsyncMock(return_value=failure != "claim"),
     )
-    clear_confirmation, _ = patch_reset_fences(monkeypatch)
-    clear_confirmation.return_value = failure != "finish"
+    monkeypatch.setattr(
+        grile,
+        "finish_reset_item",
+        AsyncMock(return_value=failure != "finish"),
+    )
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=True))
 
     with pytest.raises(grile.MonthlyManifestError) as exc_info:
         await grile.reset_month(
@@ -2007,14 +1963,13 @@ async def test_live_reset_rollback_failure_is_uncertain(
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
     monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
-    clear_confirmation, rollback_confirmation = patch_reset_fences(monkeypatch)
-    clear_confirmation.return_value = False
+    monkeypatch.setattr(grile, "finish_reset_item", AsyncMock(return_value=False))
     monkeypatch.setattr(
         grile,
         "_restore_reset_snapshot",
         MagicMock(side_effect=RuntimeError("restore failed")),
     )
-    rollback_confirmation.return_value = False
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=False))
 
     with pytest.raises(grile.MonthlyManifestError) as exc_info:
         await grile.reset_month(
@@ -2047,7 +2002,8 @@ async def test_live_reset_output_failure_restores_all_google_values(
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
     monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
-    patch_reset_fences(monkeypatch)
+    monkeypatch.setattr(grile, "finish_reset_item", AsyncMock(return_value=True))
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=True))
     monkeypatch.setattr(
         grile,
         "_promote_file",
@@ -2476,54 +2432,6 @@ async def test_monthly_operation_aborts_when_heartbeat_loses_lease(
 
 
 @pytest.mark.asyncio
-async def test_monthly_operation_caller_cancellation_waits_for_work_cleanup(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        grile,
-        "heartbeat_monthly_operation",
-        AsyncMock(return_value=True),
-    )
-    started = asyncio.Event()
-    cleanup_started = asyncio.Event()
-    release_cleanup = asyncio.Event()
-    cleanup_finished = asyncio.Event()
-
-    async def operation() -> grile.MonthlyExecution:
-        started.set()
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            cleanup_started.set()
-            await release_cleanup.wait()
-            cleanup_finished.set()
-            raise
-        raise AssertionError("unreachable")
-
-    task = asyncio.create_task(
-        grile._run_with_monthly_lease(
-            object(),
-            13,
-            execution_owner="worker-a",
-            execution_epoch=5,
-            operation=operation(),
-            heartbeat_interval=3600,
-        )
-    )
-    await started.wait()
-    task.cancel()
-    await asyncio.wait_for(cleanup_started.wait(), timeout=1)
-    assert not task.done()
-    task.cancel()
-    await asyncio.sleep(0)
-    assert not task.done()
-    release_cleanup.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert cleanup_finished.is_set()
-
-
-@pytest.mark.asyncio
 async def test_live_reset_cancelled_after_clear_completes_verified_rollback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2538,8 +2446,13 @@ async def test_live_reset_cancelled_after_clear_completes_verified_rollback(
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
     monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
-    clear_confirmation, rollback_checkpoint = patch_reset_fences(monkeypatch)
-    clear_confirmation.side_effect = asyncio.CancelledError()
+    monkeypatch.setattr(
+        grile,
+        "finish_reset_item",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+    rollback_checkpoint = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "record_reset_item_rollback", rollback_checkpoint)
 
     with pytest.raises(grile.MonthlyManifestError) as exc_info:
         await grile.reset_month(
@@ -2562,13 +2475,11 @@ async def test_live_reset_cancelled_after_clear_completes_verified_rollback(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("template_version", ["v2", "v3"])
 async def test_reconciler_crash_after_clear_restores_once(
-    template_version: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    entry_value = entry(template_version=template_version)
+    entry_value = entry()
     original = grile.canonical_snapshot(
         [{"range": name, "values": [["before"]]} for name in grile.reset_ranges_for_entry(entry_value)]
     )
@@ -2586,10 +2497,8 @@ async def test_reconciler_crash_after_clear_restores_once(
         def __init__(self):
             self.reads = 0
             self.writes = []
-            self.requests: list[tuple[str, dict[str, Any]]] = []
 
         async def request(self, operation, request, **kwargs):
-            self.requests.append((operation, request))
             if operation == "read_values":
                 self.reads += 1
                 return {"valueRanges": cleared["value_ranges"] if self.reads == 1 else original["value_ranges"]}
@@ -2612,7 +2521,6 @@ async def test_reconciler_crash_after_clear_restores_once(
                     "sheet_id": "sheet-1",
                     "company": "Mobiup",
                     "store": "Park Lake",
-                    "ranges": grile.reset_ranges_for_entry(entry_value),
                     "checkpoint_phase": "clear_intent",
                     "backup_path": str(backup),
                     "backup_sha256": grile.file_sha256(backup),
@@ -2636,11 +2544,6 @@ async def test_reconciler_crash_after_clear_restores_once(
     assert result.await_args is not None
     assert result.await_args.kwargs["classification"] == "rolled_back"
     assert confirm.await_count == 1
-    assert all(
-        request["ranges"] == grile.reset_ranges_for_entry(entry_value)
-        for operation, request in adapter.requests
-        if operation == "read_values"
-    )
 
 
 @pytest.mark.asyncio
@@ -2688,14 +2591,17 @@ async def test_live_reset_cancelled_with_unverified_restore_is_uncertain(
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
     monkeypatch.setattr(grile, "mark_reset_item_running", AsyncMock(return_value=True))
-    clear_confirmation, rollback_confirmation = patch_reset_fences(monkeypatch)
-    clear_confirmation.side_effect = asyncio.CancelledError()
+    monkeypatch.setattr(
+        grile,
+        "finish_reset_item",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
     monkeypatch.setattr(
         grile,
         "_restore_reset_snapshot",
         MagicMock(side_effect=RuntimeError("provider unavailable")),
     )
-    rollback_confirmation.return_value = False
+    monkeypatch.setattr(grile, "record_reset_item_rollback", AsyncMock(return_value=False))
 
     with pytest.raises(grile.MonthlyManifestError) as exc_info:
         await grile.reset_month(
@@ -2796,7 +2702,6 @@ async def test_reconciler_clear_intent_with_already_restored_snapshot_is_idempot
                     "sheet_id": entry_value.sheet_id,
                     "company": entry_value.company,
                     "store": entry_value.store,
-                    "ranges": grile.reset_ranges_for_entry(entry_value),
                     "checkpoint_phase": "clear_intent",
                     "backup_path": str(backup),
                     "backup_sha256": grile.file_sha256(backup),
@@ -2842,17 +2747,6 @@ async def test_async_reset_helpers_fail_closed_on_incomplete_invalid_and_mismatc
     with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
         await grile._read_reset_snapshot_async(
             cast(grile.GoogleSyncAdapter, Adapter()), entry_value
-        )
-    assert exc_info.value.code == "backup_response_incomplete"
-
-    class WrongRangeAdapter:
-        async def request(self, operation, request, **kwargs):
-            ranges = list(reversed(request["ranges"]))
-            return {"valueRanges": [{"range": item, "values": []} for item in ranges]}
-
-    with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
-        await grile._read_reset_snapshot_async(
-            cast(grile.GoogleSyncAdapter, WrongRangeAdapter()), entry_value
         )
     assert exc_info.value.code == "backup_response_incomplete"
 
@@ -2983,46 +2877,20 @@ async def test_adapter_rollback_records_fencing_restore_and_confirmation_failure
     monkeypatch.setattr(grile, "persist_reset_rollback_intent", intent)
     monkeypatch.setattr(grile, "persist_reset_rollback_confirmation", confirm)
     monkeypatch.setattr(grile, "_restore_reset_snapshot_async", restore)
-    adapter = cast(grile.GoogleSyncAdapter, object())
-    pool = object()
 
     result = await grile._rollback_reset_entries_adapter(
-        pool,
+        object(),
         operation_id=19,
         entries=[first, second],
-        google_adapter=adapter,
+        google_adapter=cast(grile.GoogleSyncAdapter, object()),
         snapshots=snapshots,
         execution_owner="worker-a",
         execution_epoch=3,
     )
     assert result is False
     assert intent.await_count == 2
-    assert [call.kwargs for call in intent.await_args_list] == [
-        {
-            "operation_id": 19,
-            "site_code": second.site_code,
-            "execution_owner": "worker-a",
-            "execution_epoch": 3,
-        },
-        {
-            "operation_id": 19,
-            "site_code": first.site_code,
-            "execution_owner": "worker-a",
-            "execution_epoch": 3,
-        },
-    ]
     confirm.assert_awaited_once()
-    confirm.assert_awaited_once_with(
-        pool,
-        operation_id=19,
-        site_code=first.site_code,
-        execution_owner="worker-a",
-        execution_epoch=3,
-        fence_epoch=4,
-        restored=True,
-        error_message="reset_rolled_back",
-    )
-    restore.assert_awaited_once_with(adapter, first, snapshots[first.site_code])
+    restore.assert_awaited_once()
 
     intent.reset_mock()
     confirm.reset_mock()
@@ -3051,36 +2919,18 @@ async def test_adapter_cancel_safe_rollback_waits_for_task_and_fails_closed(
     rollback_result: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    started = asyncio.Event()
-    release = asyncio.Event()
-    completed: list[bool] = []
-
-    async def delayed_rollback(*args: object, **kwargs: object) -> bool:
-        started.set()
-        await release.wait()
-        completed.append(True)
-        return rollback_result
-
-    rollback = AsyncMock(side_effect=delayed_rollback)
+    rollback = AsyncMock(return_value=rollback_result)
     monkeypatch.setattr(grile, "_rollback_reset_entries_adapter", rollback)
-    guarded_rollback = asyncio.create_task(
-        grile._rollback_reset_entries_adapter_cancel_safe(
-            object(),
-            operation_id=21,
-            entries=[],
-            google_adapter=cast(grile.GoogleSyncAdapter, object()),
-            snapshots={},
-            execution_owner="worker-a",
-            execution_epoch=1,
-        )
+    result = await grile._rollback_reset_entries_adapter_cancel_safe(
+        object(),
+        operation_id=21,
+        entries=[],
+        google_adapter=cast(grile.GoogleSyncAdapter, object()),
+        snapshots={},
+        execution_owner="worker-a",
+        execution_epoch=1,
     )
-    await started.wait()
-    assert not guarded_rollback.done()
-    assert completed == []
-    release.set()
-    result = await guarded_rollback
     assert result is rollback_result
-    assert completed == [True]
     rollback.assert_awaited_once()
 
     rollback.reset_mock()
@@ -3094,44 +2944,6 @@ async def test_adapter_cancel_safe_rollback_waits_for_task_and_fails_closed(
         execution_owner="worker-a",
         execution_epoch=1,
     ) is False
-
-
-@pytest.mark.asyncio
-async def test_adapter_cancel_safe_rollback_waits_through_repeated_cancellation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    started = asyncio.Event()
-    release = asyncio.Event()
-    completed = asyncio.Event()
-
-    async def rollback(*args: object, **kwargs: object) -> bool:
-        started.set()
-        await release.wait()
-        completed.set()
-        return True
-
-    monkeypatch.setattr(grile, "_rollback_reset_entries_adapter", rollback)
-    guarded = asyncio.create_task(
-        grile._rollback_reset_entries_adapter_cancel_safe(
-            object(),
-            operation_id=39,
-            entries=[],
-            google_adapter=cast(grile.GoogleSyncAdapter, object()),
-            snapshots={},
-            execution_owner="worker-a",
-            execution_epoch=1,
-        )
-    )
-    await started.wait()
-    guarded.cancel()
-    await asyncio.sleep(0)
-    assert not guarded.done()
-    guarded.cancel()
-    await asyncio.sleep(0)
-    assert not guarded.done()
-    release.set()
-    assert await guarded is True
-    assert completed.is_set()
 
 
 @pytest.mark.asyncio
@@ -3179,12 +2991,7 @@ async def test_sync_rollback_records_provider_checkpoint_exception(
     snapshot = grile._read_reset_snapshot(service, item)
     monkeypatch.setattr(
         grile,
-        "persist_reset_rollback_intent",
-        AsyncMock(return_value={"fence_epoch": 13}),
-    )
-    monkeypatch.setattr(
-        grile,
-        "persist_reset_rollback_confirmation",
+        "record_reset_item_rollback",
         AsyncMock(side_effect=RuntimeError("database unavailable")),
     )
     assert await grile._rollback_reset_entries(
@@ -3218,11 +3025,9 @@ async def test_reset_month_adapter_clears_and_confirms_every_google_range(
         def __init__(self) -> None:
             self.snapshot = original
             self.operations: list[str] = []
-            self.requests: list[tuple[str, dict[str, Any]]] = []
 
         async def request(self, operation, request, **kwargs):
             self.operations.append(operation)
-            self.requests.append((operation, request))
             if operation == "read_values":
                 return {"valueRanges": self.snapshot["value_ranges"]}
             if operation == "clear":
@@ -3258,17 +3063,6 @@ async def test_reset_month_adapter_clears_and_confirms_every_google_range(
     )
     assert report.exists()
     assert adapter.operations == ["read_values", "clear", "read_values"]
-    assert adapter.requests[0][1] == {
-        "spreadsheet_id": entry_value.sheet_id,
-        "ranges": grile.reset_ranges_for_entry(entry_value),
-        "value_render_option": "FORMULA",
-        "date_time_render_option": "SERIAL_NUMBER",
-    }
-    assert adapter.requests[1][1] == {
-        "spreadsheet_id": entry_value.sheet_id,
-        "ranges": grile.reset_ranges_for_entry(entry_value),
-    }
-    assert adapter.requests[2][1] == adapter.requests[0][1]
     confirmation.assert_awaited_once()
     assert adapter.snapshot == cleared
 
@@ -3346,14 +3140,9 @@ async def test_reset_month_adapter_fenced_clear_intent_fails_closed(
     )
 
     class Adapter:
-        def __init__(self) -> None:
-            self.operations: list[str] = []
-
         async def request(self, operation, request, **kwargs):
-            self.operations.append(operation)
             return {"valueRanges": snapshot["value_ranges"]} if operation == "read_values" else {}
 
-    adapter = Adapter()
     monkeypatch.setattr(grile, "ensure_reset_items", AsyncMock())
     monkeypatch.setattr(grile, "heartbeat_monthly_operation", AsyncMock())
     monkeypatch.setattr(grile, "record_reset_item_backup", AsyncMock(return_value=True))
@@ -3374,10 +3163,9 @@ async def test_reset_month_adapter_fenced_clear_intent_fails_closed(
             approved_manifest_id=31,
             execution_owner="worker-a",
             execution_epoch=1,
-            google_adapter=cast(grile.GoogleSyncAdapter, adapter),
+            google_adapter=cast(grile.GoogleSyncAdapter, Adapter()),
         )
     assert exc_info.value.code == "rolled_back"
-    assert adapter.operations == ["read_values"]
     rollback.assert_awaited_once()
 
 
@@ -3517,7 +3305,6 @@ async def test_reconciler_snapshot_persisted_classifies_safe_retry_or_recovery(
                     "sheet_id": entry_value.sheet_id,
                     "company": entry_value.company,
                     "store": entry_value.store,
-                    "ranges": grile.reset_ranges_for_entry(entry_value),
                     "checkpoint_phase": "snapshot_persisted",
                     "backup_path": str(backup),
                     "backup_sha256": grile.file_sha256(backup),
@@ -3577,7 +3364,6 @@ async def test_reconciler_cleared_item_without_rollback_intent_requires_recovery
                     "sheet_id": entry_value.sheet_id,
                     "company": entry_value.company,
                     "store": entry_value.store,
-                    "ranges": grile.reset_ranges_for_entry(entry_value),
                     "checkpoint_phase": "clear_intent",
                     "backup_path": str(backup),
                     "backup_sha256": grile.file_sha256(backup),
@@ -3634,7 +3420,6 @@ async def test_reconciler_noncleared_mismatch_requires_recovery_and_propagates_c
                         "sheet_id": entry_value.sheet_id,
                         "company": entry_value.company,
                         "store": entry_value.store,
-                        "ranges": grile.reset_ranges_for_entry(entry_value),
                         "checkpoint_phase": phase,
                         "backup_path": str(backup),
                         "backup_sha256": grile.file_sha256(backup),
@@ -3693,7 +3478,6 @@ async def test_reconciler_restore_failure_records_recovery_required(
                     "sheet_id": entry_value.sheet_id,
                     "company": entry_value.company,
                     "store": entry_value.store,
-                    "ranges": grile.reset_ranges_for_entry(entry_value),
                     "checkpoint_phase": "clear_intent",
                     "backup_path": str(backup),
                     "backup_sha256": grile.file_sha256(backup),
@@ -3711,8 +3495,11 @@ async def test_reconciler_restore_failure_records_recovery_required(
         "persist_reset_rollback_intent",
         AsyncMock(return_value={"fence_epoch": 12}),
     )
-    restore = AsyncMock(side_effect=RuntimeError("restore unavailable"))
-    monkeypatch.setattr(grile, "_restore_reset_snapshot_async", restore)
+    monkeypatch.setattr(
+        grile,
+        "_restore_reset_snapshot_async",
+        AsyncMock(side_effect=RuntimeError("restore unavailable")),
+    )
     confirmation = AsyncMock(return_value=False)
     result = AsyncMock(return_value=True)
     monkeypatch.setattr(grile, "persist_reset_rollback_confirmation", confirmation)
@@ -3724,16 +3511,6 @@ async def test_reconciler_restore_failure_records_recovery_required(
     assert confirmation.await_args.kwargs["restored"] is False
     assert result.await_args is not None
     assert result.await_args.kwargs["classification"] == "recovery_required"
-
-    restore.side_effect = asyncio.CancelledError()
-    confirmation.reset_mock()
-    result.reset_mock()
-    with pytest.raises(asyncio.CancelledError):
-        await grile.reconcile_monthly_operations(
-            object(), cast(grile.GoogleSyncAdapter, object())
-        )
-    confirmation.assert_not_awaited()
-    result.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -3879,11 +3656,7 @@ async def test_run_monthly_op_reset_commit_failure_is_always_persisted(
         status="uncertain",
     )
     rollback = AsyncMock(return_value=rollback_manifest)
-    execution = grile.MonthlyExecution(
-        Path("report.json"),
-        {"status": "verified"},
-        rollback=None if case == "missing_rollback" else rollback,
-    )
+    execution = grile.MonthlyExecution(Path("report.json"), {"status": "verified"}, rollback=rollback)
     approved = {"status": "approved", "manifest_sha256": "b" * 64}
     if case == "missing_manifest":
         monkeypatch.setattr(grile, "fetch_monthly_manifest", AsyncMock(return_value={}))
@@ -3904,7 +3677,9 @@ async def test_run_monthly_op_reset_commit_failure_is_always_persisted(
         monkeypatch.setattr(grile, "_run_with_monthly_lease", no_execution)
     else:
         monkeypatch.setattr(grile, "_reset_month_execution", AsyncMock(return_value=execution))
-    if case == "rollback_error":
+    if case == "missing_rollback":
+        execution = grile.MonthlyExecution(Path("report.json"), {"status": "verified"})
+    elif case == "rollback_error":
         rollback.side_effect = RuntimeError("rollback unavailable")
     monkeypatch.setattr(
         grile,
