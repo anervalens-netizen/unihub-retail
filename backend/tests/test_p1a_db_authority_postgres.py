@@ -81,9 +81,12 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "acl.grantee NOT IN (proowner, item.grantee)" in owner_sql
 
     fieldops_sql = FIELDOPS_AUTHORITY_MIGRATION.read_text(encoding="utf-8")
-    assert "to_regclass('public.fieldops_visits') IS NOT NULL" in fieldops_sql
+    assert "to_regclass('public.fieldops_visits') IS NULL" in fieldops_sql
     assert "SELECT WITH GRANT OPTION" in fieldops_sql
     assert "FieldOps owner must grant SELECT" in fieldops_sql
+    assert "PUBLIC privileges are forbidden" in fieldops_sql
+    assert "effective DML is forbidden" in fieldops_sql
+    assert "acl.grantor = relation.relowner" in fieldops_sql
     assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read" in fieldops_sql
     assert "CREATE TABLE" not in fieldops_sql
 
@@ -556,7 +559,39 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
         fieldops = await asyncpg.connect(fieldops_url)
         try:
             await fieldops.execute(
-                "GRANT SELECT ON TABLE public.fieldops_visits TO unihub_web_read"
+                "GRANT SELECT, INSERT ON TABLE public.fieldops_visits "
+                "TO unihub_web_read"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="exactly owner-issued non-grantable SELECT",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE INSERT ON TABLE public.fieldops_visits FROM unihub_web_read"
+            )
+            await fieldops.execute(
+                "GRANT SELECT ON TABLE public.fieldops_visits TO PUBLIC"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="PUBLIC privileges are forbidden",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE SELECT ON TABLE public.fieldops_visits FROM PUBLIC"
             )
         finally:
             await fieldops.close()
@@ -628,16 +663,15 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
     principal_connections: dict[str, asyncpg.Connection] = {}
     try:
         await maintenance.execute(f'CREATE DATABASE "{database}"')
-        external = await asyncpg.connect(database_url)
-        try:
-            await external.execute(
-                "CREATE TABLE fieldops_visits (id BIGINT PRIMARY KEY)"
-            )
-        finally:
-            await external.close()
         await run_migrations(database_url)
         connection = await asyncpg.connect(database_url)
         try:
+            await connection.execute(
+                "CREATE TABLE fieldops_visits (id BIGINT PRIMARY KEY)"
+            )
+            await connection.execute(
+                "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read"
+            )
             for authority, (principal, password) in test_principals.items():
                 inheritance = "NOINHERIT" if authority == "unihub_migrate" else "INHERIT"
                 await connection.execute(
