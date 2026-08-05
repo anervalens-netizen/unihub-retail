@@ -455,8 +455,8 @@ async def heartbeat(
     pool: asyncpg.Pool,
     operation_id: int,
     *,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
     lease_seconds: int = EXECUTION_LEASE_SECONDS,
 ) -> bool:
     async with pool.acquire() as conn:
@@ -467,9 +467,9 @@ async def heartbeat(
                 execution_lease_until = now() + ($4 * interval '1 second')
             WHERE id = $1
               AND status = 'running'
-              AND ($2::text IS NULL OR execution_owner = $2)
-              AND ($3::bigint IS NULL OR execution_epoch = $3)
-              AND ($2::text IS NULL OR execution_lease_until IS NULL OR execution_lease_until > now())
+              AND execution_owner = $2
+              AND execution_epoch = $3
+              AND execution_lease_until > now()
             RETURNING id
             """,
             operation_id,
@@ -486,8 +486,8 @@ async def finish(
     *,
     result: dict[str, Any],
     error_message: str | None = None,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     status = terminal_operation_status(result)
     async with pool.acquire() as conn:
@@ -501,9 +501,9 @@ async def finish(
                 heartbeat_at = now()
             WHERE id = $1
               AND status = 'running'
-              AND ($5::text IS NULL OR execution_owner = $5)
-              AND ($6::bigint IS NULL OR execution_epoch = $6)
-              AND ($5::text IS NULL OR execution_lease_until IS NULL OR execution_lease_until > now())
+              AND execution_owner = $5
+              AND execution_epoch = $6
+              AND execution_lease_until > now()
             RETURNING id
             """,
             operation_id,
@@ -632,8 +632,8 @@ async def fail(
     operation_id: int,
     *,
     error_message: str,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -643,10 +643,10 @@ async def fail(
                 error_message = $2,
                 finished_at = now(),
                 heartbeat_at = now()
-            WHERE id = $1 AND status IN ('queued', 'running')
-              AND ($3::text IS NULL OR execution_owner = $3)
-              AND ($4::bigint IS NULL OR execution_epoch = $4)
-              AND ($3::text IS NULL OR execution_lease_until IS NULL OR execution_lease_until > now())
+            WHERE id = $1 AND status = 'running'
+              AND execution_owner = $3
+              AND execution_epoch = $4
+              AND execution_lease_until > now()
             RETURNING id
             """,
             operation_id,
@@ -657,14 +657,41 @@ async def fail(
     return row is not None
 
 
+async def fail_queued(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    error_message: str,
+) -> bool:
+    """Fail only an operation that has not acquired an execution lease."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE grile_monthly_operations
+            SET status = 'failed',
+                error_message = $2,
+                finished_at = now(),
+                heartbeat_at = now()
+            WHERE id = $1
+              AND status = 'queued'
+              AND execution_owner IS NULL
+              AND execution_epoch = 0
+            RETURNING id
+            """,
+            operation_id,
+            error_message,
+        )
+    return row is not None
+
+
 
 async def mark_cancelled_uncertain(
     pool: asyncpg.Pool,
     operation_id: int,
     *,
     error_message: str,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     """Fail a cancelled operation and fence every unconfirmed destructive item."""
     async with pool.acquire() as conn:
@@ -690,9 +717,9 @@ async def mark_cancelled_uncertain(
                       SELECT 1
                       FROM grile_monthly_operations operation
                       WHERE operation.id = $1
-                        AND ($3::text IS NULL OR operation.execution_owner = $3)
-                        AND ($4::bigint IS NULL OR operation.execution_epoch = $4)
-                        AND ($3::text IS NULL OR operation.execution_lease_until IS NULL OR operation.execution_lease_until > now())
+                        AND operation.execution_owner = $3
+                        AND operation.execution_epoch = $4
+                        AND operation.execution_lease_until > now()
                   )
                   AND status IN ('running', 'completed')
                   AND rollback_status IS DISTINCT FROM 'restored'
@@ -710,9 +737,9 @@ async def mark_cancelled_uncertain(
                     finished_at = now(),
                     heartbeat_at = now()
                 WHERE id = $1 AND status IN ('queued', 'running')
-                  AND ($3::text IS NULL OR execution_owner = $3)
-                  AND ($4::bigint IS NULL OR execution_epoch = $4)
-                  AND ($3::text IS NULL OR execution_lease_until IS NULL OR execution_lease_until > now())
+                  AND execution_owner = $3
+                  AND execution_epoch = $4
+                  AND execution_lease_until > now()
                 RETURNING id
                 """,
                 operation_id,
@@ -721,6 +748,36 @@ async def mark_cancelled_uncertain(
                 execution_epoch,
             )
     return row is not None
+
+
+async def get_execution_lease(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    execution_owner: str,
+) -> MonthlyExecutionLease | None:
+    """Read only the caller-owned active lease for terminal fallback writes."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, execution_owner, execution_epoch, execution_lease_until
+            FROM grile_monthly_operations
+            WHERE id = $1
+              AND status = 'running'
+              AND execution_owner = $2
+              AND execution_lease_until > now()
+            """,
+            operation_id,
+            execution_owner,
+        )
+    if row is None:
+        return None
+    return MonthlyExecutionLease(
+        operation_id=int(row["id"]),
+        execution_owner=str(row["execution_owner"]),
+        execution_epoch=int(row["execution_epoch"]),
+        execution_lease_until=row["execution_lease_until"],
+    )
 
 async def get_manifest(
     pool: asyncpg.Pool,
@@ -778,9 +835,9 @@ async def persist_manifest_result(
     *,
     operation_id: int,
     manifest: dict[str, Any],
+    execution_owner: str,
+    execution_epoch: int,
     error_code: str | None = None,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
 ) -> dict[str, Any]:
     expected = manifest.get("expected") or {}
     processed = manifest.get("processed") or {}
@@ -804,17 +861,14 @@ async def persist_manifest_result(
                 updated_at = now()
             WHERE operation_id = $1
               AND status = 'building'
-              AND (
-                  $14::text IS NULL
-                  OR EXISTS (
-                      SELECT 1
-                      FROM grile_monthly_operations operation
-                      WHERE operation.id = $1
-                        AND operation.status = 'running'
-                        AND operation.execution_owner = $14
-                        AND operation.execution_epoch = $15
-                        AND operation.execution_lease_until > now()
-                  )
+              AND EXISTS (
+                  SELECT 1
+                  FROM grile_monthly_operations operation
+                  WHERE operation.id = $1
+                    AND operation.status = 'running'
+                    AND operation.execution_owner = $14
+                    AND operation.execution_epoch = $15
+                    AND operation.execution_lease_until > now()
               )
             RETURNING {_MANIFEST_COLUMNS}
             """,

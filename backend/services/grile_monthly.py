@@ -28,11 +28,14 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from repositories.grile_monthly_operations import (
+    MonthlyExecutionLease,
     ResetItemInput,
     attach_job as persist_monthly_operation_job,
     claim_reset_item as persist_reset_item_claim,
     ensure_reset_items as persist_reset_items,
     fail as persist_monthly_operation_failure,
+    fail_queued as persist_queued_monthly_operation_failure,
+    get_execution_lease as fetch_monthly_execution_lease,
     mark_cancelled_uncertain as persist_cancelled_uncertain,
     finish as persist_monthly_operation_result,
     finish_reset_success as persist_reset_success,
@@ -549,17 +552,24 @@ async def attach_monthly_operation_job(
 
 
 async def start_monthly_operation(
-    pool: asyncpg.Pool, operation_id: int
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    execution_owner: str | None = None,
 ) -> MonthlyOperationStartResult:
-    return await persist_monthly_operation_start(pool, operation_id)
+    return await persist_monthly_operation_start(
+        pool,
+        operation_id,
+        execution_owner=execution_owner,
+    )
 
 
 async def heartbeat_monthly_operation(
     pool: asyncpg.Pool,
     operation_id: int,
     *,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     return await persist_monthly_operation_heartbeat(
         pool,
@@ -575,8 +585,8 @@ async def finish_monthly_operation(
     *,
     result: dict[str, Any],
     error_message: str | None = None,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     return await persist_monthly_operation_result(
         pool,
@@ -593,8 +603,8 @@ async def fail_monthly_operation(
     operation_id: int,
     *,
     error_message: str,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     return await persist_monthly_operation_failure(
         pool,
@@ -605,13 +615,39 @@ async def fail_monthly_operation(
     )
 
 
+async def fail_queued_monthly_operation(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    error_message: str,
+) -> bool:
+    return await persist_queued_monthly_operation_failure(
+        pool,
+        operation_id,
+        error_message=error_message,
+    )
+
+
+async def get_monthly_execution_lease(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    execution_owner: str,
+) -> MonthlyExecutionLease | None:
+    return await fetch_monthly_execution_lease(
+        pool,
+        operation_id,
+        execution_owner=execution_owner,
+    )
+
+
 async def mark_monthly_operation_cancelled_uncertain(
     pool: asyncpg.Pool,
     operation_id: int,
     *,
     error_message: str,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     return await persist_cancelled_uncertain(
         pool,
@@ -2867,6 +2903,7 @@ async def run_monthly_op(
     dry_run: bool = True,
     operation_id: int | None = None,
     google_adapter: GoogleSyncAdapter | None = None,
+    execution_owner_hint: str | None = None,
 ) -> dict[str, Any]:
     if operation_id is None:
         if op not in VALID_OPS:
@@ -2880,11 +2917,16 @@ async def run_monthly_op(
     operation: dict[str, Any] | None = None
     requested_by_sub = "direct-execution"
     approved_manifest_id: int | None = None
-    execution_owner: str | None = None
-    execution_epoch: int | None = None
+    execution_owner = ""
+    execution_epoch = 0
 
     if operation_id is not None:
-        start = await start_monthly_operation(pool, operation_id)
+        requested_execution_owner = execution_owner_hint or uuid4().hex
+        start = await start_monthly_operation(
+            pool,
+            operation_id,
+            execution_owner=requested_execution_owner,
+        )
         if start.status != "started":
             if start.status == "already_completed" and start.result is not None:
                 replay = dict(start.result)
@@ -2924,10 +2966,20 @@ async def run_monthly_op(
         dry_run = bool(operation["dry_run"])
         requested_by_sub = str(operation.get("requested_by_sub") or "")
         approved_manifest_id = operation.get("approved_manifest_id")
-        execution_owner = operation.get("execution_owner")
-        execution_epoch = int(operation.get("execution_epoch", 0))
+        execution_owner = str(operation.get("execution_owner") or requested_execution_owner)
+        # A queued operation can be started only once, so its first lease epoch
+        # is exactly one. The repository normally returns both fields; these
+        # fallbacks preserve the caller-owned claim if a reduced adapter omits
+        # them without weakening the DB-side owner+epoch predicate.
+        execution_epoch = int(operation.get("execution_epoch", 1))
         if not requested_by_sub:
             raise RuntimeError("Persisted monthly operation has no OIDC subject")
+
+    if operation_id is not None and (
+        not execution_owner
+        or execution_epoch <= 0
+    ):
+        raise MonthlyIntegrityError("operation_lease_missing", "Monthly operation lease is missing")
 
     if op not in VALID_OPS:
         raise ValueError(f"Operatie necunoscuta: {op}")
@@ -2952,6 +3004,8 @@ async def run_monthly_op(
             operation_id=operation_id,
             manifest=error_manifest,
             error_code="partial_official_operation_forbidden",
+            execution_owner=execution_owner,
+            execution_epoch=execution_epoch,
         )
         result = {
             "op": op,
@@ -3181,6 +3235,8 @@ async def run_monthly_op(
                         operation_id=operation_id,
                         manifest=rollback_manifest,
                         error_code="reset_commit_failed",
+                        execution_owner=execution_owner,
+                        execution_epoch=execution_epoch,
                     )
                 except Exception:  # noqa: BLE001 - operation still transitions to failed below
                     manifest_record = None

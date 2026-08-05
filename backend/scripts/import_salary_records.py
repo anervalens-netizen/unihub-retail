@@ -432,8 +432,9 @@ async def insert_records(
         await conn.execute(
             """
             INSERT INTO salary_import_batches (
-                batch_id, year, month, status, manifest, manifest_sha256, applied_by
-            ) VALUES ($1::uuid, $2, $3, 'applied', $4::jsonb, $5, $6)
+                batch_id, year, month, status, manifest, manifest_sha256, applied_by,
+                approval_artifact_sha256, reviewer_key_id
+            ) VALUES ($1::uuid, $2, $3, 'applied', $4::jsonb, $5, $6, $7, $8)
             """,
             batch_id,
             records[0].year,
@@ -441,6 +442,8 @@ async def insert_records(
             manifest_json,
             envelope_sha256,
             applied_by.strip(),
+            safe_envelope["approval_artifact_sha256"],
+            safe_envelope["approval_metadata"]["reviewer_key_id"],
         )
         await conn.executemany(
             """

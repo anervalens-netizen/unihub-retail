@@ -304,8 +304,16 @@ async def test_operation_state_helpers_issue_expected_updates() -> None:
 
     await grile.attach_monthly_operation_job(pool, operation_id=1, job_id="job-1")
     assert (await grile.start_monthly_operation(pool, 1)).status == "started"
-    await grile.heartbeat_monthly_operation(pool, 1)
-    await grile.fail_monthly_operation(pool, 1, error_message="failed")
+    await grile.heartbeat_monthly_operation(
+        pool, 1, execution_owner="worker", execution_epoch=1
+    )
+    await grile.fail_monthly_operation(
+        pool,
+        1,
+        error_message="failed",
+        execution_owner="worker",
+        execution_epoch=1,
+    )
     await grile.ensure_reset_items(
         pool,
         operation_id=1,
@@ -1309,7 +1317,13 @@ async def test_repository_delegates_and_invalid_reservation(
         dry_run=False,
         requested_by_sub="subject-1",
     ) is reservation
-    assert await grile.finish_monthly_operation(pool, 1, result={"ok": True}) is True
+    assert await grile.finish_monthly_operation(
+        pool,
+        1,
+        result={"ok": True},
+        execution_owner="worker",
+        execution_epoch=1,
+    ) is True
     assert await grile.get_monthly_manifest(pool, 1) == {"id": 1}
     assert await grile.get_latest_monthly_manifest(pool, month="2026-06") == {"id": 2}
     assert latest_manifest.await_args is not None

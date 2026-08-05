@@ -699,7 +699,7 @@ async def enqueue_grile_monthly(
     from db.connection import get_pool
     from services.grile_monthly import (
         attach_monthly_operation_job,
-        fail_monthly_operation,
+        fail_queued_monthly_operation,
         reserve_monthly_operation,
     )
 
@@ -753,7 +753,7 @@ async def enqueue_grile_monthly(
         # If Valkey accepted the publish but the client lost the response, this
         # compare-and-set moves the row to failed only while it is still queued.
         # A worker that already acquired it remains running and is not clobbered.
-        await fail_monthly_operation(
+        await fail_queued_monthly_operation(
             db_pool,
             reservation.operation_id,
             error_message=MONTHLY_QUEUE_PUBLISH_FAILED,

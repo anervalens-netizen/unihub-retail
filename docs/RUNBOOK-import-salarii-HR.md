@@ -60,16 +60,28 @@ Comanda de mai jos este calea tehnică existentă, dar nu se execută pe date li
 
 În caz de fault după inserarea identității, tranzacția revine integral; nu se repară manual parțial și nu se șterg duplicatele live fără sursă și aprobare.
 
-Doar dupa reconcilierea ambelor firme, repeta exact comanda cu `--apply`.
-Importatorul scrie identitatile private si `salary_records` in aceeasi
-tranzactie.
+Doar după reconcilierea ambelor firme, un reviewer independent semnează
+Ed25519 artifactul JSON schema v2 legat de SHA-256 exact al manifestului.
+Importatorul acceptă numai un `reviewer_key_id` din
+`SALARY_APPROVAL_REVIEWER_PUBLIC_KEYS_JSON`, verifică semnătura și consumă
+unic hash-ul artifactului în aceeași tranzacție cu identitățile private și
+`salary_records`. Lipsa allowlistului, cheia necunoscută, semnătura modificată
+sau reutilizarea artifactului blochează apply înainte de înlocuirea lunii.
+
+Configurarea ori schimbarea allowlistului de chei publice este schimbare de
+identitate de securitate și cere aprobarea explicită a ownerului. Nu se
+configurează implicit prin acest runbook; în absența ei live apply rămâne
+NO-GO.
 
 ```bash
 backend/venv/bin/python backend/scripts/import_salary_records.py \
   --year YYYY --month M \
   --mobiup-file "/opt/Mobiup/docs/comisioane/FISIER-MOBIUP.xls" \
   --mobicell-file "/opt/Mobiup/docs/comisioane/FISIER-MOBICELL.xls" \
-  --apply
+  --apply \
+  --applied-by "OPERATOR-AUTENTIFICAT" \
+  --expected-manifest-sha256 "SHA256-MANIFEST" \
+  --approval-artifact "/cale/owner-only/aprobare-semnata.json"
 ```
 
 ## 3. Legaturi agent-salariu

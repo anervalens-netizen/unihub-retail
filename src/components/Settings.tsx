@@ -16,7 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
 import { ApiError, getApiErrorMessage } from '../api/client';
 import { pollImportJob } from '../lib/importJobPolling';
-import { formatIsoDateInput, getCurrentYearMonth, shiftIsoDate, formatMonthLabel } from '../lib/dates';
+import { formatIsoDateInput, formatIsoDateTime, getCurrentYearMonth, shiftIsoDate, formatMonthLabel } from '../lib/dates';
 import { SegmentedTabs } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
 import { TableHeaderCell } from './common/TableHeader';
@@ -886,7 +886,7 @@ export function Settings({
                   <div className="mt-1 text-slate-500">
                     {entry.rows_imported ?? 0} rânduri · {entry.status} ·{' '}
                     {entry.is_month_final ? '✓ Final' : 'Intermediar'} ·{' '}
-                    {entry.created_at.slice(0, 16).replace('T', ' ')}
+                    {formatIsoDateTime(entry.created_at)}
                     {entry.duration_seconds != null && (
                       <> · {entry.duration_seconds < 60
                         ? `${entry.duration_seconds.toFixed(1)} s`

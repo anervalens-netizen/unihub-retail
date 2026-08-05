@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pandas as pd
 import pytest
+import asyncpg
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from db.connection import close_db_pool, get_pool
 from scripts.import_salary_records import (
@@ -22,15 +27,27 @@ from scripts.import_salary_records import (
 from salary_identity import make_salary_person_id
 from salary_import_approval import (
     APPROVAL_ARTIFACT_TYPE,
+    APPROVAL_SCHEMA_VERSION,
     KNOWN_GROUPS_TOTAL,
     REQUIRED_COMPANIES,
     ValidatedApproval,
+    canonical_json_bytes,
     canonical_json_sha256,
     validate_approval_artifact,
 )
 
 
 TEST_PERSON_ID_KEY = "synthetic-hmac-key-for-tests-abcdefghijklmnopqrstuvwxyz"
+REVIEWER_KEY_ID = "synthetic-reviewer-key"
+REVIEWER_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(b"\x01" * 32)
+TRUSTED_REVIEWER_KEYS = {
+    REVIEWER_KEY_ID: base64.b64encode(
+        REVIEWER_PRIVATE_KEY.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    ).decode("ascii")
+}
 CNP_A = "9000000000007"
 CNP_B = "9000000000015"
 CNP_C = "9000000000023"
@@ -90,29 +107,40 @@ def approved_batch(
         "control_total": f"{sum((item.total_salary for item in records), Decimal('0')):.2f}",
     }
     manifest_sha256 = canonical_json_sha256(manifest)
+    artifact = {
+        "artifact_type": APPROVAL_ARTIFACT_TYPE,
+        "schema_version": APPROVAL_SCHEMA_VERSION,
+        "decision": "approved",
+        "manifest_sha256": manifest_sha256,
+        "year": records[0].year,
+        "month": records[0].month,
+        "companies": list(REQUIRED_COMPANIES),
+        "known_groups_total": KNOWN_GROUPS_TOTAL,
+        "resolved_groups_count": KNOWN_GROUPS_TOTAL,
+        "unresolved_groups_count": 0,
+        "reviewer": "test:independent-reviewer",
+        "reviewer_key_id": REVIEWER_KEY_ID,
+        "approval_timestamp": "2099-01-01T00:00:00+00:00",
+        "approval_reference": "test:approved-batch",
+    }
+    artifact["signature"] = base64.b64encode(
+        REVIEWER_PRIVATE_KEY.sign(canonical_json_bytes(artifact))
+    ).decode("ascii")
     approval = validate_approval_artifact(
-        {
-            "artifact_type": APPROVAL_ARTIFACT_TYPE,
-            "schema_version": 1,
-            "decision": "approved",
-            "manifest_sha256": manifest_sha256,
-            "year": records[0].year,
-            "month": records[0].month,
-            "companies": list(REQUIRED_COMPANIES),
-            "known_groups_total": KNOWN_GROUPS_TOTAL,
-            "resolved_groups_count": KNOWN_GROUPS_TOTAL,
-            "unresolved_groups_count": 0,
-            "reviewer": "test:independent-reviewer",
-            "approval_timestamp": "2099-01-01T00:00:00+00:00",
-            "approval_reference": "test:approved-batch",
-        },
+        artifact,
         manifest=manifest,
         expected_manifest_sha256=manifest_sha256,
         applied_by=applied_by,
+        trusted_reviewer_keys=TRUSTED_REVIEWER_KEYS,
     )
     # In-memory validation has no source artifact bytes; tests bind a synthetic
     # artifact digest before exercising the DB write envelope.
-    approval = replace(approval, artifact_sha256="d" * 64)
+    approval = replace(
+        approval,
+        artifact_sha256=canonical_json_sha256(
+            {"manifest": manifest_sha256, "test_nonce": uuid4().hex}
+        ),
+    )
     return manifest, approval
 
 
@@ -518,6 +546,62 @@ async def test_salary_components_persist_by_source_row_and_aggregate_by_person(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="Requires the explicitly isolated PostgreSQL test database",
 )
+async def test_signed_salary_approval_is_consumed_once_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", TEST_PERSON_ID_KEY)
+    records = [
+        replace(make_record(), month=10),
+        replace(
+            make_record(
+                cnp=CNP_B,
+                full_name="Agent Counterpart",
+                company_name="Mobicell",
+                source_file="mobicell.xlsx",
+                source_sha256="b" * 64,
+            ),
+            month=10,
+        ),
+    ]
+    manifest, approval = approved_batch(records, applied_by="test:one-time-approval")
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 10")
+            await conn.execute("DELETE FROM salary_import_batches WHERE year = 2099 AND month = 10")
+            await insert_records(
+                conn,
+                records,
+                manifest=manifest,
+                approval=approval,
+                applied_by="test:one-time-approval",
+            )
+            with pytest.raises(asyncpg.UniqueViolationError):
+                await insert_records(
+                    conn,
+                    records,
+                    manifest=manifest,
+                    approval=approval,
+                    applied_by="test:one-time-approval",
+                )
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM salary_import_batches WHERE year = 2099 AND month = 10"
+            ) == 1
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM salary_records WHERE year = 2099 AND month = 10"
+            ) == 2
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM salary_records WHERE year = 2099 AND month = 10")
+            await conn.execute("DELETE FROM salary_import_batches WHERE year = 2099 AND month = 10")
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
 async def test_salary_existing_identity_name_conflict_has_zero_writes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -569,3 +653,4 @@ async def test_salary_existing_identity_name_conflict_has_zero_writes(
             await conn.execute("DELETE FROM salary_import_batches WHERE year = 2099 AND month = 9")
             await conn.execute("DELETE FROM salary_private.people WHERE person_id = $1", person_id)
         await close_db_pool()
+    canonical_json_bytes,

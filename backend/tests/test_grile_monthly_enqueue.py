@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -67,7 +68,7 @@ def _patch_reservation(
     monkeypatch.setattr(db_connection, "get_pool", AsyncMock(return_value=db_pool))
     monkeypatch.setattr(grile_monthly, "reserve_monthly_operation", reserve)
     monkeypatch.setattr(grile_monthly, "attach_monthly_operation_job", attach)
-    monkeypatch.setattr(grile_monthly, "fail_monthly_operation", fail)
+    monkeypatch.setattr(grile_monthly, "fail_queued_monthly_operation", fail)
     return db_pool, fail
 
 
@@ -224,7 +225,10 @@ async def test_monthly_worker_accepts_only_persisted_operation_identity(
     )
 
     assert result == {"status": "success"}
-    run.assert_awaited_once_with(operation_id=51)
+    run.assert_awaited_once()
+    assert run.await_args is not None
+    assert run.await_args.kwargs["operation_id"] == 51
+    assert len(run.await_args.kwargs["execution_owner_hint"]) == 32
 
 
 async def test_monthly_worker_marks_unexpected_failure_terminal(
@@ -236,6 +240,11 @@ async def test_monthly_worker_marks_unexpected_failure_terminal(
     db_pool = object()
     monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
     monkeypatch.setattr(grile_monthly, "fail_monthly_operation", fail)
+    monkeypatch.setattr(
+        grile_monthly,
+        "get_monthly_execution_lease",
+        AsyncMock(return_value=SimpleNamespace(execution_owner="worker-owned", execution_epoch=7)),
+    )
 
     with pytest.raises(TypeError, match="unexpected serialization"):
         await worker.grile_monthly_background(
@@ -247,6 +256,8 @@ async def test_monthly_worker_marks_unexpected_failure_terminal(
         db_pool,
         53,
         error_message="monthly_operation_worker_failed",
+        execution_owner="worker-owned",
+        execution_epoch=7,
     )
 
 
@@ -282,6 +293,11 @@ async def test_monthly_worker_sigterm_marks_unconfirmed_reset_uncertain(
         "mark_monthly_operation_cancelled_uncertain",
         mark_uncertain,
     )
+    monkeypatch.setattr(
+        grile_monthly,
+        "get_monthly_execution_lease",
+        AsyncMock(return_value=SimpleNamespace(execution_owner="worker-owned", execution_epoch=8)),
+    )
 
     with pytest.raises(asyncio.CancelledError):
         await worker.grile_monthly_background(
@@ -293,4 +309,6 @@ async def test_monthly_worker_sigterm_marks_unconfirmed_reset_uncertain(
         db_pool,
         54,
         error_message="monthly_operation_cancelled_uncertain",
+        execution_owner="worker-owned",
+        execution_epoch=8,
     )

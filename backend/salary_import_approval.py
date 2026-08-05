@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import ast
+import base64
+import hashlib
 import json
+import os
 import re
 import unicodedata
 from collections.abc import Mapping
@@ -13,14 +15,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
 APPROVAL_ARTIFACT_TYPE = "unihub.salary_import.approval"
-APPROVAL_SCHEMA_VERSION = 1
+APPROVAL_SCHEMA_VERSION = 2
 AUDIT_ENVELOPE_VERSION = 1
 KNOWN_GROUPS_TOTAL = 8
 REQUIRED_COMPANIES = ("Mobiup", "Mobicell")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
-_APPROVAL_KEYS = frozenset(
+TRUSTED_REVIEWER_KEYS_ENV = "SALARY_APPROVAL_REVIEWER_PUBLIC_KEYS_JSON"
+
+_APPROVAL_METADATA_KEYS = frozenset(
     {
         "artifact_type",
         "schema_version",
@@ -33,10 +40,12 @@ _APPROVAL_KEYS = frozenset(
         "resolved_groups_count",
         "unresolved_groups_count",
         "reviewer",
+        "reviewer_key_id",
         "approval_timestamp",
         "approval_reference",
     }
 )
+_APPROVAL_ARTIFACT_KEYS = _APPROVAL_METADATA_KEYS | {"signature"}
 _ENVELOPE_KEYS = frozenset(
     {
         "audit_envelope_version",
@@ -100,8 +109,55 @@ def canonical_json_sha256(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
+def canonical_json_bytes(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def load_trusted_reviewer_keys() -> dict[str, str]:
+    """Load public reviewer keys; missing configuration blocks live apply."""
+    raw = os.environ.get(TRUSTED_REVIEWER_KEYS_ENV, "")
+    if not raw:
+        raise SalaryImportApprovalError("Trusted salary reviewer keys are not configured")
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SalaryImportApprovalError("Trusted salary reviewer keys are invalid") from exc
+    if not isinstance(parsed, dict) or not parsed:
+        raise SalaryImportApprovalError("Trusted salary reviewer keys are invalid")
+    keys: dict[str, str] = {}
+    for key_id, encoded_key in parsed.items():
+        if not isinstance(key_id, str) or not key_id.strip() or not isinstance(encoded_key, str):
+            raise SalaryImportApprovalError("Trusted salary reviewer keys are invalid")
+        keys[key_id.strip()] = encoded_key
+    return keys
+
+
+def _verify_reviewer_signature(
+    artifact: Mapping[str, Any],
+    *,
+    trusted_reviewer_keys: Mapping[str, str],
+) -> None:
+    key_id = _require_nonblank(artifact.get("reviewer_key_id"), "reviewer_key_id")
+    encoded_key = trusted_reviewer_keys.get(key_id)
+    if not isinstance(encoded_key, str):
+        raise SalaryImportApprovalError("Approval reviewer key is not trusted")
+    encoded_signature = artifact.get("signature")
+    if not isinstance(encoded_signature, str):
+        raise SalaryImportApprovalError("Approval signature is missing")
+    try:
+        public_key_raw = base64.b64decode(encoded_key, validate=True)
+        signature = base64.b64decode(encoded_signature, validate=True)
+        public_key = Ed25519PublicKey.from_public_bytes(public_key_raw)
+        signed_payload = {key: artifact[key] for key in _APPROVAL_METADATA_KEYS}
+        public_key.verify(signature, canonical_json_bytes(signed_payload))
+    except (ValueError, TypeError, InvalidSignature) as exc:
+        raise SalaryImportApprovalError("Approval signature is invalid") from exc
 
 
 def _normalise_comparison(value: str) -> str:
@@ -205,8 +261,8 @@ def _validate_approval_metadata(
     applied_by: str,
 ) -> dict[str, Any]:
     _assert_no_private_identity_material(artifact)
-    unknown = set(artifact) - _APPROVAL_KEYS
-    missing = _APPROVAL_KEYS - set(artifact)
+    unknown = set(artifact) - _APPROVAL_METADATA_KEYS
+    missing = _APPROVAL_METADATA_KEYS - set(artifact)
     if unknown:
         raise SalaryImportApprovalError("Approval contains unsupported fields")
     if missing:
@@ -228,6 +284,7 @@ def _validate_approval_metadata(
     _require_int(artifact["resolved_groups_count"], "resolved_groups_count", KNOWN_GROUPS_TOTAL)
     _require_int(artifact["unresolved_groups_count"], "unresolved_groups_count", 0)
     reviewer = _require_nonblank(artifact["reviewer"], "reviewer")
+    reviewer_key_id = _require_nonblank(artifact["reviewer_key_id"], "reviewer_key_id")
     operator = _require_nonblank(applied_by, "applied_by")
     if _normalise_comparison(reviewer) == _normalise_comparison(operator):
         raise SalaryImportApprovalError("Independent reviewer must differ from operator")
@@ -251,6 +308,7 @@ def _validate_approval_metadata(
         "resolved_groups_count": KNOWN_GROUPS_TOTAL,
         "unresolved_groups_count": 0,
         "reviewer": reviewer,
+        "reviewer_key_id": reviewer_key_id,
         "approval_timestamp": timestamp,
         "approval_reference": reference,
     }
@@ -262,14 +320,31 @@ def validate_approval_artifact(
     manifest: Mapping[str, Any],
     expected_manifest_sha256: str,
     applied_by: str,
+    trusted_reviewer_keys: Mapping[str, str] | None = None,
 ) -> ValidatedApproval:
+    _assert_no_private_identity_material(artifact)
+    unknown = set(artifact) - _APPROVAL_ARTIFACT_KEYS
+    missing = _APPROVAL_ARTIFACT_KEYS - set(artifact)
+    if unknown:
+        raise SalaryImportApprovalError("Approval contains unsupported fields")
+    if missing:
+        raise SalaryImportApprovalError("Approval is missing required fields")
+    _verify_reviewer_signature(
+        artifact,
+        trusted_reviewer_keys=(
+            load_trusted_reviewer_keys()
+            if trusted_reviewer_keys is None
+            else trusted_reviewer_keys
+        ),
+    )
+    artifact_metadata = {key: artifact[key] for key in _APPROVAL_METADATA_KEYS}
     normalized_manifest = validate_dry_run_manifest(
         manifest,
         expected_sha256=expected_manifest_sha256,
     )
     manifest_sha256 = _require_sha256(expected_manifest_sha256, "expected manifest SHA-256")
     metadata = _validate_approval_metadata(
-        artifact,
+        artifact_metadata,
         manifest=normalized_manifest,
         manifest_sha256=manifest_sha256,
         applied_by=applied_by,
@@ -289,6 +364,7 @@ def load_and_validate_approval_artifact(
     manifest: Mapping[str, Any],
     expected_manifest_sha256: str,
     applied_by: str,
+    trusted_reviewer_keys: Mapping[str, str] | None = None,
 ) -> ValidatedApproval:
     if path.name.startswith(".env"):
         raise SalaryImportApprovalError("Approval artifact path is not allowed")
@@ -304,12 +380,13 @@ def load_and_validate_approval_artifact(
         manifest=manifest,
         expected_manifest_sha256=expected_manifest_sha256,
         applied_by=applied_by,
+        trusted_reviewer_keys=trusted_reviewer_keys,
     )
     return ValidatedApproval(
         metadata=validated.metadata,
         manifest=validated.manifest,
         manifest_sha256=validated.manifest_sha256,
-        artifact_sha256=sha256_bytes(raw),
+        artifact_sha256=canonical_json_sha256(dict(artifact)),
         applied_by=validated.applied_by,
     )
 

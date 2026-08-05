@@ -21,6 +21,7 @@ from services.grile_monthly import (
     StoreEntry,
     fail_monthly_operation,
     finish_monthly_operation,
+    fail_queued_monthly_operation,
     finish_reset_item,
     ensure_reset_items,
     mark_reset_item_running,
@@ -78,6 +79,7 @@ async def test_monthly_operation_reservation_serializes_same_month() -> None:
         active = next(item for item in reservations if item.status == "enqueued")
         started = await start_monthly_operation(pool, active.operation_id)
         assert started.status == "started"
+        lease = started.operation or {}
 
         await finish_monthly_operation(
             pool,
@@ -89,6 +91,8 @@ async def test_monthly_operation_reservation_serializes_same_month() -> None:
                 "output": "",
                 "exit_code": 0,
             },
+            execution_owner=str(lease["execution_owner"]),
+            execution_epoch=int(lease["execution_epoch"]),
         )
 
         next_reservation = await reserve_monthly_operation(
@@ -324,6 +328,8 @@ async def test_failed_reset_rollback_is_uncertain_and_blocks_retry() -> None:
             pool,
             operation_id,
             error_message="Reset failed",
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
 
         with pytest.raises(GrileMonthlyRetryBlockedError, match="uncertain"):
@@ -625,7 +631,11 @@ async def test_h11_late_finish_cannot_overwrite_terminal_row(terminal: str) -> N
             error_message="kept error" if terminal == "failed" else None,
         )
         changed = await finish_monthly_operation(
-            pool, operation_id, result={"status": "success", "output": "late"}
+            pool,
+            operation_id,
+            result={"status": "success", "output": "late"},
+            execution_owner="stale-worker",
+            execution_epoch=1,
         )
         assert changed is False
         async with pool.acquire() as conn:
@@ -650,7 +660,32 @@ async def test_h11_fail_only_transitions_nonterminal_rows(source: str) -> None:
     pool = await get_pool()
     try:
         operation_id = await _insert_operation(month, status=source, error_message="kept")
-        changed = await fail_monthly_operation(pool, operation_id, error_message="new error")
+        if source == "queued":
+            changed = await fail_queued_monthly_operation(
+                pool,
+                operation_id,
+                error_message="new error",
+            )
+        else:
+            if source == "running":
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        UPDATE grile_monthly_operations
+                        SET execution_owner = 'test-worker',
+                            execution_epoch = 1,
+                            execution_lease_until = now() + interval '5 minutes'
+                        WHERE id = $1
+                        """,
+                        operation_id,
+                    )
+            changed = await fail_monthly_operation(
+                pool,
+                operation_id,
+                error_message="new error",
+                execution_owner="test-worker",
+                execution_epoch=1,
+            )
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT status, error_message FROM grile_monthly_operations WHERE id = $1", operation_id
@@ -699,6 +734,7 @@ async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic
         )
         archive_start = await start_monthly_operation(pool, archive_reservation.operation_id)
         assert archive_start.status == "started"
+        archive_lease = archive_start.operation or {}
         archive_manifest = grile_monthly.base_manifest(
             month=month,
             operation="archive",
@@ -721,12 +757,16 @@ async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic
             pool,
             operation_id=archive_reservation.operation_id,
             manifest=archive_manifest,
+            execution_owner=str(archive_lease["execution_owner"]),
+            execution_epoch=int(archive_lease["execution_epoch"]),
         )
         assert persisted_archive["requested_by_sub"] == "request-subject"
         assert await finish_monthly_operation(
             pool,
             archive_reservation.operation_id,
             result={"status": "success"},
+            execution_owner=str(archive_lease["execution_owner"]),
+            execution_epoch=int(archive_lease["execution_epoch"]),
         )
 
         approved_payload = dict(archive_manifest)
@@ -848,10 +888,12 @@ async def test_cancelled_operation_fences_completed_clear_as_uncertain() -> None
         async with pool.acquire() as conn:
             operation_id = await conn.fetchval(
                 """
-                INSERT INTO grile_monthly_operations (
-                    op, closing_month, dry_run, status, requested_by_sub,
-                    started_at, heartbeat_at
-                ) VALUES ('reset', $1, false, 'running', 'test:cancel', now(), now())
+                    INSERT INTO grile_monthly_operations (
+                        op, closing_month, dry_run, status, requested_by_sub,
+                        started_at, heartbeat_at, execution_owner,
+                        execution_epoch, execution_lease_until
+                    ) VALUES ('reset', $1, false, 'running', 'test:cancel', now(), now(),
+                              'cancel-worker', 1, now() + interval '5 minutes')
                 RETURNING id
                 """,
                 month,
@@ -870,9 +912,11 @@ async def test_cancelled_operation_fences_completed_clear_as_uncertain() -> None
 
         assert await mark_cancelled_uncertain(
             pool,
-            int(operation_id),
-            error_message="cancelled before confirmation",
-        )
+                int(operation_id),
+                error_message="cancelled before confirmation",
+                execution_owner="cancel-worker",
+                execution_epoch=1,
+            )
 
         async with pool.acquire() as conn:
             state = await conn.fetchrow(
@@ -892,6 +936,59 @@ async def test_cancelled_operation_fences_completed_clear_as_uncertain() -> None
             "item_status": "uncertain",
             "rollback_status": "failed",
             "error_message": "cancelled before confirmation",
+        }
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+async def test_stale_worker_terminal_fallback_cannot_clobber_reconciler_lease() -> None:
+    month = "2098-12"
+    pool = await get_pool()
+    try:
+        await _cleanup(month)
+        async with pool.acquire() as conn:
+            operation_id = await conn.fetchval(
+                """
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, dry_run, status, requested_by_sub,
+                    started_at, heartbeat_at, execution_owner,
+                    execution_epoch, execution_lease_until
+                ) VALUES ('reset', $1, false, 'running', 'test:interleave', now(), now(),
+                          'reconciler-new', 2, now() + interval '5 minutes')
+                RETURNING id
+                """,
+                month,
+            )
+
+        assert not await mark_cancelled_uncertain(
+            pool,
+            int(operation_id),
+            error_message="stale cancel",
+            execution_owner="worker-old",
+            execution_epoch=1,
+        )
+        assert not await fail_monthly_operation(
+            pool,
+            int(operation_id),
+            error_message="stale failure",
+            execution_owner="worker-old",
+            execution_epoch=1,
+        )
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT status, execution_owner, execution_epoch, error_message
+                FROM grile_monthly_operations
+                WHERE id = $1
+                """,
+                operation_id,
+            )
+        assert dict(row) == {
+            "status": "running",
+            "execution_owner": "reconciler-new",
+            "execution_epoch": 2,
+            "error_message": None,
         }
     finally:
         await _cleanup(month)

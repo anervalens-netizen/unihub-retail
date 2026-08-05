@@ -49,6 +49,7 @@
     "041_schema_owner_handoff.sql": "a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311",
     "042_fieldops_visits_web_authority.sql": "6e120625c69ff8528bec5074782e822ba8b7c8828ed1dbb71dc1c97919013cb4",
     "043_sales_source_artifact_lifecycle.sql": "bf997d5e2f74aa3b464ac0cc0c8529247cfc63b1ed5af7d7ff231fb339b9064d",
-    "044_grile_monthly_recovery_fencing.sql": "762c6352f8a00deb6989bd24ffac5ebefc9d537817233507d92e8dd4422d7a1c"
+    "044_grile_monthly_recovery_fencing.sql": "762c6352f8a00deb6989bd24ffac5ebefc9d537817233507d92e8dd4422d7a1c",
+    "045_salary_approval_replay_fence.sql": "2be9541709f7e8a9e6dfa031e8e1330e4c75779109030078a4add64e92551011"
   }
 }

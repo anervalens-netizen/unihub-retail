@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from typing import Any
+from uuid import uuid4
 
 from arq.worker import create_worker, func
 
@@ -445,12 +446,18 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
     try:
         from services.grile_monthly import (
             fail_monthly_operation,
+            get_monthly_execution_lease,
             mark_monthly_operation_cancelled_uncertain,
             run_monthly_op,
         )
 
+        execution_owner = uuid4().hex
+
         try:
-            run_kwargs = {"operation_id": persisted_operation_id}
+            run_kwargs = {
+                "operation_id": persisted_operation_id,
+                "execution_owner_hint": execution_owner,
+            }
             adapter = ctx.get("grile_monthly_google")
             if adapter is not None:
                 run_kwargs["google_adapter"] = adapter
@@ -466,14 +473,26 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
 
                 pool = await get_pool()
             cleanup_task = asyncio.create_task(
-                mark_monthly_operation_cancelled_uncertain(
+                get_monthly_execution_lease(
                     pool,
                     persisted_operation_id,
-                    error_message="monthly_operation_cancelled_uncertain",
+                    execution_owner=execution_owner,
                 )
             )
             try:
-                await asyncio.shield(cleanup_task)
+                lease = await asyncio.shield(cleanup_task)
+                if lease is not None:
+                    await asyncio.shield(
+                        asyncio.create_task(
+                            mark_monthly_operation_cancelled_uncertain(
+                                pool,
+                                persisted_operation_id,
+                                error_message="monthly_operation_cancelled_uncertain",
+                                execution_owner=lease.execution_owner,
+                                execution_epoch=lease.execution_epoch,
+                            )
+                        )
+                    )
             except BaseException:  # process shutdown may interrupt even the fallback checkpoint
                 logger.exception(
                     "Could not persist cancelled Grile operation operation_id=%s",
@@ -487,11 +506,19 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
 
                 pool = await get_pool()
             try:
-                await fail_monthly_operation(
+                lease = await get_monthly_execution_lease(
                     pool,
                     persisted_operation_id,
-                    error_message="monthly_operation_worker_failed",
+                    execution_owner=execution_owner,
                 )
+                if lease is not None:
+                    await fail_monthly_operation(
+                        pool,
+                        persisted_operation_id,
+                        error_message="monthly_operation_worker_failed",
+                        execution_owner=lease.execution_owner,
+                        execution_epoch=lease.execution_epoch,
+                    )
             except Exception:  # noqa: BLE001 - preserve the original worker failure
                 logger.exception(
                     "Could not fail unexpected Grile monthly operation operation_id=%s",

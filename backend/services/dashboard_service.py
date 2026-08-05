@@ -71,7 +71,6 @@ _RO_MONTHS = {
     7: "Iul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
 }
 
-AGENT_FORECAST_WORKING_DAYS = Decimal("15")
 PERFORMANCE_COMPONENT_WEIGHT = Decimal("20")
 DASHBOARD_COMPONENT_CONCURRENCY = 4
 DEFAULT_DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY = 6
@@ -687,7 +686,6 @@ class DashboardService:
 
         if level == "agent" and effective_site_code and selected_agent_stats is not None:
             summary = self._apply_agent_target_summary(summary, selected_agent_stats)
-            summary = self._apply_agent_working_days_forecast(summary)
             context_summary = await self.get_summary(
                 month,
                 None,
@@ -732,27 +730,15 @@ class DashboardService:
             if target > 0
             else None
         )
-        return summary.model_copy(
-            update={
-                "total_target": target,
-                "target_progress_pct": target_progress_pct,
-                "forecast_target_progress_pct": target_progress_pct,
-            }
-        )
-
-    def _apply_agent_working_days_forecast(self, summary: DashboardSummary) -> DashboardSummary:
-        if summary.is_month_final or summary.daily_average is None:
-            return summary
-
-        forecast_sales = (summary.daily_average * AGENT_FORECAST_WORKING_DAYS).quantize(_MONEY)
         forecast_target_progress_pct = (
-            (forecast_sales * Decimal(100) / summary.total_target).quantize(_MONEY)
-            if summary.total_target > 0
+            (summary.forecast_sales * Decimal(100) / target).quantize(_MONEY)
+            if target > 0 and summary.forecast_sales is not None
             else None
         )
         return summary.model_copy(
             update={
-                "forecast_sales": forecast_sales,
+                "total_target": target,
+                "target_progress_pct": target_progress_pct,
                 "forecast_target_progress_pct": forecast_target_progress_pct,
             }
         )

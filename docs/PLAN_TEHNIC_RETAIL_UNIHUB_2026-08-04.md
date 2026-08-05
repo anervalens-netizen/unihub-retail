@@ -894,8 +894,8 @@ nu dispoziții suplimentare.
 | M-07 | demonstrat deja | ledgers/staging/head sunt protejate append-only DB-side |
 | M-08 | implementat | artefact sales content-addressed, `0600`, hash, fsync și readback înainte de terminal DB |
 | M-09 | implementat | intenția artefactului este persistată atomic la rezervare înainte de validare; reconcilerul idempotent acoperă inclusiv crash pre-validare și retention head/predecessor/ledger |
-| M-10 | implementat | salary approval leagă exact manifestul, ambele companii, reconcilierea 8/8/0 și reviewer distinct; `salary_private` este canonic, iar copia legacy CNP rămâne excepție controlată H-01 fără acces runtime și fără ștergere neautorizată |
-| M-11 | implementat | Grile are owner/epoch/lease pe backup/result/rollback, checkpoint înainte de Google I/O și deadline 120 s sub lease-ul de 300 s |
+| M-10 | implementat | salary approval schema v2 leagă exact manifestul, ambele companii și 8/8/0, cere semnătură Ed25519 de la un reviewer key-id trusted și consumă unic artifactul atomic cu batchul; `salary_private` este canonic, iar copia legacy CNP rămâne excepție controlată H-01 fără acces runtime și fără ștergere neautorizată |
+| M-11 | implementat | Grile cere owner/epoch/lease fără bypass pentru manifest, backup, result, rollback și toate fallbackurile terminale; fail-ul queued este CAS separat, iar checkpointul precede Google I/O |
 | M-12 | implementat | Google I/O rulează prin adapter thread-affine, transport cu timeout și deadline bounded; reconcilerul nu reia automat starea incertă |
 | M-13 | implementat | XLS/XLSX au signature, ZIP/XML, expanded-bytes, ratio, member și cell budgets |
 | M-14 | implementat | exporturile au caps 50.000 rânduri, 1.000.000 celule și 64 MiB estimate, cu spool/chunks |
@@ -906,7 +906,7 @@ nu dispoziții suplimentare.
 | M-19 | implementat | backendul pornește cu 2 workeri web; operations/import sunt deja servicii separate, fiecare cu concurență bounded |
 | R-01 | demonstrat deja | contractele DB least-privilege au fost verificate live în P1-A |
 | R-02 | demonstrat deja | rolul Finance dedicat este implementat; credentialul live nu este creat |
-| R-03 | implementat | scanul negativ de privacy și gate-ul de aprobare salarială sunt fail-closed |
+| R-03 | implementat | scanul negativ de privacy și gate-ul salarial sunt fail-closed la allowlist lipsă, key-id necunoscut, semnătură alterată sau replay; configurarea identității reviewer rămâne boundary explicit, iar live apply rămâne NO-GO |
 | R-04 | demonstrat deja | `site_code` domină scope-ul istoric în exporturi/dashboard |
 | R-05 | demonstrat deja | cohortele curent/istoric sunt separate în fixtures și query-uri canonice |
 | R-06 | implementat | fotografiile sunt legate de vizita DB, cale canonică, fișier regulat și non-symlink |
@@ -916,8 +916,8 @@ nu dispoziții suplimentare.
 | R-10 | demonstrat deja | P&L/ERP/HR folosesc atribute curente sau snapshoturi/effective dates explicite |
 | R-11 | implementat | lucrul greu a fost scos din lifespan; readiness nu depinde de refresh business |
 | R-12 | demonstrat deja | EXPLAIN/BUFFERS pe DB izolat: agent-day 9,639 ms; item-day 316,855 ms, ambele sub 2.500 ms |
-| R-13 | implementat | Dashboard summary/store/regional/promo, HR, CRM, Target și evaluarea agenților folosesc distribuția zilnică din ultima rulare business; lipsa modelului produce factor 1, nu extrapolare calendaristică |
-| R-14 | implementat | datele business backend și timestampurile UI folosesc helperi Europe/Bucharest testați determinist, inclusiv limitele UTC și weekendurile |
+| R-13 | implementat | Dashboard summary/store/regional/promo și performance-detail agent, HR, CRM, Target și evaluarea agenților folosesc distribuția zilnică din ultima rulare business; lipsa modelului produce factor 1, nu extrapolare fixă/calendaristică |
+| R-14 | implementat | datele business backend și toate timestampurile UI auditate, inclusiv istoricul importurilor, folosesc helperi Europe/Bucharest testați determinist, cu limitele UTC și weekendurile |
 | R-15 | implementat | `any`-urile de producție din lane-ul Agents/salary chart au fost eliminate, strict TS extins |
 | R-16 | implementat | runtime/dev Python au lockfile-uri complete cu hashuri și CI instalează `--require-hashes` |
 | R-17 | implementat | XML-ul XLSX neîncrezător folosește `defusedxml`; formulele/hyperlinkurile neîncrezătoare rămân neutralizate |
@@ -936,15 +936,17 @@ nu dispoziții suplimentare.
 
 Porți locale pe candidatul sursă:
 
-- PostgreSQL 18 + Valkey izolate, migrări fresh 014..044: `1593 passed, 7 skipped`;
+- PostgreSQL 18 + Valkey izolate, migrări fresh 014..045 după audit: `1596 passed, 7 skipped`;
 - frontend: 34 fișiere / 245 teste; `typecheck`, `typecheck:strict`, lint și build verzi;
-- mypy: 346 fișiere, zero erori; porțile țintite post-audit `202 + 135 + 82` teste verzi;
+- mypy: 346 fișiere, zero erori; porțile țintite post-audit `202 + 135 + 82 + 101` teste verzi;
 - runtime/dev lock `--require-hashes`, import smoke, `pip check`, `pip-audit`
   strict, secret scan și Bandit regression gate verzi;
 - checksum migrare 043:
   `bf997d5e2f74aa3b464ac0cc0c8529247cfc63b1ed5af7d7ff231fb339b9064d`;
   checksum migrare 044:
   `762c6352f8a00deb6989bd24ffac5ebefc9d537817233507d92e8dd4422d7a1c`;
+  checksum migrare 045:
+  `2be9541709f7e8a9e6dfa031e8e1330e4c75779109030078a4add64e92551011`;
 - lock runtime:
   `bdabff0b5e7f4931d386f1b95d92dd3c9499a716e5de7e65ba8935c62d2a213f`;
   lock dev: `052ab1469d523d16a1639a702e13180fc528335e098987616a3cd61f0bd358ce`.

@@ -1,21 +1,38 @@
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from salary_import_approval import (
     APPROVAL_ARTIFACT_TYPE,
+    APPROVAL_SCHEMA_VERSION,
     KNOWN_GROUPS_TOTAL,
     REQUIRED_COMPANIES,
     SalaryImportApprovalError,
+    canonical_json_bytes,
     canonical_json_sha256,
     load_and_validate_approval_artifact,
     require_apply_inputs,
     scan_runtime_salary_surfaces,
     validate_approval_artifact,
 )
+
+
+REVIEWER_KEY_ID = "synthetic-reviewer-key"
+REVIEWER_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(b"\x01" * 32)
+TRUSTED_REVIEWER_KEYS = {
+    REVIEWER_KEY_ID: base64.b64encode(
+        REVIEWER_PRIVATE_KEY.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    ).decode("ascii")
+}
 
 
 def make_manifest(*, year: int = 2099, month: int = 7, companies: tuple[str, ...] = REQUIRED_COMPANIES) -> dict:
@@ -43,7 +60,7 @@ def make_manifest(*, year: int = 2099, month: int = 7, companies: tuple[str, ...
 def make_artifact(manifest: dict, **overrides: object) -> dict:
     artifact = {
         "artifact_type": APPROVAL_ARTIFACT_TYPE,
-        "schema_version": 1,
+        "schema_version": APPROVAL_SCHEMA_VERSION,
         "decision": "approved",
         "manifest_sha256": canonical_json_sha256(manifest),
         "year": manifest["year"],
@@ -53,10 +70,14 @@ def make_artifact(manifest: dict, **overrides: object) -> dict:
         "resolved_groups_count": KNOWN_GROUPS_TOTAL,
         "unresolved_groups_count": 0,
         "reviewer": "synthetic-independent-reviewer",
+        "reviewer_key_id": REVIEWER_KEY_ID,
         "approval_timestamp": "2099-07-01T10:00:00+03:00",
         "approval_reference": "synthetic-approval-reference",
     }
     artifact.update(overrides)
+    artifact["signature"] = base64.b64encode(
+        REVIEWER_PRIVATE_KEY.sign(canonical_json_bytes(artifact))
+    ).decode("ascii")
     return artifact
 
 
@@ -67,6 +88,7 @@ def validate(manifest: dict, artifact: dict | None = None, *, operator: str = "s
         manifest=manifest,
         expected_manifest_sha256=manifest_sha256,
         applied_by=operator,
+        trusted_reviewer_keys=TRUSTED_REVIEWER_KEYS,
     )
 
 
@@ -90,6 +112,7 @@ def test_tampered_manifest_or_expected_hash_fails_closed() -> None:
             manifest=tampered,
             expected_manifest_sha256=artifact["manifest_sha256"],
             applied_by="synthetic-operator",
+            trusted_reviewer_keys=TRUSTED_REVIEWER_KEYS,
         )
     with pytest.raises(SalaryImportApprovalError):
         validate_approval_artifact(
@@ -97,6 +120,7 @@ def test_tampered_manifest_or_expected_hash_fails_closed() -> None:
             manifest=manifest,
             expected_manifest_sha256="c" * 64,
             applied_by="synthetic-operator",
+            trusted_reviewer_keys=TRUSTED_REVIEWER_KEYS,
         )
 
 
@@ -137,6 +161,22 @@ def test_decision_must_be_explicitly_approved() -> None:
         validate(manifest, make_artifact(manifest, decision="pending"))
 
 
+def test_signature_and_trusted_reviewer_key_are_mandatory() -> None:
+    manifest = make_manifest()
+    artifact = make_artifact(manifest)
+    artifact["approval_reference"] = "tampered-after-signing"
+    with pytest.raises(SalaryImportApprovalError, match="signature"):
+        validate(manifest, artifact)
+    with pytest.raises(SalaryImportApprovalError, match="not trusted"):
+        validate_approval_artifact(
+            make_artifact(manifest),
+            manifest=manifest,
+            expected_manifest_sha256=canonical_json_sha256(manifest),
+            applied_by="synthetic-operator",
+            trusted_reviewer_keys={"another-key": TRUSTED_REVIEWER_KEYS[REVIEWER_KEY_ID]},
+        )
+
+
 def test_reviewer_must_be_independent_after_normalization() -> None:
     manifest = make_manifest()
     with pytest.raises(SalaryImportApprovalError):
@@ -171,9 +211,23 @@ def test_artifact_file_hash_is_recorded_without_loading_dotenv(tmp_path: Path) -
         manifest=manifest,
         expected_manifest_sha256=canonical_json_sha256(manifest),
         applied_by="synthetic-operator",
+        trusted_reviewer_keys=TRUSTED_REVIEWER_KEYS,
     )
     assert len(validated.artifact_sha256) == 64
     assert validated.metadata["decision"] == "approved"
+    compact_path = tmp_path / "approval-compact.json"
+    compact_path.write_text(
+        json.dumps(artifact, sort_keys=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    compact = load_and_validate_approval_artifact(
+        compact_path,
+        manifest=manifest,
+        expected_manifest_sha256=canonical_json_sha256(manifest),
+        applied_by="synthetic-operator",
+        trusted_reviewer_keys=TRUSTED_REVIEWER_KEYS,
+    )
+    assert compact.artifact_sha256 == validated.artifact_sha256
 
 
 def test_runtime_salary_surface_scan_passes_and_rejects_raw_identity(tmp_path: Path) -> None:
@@ -183,3 +237,4 @@ def test_runtime_salary_surface_scan_passes_and_rejects_raw_identity(tmp_path: P
     (runtime / "salarii.py").write_text("def salary():\n    return {'cnp': 'forbidden'}\n", encoding="utf-8")
     with pytest.raises(SalaryImportApprovalError):
         scan_runtime_salary_surfaces(tmp_path)
+    canonical_json_bytes,
