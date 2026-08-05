@@ -229,6 +229,35 @@ async def test_failed_content_hash_can_be_retried(
 
 
 @pytest.mark.asyncio
+async def test_failed_sales_promotion_can_be_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replacement = SimpleNamespace(job_id="sales-promote:replacement")
+    pool = MagicMock()
+    pool.delete = AsyncMock()
+    existing = MagicMock()
+    existing.status = AsyncMock(return_value=ArqJobStatus.complete)
+    existing.result_info = AsyncMock(return_value=SimpleNamespace(success=False))
+    publish = AsyncMock(side_effect=[None, replacement])
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "Job", MagicMock(return_value=existing))
+    monkeypatch.setattr(jobs_service, "_publish_arq_job", publish)
+
+    result = await jobs_service.enqueue_sales_promotion(
+        snapshot_id=214,
+        generation_token="a" * 36,
+        owner_id="b" * 36,
+        manifest_sha256="c" * 64,
+        requested_by_sub="codex:repair",
+        override_reason=None,
+    )
+
+    assert result is replacement
+    pool.delete.assert_awaited_once()
+    assert publish.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_sales_import_spools_bytes_outside_valkey_payload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

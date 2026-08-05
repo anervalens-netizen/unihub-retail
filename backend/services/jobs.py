@@ -427,12 +427,12 @@ async def enqueue_sales_promotion(
         return job
     existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
     existing_status = await existing.status()
-    if existing_status in {
-        ArqJobStatus.queued,
-        ArqJobStatus.in_progress,
-        ArqJobStatus.complete,
-    }:
+    if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
         return existing
+    if existing_status == ArqJobStatus.complete:
+        info = await existing.result_info()
+        if info and info.success:
+            return existing
     await pool.delete(result_key_prefix + job_id)
     replacement = await _publish_arq_job(
         pool,
