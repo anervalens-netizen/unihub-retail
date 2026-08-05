@@ -32,6 +32,19 @@ def test_persisted_grile_reads_use_explicit_column_contracts() -> None:
     assert re.search(r"RETURNING\s+\*", source, re.IGNORECASE) is None
 
 
+def test_reconciliation_update_qualifies_returning_columns() -> None:
+    source = (REPOSITORY_ROOT / "grile_monthly_operations.py").read_text(
+        encoding="utf-8"
+    )
+    start = source.index("async def claim_reconciliation_candidates")
+    end = source.index("async def mark_reconciliation_result", start)
+    claim_source = source[start:end]
+
+    assert "FROM candidates" in claim_source
+    assert "RETURNING\n                    operation.id" in claim_source
+    assert "RETURNING {_OPERATION_COLUMNS}" not in claim_source
+
+
 def test_latest_grile_month_prefers_sales_and_uses_targets_only_as_fallback() -> None:
     class Connection:
         async def fetchval(self, query: str) -> str:

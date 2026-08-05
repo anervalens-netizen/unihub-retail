@@ -1429,7 +1429,18 @@ async def claim_reconciliation_candidates(
                     reconciled_at = NULL
                 FROM candidates
                 WHERE operation.id = candidates.id
-                RETURNING {_OPERATION_COLUMNS}
+                RETURNING
+                    operation.id, operation.op, operation.closing_month,
+                    operation.only_filter, operation.dry_run, operation.status,
+                    operation.job_id, operation.triggered_by_email,
+                    operation.requested_by_sub, operation.approved_manifest_id,
+                    operation.result, operation.error_message,
+                    operation.started_at, operation.heartbeat_at,
+                    operation.finished_at, operation.created_at,
+                    operation.execution_owner, operation.execution_epoch,
+                    operation.execution_lease_until,
+                    operation.reconciliation_classification,
+                    operation.reconciled_at, operation.alerted_at
                 """,
                 execution_owner,
                 limit,
