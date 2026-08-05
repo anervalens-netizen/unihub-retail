@@ -98,27 +98,50 @@ def _raise_structural_contradiction(
 async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
     """Close leases left by a worker stop before ARQ retries queued imports.
 
-    Startup only closes an expired fenced lease (or a legacy reservation stale
-    for more than one hour); another worker may still be healthy.
+    Startup only closes an expired staging lease (or a legacy reservation stale
+    for more than one hour). A validated generation is deliberately retained
+    for explicit promotion after a worker restart; a stale promoting claim is
+    returned to validated so the operator can retry it safely.
     """
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            UPDATE import_snapshots
-            SET status = 'failed',
-                rows_imported = 0,
-                error_message = 'Import intrerupt de restartul workerului; retry permis',
-                heartbeat_at = now(),
-                finished_at = now()
-            WHERE status = 'processing'
-              AND (
-                    (lease_until IS NOT NULL AND lease_until <= now())
-                    OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
-              )
-            RETURNING id
-            """
-        )
-    return [int(row["id"]) for row in rows]
+        async with conn.transaction():
+            recovered = await conn.fetch(
+                """
+                UPDATE import_snapshots
+                SET owner_id = gen_random_uuid(),
+                    lease_until = now() + interval '2 hours',
+                    heartbeat_at = now(),
+                    finished_at = NULL,
+                    error_message = 'Promovarea a fost întreruptă de restart; retry permis',
+                    rows_imported = COALESCE(NULLIF(manifest->>'rows_imported', '')::integer, rows_imported),
+                    manifest = jsonb_set(manifest, '{generation_state}', '"validated"'::jsonb, true)
+                WHERE status = 'processing'
+                  AND manifest->>'generation_state' = 'promoting'
+                  AND (
+                        (lease_until IS NOT NULL AND lease_until <= now())
+                        OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
+                  )
+                RETURNING id
+                """
+            )
+            closed = await conn.fetch(
+                """
+                UPDATE import_snapshots
+                SET status = 'failed',
+                    rows_imported = 0,
+                    error_message = 'Import intrerupt de restartul workerului; retry permis',
+                    heartbeat_at = now(),
+                    finished_at = now()
+                WHERE status = 'processing'
+                  AND COALESCE(manifest->>'generation_state', '') NOT IN ('validated', 'promoting')
+                  AND (
+                        (lease_until IS NOT NULL AND lease_until <= now())
+                        OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
+                  )
+                RETURNING id
+                """
+            )
+    return [int(row["id"]) for row in [*recovered, *closed]]
 
 
 def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
@@ -586,6 +609,7 @@ async def reserve_snapshot(
                 finished_at = now()
             WHERE import_month = $1
               AND status = 'processing'
+              AND COALESCE(manifest->>'generation_state', '') NOT IN ('validated', 'promoting')
               AND (
                     (lease_until IS NOT NULL AND lease_until <= now())
                     OR (lease_until IS NULL AND COALESCE(heartbeat_at, created_at) < now() - interval '1 hour')
