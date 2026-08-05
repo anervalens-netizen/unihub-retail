@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -90,13 +91,19 @@ async def test_operations_worker_does_not_reconcile_imports(
     monkeypatch.setattr(db.connection, "init_db_pool", AsyncMock())
     monkeypatch.setattr(db.connection, "get_pool", AsyncMock(return_value=pool))
     monkeypatch.setattr(services.importer, "reconcile_interrupted_imports", reconcile)
+    monthly_reconcile = AsyncMock()
+    monkeypatch.setattr("services.grile_monthly.reconcile_monthly_operations", monthly_reconcile)
     monkeypatch.setenv("RETAIL_WORKER_ROLE", "operations")
 
     ctx: dict = {}
     await worker.startup(ctx)
 
     reconcile.assert_not_awaited()
+    monthly_reconcile.assert_awaited_once_with(pool, ctx["grile_monthly_google"])
     assert ctx["db_pool"] is pool
+    ctx["grile_monthly_reconcile_task"].cancel()
+    await asyncio.gather(ctx["grile_monthly_reconcile_task"], return_exceptions=True)
+    await ctx["grile_monthly_google"].close()
 
 
 @pytest.mark.asyncio

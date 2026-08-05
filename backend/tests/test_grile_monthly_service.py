@@ -161,7 +161,7 @@ def test_retry_api_retries_transient_and_wraps_terminal_errors(
             raise ApiError(503)
         return "ok"
 
-    monkeypatch.setattr(grile.time, "sleep", sleeps.append)
+    monkeypatch.setattr(grile.threading.Event, "wait", lambda _self, delay: sleeps.append(delay))
     assert grile.retry_api(flaky, label="read", attempts=4, base_delay=0.5) == "ok"
     assert sleeps == [0.5, 1.0]
 
@@ -187,7 +187,7 @@ def test_retry_api_exhausts_google_429_and_503_without_coercion(
             self.resp = SimpleNamespace(status=status)
 
     sleeps: list[float] = []
-    monkeypatch.setattr(grile.time, "sleep", sleeps.append)
+    monkeypatch.setattr(grile.threading.Event, "wait", lambda _self, delay: sleeps.append(delay))
     with pytest.raises(grile.MonthlyIntegrityError) as exc_info:
         grile.retry_api(
             lambda: (_ for _ in ()).throw(ApiError()),
@@ -2351,6 +2351,103 @@ async def test_live_reset_cancelled_after_clear_completes_verified_rollback(
     assert "reset_cancelled" in exc_info.value.manifest["errors"]
     assert service.state == original_state
     rollback_checkpoint.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reconciler_crash_after_clear_restores_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entry_value = entry()
+    original = grile.canonical_snapshot(
+        [{"range": name, "values": [["before"]]} for name in grile.reset_ranges_for_entry(entry_value)]
+    )
+    cleared = grile.canonical_snapshot(
+        [{"range": name, "values": []} for name in grile.reset_ranges_for_entry(entry_value)]
+    )
+    backup = tmp_path / "backup.json"
+    backup.write_text(
+        json.dumps({"snapshot": original, "snapshot_sha256": grile.snapshot_sha256(original)}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(grile, "OUTPUTS_DIR", tmp_path)
+
+    class Adapter:
+        def __init__(self):
+            self.reads = 0
+            self.writes = []
+
+        async def request(self, operation, request, **kwargs):
+            if operation == "read_values":
+                self.reads += 1
+                return {"valueRanges": cleared["value_ranges"] if self.reads == 1 else original["value_ranges"]}
+            self.writes.append(operation)
+            return {"updated": True}
+
+    adapter = Adapter()
+    monkeypatch.setattr(
+        grile,
+        "claim_reconciliation_candidates",
+        AsyncMock(return_value=[{"id": 11, "execution_epoch": 4}]),
+    )
+    monkeypatch.setattr(
+        grile,
+        "list_reset_items_for_reconciliation",
+        AsyncMock(
+            return_value=[
+                {
+                    "site_code": "SITE01",
+                    "sheet_id": "sheet-1",
+                    "company": "Mobiup",
+                    "store": "Park Lake",
+                    "checkpoint_phase": "clear_intent",
+                    "backup_path": str(backup),
+                    "backup_sha256": grile.file_sha256(backup),
+                }
+            ]
+        ),
+    )
+    intent = AsyncMock(return_value={"fence_epoch": 9})
+    confirm = AsyncMock(return_value=True)
+    result = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "persist_reset_rollback_intent", intent)
+    monkeypatch.setattr(grile, "persist_reset_rollback_confirmation", confirm)
+    monkeypatch.setattr(grile, "mark_item_recovery_required", AsyncMock())
+    monkeypatch.setattr(grile, "mark_reconciliation_result", result)
+
+    assert await grile.reconcile_monthly_operations(object(), adapter) == 1
+    assert adapter.writes == ["restore"]
+    result.assert_awaited_once()
+    assert result.await_args.kwargs["classification"] == "rolled_back"
+    assert confirm.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reconciler_legacy_unknown_is_fail_closed_without_google_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        grile,
+        "claim_reconciliation_candidates",
+        AsyncMock(return_value=[{"id": 12, "execution_epoch": 2}]),
+    )
+    monkeypatch.setattr(
+        grile,
+        "list_reset_items_for_reconciliation",
+        AsyncMock(return_value=[{"site_code": "SITE02", "checkpoint_phase": "legacy_unknown"}]),
+    )
+    recovery = AsyncMock(return_value=True)
+    result = AsyncMock(return_value=True)
+    monkeypatch.setattr(grile, "mark_item_recovery_required", recovery)
+    monkeypatch.setattr(grile, "mark_reconciliation_result", result)
+
+    class NoGoogle:
+        async def request(self, *args, **kwargs):
+            raise AssertionError("legacy recovery must not call Google")
+
+    assert await grile.reconcile_monthly_operations(object(), NoGoogle()) == 1
+    recovery.assert_awaited_once()
+    assert result.await_args.kwargs["classification"] == "recovery_required"
 
 
 @pytest.mark.asyncio

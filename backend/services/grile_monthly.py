@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import shutil
+import threading
 import time
 import zipfile
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
+from uuid import uuid4
 
 import asyncpg
 from googleapiclient.discovery import build
@@ -44,9 +46,23 @@ from repositories.grile_monthly_operations import (
     persist_manifest_result,
     record_reset_item_backup as persist_reset_item_backup,
     record_reset_item_rollback as persist_reset_item_rollback,
+    prepare_reset_clear as persist_reset_clear_intent,
+    confirm_reset_clear as persist_reset_clear_confirmation,
+    prepare_reset_rollback as persist_reset_rollback_intent,
+    confirm_reset_rollback as persist_reset_rollback_confirmation,
+    claim_reconciliation_candidates,
+    list_reset_items_for_reconciliation,
+    mark_item_recovery_required,
+    mark_item_safe_retry,
+    mark_reconciliation_result,
     operation_to_dict as persisted_operation_to_dict,
     reserve as persist_monthly_operation_reservation,
     start as persist_monthly_operation_start,
+)
+from services.grile_monthly_google import (
+    GoogleAdapterClosed,
+    GoogleSyncAdapter,
+    call_with_backoff,
 )
 from services.spreadsheet_safety import TrustedFormula, append_openpyxl_row
 from services.grile_monthly_state import (
@@ -381,11 +397,37 @@ def retry_api(fn, *, label: str, attempts: int = 4, base_delay: float = 1.0):
             if isinstance(exc, MonthlyIntegrityError):
                 raise
             if attempt < attempts - 1 and _is_transient(exc):
-                time.sleep(base_delay * (2**attempt))
+                # Compatibility-only synchronous callers.  Worker operations
+                # use call_with_backoff(), which yields with asyncio.sleep.
+                threading.Event().wait(base_delay * (2**attempt))
                 continue
             raise MonthlyIntegrityError(_google_error_code(exc), f"{label} failed") from exc
     assert last is not None
     raise last
+
+
+async def _google_request(
+    adapter: GoogleSyncAdapter,
+    operation: str,
+    request: dict[str, Any],
+    *,
+    label: str,
+    destructive: bool = False,
+) -> Any:
+    try:
+        return await call_with_backoff(
+            adapter,
+            operation,
+            request,
+            label=label,
+            attempts=GOOGLE_API_RETRY_ATTEMPTS,
+            base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+            destructive=destructive,
+        )
+    except MonthlyIntegrityError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - provider boundary is classified here
+        raise MonthlyIntegrityError(_google_error_code(exc), f"{label} failed") from exc
 
 
 def _company_from_values(registry_key: str | None, fallback: str | None) -> str:
@@ -502,8 +544,19 @@ async def start_monthly_operation(
     return await persist_monthly_operation_start(pool, operation_id)
 
 
-async def heartbeat_monthly_operation(pool: asyncpg.Pool, operation_id: int) -> None:
-    await persist_monthly_operation_heartbeat(pool, operation_id)
+async def heartbeat_monthly_operation(
+    pool: asyncpg.Pool,
+    operation_id: int,
+    *,
+    execution_owner: str | None = None,
+    execution_epoch: int | None = None,
+) -> bool:
+    return await persist_monthly_operation_heartbeat(
+        pool,
+        operation_id,
+        execution_owner=execution_owner,
+        execution_epoch=execution_epoch,
+    )
 
 
 async def finish_monthly_operation(
@@ -512,12 +565,16 @@ async def finish_monthly_operation(
     *,
     result: dict[str, Any],
     error_message: str | None = None,
+    execution_owner: str | None = None,
+    execution_epoch: int | None = None,
 ) -> bool:
     return await persist_monthly_operation_result(
         pool,
         operation_id,
         result=result,
         error_message=error_message,
+        execution_owner=execution_owner,
+        execution_epoch=execution_epoch,
     )
 
 
@@ -526,11 +583,15 @@ async def fail_monthly_operation(
     operation_id: int,
     *,
     error_message: str,
+    execution_owner: str | None = None,
+    execution_epoch: int | None = None,
 ) -> bool:
     return await persist_monthly_operation_failure(
         pool,
         operation_id,
         error_message=error_message,
+        execution_owner=execution_owner,
+        execution_epoch=execution_epoch,
     )
 
 
@@ -539,11 +600,15 @@ async def mark_monthly_operation_cancelled_uncertain(
     operation_id: int,
     *,
     error_message: str,
+    execution_owner: str | None = None,
+    execution_epoch: int | None = None,
 ) -> bool:
     return await persist_cancelled_uncertain(
         pool,
         operation_id,
         error_message=error_message,
+        execution_owner=execution_owner,
+        execution_epoch=execution_epoch,
     )
 
 
@@ -574,6 +639,8 @@ async def ensure_reset_items(
     closing_month_key: str,
     next_month_key: str,
     entries: list[StoreEntry],
+    execution_owner: str | None = None,
+    execution_epoch: int | None = None,
 ) -> None:
     await persist_reset_items(
         pool,
@@ -590,6 +657,8 @@ async def ensure_reset_items(
             )
             for entry in entries
         ],
+        execution_owner=execution_owner,
+        execution_epoch=execution_epoch,
     )
 
 
@@ -758,8 +827,17 @@ def _error_row(
     )
 
 
-def extract_store_rows(sheets_svc: Any, entry: StoreEntry) -> list[ExtractedAgentRow]:
+def extract_store_rows(
+    sheets_svc: Any,
+    entry: StoreEntry,
+    *,
+    value_ranges: list[dict[str, Any]] | None = None,
+) -> list[ExtractedAgentRow]:
+    supplied_value_ranges = value_ranges
+
     def read_values() -> list[dict[str, Any]]:
+        if supplied_value_ranges is not None:
+            return supplied_value_ranges
         ranges = []
         for cells in cells_for_entry(entry).values():
             ranges += [
@@ -1155,13 +1233,47 @@ async def _finalize_month_execution(
     operation_id: int | None,
     only: str | None = None,
     delay: float = 1.1,
+    google_adapter: GoogleSyncAdapter | None = None,
 ) -> MonthlyExecution:
     entries = await load_entries(pool, only=only, month=month_key)
     metadata = {(e.company, e.store): {"Manager": e.manager} for e in entries}
-    sheets_svc, _ = build_google_services()
+    sheets_svc = None
+    if google_adapter is None:
+        sheets_svc, _ = build_google_services()
     all_rows: list[ExtractedAgentRow] = []
     for idx, entry in enumerate(entries, start=1):
-        all_rows.extend(extract_store_rows(sheets_svc, entry))
+        if google_adapter is None:
+            assert sheets_svc is not None
+            all_rows.extend(extract_store_rows(sheets_svc, entry))
+        else:
+            ranges: list[str] = []
+            for cells in cells_for_entry(entry).values():
+                ranges += [
+                    f"Grila!{cells['agent']}",
+                    f"Grila!{cells['base_salary']}",
+                    *[f"Grila!{cell}" for cell in cells["sales_commission_cells"]],
+                    f"Grila!{cells['extra_location_commission']}",
+                    f"Grila!{cells['extra_hours_pay']}",
+                    f"Grila!{cells['bonuri']}",
+                    cells["worked_hours"],
+                ]
+            response = await _google_request(
+                google_adapter,
+                "read_values",
+                {
+                    "spreadsheet_id": entry.sheet_id,
+                    "ranges": ranges,
+                    "value_render_option": "UNFORMATTED_VALUE",
+                },
+                label="Google sheet read",
+            )
+            value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
+            if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
+                raise MonthlyIntegrityError(
+                    "google_response_incomplete",
+                    "Google sheet response is incomplete",
+                )
+            all_rows.extend(extract_store_rows(None, entry, value_ranges=value_ranges))
         if delay > 0 and idx < len(entries):
             await asyncio.sleep(delay)
 
@@ -1241,6 +1353,7 @@ async def finalize_month(
     month_key: str | None = None,
     requested_by_sub: str = "direct-execution",
     operation_id: int | None = None,
+    google_adapter: GoogleSyncAdapter | None = None,
 ) -> Path:
     execution = await _finalize_month_execution(
         pool,
@@ -1250,6 +1363,7 @@ async def finalize_month(
         operation_id=operation_id,
         only=only,
         delay=delay,
+        google_adapter=google_adapter,
     )
     return execution.path
 
@@ -1283,6 +1397,32 @@ def export_sheet_xlsx(drive_service: Any, entry: StoreEntry, output_path: Path) 
     except Exception:
         output_path.unlink(missing_ok=True)
         raise
+
+
+def write_exported_xlsx(entry: StoreEntry, output_path: Path, content: bytes) -> dict[str, Any]:
+    if not isinstance(content, bytes) or not content:
+        raise MonthlyIntegrityError("empty_source_backup", "Exported source backup is empty")
+    output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        output_path.write_bytes(content)
+        secure_file(output_path)
+        if output_path.stat().st_size == 0:
+            raise MonthlyIntegrityError("empty_source_backup", "Exported source backup is empty")
+    except Exception:
+        output_path.unlink(missing_ok=True)
+        raise
+    return {
+        "company": entry.company,
+        "store": entry.store,
+        "site_code": entry.site_code,
+        "manager": entry.manager,
+        "sheet_id": entry.sheet_id,
+        "template_version": entry.template_version,
+        "status": "OK",
+        "xlsx_path": str(output_path),
+        "bytes": output_path.stat().st_size,
+        "error": "",
+    }
 
 
 def create_archive_zip(zip_path: Path, exported_files: list[Path], archive_dir: Path) -> None:
@@ -1430,6 +1570,7 @@ async def _archive_month_execution(
     operation_id: int | None,
     only: str | None = None,
     delay: float = 0.5,
+    google_adapter: GoogleSyncAdapter | None = None,
 ) -> MonthlyExecution:
     if only:
         failed = base_manifest(
@@ -1505,7 +1646,9 @@ async def _archive_month_execution(
             failed,
         )
 
-    _, drive_service = build_google_services()
+    drive_service = None
+    if google_adapter is None:
+        _, drive_service = build_google_services()
     stage_root = _staging_dir("archive", operation_id)
     staged_archive_dir = build_archive_dir(stage_root, month)
     official_archive_dir = build_archive_dir(OUTPUTS_DIR, month)
@@ -1516,16 +1659,26 @@ async def _archive_month_execution(
         for idx, entry in enumerate(entries, start=1):
             output_path = build_store_export_path(stage_root, month, entry)
             try:
-                result = retry_api(
-                    lambda entry=entry, output_path=output_path: export_sheet_xlsx(
-                        drive_service,
-                        entry,
-                        output_path,
-                    ),
-                    label="Google source export",
-                    attempts=GOOGLE_API_RETRY_ATTEMPTS,
-                    base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
-                )
+                if google_adapter is None:
+                    assert drive_service is not None
+                    result = retry_api(
+                        lambda entry=entry, output_path=output_path: export_sheet_xlsx(
+                            drive_service,
+                            entry,
+                            output_path,
+                        ),
+                        label="Google source export",
+                        attempts=GOOGLE_API_RETRY_ATTEMPTS,
+                        base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+                    )
+                else:
+                    content = await _google_request(
+                        google_adapter,
+                        "export_xlsx",
+                        {"spreadsheet_id": entry.sheet_id, "mime_type": XLSX_MIME},
+                        label="Google source export",
+                    )
+                    result = write_exported_xlsx(entry, output_path, content)
                 _validate_source_workbook(Path(result["xlsx_path"]))
             except MonthlyIntegrityError as exc:
                 result = {
@@ -1639,6 +1792,7 @@ async def archive_month(
     month_key: str | None = None,
     requested_by_sub: str = "direct-execution",
     operation_id: int | None = None,
+    google_adapter: GoogleSyncAdapter | None = None,
 ) -> Path:
     execution = await _archive_month_execution(
         pool,
@@ -1648,6 +1802,7 @@ async def archive_month(
         operation_id=operation_id,
         only=only,
         delay=delay,
+        google_adapter=google_adapter,
     )
     return execution.path
 
@@ -1742,6 +1897,28 @@ def _read_reset_snapshot(sheets_svc: Any, entry: StoreEntry) -> dict[str, Any]:
     )
 
 
+async def _read_reset_snapshot_async(
+    google_adapter: GoogleSyncAdapter,
+    entry: StoreEntry,
+) -> dict[str, Any]:
+    response = await _google_request(
+        google_adapter,
+        "read_values",
+        {
+            "spreadsheet_id": entry.sheet_id,
+            "ranges": reset_ranges_for_entry(entry),
+            "value_render_option": "FORMULA",
+            "date_time_render_option": "SERIAL_NUMBER",
+        },
+        label="Google reset readback",
+    )
+    value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
+    ranges = reset_ranges_for_entry(entry)
+    if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
+        raise MonthlyIntegrityError("backup_response_incomplete", "Google backup response is incomplete")
+    return canonical_snapshot(value_ranges)
+
+
 def _restore_reset_snapshot(
     sheets_svc: Any,
     entry: StoreEntry,
@@ -1778,8 +1955,48 @@ def _restore_reset_snapshot(
         raise MonthlyIntegrityError("rollback_verification_failed", "Reset rollback verification failed")
 
 
+async def _restore_reset_snapshot_async(
+    google_adapter: GoogleSyncAdapter,
+    entry: StoreEntry,
+    snapshot: dict[str, Any],
+) -> None:
+    value_ranges = snapshot.get("value_ranges")
+    if not isinstance(value_ranges, list):
+        raise MonthlyIntegrityError("backup_invalid", "Reset backup is invalid")
+    data = [
+        {
+            "range": item["range"],
+            "majorDimension": item.get("majorDimension", "ROWS"),
+            "values": item.get("values", []),
+        }
+        for item in value_ranges
+        if isinstance(item, dict) and item.get("values")
+    ]
+    if data:
+        await _google_request(
+            google_adapter,
+            "restore",
+            {"spreadsheet_id": entry.sheet_id, "data": data},
+            label="Google reset rollback",
+            destructive=True,
+        )
+    restored = await _read_reset_snapshot_async(google_adapter, entry)
+    if snapshot_sha256(restored) != snapshot_sha256(snapshot):
+        raise MonthlyIntegrityError("rollback_verification_failed", "Reset rollback verification failed")
+
+
 def _verify_reset_cleared(sheets_svc: Any, entry: StoreEntry) -> None:
     snapshot = _read_reset_snapshot(sheets_svc, entry)
+    value_ranges = snapshot.get("value_ranges", [])
+    if any(item.get("values") for item in value_ranges if isinstance(item, dict)):
+        raise MonthlyIntegrityError("reset_verification_failed", "Reset verification failed")
+
+
+async def _verify_reset_cleared_async(
+    google_adapter: GoogleSyncAdapter,
+    entry: StoreEntry,
+) -> None:
+    snapshot = await _read_reset_snapshot_async(google_adapter, entry)
     value_ranges = snapshot.get("value_ranges", [])
     if any(item.get("values") for item in value_ranges if isinstance(item, dict)):
         raise MonthlyIntegrityError("reset_verification_failed", "Reset verification failed")
@@ -1879,6 +2096,84 @@ async def _rollback_reset_entries_cancel_safe(
         return False
 
 
+async def _rollback_reset_entries_adapter(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    entries: list[StoreEntry],
+    google_adapter: GoogleSyncAdapter,
+    snapshots: dict[str, dict[str, Any]],
+    execution_owner: str,
+    execution_epoch: int,
+) -> bool:
+    rollback_failed = False
+    for entry in reversed(entries):
+        intent = await persist_reset_rollback_intent(
+            pool,
+            operation_id=operation_id,
+            site_code=entry.site_code,
+            execution_owner=execution_owner,
+            execution_epoch=execution_epoch,
+        )
+        if intent is None:
+            rollback_failed = True
+            continue
+        restored = False
+        try:
+            await _restore_reset_snapshot_async(
+                google_adapter,
+                entry,
+                snapshots[entry.site_code],
+            )
+            restored = True
+        except BaseException:  # noqa: BLE001 - the fenced checkpoint records uncertainty
+            rollback_failed = True
+        confirmed = await persist_reset_rollback_confirmation(
+            pool,
+            operation_id=operation_id,
+            site_code=entry.site_code,
+            execution_owner=execution_owner,
+            execution_epoch=execution_epoch,
+            fence_epoch=int(intent["fence_epoch"]),
+            restored=restored,
+            error_message="reset_rolled_back" if restored else "reset_rollback_failed",
+        )
+        if not confirmed:
+            rollback_failed = True
+    return not rollback_failed
+
+
+async def _rollback_reset_entries_adapter_cancel_safe(
+    pool: asyncpg.Pool,
+    *,
+    operation_id: int,
+    entries: list[StoreEntry],
+    google_adapter: GoogleSyncAdapter,
+    snapshots: dict[str, dict[str, Any]],
+    execution_owner: str,
+    execution_epoch: int,
+) -> bool:
+    current = asyncio.current_task()
+    if current is not None:
+        while current.cancelling():
+            current.uncancel()
+    task = asyncio.create_task(
+        _rollback_reset_entries_adapter(
+            pool,
+            operation_id=operation_id,
+            entries=entries,
+            google_adapter=google_adapter,
+            snapshots=snapshots,
+            execution_owner=execution_owner,
+            execution_epoch=execution_epoch,
+        )
+    )
+    try:
+        return await asyncio.shield(task)
+    except BaseException:
+        return False
+
+
 async def _reset_month_execution(
     pool: asyncpg.Pool,
     closing_month: str,
@@ -1891,6 +2186,9 @@ async def _reset_month_execution(
     approved_manifest_id: int | None,
     only: str | None = None,
     dry_run: bool = True,
+    google_adapter: GoogleSyncAdapter | None = None,
+    execution_owner: str | None = None,
+    execution_epoch: int | None = None,
 ) -> MonthlyExecution:
     if not dry_run and (operation_id is None or approved_manifest_id is None):
         failed = base_manifest(
@@ -2005,7 +2303,9 @@ async def _reset_month_execution(
             failed,
         )
 
-    sheets_svc, _ = build_google_services()
+    sheets_svc = None
+    if google_adapter is None:
+        sheets_svc, _ = build_google_services()
     if operation_id is not None and not dry_run:
         await ensure_reset_items(
             pool,
@@ -2013,6 +2313,8 @@ async def _reset_month_execution(
             closing_month_key=closing_month_key,
             next_month_key=next_month_key,
             entries=entries,
+            execution_owner=execution_owner,
+            execution_epoch=execution_epoch,
         )
 
     snapshots: dict[str, dict[str, Any]] = {}
@@ -2024,7 +2326,11 @@ async def _reset_month_execution(
     )
     try:
         for entry in entries:
-            snapshot = _read_reset_snapshot(sheets_svc, entry)
+            if google_adapter is None:
+                assert sheets_svc is not None
+                snapshot = _read_reset_snapshot(sheets_svc, entry)
+            else:
+                snapshot = await _read_reset_snapshot_async(google_adapter, entry)
             snapshots[entry.site_code] = snapshot
             if backup_dir is not None and operation_id is not None:
                 token = manifest_sha256({"site_code": entry.site_code})[:20]
@@ -2116,38 +2422,89 @@ async def _reset_month_execution(
     touched: list[StoreEntry] = []
     try:
         for entry in entries:
-            await heartbeat_monthly_operation(pool, operation_id)
+            await heartbeat_monthly_operation(
+                pool,
+                operation_id,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
+            )
             claimed = await mark_reset_item_running(
                 pool,
                 operation_id=operation_id,
                 site_code=entry.site_code,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
             )
             if not claimed:
                 raise MonthlyIntegrityError("reset_checkpoint_claim_failed", "Reset checkpoint claim failed")
             touched.append(entry)
-            result = reset_store(sheets_svc, entry, dry_run=False)
-            if result["status"] != "OK":
-                raise MonthlyIntegrityError(result["error"], "Google reset failed")
-            _verify_reset_cleared(sheets_svc, entry)
-            persisted = await finish_reset_item(
-                pool,
-                operation_id=operation_id,
-                site_code=entry.site_code,
-                status="completed",
-            )
+            if google_adapter is None:
+                assert sheets_svc is not None
+                result = reset_store(sheets_svc, entry, dry_run=False)
+                if result["status"] != "OK":
+                    raise MonthlyIntegrityError(result["error"], "Google reset failed")
+                _verify_reset_cleared(sheets_svc, entry)
+                persisted = await finish_reset_item(
+                    pool,
+                    operation_id=operation_id,
+                    site_code=entry.site_code,
+                    status="completed",
+                )
+            else:
+                if execution_owner is None or execution_epoch is None:
+                    raise MonthlyIntegrityError("operation_lease_missing", "Reset operation lease is missing")
+                intent = await persist_reset_clear_intent(
+                    pool,
+                    operation_id=operation_id,
+                    site_code=entry.site_code,
+                    execution_owner=execution_owner,
+                    execution_epoch=execution_epoch,
+                )
+                if intent is None:
+                    raise MonthlyIntegrityError("operation_lease_lost", "Reset clear intent was fenced")
+                await _google_request(
+                    google_adapter,
+                    "clear",
+                    {"spreadsheet_id": entry.sheet_id, "ranges": reset_ranges_for_entry(entry)},
+                    label="Google reset",
+                    destructive=True,
+                )
+                await _verify_reset_cleared_async(google_adapter, entry)
+                persisted = await persist_reset_clear_confirmation(
+                    pool,
+                    operation_id=operation_id,
+                    site_code=entry.site_code,
+                    execution_owner=execution_owner,
+                    execution_epoch=execution_epoch,
+                    fence_epoch=int(intent["fence_epoch"]),
+                )
             if not persisted:
                 raise MonthlyIntegrityError("reset_checkpoint_finish_failed", "Reset checkpoint finish failed")
     except BaseException as exc:
         code = exc.code if isinstance(exc, MonthlyIntegrityError) else (
             "reset_cancelled" if isinstance(exc, asyncio.CancelledError) else "reset_failed"
         )
-        rollback_ok = await _rollback_reset_entries_cancel_safe(
-            pool,
-            operation_id=operation_id,
-            entries=touched,
-            sheets_svc=sheets_svc,
-            snapshots=snapshots,
-        )
+        if google_adapter is None:
+            assert sheets_svc is not None
+            rollback_ok = await _rollback_reset_entries_cancel_safe(
+                pool,
+                operation_id=operation_id,
+                entries=touched,
+                sheets_svc=sheets_svc,
+                snapshots=snapshots,
+            )
+        elif execution_owner is not None and execution_epoch is not None:
+            rollback_ok = await _rollback_reset_entries_adapter_cancel_safe(
+                pool,
+                operation_id=operation_id,
+                entries=touched,
+                google_adapter=google_adapter,
+                snapshots=snapshots,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
+            )
+        else:
+            rollback_ok = False
         rollback_failed = not rollback_ok
         status = "uncertain" if rollback_failed else "rolled_back"
         errors = [code, "rollback_failed" if rollback_failed else "rollback_verified"]
@@ -2168,13 +2525,27 @@ async def _reset_month_execution(
         raise MonthlyManifestError(status, "Reset failed and rollback was evaluated", failed) from exc
 
     async def rollback_after_commit_failure() -> dict[str, Any]:
-        rollback_ok = await _rollback_reset_entries_cancel_safe(
-            pool,
-            operation_id=operation_id,
-            entries=touched,
-            sheets_svc=sheets_svc,
-            snapshots=snapshots,
-        )
+        if google_adapter is None:
+            assert sheets_svc is not None
+            rollback_ok = await _rollback_reset_entries_cancel_safe(
+                pool,
+                operation_id=operation_id,
+                entries=touched,
+                sheets_svc=sheets_svc,
+                snapshots=snapshots,
+            )
+        elif execution_owner is not None and execution_epoch is not None:
+            rollback_ok = await _rollback_reset_entries_adapter_cancel_safe(
+                pool,
+                operation_id=operation_id,
+                entries=touched,
+                google_adapter=google_adapter,
+                snapshots=snapshots,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
+            )
+        else:
+            rollback_ok = False
         status = "rolled_back" if rollback_ok else "uncertain"
         return base_manifest(
             month=closing_month_key,
@@ -2252,6 +2623,7 @@ async def reset_month(
     next_month_key: str | None = None,
     requested_by_sub: str = "direct-execution",
     approved_manifest_id: int | None = None,
+    google_adapter: GoogleSyncAdapter | None = None,
 ) -> Path:
     execution = await _reset_month_execution(
         pool,
@@ -2264,8 +2636,175 @@ async def reset_month(
         approved_manifest_id=approved_manifest_id,
         only=only,
         dry_run=dry_run,
+        google_adapter=google_adapter,
     )
     return execution.path
+
+
+def _reconciliation_entry(item: dict[str, Any]) -> StoreEntry:
+    return StoreEntry(
+        str(item.get("company") or ""),
+        str(item.get("store") or ""),
+        str(item.get("sheet_id") or ""),
+        str(item.get("site_code") or ""),
+        "Neatribuit",
+    )
+
+
+def _read_reset_backup(item: dict[str, Any]) -> dict[str, Any]:
+    raw_path = Path(str(item.get("backup_path") or ""))
+    path = raw_path if raw_path.is_absolute() else OUTPUTS_DIR / raw_path
+    if not path.exists() or file_sha256(path) != item.get("backup_sha256"):
+        raise MonthlyIntegrityError("backup_invalid", "Reset backup cannot be verified")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+    if not isinstance(snapshot, dict):
+        raise MonthlyIntegrityError("backup_invalid", "Reset backup snapshot is invalid")
+    if payload.get("snapshot_sha256") != snapshot_sha256(snapshot):
+        raise MonthlyIntegrityError("backup_invalid", "Reset backup hash is invalid")
+    return snapshot
+
+
+def _snapshot_is_cleared(snapshot: dict[str, Any]) -> bool:
+    return not any(
+        item.get("values")
+        for item in snapshot.get("value_ranges", [])
+        if isinstance(item, dict)
+    )
+
+
+async def reconcile_monthly_operations(
+    pool: asyncpg.Pool,
+    google_adapter: GoogleSyncAdapter,
+) -> int:
+    """Recover stale monthly work without replaying a reset automatically."""
+    owner = f"reconciler-{uuid4().hex}"
+    candidates = await claim_reconciliation_candidates(
+        pool,
+        execution_owner=owner,
+    )
+    reconciled = 0
+    for operation in candidates:
+        operation_id = int(operation["id"])
+        epoch = int(operation.get("execution_epoch", 0))
+        items = await list_reset_items_for_reconciliation(pool, operation_id)
+        classifications: list[str] = []
+        for item in items:
+            site_code = str(item["site_code"])
+            phase = str(item.get("checkpoint_phase") or "legacy_unknown")
+            if phase == "legacy_unknown":
+                await mark_item_recovery_required(
+                    pool,
+                    operation_id=operation_id,
+                    site_code=site_code,
+                    execution_owner=owner,
+                    execution_epoch=epoch,
+                    error_message="legacy_unknown_recovery_required",
+                )
+                classifications.append("recovery_required")
+                continue
+
+            try:
+                snapshot = _read_reset_backup(item)
+                current = await _read_reset_snapshot_async(
+                    google_adapter,
+                    _reconciliation_entry(item),
+                )
+                if snapshot_sha256(current) == snapshot_sha256(snapshot):
+                    if phase == "snapshot_persisted":
+                        safe = await mark_item_safe_retry(
+                            pool,
+                            operation_id=operation_id,
+                            site_code=site_code,
+                            execution_owner=owner,
+                            execution_epoch=epoch,
+                        )
+                        classifications.append("safe_retry" if safe else "recovery_required")
+                    else:
+                        intent = await persist_reset_rollback_intent(
+                            pool,
+                            operation_id=operation_id,
+                            site_code=site_code,
+                            execution_owner=owner,
+                            execution_epoch=epoch,
+                        )
+                        restored = bool(intent) and await persist_reset_rollback_confirmation(
+                            pool,
+                            operation_id=operation_id,
+                            site_code=site_code,
+                            execution_owner=owner,
+                            execution_epoch=epoch,
+                            fence_epoch=int(intent["fence_epoch"]) if intent else -1,
+                            restored=True,
+                            error_message="rollback_verified_readback",
+                        )
+                        classifications.append("rolled_back" if restored else "recovery_required")
+                elif _snapshot_is_cleared(current):
+                    intent = await persist_reset_rollback_intent(
+                        pool,
+                        operation_id=operation_id,
+                        site_code=site_code,
+                        execution_owner=owner,
+                        execution_epoch=epoch,
+                    )
+                    if intent is None:
+                        classifications.append("recovery_required")
+                        continue
+                    restored = False
+                    try:
+                        await _restore_reset_snapshot_async(
+                            google_adapter,
+                            _reconciliation_entry(item),
+                            snapshot,
+                        )
+                        restored = True
+                    except BaseException:  # noqa: BLE001 - recovery is fail-closed
+                        restored = False
+                    confirmed = await persist_reset_rollback_confirmation(
+                        pool,
+                        operation_id=operation_id,
+                        site_code=site_code,
+                        execution_owner=owner,
+                        execution_epoch=epoch,
+                        fence_epoch=int(intent["fence_epoch"]),
+                        restored=restored,
+                        error_message="rollback_verified" if restored else "recovery_required",
+                    )
+                    classifications.append("rolled_back" if restored and confirmed else "recovery_required")
+                else:
+                    classifications.append("recovery_required")
+            except asyncio.CancelledError:
+                raise
+            except BaseException:  # noqa: BLE001 - read/hash failures block retry
+                classifications.append("recovery_required")
+
+            if classifications[-1] == "recovery_required":
+                await mark_item_recovery_required(
+                    pool,
+                    operation_id=operation_id,
+                    site_code=site_code,
+                    execution_owner=owner,
+                    execution_epoch=epoch,
+                    error_message="recovery_required",
+                )
+
+        if "recovery_required" in classifications:
+            classification = "recovery_required"
+        elif "rolled_back" in classifications:
+            classification = "rolled_back"
+        else:
+            classification = "safe_retry"
+        await mark_reconciliation_result(
+            pool,
+            operation_id=operation_id,
+            execution_owner=owner,
+            execution_epoch=epoch,
+            classification=classification,
+            error_message=classification,
+            alert=classification == "recovery_required",
+        )
+        reconciled += 1
+    return reconciled
 
 
 async def run_monthly_op(
@@ -2275,6 +2814,7 @@ async def run_monthly_op(
     only: str | None = None,
     dry_run: bool = True,
     operation_id: int | None = None,
+    google_adapter: GoogleSyncAdapter | None = None,
 ) -> dict[str, Any]:
     if operation_id is None:
         if op not in VALID_OPS:
@@ -2288,6 +2828,8 @@ async def run_monthly_op(
     operation: dict[str, Any] | None = None
     requested_by_sub = "direct-execution"
     approved_manifest_id: int | None = None
+    execution_owner: str | None = None
+    execution_epoch: int | None = None
 
     if operation_id is not None:
         start = await start_monthly_operation(pool, operation_id)
@@ -2330,6 +2872,8 @@ async def run_monthly_op(
         dry_run = bool(operation["dry_run"])
         requested_by_sub = str(operation.get("requested_by_sub") or "")
         approved_manifest_id = operation.get("approved_manifest_id")
+        execution_owner = operation.get("execution_owner")
+        execution_epoch = int(operation.get("execution_epoch", 0))
         if not requested_by_sub:
             raise RuntimeError("Persisted monthly operation has no OIDC subject")
 
@@ -2372,6 +2916,8 @@ async def run_monthly_op(
             operation_id,
             result=result,
             error_message="partial_official_operation_forbidden",
+            execution_owner=execution_owner,
+            execution_epoch=execution_epoch,
         )
         return result
 
@@ -2384,7 +2930,14 @@ async def run_monthly_op(
     manifest_record: dict[str, Any] | None = None
     try:
         if operation_id is not None:
-            await heartbeat_monthly_operation(pool, operation_id)
+            alive = await heartbeat_monthly_operation(
+                pool,
+                operation_id,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
+            )
+            if not alive:
+                raise MonthlyIntegrityError("operation_lease_lost", "Monthly operation lease was lost")
         if op == "finalize":
             execution = await _finalize_month_execution(
                 pool,
@@ -2393,6 +2946,7 @@ async def run_monthly_op(
                 requested_by_sub=requested_by_sub,
                 operation_id=operation_id,
                 only=only,
+                google_adapter=google_adapter,
             )
         elif op == "archive":
             execution = await _archive_month_execution(
@@ -2402,6 +2956,7 @@ async def run_monthly_op(
                 requested_by_sub=requested_by_sub,
                 operation_id=operation_id,
                 only=only,
+                google_adapter=google_adapter,
             )
         else:
             execution = await _reset_month_execution(
@@ -2415,6 +2970,9 @@ async def run_monthly_op(
                 approved_manifest_id=int(approved_manifest_id) if approved_manifest_id is not None else None,
                 only=only,
                 dry_run=dry_run,
+                google_adapter=google_adapter,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
             )
         if operation_id is not None and not (
             op == "reset" and not dry_run and approved_manifest_id is not None
@@ -2423,6 +2981,8 @@ async def run_monthly_op(
                 pool,
                 operation_id=operation_id,
                 manifest=execution.manifest,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
             )
     except MonthlyManifestError as exc:
         status = "failed"
@@ -2434,6 +2994,8 @@ async def run_monthly_op(
                 operation_id=operation_id,
                 manifest=exc.manifest,
                 error_code=exc.code,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
             )
     except asyncio.CancelledError:
         current = asyncio.current_task()
@@ -2463,6 +3025,8 @@ async def run_monthly_op(
                 operation_id=operation_id,
                 manifest=cancelled_manifest,
                 error_code=error_code,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
             )
     except Exception as exc:  # noqa: BLE001
         status = "failed"
@@ -2487,6 +3051,8 @@ async def run_monthly_op(
                 operation_id=operation_id,
                 manifest=failed_manifest,
                 error_code=error_code,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
             )
 
     result = {
@@ -2532,6 +3098,8 @@ async def run_monthly_op(
                     manifest_id=int(approved_manifest_id),
                     expected_manifest_sha256=approved_sha,
                     consumed_manifest=consumed_manifest,
+                    execution_owner=execution_owner,
+                    execution_epoch=execution_epoch,
                 )
                 result["manifest"] = public_manifest_payload(manifest_record)
                 finished = True
@@ -2579,6 +3147,8 @@ async def run_monthly_op(
                     operation_id,
                     result=result,
                     error_message="reset_commit_failed",
+                    execution_owner=execution_owner,
+                    execution_epoch=execution_epoch,
                 )
         else:
             finished = await finish_monthly_operation(
@@ -2586,6 +3156,8 @@ async def run_monthly_op(
                 operation_id,
                 result=result,
                 error_message=error_code if status == "failed" else None,
+                execution_owner=execution_owner,
+                execution_epoch=execution_epoch,
             )
         if not finished:
             return {

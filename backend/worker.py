@@ -28,6 +28,21 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
+async def _grile_monthly_reconciliation_loop(ctx: dict) -> None:
+    from services.grile_monthly import reconcile_monthly_operations
+
+    stop = ctx["grile_monthly_reconcile_stop"]
+    pool = ctx["db_pool"]
+    adapter = ctx["grile_monthly_google"]
+    try:
+        while not stop.is_set():
+            await asyncio.sleep(60)
+            if not stop.is_set():
+                await reconcile_monthly_operations(pool, adapter)
+    except asyncio.CancelledError:
+        return
+
+
 async def import_sales_background(
     ctx: dict,
     file_reference: bytes | str,
@@ -303,6 +318,20 @@ async def startup(ctx: dict) -> None:
                 interrupted,
             )
     ctx["db_pool"] = pool
+    ctx.setdefault("grile_monthly_sessions", {})
+    if worker_role != "imports":
+        from services.grile_monthly import reconcile_monthly_operations
+        from services.grile_monthly_google import GoogleSyncAdapter
+
+        adapter = GoogleSyncAdapter()
+        await adapter.start()
+        ctx["grile_monthly_google"] = adapter
+        await reconcile_monthly_operations(pool, adapter)
+        ctx["grile_monthly_reconcile_stop"] = asyncio.Event()
+        ctx["grile_monthly_reconcile_task"] = asyncio.create_task(
+            _grile_monthly_reconciliation_loop(ctx),
+            name="grile-monthly-reconciler",
+        )
 
 
 async def grile_check_background(
@@ -422,6 +451,9 @@ async def grile_monthly_background(
         raise ValueError("Invalid Grile monthly operation identity")
 
     token = bind_request_id(request_id) if request_id else None
+    session_task = asyncio.current_task()
+    sessions = ctx.setdefault("grile_monthly_sessions", {})
+    sessions[session_task] = persisted_operation_id
     try:
         from services.grile_monthly import (
             fail_monthly_operation,
@@ -430,7 +462,11 @@ async def grile_monthly_background(
         )
 
         try:
-            return await run_monthly_op(operation_id=persisted_operation_id)
+            run_kwargs = {"operation_id": persisted_operation_id}
+            adapter = ctx.get("grile_monthly_google")
+            if adapter is not None:
+                run_kwargs["google_adapter"] = adapter
+            return await run_monthly_op(**run_kwargs)
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if current is not None:
@@ -478,6 +514,7 @@ async def grile_monthly_background(
                 )
             raise
     finally:
+        sessions.pop(session_task, None)
         if token is not None:
             reset_request_id(token)
 
@@ -585,6 +622,25 @@ async def grile_agent_targets_background(
 async def shutdown(ctx: dict) -> None:
     from db.connection import close_db_pool
     from services.jobs import close_arq_pool
+
+    reconcile_task = ctx.get("grile_monthly_reconcile_task")
+    stop = ctx.get("grile_monthly_reconcile_stop")
+    if stop is not None:
+        stop.set()
+    if reconcile_task is not None:
+        reconcile_task.cancel()
+        await asyncio.gather(reconcile_task, return_exceptions=True)
+
+    sessions = ctx.get("grile_monthly_sessions", {})
+    active = [task for task in sessions if task is not asyncio.current_task() and not task.done()]
+    for task in active:
+        task.cancel()
+    if active:
+        await asyncio.gather(*active, return_exceptions=True)
+
+    adapter = ctx.get("grile_monthly_google")
+    if adapter is not None:
+        await adapter.close(timeout=30)
 
     await close_arq_pool()
     await close_db_pool()
