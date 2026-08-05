@@ -25,6 +25,11 @@ _OPERATION_COLUMNS = """
     execution_owner, execution_epoch, execution_lease_until,
     reconciliation_classification, reconciled_at, alerted_at
 """
+_OPERATION_COLUMNS_QUALIFIED = ", ".join(
+    f"operation.{column.strip()}"
+    for column in _OPERATION_COLUMNS.split(",")
+    if column.strip()
+)
 
 _RESET_ITEM_COLUMNS = """
     id, operation_id, closing_month, next_month, site_code, sheet_id,
@@ -229,7 +234,10 @@ async def reserve(
                       AND (
                           status = 'uncertain'
                           OR rollback_status = 'failed'
-                          OR checkpoint_phase = 'legacy_unknown'
+                          OR checkpoint_phase IN (
+                              'legacy_unknown', 'clear_intent',
+                              'clear_verified', 'rollback_intent'
+                          )
                           OR recovery_code = 'recovery_required'
                       )
                     ORDER BY company, store
@@ -398,7 +406,7 @@ async def start(
                         AND manifest.status = 'building'
                         AND manifest.requested_by_sub = operation.requested_by_sub
                   )
-                RETURNING {_OPERATION_COLUMNS}
+                RETURNING {_OPERATION_COLUMNS_QUALIFIED}
                 """,
                 operation_id,
                 owner,
@@ -1407,16 +1415,25 @@ async def claim_reconciliation_candidates(
                             OR operation.execution_lease_until <= now()
                         )
                     )
-                    OR EXISTS (
-                        SELECT 1
-                        FROM grile_monthly_reset_items item
-                        WHERE item.operation_id = operation.id
-                          AND (
-                              item.status = 'uncertain'
-                              OR item.checkpoint_phase IN ('legacy_unknown', 'clear_intent', 'clear_verified', 'rollback_intent')
-                              OR item.recovery_code = 'recovery_required'
-                          )
-                        AND operation.status <> 'running'
+                    OR (
+                        operation.status <> 'running'
+                        AND (
+                            operation.execution_lease_until IS NULL
+                            OR operation.execution_lease_until <= now()
+                        )
+                        AND EXISTS (
+                            SELECT 1
+                            FROM grile_monthly_reset_items item
+                            WHERE item.operation_id = operation.id
+                              AND (
+                                  item.status = 'uncertain'
+                                  OR item.checkpoint_phase IN (
+                                      'legacy_unknown', 'clear_intent',
+                                      'clear_verified', 'rollback_intent'
+                                  )
+                                  OR item.recovery_code = 'recovery_required'
+                              )
+                        )
                     )
                     ORDER BY operation.id
                     LIMIT $2
@@ -1429,7 +1446,7 @@ async def claim_reconciliation_candidates(
                     reconciled_at = NULL
                 FROM candidates
                 WHERE operation.id = candidates.id
-                RETURNING {_OPERATION_COLUMNS}
+                RETURNING {_OPERATION_COLUMNS_QUALIFIED}
                 """,
                 execution_owner,
                 limit,

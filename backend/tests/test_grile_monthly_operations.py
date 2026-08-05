@@ -12,6 +12,7 @@ import services.grile_monthly as grile_monthly
 from db.connection import close_db_pool, get_pool
 from repositories.grile_monthly_operations import (
     approve_manifest,
+    claim_reconciliation_candidates,
     mark_cancelled_uncertain,
     finish_reset_success,
     persist_manifest_result,
@@ -166,6 +167,129 @@ async def test_live_reset_retry_blocks_after_uncertain_stale_checkpoint() -> Non
         assert [(row["op_status"], row["item_status"]) for row in statuses] == [
             ("failed", "uncertain")
         ]
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+@pytest.mark.parametrize("checkpoint_phase", ["clear_intent", "clear_verified", "rollback_intent"])
+async def test_live_reset_retry_blocks_destructive_checkpoint_phase(
+    checkpoint_phase: str,
+) -> None:
+    pool = await get_pool()
+    month = "2098-11"
+    await _cleanup(month)
+    try:
+        async with pool.acquire() as conn:
+            operation_id = await conn.fetchval(
+                """
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, dry_run, status, heartbeat_at
+                )
+                VALUES ('reset', $1, false, 'failed', now())
+                RETURNING id
+                """,
+                month,
+            )
+            await conn.execute(
+                """
+                INSERT INTO grile_monthly_reset_items (
+                    operation_id, closing_month, next_month, site_code, sheet_id,
+                    company, store, status, checkpoint_phase
+                )
+                VALUES (
+                    $1, $2, '2098-12', 'SITE01', 'sheet-1',
+                    'Mobiup', 'Store 1', 'running', $3
+                )
+                """,
+                operation_id,
+                month,
+                checkpoint_phase,
+            )
+
+        with pytest.raises(GrileMonthlyRetryBlockedError, match="uncertain"):
+            await reserve_monthly_operation(
+                pool,
+                op="reset",
+                month=month,
+                only=None,
+                dry_run=False,
+                requested_by_sub="subject-admin",
+                approved_manifest_id=123,
+            )
+    finally:
+        await _cleanup(month)
+        await close_db_pool()
+
+
+async def test_reconciler_cannot_steal_active_nonrunning_lease() -> None:
+    pool = await get_pool()
+    month = "2098-09"
+    await _cleanup(month)
+    try:
+        async with pool.acquire() as conn:
+            operation_id = await conn.fetchval(
+                """
+                INSERT INTO grile_monthly_operations (
+                    op, closing_month, dry_run, status, heartbeat_at,
+                    execution_owner, execution_epoch, execution_lease_until
+                )
+                VALUES (
+                    'reset', $1, false, 'failed', now(),
+                    'reconciler-a', 7, now() + interval '10 minutes'
+                )
+                RETURNING id
+                """,
+                month,
+            )
+            await conn.execute(
+                """
+                INSERT INTO grile_monthly_reset_items (
+                    operation_id, closing_month, next_month, site_code, sheet_id,
+                    company, store, status, checkpoint_phase
+                )
+                VALUES (
+                    $1, $2, '2098-10', 'SITE01', 'sheet-1',
+                    'Mobiup', 'Store 1', 'running', 'clear_intent'
+                )
+                """,
+                operation_id,
+                month,
+            )
+
+        assert await claim_reconciliation_candidates(
+            pool,
+            execution_owner="reconciler-b",
+        ) == []
+        async with pool.acquire() as conn:
+            unchanged = await conn.fetchrow(
+                """
+                SELECT execution_owner, execution_epoch
+                FROM grile_monthly_operations
+                WHERE id = $1
+                """,
+                operation_id,
+            )
+            await conn.execute(
+                """
+                UPDATE grile_monthly_operations
+                SET execution_lease_until = now() - interval '1 second'
+                WHERE id = $1
+                """,
+                operation_id,
+            )
+        assert dict(unchanged) == {
+            "execution_owner": "reconciler-a",
+            "execution_epoch": 7,
+        }
+
+        claimed = await claim_reconciliation_candidates(
+            pool,
+            execution_owner="reconciler-b",
+        )
+        assert [row["id"] for row in claimed] == [operation_id]
+        assert claimed[0]["execution_owner"] == "reconciler-b"
+        assert claimed[0]["execution_epoch"] == 8
     finally:
         await _cleanup(month)
         await close_db_pool()

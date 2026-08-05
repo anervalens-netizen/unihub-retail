@@ -242,6 +242,25 @@ def reset_ranges_for_entry(entry: StoreEntry) -> list[str]:
     return list(RESET_RANGES_V3 if entry.template_version == "v3" else RESET_RANGES)
 
 
+def _require_exact_value_ranges(
+    value_ranges: Any,
+    expected_ranges: list[str],
+    *,
+    code: str,
+    message: str,
+) -> list[dict[str, Any]]:
+    if (
+        not isinstance(value_ranges, list)
+        or len(value_ranges) != len(expected_ranges)
+        or any(
+            not isinstance(item, dict) or item.get("range") != expected
+            for item, expected in zip(value_ranges, expected_ranges, strict=True)
+        )
+    ):
+        raise MonthlyIntegrityError(code, message)
+    return value_ranges
+
+
 @dataclass
 class ExtractedAgentRow:
     company: str
@@ -620,8 +639,24 @@ async def _run_with_monthly_lease(
         await heartbeat_task
         raise AssertionError("Lease monitor exited without a result")
     finally:
+        operation_task.cancel()
         heartbeat_task.cancel()
-        await asyncio.gather(heartbeat_task, return_exceptions=True)
+        await _wait_for_tasks_cancel_safe(operation_task, heartbeat_task)
+
+
+async def _wait_for_tasks_cancel_safe(*tasks: asyncio.Task[Any]) -> None:
+    cleanup = asyncio.gather(*tasks, return_exceptions=True)
+    current = asyncio.current_task()
+    while True:
+        if current is not None:
+            while current.cancelling():
+                current.uncancel()
+        try:
+            await asyncio.shield(cleanup)
+            return
+        except asyncio.CancelledError:
+            if cleanup.done():
+                return
 
 
 async def finish_monthly_operation(
@@ -962,12 +997,12 @@ def extract_store_rows(
             valueRenderOption="UNFORMATTED_VALUE",
         ).execute()
         value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
-        if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
-            raise MonthlyIntegrityError(
-                "google_response_incomplete",
-                "Google sheet response is incomplete",
-            )
-        return value_ranges
+        return _require_exact_value_ranges(
+            value_ranges,
+            ranges,
+            code="google_response_incomplete",
+            message="Google sheet response is incomplete",
+        )
 
     try:
         value_ranges = retry_api(
@@ -1375,12 +1410,13 @@ async def _finalize_month_execution(
                 label="Google sheet read",
             )
             value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
-            if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
-                raise MonthlyIntegrityError(
-                    "google_response_incomplete",
-                    "Google sheet response is incomplete",
-                )
-            all_rows.extend(extract_store_rows(None, entry, value_ranges=value_ranges))
+            exact_value_ranges = _require_exact_value_ranges(
+                value_ranges,
+                ranges,
+                code="google_response_incomplete",
+                message="Google sheet response is incomplete",
+            )
+            all_rows.extend(extract_store_rows(None, entry, value_ranges=exact_value_ranges))
         if delay > 0 and idx < len(entries):
             await asyncio.sleep(delay)
 
@@ -1989,12 +2025,13 @@ def _read_reset_snapshot(sheets_svc: Any, entry: StoreEntry) -> dict[str, Any]:
             dateTimeRenderOption="SERIAL_NUMBER",
         ).execute()
         value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
-        if not isinstance(value_ranges, list) or len(value_ranges) != len(reset_ranges):
-            raise MonthlyIntegrityError(
-                "backup_response_incomplete",
-                "Google backup response is incomplete",
-            )
-        return canonical_snapshot(value_ranges)
+        exact_value_ranges = _require_exact_value_ranges(
+            value_ranges,
+            reset_ranges,
+            code="backup_response_incomplete",
+            message="Google backup response is incomplete",
+        )
+        return canonical_snapshot(exact_value_ranges)
 
     return retry_api(
         read,
@@ -2021,9 +2058,13 @@ async def _read_reset_snapshot_async(
     )
     value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
     ranges = reset_ranges_for_entry(entry)
-    if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
-        raise MonthlyIntegrityError("backup_response_incomplete", "Google backup response is incomplete")
-    return canonical_snapshot(value_ranges)
+    exact_value_ranges = _require_exact_value_ranges(
+        value_ranges,
+        ranges,
+        code="backup_response_incomplete",
+        message="Google backup response is incomplete",
+    )
+    return canonical_snapshot(exact_value_ranges)
 
 
 def _restore_reset_snapshot(
@@ -2156,6 +2197,16 @@ async def _rollback_reset_entries(
 ) -> bool:
     rollback_failed = False
     for entry in reversed(entries):
+        intent = await persist_reset_rollback_intent(
+            pool,
+            operation_id=operation_id,
+            site_code=entry.site_code,
+            execution_owner=execution_owner,
+            execution_epoch=execution_epoch,
+        )
+        if intent is None:
+            rollback_failed = True
+            continue
         try:
             _restore_reset_snapshot(sheets_svc, entry, snapshots[entry.site_code])
             restored = True
@@ -2163,13 +2214,14 @@ async def _rollback_reset_entries(
             restored = False
             rollback_failed = True
         try:
-            rollback_recorded = await record_reset_item_rollback(
+            rollback_recorded = await persist_reset_rollback_confirmation(
                 pool,
                 operation_id=operation_id,
                 site_code=entry.site_code,
-                restored=restored,
                 execution_owner=execution_owner,
                 execution_epoch=execution_epoch,
+                fence_epoch=int(intent["fence_epoch"]),
+                restored=restored,
                 error_message="reset_rolled_back" if restored else "reset_rollback_failed",
             )
         except Exception:  # noqa: BLE001 - Google restoration still took precedence
@@ -2177,6 +2229,25 @@ async def _rollback_reset_entries(
         if not rollback_recorded:
             rollback_failed = True
     return not rollback_failed
+
+
+async def _await_rollback_task(task: asyncio.Task[bool]) -> bool:
+    """Consume caller cancellation until the shielded rollback reaches a terminal state."""
+    current = asyncio.current_task()
+    while True:
+        if current is not None:
+            while current.cancelling():
+                current.uncancel()
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done():
+                try:
+                    return task.result()
+                except BaseException:
+                    return False
+        except BaseException:  # provider/DB failure leaves an uncertain checkpoint
+            return False
 
 
 async def _rollback_reset_entries_cancel_safe(
@@ -2189,11 +2260,7 @@ async def _rollback_reset_entries_cancel_safe(
     execution_owner: str,
     execution_epoch: int,
 ) -> bool:
-    """Finish rollback after task cancellation; any second interruption is uncertain."""
-    current = asyncio.current_task()
-    if current is not None:
-        while current.cancelling():
-            current.uncancel()
+    """Finish the shielded rollback before reporting its verified outcome."""
     rollback_task = asyncio.create_task(
         _rollback_reset_entries(
             pool,
@@ -2205,10 +2272,7 @@ async def _rollback_reset_entries_cancel_safe(
             execution_epoch=execution_epoch,
         )
     )
-    try:
-        return await asyncio.shield(rollback_task)
-    except BaseException:  # cancellation or provider/DB failure leaves an uncertain checkpoint
-        return False
+    return await _await_rollback_task(rollback_task)
 
 
 async def _rollback_reset_entries_adapter(
@@ -2268,10 +2332,6 @@ async def _rollback_reset_entries_adapter_cancel_safe(
     execution_owner: str,
     execution_epoch: int,
 ) -> bool:
-    current = asyncio.current_task()
-    if current is not None:
-        while current.cancelling():
-            current.uncancel()
     task = asyncio.create_task(
         _rollback_reset_entries_adapter(
             pool,
@@ -2283,10 +2343,7 @@ async def _rollback_reset_entries_adapter_cancel_safe(
             execution_epoch=execution_epoch,
         )
     )
-    try:
-        return await asyncio.shield(task)
-    except BaseException:
-        return False
+    return await _await_rollback_task(task)
 
 
 async def _reset_month_execution(
@@ -2565,17 +2622,29 @@ async def _reset_month_execution(
             touched.append(entry)
             if google_adapter is None:
                 assert sheets_svc is not None
+                intent = await persist_reset_clear_intent(
+                    pool,
+                    operation_id=operation_id,
+                    site_code=entry.site_code,
+                    execution_owner=execution_owner,
+                    execution_epoch=execution_epoch,
+                )
+                if intent is None:
+                    raise MonthlyIntegrityError(
+                        "operation_lease_lost",
+                        "Reset clear intent was fenced",
+                    )
                 result = reset_store(sheets_svc, entry, dry_run=False)
                 if result["status"] != "OK":
                     raise MonthlyIntegrityError(result["error"], "Google reset failed")
                 _verify_reset_cleared(sheets_svc, entry)
-                persisted = await finish_reset_item(
+                persisted = await persist_reset_clear_confirmation(
                     pool,
                     operation_id=operation_id,
                     site_code=entry.site_code,
-                    status="completed",
                     execution_owner=execution_owner,
                     execution_epoch=execution_epoch,
+                    fence_epoch=int(intent["fence_epoch"]),
                 )
             else:
                 if execution_owner is None or execution_epoch is None:
@@ -2777,12 +2846,23 @@ async def reset_month(
 
 
 def _reconciliation_entry(item: dict[str, Any]) -> StoreEntry:
+    persisted_ranges = item.get("ranges")
+    if persisted_ranges == RESET_RANGES:
+        template_version = "v2"
+    elif persisted_ranges == RESET_RANGES_V3:
+        template_version = "v3"
+    else:
+        raise MonthlyIntegrityError(
+            "reset_ranges_invalid",
+            "Persisted reset ranges do not match a supported template",
+        )
     return StoreEntry(
         str(item.get("company") or ""),
         str(item.get("store") or ""),
         str(item.get("sheet_id") or ""),
         str(item.get("site_code") or ""),
         "Neatribuit",
+        template_version=template_version,
     )
 
 
