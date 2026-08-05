@@ -915,7 +915,7 @@ nu dispoziții suplimentare.
 | R-09 | implementat | bugetul DB permite 2 workeri web, cu session/rate-limit shared și shutdown bounded |
 | R-10 | demonstrat deja | P&L/ERP/HR folosesc atribute curente sau snapshoturi/effective dates explicite |
 | R-11 | implementat | lucrul greu a fost scos din lifespan; readiness nu depinde de refresh business |
-| R-12 | demonstrat deja | EXPLAIN/BUFFERS pe DB izolat: agent-day 9,639 ms; item-day 316,855 ms, ambele sub 2.500 ms |
+| R-12 | demonstrat deja | EXPLAIN/BUFFERS pe DB izolat: agent-day 9,639 ms (~0,010 s); item-day 316,855 ms (~0,317 s), ambele sub 2.500 ms (2,5 s) |
 | R-13 | implementat | Dashboard summary/store/regional/promo și performance-detail agent, HR, CRM, Target și evaluarea agenților folosesc distribuția zilnică din ultima rulare business; lipsa modelului produce factor 1, nu extrapolare fixă/calendaristică |
 | R-14 | implementat | datele business backend și toate timestampurile UI auditate, inclusiv istoricul importurilor și scripturile P&L/forecast, folosesc helperi Europe/Bucharest testați determinist; duratele de rețea folosesc ceas monotonic |
 | R-15 | implementat | `any`-urile de producție din lane-ul Agents/salary chart au fost eliminate, strict TS extins |

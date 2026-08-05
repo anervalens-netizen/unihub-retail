@@ -10,6 +10,7 @@ import pytest
 import asyncpg
 
 import services.jobs as jobs
+import services.importer as importer
 from db.connection import close_db_pool, get_pool
 from services.sales_generation import SalesGenerationValidationError
 from services.sales_generation_flow import promote_sales_generation
@@ -256,6 +257,68 @@ async def test_artifact_intent_is_persisted_before_validation_and_reconciled(
             assert dict(row) == {
                 "status": "failed",
                 "source_artifact_state": "artifact_retained",
+            }
+            await conn.execute("DELETE FROM import_snapshots WHERE id = $1", snapshot_id)
+    finally:
+        await close_db_pool()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="Requires the explicitly isolated PostgreSQL test database",
+)
+async def test_retained_artifact_oserror_preserves_immutable_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = await get_pool()
+    month = "2099-05"
+    digest = "c" * 64
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM import_snapshots WHERE import_month = $1", month)
+            snapshot_id = await conn.fetchval(
+                """
+                INSERT INTO import_snapshots (
+                    import_month, filename, status, rows_in_file, rows_imported,
+                    source_sha256, generation_token, owner_id, lease_until,
+                    source_spool_path, source_artifact_required,
+                    source_artifact_state, source_artifact_sha256,
+                    source_artifact_bytes, source_artifact_retained_at,
+                    source_artifact_retained_path
+                ) VALUES (
+                    $1, 'retained-oserror.xlsx', 'processing', 1, 0,
+                    $2, gen_random_uuid(), gen_random_uuid(), now(),
+                    '/isolated-fixture/retained.source', true,
+                    'artifact_retained', $2, 12, now(),
+                    '/isolated-fixture/retained.source'
+                )
+                RETURNING id
+                """,
+                month,
+                digest,
+            )
+        monkeypatch.setattr(
+            importer,
+            "retain_sales_import_spool_file",
+            MagicMock(side_effect=OSError("transient filesystem failure")),
+        )
+
+        assert await _reconcile_sales_artifacts(pool) == [snapshot_id]
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT source_artifact_state, source_artifact_sha256,
+                       source_artifact_bytes, source_artifact_retained_path
+                FROM import_snapshots WHERE id = $1
+                """,
+                snapshot_id,
+            )
+            assert dict(row) == {
+                "source_artifact_state": "artifact_retained",
+                "source_artifact_sha256": digest,
+                "source_artifact_bytes": 12,
+                "source_artifact_retained_path": "/isolated-fixture/retained.source",
             }
             await conn.execute("DELETE FROM import_snapshots WHERE id = $1", snapshot_id)
     finally:

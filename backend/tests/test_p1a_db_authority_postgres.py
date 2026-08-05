@@ -1057,6 +1057,35 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 snapshot_id,
                 digest,
             )
+            await connection.execute(
+                """
+                UPDATE import_snapshots
+                SET source_artifact_required = true,
+                    source_artifact_state = 'artifact_retaining',
+                    source_artifact_sha256 = source_sha256,
+                    source_artifact_bytes = 1
+                WHERE id = $1
+                """,
+                snapshot_id,
+            )
+            with pytest.raises(asyncpg.PostgresError, match="exact retained source artifact"):
+                await sales.fetchrow(
+                    "SELECT * FROM advance_sales_generation_head($1, $2, $3, $4, 0)",
+                    "2197-08",
+                    snapshot_id,
+                    token,
+                    owner,
+                )
+            await connection.execute(
+                """
+                UPDATE import_snapshots
+                SET source_artifact_state = 'artifact_retained',
+                    source_artifact_retained_at = now(),
+                    source_artifact_retained_path = '/isolated-fixture/source'
+                WHERE id = $1
+                """,
+                snapshot_id,
+            )
             head = await sales.fetchrow(
                 "SELECT * FROM advance_sales_generation_head($1, $2, $3, $4, 0)",
                 "2197-08",

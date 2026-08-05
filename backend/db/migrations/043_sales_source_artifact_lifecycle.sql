@@ -83,4 +83,41 @@ CREATE TRIGGER trg_sales_source_artifact_lifecycle
 BEFORE INSERT OR UPDATE ON import_snapshots
 FOR EACH ROW EXECUTE FUNCTION guard_sales_source_artifact_lifecycle();
 
+CREATE OR REPLACE FUNCTION guard_sales_generation_head_source_artifact()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    artifact RECORD;
+BEGIN
+    SELECT source_artifact_required, source_sha256, source_artifact_state,
+           source_artifact_sha256, source_artifact_bytes,
+           source_artifact_retained_at, source_artifact_retained_path
+    INTO artifact
+    FROM import_snapshots
+    WHERE id = NEW.snapshot_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'sales generation head references a missing snapshot';
+    END IF;
+    IF artifact.source_artifact_required
+       AND (
+           artifact.source_artifact_state IS DISTINCT FROM 'artifact_retained'
+           OR artifact.source_artifact_sha256 IS DISTINCT FROM artifact.source_sha256
+           OR artifact.source_artifact_bytes IS NULL
+           OR artifact.source_artifact_retained_at IS NULL
+           OR artifact.source_artifact_retained_path IS NULL
+       ) THEN
+        RAISE EXCEPTION 'sales generation head requires an exact retained source artifact';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS trg_sales_generation_head_source_artifact
+ON sales_generation_heads;
+CREATE TRIGGER trg_sales_generation_head_source_artifact
+BEFORE INSERT OR UPDATE OF snapshot_id ON sales_generation_heads
+FOR EACH ROW EXECUTE FUNCTION guard_sales_generation_head_source_artifact();
+
 GRANT SELECT, UPDATE ON TABLE import_snapshots TO unihub_sales_import;

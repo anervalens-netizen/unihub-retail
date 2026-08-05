@@ -38,7 +38,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from salary_import_approval import (
     SalaryImportApprovalError,
     ValidatedApproval,
-    build_audit_envelope,
     canonical_json_sha256,
     load_and_validate_approval_artifact,
     require_apply_inputs,
@@ -345,8 +344,7 @@ async def insert_records(
     *,
     manifest: dict[str, Any] | None = None,
     applied_by: str = "test:salary-import",
-    approval: ValidatedApproval | Mapping[str, Any] | None = None,
-    approval_envelope: Mapping[str, Any] | None = None,
+    approval: ValidatedApproval | None = None,
 ) -> None:
     if not records:
         raise ValueError("Nu exista randuri valide de importat.")
@@ -393,14 +391,10 @@ async def insert_records(
         }
     safe_manifest = validate_dry_run_manifest(manifest)
     manifest_sha256 = canonical_json_sha256(safe_manifest)
-    if approval_envelope is None and isinstance(approval, ValidatedApproval):
-        approval_envelope = approval.envelope()
-    elif approval_envelope is None and isinstance(approval, Mapping):
-        approval_envelope = approval
-    if approval_envelope is None:
-        raise SalaryImportApprovalError("A validated approval envelope is required for writes")
+    if not isinstance(approval, ValidatedApproval):
+        raise SalaryImportApprovalError("A cryptographically validated approval is required for writes")
     safe_envelope = validate_audit_envelope(
-        approval_envelope,
+        approval.envelope(),
         manifest=safe_manifest,
         manifest_sha256=manifest_sha256,
         applied_by=applied_by,
@@ -585,26 +579,18 @@ async def main() -> None:
             raise ValueError("Batch HR incomplet: ambele firme sunt obligatorii")
         if not records:
             raise ValueError("Nu exista randuri valide de importat.")
-        manifest_sha256 = canonical_json_sha256(manifest)
         validated_approval = load_and_validate_approval_artifact(
             args.approval_artifact,
             manifest=manifest,
             expected_manifest_sha256=args.expected_manifest_sha256,
             applied_by=args.applied_by,
         )
-        audit_envelope = build_audit_envelope(
-            manifest,
-            manifest_sha256,
-            validated_approval.metadata,
-            validated_approval.artifact_sha256,
-            args.applied_by,
-        )
         await insert_records(
             conn,
             records,
             manifest=manifest,
             applied_by=args.applied_by,
-            approval_envelope=audit_envelope,
+            approval=validated_approval,
         )
         print(f"Import finalizat pentru {args.year}-{args.month:02d}: {len(records)} randuri.")
     finally:

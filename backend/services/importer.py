@@ -267,11 +267,26 @@ async def _reconcile_sales_artifacts(pool: asyncpg.Pool) -> list[int]:
                 await conn.execute(
                     """
                     UPDATE import_snapshots
-                    SET source_artifact_state = NULL,
-                        source_artifact_sha256 = NULL,
-                        source_artifact_bytes = NULL,
-                        source_artifact_retained_at = NULL,
-                        source_artifact_retained_path = NULL,
+                    SET source_artifact_state = CASE
+                            WHEN source_artifact_state = 'artifact_retained'
+                            THEN source_artifact_state ELSE NULL
+                        END,
+                        source_artifact_sha256 = CASE
+                            WHEN source_artifact_state = 'artifact_retained'
+                            THEN source_artifact_sha256 ELSE NULL
+                        END,
+                        source_artifact_bytes = CASE
+                            WHEN source_artifact_state = 'artifact_retained'
+                            THEN source_artifact_bytes ELSE NULL
+                        END,
+                        source_artifact_retained_at = CASE
+                            WHEN source_artifact_state = 'artifact_retained'
+                            THEN source_artifact_retained_at ELSE NULL
+                        END,
+                        source_artifact_retained_path = CASE
+                            WHEN source_artifact_state = 'artifact_retained'
+                            THEN source_artifact_retained_path ELSE NULL
+                        END,
                         manifest = CASE
                             WHEN manifest->>'generation_state' = 'promoting'
                             THEN jsonb_set(manifest, '{generation_state}', '"validated"'::jsonb, true)

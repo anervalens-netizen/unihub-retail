@@ -50,7 +50,7 @@ release-ului `v2.1.0` include:
 | 040 | `040_db_authority_append_only.sql` | `59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
 | 041 | `041_schema_owner_handoff.sql` | `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
 | 042 | `042_fieldops_visits_web_authority.sql` | `6e120625c69ff8528bec5074782e822ba8b7c8828ed1dbb71dc1c97919013cb4` | impune unicul ACL tabelar web owner-issued SELECT-only la sursa PostgreSQL FieldOps, fără PUBLIC/DML tabelar ori columnar sau însușirea sursei externe |
-| 043 | `043_sales_source_artifact_lifecycle.sql` | `bf997d5e2f74aa3b464ac0cc0c8529247cfc63b1ed5af7d7ff231fb339b9064d` | leagă starea terminală sales de artefactul sursă reținut și verificat |
+| 043 | `043_sales_source_artifact_lifecycle.sql` | `28a5673b5559e773e4a94d3a52392fb3d5b3887e0b51cb4cb60b4361cdffba65` | leagă starea terminală și head-ul sales de artefactul sursă reținut și verificat |
 | 044 | `044_grile_monthly_recovery_fencing.sql` | `762c6352f8a00deb6989bd24ffac5ebefc9d537817233507d92e8dd4422d7a1c` | adaugă lease/epoch, checkpointuri și clasificarea deterministă a recovery-ului Grile |
 | 045 | `045_salary_approval_replay_fence.sql` | `2be9541709f7e8a9e6dfa031e8e1330e4c75779109030078a4add64e92551011` | leagă aprobarea salarială semnată de batch și interzice replay-ul artifactului |
 | 046 | `046_revoke_legacy_grile_authority.sql` | `0cadf58076c820856c801c8c7bbf7c38b38e80ff26794ceb24178442c7207432` | retrage privilegiile legacy asupra stării și secvențelor Grile |
