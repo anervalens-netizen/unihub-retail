@@ -426,13 +426,13 @@ inventare, schimbări izolate, teste negative și QA.
 | --- | --- | --- | --- |
 | P0-B | M-04, M-05 | `CLOSED LIVE 2026-08-04` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
 | P1-A | M-06, M-07, R-01, R-02 | `CLOSED LIVE 2026-08-05` | dovezi complete în 16.5 |
-| P1-B | M-08, M-09 | `CANDIDATE 17e6217` | retain/hash/fsync/readback, intenție persistată înainte de validare, reconciler, retenție și fault injection |
-| P1-C | M-10, R-03 | `CANDIDATE 17e6217` | boundary privat/controlat H-01, manifest aprobat exact, 8/8/0 și review independent; apply live blocat |
-| P1-D | M-11, M-12 | `CANDIDATE 17e6217` | checkpoint/lease/epoch fenced, deadline Google sub lease, adapter thread-affine și reconciler determinist |
-| P2-A | M-13, R-06, R-17, R-19, R-20 | `CANDIDATE 17e6217` | preflight/decompression/cell budgets, containment foto și capability existente verificate |
-| P2-B | M-16, R-04, R-05, R-10 | `CANDIDATE 17e6217` | scope istoric explicit, mapare companie fail-closed și cohorte verificate |
-| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `CANDIDATE 17e6217` | export caps/spool, startup bounded, 2 workeri web și query-plan evidence |
-| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `CANDIDATE 17e6217` | lock cu hashuri, strict TS, timezone, forecast business, payload cleanup și paging bounded |
+| P1-B | M-08, M-09 | `CANDIDATE 40a3798` | retain/hash/fsync/readback, intenție persistată înainte de validare, reconciler, retenție și fault injection |
+| P1-C | M-10, R-03 | `CANDIDATE 40a3798` | boundary privat/controlat H-01, manifest aprobat exact, 8/8/0 și review independent; apply live blocat |
+| P1-D | M-11, M-12 | `CANDIDATE 40a3798` | checkpoint/lease/epoch fenced, heartbeat periodic, deadline Google sub lease, adapter thread-affine și reconciler determinist |
+| P2-A | M-13, R-06, R-17, R-19, R-20 | `CANDIDATE 40a3798` | preflight/decompression/cell budgets, containment foto și capability existente verificate |
+| P2-B | M-16, R-04, R-05, R-10 | `CANDIDATE 40a3798` | scope istoric explicit, mapare companie fail-closed și cohorte verificate |
+| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `CANDIDATE 40a3798` | export caps/spool, startup bounded, 2 workeri web și query-plan evidence |
+| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `CANDIDATE 40a3798` | lock cu hashuri, strict TS, timezone, forecast business, payload cleanup și paging bounded |
 
 Note de rutare:
 
@@ -879,7 +879,7 @@ promovare. Promovarea rămâne explicită și nu este executată automat de hotf
 ### 16.7 Candidat consolidat P1-B -> P3 — 2026-08-05
 
 SHA-ul sursă local verificat este
-`17e621759bbbd243e9e86edbf99113f12a1896b7`. Registrul de mai jos este
+`40a3798d5f1e2174af34ae08ea236d7e1008ae40`. Registrul de mai jos este
 registrul unic de dispoziție; mențiunile anterioare din document sunt istoric,
 nu dispoziții suplimentare.
 
@@ -895,7 +895,7 @@ nu dispoziții suplimentare.
 | M-08 | implementat | artefact sales content-addressed, `0600`, hash, fsync și readback înainte de terminal DB |
 | M-09 | implementat | intenția artefactului este persistată atomic la rezervare înainte de validare; reconcilerul idempotent acoperă inclusiv crash pre-validare și retention head/predecessor/ledger |
 | M-10 | implementat | salary approval schema v2 leagă exact manifestul, ambele companii și 8/8/0, cere semnătură Ed25519 de la un reviewer key-id trusted și consumă unic artifactul atomic cu batchul; `salary_private` este canonic, iar copia legacy CNP rămâne excepție controlată H-01 fără acces runtime și fără ștergere neautorizată |
-| M-11 | implementat | Grile cere owner/epoch/lease activ fără bypass pentru manifest, creare/claim checkpoint, backup, result, consume, rollback, reconciliere și toate fallbackurile terminale; fail-ul queued este CAS separat, iar checkpointul precede Google I/O; migrarea 046 retrage integral autoritatea Grile a rolului legacy |
+| M-11 | implementat | Grile cere owner/epoch/lease activ fără bypass pentru manifest, creare/claim checkpoint, backup, result, consume, rollback, reconciliere și toate fallbackurile terminale; monitorul reînnoiește lease-ul la 60s pe întreaga operație și anulează lucrul la lease loss; fail-ul queued este CAS separat, iar checkpointul precede Google I/O; migrarea 046 retrage integral autoritatea Grile a rolului legacy |
 | M-12 | implementat | Google I/O rulează prin adapter thread-affine, transport cu timeout și deadline bounded; reconcilerul nu reia automat starea incertă |
 | M-13 | implementat | XLS/XLSX au signature, ZIP/XML, expanded-bytes, ratio, member și cell budgets |
 | M-14 | implementat | exporturile au caps 50.000 rânduri, 1.000.000 celule și 64 MiB estimate, cu spool/chunks |
@@ -938,7 +938,7 @@ Porți locale pe candidatul sursă:
 
 - PostgreSQL 18 + Valkey izolate, migrări fresh 014..046 după audit: `1596 passed, 7 skipped`;
 - frontend: 34 fișiere / 245 teste; `typecheck`, `typecheck:strict`, lint și build verzi;
-- mypy: 346 fișiere, zero erori; porțile țintite post-audit `202 + 135 + 82 + 101` teste verzi;
+- mypy: 346 fișiere, zero erori; porțile țintite post-audit `202 + 135 + 82 + 101 + 99` teste verzi;
 - runtime/dev lock `--require-hashes`, import smoke, `pip check`, `pip-audit`
   strict, secret scan și Bandit regression gate verzi;
 - checksum migrare 043:
@@ -954,5 +954,7 @@ Porți locale pe candidatul sursă:
   lock dev: `052ab1469d523d16a1639a702e13180fc528335e098987616a3cd61f0bd358ce`.
 
 Snapshotul sales 214 și Finance/salary live apply nu sunt mutate de candidat.
+Auditul Terra pe `da2711d` a respins corect lease-ul nereînnoit al operațiilor
+Grile lungi; sursa `40a3798` adaugă heartbeat periodic și anulare fail-closed.
 Auditul independent exact-SHA, CI-ul formal, deployul, probele live cu doi
 workeri și dovada de rollback sunt porțile rămase înainte de `CLOSED LIVE`.
