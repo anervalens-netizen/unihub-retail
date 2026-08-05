@@ -426,13 +426,13 @@ inventare, schimbări izolate, teste negative și QA.
 | --- | --- | --- | --- |
 | P0-B | M-04, M-05 | `CLOSED LIVE 2026-08-04` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
 | P1-A | M-06, M-07, R-01, R-02 | `CLOSED LIVE 2026-08-05` | dovezi complete în 16.5 |
-| P1-B | M-08, M-09 | `CANDIDATE 40a3798` | retain/hash/fsync/readback, intenție persistată înainte de validare, reconciler, retenție și fault injection |
-| P1-C | M-10, R-03 | `CANDIDATE 40a3798` | boundary privat/controlat H-01, manifest aprobat exact, 8/8/0 și review independent; apply live blocat |
-| P1-D | M-11, M-12 | `CANDIDATE 40a3798` | checkpoint/lease/epoch fenced, heartbeat periodic, deadline Google sub lease, adapter thread-affine și reconciler determinist |
-| P2-A | M-13, R-06, R-17, R-19, R-20 | `CANDIDATE 40a3798` | preflight/decompression/cell budgets, containment foto și capability existente verificate |
-| P2-B | M-16, R-04, R-05, R-10 | `CANDIDATE 40a3798` | scope istoric explicit, mapare companie fail-closed și cohorte verificate |
-| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `CANDIDATE 40a3798` | export caps/spool, startup bounded, 2 workeri web și query-plan evidence |
-| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `CANDIDATE 40a3798` | lock cu hashuri, strict TS, timezone, forecast business, payload cleanup și paging bounded |
+| P1-B | M-08, M-09 | `CLOSED LIVE 2026-08-05` | retain/hash/fsync/readback, intenție persistată înainte de validare, reconciler, retenție și fault injection |
+| P1-C | M-10, R-03 | `CLOSED LIVE 2026-08-05` | boundary privat/controlat H-01, manifest aprobat exact, 8/8/0 și review independent; apply live blocat |
+| P1-D | M-11, M-12 | `CLOSED LIVE 2026-08-05` | baseline Grile v1 funcțional; recovery/fencing live; rezidualul v1 este acceptat de owner și superseded de Grile v2 |
+| P2-A | M-13, R-06, R-17, R-19, R-20 | `CLOSED LIVE 2026-08-05` | preflight/decompression/cell budgets, containment foto și capability existente verificate |
+| P2-B | M-16, R-04, R-05, R-10 | `CLOSED LIVE 2026-08-05` | scope istoric explicit, mapare companie fail-closed și cohorte verificate |
+| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `CLOSED LIVE 2026-08-05` | export caps/spool, startup bounded, 2 workeri web și query-plan evidence |
+| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `CLOSED LIVE 2026-08-05` | lock cu hashuri, strict TS, timezone, forecast business, payload cleanup și paging bounded |
 
 Note de rutare:
 
@@ -876,10 +876,14 @@ snapshotului 214, operatorul reîncarcă o singură dată exact același fișier
 cutoff `2026-08-04`; UI trebuie să afișeze manifestul deja validat și butonul de
 promovare. Promovarea rămâne explicită și nu este executată automat de hotfix.
 
-### 16.7 Candidat consolidat P1-B -> P3 — 2026-08-05
+### 16.7 Închidere live consolidată P1-B -> P3 — 2026-08-05
 
-SHA-ul sursă local verificat este
-`40a3798d5f1e2174af34ae08ea236d7e1008ae40`. Registrul de mai jos este
+SHA-ul runtime final verificat este
+`68fe62551ce0461cc89dbf39500fe946d2a32536`. Release-ul formal și migrările
+provin din părintele exact `6dece2d9dcc5f6482eb330fcedc89e5253f12fd6`;
+hotfix-ul schema-neutral `68fe625` califică exclusiv coloanele PostgreSQL
+`RETURNING` ale reconcilerului Grile și a fost promovat direct, cu test țintit,
+SQL live în tranzacție anulată și audit independent. Registrul de mai jos este
 registrul unic de dispoziție; mențiunile anterioare din document sunt istoric,
 nu dispoziții suplimentare.
 
@@ -895,8 +899,8 @@ nu dispoziții suplimentare.
 | M-08 | implementat | artefact sales content-addressed, `0600`, hash, fsync și readback înainte de terminal DB |
 | M-09 | implementat | intenția artefactului este persistată atomic la rezervare înainte de validare; reconcilerul idempotent acoperă inclusiv crash pre-validare și retention head/predecessor/ledger |
 | M-10 | implementat | salary approval schema v2 leagă exact manifestul, ambele companii și 8/8/0, cere semnătură Ed25519 de la un reviewer key-id trusted și consumă unic artifactul atomic cu batchul; `salary_private` este canonic, iar copia legacy CNP rămâne excepție controlată H-01 fără acces runtime și fără ștergere neautorizată |
-| M-11 | implementat | Grile cere owner/epoch/lease activ fără bypass pentru manifest, creare/claim checkpoint, backup, result, consume, rollback, reconciliere și toate fallbackurile terminale; monitorul reînnoiește lease-ul la 60s pe întreaga operație și anulează lucrul la lease loss; fail-ul queued este CAS separat, iar checkpointul precede Google I/O; migrarea 046 retrage integral autoritatea Grile a rolului legacy |
-| M-12 | implementat | Google I/O rulează prin adapter thread-affine, transport cu timeout și deadline bounded; reconcilerul nu reia automat starea incertă |
+| M-11 | implementat | Grile cere owner/epoch/lease activ fără bypass pentru manifest, creare/claim checkpoint, backup, result, consume, rollback, reconciliere și toate fallbackurile terminale; monitorul reînnoiește lease-ul la 60s pe întreaga operație și anulează lucrul la lease loss; fail-ul queued este CAS separat, iar checkpointul precede Google I/O; migrarea 046 retrage integral autoritatea Grile a rolului legacy; hotfix-ul `68fe625` păstrează workerul funcțional după reconcilierea startup |
+| M-12 | implementat | Google I/O rulează prin adapter thread-affine, transport cu timeout și deadline bounded; reconcilerul nu reia automat starea incertă; orice investiție suplimentară în Grile v1 este oprită prin decizia ownerului, fiind superseded de Grile v2 |
 | M-13 | implementat | XLS/XLSX au signature, ZIP/XML, expanded-bytes, ratio, member și cell budgets |
 | M-14 | implementat | exporturile au caps 50.000 rânduri, 1.000.000 celule și 64 MiB estimate, cu spool/chunks |
 | M-15 | implementat | startupul web nu mai face sync/prewarm business; ARQ rămâne degradabil |
@@ -934,7 +938,7 @@ nu dispoziții suplimentare.
 | N-08 | implementat | warningurile ESLint locale nefolosite au fost eliminate; lint are zero warnings |
 | N-09 | demonstrat deja | cache-ul filtrelor este invalidat prin versiune DB cross-process, nu memorie locală |
 
-Porți locale pe candidatul sursă:
+Porți locale și formale:
 
 - PostgreSQL 18 + Valkey izolate, migrări fresh 014..046 după audit: `1596 passed, 7 skipped`;
 - frontend: 34 fișiere / 245 teste; `typecheck`, `typecheck:strict`, lint și build verzi;
@@ -953,8 +957,33 @@ Porți locale pe candidatul sursă:
   `bdabff0b5e7f4931d386f1b95d92dd3c9499a716e5de7e65ba8935c62d2a213f`;
   lock dev: `052ab1469d523d16a1639a702e13180fc528335e098987616a3cd61f0bd358ce`.
 
-Snapshotul sales 214 și Finance/salary live apply nu sunt mutate de candidat.
-Auditul Terra pe `da2711d` a respins corect lease-ul nereînnoit al operațiilor
-Grile lungi; sursa `40a3798` adaugă heartbeat periodic și anulare fail-closed.
-Auditul independent exact-SHA, CI-ul formal, deployul, probele live cu doi
-workeri și dovada de rollback sunt porțile rămase înainte de `CLOSED LIVE`.
+- audit independent Luna xhigh + Terra xhigh: GO fără P0–P3 pe `6dece2d`; după
+  hotfix, ambele audituri delta pe exact `68fe625` sunt GO, fără blocker;
+- formal CI run `31015421546`: verde, backend `1636 passed, 9 skipped`, frontend,
+  build, locks, dependency/security și secret gates verzi;
+- artifact GitHub digest:
+  `sha256:63063b5640b2baac812fd46ed9f606b7fab28c7988584e3e4e707373b5727ccf`;
+  tar SHA-256:
+  `a5687cb99caaab611ee2837268e875c10dec7e348e65ae53d73b1b453a269847`;
+- deploy formal run `31015795602`, verde; rollback handle verificat în stare
+  `deployed`:
+  `/opt/Mobiup/ops/backups/retail-deploy/20260805T143344Z-1dc07742d590-to-6dece2d9dcc5-37aa2a707ae0b513`;
+- rollbackul direct la `1dc07742` este refuzat corect deoarece manifestul de
+  migrări diferă; strategia sigură este roll-forward. Hotfix-ul `68fe625` este
+  schema-neutral față de `6dece2d` și poate fi revertat separat cu restartul
+  workerului;
+- live pe primary: checkout curat la `68fe625`; backend, operations worker și
+  import worker active; migrarea one-shot `success/0`; health local/public 200,
+  readiness/liveness 200; `/metrics`, `/docs`, `/redoc`, `/openapi.json` 404;
+  zero erori ale serviciilor după hotfix;
+- DB live: migrările 043–046 au checksumurile canonice de mai sus; rolul legacy
+  are zero privilegii write pe tabelele Grile verificate; zero operații Grile
+  queued/running; zero generații/head-uri Finance și zero batchuri salary;
+- snapshotul sales 214 rămâne `completed`, 5.674 rânduri, cutoff `2026-08-04`;
+  head `2026-08` rămâne snapshot 214/revizia 3, ledger maxim 214/revizia 3.
+
+Finance și salary live apply nu au fost executate și rămân **NO-GO** până la
+autorizare explicită. Grile v1 este închis la baseline-ul funcțional de mai sus;
+rezidualul său este acceptat de owner și nu mai consumă timp/CI, deoarece fluxul
+este superseded de Grile v2. P1-B, P1-C, P1-D, P2-A/B/C, P3 și registrul M/R/N
+sunt `CLOSED LIVE`.
