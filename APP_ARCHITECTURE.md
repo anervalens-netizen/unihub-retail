@@ -110,7 +110,9 @@ Migrarea 041 mută ownershipul obiectelor aplicației la NOLOGIN
 `unihub_schema_owner`. Runnerul de migrare este `NOINHERIT`, poate face numai
 `SET LOCAL ROLE unihub_schema_owner` în tranzacția migrației și nu primește
 `CREATEROLE`, `CREATEDB`, superuser sau create pe schema `public`. Extensiile și
-bootstrapul de schemă nouă cer un preflight administrativ separat; web-ul și
+bootstrapul de schemă nouă cer un preflight administrativ separat; tranziția
+istorică 039 -> 041 are un flag one-shot ne-persistent, acceptat numai pentru
+superuserul autentificat direct și exact acel set restant. Web-ul și
 workerii nu pot deveni owner. Funcțiile SECURITY DEFINER controlate au owner,
 `search_path` și EXECUTE allowlist verificate.
 

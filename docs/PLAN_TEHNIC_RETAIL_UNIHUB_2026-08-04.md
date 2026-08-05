@@ -688,7 +688,9 @@ Contractul rezultat:
 Ordinea obligatorie este:
 
 1. oprește backendul și ambii workeri, rulează backupul verificat și salvează business hashes;
-2. aplică 040/041 o singură dată prin identitatea administrativă existentă;
+2. aplică 040/041 o singură dată prin identitatea administrativă existentă,
+   cu `UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP=1` doar în procesul de cutover și
+   fără `UNIHUB_DB_PROCESS_AUTHORITY`; nu persista flagul în `.env`/systemd;
 3. creează cele patru LOGIN-uri de serviciu în boundary-ul operațional separat;
 4. atașează contractele exacte cu provisionerul, verifică zero sesiuni/membri
    legacy și setează `unihub_runtime NOLOGIN`; apoi scrie separat `.env`,
@@ -700,6 +702,11 @@ Ordinea obligatorie este:
 Pasul 3–4 modifică identități/credentiale și este singura confirmare umană
 necesară. Nu se creează `unihub_finance_import` LOGIN și nu se rulează nicio
 operație Finance live.
+
+Runnerul acceptă pasul 2 numai dacă identitatea curentă și cea de sesiune sunt
+același superuser, baza existentă este tracked cu checksums până la 039 și
+exact 040/041 sunt restante. Orice alt set, fresh bootstrap, role switch,
+principal neprivilegiat sau reutilizare după 041 este refuzată.
 
 ### 16.4 Rollback și limite
 

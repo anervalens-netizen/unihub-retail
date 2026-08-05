@@ -86,7 +86,9 @@ async def _expect_denied(connection: asyncpg.Connection, sql: str, *args: object
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated PostgreSQL with CREATEROLE",
 )
-async def test_service_login_provisioner_applies_exact_membership_options() -> None:
+async def test_service_login_provisioner_applies_exact_membership_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     owner_url = os.environ["DATABASE_URL"]
     parsed = urlsplit(owner_url)
     principals = {
@@ -192,6 +194,23 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
             )
         await owner.execute(f'DROP TABLE "{directly_owned_table}"')
 
+        await owner.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+            f'GRANT SELECT ON TABLES TO "{direct_principal}"'
+        )
+        with pytest.raises(RuntimeError, match="direct grants, default privileges, or ownership"):
+            await provision(
+                owner_url,
+                direct_url,
+                authority_roles=frozenset(
+                    {"unihub_web_read", "unihub_business_write"}
+                ),
+            )
+        await owner.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+            f'REVOKE SELECT ON TABLES FROM "{direct_principal}"'
+        )
+
         web_principal, web_password, _ = principals["web"]
         web_url = urlunsplit(
             (
@@ -223,6 +242,30 @@ async def test_service_login_provisioner_applies_exact_membership_options() -> N
                 ),
             )
         await owner.execute(f'REVOKE "{unexpected_role}" FROM "{web_principal}"')
+
+        web_contract = DATABASE_AUTHORITY_CONTRACTS["web"]
+        monkeypatch.setitem(
+            DATABASE_AUTHORITY_CONTRACTS,
+            "web",
+            replace(web_contract, principal=web_principal),
+        )
+        await owner.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+            f'GRANT SELECT ON TABLES TO "{web_principal}"'
+        )
+        web_runtime = await asyncpg.connect(web_url)
+        try:
+            with pytest.raises(
+                RuntimeError,
+                match="direct grants, default privileges, or ownership",
+            ):
+                await verify_database_connection_authority(web_runtime, "web")
+        finally:
+            await web_runtime.close()
+            await owner.execute(
+                f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+                f'REVOKE SELECT ON TABLES FROM "{web_principal}"'
+            )
 
         migrate_principal, migrate_password, _ = principals["migrate"]
         migrate_url = urlunsplit(

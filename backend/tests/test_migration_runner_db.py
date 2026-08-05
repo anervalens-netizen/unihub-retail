@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
+import asyncpg
 import pytest
 
 from db.connection import get_database_url, get_pool
 from db.migration_runner import run_migrations, verify_migrations_current
-from db.migration_runner import MigrationError, MigrationManifest
+from db.migration_runner import (
+    AUTHORITY_CUTOVER_BOOTSTRAP_ENV,
+    AUTHORITY_CUTOVER_MIGRATIONS,
+    MigrationError,
+    MigrationManifest,
+)
 
 
 class _Transaction:
@@ -29,25 +36,36 @@ class _Connection:
         checksum_exists: bool = True,
         rows: dict[str, str | None] | None = None,
         owner_elevation_succeeds: bool = True,
+        superuser: bool = True,
     ) -> None:
         self.has_schema = has_schema
         self.tracking_exists = tracking_exists
         self.checksum_exists = checksum_exists
         self.rows = rows or {}
         self.owner_elevation_succeeds = owner_elevation_succeeds
+        self.superuser = superuser
         self.executed: list[str] = []
         self.closed = False
 
-    async def fetchval(self, sql: str) -> bool:
+    async def fetchval(self, sql: str, *_args: object) -> bool:
         if "current_user = 'unihub_schema_owner'" in sql:
             return self.owner_elevation_succeeds
         if "sales_transactions" in sql:
-            return self.has_schema
+            return self.has_schema and (
+                self.tracking_exists if "schema_migrations" in sql else True
+            )
         if "to_regclass('public.schema_migrations')" in sql:
             return self.tracking_exists
         if "information_schema.columns" in sql:
             return self.checksum_exists
         raise AssertionError(sql)
+
+    async def fetchrow(self, _sql: str) -> dict[str, object]:
+        return {
+            "current_user": "unihub",
+            "session_user": "unihub",
+            "rolsuper": self.superuser,
+        }
 
     async def fetch(self, _sql: str) -> list[dict[str, str | None]]:
         return [
@@ -101,6 +119,51 @@ async def test_runner_is_idempotent_and_advisory_locked() -> None:
         run_migrations(get_database_url()),
     )
     assert results == [[], []]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL",
+)
+async def test_real_admin_authority_cutover_replays_exact_040_041(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    manifest = runner.load_migration_manifest()
+    connection = await asyncpg.connect(get_database_url())
+    try:
+        assert await connection.fetchval(
+            "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
+        )
+        await connection.execute(
+            "DELETE FROM schema_migrations WHERE filename = ANY($1::text[])",
+            sorted(AUTHORITY_CUTOVER_MIGRATIONS),
+        )
+    finally:
+        await connection.close()
+
+    monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
+    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+    assert await run_migrations(get_database_url()) == [
+        "040_db_authority_append_only.sql",
+        "041_schema_owner_handoff.sql",
+    ]
+
+    connection = await asyncpg.connect(get_database_url())
+    try:
+        rows = await connection.fetch(
+            "SELECT filename, checksum FROM schema_migrations "
+            "WHERE filename = ANY($1::text[]) ORDER BY filename",
+            sorted(AUTHORITY_CUTOVER_MIGRATIONS),
+        )
+        assert {row["filename"]: row["checksum"] for row in rows} == {
+            name: manifest.checksums[name]
+            for name in sorted(AUTHORITY_CUTOVER_MIGRATIONS)
+        }
+    finally:
+        await connection.close()
 
 
 @pytest.mark.asyncio
@@ -177,6 +240,67 @@ async def test_restricted_migration_authority_refuses_empty_bootstrap(
     monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
 
     with pytest.raises(MigrationError, match="administrative extension/schema preflight"):
+        await run_migrations("postgresql://unused")
+
+
+@pytest.mark.asyncio
+async def test_admin_authority_cutover_bootstrap_accepts_only_pending_040_041(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    manifest = runner.load_migration_manifest()
+    connection = _Connection(
+        rows={
+            name: checksum
+            for name, checksum in manifest.checksums.items()
+            if name not in AUTHORITY_CUTOVER_MIGRATIONS
+        }
+    )
+    authority_verify = AsyncMock()
+    monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+    monkeypatch.setattr(runner, "verify_database_connection_authority", authority_verify)
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    assert await run_migrations("postgresql://unused") == [
+        "040_db_authority_append_only.sql",
+        "041_schema_owner_handoff.sql",
+    ]
+    assert connection.rows == manifest.checksums
+    authority_verify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("connection", "message"),
+    [
+        (_Connection(rows={}), "exactly migrations 040 and 041"),
+        (_Connection(rows={}, superuser=False), "administrative superuser"),
+    ],
+)
+async def test_admin_authority_cutover_bootstrap_fails_closed(
+    connection: _Connection,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    manifest = runner.load_migration_manifest()
+    if connection.superuser:
+        connection.rows = dict(manifest.checksums)
+    else:
+        connection.rows = {
+            name: checksum
+            for name, checksum in manifest.checksums.items()
+            if name not in AUTHORITY_CUTOVER_MIGRATIONS
+        }
+    monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
+    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    with pytest.raises(MigrationError, match=message):
         await run_migrations("postgresql://unused")
 
 

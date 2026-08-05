@@ -44,12 +44,17 @@ explicită refuză startupul. Nu copia același DSN între procese și nu
 introduce `DATABASE_URL` ca fallback în fișierul de migrare.
 
 Ordinea de cutover este: oprește backendul și cei doi workeri; backup și business hashes;
-aplică 040/041 cu identitatea administrativă existentă; creează cele patru
+aplică 040/041 cu identitatea administrativă existentă și flagul one-shot
+`UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP=1`, fără autoritate de proces; creează cele patru
 LOGIN-uri în boundary-ul operațional separat; atașează contractele exacte cu
 provisionerul; verifică zero sesiuni/membri și setează `unihub_runtime NOLOGIN`
 cu scriptul controlat; scrie DSN-urile fără a le afișa; instalează unitățile și rulează
 `daemon-reload`; execută deployul formal care repornește toate procesele. Orice
 principal/flag/membership diferit oprește startupul.
+
+Flagul de bootstrap nu se persistă în niciun `.env` sau unit. Runnerul îl
+acceptă doar când exact 040/041 sunt restante pe baza existentă, sub
+superuserul autentificat direct; după 041 devine automat inutilizabil.
 
 Nu porni workerii între migrare și finalizarea cutoverului. După 040/041,
 rollbackul la sursă cu manifest vechi este deliberat refuzat; deployul păstrează

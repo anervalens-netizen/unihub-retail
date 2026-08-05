@@ -58,7 +58,13 @@ Migrațiile nu activează singure TVA live sau importul salarial live. Promotion
 
 040 creează grupurile de autoritate, iar 041 preia ownershipul. La upgrade,
 ambele se aplică o singură dată cu identitatea administrativă existentă, înainte
-de schimbarea DSN-urilor. Apoi operatorul creează separat cele patru LOGIN-uri
+de schimbarea DSN-urilor. Invocarea de cutover setează numai pentru acel proces
+`UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP=1`, fără
+`UNIHUB_DB_PROCESS_AUTHORITY`; flagul nu se scrie în `.env*` sau în unități.
+Runnerul acceptă excepția numai pentru un superuser autentificat direct, pe o
+bază existentă cu checksums complete până la 039 și exact 040/041 restante.
+Refuză fresh bootstrap, alt set restant, role switch, principal neprivilegiat
+sau reutilizarea după 041. Apoi operatorul creează separat cele patru LOGIN-uri
 de proces și rulează `provision_runtime_database_role.py --apply` pentru exact
 un contract per LOGIN. Provisionerul nu creează LOGIN, nu setează/parcurge
 parole și nu acordă privilegii pe obiecte; refuză orice grant direct, default
@@ -75,7 +81,7 @@ refuză orice sesiune sau membru rămas și setează exclusiv `unihub_runtime`
 credentialului; nu face un manifest vechi compatibil după 040/041.
 
 Instalările noi fac preflightul administrativ pentru DB/schema/extensii, aplică
-baselineul și 001–041, apoi trec definitiv runnerul la
+baselineul și 001–041 fără flagul de cutover, apoi trec definitiv runnerul la
 `unihub_migration_runner`; runnerul restricționat refuză bootstrapul gol.
 
 După aplicarea unei migrații, down migration și rollbackul la un manifest mai

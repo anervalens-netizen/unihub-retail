@@ -19,6 +19,13 @@ from db.connection import (
 
 
 MIGRATION_ADVISORY_LOCK_ID = 7_221_904_202_607_12
+AUTHORITY_CUTOVER_BOOTSTRAP_ENV = "UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP"
+AUTHORITY_CUTOVER_MIGRATIONS = frozenset(
+    {
+        "040_db_authority_append_only.sql",
+        "041_schema_owner_handoff.sql",
+    }
+)
 BASELINE_REPLAY_MIGRATIONS = frozenset(
     {"014_target_calculator_store_exclusions.sql"}
 )
@@ -49,6 +56,17 @@ async def _activate_migration_owner(connection: asyncpg.Connection) -> None:
         await connection.execute("SET LOCAL ROLE unihub_schema_owner")
         if await connection.fetchval("SELECT current_user = 'unihub_schema_owner'") is not True:
             raise MigrationError("Migration schema-owner elevation failed")
+
+
+def _authority_cutover_bootstrap_enabled() -> bool:
+    value = os.getenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "").strip()
+    if not value:
+        return False
+    if value != "1":
+        raise MigrationError(
+            f"{AUTHORITY_CUTOVER_BOOTSTRAP_ENV} must be exactly 1 for the one-time cutover"
+        )
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +149,56 @@ def _validate_applied(
             raise MigrationError("Applied migration checksum mismatch")
 
 
+async def _verify_authority_cutover_bootstrap(
+    connection: asyncpg.Connection,
+    manifest: MigrationManifest,
+) -> None:
+    """Authorize only the one-time 039 -> 041 admin transition.
+
+    The new migration LOGIN cannot exist before 040 creates its authority
+    groups and 041 creates the stable schema owner. This explicit bridge is
+    deliberately unusable for fresh installs, any other pending set, a
+    configured process authority, or a non-superuser/session-role switch.
+    """
+    if configured_database_authority() is not None:
+        raise MigrationError(
+            "Authority cutover bootstrap cannot be combined with a process authority"
+        )
+    identity = await connection.fetchrow(
+        """
+        SELECT current_user::text AS current_user,
+               session_user::text AS session_user,
+               rolsuper
+        FROM pg_roles
+        WHERE rolname = current_user
+        """
+    )
+    if (
+        identity is None
+        or str(identity["current_user"]) != str(identity["session_user"])
+        or not bool(identity["rolsuper"])
+    ):
+        raise MigrationError(
+            "Authority cutover bootstrap requires the authenticated administrative superuser"
+        )
+    if not bool(
+        await connection.fetchval(
+            "SELECT to_regclass('public.sales_transactions') IS NOT NULL "
+            "AND to_regclass('public.schema_migrations') IS NOT NULL"
+        )
+    ):
+        raise MigrationError(
+            "Authority cutover bootstrap requires an existing tracked application database"
+        )
+    applied = await _tracking_rows(connection)
+    _validate_applied(applied, manifest, allow_missing_checksums=False)
+    pending = set(manifest.checksums) - set(applied)
+    if pending != set(AUTHORITY_CUTOVER_MIGRATIONS):
+        raise MigrationError(
+            "Authority cutover bootstrap is valid only when exactly migrations 040 and 041 are pending"
+        )
+
+
 async def run_migrations(database_url: str | None = None) -> list[str]:
     manifest = load_migration_manifest()
     verify_migration_files(manifest)
@@ -143,8 +211,11 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
     )
     applied_now: list[str] = []
     try:
-        await verify_database_connection_authority(connection)
         await connection.execute("SELECT pg_advisory_lock($1)", MIGRATION_ADVISORY_LOCK_ID)
+        if _authority_cutover_bootstrap_enabled():
+            await _verify_authority_cutover_bootstrap(connection, manifest)
+        else:
+            await verify_database_connection_authority(connection)
         has_application_schema = bool(
             await connection.fetchval(
                 "SELECT to_regclass('public.sales_transactions') IS NOT NULL"
