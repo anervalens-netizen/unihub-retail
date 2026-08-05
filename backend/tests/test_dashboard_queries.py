@@ -47,7 +47,7 @@ def mock_conn():
 class TestStoreIncentiveMultipliers:
     @pytest.mark.asyncio
     async def test_no_rows(self, mock_conn):
-        mock_conn.fetchrow.return_value = FakeRow(is_final=True, last_sale_day=None, days_in_month=31)
+        mock_conn.fetchrow.return_value = FakeRow(business_factor=1.0)
         mock_conn.fetch.return_value = []
         mults, achs = await _get_store_incentive_multipliers(mock_conn, "2026-05", None, None, None, None)
         assert mults == {}
@@ -55,7 +55,7 @@ class TestStoreIncentiveMultipliers:
 
     @pytest.mark.asyncio
     async def test_with_stores(self, mock_conn):
-        mock_conn.fetchrow.return_value = FakeRow(is_final=True, last_sale_day=15, days_in_month=31)
+        mock_conn.fetchrow.return_value = FakeRow(business_factor=1.0)
         mock_conn.fetch.return_value = [
             FakeRow(site_code="S1", store_sales=Decimal("50000"), target=Decimal("60000")),
             FakeRow(site_code="S2", store_sales=Decimal("10000"), target=Decimal("0")),
@@ -67,7 +67,7 @@ class TestStoreIncentiveMultipliers:
 
     @pytest.mark.asyncio
     async def test_forecast_factor(self, mock_conn):
-        mock_conn.fetchrow.return_value = FakeRow(is_final=False, last_sale_day=15, days_in_month=30)
+        mock_conn.fetchrow.return_value = FakeRow(business_factor=2.0)
         mock_conn.fetch.return_value = [
             FakeRow(site_code="S1", store_sales=Decimal("30000"), target=Decimal("60000")),
         ]

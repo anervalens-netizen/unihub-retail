@@ -151,6 +151,8 @@ async def test_reset_rollback_reports_checkpoint_record_failure(
         entries=[entry],
         sheets_svc=object(),
         snapshots={"SITE01": {}},
+        execution_owner="worker-a",
+        execution_epoch=1,
     )
 
     assert restored is False
@@ -182,6 +184,8 @@ async def test_cancel_safe_rollback_clears_existing_cancellation(
         entries=[],
         sheets_svc=object(),
         snapshots={},
+        execution_owner="worker-a",
+        execution_epoch=1,
     )
 
     assert result is True
@@ -206,9 +210,11 @@ async def test_cancel_safe_rollback_returns_false_on_second_interruption(
         grile._rollback_reset_entries_cancel_safe(
             object(),
             operation_id=1,
-            entries=[],
-            sheets_svc=object(),
-            snapshots={},
+                entries=[],
+                sheets_svc=object(),
+                snapshots={},
+                execution_owner="worker-a",
+                execution_epoch=1,
         )
     )
     await started.wait()
