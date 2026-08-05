@@ -46,6 +46,7 @@
     "038_retire_replace_month_snapshot.sql": "bac85ae88b6118e877e73ad444ed3895051a432069b460d802dc2b1144735488",
     "039_store_pnl_authoritative_generations.sql": "4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d",
     "040_db_authority_append_only.sql": "59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9",
-    "041_schema_owner_handoff.sql": "a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311"
+    "041_schema_owner_handoff.sql": "a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311",
+    "042_fieldops_visits_web_authority.sql": "bcd7d79ddd6b47e48567a6fb136f6bda02f25469f51642601ba0c1093f7e4b21"
   }
 }

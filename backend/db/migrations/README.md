@@ -49,6 +49,7 @@ release-ului `v2.1.0` include:
 | 039 | `039_store_pnl_authoritative_generations.sql` | `4d9f3224195bc63b09be6a4642fb585f5a8b8f3c370c76ca799f0f8620f55b9d` | generații Finance immutable, scope/head/ledger și pre-image |
 | 040 | `040_db_authority_append_only.sql` | `59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9` | matrice ACL explicită, ledgers/staging/shadow append-only și head/pointer numai prin SQL/CAS |
 | 041 | `041_schema_owner_handoff.sql` | `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311` | owner NOLOGIN stabil, migration runner NOINHERIT și default ACL fail-closed |
+| 042 | `042_fieldops_visits_web_authority.sql` | `bcd7d79ddd6b47e48567a6fb136f6bda02f25469f51642601ba0c1093f7e4b21` | acordă web-read acces SELECT-only la sursa PostgreSQL FieldOps existentă, fără a crea/însuși sursa externă |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
@@ -81,7 +82,7 @@ refuză orice sesiune sau membru rămas și setează exclusiv `unihub_runtime`
 credentialului; nu face un manifest vechi compatibil după 040/041.
 
 Instalările noi fac preflightul administrativ pentru DB/schema/extensii, aplică
-baselineul și 001–041 fără flagul de cutover, apoi trec definitiv runnerul la
+baselineul și 001–042 fără flagul de cutover, apoi trec definitiv runnerul la
 `unihub_migration_runner`; runnerul restricționat refuză bootstrapul gol.
 
 După aplicarea unei migrații, down migration și rollbackul la un manifest mai

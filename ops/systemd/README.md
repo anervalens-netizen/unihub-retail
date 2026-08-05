@@ -42,6 +42,9 @@ LOGIN: `unihub_web`, `unihub_operations_worker`, `unihub_import_worker`,
 respectiv `unihub_migration_runner`. Orice proces production fără autoritate
 explicită refuză startupul. Nu copia același DSN între procese și nu
 introduce `DATABASE_URL` ca fallback în fișierul de migrare.
+Fișierele sunt `root:<service-group>` mode `0640`: root este singurul writer,
+iar userul serviciilor are read deoarece bootstrapul Python recitește `.env`
+după încărcarea systemd. Mode `0600 root:root` blochează startupul.
 
 Ordinea de cutover este: oprește backendul și cei doi workeri; backup și business hashes;
 aplică 040/041 cu identitatea administrativă existentă și flagul one-shot

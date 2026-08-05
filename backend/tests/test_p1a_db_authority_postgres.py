@@ -25,6 +25,9 @@ from scripts.provision_runtime_database_role import provision
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "db/migrations/040_db_authority_append_only.sql"
 OWNER_MIGRATION = ROOT / "db/migrations/041_schema_owner_handoff.sql"
+FIELDOPS_AUTHORITY_MIGRATION = (
+    ROOT / "db/migrations/042_fieldops_visits_web_authority.sql"
+)
 AUTHORITIES = (
     "unihub_web_read",
     "unihub_business_write",
@@ -76,6 +79,11 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "ALTER SCHEMA public OWNER TO unihub_schema_owner" in owner_sql
     assert "public.reserve_sales_import_grile_run(text,integer)" in owner_sql
     assert "acl.grantee NOT IN (proowner, item.grantee)" in owner_sql
+
+    fieldops_sql = FIELDOPS_AUTHORITY_MIGRATION.read_text(encoding="utf-8")
+    assert "to_regclass('public.fieldops_visits') IS NOT NULL" in fieldops_sql
+    assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read" in fieldops_sql
+    assert "CREATE TABLE" not in fieldops_sql
 
 
 async def _expect_denied(connection: asyncpg.Connection, sql: str, *args: object) -> None:
@@ -471,6 +479,13 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
     principal_connections: dict[str, asyncpg.Connection] = {}
     try:
         await maintenance.execute(f'CREATE DATABASE "{database}"')
+        external = await asyncpg.connect(database_url)
+        try:
+            await external.execute(
+                "CREATE TABLE fieldops_visits (id BIGINT PRIMARY KEY)"
+            )
+        finally:
+            await external.close()
         await run_migrations(database_url)
         connection = await asyncpg.connect(database_url)
         try:
@@ -542,6 +557,7 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
 
             # Every row is an independent authenticated session, not SET ROLE.
             assert await web.fetchval("SELECT COUNT(*) FROM stores") == 0
+            assert await web.fetchval("SELECT COUNT(*) FROM fieldops_visits") == 0
             await _expect_denied(web, "SELECT * FROM sales_import_stage_rows")
 
             # business-write may create online work, but cannot read import evidence.
