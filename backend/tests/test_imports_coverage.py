@@ -17,32 +17,7 @@ from fastapi import HTTPException, UploadFile
 import services.imports as imports_module
 from models import SalesGenerationPromotionRequest
 from services.imports import ImportsService
-from services.jobs import JobPublishUncertainError, JobResult, JobStatus
-from services.sales_generation import SalesGenerationConflictError
-
-
-class _AsyncContext:
-    def __init__(self, value: object) -> None:
-        self.value = value
-
-    async def __aenter__(self) -> object:
-        return self.value
-
-    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> bool:
-        return False
-
-
-class _PromotionConnection:
-    def transaction(self) -> _AsyncContext:
-        return _AsyncContext(None)
-
-
-class _PromotionPool:
-    def __init__(self) -> None:
-        self.connection = _PromotionConnection()
-
-    def acquire(self) -> _AsyncContext:
-        return _AsyncContext(self.connection)
+from services.jobs import JobResult, JobStatus
 
 
 def _service(pool: object | None = None) -> ImportsService:
@@ -371,13 +346,11 @@ async def test_sales_import_recovers_exact_validated_generation_without_requeue(
 
 
 @pytest.mark.asyncio
-async def test_promote_sales_generation_claims_then_enqueues_with_same_owner(
+async def test_promote_sales_generation_enqueues_without_web_db_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pool = _PromotionPool()
-    claim = AsyncMock(return_value="previous-owner")
+    pool = MagicMock()
     enqueue = AsyncMock(return_value=SimpleNamespace(job_id="promotion:1"))
-    monkeypatch.setattr(imports_module, "claim_validated_sales_generation", claim)
     monkeypatch.setattr(imports_module, "enqueue_sales_promotion", enqueue)
     monkeypatch.setattr(
         imports_module,
@@ -392,107 +365,15 @@ async def test_promote_sales_generation_claims_then_enqueues_with_same_owner(
     )
 
     assert result.job_id == "promotion:1"
-    claim_args = claim.await_args
-    assert claim_args is not None
-    owner_id = claim_args.kwargs["new_owner_id"]
+    assert pool.acquire.call_count == 0
     enqueue.assert_awaited_once_with(
         snapshot_id=7,
         generation_token="a" * 36,
-        owner_id=owner_id,
+        owner_id=enqueue.await_args.kwargs["owner_id"],
         manifest_sha256="b" * 64,
         requested_by_sub="owner:123",
         override_reason="operator approved promotion",
     )
-
-
-@pytest.mark.asyncio
-async def test_promote_sales_generation_maps_claim_conflict_before_enqueue(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    enqueue = AsyncMock()
-    monkeypatch.setattr(
-        imports_module,
-        "claim_validated_sales_generation",
-        AsyncMock(side_effect=SalesGenerationConflictError("stale generation")),
-    )
-    monkeypatch.setattr(imports_module, "enqueue_sales_promotion", enqueue)
-
-    with pytest.raises(HTTPException) as exc:
-        await _service(_PromotionPool()).promote_sales_generation(
-            snapshot_id=7,
-            request=_promotion_request(),
-            requested_by_sub="owner:123",
-        )
-
-    assert exc.value.status_code == 409
-    assert exc.value.detail == "stale generation"
-    enqueue.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("restore_fails", [False, True])
-async def test_promote_sales_generation_restores_claim_after_enqueue_fault(
-    monkeypatch: pytest.MonkeyPatch,
-    restore_fails: bool,
-) -> None:
-    claim = AsyncMock(return_value="previous-owner")
-    restore = AsyncMock(
-        side_effect=OSError("restore failed") if restore_fails else None
-    )
-    monkeypatch.setattr(imports_module, "claim_validated_sales_generation", claim)
-    monkeypatch.setattr(
-        imports_module,
-        "enqueue_sales_promotion",
-        AsyncMock(side_effect=OSError("enqueue failed")),
-    )
-    monkeypatch.setattr(imports_module, "restore_sales_generation_claim", restore)
-
-    with pytest.raises(OSError, match="enqueue failed"):
-        await _service(_PromotionPool()).promote_sales_generation(
-            snapshot_id=7,
-            request=_promotion_request(),
-            requested_by_sub="owner:123",
-        )
-
-    restore.assert_awaited_once()
-    restore_args = restore.await_args
-    claim_args = claim.await_args
-    assert restore_args is not None
-    assert claim_args is not None
-    assert restore_args.kwargs["current_owner_id"] == claim_args.kwargs["new_owner_id"]
-    assert restore_args.kwargs["previous_owner_id"] == "previous-owner"
-
-
-@pytest.mark.asyncio
-async def test_promote_sales_generation_does_not_restore_uncertain_publish(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    restore = AsyncMock()
-    monkeypatch.setattr(
-        imports_module,
-        "claim_validated_sales_generation",
-        AsyncMock(return_value="previous-owner"),
-    )
-    monkeypatch.setattr(
-        imports_module,
-        "enqueue_sales_promotion",
-        AsyncMock(side_effect=JobPublishUncertainError(job_id="promotion:unknown")),
-    )
-    monkeypatch.setattr(imports_module, "restore_sales_generation_claim", restore)
-
-    with pytest.raises(JobPublishUncertainError) as exc:
-        await _service(_PromotionPool()).promote_sales_generation(
-            snapshot_id=7,
-            request=_promotion_request(),
-            requested_by_sub="owner:123",
-        )
-
-    assert exc.value.detail == {
-        "status": "unknown",
-        "job_id": "promotion:unknown",
-        "operation_id": None,
-    }
-    restore.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -48,11 +48,6 @@ from services.product_lists import (
     normalize_column_name,
     resolve_path,
 )
-from services.sales_generation import SalesGenerationConflictError
-from services.sales_generation_flow import (
-    claim_validated_sales_generation,
-    restore_sales_generation_claim,
-)
 
 logger = logging.getLogger(__name__)
 DEFAULT_MAX_SALES_UPLOAD_BYTES = 32 * 1024 * 1024
@@ -356,49 +351,14 @@ class ImportsService:
         requested_by_sub: str,
     ) -> ImportJobStatus:
         new_owner_id = str(uuid4())
-        try:
-            async with self.pool.acquire() as conn:
-                async with conn.transaction():
-                    previous_owner_id = await claim_validated_sales_generation(
-                        conn,
-                        snapshot_id=snapshot_id,
-                        generation_token=request.generation_token,
-                        expected_manifest_sha256=request.manifest_sha256,
-                        new_owner_id=new_owner_id,
-                    )
-        except SalesGenerationConflictError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=str(exc),
-            ) from exc
-        try:
-            job = await enqueue_sales_promotion(
-                snapshot_id=snapshot_id,
-                generation_token=request.generation_token,
-                owner_id=new_owner_id,
-                manifest_sha256=request.manifest_sha256,
-                requested_by_sub=requested_by_sub,
-                override_reason=request.override_reason,
-            )
-        except JobPublishUncertainError:
-            raise
-        except Exception:
-            try:
-                async with self.pool.acquire() as conn:
-                    async with conn.transaction():
-                        await restore_sales_generation_claim(
-                            conn,
-                            snapshot_id=snapshot_id,
-                            generation_token=request.generation_token,
-                            current_owner_id=new_owner_id,
-                            previous_owner_id=previous_owner_id,
-                        )
-            except Exception:
-                logger.exception(
-                    "Failed to restore sales generation claim snapshot=%s",
-                    snapshot_id,
-                )
-            raise
+        job = await enqueue_sales_promotion(
+            snapshot_id=snapshot_id,
+            generation_token=request.generation_token,
+            owner_id=new_owner_id,
+            manifest_sha256=request.manifest_sha256,
+            requested_by_sub=requested_by_sub,
+            override_reason=request.override_reason,
+        )
         job_status = await get_job_status(job.job_id)
         return _to_public_import_status(job_status)
 

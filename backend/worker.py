@@ -130,7 +130,11 @@ async def promote_sales_background(
     override_reason: str | None = None,
     request_id: str | None = None,
 ) -> dict:
-    from services.sales_generation_flow import promote_sales_generation
+    from services.sales_generation_flow import (
+        claim_validated_sales_generation,
+        promote_sales_generation,
+        restore_sales_generation_claim,
+    )
 
     token = bind_request_id(request_id) if request_id else None
     try:
@@ -138,20 +142,49 @@ async def promote_sales_background(
         if pool is None:
             from db.connection import get_pool
             pool = await get_pool()
+        promotion_finished = False
+        previous_owner_id: str | None = None
         async with pool.acquire() as conn:
-            source_spool_path = await conn.fetchval(
-                "SELECT source_spool_path FROM import_snapshots WHERE id = $1",
-                snapshot_id,
-            )
-            rows_imported, _ = await promote_sales_generation(
-                conn,
-                snapshot_id=snapshot_id,
-                generation_token=generation_token,
-                owner_id=owner_id,
-                expected_manifest_sha256=manifest_sha256,
-                requested_by_sub=requested_by_sub,
-                override_reason=override_reason,
-            )
+            try:
+                async with conn.transaction():
+                    previous_owner_id = await claim_validated_sales_generation(
+                        conn,
+                        snapshot_id=snapshot_id,
+                        generation_token=generation_token,
+                        expected_manifest_sha256=manifest_sha256,
+                        new_owner_id=owner_id,
+                    )
+                source_spool_path = await conn.fetchval(
+                    "SELECT source_spool_path FROM import_snapshots WHERE id = $1",
+                    snapshot_id,
+                )
+                rows_imported, _ = await promote_sales_generation(
+                    conn,
+                    snapshot_id=snapshot_id,
+                    generation_token=generation_token,
+                    owner_id=owner_id,
+                    expected_manifest_sha256=manifest_sha256,
+                    requested_by_sub=requested_by_sub,
+                    override_reason=override_reason,
+                )
+                promotion_finished = True
+            except Exception:
+                if previous_owner_id is not None and not promotion_finished:
+                    try:
+                        async with conn.transaction():
+                            await restore_sales_generation_claim(
+                                conn,
+                                snapshot_id=snapshot_id,
+                                generation_token=generation_token,
+                                current_owner_id=owner_id,
+                                previous_owner_id=previous_owner_id,
+                            )
+                    except Exception:
+                        logger.exception(
+                            "Failed to restore sales generation claim snapshot=%s",
+                            snapshot_id,
+                        )
+                raise
             row = await conn.fetchrow(
                 """
                 SELECT import_month, filename, rows_in_file, rows_imported,
