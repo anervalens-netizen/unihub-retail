@@ -46,8 +46,10 @@ class _PromotionPool:
 
 
 def _service(pool: object | None = None) -> ImportsService:
+    repo = MagicMock()
+    repo.get_validated_sales_generation = AsyncMock(return_value=None)
     return ImportsService(
-        repo=MagicMock(),
+        repo=repo,
         pool=cast(asyncpg.Pool, pool if pool is not None else MagicMock()),
     )
 
@@ -305,6 +307,67 @@ async def test_sales_import_with_explicit_cutoff_preserves_audit_context(
         cutoff_date="2026-06-20",
         requested_by_sub="owner:123",
     )
+
+
+@pytest.mark.asyncio
+async def test_sales_import_recovers_exact_validated_generation_without_requeue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = MagicMock()
+    repo.get_validated_sales_generation = AsyncMock(
+        return_value={
+            "id": 214,
+            "import_month": "2026-08",
+            "filename": "sales.xlsx",
+            "is_month_final": False,
+            "rows_in_file": 8171,
+            "rows_imported": 5674,
+            "coverage_report": {"stores_present_count": 77},
+            "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
+            "manifest_sha256": "a" * 64,
+            "source_spool_path": "/tmp/sales-spool/source.upload",
+            "manifest": {
+                "generation_state": "validated",
+                "rows_filtered": 2497,
+                "store_count": 77,
+                "agent_count": 147,
+                "cutoff_date": "2026-08-04",
+                "receipt_count": 3870,
+                "site_day_count": 296,
+                "total_value": "100.00",
+                "total_quantity": 10,
+                "business_sha256": "b" * 64,
+                "anomalies": [],
+            },
+        }
+    )
+    enqueue = AsyncMock()
+    monkeypatch.setattr(imports_module, "enqueue_sales_import", enqueue)
+    stage_spool = MagicMock(return_value=Path("/tmp/sales-spool/source.upload"))
+    monkeypatch.setattr(imports_module, "stage_sales_import_spool_file", stage_spool)
+    svc = ImportsService(repo=repo, pool=cast(asyncpg.Pool, MagicMock()))
+
+    result = await svc.import_sales(
+        _upload(b"same sales bytes", "sales.xlsx"),
+        cutoff_date=date(2026, 8, 4),
+        requested_by_sub="owner:123",
+    )
+
+    assert result.status == "complete"
+    assert result.job_id == "sales-staged:214"
+    assert result.result is not None
+    assert result.result.generation_state == "validated"
+    assert result.result.snapshot_id == 214
+    assert result.result.rows_imported == 5674
+    repo.get_validated_sales_generation.assert_awaited_once_with(
+        source_sha256=hashlib.sha256(b"same sales bytes").hexdigest(),
+        cutoff_date=date(2026, 8, 4),
+    )
+    stage_spool.assert_called_once_with(
+        b"same sales bytes",
+        hashlib.sha256(b"same sales bytes").hexdigest(),
+    )
+    enqueue.assert_not_awaited()
 
 
 @pytest.mark.asyncio

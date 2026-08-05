@@ -39,6 +39,8 @@ from services.jobs import (
     enqueue_sales_import,
     enqueue_sales_promotion,
     get_job_status,
+    remove_sales_import_spool_file,
+    stage_sales_import_spool_file,
 )
 from services.product_lists import (
     get_data_dir,
@@ -281,6 +283,58 @@ class ImportsService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Fisierul este gol",
             )
+
+        if cutoff_date is not None:
+            source_sha256 = hashlib.sha256(content).hexdigest()
+            recovered = await self.repo.get_validated_sales_generation(
+                source_sha256=source_sha256,
+                cutoff_date=cutoff_date,
+            )
+            if recovered is not None:
+                spool_path = await asyncio.to_thread(
+                    stage_sales_import_spool_file,
+                    content,
+                    source_sha256,
+                )
+                if str(spool_path) != str(recovered["source_spool_path"]):
+                    await asyncio.to_thread(
+                        remove_sales_import_spool_file,
+                        spool_path,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "Generatia validata foloseste alta cale de sursa; "
+                            "recovery automat refuzat"
+                        ),
+                    )
+                manifest = recovered["manifest"]
+                if isinstance(manifest, str):
+                    manifest = json.loads(manifest)
+                coverage_report = recovered["coverage_report"]
+                if isinstance(coverage_report, str):
+                    coverage_report = json.loads(coverage_report)
+                manifest = dict(manifest or {})
+                return ImportJobStatus(
+                    job_id=f"sales-staged:{int(recovered['id'])}",
+                    status="complete",
+                    result=ImportResponse(
+                        import_month=str(recovered["import_month"]),
+                        rows_in_file=int(recovered["rows_in_file"] or 0),
+                        rows_imported=int(recovered["rows_imported"] or 0),
+                        rows_filtered=int(manifest.get("rows_filtered", 0)),
+                        store_count=int(manifest.get("store_count", 0)),
+                        agent_count=int(manifest.get("agent_count", 0)),
+                        snapshot_id=int(recovered["id"]),
+                        filename=str(recovered["filename"]),
+                        is_month_final=bool(recovered["is_month_final"]),
+                        coverage_report=dict(coverage_report or {}),
+                        generation_state="validated",
+                        generation_token=str(recovered["generation_token"]),
+                        manifest_sha256=str(recovered["manifest_sha256"]),
+                        manifest=manifest,
+                    ),
+                )
 
         if cutoff_date is None and requested_by_sub == "legacy-direct":
             job = await enqueue_sales_import(content, filename=file.filename)

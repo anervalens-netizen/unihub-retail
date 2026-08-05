@@ -133,7 +133,7 @@ def get_sales_import_spool_dir() -> Path:
     return path.resolve()
 
 
-def _stage_sales_import(content: bytes, digest: str) -> Path:
+def stage_sales_import_spool_file(content: bytes, digest: str) -> Path:
     spool_dir = get_sales_import_spool_dir()
     spool_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     destination = spool_dir / f"{digest}.upload"
@@ -339,7 +339,11 @@ async def enqueue_sales_import(
         f"{digest}:{cutoff_date or 'detected'}".encode("utf-8")
     ).hexdigest()
     job_id = f"sales-import:{request_digest}"
-    spool_path = await asyncio.to_thread(_stage_sales_import, file_content, digest)
+    spool_path = await asyncio.to_thread(
+        stage_sales_import_spool_file,
+        file_content,
+        digest,
+    )
     enqueue_args = (
         "import_sales_background",
         str(spool_path),
