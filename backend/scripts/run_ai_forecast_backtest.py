@@ -6,9 +6,9 @@ import json
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 import asyncpg
@@ -520,9 +520,9 @@ async def run(args: argparse.Namespace) -> int:
                             "series_ids": payload["series_ids"],
                         }
                         api_url = args.forecast_api_url
-                    started = datetime.now()
+                    started = monotonic()
                     response = post_forecast(api_url, api_key or "", payload, args.timeout)
-                    latency = (datetime.now() - started).total_seconds()
+                    latency = monotonic() - started
                     predictions = parse_forecast_response(response, metric=args.metric)
                     month_rows = model_result_rows(
                         model=model,

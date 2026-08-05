@@ -237,4 +237,3 @@ def test_runtime_salary_surface_scan_passes_and_rejects_raw_identity(tmp_path: P
     (runtime / "salarii.py").write_text("def salary():\n    return {'cnp': 'forbidden'}\n", encoding="utf-8")
     with pytest.raises(SalaryImportApprovalError):
         scan_runtime_salary_surfaces(tmp_path)
-    canonical_json_bytes,

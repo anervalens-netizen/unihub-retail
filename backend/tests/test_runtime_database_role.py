@@ -86,6 +86,37 @@ def test_grile_monthly_manifest_migration_grants_established_runtime_role() -> N
     )
 
 
+def test_legacy_runtime_grile_authority_is_fully_revoked() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "db/migrations/046_revoke_legacy_grile_authority.sql"
+    ).read_text(encoding="utf-8")
+    for relation in (
+        "agent_targets",
+        "grile_sheets",
+        "grile_runs",
+        "grile_store_status",
+        "grile_store_current_status",
+        "grile_store_observations",
+        "grile_store_projection_generations",
+        "grile_store_refreshes",
+        "grile_run_store_generations",
+        "grile_monthly_operations",
+        "grile_monthly_manifests",
+        "grile_monthly_reset_items",
+        "grile_agent_target_sync_runs",
+        "grile_runs_id_seq",
+        "grile_store_observations_id_seq",
+        "grile_store_refreshes_id_seq",
+        "grile_monthly_operations_id_seq",
+        "grile_monthly_manifests_id_seq",
+        "grile_monthly_reset_items_id_seq",
+        "grile_agent_target_sync_runs_id_seq",
+    ):
+        assert relation in source
+    assert source.count("FROM unihub_runtime") == 2
+
+
 @pytest.mark.anyio
 @pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",

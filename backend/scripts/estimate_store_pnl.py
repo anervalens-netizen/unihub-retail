@@ -36,6 +36,7 @@ from services.fiscal_rules import (
     legacy_gross_to_net,
     standard_vat_ruleset_hash,
 )
+from business_clock import business_today
 
 REPO_DIR = BACKEND_DIR.parent
 LEGACY_MODEL_VERSION = "store-pnl-estimator-v2"
@@ -382,7 +383,7 @@ def all_missing_targets(
     *,
     input_cutoff: date | None = None,
 ) -> set[tuple[str, date, str]]:
-    today = (input_cutoff or date.today()).replace(day=1)
+    today = (input_cutoff or business_today()).replace(day=1)
     actual_store_months = {
         (row["company_name"], row["period"], row["site_code"])
         for row in actual

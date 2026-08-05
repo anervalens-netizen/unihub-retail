@@ -10,9 +10,9 @@ import urllib.error
 import urllib.request
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from time import monotonic
 from typing import Any, Literal
 
 import asyncpg
@@ -586,9 +586,9 @@ async def run(args: argparse.Namespace) -> int:
             )
             if not payload["inputs"]:
                 raise RuntimeError("Nicio serie eligibila pentru rularea operationala.")
-            started = datetime.now()
+            started = monotonic()
             response = post_forecast(args.api_url, api_key, payload, args.timeout)
-            latency = (datetime.now() - started).total_seconds()
+            latency = monotonic() - started
             predictions = parse_predictions(response, metric=args.metric)
             result_rows = build_result_rows(
                 target_months=target_months,
@@ -643,9 +643,9 @@ async def run(args: argparse.Namespace) -> int:
                 )
                 if not payload["inputs"]:
                     raise RuntimeError(f"Nicio serie eligibila pentru {target_month}.")
-                started = datetime.now()
+                started = monotonic()
                 response = post_forecast(args.api_url, api_key, payload, args.timeout)
-                latency = (datetime.now() - started).total_seconds()
+                latency = monotonic() - started
                 predictions = parse_predictions(response, metric=args.metric)
                 result_rows = build_result_rows(
                     target_months=[target_month],

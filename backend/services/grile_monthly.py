@@ -685,8 +685,8 @@ async def ensure_reset_items(
     closing_month_key: str,
     next_month_key: str,
     entries: list[StoreEntry],
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> None:
     await persist_reset_items(
         pool,
@@ -726,8 +726,8 @@ async def mark_reset_item_running(
     *,
     operation_id: int,
     site_code: str,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     return await persist_reset_item_claim(
         pool,
@@ -2379,6 +2379,8 @@ async def _reset_month_execution(
     if google_adapter is None:
         sheets_svc, _ = build_google_services()
     if operation_id is not None and not dry_run:
+        assert execution_owner is not None
+        assert execution_epoch is not None
         await ensure_reset_items(
             pool,
             operation_id=operation_id,

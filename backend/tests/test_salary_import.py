@@ -653,4 +653,3 @@ async def test_salary_existing_identity_name_conflict_has_zero_writes(
             await conn.execute("DELETE FROM salary_import_batches WHERE year = 2099 AND month = 9")
             await conn.execute("DELETE FROM salary_private.people WHERE person_id = $1", person_id)
         await close_db_pool()
-    canonical_json_bytes,

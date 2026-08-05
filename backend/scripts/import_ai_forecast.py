@@ -5,14 +5,21 @@ import asyncio
 import csv
 import json
 import os
+import sys
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Literal
 
 import asyncpg
 from dotenv import find_dotenv, load_dotenv
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from business_clock import business_now
 
 
 MetricName = Literal["sales_value", "units"]
@@ -240,7 +247,7 @@ async def import_forecast(args: argparse.Namespace) -> int:
                     args.model_name,
                     args.mode,
                     args.variant,
-                    datetime.now(),
+                    business_now(),
                     json.dumps(metadata),
                 )
                 for row in month_rows:

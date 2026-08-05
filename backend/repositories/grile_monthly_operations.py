@@ -525,8 +525,8 @@ async def finish_reset_success(
     manifest_id: int,
     expected_manifest_sha256: str,
     consumed_manifest: dict[str, Any],
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> dict[str, Any]:
     expected = reset_manifest.get("expected") or {}
     processed = reset_manifest.get("processed") or {}
@@ -552,6 +552,15 @@ async def finish_reset_success(
                 WHERE operation_id = $1
                   AND operation = 'reset'
                   AND status = 'building'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM grile_monthly_operations operation
+                      WHERE operation.id = $1
+                        AND operation.status = 'running'
+                        AND operation.execution_owner = $13
+                        AND operation.execution_epoch = $14
+                        AND operation.execution_lease_until > now()
+                  )
                 RETURNING {_MANIFEST_COLUMNS}
                 """,
                 operation_id,
@@ -566,6 +575,8 @@ async def finish_reset_success(
                 json.dumps(reset_manifest.get("source_backups", []), ensure_ascii=False),
                 json.dumps(reset_manifest, ensure_ascii=False),
                 reset_manifest.get("manifest_sha256"),
+                execution_owner,
+                execution_epoch,
             )
             if reset_record is None:
                 raise RuntimeError("Reset manifest lost its building lease")
@@ -582,9 +593,9 @@ async def finish_reset_success(
                   AND dry_run = false
                   AND status = 'running'
                   AND approved_manifest_id = $3
-                  AND ($4::text IS NULL OR execution_owner = $4)
-                  AND ($5::bigint IS NULL OR execution_epoch = $5)
-                  AND ($4::text IS NULL OR execution_lease_until IS NULL OR execution_lease_until > now())
+                  AND execution_owner = $4
+                  AND execution_epoch = $5
+                  AND execution_lease_until > now()
                 RETURNING id
                 """,
                 operation_id,
@@ -937,8 +948,8 @@ async def ensure_reset_items(
     closing_month: str,
     next_month: str,
     entries: Sequence[ResetItemInput],
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> None:
     async with pool.acquire() as conn:
         await conn.executemany(
@@ -952,9 +963,10 @@ async def ensure_reset_items(
                 SELECT 1
                 FROM grile_monthly_operations operation
                 WHERE operation.id = $1
-                  AND ($9::text IS NULL OR operation.execution_owner = $9)
-                  AND ($10::bigint IS NULL OR operation.execution_epoch = $10)
-                  AND ($9::text IS NULL OR operation.execution_lease_until IS NULL OR operation.execution_lease_until > now())
+                  AND operation.status = 'running'
+                  AND operation.execution_owner = $9
+                  AND operation.execution_epoch = $10
+                  AND operation.execution_lease_until > now()
             )
             ON CONFLICT (operation_id, site_code) DO NOTHING
             """,
@@ -1003,8 +1015,8 @@ async def claim_reset_item(
     *,
     operation_id: int,
     site_code: str,
-    execution_owner: str | None = None,
-    execution_epoch: int | None = None,
+    execution_owner: str,
+    execution_epoch: int,
 ) -> bool:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -1019,9 +1031,10 @@ async def claim_reset_item(
                   SELECT 1
                   FROM grile_monthly_operations operation
                   WHERE operation.id = $1
-                    AND ($3::text IS NULL OR operation.execution_owner = $3)
-                    AND ($4::bigint IS NULL OR operation.execution_epoch = $4)
-                    AND ($3::text IS NULL OR operation.execution_lease_until IS NULL OR operation.execution_lease_until > now())
+                    AND operation.status = 'running'
+                    AND operation.execution_owner = $3
+                    AND operation.execution_epoch = $4
+                    AND operation.execution_lease_until > now()
               )
             RETURNING id
             """,
@@ -1456,7 +1469,7 @@ async def mark_reconciliation_result(
             WHERE id = $1
               AND execution_owner = $2
               AND execution_epoch = $3
-              AND (execution_lease_until IS NULL OR execution_lease_until > now())
+              AND execution_lease_until > now()
             RETURNING id
             """,
             operation_id,
@@ -1497,7 +1510,7 @@ async def mark_item_recovery_required(
                   WHERE operation.id = item.operation_id
                     AND operation.execution_owner = $3
                     AND operation.execution_epoch = $4
-                    AND (operation.execution_lease_until IS NULL OR operation.execution_lease_until > now())
+                    AND operation.execution_lease_until > now()
               )
             RETURNING id
             """,
@@ -1536,7 +1549,7 @@ async def mark_item_safe_retry(
                   WHERE operation.id = item.operation_id
                     AND operation.execution_owner = $3
                     AND operation.execution_epoch = $4
-                    AND (operation.execution_lease_until IS NULL OR operation.execution_lease_until > now())
+                    AND operation.execution_lease_until > now()
               )
             RETURNING id
             """,

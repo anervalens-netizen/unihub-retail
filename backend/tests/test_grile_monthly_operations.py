@@ -235,6 +235,8 @@ async def test_reset_checkpoint_claim_and_finish_are_compare_and_set() -> None:
             closing_month_key=month,
             next_month_key="2099-10",
             entries=[StoreEntry("Mobiup", "Store 1", "sheet-1", "SITE01", "Manager")],
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
 
         claims = await asyncio.gather(
@@ -277,6 +279,58 @@ async def test_reset_checkpoint_claim_and_finish_are_compare_and_set() -> None:
                 operation_id,
             )
         assert dict(item) == {"status": "completed", "error_message": None}
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE grile_monthly_operations
+                SET execution_owner = 'reconciler',
+                    execution_epoch = 2,
+                    execution_lease_until = now() + interval '5 minutes'
+                WHERE id = $1
+                """,
+                operation_id,
+            )
+        await ensure_reset_items(
+            pool,
+            operation_id=operation_id,
+            closing_month_key=month,
+            next_month_key="2099-10",
+            entries=[StoreEntry("Mobiup", "Store 2", "sheet-2", "SITE02", "Manager")],
+            execution_owner="worker-a",
+            execution_epoch=1,
+        )
+        async with pool.acquire() as conn:
+            assert await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM grile_monthly_reset_items
+                WHERE operation_id = $1 AND site_code = 'SITE02'
+                """,
+                operation_id,
+            ) == 0
+        await ensure_reset_items(
+            pool,
+            operation_id=operation_id,
+            closing_month_key=month,
+            next_month_key="2099-10",
+            entries=[StoreEntry("Mobiup", "Store 2", "sheet-2", "SITE02", "Manager")],
+            execution_owner="reconciler",
+            execution_epoch=2,
+        )
+        assert await mark_reset_item_running(
+            pool,
+            operation_id=operation_id,
+            site_code="SITE02",
+            execution_owner="worker-a",
+            execution_epoch=1,
+        ) is False
+        assert await mark_reset_item_running(
+            pool,
+            operation_id=operation_id,
+            site_code="SITE02",
+            execution_owner="reconciler",
+            execution_epoch=2,
+        ) is True
     finally:
         await _cleanup(month)
         await close_db_pool()
@@ -307,6 +361,8 @@ async def test_failed_reset_rollback_is_uncertain_and_blocks_retry() -> None:
             closing_month_key=month,
             next_month_key="2099-11",
             entries=[StoreEntry("Mobiup", "Store 1", "sheet-1", "SITE01", "Manager")],
+            execution_owner="worker-a",
+            execution_epoch=1,
         )
         assert await mark_reset_item_running(
             pool,
@@ -794,8 +850,14 @@ async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic
             requested_by_sub="reset-subject",
             approved_manifest_id=int(persisted_archive["id"]),
         )
-        reset_start = await start_monthly_operation(pool, reset_reservation.operation_id)
+        reset_start = await start_monthly_operation(
+            pool,
+            reset_reservation.operation_id,
+            execution_owner="reset-worker",
+        )
         assert reset_start.status == "started"
+        assert reset_start.operation is not None
+        reset_epoch = int(reset_start.operation["execution_epoch"])
         reset_manifest = grile_monthly.base_manifest(
             month=month,
             operation="reset",
@@ -827,6 +889,8 @@ async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic
                 manifest_id=int(persisted_archive["id"]),
                 expected_manifest_sha256="0" * 64,
                 consumed_manifest=consumed_payload,
+                execution_owner="reset-worker",
+                execution_epoch=reset_epoch,
             )
         async with pool.acquire() as conn:
             state_after_failed_commit = await conn.fetchrow(
@@ -842,6 +906,29 @@ async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic
             "operation_status": "running",
             "manifest_status": "building",
         }
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE grile_monthly_operations
+                SET execution_owner = 'reset-reconciler',
+                    execution_epoch = execution_epoch + 1,
+                    execution_lease_until = now() + interval '5 minutes'
+                WHERE id = $1
+                """,
+                reset_reservation.operation_id,
+            )
+        with pytest.raises(RuntimeError, match="building lease"):
+            await finish_reset_success(
+                pool,
+                reset_reservation.operation_id,
+                result={"status": "success"},
+                reset_manifest=reset_manifest,
+                manifest_id=int(persisted_archive["id"]),
+                expected_manifest_sha256=approved_payload["manifest_sha256"],
+                consumed_manifest=consumed_payload,
+                execution_owner="reset-worker",
+                execution_epoch=reset_epoch,
+            )
         committed_reset = await finish_reset_success(
             pool,
             reset_reservation.operation_id,
@@ -850,6 +937,8 @@ async def test_manifest_approval_and_reset_consumption_are_persistent_and_atomic
             manifest_id=int(persisted_archive["id"]),
             expected_manifest_sha256=approved_payload["manifest_sha256"],
             consumed_manifest=consumed_payload,
+            execution_owner="reset-reconciler",
+            execution_epoch=reset_epoch + 1,
         )
         assert committed_reset["status"] == "verified"
 

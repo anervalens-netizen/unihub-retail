@@ -320,13 +320,21 @@ async def test_operation_state_helpers_issue_expected_updates() -> None:
         closing_month_key="2026-06",
         next_month_key="2026-07",
         entries=[entry()],
+        execution_owner="worker",
+        execution_epoch=1,
     )
     previous = await grile.get_previous_completed_reset_item(
         pool,
         closing_month_key="2026-06",
         site_code="SITE01",
     )
-    await grile.mark_reset_item_running(pool, operation_id=1, site_code="SITE01")
+    await grile.mark_reset_item_running(
+        pool,
+        operation_id=1,
+        site_code="SITE01",
+        execution_owner="worker",
+        execution_epoch=1,
+    )
     await grile.finish_reset_item(
         pool,
         operation_id=1,
