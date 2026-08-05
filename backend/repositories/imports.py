@@ -37,7 +37,9 @@ class ImportsRepository:
                 """
                 SELECT id, import_month, filename, is_month_final, rows_in_file,
                        rows_imported, coverage_report, generation_token,
-                       manifest_sha256, manifest, source_spool_path
+                       manifest_sha256, manifest, source_spool_path, owner_id,
+                       source_artifact_required, source_artifact_state,
+                       source_artifact_sha256, source_artifact_bytes
                 FROM import_snapshots
                 WHERE status = 'processing'
                   AND source_sha256 = $1

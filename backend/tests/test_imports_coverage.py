@@ -40,6 +40,17 @@ def _upload(content: bytes = b"report", filename: str | None = "promo.xlsx") -> 
     return UploadFile(file=BytesIO(content), filename=filename)
 
 
+class _AsyncContext:
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    async def __aenter__(self) -> object:
+        return self.value
+
+    async def __aexit__(self, *_args: object) -> bool:
+        return False
+
+
 def _promotion_config(*, source_file: str = "@GENERATION_ACTUALS@") -> dict[str, object]:
     return {
         "promotions": [
@@ -308,6 +319,10 @@ async def test_sales_import_recovers_exact_validated_generation_without_requeue(
             "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
             "manifest_sha256": "a" * 64,
             "source_spool_path": "/tmp/sales-spool/source.upload",
+            "source_artifact_required": False,
+            "source_artifact_state": None,
+            "source_artifact_sha256": None,
+            "source_artifact_bytes": None,
             "manifest": {
                 "generation_state": "validated",
                 "rows_filtered": 2497,
@@ -350,6 +365,140 @@ async def test_sales_import_recovers_exact_validated_generation_without_requeue(
         hashlib.sha256(b"same sales bytes").hexdigest(),
     )
     enqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sales_import_recovers_from_retained_artifact_without_restaging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_sha256 = hashlib.sha256(b"same sales bytes").hexdigest()
+    repo = MagicMock()
+    repo.get_validated_sales_generation = AsyncMock(
+        return_value={
+            "id": 214,
+            "import_month": "2026-08",
+            "filename": "sales.xlsx",
+            "is_month_final": False,
+            "rows_in_file": 1,
+            "rows_imported": 1,
+            "coverage_report": {},
+            "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
+            "owner_id": "a8bc1c44-752f-43c7-b0b0-f99b95134a74",
+            "manifest_sha256": "a" * 64,
+            "source_spool_path": f"/tmp/sales-spool/retained/{source_sha256}.source",
+            "source_artifact_required": True,
+            "source_artifact_state": "artifact_retained",
+            "source_artifact_sha256": source_sha256,
+            "source_artifact_bytes": len(b"same sales bytes"),
+            "manifest": {"generation_state": "validated"},
+        }
+    )
+    verify = MagicMock(return_value=len(b"same sales bytes"))
+    stage = MagicMock()
+    monkeypatch.setattr(imports_module, "verify_sales_import_artifact", verify)
+    monkeypatch.setattr(imports_module, "stage_sales_import_spool_file", stage)
+
+    result = await ImportsService(
+        repo=repo,
+        pool=cast(asyncpg.Pool, MagicMock()),
+    ).import_sales(
+        _upload(b"same sales bytes", "sales.xlsx"),
+        cutoff_date=date(2026, 8, 4),
+        requested_by_sub="owner:123",
+    )
+
+    assert result.status == "complete"
+    verify.assert_called_once_with(
+        f"/tmp/sales-spool/retained/{source_sha256}.source",
+        source_sha256,
+        len(b"same sales bytes"),
+    )
+    stage.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expected_retained_path", [False, True])
+async def test_sales_import_exact_retry_repairs_missing_retention_state(
+    monkeypatch: pytest.MonkeyPatch,
+    expected_retained_path: bool,
+) -> None:
+    content = b"same sales bytes"
+    source_sha256 = hashlib.sha256(content).hexdigest()
+    owner_id = "a8bc1c44-752f-43c7-b0b0-f99b95134a74"
+    token = "58daa48f-ceb4-4963-88ab-441a46fedd64"
+    repo = MagicMock()
+    repo.get_validated_sales_generation = AsyncMock(
+        return_value={
+            "id": 214,
+            "import_month": "2026-08",
+            "filename": "sales.xlsx",
+            "is_month_final": False,
+            "rows_in_file": 1,
+            "rows_imported": 1,
+            "coverage_report": {},
+            "generation_token": token,
+            "owner_id": owner_id,
+            "manifest_sha256": "a" * 64,
+            "source_spool_path": (
+                f"/tmp/sales-spool/retained/{source_sha256}.source"
+                if expected_retained_path
+                else f"/tmp/sales-spool/{source_sha256}.upload"
+            ),
+            "source_artifact_required": True,
+            "source_artifact_state": None,
+            "source_artifact_sha256": None,
+            "source_artifact_bytes": None,
+            "manifest": {"generation_state": "validated"},
+        }
+    )
+    spool_path = Path(f"/tmp/sales-spool/{source_sha256}.upload")
+    retained_path = Path(f"/tmp/sales-spool/retained/{source_sha256}.source")
+    monkeypatch.setattr(
+        imports_module,
+        "stage_sales_import_spool_file",
+        MagicMock(return_value=spool_path),
+    )
+    monkeypatch.setattr(
+        imports_module,
+        "retain_sales_import_spool_file",
+        MagicMock(return_value=retained_path),
+    )
+    attach = AsyncMock()
+    mark = AsyncMock()
+    monkeypatch.setattr(imports_module, "attach_sales_generation_source", attach)
+    monkeypatch.setattr(imports_module, "mark_sales_generation_artifact_retained", mark)
+    connection = MagicMock()
+    pool = MagicMock()
+    pool.acquire.return_value = _AsyncContext(connection)
+
+    result = await ImportsService(
+        repo=repo,
+        pool=cast(asyncpg.Pool, pool),
+    ).import_sales(
+        _upload(content, "sales.xlsx"),
+        cutoff_date=date(2026, 8, 4),
+        requested_by_sub="owner:123",
+    )
+
+    assert result.status == "complete"
+    attach.assert_awaited_once_with(
+        connection,
+        snapshot_id=214,
+        generation_token=token,
+        owner_id=owner_id,
+        source_spool_path=str(spool_path),
+        source_sha256=source_sha256,
+        source_byte_size=len(content),
+    )
+    mark.assert_awaited_once_with(
+        connection,
+        snapshot_id=214,
+        generation_token=token,
+        owner_id=owner_id,
+        retained_path=str(retained_path),
+        source_sha256=source_sha256,
+        source_byte_size=len(content),
+    )
 
 
 @pytest.mark.asyncio

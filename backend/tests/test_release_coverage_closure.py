@@ -47,6 +47,10 @@ def _validated_generation(*, spool_path: str, encode_json: bool = False) -> dict
         "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
         "manifest_sha256": "a" * 64,
         "source_spool_path": spool_path,
+        "source_artifact_required": False,
+        "source_artifact_state": None,
+        "source_artifact_sha256": None,
+        "source_artifact_bytes": None,
         "manifest": json.dumps(manifest) if encode_json else manifest,
     }
 

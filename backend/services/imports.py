@@ -35,12 +35,18 @@ from services.jobs import (
     JobPublishUncertainError,
     JobResult,
     JobStatus,
+    retain_sales_import_spool_file,
     enqueue_grile_check,
     enqueue_sales_import,
     enqueue_sales_promotion,
     get_job_status,
     remove_sales_import_spool_file,
     stage_sales_import_spool_file,
+    verify_sales_import_artifact,
+)
+from services.sales_generation_flow import (
+    attach_sales_generation_source,
+    mark_sales_generation_artifact_retained,
 )
 from services.product_lists import (
     get_data_dir,
@@ -301,23 +307,73 @@ class ImportsService:
                 cutoff_date=cutoff_date,
             )
             if recovered is not None:
-                spool_path = await asyncio.to_thread(
-                    stage_sales_import_spool_file,
-                    content,
-                    source_sha256,
-                )
-                if str(spool_path) != str(recovered["source_spool_path"]):
+                expected_path = str(recovered["source_spool_path"])
+                artifact_required = bool(recovered["source_artifact_required"])
+                artifact_state = recovered["source_artifact_state"]
+                if artifact_required and artifact_state == "artifact_retained":
                     await asyncio.to_thread(
-                        remove_sales_import_spool_file,
-                        spool_path,
+                        verify_sales_import_artifact,
+                        expected_path,
+                        source_sha256,
+                        len(content),
                     )
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            "Generatia validata foloseste alta cale de sursa; "
-                            "recovery automat refuzat"
-                        ),
+                else:
+                    spool_path = await asyncio.to_thread(
+                        stage_sales_import_spool_file,
+                        content,
+                        source_sha256,
                     )
+                    canonical_retained_path = (
+                        spool_path.parent / "retained" / f"{source_sha256}.source"
+                    )
+                    allowed_recovery_paths = (
+                        {str(spool_path), str(canonical_retained_path)}
+                        if artifact_required
+                        else {str(spool_path)}
+                    )
+                    if expected_path not in allowed_recovery_paths:
+                        await asyncio.to_thread(
+                            remove_sales_import_spool_file,
+                            spool_path,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                "Generatia validata foloseste alta cale de sursa; "
+                                "recovery automat refuzat"
+                            ),
+                        )
+                    if artifact_required:
+                        generation_token = str(recovered["generation_token"])
+                        owner_id = str(recovered["owner_id"])
+                        async with self.pool.acquire() as conn:
+                            await attach_sales_generation_source(
+                                conn,
+                                snapshot_id=int(recovered["id"]),
+                                generation_token=generation_token,
+                                owner_id=owner_id,
+                                source_spool_path=str(spool_path),
+                                source_sha256=source_sha256,
+                                source_byte_size=len(content),
+                            )
+                        retained_path = await asyncio.to_thread(
+                            retain_sales_import_spool_file,
+                            spool_path,
+                            import_month=str(recovered["import_month"]),
+                            snapshot_id=int(recovered["id"]),
+                            expected_digest=source_sha256,
+                            expected_bytes=len(content),
+                        )
+                        async with self.pool.acquire() as conn:
+                            await mark_sales_generation_artifact_retained(
+                                conn,
+                                snapshot_id=int(recovered["id"]),
+                                generation_token=generation_token,
+                                owner_id=owner_id,
+                                retained_path=str(retained_path),
+                                source_sha256=source_sha256,
+                                source_byte_size=len(content),
+                            )
                 manifest = recovered["manifest"]
                 if isinstance(manifest, str):
                     manifest = json.loads(manifest)
