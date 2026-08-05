@@ -639,8 +639,9 @@ aprobare operațională distinctă.
 ### 16.1 Candidat tehnic pregătit
 
 Implementarea M-06, M-07, R-01 și R-02 pornește din `83194c653b784dce62123e7f6f655a8c94d3315f`.
-Lanțul integrat până la contractele finale este `2b944de`; SHA-ul candidatului
-formal și dovezile live se completează în 16.5 după gate/QA/deploy.
+Lanțul integrat până la contractele inițiale este `2b944de`; candidatul formal
+corectat, auditat și deployat este
+`4cc3d322e0c0559615c642568fe914af29370b8e`.
 
 Migrații immutable:
 
@@ -670,8 +671,10 @@ Contractul rezultat:
   head CAS, ledger și complete pentru toate scope-urile ambelor companii;
 - `authoritative_replace` păstrează reducerile față de snapshotul precedent ca
   informație și blochează numai contradicții interne ale candidatului;
-- sursa externă `fieldops_visits` păstrează ownerul ei și permite webului numai
-  SELECT owner-issued, non-grantable prin `unihub_web_read`; 042 refuză orice
+- 041 nu preia obiecte deținute de un owner extern; în producție,
+  `fieldops_visits` era deținut de principalul administrativ al schemei și a
+  trecut controlat la `unihub_schema_owner`. Webul primește numai SELECT
+  owner-issued, non-grantable prin `unihub_web_read`; 042 refuză orice
   privilegiu prin `unihub_business_write`, LOGIN-ul web direct, PUBLIC,
   ACL-uri columnare sau membershipuri moștenite;
 - Finance are grupul și contractul viitorului principal
@@ -739,8 +742,69 @@ pre-image-ul nu se șterg. P1-A nu rezolvă lifecycle-ul artefactului sales
 
 ### 16.5 Închidere live
 
-**PENDING OPERATIONAL CUTOVER** până la un singur gate CI-shaped, GO Terra + Luna
-pe același SHA, CI formal pe `main`, boundary-ul de identități, deploy,
-verificarea live și cleanup. Acest marker este dovada explicită că nu declarăm
-prematur live closure; nu este un defect al candidatului pre-deploy. P1-B nu
-începe înainte de verdictul `CLOSED LIVE` aici.
+Identitate release și gate-uri:
+
+- source/artifact SHA: `4cc3d322e0c0559615c642568fe914af29370b8e`;
+- CI formal `30982550494`, integral verde; artifact GitHub digest
+  `sha256:18240bf1a36b7764275dd30e5b269fb1dbf64fa06b2999c6dba748c6747a086f`;
+- tarball verificat prin `SHA256SUMS`, SHA-256
+  `95f5dbdf7d597b310e17d10cd187e25ff3369d1ab0b4a4f846e0437dad947c65`;
+- deploy formal `30982809274`, verde; rollback handle
+  `/opt/Mobiup/ops/backups/retail-deploy/20260805T065144Z-2e506e34483c-to-4cc3d322e0c0-dd26ab38fe8413db`;
+- migrațiile live 040/041/042 au exact checksumurile din 16.1;
+- Terra xhigh și Luna xhigh au auditat independent același SHA exact și au dat
+  GO, fără findings P0/P1/P2; Luna a rulat 56 verificări PostgreSQL/Valkey
+  izolate. Finance nu a fost exercitat live.
+
+Findings și candidați refuzați înainte de release:
+
+- granturi sau dependențe directe pe LOGIN, bypassul composite web către
+  `fieldops_visits`, DML columnar FieldOps și bootstrapul care ar fi consumat
+  042 au fost găsite independent, corectate și reauditate pe SHA-uri noi;
+- CI `30981407131` pe `8b24e659` a respins un checksum public ca posibil secret;
+  baselineul a primit numai fingerprintul hash-uit, fără slăbirea hookului;
+- deployurile intermediare `30977246956` și `30977407851` au expus, respectiv,
+  permisiunea greșită `0600 root:root` pentru `.env*` și lipsa grantului
+  owner-issued FieldOps. Primul rollback a refuzat corect manifestul vechi;
+  recuperarea roll-forward a păstrat handle-ul
+  `/opt/Mobiup/ops/backups/retail-deploy/20260805T050933Z-83194c653b78-to-2e506e34483c-b56f2a8de32a6552`.
+
+Dovezi live după deploy:
+
+- primary `main`, `origin/main` și checkoutul de producție sunt curate la SHA-ul
+  artifactului; backend, worker și import worker sunt active, migration service
+  are `Result=success`, iar health local/public este verde;
+- cele șase authority-uri și `unihub_schema_owner` sunt NOLOGIN/fără capabilități
+  privilegiate. Cele patru LOGIN-uri au exclusiv contractele directe așteptate;
+  runnerul este NOINHERIT și poate seta numai schema owner. LOGIN-urile au zero
+  ACL-uri directe, default ACL sau obiecte deținute; PUBLIC nu are CREATE;
+- `unihub_runtime` este NOLOGIN fără sesiuni, iar principalul Finance de
+  producție nu există. Fișierele `.env*` sunt `root:andrei 0640`; fișierul de
+  migrare conține ca nume de cheie numai `MIGRATION_DATABASE_URL`;
+- `fieldops_visits` este sub `unihub_schema_owner`, cu SELECT owner-issued,
+  non-grantable către `unihub_web_read`, zero ACL columnar/PUBLIC și zero DML
+  efectiv pentru web-read, business-write sau LOGIN-ul web. Startupul a
+  sincronizat 14 vizite și a devenit ready;
+- P&L este neschimbat: 97.687 rânduri, două companii, 2017-01..2026-06,
+  569.813.991,84 RON, fingerprint `d0506e8af8fb1730786132fb7979d870`;
+- sales păstrează un head, revizia 2, două promotions și fingerprintul
+  `f2bd5d1bea45a22911b4dba684fc8a78`. Stagingul a crescut de la 7.022 la
+  12.696 prin snapshotul normal 214 (5.674 rânduri, `processing`, nepromovat),
+  pornit înainte de deploy; nu este mutație a headului sau ledgerului;
+- toate cele cinci tabele Finance generation și cele trei tabele shadow au zero
+  rânduri; shadow pointerul rămâne revizia 0. Nu s-a creat credential Finance și
+  nu s-a executat Finance stage/apply/rollback.
+
+Backup și rollback:
+
+- backupul de cutover `20260805_080132` este `verified`, nouă fișiere și toate
+  checksumurile locale trec; copia `.env*` pre-cutover este root-only 0600;
+- backupul predeploy `20260805_095145` este verificat integral atât local, cât
+  și pe NAS (`nas_sync_ok=1`), nouă fișiere, 126.051.171 bytes;
+- handle-ul final păstrează sursa/dist-ul pre-switch. După 040/041 nu există
+  downgrade automat sigur la manifestul vechi: recovery-ul de cod este
+  roll-forward verificat, iar rollbackurile business rămân inverse
+  generations/CAS fără ștergerea stagingului, ledgerelor sau pre-image-ului.
+
+Verdict P1-A: **CLOSED LIVE**. M-06, M-07, R-01 și R-02 sunt închise integral.
+Finance live rămâne **NO-GO**. P1-B nu a fost început în acest goal.
