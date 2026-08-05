@@ -93,6 +93,8 @@ async def test_operations_worker_does_not_reconcile_imports(
     monkeypatch.setattr(services.importer, "reconcile_interrupted_imports", reconcile)
     monthly_reconcile = AsyncMock()
     monkeypatch.setattr("services.grile_monthly.reconcile_monthly_operations", monthly_reconcile)
+    visits_refresh = AsyncMock(return_value=4)
+    monkeypatch.setattr(worker, "_refresh_visits_snapshot_once", visits_refresh)
     monkeypatch.setenv("RETAIL_WORKER_ROLE", "operations")
 
     ctx: dict = {}
@@ -100,9 +102,12 @@ async def test_operations_worker_does_not_reconcile_imports(
 
     reconcile.assert_not_awaited()
     monthly_reconcile.assert_awaited_once_with(pool, ctx["grile_monthly_google"])
+    visits_refresh.assert_awaited_once_with(pool)
     assert ctx["db_pool"] is pool
     ctx["grile_monthly_reconcile_task"].cancel()
+    ctx["visits_snapshot_refresh_task"].cancel()
     await asyncio.gather(ctx["grile_monthly_reconcile_task"], return_exceptions=True)
+    await asyncio.gather(ctx["visits_snapshot_refresh_task"], return_exceptions=True)
     await ctx["grile_monthly_google"].close()
 
 

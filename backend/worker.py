@@ -25,6 +25,45 @@ from services.jobs import (
 
 setup_logging()
 logger = logging.getLogger(__name__)
+VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
+
+
+async def _refresh_visits_snapshot_once(pool: Any) -> int:
+    from services.visits_sync import sync_visits_snapshot
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            claimed = await conn.fetchval(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))",
+                "unihub:visits-snapshot-refresh",
+            )
+            if not claimed:
+                return 0
+            refreshed = await sync_visits_snapshot(conn)
+    logger.info("Refreshed %d visits snapshot rows", refreshed)
+    return refreshed
+
+
+async def _visits_snapshot_refresh_loop(ctx: dict) -> None:
+    stop = ctx["visits_snapshot_refresh_stop"]
+    pool = ctx["db_pool"]
+    try:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop.wait(),
+                    timeout=VISITS_SNAPSHOT_REFRESH_SECONDS,
+                )
+            except TimeoutError:
+                pass
+            if stop.is_set():
+                break
+            try:
+                await _refresh_visits_snapshot_once(pool)
+            except Exception:
+                logger.exception("Periodic visits snapshot refresh failed; last good projection retained")
+    except asyncio.CancelledError:
+        return
 
 
 async def _grile_monthly_reconciliation_loop(ctx: dict) -> None:
@@ -314,10 +353,19 @@ async def startup(ctx: dict) -> None:
         await adapter.start()
         ctx["grile_monthly_google"] = adapter
         await reconcile_monthly_operations(pool, adapter)
+        try:
+            await _refresh_visits_snapshot_once(pool)
+        except Exception:
+            logger.exception("Initial visits snapshot refresh failed; last good projection retained")
         ctx["grile_monthly_reconcile_stop"] = asyncio.Event()
         ctx["grile_monthly_reconcile_task"] = asyncio.create_task(
             _grile_monthly_reconciliation_loop(ctx),
             name="grile-monthly-reconciler",
+        )
+        ctx["visits_snapshot_refresh_stop"] = asyncio.Event()
+        ctx["visits_snapshot_refresh_task"] = asyncio.create_task(
+            _visits_snapshot_refresh_loop(ctx),
+            name="visits-snapshot-refresh",
         )
 
 
@@ -581,6 +629,14 @@ async def shutdown(ctx: dict) -> None:
     if reconcile_task is not None:
         reconcile_task.cancel()
         await asyncio.gather(reconcile_task, return_exceptions=True)
+
+    visits_task = ctx.get("visits_snapshot_refresh_task")
+    visits_stop = ctx.get("visits_snapshot_refresh_stop")
+    if visits_stop is not None:
+        visits_stop.set()
+    if visits_task is not None:
+        visits_task.cancel()
+        await asyncio.gather(visits_task, return_exceptions=True)
 
     sessions = ctx.get("grile_monthly_sessions", {})
     active = [task for task in sessions if task is not asyncio.current_task() and not task.done()]

@@ -239,8 +239,8 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   magazin Retail.
   Bucket-ul de reconciliere nealocat intra numai in totalul companiei/retelei;
   nu este expus ca magazin si nu este folosit la antrenarea estimarilor.
-- Raportarea vizitelor are cutover controlat intre SQLite si tabela FieldOps
-  `fieldops_visits`; dual-read-ul compara agregat sursele fara payload in loguri.
+- Raportarea vizitelor citește exclusiv tabela PostgreSQL FieldOps
+  `fieldops_visits`; SQLite este numai arhivă pre-cutover, fără dual-read runtime.
 - Agenti -> Grile include verificare read-only si inchidere de luna; actiunile
   privilegiate raman protejate individual in backend.
   Verificarea citeste toate cele 15 randuri `Suplimentar` din
@@ -495,9 +495,11 @@ aceeași tranzacție cu promovarea. Un worker stale nu mai poate scrie. Hotfixul
 `2fe927794d302a3c5d14a4f2d345e6f27c546fb0` recuperează după pierderea
 rezultatului ARQ o generație `validated` numai când bytes hash și cutoff sunt
 identice: reface atomic spool-ul content-addressed și returnează manifestul
-existent fără enqueue sau mutarea headului. Garanția completă retain +
-fsync/readback înainte de terminal, reconcilerul și fault injection rămân P1-B;
-nu se declară încă lifecycle complet. Rollbackul clonează și reverifică generația
+existent fără enqueue sau mutarea headului. Migrarea 043 leagă sursa
+content-addressed de generație și cere retain `0600`, hash, fsync/readback
+înainte de starea terminală. Reconcilerul idempotent repară crashurile dintre
+filesystem și DB, iar retention păstrează headul, predecessorul și generațiile
+din ledger. Rollbackul clonează și reverifică generația
 anterioară, apoi o promovează auditabil; nu mută headul direct înapoi.
 
 Migrarea 040 face stagingul și promotion ledgerul append-only și revocă mutarea
@@ -904,6 +906,9 @@ Reset manifest + finalizare operatie + consumare aprobare se comit intr-o
 singura tranzactie DB, iar orice esec ulterior clear-ului declanseaza
 restaurarea si verificarea snapshoturilor. Contractul complet este documentat
 in `docs/engineering/h11-grile-monthly-idempotency.md`.
+Migrarea 044 adaugă owner/epoch/lease și faze de checkpoint. Google I/O rulează
+printr-un adapter thread-affine; reconcilerul de startup și periodic clasifică
+determinist stale/uncertain și nu reia automat un clear incert.
 
 ### Calculator Target
 
@@ -984,10 +989,9 @@ modifica un scenariu deja salvat/finalizat.
   compararea permanenta cu arhiva statica ar produce diferente asteptate.
 - Configuratia de productie refuza pornirea daca sursa este SQLite sau shadow
   compare este activ; valoarea implicita a sursei este PostgreSQL.
-- `visits_snapshot` este o proiectie completa a agregatelor sursei active. Sync-ul
-  inlocuieste proiectia intr-o singura tranzactie: randurile disparute din
-  sursa nu raman stale, iar o eroare de insert pastreaza snapshotul anterior
-  prin rollback.
+- `visits_snapshot` este proiecția HR a agregatelor PostgreSQL. Workerul
+  operațional o actualizează la boot și la 15 minute sub advisory lock global;
+  replace-ul este tranzacțional, iar orice eroare păstrează ultima proiecție bună.
 - Bytes-ii fotografiilor raman pe filesystem; PostgreSQL detine
   metadatele normalizate in `fieldops_visit_photos`.
 
