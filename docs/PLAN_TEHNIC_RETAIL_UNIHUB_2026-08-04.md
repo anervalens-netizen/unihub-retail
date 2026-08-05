@@ -426,13 +426,13 @@ inventare, schimbări izolate, teste negative și QA.
 | --- | --- | --- | --- |
 | P0-B | M-04, M-05 | `CLOSED LIVE 2026-08-04` | bypass legacy absent; P&L numai prin generație explicită; fresh + upgrade DB; fără apply live |
 | P1-A | M-06, M-07, R-01, R-02 | `CLOSED LIVE 2026-08-05` | dovezi complete în 16.5 |
-| P1-B | M-08, M-09 | `CANDIDATE 7cb8375` | retain/hash/fsync/readback, stare intermediară, reconciler, retenție și fault injection |
-| P1-C | M-10, R-03 | `CANDIDATE 7cb8375` | boundary privat, manifest aprobat exact, 8/8/0 și review independent; apply live blocat |
-| P1-D | M-11, M-12 | `CANDIDATE 7cb8375` | checkpoint/lease/epoch fenced, adapter thread-affine și reconciler determinist |
-| P2-A | M-13, R-06, R-17, R-19, R-20 | `CANDIDATE 7cb8375` | preflight/decompression/cell budgets, containment foto și capability existente verificate |
-| P2-B | M-16, R-04, R-05, R-10 | `CANDIDATE 7cb8375` | scope istoric explicit, mapare companie fail-closed și cohorte verificate |
-| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `CANDIDATE 7cb8375` | export caps/spool, startup bounded, 2 workeri web și query-plan evidence |
-| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `CANDIDATE 7cb8375` | lock cu hashuri, strict TS, timezone, forecast business, payload cleanup și paging bounded |
+| P1-B | M-08, M-09 | `CANDIDATE 922f776` | retain/hash/fsync/readback, intenție persistată înainte de validare, reconciler, retenție și fault injection |
+| P1-C | M-10, R-03 | `CANDIDATE 922f776` | boundary privat/controlat H-01, manifest aprobat exact, 8/8/0 și review independent; apply live blocat |
+| P1-D | M-11, M-12 | `CANDIDATE 922f776` | checkpoint/lease/epoch fenced, deadline Google sub lease, adapter thread-affine și reconciler determinist |
+| P2-A | M-13, R-06, R-17, R-19, R-20 | `CANDIDATE 922f776` | preflight/decompression/cell budgets, containment foto și capability existente verificate |
+| P2-B | M-16, R-04, R-05, R-10 | `CANDIDATE 922f776` | scope istoric explicit, mapare companie fail-closed și cohorte verificate |
+| P2-C | M-14, M-15, R-07, R-08, R-09, R-11, R-12 | `CANDIDATE 922f776` | export caps/spool, startup bounded, 2 workeri web și query-plan evidence |
+| P3 | M-17–M-19, R-13–R-18, N-01–N-09 | `CANDIDATE 922f776` | lock cu hashuri, strict TS, timezone, forecast business, payload cleanup și paging bounded |
 
 Note de rutare:
 
@@ -879,7 +879,7 @@ promovare. Promovarea rămâne explicită și nu este executată automat de hotf
 ### 16.7 Candidat consolidat P1-B -> P3 — 2026-08-05
 
 SHA-ul sursă local verificat este
-`7cb8375ef559a866d8944c60c22b9f416c8c36c4`. Registrul de mai jos este
+`922f776f20b15ce5756ad230f7fab53dca4ef6ff`. Registrul de mai jos este
 registrul unic de dispoziție; mențiunile anterioare din document sunt istoric,
 nu dispoziții suplimentare.
 
@@ -893,10 +893,10 @@ nu dispoziții suplimentare.
 | M-06 | demonstrat deja | authority roles și matricea ACL au fost închise live în P1-A |
 | M-07 | demonstrat deja | ledgers/staging/head sunt protejate append-only DB-side |
 | M-08 | implementat | artefact sales content-addressed, `0600`, hash, fsync și readback înainte de terminal DB |
-| M-09 | implementat | stare intermediară, reconciler idempotent și retention head/predecessor/ledger |
+| M-09 | implementat | intenția artefactului este persistată atomic la rezervare înainte de validare; reconcilerul idempotent acoperă inclusiv crash pre-validare și retention head/predecessor/ledger |
 | M-10 | implementat | salary approval leagă exact manifestul, ambele companii, reconcilierea 8/8/0 și reviewer distinct; `salary_private` este canonic, iar copia legacy CNP rămâne excepție controlată H-01 fără acces runtime și fără ștergere neautorizată |
-| M-11 | implementat | Grile are owner/epoch/lease și checkpoint înainte de Google I/O |
-| M-12 | implementat | Google I/O rulează prin adapter thread-affine bounded; reconcilerul nu reia automat starea incertă |
+| M-11 | implementat | Grile are owner/epoch/lease pe backup/result/rollback, checkpoint înainte de Google I/O și deadline 120 s sub lease-ul de 300 s |
+| M-12 | implementat | Google I/O rulează prin adapter thread-affine, transport cu timeout și deadline bounded; reconcilerul nu reia automat starea incertă |
 | M-13 | implementat | XLS/XLSX au signature, ZIP/XML, expanded-bytes, ratio, member și cell budgets |
 | M-14 | implementat | exporturile au caps 50.000 rânduri, 1.000.000 celule și 64 MiB estimate, cu spool/chunks |
 | M-15 | implementat | startupul web nu mai face sync/prewarm business; ARQ rămâne degradabil |
@@ -916,8 +916,8 @@ nu dispoziții suplimentare.
 | R-10 | demonstrat deja | P&L/ERP/HR folosesc atribute curente sau snapshoturi/effective dates explicite |
 | R-11 | implementat | lucrul greu a fost scos din lifespan; readiness nu depinde de refresh business |
 | R-12 | demonstrat deja | EXPLAIN/BUFFERS pe DB izolat: agent-day 9,639 ms; item-day 316,855 ms, ambele sub 2.500 ms |
-| R-13 | implementat | forecastul parțial folosește distribuția zilnică din ultima rulare business, nu extrapolare calendaristică implicită |
-| R-14 | implementat | datele UI folosesc helperi Europe/Bucharest testați determinist |
+| R-13 | implementat | Dashboard summary/store/regional/promo, HR, CRM, Target și evaluarea agenților folosesc distribuția zilnică din ultima rulare business; lipsa modelului produce factor 1, nu extrapolare calendaristică |
+| R-14 | implementat | datele business backend și timestampurile UI folosesc helperi Europe/Bucharest testați determinist, inclusiv limitele UTC și weekendurile |
 | R-15 | implementat | `any`-urile de producție din lane-ul Agents/salary chart au fost eliminate, strict TS extins |
 | R-16 | implementat | runtime/dev Python au lockfile-uri complete cu hashuri și CI instalează `--require-hashes` |
 | R-17 | implementat | XML-ul XLSX neîncrezător folosește `defusedxml`; formulele/hyperlinkurile neîncrezătoare rămân neutralizate |
@@ -936,9 +936,9 @@ nu dispoziții suplimentare.
 
 Porți locale pe candidatul sursă:
 
-- PostgreSQL 18 + Valkey izolate, migrări fresh 014..044: `1589 passed, 7 skipped`;
+- PostgreSQL 18 + Valkey izolate, migrări fresh 014..044: `1593 passed, 7 skipped`;
 - frontend: 34 fișiere / 245 teste; `typecheck`, `typecheck:strict`, lint și build verzi;
-- mypy: 346 fișiere, zero erori; 133 teste backend țintite post-fix verzi;
+- mypy: 346 fișiere, zero erori; porțile țintite post-audit `202 + 135 + 82` teste verzi;
 - runtime/dev lock `--require-hashes`, import smoke, `pip check`, `pip-audit`
   strict, secret scan și Bandit regression gate verzi;
 - checksum migrare 043:
