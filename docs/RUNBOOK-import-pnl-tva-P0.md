@@ -88,7 +88,10 @@ nici Finance nu primesc write direct pe pointer.
 Generațiile Finance autoritative pornesc obligatoriu `building`, sunt sealed
 `staged` și devin `promoted` numai prin funcțiile controlate care verifică
 manifestul, toate headurile CAS și ledgerul per scope. Grupul Finance nu are
-UPDATE direct pe stare. Contractul autentificat rezervă
+INSERT/UPDATE/DELETE direct pe actuale, UPDATE direct pe stare sau acces la
+helper-ele interne de head/ledger. `promote_store_pnl_generation` rehash-uiește
+pre-image-ul și candidatul, înlocuiește numai `actual`, mută toate headurile și
+închide ledgerul într-o singură tranzacție. Contractul autentificat rezervă
 `unihub_finance_import_worker`, dar P1-A nu creează acel LOGIN/credential și nu
 autorizează stage/apply live.
 

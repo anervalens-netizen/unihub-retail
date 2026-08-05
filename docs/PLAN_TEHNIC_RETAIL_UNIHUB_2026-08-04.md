@@ -644,8 +644,8 @@ formal și dovezile live se completează în 16.5 după gate/QA/deploy.
 
 Migrații immutable:
 
-- 040 `3dffd6209fa931a87d3cceb14a6951f4b6c3b0cd7fa36fc45ae47ad84233be22`;
-- 041 `3ef80c2fbd3b5fb3d68c019d34c17cb17a96b19fc9d7da2e845b96ee8a9587e3`.
+- 040 `59a15b051d73fdbbce2ce8d465b6d7a9f41ffdc7abe45744e1de6ae1db69bce9`;
+- 041 `a14a3d170fce29ca9326144e358ce6ead054999cbb31599b3bde092924f00311`.
 
 Contractul rezultat:
 
@@ -665,7 +665,8 @@ Contractul rezultat:
   cu fencing, digest rehash și CAS; seal-ul Finance recompută în DB row hash,
   coverage, count, total și pre-image, iar sales CAS reverifică starea validată,
   digestul, control totals și absența contradicțiilor blocking; Finance nu are
-  UPDATE direct pe stare;
+  DML direct pe actuale sau stare, iar promovarea atomică DB-side face replace,
+  head CAS, ledger și complete pentru toate scope-urile ambelor companii;
 - `authoritative_replace` păstrează reducerile față de snapshotul precedent ca
   informație și blochează numai contradicții interne ale candidatului;
 - Finance are grupul și contractul viitorului principal

@@ -47,6 +47,8 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
         "advance_sales_generation_head",
         "reserve_sales_import_grile_run",
         "advance_store_pnl_generation_head",
+        "stage_store_pnl_generation",
+        "promote_store_pnl_generation",
         "seal_store_pnl_generation",
         "complete_store_pnl_generation",
         "promote_store_pnl_shadow_generation",
@@ -763,7 +765,8 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 """,
                 finance_generation,
             )
-            assert await finance.fetchval(
+            await _expect_denied(
+                finance,
                 "SELECT append_store_pnl_generation_ledger($1, 'staged', NULL, NULL, $2::jsonb)",
                 finance_generation,
                 '{"manifest_sha256":"' + ("b" * 64) + '"}',
@@ -794,7 +797,7 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
             )
             with pytest.raises(asyncpg.PostgresError, match="cannot be sealed from its evidence"):
                 await finance.execute(
-                    "SELECT seal_store_pnl_generation($1, $2)",
+                    "SELECT stage_store_pnl_generation($1, $2)",
                     finance_generation,
                     "b" * 64,
                 )
@@ -811,12 +814,23 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 """,
                 finance_generation,
             )
-            assert await finance.fetchval(
+            await _expect_denied(
+                finance,
                 "SELECT advance_store_pnl_generation_head($1, $2, $3, 0, 'legacy', 'r1')",
                 "Mobiup",
                 date(2197, 8, 1),
                 finance_generation,
-            ) == 1
+            )
+            await _expect_denied(
+                finance,
+                "DELETE FROM store_pnl_monthly WHERE company_name = 'Mobiup'",
+            )
+            await _expect_denied(
+                finance,
+                "INSERT INTO store_pnl_monthly (company_name, period, source_site_code, "
+                "source_location_name, category_code, category_name, amount, data_kind) "
+                "VALUES ('Mobiup', DATE '2197-08-01', 'P1A', 'P1-A', 'v1', 'Venit', 1, 'actual')",
+            )
 
             shadow_generation = uuid4()
             with pytest.raises(asyncpg.PostgresError, match="must start unsealed and staged"):

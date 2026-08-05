@@ -520,8 +520,10 @@ pre-image-ul immutable, control totals, coverage, revision/parent și hashurile
 sursei/manifestului. Seal-ul SQL recalculează din rândurile persistate candidate
 row hash, coverage, count, total și pre-image hash înainte de `staged`, folosind
 aceeași codificare scalară UTF-8 length-prefixed ca serviciul. Promovarea verifică head/pre-image prin lock + CAS,
-înlocuiește numai `actual` și păstrează `estimated`; rollbackul este o generație
-inversă nouă. În baseline-ul P0-B, CLI-ul blochează operațional promote și
+înlocuiește numai `actual` și păstrează `estimated`; rolul Finance nu are DML
+direct pe actuale, iar o singură funcție SQL controlată face atomic rehash,
+replace, head CAS, ledger și complete pentru toate scope-urile ambelor companii.
+Rollbackul este o generație inversă nouă. În baseline-ul P0-B, CLI-ul blochează operațional promote și
 rollback înainte de conectarea DB: implementarea nu este aprobare de apply live.
 
 ### Salarii: preflight -> dry-run -> apply controlat

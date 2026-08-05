@@ -233,10 +233,12 @@ GRANT USAGE, SELECT ON SEQUENCE
     sales_transactions_id_seq
 TO unihub_sales_import;
 
--- Finance remains its own NOLOGIN authority.  Direct head and ledger writes
--- are denied; table permissions are only those required to build/replay an
--- immutable generation.
-GRANT SELECT, INSERT, DELETE ON TABLE store_pnl_monthly TO unihub_finance_import;
+-- Finance remains its own NOLOGIN authority.  Direct live-actual, head and
+-- ledger writes are denied; promotion is one controlled DB transaction.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE store_pnl_monthly
+FROM unihub_finance_import;
+REVOKE ALL ON SEQUENCE store_pnl_monthly_id_seq FROM unihub_finance_import;
+GRANT SELECT ON TABLE store_pnl_monthly TO unihub_finance_import;
 GRANT SELECT, INSERT ON TABLE store_pnl_generations TO unihub_finance_import;
 GRANT SELECT, INSERT ON TABLE
     store_pnl_generation_scopes,
@@ -246,7 +248,6 @@ GRANT SELECT ON TABLE
     store_pnl_generation_heads,
     store_pnl_generation_ledger
 TO unihub_finance_import;
-GRANT USAGE, SELECT ON SEQUENCE store_pnl_monthly_id_seq TO unihub_finance_import;
 
 -- Operations may capture immutable shadow evidence and operate its review
 -- pointer only through the CAS functions below.
@@ -1190,6 +1191,51 @@ AS $$
       AND period = p_period
 $$;
 
+CREATE OR REPLACE FUNCTION public.store_pnl_actual_scope_sha256(
+    p_company_name TEXT,
+    p_period DATE
+)
+RETURNS TEXT
+LANGUAGE SQL
+STABLE
+STRICT
+SET search_path = pg_catalog, public
+AS $$
+    SELECT encode(
+        digest(
+            convert_to(
+                COALESCE(
+                    string_agg(
+                        concat_ws(
+                            E'\x1f',
+                            'V' || octet_length(company_name) || ':' || company_name,
+                            'V' || octet_length(period::TEXT) || ':' || period::TEXT,
+                            'V' || octet_length(source_site_code) || ':' || source_site_code,
+                            'V' || octet_length(source_location_name) || ':' || source_location_name,
+                            'V' || octet_length(category_code) || ':' || category_code,
+                            'V' || octet_length(category_name) || ':' || category_name,
+                            'V' || octet_length(amount::TEXT) || ':' || amount::TEXT,
+                            'V' || octet_length(source_file) || ':' || source_file,
+                            'V' || octet_length(source_sha256) || ':' || source_sha256
+                        ),
+                        E'\x1e'
+                        ORDER BY company_name COLLATE "C", period,
+                                 source_site_code COLLATE "C", category_code COLLATE "C"
+                    ),
+                    ''
+                ),
+                'UTF8'
+            ),
+            'sha256'
+        ),
+        'hex'
+    )
+    FROM public.store_pnl_monthly
+    WHERE company_name = p_company_name
+      AND period = p_period
+      AND data_kind = 'actual'
+$$;
+
 CREATE OR REPLACE FUNCTION public.seal_store_pnl_generation(
     p_generation_id UUID,
     p_expected_manifest_sha256 TEXT
@@ -1261,6 +1307,30 @@ BEGIN
 END
 $$;
 
+CREATE OR REPLACE FUNCTION public.stage_store_pnl_generation(
+    p_generation_id UUID,
+    p_expected_manifest_sha256 TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+    PERFORM public.append_store_pnl_generation_ledger(
+        p_generation_id,
+        'staged',
+        NULL,
+        NULL,
+        jsonb_build_object('manifest_sha256', p_expected_manifest_sha256)
+    );
+    PERFORM public.seal_store_pnl_generation(
+        p_generation_id,
+        p_expected_manifest_sha256
+    );
+END
+$$;
+
 CREATE OR REPLACE FUNCTION public.complete_store_pnl_generation(
     p_generation_id UUID,
     p_expected_manifest_sha256 TEXT
@@ -1301,6 +1371,165 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION 'store_pnl generation completion CAS failed';
     END IF;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION public.promote_store_pnl_generation(
+    p_generation_id UUID,
+    p_expected_manifest_sha256 TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+    scope_record RECORD;
+    current_head RECORD;
+    next_revision BIGINT;
+    revisions JSONB := '{}'::JSONB;
+BEGIN
+    PERFORM 1
+    FROM public.store_pnl_generations
+    WHERE id = p_generation_id
+      AND state = 'staged'
+      AND generation_manifest_sha256 = p_expected_manifest_sha256
+    FOR UPDATE;
+    IF NOT FOUND OR (
+        SELECT array_agg(DISTINCT company_name ORDER BY company_name)
+        FROM public.store_pnl_generation_scopes
+        WHERE generation_id = p_generation_id
+    ) IS DISTINCT FROM ARRAY['Mobicell', 'Mobiup']::TEXT[] THEN
+        RAISE EXCEPTION 'store_pnl promotion requires sealed scopes for both companies';
+    END IF;
+
+    FOR scope_record IN
+        SELECT *
+        FROM public.store_pnl_generation_scopes
+        WHERE generation_id = p_generation_id
+        ORDER BY company_name, period
+    LOOP
+        PERFORM pg_advisory_xact_lock(
+            hashtextextended(
+                'store-pnl:' || scope_record.company_name || ':' || scope_record.period::TEXT,
+                0
+            )
+        );
+
+        IF public.store_pnl_actual_scope_sha256(
+                scope_record.company_name,
+                scope_record.period
+           ) IS DISTINCT FROM scope_record.preimage_sha256
+           OR public.store_pnl_generation_rows_sha256(
+                p_generation_id,
+                'candidate',
+                scope_record.company_name,
+                scope_record.period
+           ) IS DISTINCT FROM scope_record.candidate_rows_sha256
+           OR public.store_pnl_generation_coverage_sha256(
+                p_generation_id,
+                scope_record.company_name,
+                scope_record.period
+           ) IS DISTINCT FROM scope_record.candidate_coverage_sha256
+           OR (SELECT COUNT(*)::INTEGER
+               FROM public.store_pnl_generation_rows AS row
+               WHERE row.generation_id = p_generation_id
+                 AND row.row_set = 'candidate'
+                 AND row.company_name = scope_record.company_name
+                 AND row.period = scope_record.period)
+              IS DISTINCT FROM scope_record.candidate_row_count
+           OR (SELECT COALESCE(SUM(row.amount), 0)::NUMERIC(16, 2)
+               FROM public.store_pnl_generation_rows AS row
+               WHERE row.generation_id = p_generation_id
+                 AND row.row_set = 'candidate'
+                 AND row.company_name = scope_record.company_name
+                 AND row.period = scope_record.period)
+              IS DISTINCT FROM scope_record.candidate_total_amount THEN
+            RAISE EXCEPTION 'store_pnl promotion evidence is stale or inconsistent';
+        END IF;
+
+        SELECT active_generation_id, revision, revision_id
+        INTO current_head
+        FROM public.store_pnl_generation_heads
+        WHERE company_name = scope_record.company_name
+          AND period = scope_record.period
+        FOR UPDATE;
+        IF FOUND THEN
+            IF current_head.revision IS DISTINCT FROM scope_record.expected_head_revision
+               OR current_head.revision_id IS DISTINCT FROM scope_record.parent_revision_id THEN
+                RAISE EXCEPTION 'store_pnl promotion head changed';
+            END IF;
+        ELSIF scope_record.expected_head_revision <> 0
+              OR scope_record.parent_revision_id <> 'legacy' THEN
+            RAISE EXCEPTION 'store_pnl promotion legacy head is stale';
+        END IF;
+
+        DELETE FROM public.store_pnl_monthly
+        WHERE company_name = scope_record.company_name
+          AND period = scope_record.period
+          AND data_kind = 'actual';
+        INSERT INTO public.store_pnl_monthly (
+            company_name,
+            period,
+            source_site_code,
+            source_location_name,
+            category_code,
+            category_name,
+            amount,
+            data_kind,
+            source_file,
+            source_sha256
+        )
+        SELECT company_name,
+               period,
+               source_site_code,
+               source_location_name,
+               category_code,
+               category_name,
+               amount,
+               'actual',
+               source_file,
+               source_sha256
+        FROM public.store_pnl_generation_rows
+        WHERE generation_id = p_generation_id
+          AND row_set = 'candidate'
+          AND company_name = scope_record.company_name
+          AND period = scope_record.period
+        ORDER BY source_site_code COLLATE "C", category_code COLLATE "C";
+
+        IF public.store_pnl_actual_scope_sha256(
+                scope_record.company_name,
+                scope_record.period
+           ) IS DISTINCT FROM scope_record.candidate_rows_sha256 THEN
+            RAISE EXCEPTION 'store_pnl promoted actual hash does not match staged evidence';
+        END IF;
+
+        next_revision := public.advance_store_pnl_generation_head(
+            scope_record.company_name,
+            scope_record.period,
+            p_generation_id,
+            scope_record.expected_head_revision,
+            scope_record.parent_revision_id,
+            scope_record.revision_id
+        );
+        PERFORM public.append_store_pnl_generation_ledger(
+            p_generation_id,
+            'promoted',
+            scope_record.company_name,
+            scope_record.period,
+            jsonb_build_object('revision', next_revision)
+        );
+        revisions := revisions || jsonb_build_object(
+            scope_record.company_name || ':' || scope_record.period::TEXT,
+            next_revision
+        );
+    END LOOP;
+
+    PERFORM public.complete_store_pnl_generation(
+        p_generation_id,
+        p_expected_manifest_sha256
+    );
+    RETURN revisions;
 END
 $$;
 
@@ -1427,13 +1656,16 @@ REVOKE ALL ON FUNCTION
     public.store_pnl_shadow_preimage_rows_sha256(UUID),
     public.store_pnl_generation_rows_sha256(UUID, TEXT, TEXT, DATE),
     public.store_pnl_generation_coverage_sha256(UUID, TEXT, DATE),
+    public.store_pnl_actual_scope_sha256(TEXT, DATE),
     public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT),
     public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT),
     public.reserve_sales_import_grile_run(TEXT, INTEGER),
     public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
     public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
     public.seal_store_pnl_generation(UUID, TEXT),
+    public.stage_store_pnl_generation(UUID, TEXT),
     public.complete_store_pnl_generation(UUID, TEXT),
+    public.promote_store_pnl_generation(UUID, TEXT),
     public.seal_store_pnl_shadow_generation(UUID),
     public.promote_store_pnl_shadow_generation(UUID, BIGINT),
     public.rollback_store_pnl_shadow_pointer(BIGINT)
@@ -1448,13 +1680,16 @@ BEGIN
             public.store_pnl_shadow_preimage_rows_sha256(UUID),
             public.store_pnl_generation_rows_sha256(UUID, TEXT, TEXT, DATE),
             public.store_pnl_generation_coverage_sha256(UUID, TEXT, DATE),
+            public.store_pnl_actual_scope_sha256(TEXT, DATE),
             public.advance_sales_generation_head(TEXT, INTEGER, UUID, UUID, BIGINT),
             public.record_sales_generation_promotion(TEXT, INTEGER, INTEGER, BIGINT, TEXT, TEXT, TEXT),
             public.reserve_sales_import_grile_run(TEXT, INTEGER),
             public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
             public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
             public.seal_store_pnl_generation(UUID, TEXT),
+            public.stage_store_pnl_generation(UUID, TEXT),
             public.complete_store_pnl_generation(UUID, TEXT),
+            public.promote_store_pnl_generation(UUID, TEXT),
             public.seal_store_pnl_shadow_generation(UUID),
             public.promote_store_pnl_shadow_generation(UUID, BIGINT),
             public.rollback_store_pnl_shadow_pointer(BIGINT)
@@ -1469,10 +1704,8 @@ GRANT EXECUTE ON FUNCTION
     public.reserve_sales_import_grile_run(TEXT, INTEGER)
 TO unihub_sales_import;
 GRANT EXECUTE ON FUNCTION
-    public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT),
-    public.append_store_pnl_generation_ledger(UUID, TEXT, TEXT, DATE, JSONB),
-    public.seal_store_pnl_generation(UUID, TEXT),
-    public.complete_store_pnl_generation(UUID, TEXT)
+    public.stage_store_pnl_generation(UUID, TEXT),
+    public.promote_store_pnl_generation(UUID, TEXT)
 TO unihub_finance_import;
 GRANT EXECUTE ON FUNCTION
     public.seal_store_pnl_shadow_generation(UUID),
@@ -1485,6 +1718,8 @@ COMMENT ON FUNCTION public.advance_sales_generation_head(TEXT, INTEGER, UUID, UU
 COMMENT ON FUNCTION public.reserve_sales_import_grile_run(TEXT, INTEGER) IS
     'Sales-import Grile reservation: completed matching snapshot and fixed auto provenance only.';
 COMMENT ON FUNCTION public.advance_store_pnl_generation_head(TEXT, DATE, UUID, BIGINT, TEXT, TEXT) IS
-    'Finance authoritative-head advance: staged scope plus revision/parent CAS only.';
+    'Internal Finance authoritative-head advance; reachable only through controlled promotion.';
+COMMENT ON FUNCTION public.promote_store_pnl_generation(UUID, TEXT) IS
+    'Atomic Finance actual replacement, head CAS, ledger append and generation completion.';
 COMMENT ON FUNCTION public.promote_store_pnl_shadow_generation(UUID, BIGINT) IS
     'Shadow review-pointer advance: revision CAS only; never writes live P&L.';

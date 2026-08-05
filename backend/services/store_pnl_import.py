@@ -527,12 +527,7 @@ async def stage_generation(
                     preimage_values,
                 )
         await connection.fetchval(
-            "SELECT append_store_pnl_generation_ledger($1, 'staged', NULL, NULL, $2::jsonb)",
-            generation_id,
-            json.dumps({"manifest_sha256": manifest_sha256}, sort_keys=True),
-        )
-        await connection.fetchval(
-            "SELECT seal_store_pnl_generation($1, $2)",
+            "SELECT stage_store_pnl_generation($1, $2)",
             generation_id,
             manifest_sha256,
         )
@@ -562,38 +557,6 @@ async def _generation_rows(
     return [_record_to_row(record) for record in records]
 
 
-async def _replace_actual_scope(
-    connection: asyncpg.Connection,
-    scope: PnlScope,
-    candidate_rows: Sequence[PnlRow],
-) -> None:
-    """Replace only actuals; estimates are intentionally outside this boundary."""
-    await connection.execute(
-        """
-        DELETE FROM store_pnl_monthly
-        WHERE company_name = $1 AND period = $2 AND data_kind = 'actual'
-        """,
-        *scope,
-    )
-    if candidate_rows:
-        await connection.executemany(
-            """
-            INSERT INTO store_pnl_monthly (
-                company_name, period, source_site_code, source_location_name,
-                category_code, category_name, amount, data_kind, source_file, source_sha256
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,'actual',$8,$9)
-            """,
-            [
-                (
-                    row.company_name, row.period, row.source_site_code,
-                    row.source_location_name, row.category_code, row.category_name,
-                    row.amount, row.source_file, row.source_sha256,
-                )
-                for row in candidate_rows
-            ],
-        )
-
-
 async def _promote_staged_generation(
     connection: asyncpg.Connection,
     generation_id: UUID,
@@ -612,83 +575,21 @@ async def _promote_staged_generation(
         raise PnlGenerationConflict("Poate fi promovată numai o generatie P&L staged.")
     if generation["generation_manifest_sha256"] != expected_manifest_sha256:
         raise PnlGenerationConflict("expected-manifest-sha nu corespunde generatiei staged.")
-    scopes = await connection.fetch(
-        """
-        SELECT company_name, period, revision_id, parent_revision_id,
-               candidate_rows_sha256, candidate_row_count, candidate_total_amount,
-               preimage_sha256, expected_head_revision
-        FROM store_pnl_generation_scopes
-        WHERE generation_id = $1
-        ORDER BY company_name, period
-        """,
-        generation_id,
-    )
-    if {scope["company_name"] for scope in scopes} != COMPANIES:
-        raise PnlImportError("Promovarea Finance necesita batch reconciliat pentru ambele companii.")
-    revisions: dict[str, int] = {}
-    for scope in scopes:
-        scope_key = (scope["company_name"], scope["period"])
-        await _lock_scope(connection, scope_key)
-        head = await _head(connection, scope_key)
-        current_rows = await _actual_rows(connection, scope_key)
-        if rows_sha256(current_rows) != scope["preimage_sha256"]:
-            raise PnlGenerationConflict("Preimage P&L este stale; generatia nu poate promova.")
-        if head is None:
-            if scope["expected_head_revision"] != 0 or scope["parent_revision_id"] != "legacy":
-                raise PnlGenerationConflict("Head Finance lipseste sau parentul legacy este stale.")
-        elif (
-            int(head["revision"]) != scope["expected_head_revision"]
-            or head["revision_id"] != scope["parent_revision_id"]
-        ):
-            raise PnlGenerationConflict("Head Finance este stale; generatia nu poate promova.")
-        candidate_rows = await _generation_rows(connection, generation_id, "candidate", scope_key)
-        count, total = scope_totals(candidate_rows)
-        if (
-            rows_sha256(candidate_rows) != scope["candidate_rows_sha256"]
-            or count != scope["candidate_row_count"]
-            or total != Decimal(scope["candidate_total_amount"])
-        ):
-            raise PnlGenerationConflict("Staging P&L nu mai corespunde manifestului generatiei.")
-        await _replace_actual_scope(connection, scope_key, candidate_rows)
-        persisted = await _actual_rows(connection, scope_key)
-        if rows_sha256(persisted) != scope["candidate_rows_sha256"]:
-            raise PnlGenerationConflict("Post-write hash P&L nu corespunde generatiei staged.")
-        try:
-            next_revision = await connection.fetchval(
-                """
-                SELECT advance_store_pnl_generation_head($1, $2, $3, $4, $5, $6)
-                """,
-                scope_key[0],
-                scope_key[1],
-                generation_id,
-                int(scope["expected_head_revision"]),
-                scope["parent_revision_id"],
-                scope["revision_id"],
-            )
-        except asyncpg.PostgresError:
-            raise PnlGenerationConflict(
-                "Head Finance este stale; CAS-ul controlat a refuzat promovarea."
-            ) from None
-        if next_revision is None:
-            raise PnlGenerationConflict("CAS-ul Finance nu a returnat o revizie.")
-        await connection.fetchval(
-            """
-            SELECT append_store_pnl_generation_ledger(
-                $1, 'promoted', $2, $3, $4::jsonb
-            )
-            """,
+    try:
+        revisions = await connection.fetchval(
+            "SELECT promote_store_pnl_generation($1, $2)",
             generation_id,
-            scope_key[0],
-            scope_key[1],
-            json.dumps({"revision": int(next_revision)}, sort_keys=True),
+            expected_manifest_sha256,
         )
-        revisions[f"{scope_key[0]}:{scope_key[1].isoformat()}"] = int(next_revision)
-    await connection.fetchval(
-        "SELECT complete_store_pnl_generation($1, $2)",
-        generation_id,
-        expected_manifest_sha256,
-    )
-    return revisions
+    except asyncpg.PostgresError:
+        raise PnlGenerationConflict(
+            "Promovarea Finance controlata DB a refuzat generatia sau CAS-ul."
+        ) from None
+    if isinstance(revisions, str):
+        revisions = json.loads(revisions)
+    if not isinstance(revisions, dict):
+        raise PnlGenerationConflict("Promovarea Finance nu a returnat reviziile CAS.")
+    return {str(key): int(value) for key, value in revisions.items()}
 
 
 async def apply_generation(
@@ -816,11 +717,7 @@ async def rollback_generation(
                         [(inverse_id, row_set, *row_payload(row).values()) for row in rows],
                     )
         await connection.fetchval(
-            "SELECT append_store_pnl_generation_ledger($1, 'staged', NULL, NULL, $2::jsonb)",
-            inverse_id, json.dumps({"rollback_of": str(source_generation_id), "manifest_sha256": inverse_sha}, sort_keys=True),
-        )
-        await connection.fetchval(
-            "SELECT seal_store_pnl_generation($1, $2)",
+            "SELECT stage_store_pnl_generation($1, $2)",
             inverse_id,
             inverse_sha,
         )

@@ -75,7 +75,7 @@ async def _reset_role(connection) -> None:
 @pytest.mark.asyncio
 @pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
-    reason="requires isolated PostgreSQL after migration 039 is in the immutable manifest",
+    reason="requires isolated PostgreSQL through the current immutable manifest",
 )
 async def test_authoritative_generation_cas_and_inverse_rollback_preserve_estimates(
     monkeypatch: pytest.MonkeyPatch,
@@ -97,23 +97,6 @@ async def test_authoritative_generation_cas_and_inverse_rollback_preserve_estima
             )
             await connection.execute(
                 "DO $$ BEGIN EXECUTE format('GRANT unihub_finance_import TO %I', current_user); END $$"
-            )
-            await connection.execute(
-                "GRANT SELECT, INSERT ON store_pnl_generations TO unihub_finance_import"
-            )
-            await connection.execute(
-                "GRANT SELECT ON store_pnl_generation_heads TO unihub_finance_import"
-            )
-            await connection.execute(
-                "GRANT SELECT, INSERT ON store_pnl_generation_scopes, store_pnl_generation_rows, "
-                "store_pnl_generation_ledger TO unihub_finance_import"
-            )
-            await connection.execute(
-                "GRANT SELECT, INSERT, DELETE ON store_pnl_monthly TO unihub_finance_import"
-            )
-            await connection.execute(
-                "GRANT USAGE, SELECT ON SEQUENCE store_pnl_monthly_id_seq, "
-                "store_pnl_generation_ledger_id_seq TO unihub_finance_import"
             )
             for company in COMPANIES:
                 await connection.execute(

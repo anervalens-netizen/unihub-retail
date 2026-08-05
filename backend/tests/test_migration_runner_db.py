@@ -273,6 +273,50 @@ async def test_admin_authority_cutover_bootstrap_accepts_only_pending_040_041(
 
 
 @pytest.mark.asyncio
+async def test_admin_authority_cutover_bootstrap_flag_is_exact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    connection = _Connection()
+    monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "true")
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    with pytest.raises(MigrationError, match="must be exactly 1"):
+        await run_migrations("postgresql://unused")
+
+
+@pytest.mark.asyncio
+async def test_admin_authority_cutover_rejects_process_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    connection = _Connection()
+    monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "web")
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    with pytest.raises(MigrationError, match="cannot be combined"):
+        await run_migrations("postgresql://unused")
+
+
+@pytest.mark.asyncio
+async def test_admin_authority_cutover_rejects_untracked_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    connection = _Connection(has_schema=False, tracking_exists=False)
+    monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
+    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+    monkeypatch.setattr(runner.asyncpg, "connect", _async_return(connection))
+
+    with pytest.raises(MigrationError, match="existing tracked application database"):
+        await run_migrations("postgresql://unused")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("connection", "message"),
     [

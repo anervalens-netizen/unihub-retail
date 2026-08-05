@@ -125,10 +125,8 @@ BEGIN
             ('public.advance_sales_generation_head(text,integer,uuid,uuid,bigint)', 'unihub_sales_import'),
             ('public.record_sales_generation_promotion(text,integer,integer,bigint,text,text,text)', 'unihub_sales_import'),
             ('public.reserve_sales_import_grile_run(text,integer)', 'unihub_sales_import'),
-            ('public.advance_store_pnl_generation_head(text,date,uuid,bigint,text,text)', 'unihub_finance_import'),
-            ('public.append_store_pnl_generation_ledger(uuid,text,text,date,jsonb)', 'unihub_finance_import'),
-            ('public.seal_store_pnl_generation(uuid,text)', 'unihub_finance_import'),
-            ('public.complete_store_pnl_generation(uuid,text)', 'unihub_finance_import'),
+            ('public.stage_store_pnl_generation(uuid,text)', 'unihub_finance_import'),
+            ('public.promote_store_pnl_generation(uuid,text)', 'unihub_finance_import'),
             ('public.seal_store_pnl_shadow_generation(uuid)', 'unihub_operations'),
             ('public.promote_store_pnl_shadow_generation(uuid,bigint)', 'unihub_operations'),
             ('public.rollback_store_pnl_shadow_pointer(bigint)', 'unihub_operations')

@@ -24,7 +24,6 @@ from services.store_pnl_import import (
     PnlImportError,
     PnlRow,
     _scope_generation_manifest,
-    _replace_actual_scope,
     apply_generation,
     canonical_sha256,
     coverage_regressions,
@@ -229,19 +228,6 @@ async def test_finance_connection_is_closed_when_authority_verification_fails(
         await import_store_pnl_script.connect_finance()
 
     connection.close.assert_awaited_once()
-
-
-@pytest.mark.anyio
-async def test_replace_actual_scope_never_deletes_or_inserts_estimates() -> None:
-    connection = MagicMock()
-    connection.execute = AsyncMock()
-    connection.executemany = AsyncMock()
-    await _replace_actual_scope(connection, ("Mobiup", PERIOD), [row()])
-    delete_sql = connection.execute.await_args.args[0]
-    insert_sql = connection.executemany.await_args.args[0]
-    assert "data_kind = 'actual'" in delete_sql
-    assert "estimated" not in delete_sql
-    assert "'actual'" in insert_sql
 
 
 def test_legacy_apply_flag_is_not_an_interface() -> None:
