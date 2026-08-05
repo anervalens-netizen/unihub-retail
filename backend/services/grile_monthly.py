@@ -2823,7 +2823,7 @@ async def reconcile_monthly_operations(
         operation_id = int(operation["id"])
         epoch = int(operation.get("execution_epoch", 0))
         items = await list_reset_items_for_reconciliation(pool, operation_id)
-        classifications: list[str] = []
+        classifications: list[Literal["safe_retry", "rolled_back", "recovery_required"]] = []
         for item in items:
             site_code = str(item["site_code"])
             phase = str(item.get("checkpoint_phase") or "legacy_unknown")
@@ -2923,6 +2923,7 @@ async def reconcile_monthly_operations(
                     error_message="recovery_required",
                 )
 
+        classification: Literal["safe_retry", "rolled_back", "recovery_required"]
         if "recovery_required" in classifications:
             classification = "recovery_required"
         elif "rolled_back" in classifications:

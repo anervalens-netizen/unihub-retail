@@ -6,7 +6,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -2536,7 +2536,9 @@ async def test_reconciler_crash_after_clear_restores_once(
     monkeypatch.setattr(grile, "mark_item_recovery_required", AsyncMock())
     monkeypatch.setattr(grile, "mark_reconciliation_result", result)
 
-    assert await grile.reconcile_monthly_operations(object(), adapter) == 1
+    assert await grile.reconcile_monthly_operations(
+        object(), cast(grile.GoogleSyncAdapter, adapter)
+    ) == 1
     assert adapter.writes == ["restore"]
     result.assert_awaited_once()
     assert result.await_args is not None
@@ -2567,7 +2569,9 @@ async def test_reconciler_legacy_unknown_is_fail_closed_without_google_write(
         async def request(self, *args, **kwargs):
             raise AssertionError("legacy recovery must not call Google")
 
-    assert await grile.reconcile_monthly_operations(object(), NoGoogle()) == 1
+    assert await grile.reconcile_monthly_operations(
+        object(), cast(grile.GoogleSyncAdapter, NoGoogle())
+    ) == 1
     recovery.assert_awaited_once()
     assert result.await_args is not None
     assert result.await_args.kwargs["classification"] == "recovery_required"

@@ -268,9 +268,9 @@ async def test_monthly_worker_rejects_legacy_payload(
     monkeypatch.setattr(grile_monthly, "run_monthly_op", run)
 
     with pytest.raises(TypeError):
-        await worker.grile_monthly_background(
+        await worker.grile_monthly_background(  # type: ignore[call-arg]
             {},
-            "finalize",
+            "finalize",  # type: ignore[arg-type]
             "2099-05",
             None,
             False,

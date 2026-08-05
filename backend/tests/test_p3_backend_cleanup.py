@@ -101,7 +101,9 @@ def test_listing_inputs_are_typed_and_bounded() -> None:
 @pytest.mark.asyncio
 async def test_workers_reject_legacy_payloads() -> None:
     with pytest.raises(ValueError, match="durable spool"):
-        await worker.import_sales_background({}, b"legacy-bytes", "legacy.xlsx", 12, "legacy.xlsx")
+        await worker.import_sales_background(
+            {}, b"legacy-bytes", "legacy.xlsx", 12, "legacy.xlsx"  # type: ignore[arg-type]
+        )
 
     with pytest.raises(ValueError, match="persisted"):
         await worker.grile_monthly_background({}, 0)

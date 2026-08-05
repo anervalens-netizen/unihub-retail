@@ -454,14 +454,17 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
         execution_owner = uuid4().hex
 
         try:
-            run_kwargs = {
-                "operation_id": persisted_operation_id,
-                "execution_owner_hint": execution_owner,
-            }
             adapter = ctx.get("grile_monthly_google")
-            if adapter is not None:
-                run_kwargs["google_adapter"] = adapter
-            return await run_monthly_op(**run_kwargs)
+            if adapter is None:
+                return await run_monthly_op(
+                    operation_id=persisted_operation_id,
+                    execution_owner_hint=execution_owner,
+                )
+            return await run_monthly_op(
+                operation_id=persisted_operation_id,
+                execution_owner_hint=execution_owner,
+                google_adapter=adapter,
+            )
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if current is not None:
