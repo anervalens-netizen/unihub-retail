@@ -65,6 +65,33 @@ def _promotion_config(*, source_file: str = "@GENERATION_ACTUALS@") -> dict[str,
     }
 
 
+@pytest.mark.asyncio
+async def test_campaign_reporting_publication_hook_logs_queued_job(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    enqueue = AsyncMock(return_value=SimpleNamespace(job_id="campaign-reporting:2026-06"))
+    monkeypatch.setattr(
+        imports_module,
+        "enqueue_campaign_reporting_publication",
+        enqueue,
+    )
+
+    with caplog.at_level("INFO", logger="services.imports"):
+        await imports_module.trigger_campaign_reporting_publication(
+            "2026-06",
+            requested_by_sub="system:sales-import",
+            reason="sales_generation_promoted",
+        )
+
+    enqueue.assert_awaited_once_with(
+        month="2026-06",
+        requested_by_sub="system:sales-import",
+        reason="sales_generation_promoted",
+    )
+    assert "campaign reporting publication queued month=2026-06" in caplog.text
+
+
 def _configure_promo_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
