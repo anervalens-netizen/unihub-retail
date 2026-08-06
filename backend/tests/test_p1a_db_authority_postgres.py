@@ -28,6 +28,9 @@ OWNER_MIGRATION = ROOT / "db/migrations/041_schema_owner_handoff.sql"
 FIELDOPS_AUTHORITY_MIGRATION = (
     ROOT / "db/migrations/042_fieldops_visits_web_authority.sql"
 )
+FIELDOPS_OPERATIONS_MIGRATION = (
+    ROOT / "db/migrations/056_fieldops_visits_operations_authority.sql"
+)
 AUTHORITIES = (
     "unihub_web_read",
     "unihub_business_write",
@@ -94,6 +97,16 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "acl.grantor = relation.relowner" in fieldops_sql
     assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read" in fieldops_sql
     assert "CREATE TABLE" not in fieldops_sql
+
+    operations_sql = FIELDOPS_OPERATIONS_MIGRATION.read_text(encoding="utf-8")
+    assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_operations" in operations_sql
+    assert "GRANT INSERT, DELETE ON TABLE visits_snapshot TO unihub_operations" in operations_sql
+    assert "SELECT WITH GRANT OPTION" in operations_sql
+    assert "owner-issued non-grantable SELECT" in operations_sql
+    assert "effective DML is forbidden" in operations_sql
+    assert "must remain a NOLOGIN authority" in operations_sql
+    assert "GRANT UPDATE" not in operations_sql
+    assert "GRANT TRUNCATE" not in operations_sql
 
 
 async def _expect_denied(connection: asyncpg.Connection, sql: str, *args: object) -> None:
@@ -793,6 +806,74 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
                 )
         finally:
             await owner.close()
+
+        owner = await asyncpg.connect(database_url)
+        try:
+            await owner.execute(
+                "DELETE FROM schema_migrations WHERE filename = $1",
+                FIELDOPS_OPERATIONS_MIGRATION.name,
+            )
+        finally:
+            await owner.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="FieldOps owner must grant SELECT.*unihub_operations",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "GRANT SELECT ON TABLE public.fieldops_visits "
+                "TO unihub_operations WITH GRANT OPTION"
+            )
+        finally:
+            await fieldops.close()
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="FieldOps owner must grant SELECT|owner-issued non-grantable SELECT",
+        ):
+            await run_migrations(migrate_url)
+
+        fieldops = await asyncpg.connect(fieldops_url)
+        try:
+            await fieldops.execute(
+                "REVOKE SELECT ON TABLE public.fieldops_visits FROM unihub_operations"
+            )
+            await fieldops.execute(
+                "GRANT SELECT ON TABLE public.fieldops_visits TO unihub_operations"
+            )
+        finally:
+            await fieldops.close()
+
+        assert await run_migrations(migrate_url) == [
+            FIELDOPS_OPERATIONS_MIGRATION.name
+        ]
+        owner = await asyncpg.connect(database_url)
+        try:
+            assert await owner.fetchval(
+                "SELECT has_table_privilege('unihub_operations', "
+                "'public.fieldops_visits', 'SELECT')"
+            )
+            assert await owner.fetchval(
+                "SELECT has_table_privilege('unihub_operations', "
+                "'public.visits_snapshot', 'INSERT,DELETE')"
+            )
+            for relation, privileges in (
+                ("fieldops_visits", ("INSERT", "UPDATE", "DELETE", "TRUNCATE")),
+                ("visits_snapshot", ("SELECT", "UPDATE", "TRUNCATE")),
+            ):
+                for privilege in privileges:
+                    assert not await owner.fetchval(
+                        "SELECT has_table_privilege('unihub_operations', "
+                        "'public.' || $1, $2)",
+                        relation,
+                        privilege,
+                    )
+        finally:
+            await owner.close()
     finally:
         await maintenance.execute(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
         await maintenance.execute(f'DROP ROLE IF EXISTS "{migrate_principal}"')
@@ -847,6 +928,9 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
             )
             await connection.execute(
                 "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read"
+            )
+            await connection.execute(
+                "GRANT SELECT ON TABLE fieldops_visits TO unihub_operations"
             )
             for authority, (principal, password) in test_principals.items():
                 inheritance = "NOINHERIT" if authority == "unihub_migrate" else "INHERIT"
@@ -933,6 +1017,30 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
             # Real operations surfaces include reference reads, Grile DML and
             # their owned sequences; they still cannot use import authority.
             assert await operations.fetchval("SELECT COUNT(*) FROM stores") == 0
+            assert await operations.fetchval(
+                "SELECT COUNT(*) FROM fieldops_visits"
+            ) == 0
+            await operations.execute(
+                "INSERT INTO visits_snapshot (asm, month) VALUES ('P1-A ops', '2197-07')"
+            )
+            # The refresh replaces the complete projection and deliberately has
+            # no SELECT privilege that could support a filtered DELETE.
+            await operations.execute("DELETE FROM visits_snapshot")
+            await _expect_denied(operations, "SELECT * FROM visits_snapshot")
+            await _expect_denied(
+                operations,
+                "UPDATE visits_snapshot SET asm = asm WHERE false",
+            )
+            await _expect_denied(operations, "TRUNCATE visits_snapshot")
+            await _expect_denied(
+                operations,
+                "INSERT INTO fieldops_visits (id) VALUES (1)",
+            )
+            await _expect_denied(
+                operations,
+                "UPDATE fieldops_visits SET id = id WHERE false",
+            )
+            await _expect_denied(operations, "DELETE FROM fieldops_visits WHERE false")
             await connection.execute(
                 "INSERT INTO stores (site_code, locatie, firma, regional, asm, "
                 "first_seen_month, last_seen_month) "

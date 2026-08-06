@@ -113,7 +113,9 @@ LOGIN Finance; principalul rezervat pentru acel lot viitor este
 
 `fieldops_visits` rămâne sursă externă. Dacă ownerul DB este diferit de
 `unihub_schema_owner`, el acordă explicit `SELECT` către `unihub_web_read`
-înainte de 042. Migrarea restricționată verifică grantul și refuză fail-closed
+înainte de 042 și către `unihub_operations` înainte de 056. Migrarea 056 acordă
+workerului numai `INSERT, DELETE` pe proiecția Retail `visits_snapshot`; nu îi
+acordă SELECT, UPDATE sau TRUNCATE. Migrările restricționate verifică granturile și refuză fail-closed
 dacă lipsește. Refuză grant option, alt grantor, orice ACL `PUBLIC`, orice ACL
 columnar pentru web/PUBLIC și orice DML efectiv, inclusiv moștenit; nu schimbă
 ownerul și nu cere superuser.
