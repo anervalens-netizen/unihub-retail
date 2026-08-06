@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateDashboardDetails, getDefaultHistoryMonth } from './Dashboard';
+import { aggregateDashboardDetails, getDefaultHistoryMonth } from '../features/dashboard/presenters';
 import type {
   AgentStat,
   DashboardAllResponse,
