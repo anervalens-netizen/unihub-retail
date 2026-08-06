@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,26 +43,70 @@ class ExportRequest(BaseModel):
     filename: str | None = None
 
 
+class ExportColumnDef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    type: str
+    group: str
+
+
+class ExportDataset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    description: str
+    dimensions: list[ExportColumnDef]
+
+
+class ExportComparisonLevel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+
+
+class ExportCatalogResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    datasets: list[ExportDataset]
+    metrics: list[ExportColumnDef]
+    monthly_metrics: list[ExportColumnDef]
+    daily_metrics: list[ExportColumnDef]
+    comparison_levels: list[ExportComparisonLevel]
+
+
+class ExportPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    columns: list[ExportColumnDef]
+    rows: list[dict[str, Any]]
+    total_rows: int
+    truncated: bool
+
+
 async def get_exports_service() -> ExportsService:
     pool = await get_pool()
     return ExportsService(ExportsRepository(pool))
 
 
-@router.get("/catalog")
+@router.get("/catalog", response_model=ExportCatalogResponse)
 async def get_catalog(
     svc: ExportsService = Depends(get_exports_service),
-) -> dict:
-    return svc.catalog()
+) -> ExportCatalogResponse:
+    return ExportCatalogResponse.model_validate(svc.catalog())
 
 
-@router.post("/preview")
+@router.post("/preview", response_model=ExportPreviewResponse)
 async def preview_export(
     body: ExportRequest,
     _rate_limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
     svc: ExportsService = Depends(get_exports_service),
-) -> dict:
+) -> ExportPreviewResponse:
     try:
-        return await svc.preview(body.model_dump())
+        return ExportPreviewResponse.model_validate(await svc.preview(body.model_dump()))
     except ExportValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

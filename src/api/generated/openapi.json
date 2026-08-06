@@ -3976,6 +3976,135 @@
         "title": "ErpReconciliationResponse",
         "type": "object"
       },
+      "ExportCatalogResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_levels": {
+            "items": {
+              "$ref": "#/components/schemas/ExportComparisonLevel"
+            },
+            "title": "Comparison Levels",
+            "type": "array"
+          },
+          "daily_metrics": {
+            "items": {
+              "$ref": "#/components/schemas/ExportColumnDef"
+            },
+            "title": "Daily Metrics",
+            "type": "array"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/ExportDataset"
+            },
+            "title": "Datasets",
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/ExportColumnDef"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "monthly_metrics": {
+            "items": {
+              "$ref": "#/components/schemas/ExportColumnDef"
+            },
+            "title": "Monthly Metrics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datasets",
+          "metrics",
+          "monthly_metrics",
+          "daily_metrics",
+          "comparison_levels"
+        ],
+        "title": "ExportCatalogResponse",
+        "type": "object"
+      },
+      "ExportColumnDef": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type",
+          "group"
+        ],
+        "title": "ExportColumnDef",
+        "type": "object"
+      },
+      "ExportComparisonLevel": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "ExportComparisonLevel",
+        "type": "object"
+      },
+      "ExportDataset": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "dimensions": {
+            "items": {
+              "$ref": "#/components/schemas/ExportColumnDef"
+            },
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "description",
+          "dimensions"
+        ],
+        "title": "ExportDataset",
+        "type": "object"
+      },
       "ExportFilters": {
         "additionalProperties": false,
         "properties": {
@@ -4016,6 +4145,42 @@
           }
         },
         "title": "ExportFilters",
+        "type": "object"
+      },
+      "ExportPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ExportColumnDef"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "total_rows",
+          "truncated"
+        ],
+        "title": "ExportPreviewResponse",
         "type": "object"
       },
       "ExportRequest": {
@@ -11427,9 +11592,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Catalog Api Exports Catalog Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ExportCatalogResponse"
                 }
               }
             },
@@ -11509,9 +11672,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Preview Export Api Exports Preview Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ExportPreviewResponse"
                 }
               }
             },

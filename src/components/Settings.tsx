@@ -1166,7 +1166,7 @@ export function Settings({
                       <tr key={index} className={index % 2 === 0 ? 'bg-white dark:bg-slate-900/40' : 'bg-slate-50/60 dark:bg-slate-800/40'}>
                         {preview.columns.map((column) => (
                           <td key={column.key} className="whitespace-nowrap px-3 py-2">
-                            {row[column.key] ?? ''}
+                            {String(row[column.key] ?? '')}
                           </td>
                         ))}
                       </tr>

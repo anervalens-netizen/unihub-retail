@@ -1,57 +1,17 @@
 import { client } from './client';
+import type {
+  RetailExportCatalogResponse,
+  RetailExportColumnDef,
+  RetailExportFilters,
+  RetailExportPreviewResponse,
+  RetailExportRequest,
+} from './generated/contracts';
 
-export interface ExportColumnDef {
-  key: string;
-  label: string;
-  type: string;
-  group: string;
-}
-
-export interface ExportDataset {
-  key: string;
-  label: string;
-  description: string;
-  dimensions: ExportColumnDef[];
-}
-
-export interface ExportCatalog {
-  datasets: ExportDataset[];
-  metrics: ExportColumnDef[];
-  monthly_metrics: ExportColumnDef[];
-  daily_metrics: ExportColumnDef[];
-  comparison_levels: Array<{ key: string; label: string }>;
-}
-
-export interface ExportFilters {
-  firma: string[];
-  regional: string[];
-  asm: string[];
-  site_code: string[];
-  agent: string[];
-}
-
-export interface ExportRequest {
-  export_mode?: 'table' | 'daily_comparison';
-  dataset: string;
-  months: string[];
-  dimensions: string[];
-  metrics: string[];
-  monthly_metrics: string[];
-  daily_metrics: string[];
-  comparison_levels?: string[];
-  selected_days?: number[];
-  filters: ExportFilters;
-  include_closed_stores: boolean;
-  preview_limit?: number;
-  filename?: string | null;
-}
-
-export interface ExportPreview {
-  columns: ExportColumnDef[];
-  rows: Record<string, string | number | null>[];
-  total_rows: number;
-  truncated: boolean;
-}
+export type ExportColumnDef = RetailExportColumnDef;
+export type ExportCatalog = RetailExportCatalogResponse;
+export type ExportFilters = Required<RetailExportFilters>;
+export type ExportRequest = RetailExportRequest;
+export type ExportPreview = RetailExportPreviewResponse;
 
 export async function getExportCatalog(signal?: AbortSignal): Promise<ExportCatalog> {
   const { data } = await client.get<ExportCatalog>('/api/exports/catalog', { signal });

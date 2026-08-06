@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '50500c82375f8685c642a46f9dc2b39e60e0e04f6fd63e1b11f6633fd8501969' as const;
+export const RETAIL_OPENAPI_SHA256 = 'b4781a979672b05a03ac21699386d22e743664263d7e9896d085196973d466ca' as const;
 
 export interface RetailAgentEvaluationOption {
   "label": string;
@@ -662,12 +662,46 @@ export interface RetailErpReconciliationResponse {
   "status": "ok" | "differences";
 }
 
+export interface RetailExportCatalogResponse {
+  "comparison_levels": Array<RetailExportComparisonLevel>;
+  "daily_metrics": Array<RetailExportColumnDef>;
+  "datasets": Array<RetailExportDataset>;
+  "metrics": Array<RetailExportColumnDef>;
+  "monthly_metrics": Array<RetailExportColumnDef>;
+}
+
+export interface RetailExportColumnDef {
+  "group": string;
+  "key": string;
+  "label": string;
+  "type": string;
+}
+
+export interface RetailExportComparisonLevel {
+  "key": string;
+  "label": string;
+}
+
+export interface RetailExportDataset {
+  "description": string;
+  "dimensions": Array<RetailExportColumnDef>;
+  "key": string;
+  "label": string;
+}
+
 export interface RetailExportFilters {
   "agent"?: Array<string>;
   "asm"?: Array<string>;
   "firma"?: Array<string>;
   "regional"?: Array<string>;
   "site_code"?: Array<string>;
+}
+
+export interface RetailExportPreviewResponse {
+  "columns": Array<RetailExportColumnDef>;
+  "rows": Array<Record<string, unknown>>;
+  "total_rows": number;
+  "truncated": boolean;
 }
 
 export interface RetailExportRequest {
@@ -1636,7 +1670,7 @@ export interface RetailOperationResponses {
   }
 
   'get_catalog_api_exports_catalog_get': {
-    '200': Record<string, unknown>;
+    '200': RetailExportCatalogResponse;
   }
 
   'download_export_api_exports_download_post': {
@@ -1645,7 +1679,7 @@ export interface RetailOperationResponses {
   }
 
   'preview_export_api_exports_preview_post': {
-    '200': Record<string, unknown>;
+    '200': RetailExportPreviewResponse;
     '422': RetailHTTPValidationError;
   }
 
