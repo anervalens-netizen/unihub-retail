@@ -143,6 +143,9 @@ Migrarea 051 adaugă autoritatea Planning pentru Insight: head per
 lună/metrică/orizont, promotion/rollback cu revision CAS și ledger append-only.
 Niciun run `completed` și niciun Target legacy fără snapshot exact nu este
 publicat implicit; migrarea instalează contractul, dar nu promovează date live.
+Migrarea 052 permite reader-ului Insight să execute numai funcția definer de
+digest folosită de aceste view-uri; accesul la tabelele forecast brute rămâne
+revocat.
 
 Fiecare request Dashboard are un deadline monotonic unic, implicit 2.500 ms și
 configurabil până la maximum 3.000 ms, creat înainte de rezolvarea poolului.

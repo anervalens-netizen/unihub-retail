@@ -55,6 +55,11 @@ release-ului `v2.1.0` include:
 | 045 | `045_salary_approval_replay_fence.sql` | `2be9541709f7e8a9e6dfa031e8e1330e4c75779109030078a4add64e92551011` | leagă aprobarea salarială semnată de batch și interzice replay-ul artifactului |
 | 046 | `046_revoke_legacy_grile_authority.sql` | `0cadf58076c820856c801c8c7bbf7c38b38e80ff26794ceb24178442c7207432` | retrage privilegiile legacy asupra stării și secvențelor Grile |
 | 047 | `047_insight_reporting_read_models.sql` | `3e920d96b1f4deb81e591085b14361ae54dba058bf54fad2e1c9928e9431e9f9` | read-model-uri Insight v1 cu snapshot/versionare, P&L promovat și compensare agregată; păstrează temporar ACL N-1 până la revocarea coordonată |
+| 048 | `048_insight_sales_day_read_model.sql` | `4e75756277b6d1f0351dcd456d72eb78d0531c95474a145847c1ffc038bbca79` | granularitate sales zilnică aprobată pentru inspect și export Insight |
+| 049 | `049_insight_visits_team_leader_read_model.sql` | `5b24cd25bf0a79a6a4ea37e370b4ab5249724726f1dc78692526c338d6be3c5c` | read-model Visits v2 pe Team Leader autor și magazin |
+| 050 | `050_insight_visits_completion_semantics.sql` | `681a2e396f3d14713d4c1d40b8c93351329390a980320b6ac2e56db597963b0d` | semantică de completare Visits canonică și fail-closed |
+| 051 | `051_insight_planning_promotion_read_model.sql` | `1f7fafe8d3889d77affb2602502d0411d4bb28df0ab31a897c796e3ddf4f3bb0` | head și ledger Planning cu CAS, snapshot v3 și scenariu v2 fără promovare implicită |
+| 052 | `052_insight_planning_hash_acl.sql` | `3cb4411dba9ef15723ee82df7dff7dbb75f58efa61c9dbe751000ce1986aec4d` | bridge definer îngust pentru verificarea read-only a digestului forecast promovat |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 

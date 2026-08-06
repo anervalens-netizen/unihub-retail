@@ -575,6 +575,9 @@ artefact de aprobare, revision CAS și ledger append-only. View-urile
 run fără head sau cu integritatea schimbată. Targeturile apar numai dacă sunt
 finalizate, toate valorile sunt prezente, iar snapshotul de reguli corespunde
 exact registry-ului append-only. Migrarea nu promovează date business.
+Migrarea 052 repară ACL-ul de evaluare al digestului printr-o funcție
+`SECURITY DEFINER` cu `search_path` fix și `EXECUTE` exclusiv pentru
+`unihub_insight_reader`; reader-ul nu primește `SELECT` pe sursele brute.
 
 `stores` este master data curenta pentru apartenenta magazinelor. In Retail
 exista un singur layer activ de management; coloanele `regional` si `asm` sunt
