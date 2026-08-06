@@ -135,7 +135,9 @@ def _promotion_request() -> SalesGenerationPromotionRequest:
 
 
 def test_promo_parse_result_compatibility_equality() -> None:
-    rows = ({"site_code": "S1", "item_code": "I1", "quantity": 1, "value": "0.00"},)
+    rows: tuple[dict[str, str | int], ...] = (
+        {"site_code": "S1", "item_code": "I1", "quantity": 1, "value": "0.00"},
+    )
     first = imports_module.PromoActualsParseResult(1, 1, rows)
     same = imports_module.PromoActualsParseResult(1, 1, rows)
 

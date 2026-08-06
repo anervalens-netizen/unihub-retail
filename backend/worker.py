@@ -670,10 +670,10 @@ async def build_complex_export_background(ctx: dict, operation_id: int) -> dict[
             "artifact_size": persisted.size,
         }
     except asyncio.CancelledError:
-        current = asyncio.current_task()
-        if current is not None:
-            while current.cancelling():
-                current.uncancel()
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            while current_task.cancelling():
+                current_task.uncancel()
         if stored is not None:
             await asyncio.to_thread(remove_export_artifact, stored.key)
         await asyncio.shield(

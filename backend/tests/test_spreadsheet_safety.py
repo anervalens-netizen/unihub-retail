@@ -43,6 +43,7 @@ def test_xlsx_structural_preflight_accepts_bounded_workbook() -> None:
     stats = validate_spreadsheet_upload(content, ".xlsx")
 
     assert stats.compressed_bytes == len(content)
+    assert stats.uncompressed_bytes is not None
     assert stats.uncompressed_bytes > len(content)
     assert stats.cells == 2
 

@@ -199,8 +199,10 @@ async def fetch_promo_incentive_summary(
 
     excluded_by_site_item: dict[tuple[str, str], int] = {}
     for (site, _agent, item), units in promo_excluded_units.items():
-        key = (site, item)
-        excluded_by_site_item[key] = excluded_by_site_item.get(key, 0) + units
+        site_item_key = (site, item)
+        excluded_by_site_item[site_item_key] = (
+            excluded_by_site_item.get(site_item_key, 0) + units
+        )
 
     if incentive_campaign is not None:
         periods = incentive_campaign.get("periods") or []
@@ -240,12 +242,14 @@ async def fetch_promo_incentive_summary(
                         range_end = min(period["valid_to"], definition["end_date"])
                         if range_start > range_end:
                             continue
-                        key = campaign_context.period_evaluation_key(
+                        evaluation_key = campaign_context.period_evaluation_key(
                             definition,
                             range_start,
                             range_end,
                         )
-                        evaluation = campaign_context.period_evaluations.get(key)
+                        evaluation = campaign_context.period_evaluations.get(
+                            evaluation_key
+                        )
                         if evaluation is None:
                             evaluation = await compute_promotion_result(
                                 conn,
@@ -263,7 +267,9 @@ async def fetch_promo_incentive_summary(
                                 current_scope=current_scope,
                                 include_closed_stores=include_closed_stores,
                             )
-                            campaign_context.period_evaluations[key] = evaluation
+                            campaign_context.period_evaluations[
+                                evaluation_key
+                            ] = evaluation
                         if not evaluation.is_complete:
                             calculation_status = "invalid"
                             calculation_warnings.append(

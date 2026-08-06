@@ -50,8 +50,12 @@ def test_historical_workbook_is_validated_without_database_dependencies(tmp_path
     assert report.stores == 1
     assert report.parser_resources["format"] == "xlsx"
     assert report.parser_resources["rows"] == 1
-    assert float(report.parser_resources["parse_seconds"]) >= 0
-    assert int(report.parser_resources["peak_rss_bytes"]) > 0
+    parse_seconds = report.parser_resources["parse_seconds"]
+    peak_rss_bytes = report.parser_resources["peak_rss_bytes"]
+    assert parse_seconds is not None
+    assert peak_rss_bytes is not None
+    assert float(parse_seconds) >= 0
+    assert int(peak_rss_bytes) > 0
     assert list(loaded.columns) == historical.OLD_COLUMNS
     assert "Categorie" not in loaded.columns
     assert "is_cartela" not in loaded.columns

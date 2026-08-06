@@ -14,6 +14,11 @@ def _money(value: object) -> Decimal:
     return Decimal(str(value or 0))
 
 
+def _percent_change_float(new_value: float, base_value: float) -> float | None:
+    result = percent_change(new_value, base_value)
+    return float(result) if result is not None else None
+
+
 def serialize_header(row: dict[str, Any]) -> dict[str, Any]:
     for key in ("total_target", "min_floor", "previous_month_floor_pct", "proposed_total", "final_total"):
         if key in row:
@@ -158,15 +163,15 @@ def regional_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "current_forecast_total": float(values["current_forecast_total"]),
             "last_year_base_total": float(values["last_year_base_total"]),
             "last_year_target_total": float(values["last_year_target_total"]),
-            "proposed_growth_vs_current_pct": float(percent_change(
+            "proposed_growth_vs_current_pct": _percent_change_float(
                 values["proposed_total"], values["current_forecast_total"]
-            )) if values["current_forecast_total"] > 0 else None,
-            "final_growth_vs_current_pct": float(percent_change(
+            ) if values["current_forecast_total"] > 0 else None,
+            "final_growth_vs_current_pct": _percent_change_float(
                 values["final_total"], values["current_forecast_total"]
-            )) if values["current_forecast_total"] > 0 else None,
-            "last_year_growth_pct": float(percent_change(
+            ) if values["current_forecast_total"] > 0 else None,
+            "last_year_growth_pct": _percent_change_float(
                 values["last_year_target_total"], values["last_year_base_total"]
-            )) if values["last_year_base_total"] > 0 else None,
+            ) if values["last_year_base_total"] > 0 else None,
         }
         for regional, values in sorted(summary.items())
     ]

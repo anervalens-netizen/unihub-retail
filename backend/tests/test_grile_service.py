@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
-from typing import Any
+from typing import Any, cast
 
+from repositories.grile import GrileRepository
 from services import grile
 from services.grile import _completed_days_for_month, _normalize_completion_window
 
@@ -241,7 +242,7 @@ def test_grile_run_heartbeat_is_periodic_while_job_is_alive() -> None:
         lost = asyncio.Event()
         task = asyncio.create_task(
             grile._grile_run_heartbeat_loop(
-                Repository(),
+                cast(GrileRepository, Repository()),
                 run_id=23,
                 stop=stop,
                 lease_lost=lost,
@@ -307,7 +308,7 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
         }
         healthy = Repository(fail_persistence=False)
         assert await grile._run_claimed_grile_check(
-            healthy,
+            cast(GrileRepository, healthy),
             run_id=31,
             sheets=sheets,
             expected=expected,
@@ -322,7 +323,7 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
         failing = Repository(fail_persistence=True)
         try:
             await grile._run_claimed_grile_check(
-                failing,
+                cast(GrileRepository, failing),
                 run_id=32,
                 sheets=sheets,
                 expected=expected,

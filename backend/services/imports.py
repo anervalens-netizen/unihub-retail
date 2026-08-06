@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 import asyncpg
@@ -28,6 +29,7 @@ from models import (
     SalesGenerationManifest,
     SalesGenerationPromotionRequest,
 )
+from schemas.erp_reconciliation import ErpReconciliationResponse
 from repositories.imports import ImportsRepository
 from services.dashboard_specials import (
     get_special_cards_config_path,
@@ -163,7 +165,7 @@ def _to_public_import_status(result: JobResult) -> ImportJobStatus:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Job status unavailable",
         )
-    job_kind = (
+    job_kind: Literal["sales", "promo_actuals", "erp_reconciliation"] = (
         "promo_actuals"
         if result.job_id.startswith("promo-actuals:")
         else "erp_reconciliation"
@@ -172,13 +174,18 @@ def _to_public_import_status(result: JobResult) -> ImportJobStatus:
     )
     payload = ImportResponse(**result.result) if result.result and job_kind == "sales" else None
     promo_payload = PromoActualImportResponse(**result.result) if result.result and job_kind == "promo_actuals" else None
+    erp_payload = (
+        ErpReconciliationResponse(**result.result)
+        if result.result and job_kind == "erp_reconciliation"
+        else None
+    )
     return ImportJobStatus(
         job_id=result.job_id,
         status=result.status.value,
         job_kind=job_kind,
         result=payload,
         promo_result=promo_payload,
-        erp_result=result.result if result.result and job_kind == "erp_reconciliation" else None,
+        erp_result=erp_payload,
         error=result.error,
     )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,7 +15,11 @@ async def test_store_targets_returns_documented_response_model() -> None:
     service.save_targets.return_value = 2
 
     result = await save_targets(
-        payload=[StoreTargetInput(site_code="SYNTHETIC-SITE", import_month="2026-08", target_value=100)],
+        payload=[StoreTargetInput(
+            site_code="SYNTHETIC-SITE",
+            import_month="2026-08",
+            target_value=Decimal("100"),
+        )],
         _claims=None,
         _rate_limit=None,
         svc=service,

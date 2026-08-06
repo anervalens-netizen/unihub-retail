@@ -4,6 +4,7 @@ import asyncio
 import time
 from datetime import date
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -181,9 +182,9 @@ async def test_invalid_iso_date_records_finite_reason_without_pool_acquire() -> 
     before = metric._value.get()
 
     with pytest.raises(CampaignDateRangeError):
-        await service.get_promotions_incentives(  # type: ignore[arg-type]
-            "bad-date",
-            "2026-08-31",
+        await service.get_promotions_incentives(
+            cast(date, "bad-date"),
+            cast(date, "2026-08-31"),
             None,
             None,
             None,

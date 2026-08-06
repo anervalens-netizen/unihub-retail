@@ -99,7 +99,7 @@ class CampaignResponseSnapshot:
     campaign_context: CampaignContext
     summary: PromoIncentiveSummary | None
     store_multipliers: dict[str, float]
-    store_achievements: dict[str, float]
+    store_achievements: dict[str, float | None]
     promo_total_row: Any | None
     promo_store_rows: list[Any] = field(default_factory=list)
     incentive_store_rows: list[Any] = field(default_factory=list)
