@@ -90,6 +90,10 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
         async def count_active_sheets(self, _month: str) -> int:
             return 2
 
+        async def reconcile_stale_runs(self, *, run_month: str):
+            assert run_month == "2026-07"
+            return []
+
         async def get_latest_run(self, _month: str):
             return latest
 
@@ -125,6 +129,7 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
     assert result["run"]["ok_count"] == 1
     assert result["run"]["problem_count"] == 1
     assert result["run"]["error_count"] == 0
+    assert result["run"]["active"] is False
     visible = {
         store["site_code"]
         for manager in result["managers"]
@@ -219,3 +224,121 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
     assert phases[1] == ("queue_wait", 2.0)
     assert phases[3][1] is not None
     assert phases[3][1] >= 0
+
+
+def test_grile_run_heartbeat_is_periodic_while_job_is_alive() -> None:
+    heartbeats = 0
+
+    class Repository:
+        async def heartbeat_run(self, run_id: int) -> bool:
+            nonlocal heartbeats
+            assert run_id == 23
+            heartbeats += 1
+            return True
+
+    async def scenario() -> None:
+        stop = asyncio.Event()
+        lost = asyncio.Event()
+        task = asyncio.create_task(
+            grile._grile_run_heartbeat_loop(
+                Repository(),
+                run_id=23,
+                stop=stop,
+                lease_lost=lost,
+                interval=0.001,
+            )
+        )
+        while heartbeats < 2:
+            await asyncio.sleep(0)
+        stop.set()
+        await task
+        assert not lost.is_set()
+
+    asyncio.run(scenario())
+    assert heartbeats >= 2
+
+
+def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypatch) -> None:
+    values: list[dict[str, Any]] = [
+        {"values": [[100]]},
+        {"values": [[50]]},
+        {"values": []},
+        {"values": []},
+        {"values": []},
+    ]
+    closed: list[object] = []
+    monkeypatch.setattr(grile, "get_credentials", lambda: object())
+    monkeypatch.setattr(grile, "build_services", lambda: (object(), object()))
+    monkeypatch.setattr(grile, "close_services", lambda *services: closed.extend(services))
+    monkeypatch.setattr(grile, "fetch_grila", lambda *_args: values)
+    monkeypatch.setattr(grile, "fetch_mod_time", lambda *_args: None)
+
+    async def scenario() -> None:
+        class Repository:
+            def __init__(self, *, fail_persistence: bool) -> None:
+                self.fail_persistence = fail_persistence
+                self.finalized: list[dict[str, Any]] = []
+                self.persisting = 0
+
+            async def record_full_observation(self, *_args, **_kwargs) -> bool:
+                self.persisting += 1
+                try:
+                    await asyncio.sleep(0)
+                    if self.fail_persistence:
+                        raise RuntimeError("synthetic persistence failure")
+                    return True
+                finally:
+                    self.persisting -= 1
+
+            async def set_run_progress(self, *_args) -> bool:
+                return True
+
+            async def finalize_run(self, _run_id: int, **kwargs) -> bool:
+                self.finalized.append(kwargs)
+                return True
+
+        sheets = [
+            {"site_code": "S1", "sheet_id": "sheet-1", "template_version": "v2"},
+            {"site_code": "S2", "sheet_id": "sheet-2", "template_version": "v2"},
+        ]
+        expected = {
+            site: {"db_target": 100, "db_sales_mtd": 50}
+            for site in ("S1", "S2")
+        }
+        healthy = Repository(fail_persistence=False)
+        assert await grile._run_claimed_grile_check(
+            healthy,
+            run_id=31,
+            sheets=sheets,
+            expected=expected,
+            generations={"S1": 1, "S2": 1},
+            triggered_by_sub="subject",
+            tolerance=1,
+            concurrency=2,
+            lease_lost=asyncio.Event(),
+        ) == 31
+        assert healthy.finalized[0]["status"] == "completed"
+
+        failing = Repository(fail_persistence=True)
+        try:
+            await grile._run_claimed_grile_check(
+                failing,
+                run_id=32,
+                sheets=sheets,
+                expected=expected,
+                generations={"S1": 1, "S2": 1},
+                triggered_by_sub="subject",
+                tolerance=1,
+                concurrency=2,
+                lease_lost=asyncio.Event(),
+            )
+        except RuntimeError as exc:
+            assert "persistence failure" in str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("persistence failure was not propagated")
+        assert failing.persisting == 0
+        assert failing.finalized == []
+
+    asyncio.run(scenario())
+    assert len(closed) >= 6
+    assert len(closed) % 2 == 0

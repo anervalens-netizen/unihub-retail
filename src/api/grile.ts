@@ -8,6 +8,7 @@ export interface GrileRun {
   source: 'manual' | 'auto';
   source_snapshot_id: number | null;
   status: 'queued' | 'running' | 'completed' | 'failed';
+  active: boolean;
   progress_current: number;
   progress_total: number;
   ok_count: number;
@@ -16,6 +17,7 @@ export interface GrileRun {
   duration_ms: number | null;
   error_message: string | null;
   started_at: string | null;
+  heartbeat_at: string | null;
   finished_at: string | null;
   created_at: string | null;
 }

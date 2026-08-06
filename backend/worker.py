@@ -28,6 +28,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
 EXPORT_CLEANUP_SECONDS = 5 * 60
+GRILE_RUN_RECONCILE_SECONDS = 60
 
 
 async def _refresh_visits_snapshot_once(pool: Any) -> int:
@@ -79,6 +80,29 @@ async def _grile_monthly_reconciliation_loop(ctx: dict) -> None:
             await asyncio.sleep(60)
             if not stop.is_set():
                 await reconcile_monthly_operations(pool, adapter)
+    except asyncio.CancelledError:
+        return
+
+
+async def _grile_run_reconciliation_loop(ctx: dict) -> None:
+    from repositories.grile import GrileRepository
+
+    stop = ctx["grile_run_reconcile_stop"]
+    repo = GrileRepository(ctx["db_pool"])
+    try:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=GRILE_RUN_RECONCILE_SECONDS)
+            except TimeoutError:
+                pass
+            if stop.is_set():
+                break
+            try:
+                reconciled = await repo.reconcile_stale_runs()
+                if reconciled:
+                    logger.warning("Closed stale Grile runs: %s", reconciled)
+            except Exception:
+                logger.exception("Periodic Grile run reconciliation failed")
     except asyncio.CancelledError:
         return
 
@@ -473,12 +497,20 @@ async def startup(ctx: dict) -> None:
     ctx.setdefault("grile_monthly_sessions", {})
     if worker_role != "imports":
         from repositories.export_operations import ExportOperationsRepository
+        from repositories.grile import GrileRepository
         from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
         from services.grile_monthly import reconcile_monthly_operations
         from services.grile_monthly_google import GoogleSyncAdapter
 
         await cleanup_export_operations(ExportOperationsRepository(pool))
         await sweep_orphan_export_artifacts(ExportOperationsRepository(pool))
+        grile_run_repo = GrileRepository(pool)
+        interrupted_runs = await grile_run_repo.reconcile_interrupted_running_runs()
+        reconciled_runs = await grile_run_repo.reconcile_stale_runs()
+        if interrupted_runs:
+            logger.warning("Closed interrupted Grile runs at worker startup: %s", interrupted_runs)
+        if reconciled_runs:
+            logger.warning("Closed stale Grile runs at worker startup: %s", reconciled_runs)
         ctx["export_cleanup_stop"] = asyncio.Event()
         ctx["export_cleanup_task"] = asyncio.create_task(
             _export_cleanup_loop(ctx),
@@ -496,6 +528,11 @@ async def startup(ctx: dict) -> None:
         ctx["grile_monthly_reconcile_task"] = asyncio.create_task(
             _grile_monthly_reconciliation_loop(ctx),
             name="grile-monthly-reconciler",
+        )
+        ctx["grile_run_reconcile_stop"] = asyncio.Event()
+        ctx["grile_run_reconcile_task"] = asyncio.create_task(
+            _grile_run_reconciliation_loop(ctx),
+            name="grile-run-reconciler",
         )
         ctx["visits_snapshot_refresh_stop"] = asyncio.Event()
         ctx["visits_snapshot_refresh_task"] = asyncio.create_task(
@@ -721,9 +758,65 @@ async def grile_check_background(
             "agent_targets_before_sha256": before.sha256,
             "agent_targets_after_sha256": after.sha256,
         }
+    except asyncio.CancelledError:
+        current = asyncio.current_task()
+        if current is not None:
+            while current.cancelling():
+                current.uncancel()
+        await asyncio.shield(
+            asyncio.create_task(
+                _terminalize_grile_run_after_worker_exit(
+                    ctx,
+                    run_id=run_id,
+                    error_message="grile_run_worker_cancelled",
+                )
+            )
+        )
+        raise
+    except TimeoutError:
+        await _terminalize_grile_run_after_worker_exit(
+            ctx,
+            run_id=run_id,
+            error_message="grile_run_worker_timeout",
+        )
+        raise
+    except Exception:
+        await _terminalize_grile_run_after_worker_exit(
+            ctx,
+            run_id=run_id,
+            error_message="grile_run_worker_failed",
+        )
+        raise
     finally:
         if token is not None:
             reset_request_id(token)
+
+
+async def _terminalize_grile_run_after_worker_exit(
+    ctx: dict,
+    *,
+    run_id: int | None,
+    error_message: str,
+) -> None:
+    if run_id is None:
+        return
+    try:
+        pool = ctx.get("db_pool")
+        if pool is None:
+            from db.connection import get_pool
+
+            pool = await get_pool()
+        from repositories.grile import GrileRepository
+
+        await GrileRepository(pool).fail_run(
+            int(run_id),
+            error_message=error_message,
+        )
+    except Exception:  # noqa: BLE001 - preserve the original ARQ terminal event
+        logger.exception(
+            "Could not terminalize Grile run after worker exit run_id=%s",
+            run_id,
+        )
 
 
 async def grile_store_refresh_background(
@@ -969,6 +1062,14 @@ async def shutdown(ctx: dict) -> None:
     if reconcile_task is not None:
         reconcile_task.cancel()
         await asyncio.gather(reconcile_task, return_exceptions=True)
+
+    run_reconcile_task = ctx.get("grile_run_reconcile_task")
+    run_reconcile_stop = ctx.get("grile_run_reconcile_stop")
+    if run_reconcile_stop is not None:
+        run_reconcile_stop.set()
+    if run_reconcile_task is not None:
+        run_reconcile_task.cancel()
+        await asyncio.gather(run_reconcile_task, return_exceptions=True)
 
     visits_task = ctx.get("visits_snapshot_refresh_task")
     visits_stop = ctx.get("visits_snapshot_refresh_stop")

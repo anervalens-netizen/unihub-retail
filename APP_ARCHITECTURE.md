@@ -969,8 +969,14 @@ Retail compara `K5/L5` din grila cu `store_targets` si
 nativ in Retail: finalizare salarii, export arhiva XLSX/ZIP si reset lunar
 controlat al range-urilor editabile. Output-urile sunt generate in
 `backend/outputs/grile`. Verificarile async rezerva atomic un singur run
-`queued/running` per luna inainte de enqueue; workerul actualizeaza heartbeat-ul,
-iar o rezervare abandonata poate fi inlocuita dupa doua ore.
+`queued/running` per luna inainte de enqueue. Workerul actualizeaza heartbeat-ul
+independent la 30s si progresul dupa fiecare magazin. Exceptia, timeout-ul sau
+anularea terminalizeaza prin CAS in `failed`; startupul workerului inchide
+runurile `running` mostenite, iar reconcilerul periodic si boundary-urile
+overview/status expira `running` dupa 5 minute fara heartbeat si `queued` dupa
+doua ore. UI foloseste starea `active` autoritativa a backendului, nu eticheta
+bruta persistata inainte de reconciliere. I/O Google are timeout configurabil
+bounded si executorul nu asteapta nelimitat threadurile dupa anulare.
 
 Operatiunile lunare sunt fail-closed si folosesc manifestele persistente din
 `grile_monthly_manifests`. Finalizarea valideaza strict valorile si coverage-ul

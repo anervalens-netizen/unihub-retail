@@ -25,13 +25,25 @@ persistă rezultatul verificării; nu modifică `agent_targets` și nu scrie în
 Google Sheets.
 
 Pentru fiecare lună poate exista cel mult un run `queued` sau `running`.
-Rezervarea PostgreSQL precedă enqueue-ul, heartbeat-ul menține lease-ul, iar o
-rezervare abandonată devine auditabil `failed` înainte de o nouă încercare.
+Rezervarea PostgreSQL precedă enqueue-ul. Heartbeat-ul rulează independent la
+30s cât timp jobul este viu, iar progresul este salvat după fiecare magazin.
+Orice excepție, timeout sau anulare ARQ încearcă terminalizarea CAS în `failed`.
+Startupul workerului închide runurile `running` moștenite; reconcilierea
+periodică și citirile overview/status expiră un `running` fără heartbeat după
+5 minute și un `queued` după două ore. Rândul runului și observațiile deja
+valide rămân auditabile; nu se face `DELETE`. UI blochează retry numai când
+backendul returnează `run.active=true` după reconciliere.
 
 Scope-urile clientului de verificare sunt strict read-only:
 
 - `spreadsheets.readonly` pentru valorile grilei;
 - `drive.metadata.readonly` pentru metadatele necesare monitorizării.
+
+Transportul Google are timeout HTTP implicit 30s, configurabil prin
+`GRILE_GOOGLE_HTTP_TIMEOUT_SECONDS` între 1 și 120s. La failure/cancellation,
+taskurile async de persistență sunt anulate și așteptate înainte de întoarcerea
+jobului; executorul oprește coada bounded, iar fiecare thread își închide
+propriile servicii Google în `finally`.
 
 Contractul UX activ din `2026-07-17` are `15` rânduri în tabelul
 `Suplimentar`. Verificarea citește `Grila!B32:G46` și include toate datele din

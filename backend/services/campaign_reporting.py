@@ -438,21 +438,43 @@ def _promo_agent_metrics(
 ) -> tuple[int, int, Decimal] | tuple[None, None, None]:
     if result is None:
         return None, None, None
+    source_agent = _source_agent(agent)
     discounted_units = sum(
         int(units)
         for (site, result_agent, _item), units in result.excluded_units.items()
-        if site == site_code and result_agent == agent
+        if site == site_code and result_agent == source_agent
     )
     discount_value = sum(
         (
             value
             for (site, result_agent, _item), value in result.excluded_discount_values.items()
-            if site == site_code and result_agent == agent
+            if site == site_code and result_agent == source_agent
         ),
         Decimal("0"),
     )
     # The canonical evaluator enforces one discounted unit per qualifying bon.
     return discounted_units, discounted_units, discount_value
+
+
+def _promo_store_agents(
+    result: Any,
+    *,
+    site_code: str,
+    store_agents: list[_StoreAgent],
+) -> list[_StoreAgent]:
+    """Expose canonical Neatribuit totals produced under the source agent '-'."""
+    if result is None or not store_agents:
+        return store_agents
+    has_unassigned = any(
+        site == site_code and result_agent == "-"
+        for site, result_agent, _item in result.excluded_units
+    )
+    has_published_unassigned = any(
+        scope.agent in {"-", "Neatribuit"} for scope in store_agents
+    )
+    if not has_unassigned or has_published_unassigned:
+        return store_agents
+    return [*store_agents, _StoreAgent(store_agents[0].store, "Neatribuit")]
 
 
 def _source_agent(agent: str) -> str:
@@ -538,12 +560,16 @@ class CampaignReportingPublisher:
                         campaign_source_status,
                     )
                     result = evaluation.result
-                    for store_agent in store_scopes:
+                    for store_agent in _promo_store_agents(
+                        result,
+                        site_code=site_code,
+                        store_agents=store_scopes,
+                    ):
                         source_sales, source_qty, source_product_codes = await _promotion_source_totals(
                             conn,
                             period=period,
                             site_code=site_code,
-                            agent=store_agent.agent,
+                            agent=_source_agent(store_agent.agent),
                             start_date=definition["start_date"],
                             end_date=definition["end_date"],
                             item_codes=evaluation.item_codes,

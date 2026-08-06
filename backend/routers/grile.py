@@ -85,7 +85,9 @@ async def grile_run_status(
 ) -> dict[str, Any]:
     pool = await get_pool()
     repo = GrileRepository(pool)
-    latest = await repo.get_latest_run(await resolve_month(pool, month))
+    resolved = await resolve_month(pool, month)
+    await repo.reconcile_stale_runs(run_month=resolved)
+    latest = await repo.get_latest_run(resolved)
     return {"run": _run_to_dict(latest) if latest is not None else None}
 
 

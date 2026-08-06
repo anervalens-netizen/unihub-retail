@@ -11,6 +11,7 @@ import asyncio
 import calendar
 from hashlib import sha256
 import json
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -34,7 +35,9 @@ from services.grile_sheets import (
 
 DEFAULT_TOLERANCE = 1.0
 DEFAULT_CONCURRENCY = 3  # sub quota Google read (60/min/user); 429 rare la acest nivel
+GRILE_RUN_HEARTBEAT_SECONDS = 30.0
 _TRANSIENT = {429, 500, 502, 503, 504}
+logger = logging.getLogger(__name__)
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -42,15 +45,28 @@ def _is_transient(exc: Exception) -> bool:
     return status in _TRANSIENT
 
 
-def _retry_sync(fn, *, attempts: int = 6, base_delay: float = 3.0):
+def _retry_sync(
+    fn,
+    *,
+    attempts: int = 6,
+    base_delay: float = 3.0,
+    stop_event: threading.Event | None = None,
+):
     last: Exception | None = None
     for attempt in range(attempts):
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("Grile Google work cancelled")
         try:
             return fn()
         except Exception as exc:  # noqa: BLE001 — re-raise dupa retry
             last = exc
             if attempt < attempts - 1 and _is_transient(exc):
-                time.sleep(base_delay * (2**attempt))
+                delay = base_delay * (2**attempt)
+                if stop_event is not None:
+                    if stop_event.wait(delay):
+                        raise RuntimeError("Grile Google work cancelled") from exc
+                else:
+                    time.sleep(delay)
                 continue
             raise
     assert last is not None  # pragma: no cover
@@ -209,57 +225,124 @@ async def run_grile_check(
     )
     if generations is None:
         return run_id
-    started = time.monotonic()
+    heartbeat_stop = asyncio.Event()
+    lease_lost = asyncio.Event()
+    heartbeat_task = asyncio.create_task(
+        _grile_run_heartbeat_loop(
+            repo,
+            run_id=run_id,
+            stop=heartbeat_stop,
+            lease_lost=lease_lost,
+        ),
+        name=f"grile-run-heartbeat:{run_id}",
+    )
+    try:
+        return await _run_claimed_grile_check(
+            repo,
+            run_id=run_id,
+            sheets=sheets,
+            expected=expected,
+            generations=generations,
+            triggered_by_sub=triggered_by_sub,
+            tolerance=tolerance,
+            concurrency=concurrency,
+            lease_lost=lease_lost,
+        )
+    finally:
+        heartbeat_stop.set()
+        heartbeat_task.cancel()
+        await asyncio.gather(heartbeat_task, return_exceptions=True)
 
-    # Fail-fast daca lipsesc credentialele (SA file), inainte de a porni thread-urile.
+
+async def _grile_run_heartbeat_loop(
+    repo: GrileRepository,
+    *,
+    run_id: int,
+    stop: asyncio.Event,
+    lease_lost: asyncio.Event,
+    interval: float = GRILE_RUN_HEARTBEAT_SECONDS,
+) -> None:
+    try:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=interval)
+                continue
+            except TimeoutError:
+                pass
+            try:
+                retained = await repo.heartbeat_run(run_id)
+            except Exception:  # noqa: BLE001 - next tick may recover a transient DB failure
+                logger.exception("Grile run heartbeat failed run_id=%s", run_id)
+                continue
+            if not retained:
+                lease_lost.set()
+                return
+    except asyncio.CancelledError:
+        return
+
+
+async def _run_claimed_grile_check(
+    repo: GrileRepository,
+    *,
+    run_id: int,
+    sheets: list[asyncpg.Record],
+    expected: dict[str, dict[str, Any]],
+    generations: dict[str, int],
+    triggered_by_sub: str | None,
+    tolerance: float,
+    concurrency: int,
+    lease_lost: asyncio.Event,
+) -> int:
+    started = time.monotonic()
     try:
         await asyncio.to_thread(get_credentials)
     except Exception as exc:  # noqa: BLE001 — lipsa SA / creds
         await repo.finalize_run(
-            run_id, status="failed", ok_count=0, problem_count=0,
-            error_count=len(sheets), duration_ms=int((time.monotonic() - started) * 1000),
+            run_id,
+            status="failed",
+            ok_count=0,
+            problem_count=0,
+            error_count=len(sheets),
+            duration_ms=int((time.monotonic() - started) * 1000),
             error_message=str(exc)[:500],
         )
         return run_id
 
-    # googleapiclient/httplib2 NU e thread-safe: fiecare thread isi
-    # construieste propriile servicii (thread-local), pe un executor dedicat
-    # dimensionat la `concurrency`. Astfel max `concurrency` clienti, fiecare
-    # folosit de un singur thread.
-    _local = threading.local()
-    created_services: list[tuple[Any, Any]] = []
-    created_services_lock = threading.Lock()
-
-    def _services() -> tuple[Any, Any]:
-        if not hasattr(_local, "svc"):
-            _local.svc = build_services()
-            with created_services_lock:
-                created_services.append(_local.svc)
-        return _local.svc
+    google_stop = threading.Event()
 
     def _fetch_one(sid: str, template_version: str) -> tuple[list, str | None]:
-        sheets_svc, drive_svc = _services()
-        value_ranges = _retry_sync(
-            lambda: fetch_grila(sheets_svc, sid, template_version)
-        )
-        mod_raw = _retry_sync(lambda: fetch_mod_time(drive_svc, sid))
-        return value_ranges, mod_raw
+        sheets_svc, drive_svc = build_services()
+        try:
+            value_ranges = _retry_sync(
+                lambda: fetch_grila(sheets_svc, sid, template_version),
+                stop_event=google_stop,
+            )
+            mod_raw = _retry_sync(
+                lambda: fetch_mod_time(drive_svc, sid),
+                stop_event=google_stop,
+            )
+            return value_ranges, mod_raw
+        finally:
+            close_services(sheets_svc, drive_svc)
 
     executor = ThreadPoolExecutor(max_workers=concurrency)
     loop = asyncio.get_running_loop()
-    progress = {"done": 0}
+    progress = 0
     progress_lock = asyncio.Lock()
 
     async def process(sheet: asyncpg.Record) -> str:
-        site = sheet["site_code"]
-        sid = sheet["sheet_id"]
+        nonlocal progress
+        site = str(sheet["site_code"])
+        sid = str(sheet["sheet_id"])
         exp = expected.get(site, {})
+        if lease_lost.is_set():
+            raise RuntimeError("Grile run lost its DB lease")
         try:
             value_ranges, mod_raw = await loop.run_in_executor(
                 executor,
                 _fetch_one,
                 sid,
-                sheet["template_version"],
+                str(sheet["template_version"]),
             )
             row = _status_from_google(
                 site_code=site,
@@ -267,26 +350,17 @@ async def run_grile_check(
                 value_ranges=value_ranges,
                 modified_time=mod_raw,
                 tolerance=tolerance,
-                template_version=sheet["template_version"],
+                template_version=str(sheet["template_version"]),
             )
             cls = row["_class"]
         except GrileStructureError as exc:
             row = _error_row(site, exp, tolerance, "STRUCTURAL_INVALID", str(exc)[:500])
             cls = "error"
-        except Exception as exc:  # noqa: BLE001 — eroare per magazin, nu opreste runul
-            row = {
-                "site_code": site,
-                "db_target": _num(exp.get("db_target")),
-                "db_sales_mtd": _num(exp.get("db_sales_mtd")),
-                "db_max_sale_date": exp.get("db_max_sale_date"),
-                "fill_status": None,
-                "target_status": None,
-                "sales_status": None,
-                "tolerance": tolerance,
-                "error_code": "GOOGLE_ERROR",
-                "error_message": str(exc)[:500],
-            }
+        except Exception as exc:  # noqa: BLE001 — eroare Google per magazin
+            row = _error_row(site, exp, tolerance, "GOOGLE_ERROR", str(exc)[:500])
             cls = "error"
+        if lease_lost.is_set() or google_stop.is_set():
+            raise RuntimeError("Grile run stopped before observation persistence")
         await repo.record_full_observation(
             run_id,
             row,
@@ -294,25 +368,44 @@ async def run_grile_check(
             checked_by_sub=triggered_by_sub,
         )
         async with progress_lock:
-            progress["done"] += 1
-            if progress["done"] % 5 == 0 or progress["done"] == len(sheets):
-                await repo.set_run_progress(run_id, progress["done"])
+            progress += 1
+            if not await repo.set_run_progress(run_id, progress):
+                lease_lost.set()
+                raise RuntimeError("Grile run lost its DB lease")
         return cls
 
+    tasks = [
+        asyncio.create_task(process(sheet), name=f"grile-store:{run_id}:{sheet['site_code']}")
+        for sheet in sheets
+    ]
     try:
-        results = await asyncio.gather(*[process(s) for s in sheets], return_exceptions=False)
+        results = await asyncio.gather(*tasks)
+    except BaseException:
+        google_stop.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     finally:
-        executor.shutdown(wait=True)
-        for service_pair in created_services:
-            close_services(*service_pair)
+        google_stop.set()
+        executor.shutdown(wait=False, cancel_futures=True)
 
-    ok = sum(1 for r in results if r == "ok")
-    err = sum(1 for r in results if r == "error")
-    problem = len(results) - ok - err
-    await repo.finalize_run(
-        run_id, status="completed", ok_count=ok, problem_count=problem,
-        error_count=err, duration_ms=int((time.monotonic() - started) * 1000),
+    if lease_lost.is_set():
+        raise RuntimeError("Grile run lost its DB lease")
+    ok = sum(1 for result in results if result == "ok")
+    error = sum(1 for result in results if result == "error")
+    problem = len(results) - ok - error
+    completed = await repo.finalize_run(
+        run_id,
+        status="completed",
+        ok_count=ok,
+        problem_count=problem,
+        error_count=error,
+        duration_ms=int((time.monotonic() - started) * 1000),
     )
+    if not completed:
+        raise RuntimeError("Grile run lost its DB lease before completion")
     return run_id
 
 
@@ -446,6 +539,7 @@ async def resolve_month(pool: asyncpg.Pool, month: str | None) -> str:
 
 async def get_overview(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
     repo = GrileRepository(pool)
+    await repo.reconcile_stale_runs(run_month=month)
     total_sheets = await repo.count_active_sheets(month)
     latest = await repo.get_latest_run(month)
     hierarchy = await repo.get_hierarchy()
@@ -632,12 +726,15 @@ def _completed_days_for_month(month: str, *, today: date | None = None) -> int |
 
 
 def _run_to_dict(r: Mapping[str, Any]) -> dict[str, Any]:
+    status = str(r["status"])
+    heartbeat_at = r.get("heartbeat_at")
     return {
         "id": r["id"],
         "run_month": r["run_month"],
         "source": r["source"],
         "source_snapshot_id": r["source_snapshot_id"],
-        "status": r["status"],
+        "status": status,
+        "active": status in {"queued", "running"},
         "progress_current": r["progress_current"],
         "progress_total": r["progress_total"],
         "ok_count": r["ok_count"],
@@ -646,6 +743,7 @@ def _run_to_dict(r: Mapping[str, Any]) -> dict[str, Any]:
         "duration_ms": r["duration_ms"],
         "error_message": r["error_message"],
         "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+        "heartbeat_at": heartbeat_at.isoformat() if heartbeat_at else None,
         "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
     }

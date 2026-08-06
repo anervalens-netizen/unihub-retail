@@ -12,6 +12,7 @@ import services.jobs
 import services.export_operations
 import services.erp_reconciliation
 import services.imports
+import repositories.grile
 import worker
 
 
@@ -178,6 +179,18 @@ async def test_operations_worker_does_not_reconcile_imports(
     monkeypatch.setattr(services.export_operations, "cleanup_export_operations", export_cleanup)
     orphan_sweep = AsyncMock()
     monkeypatch.setattr(services.export_operations, "sweep_orphan_export_artifacts", orphan_sweep)
+    run_reconcile = AsyncMock(return_value=[192])
+    restart_reconcile = AsyncMock(return_value=[191])
+    monkeypatch.setattr(
+        repositories.grile,
+        "GrileRepository",
+        lambda received_pool: SimpleNamespace(
+            reconcile_stale_runs=run_reconcile,
+            reconcile_interrupted_running_runs=restart_reconcile,
+        )
+        if received_pool is pool
+        else None,
+    )
     monkeypatch.setenv("RETAIL_WORKER_ROLE", "operations")
 
     ctx: dict = {}
@@ -188,13 +201,17 @@ async def test_operations_worker_does_not_reconcile_imports(
     visits_refresh.assert_awaited_once_with(pool)
     export_cleanup.assert_awaited_once()
     orphan_sweep.assert_awaited_once()
+    run_reconcile.assert_awaited_once_with()
+    restart_reconcile.assert_awaited_once_with()
     assert ctx["db_pool"] is pool
     ctx["grile_monthly_reconcile_task"].cancel()
     ctx["visits_snapshot_refresh_task"].cancel()
     ctx["export_cleanup_task"].cancel()
+    ctx["grile_run_reconcile_task"].cancel()
     await asyncio.gather(ctx["grile_monthly_reconcile_task"], return_exceptions=True)
     await asyncio.gather(ctx["visits_snapshot_refresh_task"], return_exceptions=True)
     await asyncio.gather(ctx["export_cleanup_task"], return_exceptions=True)
+    await asyncio.gather(ctx["grile_run_reconcile_task"], return_exceptions=True)
     await ctx["grile_monthly_google"].close()
 
 

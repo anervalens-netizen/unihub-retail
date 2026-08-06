@@ -41,6 +41,9 @@ cantitatea eligibilă pe magazin/produs/perioadă se distribuie ca întreg prin
 metoda celui mai mare rest. Astfel, retururile nu produc valori negative pe
 agent și nici un total mai mare decât magazinul. O diferență fără atribuire se
 afișează explicit ca `Neatribuit`, fără a inventa un agent.
+Publisherul read-modelului Insight păstrează aceeași regulă: totalurile promo
+produse canonic sub agentul sursă `-` sunt publicate o singură dată ca
+`Neatribuit`, prin API-urile publice Campaigns și fără evaluator paralel.
 
 În payload:
 

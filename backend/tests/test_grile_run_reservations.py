@@ -136,3 +136,65 @@ async def test_grile_run_reservation_recovers_an_expired_lease() -> None:
                 run_month,
             )
         await close_db_pool()
+
+
+async def test_grile_reconciler_terminalizes_stale_queued_and_running_only() -> None:
+    pool = await get_pool()
+    repo = GrileRepository(pool)
+    months = ("2099-07", "2099-08", "2099-09")
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM grile_runs WHERE run_month = ANY($1::text[])", months)
+            stale_rows = await conn.fetch(
+                """
+                INSERT INTO grile_runs (run_month, source, status, heartbeat_at, created_at)
+                VALUES
+                    ($1, 'manual', 'queued', now() - interval '10 seconds', now() - interval '10 seconds'),
+                    ($2, 'manual', 'running', now() - interval '10 seconds', now() - interval '10 seconds')
+                RETURNING id
+                """,
+                months[0],
+                months[1],
+            )
+            fresh_id = await conn.fetchval(
+                """
+                INSERT INTO grile_runs (run_month, source, status, heartbeat_at)
+                VALUES ($1, 'manual', 'running', now())
+                RETURNING id
+                """,
+                months[2],
+            )
+
+        reconciled = await repo.reconcile_stale_runs(
+            queued_lease_seconds=1,
+            running_lease_seconds=1,
+        )
+        assert set(reconciled) == {int(row["id"]) for row in stale_rows}
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, status, error_message
+                FROM grile_runs
+                WHERE run_month = ANY($1::text[])
+                ORDER BY id
+                """,
+                months,
+            )
+        states = {int(row["id"]): (row["status"], row["error_message"]) for row in rows}
+        for stale in stale_rows:
+            assert states[int(stale["id"])] == ("failed", "grile_run_lease_expired")
+        assert states[int(fresh_id)] == ("running", None)
+
+        assert await repo.reconcile_interrupted_running_runs() == [int(fresh_id)]
+        async with pool.acquire() as conn:
+            restarted = await conn.fetchrow(
+                "SELECT status, error_message FROM grile_runs WHERE id = $1",
+                fresh_id,
+            )
+        assert restarted["status"] == "failed"
+        assert restarted["error_message"] == "grile_run_worker_restarted"
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM grile_runs WHERE run_month = ANY($1::text[])", months)
+        await close_db_pool()

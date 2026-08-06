@@ -112,11 +112,14 @@ class FixtureRepository:
         self.captured[run_id].append(dict(row))
         return True
 
-    async def set_run_progress(self, _run_id: int, _current: int) -> None:
-        return None
+    async def heartbeat_run(self, _run_id: int) -> bool:
+        return True
 
-    async def finalize_run(self, _run_id: int, **_kwargs: Any) -> None:
-        return None
+    async def set_run_progress(self, _run_id: int, _current: int) -> bool:
+        return True
+
+    async def finalize_run(self, _run_id: int, **_kwargs: Any) -> bool:
+        return True
 
 
 def _proc_memory_mb() -> tuple[float, float]:

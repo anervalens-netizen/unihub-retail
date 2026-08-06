@@ -441,7 +441,7 @@ export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
     queryFn: ({ signal }) => getGrileOverview(month || undefined, signal),
     refetchInterval: (q) => {
       const run = (q.state.data as Awaited<ReturnType<typeof getGrileOverview>> | undefined)?.run;
-      return run && (run.status === 'running' || run.status === 'queued') ? 3000 : false;
+      return run?.active ? 3000 : false;
     },
   });
 
@@ -460,7 +460,7 @@ export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
   });
 
   const run = data?.run ?? null;
-  const isRunning = run?.status === 'running' || run?.status === 'queued' || runMut.isPending;
+  const isRunning = run?.active === true || runMut.isPending;
   const progressPct =
     run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
 

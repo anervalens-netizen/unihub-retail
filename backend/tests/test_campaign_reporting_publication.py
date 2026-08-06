@@ -10,7 +10,13 @@ from types import SimpleNamespace
 import asyncpg
 import pytest
 
-from services.campaign_reporting import _Store, _promo_agent_metrics, _row
+from services.campaign_reporting import (
+    _Store,
+    _StoreAgent,
+    _promo_agent_metrics,
+    _promo_store_agents,
+    _row,
+)
 
 
 MIGRATION = (
@@ -177,11 +183,13 @@ def test_publisher_reuses_canonical_evaluators_and_preserves_agent_totals() -> N
             ("S1", "Ana", "A"): 2,
             ("S1", "Ana", "B"): 1,
             ("S1", "Bogdan", "A"): 4,
+            ("S1", "-", "A"): 2,
         },
         excluded_discount_values={
             ("S1", "Ana", "A"): Decimal("10.00"),
             ("S1", "Ana", "B"): Decimal("5.00"),
             ("S1", "Bogdan", "A"): Decimal("20.00"),
+            ("S1", "-", "A"): Decimal("9.60"),
         },
     )
     assert _promo_agent_metrics(result, site_code="S1", agent="Ana") == (
@@ -199,6 +207,22 @@ def test_publisher_reuses_canonical_evaluators_and_preserves_agent_totals() -> N
         None,
         None,
     )
+    assert _promo_agent_metrics(result, site_code="S1", agent="Neatribuit") == (
+        2,
+        2,
+        Decimal("9.60"),
+    )
+    store = _Store("S1", "Loc", "Mobiup", "R", "A")
+    scopes = [_StoreAgent(store, "Ana"), _StoreAgent(store, "Bogdan")]
+    assert [
+        scope.agent
+        for scope in _promo_store_agents(result, site_code="S1", store_agents=scopes)
+    ] == ["Ana", "Bogdan", "Neatribuit"]
+    assert _promo_store_agents(
+        result,
+        site_code="S1",
+        store_agents=[*scopes, _StoreAgent(store, "Neatribuit")],
+    )[-1].agent == "Neatribuit"
 
 
 def test_product_codes_are_sorted_deduplicated_and_counted_at_row_grain() -> None:

@@ -6,6 +6,12 @@ from typing import Any
 import asyncpg
 
 
+GRILE_RUN_QUEUED_LEASE_SECONDS = 2 * 60 * 60
+GRILE_RUN_RUNNING_LEASE_SECONDS = 5 * 60
+GRILE_RUN_LEASE_EXPIRED = "grile_run_lease_expired"
+GRILE_RUN_WORKER_RESTARTED = "grile_run_worker_restarted"
+
+
 _RUN_COLUMNS = """
     id, run_month, source_snapshot_id, status, source, progress_current,
     progress_total, ok_count, problem_count, error_count, duration_ms,
@@ -124,14 +130,11 @@ class GrileRepository:
     async def reserve_run(self, *, run_month: str, source: str, source_snapshot_id: int | None, triggered_by_sub: str | None) -> int | None:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
-                    """
-                    UPDATE grile_runs SET status = 'failed',
-                        error_message = 'Rezervare expirata inainte de finalizare',
-                        finished_at = now(), heartbeat_at = now()
-                    WHERE run_month = $1 AND status IN ('queued', 'running')
-                      AND COALESCE(heartbeat_at, started_at, created_at) < now() - interval '2 hours'
-                    """, run_month,
+                await _reconcile_stale_runs_on_connection(
+                    conn,
+                    run_month=run_month,
+                    queued_lease_seconds=GRILE_RUN_QUEUED_LEASE_SECONDS,
+                    running_lease_seconds=GRILE_RUN_RUNNING_LEASE_SECONDS,
                 )
                 return await conn.fetchval(
                     """
@@ -189,23 +192,89 @@ class GrileRepository:
                     generations[site_code] = generation
                 return generations
 
-    async def set_run_progress(self, run_id: int, current: int) -> None:
+    async def heartbeat_run(self, run_id: int) -> bool:
         async with self.pool.acquire() as conn:
-            await conn.execute(
+            result = await conn.execute(
+                """
+                UPDATE grile_runs SET heartbeat_at = now()
+                WHERE id = $1 AND status = 'running'
+                """,
+                run_id,
+            )
+        return result == "UPDATE 1"
+
+    async def set_run_progress(self, run_id: int, current: int) -> bool:
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
                 """UPDATE grile_runs SET progress_current = $2, heartbeat_at = now()
                    WHERE id = $1 AND status = 'running'""", run_id, current,
             )
+        return result == "UPDATE 1"
 
-    async def finalize_run(self, run_id: int, *, status: str, ok_count: int, problem_count: int, error_count: int, duration_ms: int, error_message: str | None = None) -> None:
+    async def finalize_run(self, run_id: int, *, status: str, ok_count: int, problem_count: int, error_count: int, duration_ms: int, error_message: str | None = None) -> bool:
+        if status not in {"completed", "failed"}:
+            raise ValueError("Grile run terminal status must be completed or failed")
         async with self.pool.acquire() as conn:
-            await conn.execute(
+            result = await conn.execute(
                 """
                 UPDATE grile_runs SET status = $2, ok_count = $3, problem_count = $4,
                     error_count = $5, duration_ms = $6, error_message = $7,
-                    progress_current = progress_total, finished_at = now(), heartbeat_at = now()
-                WHERE id = $1
+                    progress_current = CASE WHEN $2 = 'completed' THEN progress_total ELSE progress_current END,
+                    finished_at = now(), heartbeat_at = now()
+                WHERE id = $1 AND status IN ('queued', 'running')
                 """, run_id, status, ok_count, problem_count, error_count, duration_ms, error_message,
             )
+        return result == "UPDATE 1"
+
+    async def fail_run(self, run_id: int, *, error_message: str, duration_ms: int | None = None) -> bool:
+        """CAS any active run to failed without inventing progress or replacing observations."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE grile_runs AS operation
+                SET status = 'failed', error_message = $2,
+                    duration_ms = COALESCE($3, operation.duration_ms),
+                    finished_at = now(), heartbeat_at = now()
+                WHERE operation.id = $1 AND operation.status IN ('queued', 'running')
+                """,
+                run_id,
+                error_message[:500],
+                duration_ms,
+            )
+        return result == "UPDATE 1"
+
+    async def reconcile_stale_runs(
+        self,
+        *,
+        run_month: str | None = None,
+        queued_lease_seconds: int = GRILE_RUN_QUEUED_LEASE_SECONDS,
+        running_lease_seconds: int = GRILE_RUN_RUNNING_LEASE_SECONDS,
+    ) -> list[int]:
+        if queued_lease_seconds <= 0 or running_lease_seconds <= 0:
+            raise ValueError("Grile run leases must be positive")
+        async with self.pool.acquire() as conn:
+            rows = await _reconcile_stale_runs_on_connection(
+                conn,
+                run_month=run_month,
+                queued_lease_seconds=queued_lease_seconds,
+                running_lease_seconds=running_lease_seconds,
+            )
+        return [int(row["id"]) for row in rows]
+
+    async def reconcile_interrupted_running_runs(self) -> list[int]:
+        """A fresh operations worker owns no run left running by its predecessor."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                UPDATE grile_runs AS operation
+                SET status = 'failed', error_message = $1,
+                    finished_at = now(), heartbeat_at = now()
+                WHERE operation.status = 'running'
+                RETURNING operation.id
+                """,
+                GRILE_RUN_WORKER_RESTARTED,
+            )
+        return [int(row["id"]) for row in rows]
 
     async def record_full_observation(self, run_id: int, row: dict[str, Any], *, generation: int, checked_by_sub: str | None = None) -> bool:
         async with self.pool.acquire() as conn:
@@ -363,6 +432,52 @@ async def _allocate_generation(conn: asyncpg.Connection, run_month: str, site_co
         RETURNING next_generation
         """, run_month, site_code,
     ))
+
+
+async def _reconcile_stale_runs_on_connection(
+    conn: asyncpg.Connection,
+    *,
+    run_month: str | None,
+    queued_lease_seconds: int,
+    running_lease_seconds: int,
+) -> list[asyncpg.Record]:
+    """Terminalize abandoned reservations through a fenced, append-only-safe CAS."""
+    return await conn.fetch(
+        """
+        WITH candidates AS (
+            SELECT candidate.id
+            FROM grile_runs AS candidate
+            WHERE candidate.status IN ('queued', 'running')
+              AND ($1::text IS NULL OR candidate.run_month = $1)
+              AND (
+                    (
+                        candidate.status = 'queued'
+                        AND COALESCE(candidate.heartbeat_at, candidate.created_at)
+                            < now() - ($2::integer * interval '1 second')
+                    )
+                    OR (
+                        candidate.status = 'running'
+                        AND COALESCE(candidate.heartbeat_at, candidate.started_at, candidate.created_at)
+                            < now() - ($3::integer * interval '1 second')
+                    )
+              )
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE grile_runs AS operation
+        SET status = 'failed',
+            error_message = $4,
+            finished_at = now(),
+            heartbeat_at = now()
+        FROM candidates
+        WHERE operation.id = candidates.id
+          AND operation.status IN ('queued', 'running')
+        RETURNING operation.id
+        """,
+        run_month,
+        queued_lease_seconds,
+        running_lease_seconds,
+        GRILE_RUN_LEASE_EXPIRED,
+    )
 
 
 async def _record_observation(conn: asyncpg.Connection, *, run_month: str, row: dict[str, Any], source: str, source_run_id: int | None, store_refresh_id: int | None, generation: int, checked_by_sub: str | None) -> bool:

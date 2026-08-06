@@ -24,6 +24,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
+DEFAULT_GOOGLE_HTTP_TIMEOUT_SECONDS = 30.0
 
 # Range-uri citite intr-un singur batchGet per spreadsheet (UNFORMATTED).
 # Index-ul conteaza pentru analyze().
@@ -90,11 +91,25 @@ def get_credentials() -> Any:
 
 def build_services() -> tuple[Any, Any]:
     """Returneaza (sheets_service, drive_service). Sincron — a se rula in to_thread."""
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
     from googleapiclient.discovery import build
 
     creds = get_credentials()
-    sheets = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    drive = build("drive", "v3", credentials=creds, cache_discovery=False)
+    raw_timeout = os.getenv(
+        "GRILE_GOOGLE_HTTP_TIMEOUT_SECONDS",
+        str(DEFAULT_GOOGLE_HTTP_TIMEOUT_SECONDS),
+    )
+    try:
+        timeout = float(raw_timeout)
+    except ValueError as exc:
+        raise ValueError("GRILE_GOOGLE_HTTP_TIMEOUT_SECONDS must be numeric") from exc
+    if not 1 <= timeout <= 120:
+        raise ValueError("GRILE_GOOGLE_HTTP_TIMEOUT_SECONDS must be between 1 and 120")
+    sheets_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=timeout))
+    drive_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=timeout))
+    sheets = build("sheets", "v4", http=sheets_http, cache_discovery=False)
+    drive = build("drive", "v3", http=drive_http, cache_discovery=False)
     return sheets, drive
 
 
