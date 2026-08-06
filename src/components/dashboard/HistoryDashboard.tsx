@@ -264,7 +264,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatAmount(value))} />
+                <Tooltip formatter={(value: unknown, name: unknown) => (String(name) === '% target' ? `${Number(value).toFixed(2)}%` : formatAmount(Number(value)))} />
                 <Legend />
                 <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
                   {currentHistoryChartData.map((entry, index) => <Cell key={index} fill={entry.isForecast ? '#a78bfa' : '#4f46e5'} />)}
@@ -284,7 +284,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="progress" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(value: number, name: string) => (name === '% target' ? `${value.toFixed(2)}%` : formatAmount(value))} />
+                <Tooltip formatter={(value: unknown, name: unknown) => (String(name) === '% target' ? `${Number(value).toFixed(2)}%` : formatAmount(Number(value)))} />
                 <Legend />
                 <Bar yAxisId="sales" dataKey="sales" name="Vanzari" radius={[8, 8, 0, 0]}>
                   {yearHistoryChartData.map((entry, index) => <Cell key={index} fill={entry.isAggregate ? '#818cf8' : '#4f46e5'} />)}
@@ -326,7 +326,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(value: number) => kpiMetric === 'total_receipts' ? formatInt(value) : `${value.toFixed(1)}%`} />
+                <Tooltip formatter={(value: unknown) => kpiMetric === 'total_receipts' ? formatInt(Number(value)) : `${Number(value).toFixed(1)}%`} />
                 <Area type="monotone" dataKey="value" name={kpiMetric === 'proc_bon2acc' ? 'ProcBon2Acc' : kpiMetric === 'prc_focus_acc_qty' ? 'PrcFocus/AccQtty' : 'Total bonuri'} stroke="#4f46e5" fill="url(#kpiTrendArea)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
@@ -439,7 +439,7 @@ export function HistoryDashboard<RegionalKey extends string, StoreKey extends st
                 <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="sales" width={38} tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="qty" width={30} orientation="right" tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(value: number, name: string) => name === 'Vanzari' ? formatAmount(value) : formatInt(value)} />
+                <Tooltip formatter={(value: unknown, name: unknown) => String(name) === 'Vanzari' ? formatAmount(Number(value)) : formatInt(Number(value))} />
                 <Legend />
                 <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
                 <Line yAxisId="qty" type="monotone" dataKey="qty" name="Cantitate" stroke="#f59e0b" strokeWidth={2} dot={false} />

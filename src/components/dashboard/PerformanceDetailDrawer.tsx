@@ -240,7 +240,7 @@ export function PerformanceDetailDrawer({
                       {isReturnsMetric ? (
                         <>
                           <YAxis yAxisId="returns" tick={{ fontSize: 10 }} tickFormatter={(value) => formatInt(Number(value))} width={48} allowDecimals={false} />
-                          <Tooltip formatter={(value: number) => [formatInt(value), 'Retururi']} labelFormatter={(label) => `Luna ${label}`} />
+                          <Tooltip formatter={(value: unknown) => [formatInt(Number(value)), 'Retururi']} labelFormatter={(label) => `Luna ${label}`} />
                           <Bar yAxisId="returns" dataKey="returns" name="Retururi" fill={monthlyMetricColor} radius={[4, 4, 0, 0]} />
                         </>
                       ) : monthlyMetric === 'sales' ? (
@@ -249,7 +249,7 @@ export function PerformanceDetailDrawer({
                           {showMonthlyTargetLines && (
                             <YAxis yAxisId="percent" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(value) => `${value}%`} width={38} />
                           )}
-                          <Tooltip formatter={(value: number, name: string) => [name.includes('%') ? formatPercent(value) : formatCurrency(value), name]} />
+                          <Tooltip formatter={(value: unknown, name: unknown) => [String(name).includes('%') ? formatPercent(Number(value)) : formatCurrency(Number(value)), String(name)]} />
                           <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill={monthlyMetricColor} radius={[4, 4, 0, 0]} />
                           {showMonthlyTargetLines && (
                             <>
@@ -261,7 +261,7 @@ export function PerformanceDetailDrawer({
                       ) : (
                         <>
                           <YAxis yAxisId="percent" tick={{ fontSize: 10 }} tickFormatter={(value) => `${value}%`} width={48} />
-                          <Tooltip formatter={(value: number) => [formatPercent(value), monthlyMetricLabel]} />
+                          <Tooltip formatter={(value: unknown) => [formatPercent(Number(value)), monthlyMetricLabel]} />
                           <Line yAxisId="percent" type="monotone" dataKey={monthlyMetric} name={monthlyMetricLabel} stroke={monthlyMetricColor} strokeWidth={3} dot={{ r: 3 }} connectNulls />
                         </>
                       )}
@@ -286,7 +286,7 @@ export function PerformanceDetailDrawer({
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="day" interval={0} tick={{ fontSize: 9 }} />
                       <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => formatAmount(Number(value))} width={58} />
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} labelFormatter={(label) => `Ziua ${label}`} />
+                      <Tooltip formatter={(value: unknown) => formatCurrency(Number(value))} labelFormatter={(label) => `Ziua ${label}`} />
                       <Line type="monotone" dataKey="sales" name="Vanzari" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 4 }} connectNulls={false} />
                     </ComposedChart>
                   </ResponsiveContainer>

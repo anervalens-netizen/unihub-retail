@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ASMSubtab } from './ASMSubtab';
-import { TargetCalculatorSubtab } from './TargetCalculatorSubtab';
+import { TargetCalculatorSubtab } from '../features/target-calculator/TargetCalculatorPage';
 import { SalariiSubtab } from './SalariiSubtab';
 import { PnlSubtab } from './PnlSubtab';
 import type { ManagementTab } from '../lib/tabs';

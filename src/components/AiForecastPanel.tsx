@@ -646,7 +646,7 @@ function RollingMonthlyChartCard({ data, metric }: { data: AiForecastRollingMont
             <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
             <Tooltip
-              formatter={(value: number, name: string) => [formatMetricValue(value, metric), name]}
+              formatter={(value: unknown, name: unknown) => [formatMetricValue(Number(value), metric), String(name ?? '')]}
               labelFormatter={(_label, items) => {
                 const point = items?.[0]?.payload as AiForecastRollingMonthlyPoint | undefined;
                 return point?.forecast_month ?? '';
@@ -862,7 +862,7 @@ function ForecastDailyCurveCard({
               tickLine={false}
             />
             <Tooltip
-              formatter={(value: number, name: string) => [formatMetricValue(value, metric), name]}
+              formatter={(value: unknown, name: unknown) => [formatMetricValue(Number(value), metric), String(name ?? '')]}
               labelFormatter={(_label, items) => {
                 const point = items?.[0]?.payload as DailyCurvePoint | undefined;
                 if (!point) return '';

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
-import weakref
 from decimal import Decimal
 from collections.abc import Awaitable
 from typing import Any, Literal, cast
@@ -55,10 +53,24 @@ from services.dashboard.queries import (
     _load_dashboard_campaign_context,
 )
 from services.dashboard.specials_data import _get_special_cards_data
-from services.dashboard.metrics import (
-    observe_dashboard_component,
-    record_dashboard_component_global_queue,
-    record_dashboard_component_queue,
+from services.dashboard.metrics import observe_dashboard_component
+from services.dashboard.scheduler import (
+    DASHBOARD_COMPONENT_CONCURRENCY,
+    DEFAULT_DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY,
+    _gather_cancel_on_error,
+    _gather_named,
+)
+from services.dashboard.batch import (
+    load_dashboard_all_batch,
+    load_dashboard_history_details_batch,
+)
+from services.dashboard.performance import (
+    score_bon2acc,
+    score_breakdown,
+    score_focus,
+    score_label,
+    score_total,
+    trend_sales,
 )
 from services.dashboard.utils import _expand_current_manager_scope
 from services.filters import build_scoped_params, normalize_filter, scoped_clauses
@@ -71,95 +83,7 @@ _RO_MONTHS = {
     7: "Iul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
 }
 
-PERFORMANCE_COMPONENT_WEIGHT = Decimal("20")
-DASHBOARD_COMPONENT_CONCURRENCY = 4
-DEFAULT_DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY = 6
 _MONEY = Decimal("0.01")
-_dashboard_global_slots: weakref.WeakKeyDictionary[
-    asyncio.AbstractEventLoop, dict[int, asyncio.Semaphore]
-] = weakref.WeakKeyDictionary()
-
-
-def _get_dashboard_global_slots(limit: int) -> asyncio.Semaphore:
-    """Return an event-loop-local semaphore for the validated process budget."""
-    loop = asyncio.get_running_loop()
-    slots_by_limit = _dashboard_global_slots.get(loop)
-    if slots_by_limit is None:
-        slots_by_limit = {}
-        _dashboard_global_slots[loop] = slots_by_limit
-    slots = slots_by_limit.get(limit)
-    if slots is None:
-        slots = asyncio.Semaphore(limit)
-        slots_by_limit[limit] = slots
-    return slots
-
-
-async def _gather_cancel_on_error(
-    *operations: Awaitable[Any],
-    task_name: str,
-) -> list[Any]:
-    """Await children or cancel and reap every child before propagating failure."""
-    tasks: list[asyncio.Future[Any]] = [
-        asyncio.ensure_future(operation)
-        for operation in operations
-    ]
-    for index, task in enumerate(tasks):
-        if isinstance(task, asyncio.Task):
-            task.set_name(f"{task_name}:{index}")
-    try:
-        return list(await asyncio.gather(*tasks))
-    except BaseException:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
-
-
-async def _gather_named(
-    max_concurrency: int,
-    global_component_concurrency: int = DEFAULT_DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY,
-    **components: Awaitable[Any],
-) -> dict[str, Any]:
-    """Run named loaders with bounded concurrency and preserve their names."""
-    if max_concurrency < 1:
-        raise ValueError("max_concurrency must be positive")
-
-    semaphore = asyncio.Semaphore(max_concurrency)
-    global_slots = _get_dashboard_global_slots(global_component_concurrency)
-
-    async def run_component(name: str, component: Awaitable[Any]) -> Any:
-        queued_at = time.perf_counter()
-        async with semaphore:
-            record_dashboard_component_queue(
-                name,
-                time.perf_counter() - queued_at,
-            )
-            global_queued_at = time.perf_counter()
-            async with global_slots:
-                record_dashboard_component_global_queue(
-                    name,
-                    time.perf_counter() - global_queued_at,
-                )
-                return await component
-
-    names = tuple(components)
-    tasks = {
-        name: asyncio.create_task(
-            run_component(name, components[name]),
-            name=f"dashboard:{name}",
-        )
-        for name in names
-    }
-    try:
-        values = await asyncio.gather(*(tasks[name] for name in names))
-    except BaseException:
-        for task in tasks.values():
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks.values(), return_exceptions=True)
-        raise
-    return dict(zip(names, values, strict=True))
 
 
 class DashboardService:
@@ -744,57 +668,22 @@ class DashboardService:
         )
 
     def _performance_score_breakdown(self, summary: DashboardSummary) -> PerformanceScoreBreakdown:
-        target_pct = summary.forecast_target_progress_pct or summary.target_progress_pct or Decimal(0)
-        bon_pct = summary.proc_bon2acc or Decimal(0)
-        focus_pct = summary.prc_focus_acc_qty or Decimal(0)
-        target_score = (
-            min(max(target_pct, Decimal(0)), Decimal(120)) / Decimal(120) * Decimal(60)
-        ).quantize(Decimal("0.1"))
-        bon_score = self._bon2acc_score(bon_pct)
-        focus_score = self._focus_score(focus_pct)
-        return PerformanceScoreBreakdown(
-            target_points=target_score,
-            bon2acc_points=bon_score,
-            focus_points=focus_score,
-        )
+        return score_breakdown(summary)
 
     def _performance_score(self, breakdown: PerformanceScoreBreakdown) -> int:
-        score = breakdown.target_points + breakdown.bon2acc_points + breakdown.focus_points
-        return max(0, min(100, round(float(score))))
+        return score_total(breakdown)
 
     def _bon2acc_score(self, value: Decimal) -> Decimal:
-        if value > Decimal("35"):
-            points = PERFORMANCE_COMPONENT_WEIGHT
-        elif value >= Decimal("30"):
-            points = PERFORMANCE_COMPONENT_WEIGHT * Decimal(2) / Decimal(3)
-        elif value >= Decimal("20"):
-            points = PERFORMANCE_COMPONENT_WEIGHT / Decimal(3)
-        else:
-            points = Decimal(0)
-        return points.quantize(Decimal("0.1"))
+        return score_bon2acc(value)
 
     def _focus_score(self, value: Decimal) -> Decimal:
-        if value > Decimal("8"):
-            points = PERFORMANCE_COMPONENT_WEIGHT
-        elif value >= Decimal("6"):
-            points = PERFORMANCE_COMPONENT_WEIGHT * Decimal(2) / Decimal(3)
-        else:
-            points = Decimal(0)
-        return points.quantize(Decimal("0.1"))
+        return score_focus(value)
 
     def _performance_trend_sales(self, summary: DashboardSummary) -> Decimal:
-        if not summary.is_month_final and summary.forecast_sales is not None:
-            return summary.forecast_sales
-        return summary.total_sales
+        return trend_sales(summary)
 
     def _score_label(self, score: int) -> str:
-        if score >= 85:
-            return "Foarte bine"
-        if score >= 70:
-            return "Bun"
-        if score >= 55:
-            return "De urmarit"
-        return "Necesita interventie"
+        return score_label(score)
 
     def _performance_signals(
         self,
@@ -945,23 +834,23 @@ class DashboardService:
                     include_closed_stores=include_closed_stores,
                 )
 
-        campaign_context_task: asyncio.Task[Any] | None = None
-        promo_incentive_task: asyncio.Task[Any] | None = None
+        # Campaign context is a dependency of several components.  It must be
+        # scheduled through the same bounded/global gate as every other DB
+        # component; starting a task here would let it acquire a pool
+        # connection before the scheduler has admitted it.
+        campaign_context: Any | None = None
         if not _history_projection:
-            campaign_context_task = asyncio.create_task(
-                observe_dashboard_component(
+            context_results = await _gather_named(
+                DASHBOARD_COMPONENT_CONCURRENCY,
+                self.dashboard_global_component_concurrency,
+                campaign_context=observe_dashboard_component(
                     "campaign_context",
                     load_campaign_context(),
                 ),
-                name="dashboard:campaign_context",
             )
+            campaign_context = context_results["campaign_context"]
 
         async def get_agents_data() -> list[AgentStats]:
-            campaign_context = (
-                await campaign_context_task
-                if campaign_context_task is not None
-                else None
-            )
             async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_agent_stats_rows(
                     conn,
@@ -984,11 +873,6 @@ class DashboardService:
             return [AgentStats(**row) for row in row_dicts]
 
         async def get_stores_data() -> list[StoreStats]:
-            campaign_context = (
-                await campaign_context_task
-                if campaign_context_task is not None
-                else None
-            )
             async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_store_stats_rows(
                     conn,
@@ -1123,8 +1007,7 @@ class DashboardService:
                 )
 
         async def get_promo_incentive_data() -> PromoIncentiveSummary:
-            assert campaign_context_task is not None
-            campaign_context = await campaign_context_task
+            assert campaign_context is not None
             async with self._pool_for(deadline).acquire() as conn:
                 return await _fetch_promo_incentive_summary(
                     conn,
@@ -1139,19 +1022,10 @@ class DashboardService:
                     campaign_context=campaign_context,
                 )
 
-        if not _history_projection:
-            promo_incentive_task = asyncio.create_task(
-                observe_dashboard_component(
-                    "promo_incentive",
-                    get_promo_incentive_data(),
-                ),
-                name="dashboard:promo_incentive",
-            )
-
-        async def get_special_cards_data() -> list[DashboardSpecialCard]:
-            assert campaign_context_task is not None
-            assert promo_incentive_task is not None
-            campaign_context = await campaign_context_task
+        async def get_special_cards_data(
+            promo_incentive_summary: Awaitable[PromoIncentiveSummary],
+        ) -> list[DashboardSpecialCard]:
+            assert campaign_context is not None
             return await _get_special_cards_data(
                 month,
                 firma,
@@ -1162,7 +1036,7 @@ class DashboardService:
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
                 campaign_context=campaign_context,
-                promo_incentive_summary=promo_incentive_task,
+                promo_incentive_summary=promo_incentive_summary,
                 pool=self._pool_for(deadline),
             )
 
@@ -1180,11 +1054,6 @@ class DashboardService:
             )
 
         async def get_regional_data() -> list[RegionalStats]:
-            campaign_context = (
-                await campaign_context_task
-                if campaign_context_task is not None
-                else None
-            )
             async with self._pool_for(deadline).acquire() as conn:
                 rows = await _fetch_regional_stats(
                     conn,
@@ -1288,11 +1157,9 @@ class DashboardService:
             "asms": observe_dashboard_component("asms", get_asm_data()),
         }
         if not _history_projection:
-            assert promo_incentive_task is not None
             components.update(
-                promo_incentive=promo_incentive_task,
-                special_cards=observe_dashboard_component(
-                    "special_cards", get_special_cards_data()
+                promo_incentive=observe_dashboard_component(
+                    "promo_incentive", get_promo_incentive_data()
                 ),
                 premium_glass=observe_dashboard_component(
                     "premium_glass", get_premium_glass_data()
@@ -1301,23 +1168,30 @@ class DashboardService:
                     "daily_last_year", get_daily_last_year_data()
                 ),
             )
-        try:
-            component_results = await _gather_named(
+        component_results = await _gather_named(
+            DASHBOARD_COMPONENT_CONCURRENCY,
+            self.dashboard_global_component_concurrency,
+            **components,
+        )
+        if not _history_projection:
+            # Special cards consume the already materialized summary.  Keep
+            # this as a second scheduled phase instead of letting a component
+            # occupy a global slot while awaiting another component.
+            promo_incentive = cast(
+                PromoIncentiveSummary, component_results["promo_incentive"]
+            )
+            resolved_promo: asyncio.Future[PromoIncentiveSummary] = (
+                asyncio.get_running_loop().create_future()
+            )
+            resolved_promo.set_result(promo_incentive)
+            dependent_results = await _gather_named(
                 DASHBOARD_COMPONENT_CONCURRENCY,
                 self.dashboard_global_component_concurrency,
-                **components,
+                special_cards=observe_dashboard_component(
+                    "special_cards", get_special_cards_data(resolved_promo)
+                ),
             )
-        finally:
-            background_tasks = [
-                task
-                for task in (campaign_context_task, promo_incentive_task)
-                if task is not None
-            ]
-            for task in background_tasks:
-                if not task.done():
-                    task.cancel()
-            if background_tasks:
-                await asyncio.gather(*background_tasks, return_exceptions=True)
+            component_results.update(dependent_results)
         summary = cast(DashboardSummary, component_results["summary"])
         agents_stats = cast(list[AgentStats], component_results["agents"])
         stores_stats = cast(list[StoreStats], component_results["stores"])
@@ -1379,17 +1253,7 @@ class DashboardService:
         *,
         deadline: RequestDeadline | None = None,
     ) -> DashboardAllBatchResponse:
-        semaphore = asyncio.Semaphore(2)
-
-        async def load(query: DashboardAllQuery) -> DashboardAllResponse:
-            async with semaphore:
-                return await self.get_dashboard_all(**query.model_dump(), deadline=deadline)
-
-        results = await _gather_cancel_on_error(
-            *(load(query) for query in queries),
-            task_name="dashboard:all-batch",
-        )
-        return DashboardAllBatchResponse(results=results)
+        return await load_dashboard_all_batch(self, queries, deadline=deadline)
 
     async def get_dashboard_history_details_batch(
         self,
@@ -1397,19 +1261,4 @@ class DashboardService:
         *,
         deadline: RequestDeadline | None = None,
     ) -> DashboardAllBatchResponse:
-        """Load only the components consumed by the multi-month History UI."""
-        semaphore = asyncio.Semaphore(2)
-
-        async def load(query: DashboardAllQuery) -> DashboardAllResponse:
-            async with semaphore:
-                return await self.get_dashboard_all(
-                    **query.model_dump(),
-                    _history_projection=True,
-                    deadline=deadline,
-                )
-
-        results = await _gather_cancel_on_error(
-            *(load(query) for query in queries),
-            task_name="dashboard:all-batch",
-        )
-        return DashboardAllBatchResponse(results=results)
+        return await load_dashboard_history_details_batch(self, queries, deadline=deadline)

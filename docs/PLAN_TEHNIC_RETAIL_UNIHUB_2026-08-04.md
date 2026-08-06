@@ -1,5 +1,9 @@
 # Plan tehnic de remediere — UniHub Retail
 
+> **HISTORICAL / CLOSED — 2026-08-06.** Acest document este registrul auditului
+> închis la 2026-08-05, nu backlog activ. Singurul plan activ este
+> [`PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md).
+
 ## 1. Scop și surse de adevăr
 
 Acest document transformă auditul static din 2026-08-04 într-un program de

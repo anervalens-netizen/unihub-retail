@@ -43,6 +43,8 @@ import {
 import {getApiErrorMessage} from '../api/client';
 import { formatCurrency, formatPercent } from '../lib/formatters';
 import { formatMonthLabel, shiftMonth } from '../lib/dates';
+import { SeasonalityControl, type SeasonalityMode } from './SeasonalityControl';
+import { resolveSeasonalityMode, seasonalityYearsFromMode } from '../lib/targetSeasonality';
 
 const inputCls = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 const finalInputCls = 'rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-600 dark:bg-amber-950/30 dark:text-slate-100';
@@ -362,7 +364,7 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
                         <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
                         <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                        <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
+                        <Tooltip formatter={(value: unknown) => formatCurrency(Number(value))} />
                         <Legend />
                         <Bar dataKey="total_sales" name="Vanzari" fill="#4f46e5" radius={[4, 4, 0, 0]} />
                         <Line type="monotone" dataKey="target_value" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
@@ -374,7 +376,7 @@ function StoreDetailDrawer({ scenarioId, siteCode, onClose }: {
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
                         <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
                         <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
-                        <Tooltip formatter={(value: number | string) => formatPercent(Number(value))} />
+                        <Tooltip formatter={(value: unknown) => formatPercent(Number(value))} />
                         <Legend />
                         <Line
                           type="monotone"
@@ -461,7 +463,7 @@ function TargetWorkflow({ step }: { step: 1 | 2 | 3 | 4 }) {
   return (
     <nav aria-label="Flux Calculator Target" className="glass rounded-2xl p-3">
       <div className="lg:hidden">
-        <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500"><span>Pasul {step} din 4</span><span>{steps[step - 1].label}</span></div>
+        <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500"><span>Pasul {step} din 4</span><span>{steps[step - 1]?.label}</span></div>
         <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${step * 25}%` }} /></div>
       </div>
       <ol className="hidden grid-cols-2 gap-2 lg:grid lg:grid-cols-4">
@@ -499,7 +501,7 @@ export function TargetCalculatorSubtab() {
   const [targetMonth, setTargetMonth] = useState('');
   const [totalTarget, setTotalTarget] = useState('');
   const [minFloor, setMinFloor] = useState('');
-  const [seasonalityMode, setSeasonalityMode] = useState<'multi' | 'single'>('multi');
+  const [seasonalityMode, setSeasonalityMode] = useState<SeasonalityMode>(null);
   const [logicOpen, setLogicOpen] = useState(false);
   const [selectedLocationCodes, setSelectedLocationCodes] = useState<string[]>([]);
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
@@ -512,6 +514,7 @@ export function TargetCalculatorSubtab() {
   const scenarioRef = useRef<TargetScenario | null>(null);
   const dirtyRowsRef = useRef<Set<string>>(new Set());
   const editVersionsRef = useRef<Map<string, number>>(new Map());
+  const seasonalityManualModeRef = useRef<Exclude<SeasonalityMode, null> | null>(null);
   const locationFilterRef = useRef<HTMLDivElement>(null);
   const dirty = dirtyRows.size > 0;
   const isDesktop = useMediaQuery('(min-width: 768px)');
@@ -527,6 +530,19 @@ export function TargetCalculatorSubtab() {
     editVersionsRef.current.clear();
   }, []);
 
+  const selectSeasonalityMode = useCallback((mode: 'multi' | 'single') => {
+    seasonalityManualModeRef.current = mode;
+    setSeasonalityMode(mode);
+  }, []);
+
+  const applyScenarioSeasonality = useCallback((loaded: TargetScenario, backendDefaultYears: number) => {
+    setSeasonalityMode(resolveSeasonalityMode({
+      manualMode: seasonalityManualModeRef.current,
+      scenarioYears: Number(loaded.calculation_params?.seasonality_years ?? 1),
+      backendDefaultYears,
+    }));
+  }, []);
+
   const loadInitial = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -539,13 +555,20 @@ export function TargetCalculatorSubtab() {
       setTargetMonth((current) => current || nextContext.suggested_target_month);
       setTotalTarget((current) => current || String(nextContext.suggested_total_target));
       setMinFloor((current) => current || String(nextContext.default_min_floor));
-      setSeasonalityMode((current) => current || (nextContext.default_seasonality_years > 1 ? 'multi' : 'single'));
+      setSeasonalityMode(resolveSeasonalityMode({
+        manualMode: seasonalityManualModeRef.current,
+        backendDefaultYears: nextContext.default_seasonality_years,
+      }));
       const activeScenarioId = scenarioRef.current?.id;
       if (activeScenarioId && dirtyRowsRef.current.size === 0) {
-        replaceScenario(await fetchTargetScenario(activeScenarioId));
+        const loaded = await fetchTargetScenario(activeScenarioId);
+        replaceScenario(loaded);
+        applyScenarioSeasonality(loaded, nextContext.default_seasonality_years);
       } else if (!scenarioRef.current) {
         const currentDraft = recentScenarios.find((item) => item.target_month === nextContext.suggested_target_month);
-        replaceScenario(currentDraft ? await fetchTargetScenario(currentDraft.id) : null);
+        const loaded = currentDraft ? await fetchTargetScenario(currentDraft.id) : null;
+        replaceScenario(loaded);
+        if (loaded) applyScenarioSeasonality(loaded, nextContext.default_seasonality_years);
         clearLocalEdits();
       }
     } catch (err) {
@@ -554,7 +577,7 @@ export function TargetCalculatorSubtab() {
     } finally {
       setLoading(false);
     }
-  }, [clearLocalEdits, replaceScenario]);
+  }, [applyScenarioSeasonality, clearLocalEdits, replaceScenario]);
 
   useEffect(() => {
     void loadInitial();
@@ -771,6 +794,10 @@ export function TargetCalculatorSubtab() {
   const handleCalculate = async () => {
     const parsedTarget = Number(totalTarget);
     const parsedFloor = Number(minFloor);
+    if (seasonalityMode === null) {
+      setError('Asteapta initializarea modului de sezonalitate.');
+      return;
+    }
     if (!targetMonth || parsedTarget <= 0 || parsedFloor < 0) {
       setError('Completeaza parametrii de calcul cu valori valide.');
       return;
@@ -798,7 +825,7 @@ export function TargetCalculatorSubtab() {
         min_floor: parsedFloor,
         previous_month_floor_pct: 0,
         previous_month_cap_pct: context?.default_previous_month_cap_pct ?? 1.7,
-        seasonality_years: seasonalityMode === 'multi' ? 3 : 1,
+        seasonality_years: seasonalityYearsFromMode(seasonalityMode),
         expected_revision: recalculatingCurrentDraft
           ? existingTarget.revision
           : undefined,
@@ -1073,37 +1100,17 @@ export function TargetCalculatorSubtab() {
               Prag minim (RON)
               <input className={`w-full ${inputCls}`} type="number" min="0" value={minFloor} onChange={(event) => setMinFloor(event.target.value)} />
             </label>
-            <div className="col-span-2 space-y-1 text-xs text-slate-500 sm:col-span-1">
-              Sezonalitate
-              <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setSeasonalityMode('single')}
-                  className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
-                    seasonalityMode === 'single'
-                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  Anul trecut
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSeasonalityMode('multi')}
-                  className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
-                    seasonalityMode === 'multi'
-                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  Multi-year
-                </button>
-              </div>
+            <div className="col-span-2 sm:col-span-1">
+              <SeasonalityControl
+                value={seasonalityMode}
+                disabled={busy || seasonalityMode === null}
+                onChange={selectSeasonalityMode}
+              />
             </div>
             <div className="col-span-2 flex items-end sm:col-span-1">
               <button
                 onClick={handleCalculate}
-                disabled={busy}
+                disabled={busy || seasonalityMode === null}
                 className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
               >
                 {busy ? 'Se proceseaza...' : 'Calculeaza propunerea'}
@@ -1371,7 +1378,7 @@ export function TargetCalculatorSubtab() {
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.15)" />
                       <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                       <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Tooltip formatter={(value: unknown) => formatCurrency(Number(value))} />
                       <Legend />
                       {sourceChart.some((period) => period.showTarget) && (
                         <Bar dataKey="target" name="Target istoric" fill="#cbd5e1" radius={[4, 4, 0, 0]} />

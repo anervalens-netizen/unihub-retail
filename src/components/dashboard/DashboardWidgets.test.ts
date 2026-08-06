@@ -205,7 +205,7 @@ describe('sumChartValues', () => {
   });
 
   it('treats missing keys as 0', () => {
-    const rows = [{ a: 1 }, { b: 2 }];
+    const rows: Array<Record<string, string | number | undefined>> = [{ a: 1 }, { b: 2 }];
     expect(sumChartValues(rows, 'a')).toBe(1);
   });
 

@@ -88,7 +88,7 @@ interface AgentDetailsProps {
   currentMonth: string;
 }
 
-type ChartTooltipProps = TooltipContentProps<number | string, number | string>;
+type ChartTooltipProps = TooltipContentProps;
 
 function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
   const { data: profile, isLoading: profileLoading } = useQuery({

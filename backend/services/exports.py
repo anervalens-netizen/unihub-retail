@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
+import os
+import resource
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from typing import Any, IO, Iterator
 
@@ -11,8 +17,10 @@ from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.cell import WriteOnlyCell
+from prometheus_client import Counter, Gauge, Histogram
 from business_clock import business_now
-from services.spreadsheet_safety import append_openpyxl_row
+from services.spreadsheet_safety import append_openpyxl_row, set_openpyxl_cell
 
 from repositories.exports import ExportsRepository
 from services.dashboard.queries import (
@@ -30,6 +38,7 @@ from services.dashboard_specials import (
     load_special_cards_config,
     parse_promotion_definitions,
 )
+from services.export_complex_worker import render_daily_comparison_xlsx
 
 
 @dataclass(frozen=True)
@@ -44,9 +53,39 @@ XLSX_SPOOL_MAX_MEMORY_BYTES = 8 * 1024 * 1024
 XLSX_STREAM_CHUNK_BYTES = 256 * 1024
 EXPORT_MAX_ROWS = 50_000
 EXPORT_MAX_CELLS = 1_000_000
-EXPORT_MAX_ESTIMATED_BYTES = 64 * 1024 * 1024
+EXPORT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+EXPORT_MAX_PEAK_RSS_BYTES = 512 * 1024 * 1024
 EXPORT_ESTIMATED_BYTES_PER_CELL = 128
 EXPORT_MAX_PREVIEW_ROWS = 500
+EXPORT_COMPLEX_SEMAPHORE = asyncio.Semaphore(1)
+EXPORT_COMPLEX_PROCESS_POOL: ProcessPoolExecutor | None = None
+
+
+def _complex_process_pool() -> ProcessPoolExecutor:
+    global EXPORT_COMPLEX_PROCESS_POOL
+    if EXPORT_COMPLEX_PROCESS_POOL is None:
+        EXPORT_COMPLEX_PROCESS_POOL = ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=multiprocessing.get_context("spawn"),
+        )
+    return EXPORT_COMPLEX_PROCESS_POOL
+
+EXPORT_PEAK_RSS_BYTES = Gauge(
+    "export_peak_rss_bytes",
+    "Peak resident set size observed while building the latest export.",
+)
+EXPORT_BUILD_SECONDS = Histogram(
+    "export_build_seconds",
+    "Time spent serializing an XLSX artifact.",
+    buckets=(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120),
+)
+EXPORT_OUTPUT_BYTES = Gauge("export_output_bytes", "Size of the latest XLSX artifact.")
+EXPORT_CELLS = Gauge("export_cells", "Cell count passed to the XLSX writer.")
+EXPORT_REJECTED_TOTAL = Counter(
+    "export_rejected_total",
+    "Exports rejected by a finite resource or validation cap.",
+    ("reason",),
+)
 
 
 @dataclass
@@ -652,12 +691,51 @@ class ExportsService:
             )
             if len(daily_rows) > EXPORT_MAX_ROWS:
                 raise ExportValidationError("Exportul depaseste limita de randuri pentru evolutia zilnica.")
-        return await asyncio.to_thread(
-            self._render_table_xlsx,
-            request,
-            result,
-            selected_days,
-            daily_rows,
+        renderer = self._render_table_xlsx if daily_rows is not None else self._render_simple_table_xlsx
+        return await asyncio.to_thread(renderer, request, result, selected_days, daily_rows)
+
+    def _render_simple_table_xlsx(
+        self,
+        request: dict[str, Any],
+        result: dict[str, Any],
+        selected_days: list[int] | None,
+        _daily_rows: list[Any] | None,
+    ) -> XlsxArtifact:
+        """Stream a plain table without retaining an openpyxl cell graph."""
+        wb = Workbook(write_only=True)
+        ws = wb.create_sheet("Raport")
+        columns = result["columns"]
+        rows = result["rows"]
+        header = []
+        for column in columns:
+            cell = WriteOnlyCell(ws)
+            set_openpyxl_cell(cell, column["label"])
+            cell.font = Font(bold=True, color="1f2937")
+            cell.fill = PatternFill("solid", fgColor="EEF2FF")
+            header.append(cell)
+        ws.append(header)
+        for row in rows:
+            output = []
+            for column in columns:
+                cell = WriteOnlyCell(ws)
+                set_openpyxl_cell(cell, row.get(column["key"]))
+                number_format = self._excel_number_format(column["type"])
+                if number_format:
+                    cell.number_format = number_format
+                output.append(cell)
+            ws.append(output)
+
+        cfg = wb.create_sheet("Configuratie")
+        cfg.append(["Optiune", "Valoare"])
+        cfg.append(["Dataset", DATASETS[request["dataset"]]["label"]])
+        cfg.append(["Luni", ", ".join(request["months"])])
+        cfg.append(["Zile", ", ".join(str(day) for day in selected_days) if selected_days else "Toata luna"])
+        cfg.append(["Generat", business_now().strftime("%Y-%m-%d %H:%M")])
+        cfg.append(["Randuri", len(rows)])
+        return self._spool_workbook(
+            wb,
+            self._safe_filename(str(request.get("filename") or "export_retail.xlsx")),
+            cells=(len(rows) + 1) * len(columns) + 6 * 2,
         )
 
     def _render_table_xlsx(
@@ -716,7 +794,11 @@ class ExportsService:
             f"export_retail_{request['dataset']}_{'_'.join(request['months'])}"
             f"{self._days_filename_suffix(selected_days)}.xlsx"
         )
-        return self._spool_workbook(wb, self._safe_filename(str(filename)))
+        return self._spool_workbook(
+            wb,
+            self._safe_filename(str(filename)),
+            cells=(len(rows) + 1) * len(columns),
+        )
 
     async def _preview_daily_comparison(
         self,
@@ -754,6 +836,11 @@ class ExportsService:
         }
 
     async def _build_daily_comparison_xlsx(self, request: dict[str, Any]) -> XlsxArtifact:
+        """Serialize the complex writer so concurrent exports cannot starve web DB work."""
+        async with EXPORT_COMPLEX_SEMAPHORE:
+            return await self._build_daily_comparison_xlsx_unlocked(request)
+
+    async def _build_daily_comparison_xlsx_unlocked(self, request: dict[str, Any]) -> XlsxArtifact:
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
         campaign_codes_by_month: dict[str, list[str]] = {}
         semaphore = asyncio.Semaphore(2)
@@ -796,15 +883,60 @@ class ExportsService:
                 for _, table in tables
             ),
         )
-        return await asyncio.to_thread(
-            self._render_daily_comparison_xlsx,
-            request,
-            months,
-            metrics,
-            levels,
-            include_closed_stores,
-            selected_days,
-            tables,
+        payload = {
+            "request": request,
+            "months": months,
+            "metrics": metrics,
+            "levels": levels,
+            "include_closed_stores": include_closed_stores,
+            "selected_days": selected_days,
+            "tables": tables,
+            "level_config": {
+                level: {
+                    "label": str(COMPARISON_LEVELS[level]["label"]),
+                    "sheet": str(COMPARISON_LEVELS[level]["sheet"]),
+                    "dimensions": list(COMPARISON_LEVELS[level]["dimensions"]),
+                }
+                for level in levels
+            },
+            "metric_labels": {
+                metric: DAILY_EVOLUTION_METRICS[metric].label
+                for metric in metrics
+            },
+        }
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            _complex_process_pool(),
+            render_daily_comparison_xlsx,
+            payload,
+        )
+        path = Path(str(result["path"]))
+        try:
+            stream = path.open("r+b")
+        finally:
+            path.unlink(missing_ok=True)
+        size = int(result["size"])
+        peak_rss = int(result["peak_rss"])
+        EXPORT_BUILD_SECONDS.observe(float(result["build_seconds"]))
+        EXPORT_OUTPUT_BYTES.set(size)
+        EXPORT_CELLS.set(sum(len(table[1]["rows"]) * len(table[1]["columns"]) for table in tables))
+        EXPORT_PEAK_RSS_BYTES.set(peak_rss)
+        if size > EXPORT_MAX_OUTPUT_BYTES:
+            stream.close()
+            EXPORT_REJECTED_TOTAL.labels("output_bytes").inc()
+            raise ExportValidationError("Fisierul XLSX depaseste limita de dimensiune de output.")
+        if peak_rss > EXPORT_MAX_PEAK_RSS_BYTES:
+            stream.close()
+            EXPORT_REJECTED_TOTAL.labels("peak_rss_bytes").inc()
+            raise ExportValidationError("Exportul depaseste limita de memorie RSS.")
+        filename = request.get("filename") or (
+            f"export_retail_evolutie_zilnica_{'_'.join(months)}"
+            f"{self._days_filename_suffix(selected_days)}.xlsx"
+        )
+        return XlsxArtifact(
+            stream=stream,
+            filename=self._safe_filename(str(filename)),
+            size=size,
         )
 
     def _render_daily_comparison_xlsx(
@@ -855,17 +987,31 @@ class ExportsService:
             f"export_retail_evolutie_zilnica_{'_'.join(months)}"
             f"{self._days_filename_suffix(selected_days)}.xlsx"
         )
-        return self._spool_workbook(wb, self._safe_filename(str(filename)))
+        return self._spool_workbook(
+            wb,
+            self._safe_filename(str(filename)),
+            cells=sum(len(table[1]["rows"]) * len(table[1]["columns"]) for table in tables),
+        )
 
     @staticmethod
-    def _spool_workbook(wb: Workbook, filename: str) -> XlsxArtifact:
+    def _spool_workbook(wb: Workbook, filename: str, *, cells: int = 0) -> XlsxArtifact:
         stream = SpooledTemporaryFile(max_size=XLSX_SPOOL_MAX_MEMORY_BYTES, mode="w+b")
+        started_at = time.perf_counter()
         try:
             wb.save(stream)
             size = stream.tell()
-            if size > EXPORT_MAX_ESTIMATED_BYTES:
-                raise ExportValidationError("Fisierul XLSX depaseste limita de dimensiune estimata.")
+            if size > EXPORT_MAX_OUTPUT_BYTES:
+                EXPORT_REJECTED_TOTAL.labels("output_bytes").inc()
+                raise ExportValidationError("Fisierul XLSX depaseste limita de dimensiune de output.")
             stream.seek(0)
+            peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+            EXPORT_BUILD_SECONDS.observe(time.perf_counter() - started_at)
+            EXPORT_OUTPUT_BYTES.set(size)
+            EXPORT_CELLS.set(cells)
+            EXPORT_PEAK_RSS_BYTES.set(peak_rss)
+            if peak_rss > EXPORT_MAX_PEAK_RSS_BYTES:
+                EXPORT_REJECTED_TOTAL.labels("peak_rss_bytes").inc()
+                raise ExportValidationError("Exportul depaseste limita de memorie RSS.")
             return XlsxArtifact(stream=stream, filename=filename, size=size)
         except Exception:
             stream.close()
@@ -1166,19 +1312,22 @@ class ExportsService:
         cells: int | None = None,
     ) -> None:
         if row_count > EXPORT_MAX_ROWS:
+            EXPORT_REJECTED_TOTAL.labels("rows").inc()
             raise ExportValidationError(
                 f"{operation} depaseste limita de {EXPORT_MAX_ROWS} randuri."
             )
         cell_count = cells if cells is not None else row_count * max(1, column_count)
         if cell_count > EXPORT_MAX_CELLS:
+            EXPORT_REJECTED_TOTAL.labels("cells").inc()
             raise ExportValidationError(
                 f"{operation} depaseste limita de {EXPORT_MAX_CELLS} celule."
             )
         estimated_bytes = 4096 + cell_count * EXPORT_ESTIMATED_BYTES_PER_CELL
-        if estimated_bytes > EXPORT_MAX_ESTIMATED_BYTES:
+        if estimated_bytes > EXPORT_MAX_OUTPUT_BYTES:
+            EXPORT_REJECTED_TOTAL.labels("output_bytes").inc()
             raise ExportValidationError(
                 f"{operation} depaseste limita de dimensiune estimata "
-                f"({EXPORT_MAX_ESTIMATED_BYTES} bytes)."
+                f"({EXPORT_MAX_OUTPUT_BYTES} bytes)."
             )
 
     def _public_row(self, row: dict[str, Any], columns: list[dict[str, str]]) -> dict[str, Any]:

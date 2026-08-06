@@ -229,7 +229,7 @@ function regionalBreakdownColumns(
         return <PromoMetric qty={row.promo_qty} discount={row.promo_discount_value ?? 0} />;
       }
       if (column.key === 'proc_realizare_target' || column.key === 'forecast_target_pct' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
-        return formatPercent(row[column.key]);
+        return formatPercent(row[column.key] ?? null);
       }
       return formatInt(row[column.key] ?? 0);
     },
@@ -273,13 +273,16 @@ function storeBreakdownColumns(
       }
       if (column.key === 'site_code') return row.firma;
       if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_zilnica' || column.key === 'medie_produs') {
-        return formatAmount(row[column.key] ?? 0);
+        const value = column.key === 'medie_zilnica'
+          ? (row.zile_active > 0 ? row.total_vanzari / row.zile_active : 0)
+          : row[column.key] ?? 0;
+        return formatAmount(value);
       }
       if (column.key === 'promo_qty') {
         return <PromoMetric qty={row.promo_qty} discount={row.promo_discount_value ?? 0} />;
       }
       if (column.key === 'proc_realizare_target' || column.key === 'forecast_target_pct' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
-        return formatPercent(row[column.key]);
+        return formatPercent(row[column.key] ?? null);
       }
       return formatInt(row[column.key] ?? 0);
     },
@@ -317,13 +320,16 @@ function agentBreakdownColumns(
       }
       if (column.key === 'locatie') return row.locatie;
       if (column.key === 'target' || column.key === 'total_vanzari' || column.key === 'medie_zilnica' || column.key === 'medie_produs') {
-        return formatAmount(row[column.key] ?? 0);
+        const value = column.key === 'medie_zilnica'
+          ? (row.zile_lucrate > 0 ? row.total_vanzari / row.zile_lucrate : 0)
+          : row[column.key] ?? 0;
+        return formatAmount(value);
       }
       if (column.key === 'promo_qty') {
         return <PromoMetric qty={row.promo_qty} discount={row.promo_discount_value ?? 0} />;
       }
       if (column.key === 'proc_realizare_target' || column.key === 'proc_bon2acc' || column.key === 'prc_focus_acc_qty') {
-        return formatPercent(row[column.key]);
+        return formatPercent(row[column.key] ?? null);
       }
       return formatInt(row[column.key] ?? 0);
     },
@@ -335,7 +341,7 @@ const n = (value: number | null | undefined): number => Number(value ?? 0);
 const pct = (value: number, base: number): number | null => (base > 0 ? round2((value * 100) / base) : null);
 const sortMonthsAsc = (values: string[]): string[] => [...values].sort((a, b) => a.localeCompare(b));
 const formatMonthSelectionLabel = (values: string[]): string =>
-  values.length === 1 ? values[0] : `${values[0]} - ${values[values.length - 1]} (${values.length} luni)`;
+  values.length === 1 ? (values[0] ?? '') : `${values[0] ?? ''} - ${values[values.length - 1] ?? ''} (${values.length} luni)`;
 
 export function getDefaultHistoryMonth(currentMonth: string, months: string[]): string {
   const latestAvailableClosedMonth = months
@@ -500,7 +506,7 @@ function aggregateRegionals(rows: RegionalStat[][]): RegionalStat[] {
       current.zile_active += n(row.zile_active);
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
-      current.promo_discount_value += n(row.promo_discount_value);
+      current.promo_discount_value = n(current.promo_discount_value) + n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
@@ -540,7 +546,7 @@ function aggregateAsms(rows: AsmStat[][]): AsmStat[] {
       current.zile_active += n(row.zile_active);
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
-      current.promo_discount_value += n(row.promo_discount_value);
+      current.promo_discount_value = n(current.promo_discount_value) + n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       const currentWeighted = weighted.get(key) ?? { bon2: 0, focus: 0 };
       currentWeighted.bon2 += (n(row.proc_bon2acc) / 100) * n(row.nr_bonuri);
@@ -577,7 +583,7 @@ function aggregateStores(rows: StoreStat[][]): StoreStat[] {
       current.zile_active += n(row.zile_active);
       current.target += n(row.target);
       current.promo_qty += n(row.promo_qty);
-      current.promo_discount_value += n(row.promo_discount_value);
+      current.promo_discount_value = n(current.promo_discount_value) + n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       const currentWeighted = weighted.get(row.site_code) ?? { bon2: 0, focus: 0 };
@@ -616,7 +622,7 @@ function aggregateAgents(rows: AgentStat[][]): AgentStat[] {
       current.acc_focus_qty += n(row.acc_focus_qty);
       current.target = n(current.target) + n(row.target);
       current.promo_qty += n(row.promo_qty);
-      current.promo_discount_value += n(row.promo_discount_value);
+      current.promo_discount_value = n(current.promo_discount_value) + n(row.promo_discount_value);
       current.incentive_qty += n(row.incentive_qty);
       current.return_receipt_count = n(current.return_receipt_count) + n(row.return_receipt_count);
       map.set(key, current);
@@ -643,11 +649,13 @@ function aggregatePeriodComparisons(rows: Array<PeriodComparisonPayload | null>)
     const totalQuantity = points.reduce((sum, item) => sum + n(item.total_quantity), 0);
     const totalReceipts = points.reduce((sum, item) => sum + n(item.total_receipts), 0);
     const workingDays = points.reduce((sum, item) => sum + n(item.working_days), 0);
+    const firstPoint = points[0];
+    if (!firstPoint) throw new Error(`Missing period comparison point for ${key}`);
     return {
-      ...points[0],
-      label: points[0].label,
-      month: valid.length > 1 ? 'agregat' : points[0].month,
-      day_range: valid.length > 1 ? 'luni selectate' : points[0].day_range,
+      ...firstPoint,
+      label: firstPoint.label,
+      month: valid.length > 1 ? 'agregat' : firstPoint.month,
+      day_range: valid.length > 1 ? 'luni selectate' : firstPoint.day_range,
       total_sales: round2(totalSales),
       total_quantity: totalQuantity,
       total_receipts: totalReceipts,
@@ -671,8 +679,9 @@ export function aggregateDashboardDetails(
   responses: DashboardAllResponse[],
   selectedMonths: string[]
 ): AggregatedDashboardDetails {
-  const label = selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} - ${selectedMonths[selectedMonths.length - 1]}`;
+  const label = selectedMonths.length === 1 ? (selectedMonths[0] ?? '') : `${selectedMonths[0] ?? ''} - ${selectedMonths[selectedMonths.length - 1] ?? ''}`;
   const latest = responses[responses.length - 1];
+  if (!latest) throw new Error('Dashboard aggregation requires at least one response');
   return {
     summary: aggregateSummary(responses, label),
     receiptBucketMix: aggregateReceiptBuckets(responses.map((response) => response.receipt_bucket_mix)),
@@ -863,7 +872,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
     }
 
     const currentDays = Array.from(currentMap.keys()).sort();
-    const lastActualDay = currentDays.length > 0 ? currentDays[currentDays.length - 1] : null;
+    const lastActualDay = currentDays.length > 0 ? (currentDays[currentDays.length - 1] ?? null) : null;
 
     const isFinal = summary?.is_month_final ?? false;
     const daysInMonth = summary?.days_in_month ?? 31;

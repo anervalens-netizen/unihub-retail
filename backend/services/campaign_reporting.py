@@ -569,8 +569,8 @@ class CampaignReportingPublisher:
 
                 if incentive_campaign is not None:
                     canonical_incentive = await campaign_service.get_promotions_incentives(
-                        campaign_start.isoformat(),
-                        campaign_end.isoformat(),
+                        campaign_start,
+                        campaign_end,
                         firma=None,
                         regional=None,
                         asm=None,

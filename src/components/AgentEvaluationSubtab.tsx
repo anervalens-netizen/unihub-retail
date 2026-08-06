@@ -51,6 +51,7 @@ function MonthLabel({ month }: { month: string }) {
   };
   if (month.includes('..')) {
     const [start, end] = month.split('..');
+    if (!start || !end) return <>{formatShort(month)}</>;
     return <>{formatShort(start)} - {end.includes('-') ? formatShort(end) : end}</>;
   }
   return <>{formatShort(month)}</>;
@@ -202,7 +203,7 @@ function MonthDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const label = selectedMonths.length === 1
-    ? formatMonthLabel(selectedMonths[0], { month: 'long', year: 'full' })
+    ? formatMonthLabel(selectedMonths[0] ?? '', { month: 'long', year: 'full' })
     : selectedMonths.length
       ? `${selectedMonths.length} luni`
       : 'Toate lunile';

@@ -475,6 +475,25 @@ def allocate_with_bounds(
         raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
     return rows, []
 
+
+# Keep the public service module compatible while the pure allocation boundary
+# lives in a dependency-free module.  The aliases below are the only versions
+# consumed by TargetCalculatorService and by the existing test imports.
+from services.target_calculator.allocation import (
+    money as calculation_money,
+    TargetBudgetInfeasibleError as CalculationBudgetInfeasibleError,
+    allocate_with_bounds as calculation_allocate_with_bounds,
+    allocate_with_floors as calculation_allocate_with_floors,
+)
+from services.target_calculator.calculations import MONEY as CALCULATION_MONEY
+
+MONEY = CALCULATION_MONEY
+TargetBudgetInfeasibleError = CalculationBudgetInfeasibleError  # type: ignore[misc]
+allocate_with_bounds = calculation_allocate_with_bounds
+allocate_with_floors = calculation_allocate_with_floors
+money = calculation_money
+
+
 class TargetCalculatorService:
     def __init__(self, repo: TargetCalculatorRepository):
         self.repo = repo

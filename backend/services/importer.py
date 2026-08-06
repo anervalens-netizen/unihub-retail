@@ -10,11 +10,14 @@ import json
 import math
 from pathlib import Path
 import re
+import resource
+import time
 from typing import Any
 from uuid import uuid4
 
 import asyncpg
 import pandas as pd
+from prometheus_client import Gauge, Histogram
 
 from business_clock import BusinessClock, business_today
 from services.reporting_refresh import (
@@ -64,6 +67,25 @@ SALES_COLUMNS = [
     "SubCategorie",
     "Agent",
 ]
+
+IMPORT_COMPRESSED_BYTES = Gauge(
+    "sales_import_compressed_bytes",
+    "Source bytes parsed by the sales import loader.",
+)
+IMPORT_EXPANDED_BYTES = Gauge(
+    "sales_import_expanded_bytes",
+    "Expanded DataFrame bytes produced by the sales import loader.",
+)
+IMPORT_ROWS = Gauge("sales_import_rows", "Rows produced by the sales import loader.")
+IMPORT_PARSE_SECONDS = Histogram(
+    "sales_import_parse_seconds",
+    "Sales workbook parse and validation duration.",
+    buckets=(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120),
+)
+IMPORT_PEAK_RSS_BYTES = Gauge(
+    "sales_import_peak_rss_bytes",
+    "Peak RSS observed by the sales import loader.",
+)
 
 
 @dataclass(slots=True)
@@ -328,35 +350,36 @@ async def _reconcile_sales_artifacts(pool: asyncpg.Pool) -> list[int]:
 
 
 def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
-    if isinstance(source, bytes):
-        header_content: str | BytesIO = BytesIO(source)
-        content: str | BytesIO = BytesIO(source)
-    else:
-        header_content = content = str(source)
-
-    # pandas mangles duplicate labels before exposing ``df.columns`` (for
-    # example ``SiteCode`` / ``SiteCode.1``).  Inspect the raw first row so a
-    # contradictory workbook cannot bypass the duplicate-header gate.
-    raw_header = pd.read_excel(header_content, header=None, nrows=1, engine=None)
-    raw_columns = [
-        "" if pd.isna(value) else str(value).strip()
-        for value in raw_header.iloc[0].tolist()
-    ]
-    duplicate_headers = sorted(
-        {
-            column
-            for column in raw_columns
-            if column and raw_columns.count(column) > 1
-        }
+    started_at = time.perf_counter()
+    source_bytes = (
+        len(source)
+        if isinstance(source, bytes)
+        else Path(source).stat().st_size
     )
-    if duplicate_headers:
-        _raise_structural_contradiction(
-            "duplicate_headers",
-            "Fișierul conține antete duplicate.",
-            headers=duplicate_headers,
+    content: str | BytesIO = BytesIO(source) if isinstance(source, bytes) else str(source)
+    # Keep one ExcelFile open for header inspection and data parsing.  This
+    # preserves the duplicate-header safety gate without opening/parsing the
+    # uploaded workbook twice.
+    with pd.ExcelFile(content) as workbook:
+        raw_header = workbook.parse(header=None, nrows=1)
+        raw_columns = [
+            "" if pd.isna(value) else str(value).strip()
+            for value in raw_header.iloc[0].tolist()
+        ]
+        duplicate_headers = sorted(
+            {
+                column
+                for column in raw_columns
+                if column and raw_columns.count(column) > 1
+            }
         )
-
-    df = pd.read_excel(content, engine=None)
+        if duplicate_headers:
+            _raise_structural_contradiction(
+                "duplicate_headers",
+                "Fișierul conține antete duplicate.",
+                headers=duplicate_headers,
+            )
+        df = workbook.parse()
     normalized_columns = [str(value).strip() for value in df.columns]
     df.columns = normalized_columns
     missing = [column for column in SALES_COLUMNS if column not in df.columns]
@@ -420,6 +443,11 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     df["is_cartela"] = df["Categorie"].isna() | (df["Categorie"].astype(str).str.strip() == "")
     df["is_return"] = df["Cantitate"] < 0
     validate_sales_dataframe(df)
+    IMPORT_COMPRESSED_BYTES.set(source_bytes)
+    IMPORT_EXPANDED_BYTES.set(int(df.memory_usage(deep=True).sum()))
+    IMPORT_ROWS.set(len(df))
+    IMPORT_PARSE_SECONDS.observe(time.perf_counter() - started_at)
+    IMPORT_PEAK_RSS_BYTES.set(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024)
     return df
 
 
@@ -1158,9 +1186,10 @@ async def import_sales_file(
 
 
 def load_targets_dataframe(source: str | Path) -> list[dict[str, Any]]:
-    df = pd.read_excel(source, header=1)
+    with pd.ExcelFile(source) as workbook:
+        df = workbook.parse(header=1)
+        raw_header = workbook.parse(header=None, nrows=2)
     df = df.rename(columns=lambda value: str(value).strip() if value is not None else "")
-    raw_header = pd.read_excel(source, header=None, nrows=2)
     month_columns: list[tuple[int, str, int, int]] = []
     current_year: int | None = None
     for idx, column in enumerate(df.columns):

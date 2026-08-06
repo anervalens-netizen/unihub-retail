@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -38,6 +38,12 @@ from services.promotion_evaluation import (
     evaluate_promotion,
     scope_promotion_definition_to_interval,
 )
+from services.campaigns.money import (
+    allocate_currency_targets as _allocate_currency_targets,
+    allocate_integer_target as _allocate_integer_target,
+    money as _money,
+    money_float as _money_float,
+)
 
 
 def _merge_excluded_units(
@@ -57,86 +63,30 @@ def _excluded_by_site_item(
     return out
 
 
-def _allocate_integer_target(
-    quantities: dict[str | None, int],
-    target: int,
-) -> dict[str | None, int]:
-    """Allocate a canonical non-negative store quantity across agent rows."""
-    target = max(0, int(target))
-    normalized = {
-        agent: max(0, int(quantity))
-        for agent, quantity in quantities.items()
-    }
-    current = sum(normalized.values())
-    if current == target:
-        return normalized
-    if current < target:
-        normalized[None] = normalized.get(None, 0) + target - current
-        return normalized
-    if target == 0:
-        return {agent: 0 for agent in normalized}
+class CampaignDateRangeError(ValueError):
+    """Finite, client-safe validation failure for monthly campaign ranges."""
 
-    allocated = {
-        agent: quantity * target // current
-        for agent, quantity in normalized.items()
-    }
-    remainder = target - sum(allocated.values())
-    ranked = sorted(
-        normalized,
-        key=lambda agent: (
-            -(normalized[agent] * target % current),
-            str(agent or "").casefold(),
-        ),
-    )
-    for agent in ranked[:remainder]:
-        allocated[agent] += 1
-    return allocated
+    code = "campaign_date_range_invalid"
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
 
 
-def _allocate_currency_targets(
-    values: dict[tuple[str, str], float],
-    store_targets: dict[str, float],
-) -> dict[tuple[str, str], float]:
-    """Round agent currency values while preserving every rounded store total."""
-    by_store: dict[str, list[tuple[str, str]]] = defaultdict(list)
-    for key in values:
-        by_store[key[0]].append(key)
-
-    allocated: dict[tuple[str, str], float] = {}
-    for site_code, keys in by_store.items():
-        ordered = sorted(keys, key=lambda key: key[1].casefold())
-        raw_cents = {
-            key: Decimal(str(max(0.0, values[key]))) * Decimal("100")
-            for key in ordered
-        }
-        cents = {key: int(raw_cents[key]) for key in ordered}
-        target_cents = int(round(float(store_targets.get(site_code, 0.0)) * 100))
-        remainder = target_cents - sum(cents.values())
-        ranked_up = sorted(
-            ordered,
-            key=lambda key: (-(raw_cents[key] - cents[key]), key[1].casefold()),
-        )
-        ranked_down = list(reversed(ranked_up))
-        while remainder > 0 and ranked_up:
-            for key in ranked_up:
-                if remainder == 0:
-                    break
-                cents[key] += 1
-                remainder -= 1
-        while remainder < 0 and ranked_down:
-            progressed = False
-            for key in ranked_down:
-                if remainder == 0:
-                    break
-                if cents[key] > 0:
-                    cents[key] -= 1
-                    remainder += 1
-                    progressed = True
-            if not progressed:
-                break
-        for key in ordered:
-            allocated[key] = cents[key] / 100
-    return allocated
+def validate_campaign_date_range(start_date: date | str, end_date: date | str) -> str:
+    """Validate the authoritative monthly Campaigns boundary and return YYYY-MM."""
+    # The HTTP boundary is typed as ``date``.  Keep direct calls from older
+    # workers/tests compatible while normalizing immediately at this boundary.
+    try:
+        start_date = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+        end_date = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+    except ValueError as exc:
+        raise CampaignDateRangeError("invalid_iso_date") from exc
+    if start_date > end_date:
+        raise CampaignDateRangeError("start_date_after_end_date")
+    if (start_date.year, start_date.month) != (end_date.year, end_date.month):
+        raise CampaignDateRangeError("cross_month_range_not_supported")
+    return start_date.strftime("%Y-%m")
 
 
 async def _compute_promotion_result(
@@ -325,8 +275,8 @@ class CampaignsService:
 
     async def get_promotions_incentives(
         self,
-        start_date: str,
-        end_date: str,
+        start_date: date,
+        end_date: date,
         firma: str | None,
         regional: str | None,
         asm: str | None,
@@ -337,11 +287,12 @@ class CampaignsService:
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> dict:
-        from datetime import date as date_cls
-
-        start = date_cls.fromisoformat(start_date)
-        end = date_cls.fromisoformat(end_date)
-        month = start_date[:7]
+        try:
+            start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+            end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+        except ValueError as exc:
+            raise CampaignDateRangeError("invalid_iso_date") from exc
+        month = validate_campaign_date_range(start, end)
 
         config, config_error = load_special_cards_config()
         promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
@@ -361,7 +312,196 @@ class CampaignsService:
         ]
         include_incentive = view != "promo"
 
-        async with self.pool.acquire() as conn:
+        # All DB inputs are materialized under one immutable snapshot.  The
+        # connection is released before the response aggregation/formatting
+        # phase so CPU work does not occupy a pool slot.
+        conn = await self.pool.acquire()
+        try:
+            async with conn.transaction(
+                isolation="repeatable_read",
+                readonly=True,
+            ):
+                incentive_campaign = (
+                    await get_incentive_campaign(conn, month)
+                    if include_incentive
+                    else None
+                )
+                campaign_context = await _build_campaign_context(
+                    conn,
+                    config_error=config_error,
+                    promotion_definitions=promotion_definitions,
+                    promotion_definition=promotion_definition,
+                    promotion_error=promotion_error,
+                    incentive_campaign=incentive_campaign,
+                    month=month,
+                    firma=firma,
+                    regional=regional,
+                    asm=asm,
+                    site_code=site_code,
+                    agent=agent,
+                    include_incentive=include_incentive,
+                    current_scope=current_scope,
+                    include_closed_stores=include_closed_stores,
+                )
+                summary = (
+                    await _fetch_promo_incentive_summary(
+                        conn=conn,
+                        month=month,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
+                        campaign_context=campaign_context,
+                    )
+                    if include_incentive
+                    else None
+                )
+                # Split incentive mechanisms need scoped promo evaluations too;
+                # materialize them while the same repeatable-read snapshot is
+                # still open so the CPU phase performs no DB I/O.  Summary is
+                # intentionally loaded first because it can populate the same
+                # request-local evaluation cache.
+                if incentive_campaign is not None:
+                    snapshot_periods = incentive_campaign.get("periods") or []
+                    if not snapshot_periods and incentive_campaign.get("reward_map"):
+                        snapshot_periods = [{
+                            "valid_from": start,
+                            "valid_to": end,
+                            "products": [
+                                {"item_code": code, "reward_value": reward}
+                                for code, reward in incentive_campaign["reward_map"].items()
+                            ],
+                        }]
+                    if len(snapshot_periods) > 1:
+                        for period in snapshot_periods:
+                            for definition in promotion_definitions:
+                                period_start_date = max(
+                                    period["valid_from"], definition["start_date"]
+                                )
+                                period_end_date = min(
+                                    period["valid_to"], definition["end_date"]
+                                )
+                                if period_start_date > period_end_date:
+                                    continue
+                                cache_key = campaign_context.period_evaluation_key(
+                                    definition,
+                                    period_start_date,
+                                    period_end_date,
+                                )
+                                if cache_key not in campaign_context.period_evaluations:
+                                    campaign_context.period_evaluations[cache_key] = (
+                                        await _compute_promotion_result(
+                                            conn,
+                                            month=month,
+                                            definition=scope_promotion_definition_to_interval(
+                                                definition,
+                                                period_start_date,
+                                                period_end_date,
+                                            ),
+                                            firma=firma,
+                                            regional=regional,
+                                            asm=asm,
+                                            site_code=site_code,
+                                            agent=agent,
+                                            current_scope=current_scope,
+                                            include_closed_stores=include_closed_stores,
+                                        )
+                                    )
+                store_multipliers, store_achievements = (
+                    await _get_store_incentive_multipliers(
+                        conn,
+                        month,
+                        firma,
+                        regional,
+                        asm,
+                        site_code,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
+                    )
+                    if incentive_campaign is not None
+                    else ({}, {})
+                )
+                has_active_promotion = (
+                    promotion_definition is not None and promotion_error is None
+                )
+                promo_total_row = None
+                promo_store_rows: list[Any] = []
+                selected_evaluation = campaign_context.selected_promotion_evaluation
+                promotion_item_codes = (
+                    selected_evaluation.item_codes
+                    if selected_evaluation is not None
+                    else []
+                )
+                if has_active_promotion and promotion_item_codes:
+                    promo_total_row = await self.repo.fetch_promo_total(
+                        start,
+                        end,
+                        promotion_item_codes,
+                        month,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
+                    )
+                    promo_store_rows = await self.repo.fetch_promo_store_rows(
+                        start,
+                        end,
+                        promotion_item_codes,
+                        month,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
+                    )
+                incentive_codes = sorted({
+                    str(product["item_code"])
+                    for period in (incentive_campaign or {}).get("periods", [])
+                    for product in period.get("products", [])
+                })
+                if incentive_campaign is not None and not incentive_codes:
+                    incentive_codes = sorted({
+                        str(code)
+                        for code in (
+                            incentive_campaign.get("item_codes")
+                            or incentive_campaign.get("reward_map", {}).keys()
+                        )
+                    })
+                incentive_store_rows: list[Any] = []
+                incentive_agent_rows: list[Any] = []
+                if incentive_campaign is not None and incentive_codes:
+                    incentive_store_rows = await self.repo.fetch_incentive_store_rows(
+                        incentive_codes,
+                        month,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
+                    )
+                    incentive_agent_rows = await self.repo.fetch_incentive_agent_rows(
+                        incentive_codes,
+                        month,
+                        firma=firma,
+                        regional=regional,
+                        asm=asm,
+                        site_code=site_code,
+                        agent=agent,
+                        current_scope=current_scope,
+                        include_closed_stores=include_closed_stores,
+                    )
+            await self.pool.release(conn)
+            conn = None
             promo_title = (
                 promotion_definition.get("title", "Promotie")
                 if promotion_definition
@@ -371,7 +511,6 @@ class CampaignsService:
                 promotion_definition.get("description", "") if promotion_definition else ""
             )
 
-            incentive_campaign = await get_incentive_campaign(conn, month) if include_incentive else None
             incentive_title = incentive_campaign["title"] if incentive_campaign else ""
             incentive_description = incentive_campaign["description"] if incentive_campaign else ""
             calculation_warnings: list[str] = []
@@ -391,23 +530,6 @@ class CampaignsService:
                     "Incentive indisponibil: lista promotiilor active nu poate fi validata."
                 )
 
-            campaign_context = await _build_campaign_context(
-                conn,
-                config_error=config_error,
-                promotion_definitions=promotion_definitions,
-                promotion_definition=promotion_definition,
-                promotion_error=promotion_error,
-                incentive_campaign=incentive_campaign,
-                month=month,
-                firma=firma,
-                regional=regional,
-                asm=asm,
-                site_code=site_code,
-                agent=agent,
-                include_incentive=include_incentive,
-                current_scope=current_scope,
-                include_closed_stores=include_closed_stores,
-            )
             if (
                 incentive_campaign is not None
                 and campaign_context.promotion_status
@@ -418,25 +540,13 @@ class CampaignsService:
                     campaign_context.promotion_warnings
                 )
 
-            if include_incentive:
-                summary = await _fetch_promo_incentive_summary(
-                    conn=conn,
-                    month=month,
-                    firma=firma,
-                    regional=regional,
-                    asm=asm,
-                    site_code=site_code,
-                    agent=agent,
-                    current_scope=current_scope,
-                    include_closed_stores=include_closed_stores,
-                    campaign_context=campaign_context,
-                )
+            if include_incentive and summary is not None:
                 promo_qty = summary.promo_qty
-                promo_impact = float(summary.promo_impact)
+                promo_impact = _money(summary.promo_impact)
                 incentive_sold_qty = summary.incentive_sold_qty
                 incentive_qty = summary.incentive_qty
                 incentive_value = (
-                    float(summary.incentive_value)
+                    _money(summary.incentive_value)
                     if summary.incentive_value is not None
                     else None
                 )
@@ -452,10 +562,10 @@ class CampaignsService:
                     calculation_warnings.extend(summary.calculation_warnings)
             else:
                 promo_qty = 0
-                promo_impact = 0.0
+                promo_impact = Decimal("0")
                 incentive_sold_qty = 0
                 incentive_qty = 0
-                incentive_value = 0.0
+                incentive_value = Decimal("0")
                 incentive_qualified_qty = 0
                 incentive_qualified_stores = 0
                 incentive_qualified_stores_full = 0
@@ -465,21 +575,6 @@ class CampaignsService:
                 incentive_qualified_agents_half = 0
 
             promo_total_qty = 0
-            store_multipliers: dict[str, float] = {}
-            store_achievements: dict[str, float | None] = {}
-            if incentive_campaign is not None:
-                store_multipliers, store_achievements = await _get_store_incentive_multipliers(
-                    conn,
-                    month,
-                    firma,
-                    regional,
-                    asm,
-                    site_code,
-                    current_scope=current_scope,
-                    include_closed_stores=include_closed_stores,
-                )
-
-            has_active_promotion = promotion_definition is not None and promotion_error is None
 
             # Regula co-purchase: unitatile reduse (1 per bon calificat) nu se incentiveaza.
             promo_excluded_ag: dict[tuple[str, str, str], int] = {}
@@ -492,7 +587,7 @@ class CampaignsService:
             promo_bonuri_by_store: dict[str, int] = {}
             promo_bonuri_by_agent: dict[str, int] = {}
             promo_agent_sites: dict[str, dict[str, int]] = {}
-            promotion_item_codes: list[str] = []
+            promotion_item_codes = []
             promotion_rule_type = "selected_item_copurchase"
             incentive_excluded_ag = (
                 dict(campaign_context.promo_excluded_units)
@@ -503,33 +598,30 @@ class CampaignsService:
                 assert promotion_definition is not None
                 evaluation = campaign_context.selected_promotion_evaluation
                 if evaluation is None:
-                    evaluation = await _compute_promotion_result(
-                        conn,
-                        month=month,
-                        definition=promotion_definition,
-                        firma=firma,
-                        regional=regional,
-                        asm=asm,
-                        site_code=site_code,
-                        agent=agent,
-                        current_scope=current_scope,
-                        include_closed_stores=include_closed_stores,
+                    has_active_promotion = False
+                    promo_cp = None
+                    promo_calculation_status = "invalid"
+                    calculation_warnings.append(
+                        "Promotia activa nu a putut fi materializata in snapshot."
                     )
-                promo_cp = evaluation.result
-                promotion_item_codes = evaluation.item_codes
-                promotion_rule_type = evaluation.rule_type
-                promo_calculation_status = evaluation.status.value
-                if not evaluation.is_complete:
-                    if evaluation.warning:
-                        calculation_warnings.append(evaluation.warning)
                     if include_incentive and incentive_campaign is not None:
                         incentive_calculation_status = "invalid"
-                if evaluation.status is PromotionEvaluationStatus.INVALID:
-                    has_active_promotion = False
-                    promotion_error = evaluation.warning
-                if promo_cp is None:
-                    promo_cp = None
                 else:
+                    promo_cp = evaluation.result
+                    promotion_item_codes = evaluation.item_codes
+                    promotion_rule_type = evaluation.rule_type
+                    promo_calculation_status = evaluation.status.value
+                    if not evaluation.is_complete:
+                        if evaluation.warning:
+                            calculation_warnings.append(evaluation.warning)
+                        if include_incentive and incentive_campaign is not None:
+                            incentive_calculation_status = "invalid"
+                    if evaluation.status is PromotionEvaluationStatus.INVALID:
+                        has_active_promotion = False
+                        promotion_error = evaluation.warning
+                if not has_active_promotion:
+                    has_active_promotion = False
+                if has_active_promotion and promo_cp is not None:
                     promo_excluded_ag = promo_cp.excluded_units
                     promo_excluded_si = promo_cp.excluded_by_site_item()
                     promo_qualifying_bons = promo_cp.qualifying_bons
@@ -551,37 +643,9 @@ class CampaignsService:
                 incentive_excluded_si = {}
 
             if has_active_promotion:
-                assert promotion_definition is not None
-                promo_month = start_date[:7]
-                total_row = await self.repo.fetch_promo_total(
-                    start,
-                    end,
-                    promotion_item_codes,
-                    promo_month,
-                    firma=firma,
-                    regional=regional,
-                    asm=asm,
-                    site_code=site_code,
-                    agent=agent,
-                    current_scope=current_scope,
-                    include_closed_stores=include_closed_stores,
-                )
-                if total_row:
-                    promo_total_qty = int(total_row["total_qty"] or 0)
-
-                store_rows = await self.repo.fetch_promo_store_rows(
-                    start,
-                    end,
-                    promotion_item_codes,
-                    promo_month,
-                    firma=firma,
-                    regional=regional,
-                    asm=asm,
-                    site_code=site_code,
-                    agent=agent,
-                    current_scope=current_scope,
-                    include_closed_stores=include_closed_stores,
-                )
+                if promo_total_row:
+                    promo_total_qty = int(promo_total_row["total_qty"] or 0)
+                store_rows = promo_store_rows
                 top_stores = [
                     PromoTopStore(
                         store_name=f"{row['site_code']} - {row['locatie']}",
@@ -632,7 +696,7 @@ class CampaignsService:
             incentive_periods: list[IncentivePeriodStat] = []
             incentive_category_breakdown: list[IncentiveCategoryBreakdown] = []
             incentive_sold_qty = 0
-            incentive_potential: float | None = 0.0
+            incentive_potential: Decimal | None = Decimal("0")
             incentive_product_count = 0
 
             if incentive_campaign is not None:
@@ -677,25 +741,11 @@ class CampaignsService:
                                 )
                             )
                             if period_evaluation is None:
-                                period_evaluation = await _compute_promotion_result(
-                                    conn,
-                                    month=month,
-                                    definition=scope_promotion_definition_to_interval(
-                                        definition,
-                                        period_start_date,
-                                        period_end_date,
-                                    ),
-                                    firma=firma,
-                                    regional=regional,
-                                    asm=asm,
-                                    site_code=site_code,
-                                    agent=agent,
-                                    current_scope=current_scope,
-                                    include_closed_stores=include_closed_stores,
+                                incentive_calculation_status = "invalid"
+                                calculation_warnings.append(
+                                    "Evaluarea promo pentru mecanism nu exista in snapshot."
                                 )
-                                campaign_context.period_evaluations[cache_key] = (
-                                    period_evaluation
-                                )
+                                continue
                             if not period_evaluation.is_complete:
                                 incentive_calculation_status = "invalid"
                                 calculation_warnings.append(
@@ -721,27 +771,17 @@ class CampaignsService:
                     period_excluded_si[site_exclusion_key] = period_excluded_si.get(site_exclusion_key, 0) + units
 
                 if incentive_codes:
-                    store_item_rows = await self.repo.fetch_incentive_store_rows(
-                        incentive_codes,
-                        month,
-                        firma=firma,
-                        regional=regional,
-                        asm=asm,
-                        site_code=site_code,
-                        agent=agent,
-                        current_scope=current_scope,
-                        include_closed_stores=include_closed_stores,
-                    )
+                    store_item_rows = incentive_store_rows
                     store_inc: dict[str, list[Any]] = {}
                     store_eligible_by_item: dict[tuple[str, str, str, str], int] = {}
-                    store_reward_by_item: dict[tuple[str, str, str, str], float] = {}
-                    period_totals: dict[tuple[str, str], list[float]] = {}
-                    category_totals: dict[str, list[float]] = {}
-                    tier_totals: dict[str, list[float]] = {}
+                    store_reward_by_item: dict[tuple[str, str, str, str], Decimal] = {}
+                    period_totals: dict[tuple[str, str], list[Any]] = {}
+                    category_totals: dict[str, list[Any]] = {}
+                    tier_totals: dict[str, list[Any]] = {}
                     incentive_sold_qty = 0
                     incentive_qty = 0
-                    incentive_value = 0.0
-                    incentive_potential = 0.0
+                    incentive_value = Decimal("0")
+                    incentive_potential = Decimal("0")
                     incentive_qualified_qty = 0
                     for row in store_item_rows:
                         sc = str(row["site_code"])
@@ -749,7 +789,7 @@ class CampaignsService:
                         row_valid_to = row.get("valid_to") or campaign_periods[0]["valid_to"]
                         period_start = row_valid_from.isoformat()
                         period_end = row_valid_to.isoformat()
-                        reward_val = float(
+                        reward_val = _money(
                             row.get("reward_value")
                             or incentive_campaign.get("reward_map", {}).get(row["item_code"], 0)
                         )
@@ -760,31 +800,33 @@ class CampaignsService:
                         item_key = (period_start, period_end, sc, str(row["item_code"]))
                         store_eligible_by_item[item_key] = qty
                         store_reward_by_item[item_key] = reward_val
-                        potential = qty * reward_val
-                        value = potential * store_multipliers.get(sc, 0)
+                        potential = _money(qty * reward_val)
+                        value = _money(
+                            potential * Decimal(str(store_multipliers.get(sc, 0)))
+                        )
                         incentive_qty += qty
                         incentive_potential += potential
                         incentive_value += value
                         if (store_achievements.get(sc) or 0) >= 0.9:
                             incentive_qualified_qty += qty
                         if sc not in store_inc:
-                            store_inc[sc] = [row["locatie"], 0.0, row["firma"] or "", 0, 0.0]
+                            store_inc[sc] = [row["locatie"], Decimal("0"), row["firma"] or "", 0, Decimal("0")]
                         store_inc[sc][1] += value
                         store_inc[sc][3] += qty
                         store_inc[sc][4] += potential
-                        period_total = period_totals.setdefault((period_start, period_end), [0, 0.0, 0.0])
+                        period_total = period_totals.setdefault((period_start, period_end), [0, Decimal("0"), Decimal("0")])
                         period_total[0] += qty
                         period_total[1] += potential
                         period_total[2] += value
                         category = str(row.get("subcategory") or row.get("category") or "Necategorizat")
-                        category_total = category_totals.setdefault(category, [0, 0.0, 0.0, 0])
+                        category_total = category_totals.setdefault(category, [0, Decimal("0"), Decimal("0"), 0])
                         category_total[0] += qty
                         category_total[1] += potential
                         category_total[2] += value
                         if (store_achievements.get(sc) or 0) >= 0.9:
                             category_total[3] += qty
                         tier_label = f"{int(reward_val)} RON" if reward_val == int(reward_val) else f"{reward_val} RON"
-                        tier_total = tier_totals.setdefault(tier_label, [0, 0.0])
+                        tier_total = tier_totals.setdefault(tier_label, [0, Decimal("0")])
                         tier_total[0] += qty
                         tier_total[1] += potential
 
@@ -792,12 +834,12 @@ class CampaignsService:
                         top_stores = [
                             PromoTopStore(
                                 store_name=s.store_name,
-                                qty=int(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0, "", 0])[3]),
+                                qty=int(store_inc.get(s.store_name.split(" - ")[0], [None, Decimal("0"), "", 0])[3]),
                                 total_qty=s.total_qty,
                                 category_qty=s.category_qty,
                                 promo_bons=s.promo_bons,
-                                incentive_value=round(float(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0])[1]), 2),
-                                incentive_potential=round(float(store_inc.get(s.store_name.split(" - ")[0], [None, 0.0, "", 0, 0.0])[4]), 2),
+                                incentive_value=_money_float(store_inc.get(s.store_name.split(" - ")[0], [None, Decimal("0")])[1]),
+                                incentive_potential=_money_float(store_inc.get(s.store_name.split(" - ")[0], [None, Decimal("0"), "", 0, Decimal("0")])[4]),
                                 achievement=s.achievement,
                                 firma=s.firma,
                             )
@@ -807,8 +849,8 @@ class CampaignsService:
                         top_stores = [
                             PromoTopStore(
                                 store_name=f"{sc} - {data[0]}", qty=int(data[3]), total_qty=0,
-                                category_qty=0, promo_bons=0, incentive_value=round(float(data[1]), 2),
-                                incentive_potential=round(float(data[4]), 2),
+                                category_qty=0, promo_bons=0, incentive_value=_money_float(data[1]),
+                                incentive_potential=_money_float(data[4]),
                                 achievement=store_achievements.get(sc), firma=str(data[2]),
                             )
                             for sc, data in store_inc.items()
@@ -817,48 +859,38 @@ class CampaignsService:
                     for index, period in enumerate(campaign_periods):
                         period_start = period["valid_from"].isoformat()
                         period_end = period["valid_to"].isoformat()
-                        totals = period_totals.get((period_start, period_end), [0, 0.0, 0.0])
+                        totals = period_totals.get((period_start, period_end), [0, Decimal("0"), Decimal("0")])
                         label = "Mecanism actualizat" if index == len(campaign_periods) - 1 and len(campaign_periods) > 1 else "Mecanism initial" if len(campaign_periods) > 1 else "Mecanism lunar"
                         incentive_periods.append(IncentivePeriodStat(
                             label=label,
                             start_date=period_start,
                             end_date=period_end,
                             product_count=len(period["products"]),
-                            reward_values=sorted({float(product["reward_value"]) for product in period["products"]}),
+                            reward_values=sorted({_money_float(product["reward_value"]) for product in period["products"]}),
                             qty=int(totals[0]),
-                            potential=round(float(totals[1]), 2),
-                            value=round(float(totals[2]), 2),
+                            potential=_money_float(totals[1]),
+                            value=_money_float(totals[2]),
                         ))
                     incentive_category_breakdown = sorted(
                         [IncentiveCategoryBreakdown(
                             label=label,
                             qty=int(values[0]),
                             qualified_qty=int(values[3]),
-                            potential=round(values[1], 2),
-                            value=round(values[2], 2),
+                            potential=_money_float(values[1]),
+                            value=_money_float(values[2]),
                         ) for label, values in category_totals.items() if values[0] > 0],
                         key=lambda item: (-item.qty, item.label),
                     )
                     incentive_categories = sorted(
-                        [IncentiveCategory(label=label, qty=int(values[0]), value=round(values[1], 2)) for label, values in tier_totals.items()],
+                        [IncentiveCategory(label=label, qty=int(values[0]), value=_money_float(values[1])) for label, values in tier_totals.items()],
                         key=lambda item: -item.value,
                     )
 
-                    agent_item_rows = await self.repo.fetch_incentive_agent_rows(
-                        incentive_codes,
-                        month,
-                        firma=firma,
-                        regional=regional,
-                        asm=asm,
-                        site_code=site_code,
-                        agent=agent,
-                        current_scope=current_scope,
-                        include_closed_stores=include_closed_stores,
-                    )
+                    agent_item_rows = incentive_agent_rows
                     agent_item_quantities: dict[
                         tuple[str, str, str, str], dict[str | None, int]
                     ] = {}
-                    agent_item_rewards: dict[tuple[str, str, str, str], float] = {}
+                    agent_item_rewards: dict[tuple[str, str, str, str], Decimal] = {}
                     agent_store_meta: dict[str, tuple[str, str]] = {}
                     for row in agent_item_rows:
                         ag = str(row["agent"])
@@ -872,7 +904,7 @@ class CampaignsService:
                         period_end = row_valid_to.isoformat()
                         excluded = period_excluded_ag.get((period_start, period_end, sc, ag, item_code), 0)
                         q = max(0, int(row["qty"]) - excluded)
-                        reward_value = float(
+                        reward_value = _money(
                             row.get("reward_value")
                             or incentive_campaign.get("reward_map", {}).get(item_code, 0)
                         )
@@ -882,8 +914,8 @@ class CampaignsService:
                         agent_item_rewards[item_key] = reward_value
                         agent_store_meta[sc] = (loc, firma_val)
 
-                    agent_inc: dict[tuple[str, str], float] = {}
-                    agent_potential: dict[tuple[str, str], float] = {}
+                    agent_inc: dict[tuple[str, str], Decimal] = {}
+                    agent_potential: dict[tuple[str, str], Decimal] = {}
                     agent_qty: dict[tuple[str, str], int] = {}
                     for item_key in sorted(set(store_eligible_by_item) | set(agent_item_quantities)):
                         sc = item_key[2]
@@ -895,7 +927,7 @@ class CampaignsService:
                             item_key,
                             store_reward_by_item.get(
                                 item_key,
-                                float(
+                                _money(
                                     incentive_campaign.get("reward_map", {}).get(item_key[3], 0)
                                 ),
                             ),
@@ -903,19 +935,21 @@ class CampaignsService:
                         for allocated_agent, quantity in allocated_quantities.items():
                             label = allocated_agent or "Neatribuit"
                             agent_key = (sc, label)
-                            potential = quantity * reward_value
-                            value = potential * store_multipliers.get(sc, 0)
+                            potential = _money(quantity * reward_value)
+                            value = _money(
+                                potential * Decimal(str(store_multipliers.get(sc, 0)))
+                            )
                             agent_qty[agent_key] = agent_qty.get(agent_key, 0) + quantity
-                            agent_potential[agent_key] = agent_potential.get(agent_key, 0.0) + potential
-                            agent_inc[agent_key] = agent_inc.get(agent_key, 0.0) + value
+                            agent_potential[agent_key] = agent_potential.get(agent_key, Decimal("0")) + potential
+                            agent_inc[agent_key] = agent_inc.get(agent_key, Decimal("0")) + value
 
                     allocated_agent_values = _allocate_currency_targets(
                         agent_inc,
-                        {sc: float(data[1]) for sc, data in store_inc.items()},
+                        {sc: data[1] for sc, data in store_inc.items()},
                     )
                     allocated_agent_potential = _allocate_currency_targets(
                         agent_potential,
-                        {sc: float(data[4]) for sc, data in store_inc.items()},
+                        {sc: data[4] for sc, data in store_inc.items()},
                     )
 
                     agent_rows: list[IncentiveTopAgent] = []
@@ -924,8 +958,8 @@ class CampaignsService:
                         loc, firma_val = agent_store_meta.get(
                             sc,
                             (
-                                str(store_inc.get(sc, ["", 0.0, ""])[0]),
-                                str(store_inc.get(sc, ["", 0.0, ""])[2]),
+                                str(store_inc.get(sc, ["", Decimal("0"), ""])[0]),
+                                str(store_inc.get(sc, ["", Decimal("0"), ""])[2]),
                             ),
                         )
                         store_name = f"{sc} - {loc}" if sc and loc else sc
@@ -935,8 +969,8 @@ class CampaignsService:
                                 store_name=store_name,
                                 firma=firma_val,
                                 qty_sold=agent_qty[agent_key],
-                                val_incentive=allocated_agent_values[agent_key],
-                                incentive_potential=allocated_agent_potential[agent_key],
+                                val_incentive=_money_float(allocated_agent_values[agent_key]),
+                                incentive_potential=_money_float(allocated_agent_potential[agent_key]),
                                 achievement=store_achievements.get(sc),
                             )
                         )
@@ -966,7 +1000,7 @@ class CampaignsService:
                 "promo_total_qty": promo_total_qty,
                 "promo_qty": promo_qty,
                 "promo_category_qty": None,
-                "promo_impact": promo_impact,
+                "promo_impact": _money_float(promo_impact),
                 "promo_qualifying_bons": promo_qualifying_bons,
                 "promo_discounted_units": promo_discounted_units,
                 "promo_discount_value": promo_discount_value,
@@ -983,8 +1017,8 @@ class CampaignsService:
                 "incentive_description": incentive_description,
                 "incentive_qty": incentive_qty,
                 "incentive_sold_qty": incentive_sold_qty,
-                "incentive_value": incentive_value,
-                "incentive_potential": incentive_potential,
+                "incentive_value": _money_float(incentive_value) if incentive_value is not None else None,
+                "incentive_potential": _money_float(incentive_potential) if incentive_potential is not None else None,
                 "incentive_qualified_qty": incentive_qualified_qty,
                 "incentive_qualified_stores": incentive_qualified_stores,
                 "incentive_qualified_stores_full": incentive_qualified_stores_full,
@@ -997,3 +1031,6 @@ class CampaignsService:
                 "incentive_periods": incentive_periods,
                 "incentive_category_breakdown": incentive_category_breakdown,
             }
+        finally:
+            if conn is not None:
+                await self.pool.release(conn)

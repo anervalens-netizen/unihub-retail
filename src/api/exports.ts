@@ -53,8 +53,8 @@ export interface ExportPreview {
   truncated: boolean;
 }
 
-export async function getExportCatalog(): Promise<ExportCatalog> {
-  const { data } = await client.get<ExportCatalog>('/api/exports/catalog');
+export async function getExportCatalog(signal?: AbortSignal): Promise<ExportCatalog> {
+  const { data } = await client.get<ExportCatalog>('/api/exports/catalog', { signal });
   return data;
 }
 

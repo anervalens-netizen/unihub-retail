@@ -13,7 +13,7 @@ import {
 
 import type { AgentStat, DashboardSummary, PeriodComparisonPayload, RegionalStat, StoreStat } from '../../api/types';
 import type { AppFilters } from '../MainLayout';
-import { AiForecastPanel } from '../AiForecastPanel';
+import { AiForecastPanel } from '../../features/ai-forecast/AiForecastPage';
 import { SegmentedTabs } from '../common/SegmentedTabs';
 import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable, type BreakdownColumn } from './BreakdownTable';
@@ -317,7 +317,7 @@ export function CurrentDashboard<RegionalKey extends string, StoreKey extends st
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
                     <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                     <YAxis yAxisId="sales" width={38} tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(value: number, _name: string) => formatAmount(value)} />
+                    <Tooltip formatter={(value: unknown, _name: unknown) => formatAmount(Number(value))} />
                     <Legend />
                     <Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} />
                     <Line yAxisId="sales" type="monotone" dataKey="sales_last_year" name="Anul trecut" stroke="#10b981" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls />

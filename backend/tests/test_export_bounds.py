@@ -96,7 +96,7 @@ async def test_report_rejects_cell_cap_before_period_expansion(
 async def test_report_rejects_estimated_byte_cap_before_xlsx_render(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(exports_module, "EXPORT_MAX_ESTIMATED_BYTES", 4096)
+    monkeypatch.setattr(exports_module, "EXPORT_MAX_OUTPUT_BYTES", 4096)
     repo = BoundedRepo([report_row("S001")])
     service = ExportsService(repo)  # type: ignore[arg-type]
 

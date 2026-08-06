@@ -6,7 +6,7 @@ export async function getFilterOptions(month: string, signal?: AbortSignal): Pro
   return data;
 }
 
-export async function getAvailableMonths(): Promise<string[]> {
-  const { data } = await client.get<string[]>('/api/filters/months');
+export async function getAvailableMonths(signal?: AbortSignal): Promise<string[]> {
+  const { data } = await client.get<string[]>('/api/filters/months', { signal });
   return data;
 }

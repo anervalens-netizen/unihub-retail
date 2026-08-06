@@ -1,9 +1,13 @@
 ---
 title: "UniHub Retail development plan toward 10 out of 10"
 tags: [unihub-retail, roadmap, performance, refactoring]
-status: active
+status: superseded
 created: 2026-08-02
 ---
+
+> **HISTORICAL / SUPERSEDED — 2026-08-06.** Acest document păstrează contextul
+> programului v2.1.0. Singurul plan activ este
+> [`PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md).
 
 # Obiectiv
 

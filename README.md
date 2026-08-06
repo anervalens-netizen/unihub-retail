@@ -16,10 +16,8 @@ salarii, P&L, raportarea vizitelor și interfața activă Grile.
 - instalare locală: [`LOCAL_SETUP.md`](LOCAL_SETUP.md);
 - audit tehnic istoric și riscuri de la release-ul v2.0.1:
   [`docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md`](docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md);
-- plan activ 10/10 după v2.0.1:
-  [`docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md`](docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md);
-- plan activ de performanță și operativitate P0-P2:
-  [`docs/PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md`](docs/PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md);
+- singurul plan activ pentru ridicarea aplicației peste 9:
+  [`docs/PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](docs/PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md);
 - deploy privilegiat și rollback: [`ops/README.md`](ops/README.md).
 
 Planurile și rapoartele închise nu sunt duplicate într-o arhivă Markdown din

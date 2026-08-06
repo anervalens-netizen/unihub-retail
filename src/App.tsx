@@ -2,7 +2,6 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-import { getAvailableMonths } from './api/filters';
 import { defaultAppFilters, normalizeAppFilters } from './lib/filterValues';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 import { sanitizeActiveTab } from './lib/navigationAccess';
@@ -21,6 +20,8 @@ import { usePnlCapability } from './auth/usePnlCapability';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { parseInsightDeepLink } from './lib/insightDeepLink';
 import { usePersistentState } from './lib/usePersistentState';
+import { useAvailableMonths } from './hooks/useAvailableMonths';
+import { AvailableMonthsStatus } from './components/AvailableMonthsStatus';
 
 const Campaigns = lazy(loadCampaignsScreen);
 const Dashboard = lazy(loadDashboardScreen);
@@ -121,8 +122,8 @@ export default function App() {
   );
   const [currentMonth, setCurrentMonth] = useState('');
   const [focusFilterMonth, setFocusFilterMonth] = useState('');
-  const [months, setMonths] = useState<string[]>([]);
-  const [bootstrapping, setBootstrapping] = useState(true);
+  const availableMonths = useAvailableMonths(isAuthenticated);
+  const { months, status: monthsStatus, isLoading: isMonthsLoading, setMonths, retry: retryMonths } = availableMonths;
   const [mgmtSubTab, setMgmtSubTab] = usePersistentState<ManagementTab>(
     MANAGEMENT_SUBTAB_STORAGE_KEY,
     insightDeepLink?.managementSubtab ?? 'asm',
@@ -193,68 +194,17 @@ export default function App() {
     }
   }, [theme]);
 
-  const bootstrapRan = useRef(false);
-
   useEffect(() => {
-    // Don't start anything until auth loading is done
-    if (isAuthLoading) return;
-    // If already ran bootstrap, skip
-    if (bootstrapRan.current) return;
-    bootstrapRan.current = true;
-
-    // If not authenticated, mark bootstrapping as done immediately
-    if (!isAuthenticated) {
-      setBootstrapping(false);
-      return;
-    }
-
-    let mounted = true;
-    async function bootstrap() {
-      try {
-        const availableMonths = await getAvailableMonths();
-        if (!mounted) return;
-        setMonths(availableMonths);
-        setCurrentMonth(
-          insightDeepLink?.period && availableMonths.includes(insightDeepLink.period)
-            ? insightDeepLink.period
-            : selectCurrentMonth(availableMonths),
-        );
-      } catch {
-        // ignore — empty state OK
-      } finally {
-        if (mounted) {
-          setBootstrapping(false);
-        }
-      }
-    }
-
-    void bootstrap();
-
-    const handleNavigate = (event: Event) => {
-      const detail = (event as CustomEvent<{ tab?: ActiveTab; section?: CampaignsSection; subtab?: ManagementTab }>).detail;
-      if (detail?.tab) {
-        setActiveTab(detail.tab);
-      }
-      if (detail?.section) {
-        setCampaignsSection(detail.section);
-      }
-      if (detail?.subtab) {
-        setMgmtSubTab(detail.subtab);
-      }
-    };
-
-    window.addEventListener('unihub:navigate', handleNavigate as EventListener);
-    return () => {
-      mounted = false;
-      window.removeEventListener('unihub:navigate', handleNavigate as EventListener);
-    };
+    if (!isAuthenticated || !months.length) return;
+    setCurrentMonth((previous) => (
+      insightDeepLink?.period && months.includes(insightDeepLink.period)
+        ? insightDeepLink.period
+        : previous && months.includes(previous) ? previous : selectCurrentMonth(months)
+    ));
   }, [
     insightDeepLink?.period,
     isAuthenticated,
-    isAuthLoading,
-    setActiveTab,
-    setCampaignsSection,
-    setMgmtSubTab,
+    months,
   ]);
 
 
@@ -280,7 +230,7 @@ export default function App() {
     </div>
   );
 
-  if (isAuthLoading || bootstrapping) {
+  if (isAuthLoading || isMonthsLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">
         Se incarca...
@@ -296,6 +246,17 @@ export default function App() {
       </div>
     );
   }
+
+  if (monthsStatus === 'empty' || monthsStatus === 'unavailable' || monthsStatus === 'session_expired') {
+    return <AvailableMonthsStatus status={monthsStatus} onRetry={() => { void retryMonths(); }} />;
+  }
+
+  const staleMonthsBanner = monthsStatus === 'stale' ? (
+    <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+      <span>Datele lunilor sunt din ultima încărcare validă și pot fi învechite.</span>
+      <button type="button" onClick={() => { void retryMonths(); }} className="font-bold underline">Reîncearcă</button>
+    </div>
+  ) : null;
 
   return (
     <MainLayout
@@ -314,6 +275,7 @@ export default function App() {
       onLogout={logout}
       canAccessManagement={hasManagementAccess}
     >
+      {staleMonthsBanner}
       <Suspense fallback={screenFallback}>
         {activeTab === 'hub' && currentMonth && (
           <Dashboard

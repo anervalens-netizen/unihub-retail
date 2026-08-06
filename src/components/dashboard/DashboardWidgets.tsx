@@ -8,49 +8,6 @@ import type { AppFilters } from '../MainLayout';
 import { SortableTableHeader } from '../common/TableHeader';
 
 type SortDirection = 'asc' | 'desc';
-type StoreSortKey =
-  | 'locatie'
-  | 'site_code'
-  | 'target'
-  | 'total_vanzari'
-  | 'proc_realizare_target'
-  | 'forecast_target_pct'
-  | 'incentive_qty'
-  | 'qty_total'
-  | 'nr_bonuri'
-  | 'nr_agenti'
-  | 'zile_active'
-  | 'medie_zilnica'
-  | 'medie_produs';
-type AgentSortKey =
-  | 'locatie'
-  | 'agent'
-  | 'target'
-  | 'total_vanzari'
-  | 'proc_realizare_target'
-  | 'promo_qty'
-  | 'incentive_qty'
-  | 'acc_qty_realizat'
-  | 'nr_bonuri'
-  | 'zile_lucrate'
-  | 'medie_zilnica'
-  | 'medie_produs'
-  | 'proc_bon2acc'
-  | 'prc_focus_acc_qty';
-type RegionalSortKey =
-  | 'regional'
-  | 'target'
-  | 'total_vanzari'
-  | 'proc_realizare_target'
-  | 'forecast_target_pct'
-  | 'promo_qty'
-  | 'incentive_qty'
-  | 'qty_total'
-  | 'nr_bonuri'
-  | 'medie_zilnica'
-  | 'medie_produs'
-  | 'proc_bon2acc'
-  | 'prc_focus_acc_qty';
 type AsmSortKey =
   | 'asm'
   | 'regional'
@@ -242,7 +199,7 @@ function DonutLegendChart({
                 <Cell key={`${entry[nameKey]}-${index}`} fill={colors[index % colors.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(value: number) => valueFormatter(Number(value))} />
+            <Tooltip formatter={(value: unknown) => valueFormatter(Number(value))} />
             <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
               <tspan x="50%" dy="-0.9em" className={`fill-slate-500 font-bold uppercase tracking-wide ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
                 {centerLabel}
@@ -476,8 +433,8 @@ export function CompactCurrency({ value }: { value: number }) {
   return <span>{amount}</span>;
 }
 
-export function getAgentSortValue(agent: AgentStat, key: AgentSortKey): number {
-  const value = agent[key];
+export function getAgentSortValue(agent: AgentStat, key: string): number {
+  const value = agent[key as keyof AgentStat];
   if (value === null || value === undefined) {
     return Number.NEGATIVE_INFINITY;
   }
@@ -492,11 +449,11 @@ export function getStoreDailyAverage(store: StoreStat): number {
   return Number(store.total_vanzari) / Number(store.zile_active);
 }
 
-export function getStoreSortValue(store: StoreStat, key: StoreSortKey): number {
+export function getStoreSortValue(store: StoreStat, key: string): number {
   if (key === 'medie_zilnica') {
     return getStoreDailyAverage(store);
   }
-  const value = store[key];
+  const value = store[key as keyof StoreStat];
   if (value === null || value === undefined) {
     return Number.NEGATIVE_INFINITY;
   }
@@ -504,8 +461,8 @@ export function getStoreSortValue(store: StoreStat, key: StoreSortKey): number {
   return Number.isNaN(num) ? Number.NEGATIVE_INFINITY : num;
 }
 
-export function getRegionalSortValue(regional: RegionalStat, key: RegionalSortKey): number {
-  const value = regional[key];
+export function getRegionalSortValue(regional: RegionalStat, key: string): number {
+  const value = regional[key as keyof RegionalStat];
   if (value === null || value === undefined) {
     return Number.NEGATIVE_INFINITY;
   }
@@ -522,7 +479,7 @@ export function getAsmSortValue(asm: AsmStat, key: AsmSortKey): number {
   return Number.isNaN(num) ? Number.NEGATIVE_INFINITY : num;
 }
 
-export function sumChartValues(rows: Array<Record<string, string | number>>, key: string): number {
+export function sumChartValues(rows: Array<Record<string, string | number | undefined>>, key: string): number {
   return rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
 }
 

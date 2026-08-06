@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from openpyxl import load_workbook
 
 import services.target_calculator as target
+import services.target_calculator.calculations as target_calculations
 from repositories.target_calculator import TargetScenarioAlgorithmMismatch
 from services.target_calculator import (
     CALCULATION_METHOD,
@@ -209,7 +210,7 @@ def test_allocators_detect_unreconciled_rounding_totals(monkeypatch: pytest.Monk
     def skip_rounding(*_args: Any, **_kwargs: Any) -> None:
         return None
 
-    monkeypatch.setattr(target, "_apply_rounding_difference", skip_rounding)
+    monkeypatch.setattr(target_calculations, "_apply_rounding_difference", skip_rounding)
     floor_rows = [
         {"calculated_weight": Decimal("1"), "floor_target": Decimal("0")},
         {"calculated_weight": Decimal("1"), "floor_target": Decimal("0")},

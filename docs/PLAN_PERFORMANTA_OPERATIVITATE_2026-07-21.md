@@ -1,4 +1,8 @@
-# Plan activ: performanță și operativitate Retail
+# Plan istoric: performanță și operativitate Retail
+
+> **HISTORICAL / SUPERSEDED — 2026-08-06.** Dovezile măsurate rămân valide ca
+> istoric. Singurul plan activ este
+> [`PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md).
 
 Stare: **implementare si deploy inchise; observatie SLO in curs**. Planul nu folosește estimări calendaristice; fiecare
 etapă se închide numai după criteriile măsurabile de acceptare.

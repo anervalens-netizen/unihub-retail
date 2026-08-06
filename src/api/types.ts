@@ -476,22 +476,9 @@ export interface AsmStat {
   prc_focus_acc_qty: number | null;
 }
 
-export interface AgentOption {
-  agent: string;
-  site_code: string;
-  locatie: string;
-  firma: string;
-  regional: string;
-  asm: string;
-}
-
-export interface FilterOptions {
-  firme: string[];
-  regionali: string[];
-  asmi: string[];
-  magazine: StoreOption[];
-  agenti: AgentOption[];
-}
+export type AgentOption = RetailAgentOption;
+export type StoreOption = RetailStoreOption;
+export type FilterOptions = RetailFilterOptions;
 
 export interface ImportHistoryEntry {
   id: number;
@@ -556,14 +543,6 @@ export interface ImportJobStatus {
   status: 'queued' | 'in_progress' | 'complete' | 'not_found';
   result: ImportResponse | null;
   error: string | null;
-}
-
-export interface StoreOption {
-  site_code: string;
-  locatie: string;
-  firma: string;
-  regional: string;
-  asm: string;
 }
 
 export interface DashboardAllResponse {
@@ -778,3 +757,8 @@ export interface ContestResponse {
   prizes: ContestPrizeInfo[];
   leaderboard: ContestLeaderboardRow[];
 }
+import type {
+  RetailAgentOption,
+  RetailFilterOptions,
+  RetailStoreOption,
+} from './generated/contracts';

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { AlertTriangle, CheckCircle2, Download, Eye, FileSpreadsheet, Info, LineChart as LineChartIcon, SlidersHorizontal, Table2, Upload } from 'lucide-react';
 import { downloadExport, getExportCatalog, previewExport } from '../api/exports';
-import type { ExportCatalog, ExportColumnDef, ExportFilters, ExportPreview, ExportRequest } from '../api/exports';
-import { getAvailableMonths, getFilterOptions } from '../api/filters';
+import type { ExportColumnDef, ExportFilters, ExportPreview, ExportRequest } from '../api/exports';
+import { getFilterOptions } from '../api/filters';
 import { getImportHistory, getImportJobStatus, promoteSalesGeneration, uploadErpReconciliationFile, uploadPromoActualsFile, uploadSalesFile } from '../api/imports';
 import type { ErpReconciliationMetric, ErpReconciliationResponse } from '../api/imports';
 import type { FilterOptions, ImportHistoryEntry, ImportResponse } from '../api/types';
@@ -20,6 +21,7 @@ import { formatIsoDateInput, formatIsoDateTime, getCurrentYearMonth, shiftIsoDat
 import { SegmentedTabs } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
 import { TableHeaderCell } from './common/TableHeader';
+import { useAvailableMonths } from '../hooks/useAvailableMonths';
 
 interface SettingsProps {
   theme: string;
@@ -106,9 +108,6 @@ export function Settings({
   const [section, setSection] = useState<SettingsSection>(
     canImportSales ? 'imports' : canUseExports ? 'exports' : 'preferences',
   );
-  const [catalog, setCatalog] = useState<ExportCatalog | null>(null);
-  const [months, setMonths] = useState<string[]>([]);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [exportMode, setExportMode] = useState<ExportMode>('table');
   const [exportDataset, setExportDataset] = useState('agents');
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
@@ -175,34 +174,45 @@ export function Settings({
     ));
   }, [erpReconciliationMonths]);
 
+  const canLoadExportData = section === 'exports' && canUseExports;
+  const availableMonthsQuery = useAvailableMonths(Boolean(user) && canLoadExportData);
+  const months = availableMonthsQuery.months;
+  const catalogQuery = useQuery({
+    queryKey: ['settings', 'export-catalog', canUseExports],
+    enabled: canLoadExportData,
+    queryFn: ({ signal }) => getExportCatalog(signal),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const catalog = catalogQuery.data ?? null;
+
+  const selectedMonthForFilters = months
+    .filter((month) => selectedYears.includes(month.slice(0, 4)) && selectedMonthNumbers.includes(month.slice(5, 7)))
+    .sort()
+    .at(0) ?? months[0] ?? '';
+  const filterOptionsQuery = useQuery({
+    queryKey: ['settings', 'filter-options', selectedMonthForFilters],
+    enabled: canLoadExportData && Boolean(selectedMonthForFilters),
+    queryFn: ({ signal }) => getFilterOptions(selectedMonthForFilters, signal),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const filterOptions: FilterOptions | null = filterOptionsQuery.data ?? null;
+
   useEffect(() => {
-    if (section !== 'exports' || !canUseExports) return;
-    let cancelled = false;
-    Promise.all([getExportCatalog(), getAvailableMonths()])
-      .then(async ([catalogData, monthData]) => {
-        if (cancelled) return;
-        setCatalog(catalogData);
-        setMonths(monthData);
-        const firstMonth = monthData[0];
-        if (firstMonth) {
-          setSelectedYears((current) => current.length > 0 ? current : [firstMonth.slice(0, 4)]);
-          setSelectedMonthNumbers((current) => current.length > 0 ? current : [firstMonth.slice(5, 7)]);
-        }
-        const defaultDataset = catalogData.datasets.find((item) => item.key === exportDataset) ?? catalogData.datasets[0];
-        if (defaultDataset) {
-          setExportDataset(defaultDataset.key);
-          setExportDimensions((current) => current.length > 0 ? current : defaultDataset.dimensions.map((item) => item.key));
-        }
-        if (firstMonth) {
-          const options = await getFilterOptions(firstMonth);
-          if (!cancelled) setFilterOptions(options);
-        }
-      })
-      .catch(() => setExportMessage('Nu am putut incarca configuratia exporturilor.'));
-    return () => {
-      cancelled = true;
-    };
-  }, [section, canUseExports, exportDataset]);
+    if (!catalogQuery.data) return;
+    const defaultDataset = catalogQuery.data.datasets.find((item) => item.key === exportDataset) ?? catalogQuery.data.datasets[0];
+    if (!defaultDataset) return;
+    setExportDataset((current) => catalogQuery.data?.datasets.some((item) => item.key === current) ? current : defaultDataset.key);
+    setExportDimensions((current) => current.length > 0 ? current : defaultDataset.dimensions.map((item) => item.key));
+  }, [catalogQuery.data, exportDataset]);
+
+  useEffect(() => {
+    const firstMonth = months[0];
+    if (!firstMonth) return;
+    setSelectedYears((current) => current.length > 0 ? current : [firstMonth.slice(0, 4)]);
+    setSelectedMonthNumbers((current) => current.length > 0 ? current : [firstMonth.slice(5, 7)]);
+  }, [months]);
 
   const selectedDataset = useMemo(
     () => catalog?.datasets.find((item) => item.key === exportDataset) ?? null,

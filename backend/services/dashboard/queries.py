@@ -1978,14 +1978,18 @@ async def _fetch_promo_incentive_summary(
                     ),
                     Decimal("0"),
                 )
-                incentive_value = Decimal(str(
-                    sum(
-                        eligible_qty(r)
-                        * float(r.get("reward_value") or incentive_campaign.get("reward_map", {}).get(r["item_code"], 0))
-                        * store_multipliers.get(r["site_code"], 0)
+                incentive_value = sum(
+                    (
+                        Decimal(eligible_qty(r))
+                        * Decimal(str(
+                            r.get("reward_value")
+                            or incentive_campaign.get("reward_map", {}).get(r["item_code"], 0)
+                        ))
+                        * Decimal(str(store_multipliers.get(r["site_code"], 0)))
                         for r in item_rows
-                    )
-                ))
+                    ),
+                    Decimal("0"),
+                )
 
             qualified_store_codes = [sc for sc, v in achievements.items() if v is not None and v >= 0.9]
             qualified_store_set = set(qualified_store_codes)

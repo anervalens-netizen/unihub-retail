@@ -1,0 +1,30 @@
+{
+  "generated_from": "dist",
+  "tolerance_bytes": 4096,
+  "budget": {
+    "entry_js": {
+      "raw": 34548,
+      "gzip": 11187
+    },
+    "initial_css": {
+      "raw": 121923,
+      "gzip": 17982
+    },
+    "vendor": {
+      "raw": 396169,
+      "gzip": 125224
+    },
+    "ui": {
+      "raw": 143468,
+      "gzip": 46765
+    },
+    "charts": {
+      "raw": 428671,
+      "gzip": 118602
+    },
+    "precache_total": {
+      "raw": 2085012,
+      "gzip": 1589311
+    }
+  }
+}

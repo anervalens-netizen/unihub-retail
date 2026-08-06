@@ -269,7 +269,7 @@ export function Campaigns({
       availableKeys.length > 0 &&
       !availableKeys.includes(selectedPromotionKey)
     ) {
-      setSelectedPromotionKey(availableKeys[0]);
+      setSelectedPromotionKey(availableKeys[0] ?? selectedPromotionKey);
     }
   }, [promoData, selectedPromotionKey]);
 
@@ -330,6 +330,7 @@ export function Campaigns({
       return `Nu exista inca focus products vandute in ${promoMonth} pentru filtrarea selectata.`;
     }
     const leader = snapshot.products[0];
+    if (!leader) return `Nu exista inca focus products vandute in ${promoMonth} pentru filtrarea selectata.`;
     return `${leader.item_name} conduce ${promoMonth} cu ${formatInt(leader.qty_total)} bucati si ${formatCurrency(leader.sales_total)}.`;
   }, [snapshot.products, promoMonth]);
   const loadingLabel = activeSection === 'promo'
@@ -866,8 +867,8 @@ export function Campaigns({
                       <YAxis yAxisId="sales" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                       <YAxis yAxisId="share" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                       <Tooltip
-                        formatter={(value: number, name: string) =>
-                          name === 'Share' ? `${value.toFixed(2)}%` : formatCurrency(value)
+                        formatter={(value: unknown, name: unknown) =>
+                          String(name) === 'Share' ? `${Number(value).toFixed(2)}%` : formatCurrency(Number(value))
                         }
                       />
                       <Legend />
@@ -1015,7 +1016,7 @@ function PremiumGlassFocusSection({
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.15} />
                       <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                       <YAxis dataKey="model" type="category" width={104} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(value: number) => formatInt(value)} />
+                      <Tooltip formatter={(value: unknown) => formatInt(Number(value))} />
                       <Legend />
                       <Bar dataKey="Premium" stackId="qty" fill="#059669" radius={[0, 6, 6, 0]} />
                       <Bar dataKey="Rest" stackId="qty" fill="#cbd5e1" radius={[0, 6, 6, 0]} />

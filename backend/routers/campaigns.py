@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from db.connection import get_pool
 from schemas.campaigns import (
@@ -11,7 +12,11 @@ from schemas.campaigns import (
     FocusHistoryResponse,
 )
 from repositories.campaigns import CampaignsRepository
-from services.campaigns import CampaignsService
+from services.campaigns import (
+    CampaignDateRangeError,
+    CampaignsService,
+    validate_campaign_date_range,
+)
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -47,8 +52,8 @@ async def get_focus_history(
 
 @router.get("/promotions-incentives", response_model=CampaignsPromotionsResponse)
 async def get_promotions_incentives(
-    start_date: str = Query(...),
-    end_date: str = Query(...),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
@@ -60,6 +65,13 @@ async def get_promotions_incentives(
     include_closed_stores: bool = Query(False),
     svc: CampaignsService = Depends(get_campaigns_service),
 ) -> CampaignsPromotionsResponse:
+    try:
+        validate_campaign_date_range(start_date, end_date)
+    except CampaignDateRangeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": exc.code, "reason": exc.reason},
+        ) from exc
     data = await svc.get_promotions_incentives(
         start_date,
         end_date,

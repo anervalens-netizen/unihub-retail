@@ -25,9 +25,12 @@ def _mock_pool_conn():
     conn = AsyncMock()
     conn.fetch = AsyncMock(return_value=[])
     conn.fetchrow = AsyncMock(return_value=None)
+    conn.transaction = MagicMock()
+    conn.transaction.return_value.__aenter__ = AsyncMock(return_value=conn)
+    conn.transaction.return_value.__aexit__ = AsyncMock(return_value=False)
     pool = MagicMock()
-    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
-    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+    pool.acquire = AsyncMock(return_value=conn)
+    pool.release = AsyncMock(return_value=None)
     return pool, conn
 
 
