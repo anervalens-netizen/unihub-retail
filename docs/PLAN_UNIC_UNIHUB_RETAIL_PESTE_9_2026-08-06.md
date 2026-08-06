@@ -5,7 +5,8 @@ status: closed
 created: 2026-08-06
 baseline_sha: 6ce32b863b44fbab76f612ba74aad0e0cf0f108a
 audit_sha: da38d93707edf8d5ba66f6154d66103a89efd0cc
-implementation_sha: 30d64f30209f1056d38a6d988aadc68506bfeeac
+implementation_sha: e689c06ebc65fda45ba6e46666f7020397757f82
+formal_ci_run: 31106026721
 ---
 
 # 1. Mandat
@@ -113,9 +114,9 @@ Implementarea curentă este verificată local pe `dell-standby`; candidații
 `fc5fb24aa13a2a0391a17e60185bdf144b632420` sunt sincronizați pe `origin/main`,
 iar ultimul SHA documentat anterior este build-uit și deployat pe primary.
 
-Candidatul final de cod este `30d64f30209f1056d38a6d988aadc68506bfeeac`, iar
-primary rulează acest SHA; buildul, serviciile și health checks sunt verificate pe
-acest release. Schimbările livrate:
+Candidatul final de cod este `e689c06ebc65fda45ba6e46666f7020397757f82`, iar
+primary are checkout-ul exact al acestui SHA; buildul, serviciile și health checks
+sunt verificate pe release. Schimbările livrate:
 
 - decompoziție vizuală efectivă: `features/campaigns/PremiumView.tsx`,
   `SortableTable.tsx`, `features/settings/exports/controls.tsx`, rezultatul ERP,
@@ -142,11 +143,11 @@ Dovezi curente:
 - writer/exports țintit: `33` teste verzi; Dashboard țintit: `49` teste verzi, `2` skip;
 - Target/Campanii/Dashboard țintit după ultimele boundary-uri: `68` teste verzi, `2` skip;
   Campanii complet țintit: `14` teste verzi; mypy pe `35` module schimbate verde;
-- full backend local: `1505` verzi, `128` skip; `38` failure-uri sunt limitate
-  la testele DB/Valkey fără `UNIHUB_TEST_DATABASE=1` și la trei teste XLSX care
-  ating plafonul RSS al procesului de test; nu s-a folosit baza shared/producție.
-- contract/response-model tests țintite: `37` verzi; `mypy` complet: `382`
-  module fără erori.
+- full backend izolat: `1666` verzi, `7` skip, cu Postgres/Valkey temporare;
+  nu s-a folosit baza shared/producție.
+- contract/response-model tests țintite: `37` verzi; `mypy` complet: `386`
+  module fără erori; coverage critic peste pragurile ratchet actualizate pentru
+  package Target și ramurile bounded de export.
 - Smoke primary după ultimul deploy: backend/worker `active`, `/health` și `/readyz`
   `200`, `/livez` `200`, fără warning/error în jurnalul serviciilor în fereastra
   de 10 minute post-restart; public `/readyz` `200`, frontend public `200`, iar
@@ -173,7 +174,7 @@ Nicio recomandare nu este omisă. Sunt două adaptări justificate:
 
 ## 4.2 Closure evidence — 2026-08-06
 
-Implementarea finală de cod este `30d64f30209f1056d38a6d988aadc68506bfeeac`,
+Implementarea finală de cod este `e689c06ebc65fda45ba6e46666f7020397757f82`,
 sincronizată pe `origin/main` și verificată pe primary la același SHA. Schimbările
 livrate:
 
@@ -193,10 +194,12 @@ Dovezi finale pe conținut neschimbat:
 - `npm run typecheck:strict`: verde;
 - `npm run lint`: verde;
 - `npm run test -- --run`: `45` fișiere, `274` teste verzi;
-- `backend/scripts/run_tests_isolated.sh`: `1664 passed, 7 skipped` într-o bază
+- `backend/scripts/run_tests_isolated.sh`: `1666 passed, 7 skipped` într-o bază
   Postgres/Valkey izolată;
-- `mypy backend/ --ignore-missing-imports --explicit-package-bases`: `382`
-  fișiere fără erori;
+- `mypy . --ignore-missing-imports --explicit-package-bases`: `386` fișiere
+  fără erori;
+- coverage critic izolat: exports `91,35%` la prag `90%`, package Target
+  agregat `90,16%` la prag `90%`, toate celelalte praguri trecute;
 - `npm run contracts:check`: verde, digest
   `f97f73f17a1d18c7c0403e068947dfa9b86251b63b72d4098ef01afe019ff262`;
 - `npm run build`, `npm run verify:rum-build`: build verde, RUM verificat în
@@ -204,10 +207,12 @@ Dovezi finale pe conținut neschimbat:
 - `node scripts/check_bundle_budget.mjs`: verde; precache `2,085,422` bytes raw /
   `1,589,348` gzip, fără failure-uri;
 - `git diff --check`: verde; worktree-ul candidatului este curat.
+- CI formal `31106026721`, exact pe `e689c06`, este verde: runner isolation,
+  backend-check și frontend-check `success`.
 
 Dovadă live exact-SHA:
 
-- primary `server`: `30d64f30209f1056d38a6d988aadc68506bfeeac`,
+- primary `server`: `e689c06ebc65fda45ba6e46666f7020397757f82`,
   `unihub-backend`, `unihub-worker` și `unihub-import-worker` active;
 - `/health` și `/readyz` locale: `200` cu `{"status":"ok"}`;
 - `https://retail.unihub.ro/`: `200`, `/readyz`: `200`,
