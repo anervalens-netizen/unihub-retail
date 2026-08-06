@@ -390,7 +390,23 @@ export function ImportsView({ model }: { model: ImportsModel }) {
                 {entry.rows_imported ?? 0} rânduri · {entry.status} ·{" "}
                 {entry.is_month_final ? "✓ Final" : "Intermediar"} ·{" "}
                 {formatIsoDateTime(entry.created_at)}
+                {entry.duration_seconds != null && (
+                  <>
+                    {" "}·{" "}
+                    {entry.duration_seconds < 60
+                      ? `${entry.duration_seconds.toFixed(1)} s`
+                      : `${(entry.duration_seconds / 60).toFixed(1)} min`}
+                  </>
+                )}
               </p>
+              {entry.coverage_report?.active_store_coverage_pct != null && (
+                <p className="mt-1 text-slate-500">
+                  Coverage magazine active{" "}
+                  {entry.coverage_report.active_store_coverage_pct}% ·{" "}
+                  {entry.coverage_report.missing_active_store_count ?? 0} absente
+                  {" "}· {entry.coverage_report.store_activity_writes ?? 0} schimbări de stare
+                </p>
+              )}
             </div>
           ))}
           {history.length === 0 && (

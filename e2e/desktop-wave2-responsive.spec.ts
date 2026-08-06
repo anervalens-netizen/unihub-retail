@@ -1,8 +1,9 @@
 import type { BrowserContext, Page } from '@playwright/test';
 
 import { expect, test } from './fixtures';
-import { mockAuthenticatedSession } from './helpers';
-import type { CampaignsPromotionsResponse } from '../src/api/generated/runtime-types';
+import { mockAuthenticatedSession, retailWire, retailWireForRequest } from './helpers';
+import type { CampaignPromotionsWireResponse } from './helpers';
+import type { ImportHistoryEntry } from '../src/api/generated/runtime-types';
 
 const MONTHS = ['2026-05', '2026-04', '2026-03'];
 const FILTER_OPTIONS = {
@@ -20,10 +21,15 @@ const EXPORT_CATALOG = {
   daily_metrics: [{ key: 'daily_sales', label: 'Vânzări zilnice', type: 'currency', group: 'Zilnic' }],
   comparison_levels: [{ key: 'general', label: 'General' }],
 };
-const IMPORT_HISTORY = [{
-  id: 'import-2026-05', import_month: '2026-05', filename: 'vanzari_mai.xlsx', status: 'completed',
-  rows_imported: 250, is_month_final: true, created_at: '2026-05-06T10:00:00', duration_seconds: 12.4,
-  coverage_report: { active_store_coverage_pct: 100, missing_active_store_count: 0 },
+const IMPORT_HISTORY: ImportHistoryEntry[] = [{
+  id: 205, import_month: '2026-05', filename: 'vanzari_mai.xlsx', upload_date: '2026-05-06', status: 'completed',
+  rows_in_file: 250, rows_imported: 250, is_month_final: true, error_message: null,
+  created_at: '2026-05-06T10:00:00Z', finished_at: '2026-05-06T10:00:12Z', duration_seconds: 12.4,
+  coverage_report: {
+    active_store_count_before: 1, active_store_coverage_pct: 100, company_count: 1, incoming_store_count: 1,
+    metadata_change_count: 0, missing_active_store_count: 0, missing_prior_store_count: 0, new_store_count: 0,
+    prior_snapshot_coverage_pct: 100, prior_snapshot_store_count: 1, store_activity_writes: 0,
+  },
 }];
 
 const PNL_OVERVIEW = {
@@ -39,10 +45,10 @@ const PNL_OVERVIEW = {
 };
 const PNL_ANNUAL = [{ year: '2026', store_count: 1, month_count: 2, is_estimated: true, revenue: 120000, cogs: 30000, gross_margin: 90000, operating_costs: 50000, ebitda: 40000, depreciation: 5000, ebit: 35000 }];
 
-const PROMO_RESPONSE: CampaignsPromotionsResponse = {
+const PROMO_RESPONSE: CampaignPromotionsWireResponse = {
   promotions: [{ key: 'promo-mai-2026', label: 'Promo Mai 2026' }, { key: 'promo-iunie-2026', label: 'Promo Iunie 2026' }],
   selected_promotion_key: 'promo-mai-2026', promo_title: 'Promo Mai 2026', promo_description: 'Campanie promo cu perioadă parțial verificată.',
-  promo_qty: 28, promo_total_qty: 28, promo_category_qty: 16, promo_impact: 240, promo_qualifying_bons: 12, promo_discounted_units: 28, promo_discount_value: 240, promo_active_stores: 1, promo_active_agents: 1,
+  promo_qty: 28, promo_total_qty: 28, promo_category_qty: 16, promo_impact: 240, promo_qualifying_bons: 12, promo_discounted_units: 28, promo_discount_value: '240', promo_active_stores: 1, promo_active_agents: 1,
   incentive_title: 'Incentive Mai 2026', incentive_description: 'Bonus pentru produsele eligibile.', incentive_qty: 20, incentive_sold_qty: 28, incentive_value: 100, incentive_potential: 120, incentive_qualified_qty: 20, incentive_qualified_stores: 1, incentive_qualified_stores_full: 1, incentive_qualified_stores_half: 0, incentive_qualified_agents: 1, incentive_qualified_agents_full: 1, incentive_qualified_agents_half: 0, incentive_product_count: 2,
   incentive_categories: [{ label: 'Accesorii', qty: 20, value: 100 }], incentive_periods: [{ label: 'Mai', start_date: '2026-05-01', end_date: '2026-05-31', product_count: 2, reward_values: [5], qty: 20, potential: 120, value: 100 }], incentive_category_breakdown: [{ label: 'Accesorii', qty: 20, qualified_qty: 16, potential: 120, value: 100 }],
   has_active_promotion: true, promo_calculation_status: 'partial', incentive_calculation_status: 'complete', calculation_warnings: ['Raportul promo este disponibil doar până la ziua 20.'],
@@ -58,7 +64,11 @@ const VIEWPORTS = [
 
 async function jsonRoute(context: BrowserContext, method: string, pattern: RegExp, response: unknown) {
   await context.route(pattern, (route) => route.request().method() === method
-    ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) })
+    ? route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(retailWireForRequest(method, route.request().url(), response)),
+    })
     : route.fallback());
 }
 
@@ -67,7 +77,12 @@ async function setScreen(context: BrowserContext) {
   await jsonRoute(context, "GET", /\/api\/filters\/months$/, MONTHS);
   await jsonRoute(context, "GET", /\/api\/filters\/options(?:\?|$)/, FILTER_OPTIONS);
   await jsonRoute(context, "GET", /\/api\/store-pnl\/permissions$/, { can_view: true });
-  await jsonRoute(context, "GET", /\/api\/dashboard\/all(?:\?|$)/, DASHBOARD_ALL);
+  await jsonRoute(
+    context,
+    "GET",
+    /\/api\/dashboard\/all(?:\?|$)/,
+    retailWire('get_dashboard_all_api_dashboard_all_get', DASHBOARD_ALL),
+  );
   await jsonRoute(context, "GET", /\/api\/dashboard\/history(?:\?|$)/, { months: [], rows: [] });
   await jsonRoute(context, "GET", /\/api\/hr\/manager-overview(?:\?|$)/, []);
 }
@@ -85,6 +100,7 @@ async function installSettingsRoutes(context: BrowserContext) {
   await setScreen(context);
   await jsonRoute(context, 'GET', /\/api\/import\/history$/, IMPORT_HISTORY);
   await jsonRoute(context, 'GET', /\/api\/exports\/catalog$/, EXPORT_CATALOG);
+  await jsonRoute(context, 'GET', /\/api\/exports\/operations\/resumable$/, null);
   await jsonRoute(context, 'POST', /\/api\/exports\/preview$/, {
     columns: [{ key: 'agent', label: 'Agent', type: 'text', group: 'Identificare' }],
     rows: [{ agent: 'Ana Popescu' }],

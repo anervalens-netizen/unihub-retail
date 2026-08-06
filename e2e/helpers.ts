@@ -1,5 +1,15 @@
 import { BrowserContext } from '@playwright/test';
 import type { CampaignsPromotionsResponse } from '../src/api/generated/runtime-types';
+import {
+  RETAIL_DECIMAL_PATHS,
+  RETAIL_OPERATION_ROUTES,
+  type RetailOperationId,
+} from '../src/api/generated/contracts';
+
+export type CampaignPromotionsWireResponse = Omit<
+  CampaignsPromotionsResponse,
+  'promo_discount_value'
+> & { promo_discount_value: string };
 
 export const MOCK_USER = {
   sub: 'test-user-123',
@@ -27,11 +37,48 @@ export async function mockApiRoute(context: BrowserContext, method: string, urlP
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(response),
+        body: JSON.stringify(
+          retailWireForRequest(route.request().method(), route.request().url(), response),
+        ),
       });
     }
     return route.continue();
   });
+}
+
+export function retailWire(operationId: RetailOperationId, value: unknown): unknown {
+  const decimalPaths = RETAIL_DECIMAL_PATHS[operationId];
+  const encode = (current: unknown, path: string[]): unknown => {
+    if (current === null || current === undefined) return current;
+    if (decimalPaths.has(path.join('/'))) {
+      return typeof current === 'string' ? current : String(current);
+    }
+    if (Array.isArray(current)) return current.map((item) => encode(item, [...path, '*']));
+    if (typeof current !== 'object') return current;
+    return Object.fromEntries(
+      Object.entries(current).map(([key, child]) => [key, encode(child, [...path, key])]),
+    );
+  };
+  return encode(value, []);
+}
+
+export function retailWireForRequest(method: string, url: string, value: unknown): unknown {
+  const pathname = new URL(url, 'http://localhost').pathname;
+  const actualSegments = pathname.split('/');
+  const normalizedMethod = method.toLowerCase();
+  const routes = Object.entries(RETAIL_OPERATION_ROUTES) as Array<[
+    RetailOperationId,
+    (typeof RETAIL_OPERATION_ROUTES)[RetailOperationId],
+  ]>;
+  const match = routes.find(([, route]) => {
+    if (route.method !== normalizedMethod) return false;
+    const expectedSegments = route.path.split('/');
+    return expectedSegments.length === actualSegments.length
+      && expectedSegments.every((segment, index) => (
+        (segment.startsWith('{') && segment.endsWith('}')) || segment === actualSegments[index]
+      ));
+  });
+  return match ? retailWire(match[0], value) : value;
 }
 
 export const MOCK_MONTHS = ['2026-05', '2026-04', '2026-03', '2026-02', '2026-01'];
@@ -115,7 +162,7 @@ export const MOCK_DASHBOARD_YEAR_HISTORY = {
   ],
 };
 
-export const MOCK_PROMOTIONS_RESPONSE: CampaignsPromotionsResponse = {
+export const MOCK_PROMOTIONS_RESPONSE: CampaignPromotionsWireResponse = {
   promotions: [],
   selected_promotion_key: '',
   promo_title: '',
@@ -126,7 +173,7 @@ export const MOCK_PROMOTIONS_RESPONSE: CampaignsPromotionsResponse = {
   promo_impact: 0,
   promo_qualifying_bons: 0,
   promo_discounted_units: 0,
-  promo_discount_value: 0,
+  promo_discount_value: '0',
   promo_active_stores: 0,
   promo_active_agents: 0,
   incentive_title: '',
@@ -168,7 +215,12 @@ export async function setupBaseMocks(context: BrowserContext) {
 
   await mockApiRoute(context, 'GET', /\/api\/filters\/months$/, MOCK_MONTHS);
   await mockApiRoute(context, 'GET', /\/api\/filters\/options/, MOCK_FILTER_OPTIONS);
-  await mockApiRoute(context, 'GET', /\/api\/dashboard\/all/, MOCK_DASHBOARD_ALL);
+  await mockApiRoute(
+    context,
+    'GET',
+    /\/api\/dashboard\/all/,
+    retailWire('get_dashboard_all_api_dashboard_all_get', MOCK_DASHBOARD_ALL),
+  );
   await context.route('**/api/dashboard/*-batch', async (route) => {
     if (route.request().method() !== 'POST') {
       return route.fallback();
@@ -186,11 +238,23 @@ export async function setupBaseMocks(context: BrowserContext) {
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ results }),
+      body: JSON.stringify(
+        retailWire('get_dashboard_all_batch_api_dashboard_all_batch_post', { results }),
+      ),
     });
   });
-  await mockApiRoute(context, 'GET', /\/api\/dashboard\/history(?:\?|$)/, MOCK_DASHBOARD_HISTORY);
-  await mockApiRoute(context, 'GET', /\/api\/dashboard\/history-year/, MOCK_DASHBOARD_YEAR_HISTORY);
+  await mockApiRoute(
+    context,
+    'GET',
+    /\/api\/dashboard\/history(?:\?|$)/,
+    retailWire('get_monthly_history_api_dashboard_history_get', MOCK_DASHBOARD_HISTORY),
+  );
+  await mockApiRoute(
+    context,
+    'GET',
+    /\/api\/dashboard\/history-year/,
+    retailWire('get_history_by_year_api_dashboard_history_year_get', MOCK_DASHBOARD_YEAR_HISTORY),
+  );
   await mockApiRoute(context, 'GET', /\/api\/stores$/, []);
   await mockApiRoute(context, 'GET', /\/api\/hr\/asm-performance/, []);
   await mockApiRoute(context, 'GET', /\/api\/hr\/manager-overview/, []);
@@ -204,7 +268,11 @@ export async function setupBaseMocks(context: BrowserContext) {
     context,
     'GET',
     /\/api\/campaigns\/promotions-incentives/,
-    MOCK_PROMOTIONS_RESPONSE,
+    retailWire(
+      'get_promotions_incentives_api_campaigns_promotions_incentives_get',
+      MOCK_PROMOTIONS_RESPONSE,
+    ),
   );
+  await mockApiRoute(context, 'GET', /\/api\/exports\/operations\/resumable/, null);
   await mockApiRoute(context, 'GET', /\/api\/import\/history/, []);
 }

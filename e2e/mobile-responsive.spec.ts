@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures';
-import { MOCK_DASHBOARD_ALL, mockApiRoute, setupBaseMocks } from './helpers';
+import { MOCK_DASHBOARD_ALL, mockApiRoute, retailWire, setupBaseMocks } from './helpers';
+import type { ImportHistoryEntry } from '../src/api/generated/runtime-types';
 
 test.describe('E2E: responsive mobile', () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -66,11 +67,13 @@ test.describe('E2E: responsive mobile', () => {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          ...MOCK_DASHBOARD_ALL,
-          regionals,
-          stores,
-        }),
+        body: JSON.stringify(
+          retailWire('get_dashboard_all_api_dashboard_all_get', {
+            ...MOCK_DASHBOARD_ALL,
+            regionals,
+            stores,
+          }),
+        ),
       });
     });
 
@@ -128,12 +131,19 @@ test.describe('E2E: responsive mobile', () => {
   });
 
   test('keeps ERP reconciliation details within the mobile viewport', async ({ page, context }) => {
-    await mockApiRoute(context, 'GET', /\/api\/import\/history$/, [{
+    const history: ImportHistoryEntry[] = [{
       id: 213, import_month: '2026-08', filename: 'vanzari_august.xlsx', status: 'completed',
-      rows_imported: 4226, is_month_final: false, created_at: '2026-08-04T08:46:55',
-      coverage_report: {},
-    }]);
-    await mockApiRoute(context, 'POST', /\/api\/import\/erp-reconciliation$/, {
+      upload_date: '2026-08-04', rows_in_file: 4226, rows_imported: 4226, is_month_final: false,
+      error_message: null, created_at: '2026-08-04T08:46:55Z', finished_at: '2026-08-04T08:47:01Z',
+      duration_seconds: 6, coverage_report: {
+        active_store_count_before: null, active_store_coverage_pct: null, company_count: null,
+        incoming_store_count: null, metadata_change_count: null, missing_active_store_count: null,
+        missing_prior_store_count: null, new_store_count: null, prior_snapshot_coverage_pct: null,
+        prior_snapshot_store_count: null, store_activity_writes: null,
+      },
+    }];
+    await mockApiRoute(context, 'GET', /\/api\/import\/history$/, history);
+    const erpResult = {
       status: 'differences',
       import_month: '2026-08',
       report_cutoff_date: '2026-08-03',
@@ -158,7 +168,21 @@ test.describe('E2E: responsive mobile', () => {
       issue_count: 1,
       omitted_issue_count: 0,
       notes: [],
-    });
+    };
+    await mockApiRoute(
+      context,
+      'POST',
+      /\/api\/import\/erp-reconciliation$/,
+      retailWire('reconcile_erp_report_file_api_import_erp_reconciliation_post', {
+        job_id: 'erp-reconciliation-e2e',
+        job_kind: 'erp_reconciliation',
+        status: 'complete',
+        error: null,
+        result: null,
+        promo_result: null,
+        erp_result: erpResult,
+      }),
+    );
 
     await page.goto('/');
     await page.getByRole('button', { name: /Setari/i }).first().click();

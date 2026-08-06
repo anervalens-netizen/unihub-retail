@@ -8,6 +8,7 @@ import {
   MOCK_FILTER_OPTIONS,
   MOCK_MONTHS,
   mockAuthenticatedSession,
+  retailWireForRequest,
 } from './helpers';
 
 const VIEWPORTS = [
@@ -145,7 +146,11 @@ const PNL_OVERVIEW = {
 
 async function jsonRoute(context: BrowserContext, method: string, pattern: RegExp, response: unknown) {
   await context.route(pattern, (route) => route.request().method() === method
-    ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) })
+    ? route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(retailWireForRequest(method, route.request().url(), response)),
+    })
     : route.fallback());
 }
 
