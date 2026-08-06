@@ -2,7 +2,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 
 import { expect, test } from './fixtures';
 import { mockAuthenticatedSession } from './helpers';
-import type { CampaignsPromotionsResponse } from '../src/api/types';
+import type { CampaignsPromotionsResponse } from '../src/api/generated/runtime-types';
 
 const MONTHS = ['2026-05', '2026-04', '2026-03'];
 const FILTER_OPTIONS = {

@@ -1,12 +1,11 @@
 ---
 title: "Plan unic de execuție UniHub Retail peste 9"
 tags: [unihub-retail, audit, quality, frontend, performance]
-status: closed
+status: active
 created: 2026-08-06
 baseline_sha: 6ce32b863b44fbab76f612ba74aad0e0cf0f108a
 audit_sha: da38d93707edf8d5ba66f6154d66103a89efd0cc
-implementation_sha: e689c06ebc65fda45ba6e46666f7020397757f82
-formal_ci_run: 31106026721
+implementation_sha: pending
 ---
 
 # 1. Mandat
@@ -86,13 +85,13 @@ Constatări reconfirmate în codul curent:
 | R-04 | DONE | Bootstrap recuperabil, cache stale și retry fără reload |
 | R-05 | DONE | Harness Vitest DOM și teste pentru bootstrap/sezonabilitate/status |
 | R-06 | DONE | Strict global pe toate fișierele non-Grile |
-| R-07 | DONE | Boundary-uri de container/view pentru Dashboard, Target, Settings și Agents, plus presenters/model boundaries existente pentru Campanii și AI; facad-urile publice și fluxurile DOM/E2E rămân stabile |
+| R-07 | DONE | Paginile de feature orchestrează subcomponente și hookuri de domeniu reale; paginile principale au 16–390 linii, fără re-export spre monoliții legacy |
 | R-08 | DONE | Niciun emitter/listener `unihub:navigate` rămas |
 | R-09 | DONE | Benchmark RSS, writer write-only bounded și worker complex izolat cu spawn |
 | R-10 | DONE | Parsare Excel single-pass în importurile afectate și metrici de resurse |
 | R-11 | DONE | Snapshot repeatable-read Campanii și pool eliberat înainte de agregarea CPU |
 | R-12 | DONE | Decimal/rotunjire HALF_UP și alocare exactă la cent în Campanii/Target |
-| R-13 | DONE | OpenAPI offline, client/decoders generați, response models și drift gate pentru toate modulele API non-Grile; tipurile locale au fost eliminate, Grile rămâne exclus explicit |
+| R-13 | DONE | OpenAPI generează operation-specific query/path/body/response, decoder structural și client BFF tipizat pentru toate API-urile non-Grile, fără tipuri de request duplicate |
 | R-14 | DONE | Settings query keys/cache și efecte separate pentru catalog/luni/filtre |
 | R-15 | satisfăcut | Lot 7: numai revalidare exact-SHA; nu se reconstruiește |
 | R-16 | DONE | Bundle budget ratcheted pe raw/gzip/precache |
@@ -154,11 +153,11 @@ Dovezi curente:
   de 10 minute post-restart; public `/readyz` `200`, frontend public `200`, iar
   `/api/filters/months` răspunde `401` fără sesiune, conform boundary-ului auth.
 
-R-07 și R-13 sunt închise pe scope-ul planului: view-urile/container boundaries
-au fost conectate pentru suprafețele vizuale critice, iar API-urile non-Grile
-folosesc contractul generat fără echivalente locale. Endpointurile Grile sunt
-excluse explicit; auth/session și metrics sunt infrastructură, nu consumatori ai
-API-ului Retail. R-17, R-18 și R-20 rămân închise pe boundary-urile cerute.
+R-07 și R-13 au fost redeschise de re-auditul independent de preluare; acea
+constatare istorică este păstrată în 4.3, iar remedierea candidatului curent este
+documentată în 4.4. Endpointurile Grile rămân excluse explicit; auth/session și
+metrics sunt infrastructură, nu consumatori ai API-ului Retail. R-17, R-18 și
+R-20 rămân închise pe boundary-urile backend verificate.
 
 Nicio recomandare nu este omisă. Sunt două adaptări justificate:
 
@@ -220,6 +219,52 @@ Dovadă live exact-SHA:
 - `https://retail.unihub.ro/`: `200`, `/readyz`: `200`,
   `/api/filters/months` fără sesiune: `401 Authentication required`;
 - nicio migrare sau mutație de date business nu a fost rulată pentru acest lot.
+
+## 4.3 Re-audit independent de preluare — 2026-08-06
+
+Statusul `closed` anterior a fost retras. Re-auditul independent a confirmat:
+
+- feature pages pentru Dashboard, Target, Campanii, Settings, Agents și AI sunt
+  re-exporturi de o linie către implementările legacy; componentele principale
+  au între 976 și 2.006 linii, peste criteriul aproximativ 300–400;
+- clientul generat acceptă încă `params?: object` și `body: unknown`, nu leagă
+  requesturile de operation ID, iar decoderul Decimal folosește un set global
+  de nume de câmpuri;
+- CI exact-SHA `31104884570` pentru `d461ecc` a avut frontendul și cele 1.662
+  teste backend verzi, dar gate-ul backend a rămas roșu la coverage; nu există
+  încă release formal verde pentru candidatul final;
+- numerele de teste, digesturile și SHA-urile din closure evidence sunt istorice
+  și vor fi înlocuite numai după candidatul final, nu tratate ca dovezi curente.
+
+Planul revine la `active`. Închiderea cere din nou toate gate-urile din secțiunea
+13, CI verde pe SHA-ul final, deploy exact-SHA și un nou re-audit independent.
+
+## 4.4 Candidatul integrat după re-audit
+
+Deficiențele care au redeschis R-07 și R-13 sunt reparate în candidatul local:
+
+- Dashboard, Target, Campanii, Settings, Agents, Agent Evaluation și AI Forecast
+  au pagini de orchestrare de 16–390 linii, cu tabele, controale, hooks și views
+  deținute de feature; vechile monolite au fost eliminate;
+- toate wrapper-ele API non-Grile derivă query/path/body/response din operation
+  ID-ul OpenAPI; `src/api/types.ts` și casturile de răspuns au fost eliminate;
+- exporturile complexe au operații DB owner-bound, lease/epoch fencing, proces
+  `spawn` cu `RLIMIT_AS`, artefact privat hash-uit, TTL, cancel/retry și reluare
+  identity-scoped în UI; boundary-urile critice au praguri coverage de minimum
+  95%;
+- parserele Sales, Promo, ERP, target și istoric au politici/evidence distincte,
+  spool content-addressed și single-open. Generația Promo v1 live are o migrare
+  v2 atomică, dry-run implicit, CAS, surse/materializări `0600` și recovery al
+  pointerului precedent byte-for-byte;
+- Campanii folosește exclusiv API-ul public `services.campaigns`, un snapshot
+  caller-owned și deadline request-wide pentru pool, query și compute.
+
+Dovezi locale deja verzi pe conținutul integrat: TypeScript strict, ESLint,
+`55` fișiere / `322` teste Vitest, `190` teste țintite Campanii/Dashboard/export,
+`41` teste Promo/migrare, contract drift, migration manifest, build, RUM în
+`27` asset-uri, bundle ratchet și ciclul PWA N -> N+1 -> rollback N. Planul
+rămâne `active` până la suita backend izolată completă, CI exact-SHA, deploy și
+re-auditul live final.
 
 # 5. Protocol unic de execuție pentru GPT Luna
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from "vitest";
 
 const screens = vi.hoisted(() => ({
   Campaigns: () => null,
@@ -8,11 +8,17 @@ const screens = vi.hoisted(() => ({
   Management: () => null,
 }));
 
-vi.mock('./components/Campaigns', () => ({ Campaigns: screens.Campaigns }));
-vi.mock('./components/Dashboard', () => ({ Dashboard: screens.Dashboard }));
-vi.mock('./components/Agents', () => ({ Agents: screens.Agents }));
-vi.mock('./components/Settings', () => ({ Settings: screens.Settings }));
-vi.mock('./components/Management', () => ({ Management: screens.Management }));
+vi.mock("./features/campaigns/CampaignsPage", () => ({
+  Campaigns: screens.Campaigns,
+}));
+vi.mock("./features/dashboard/DashboardPage", () => ({
+  Dashboard: screens.Dashboard,
+}));
+vi.mock("./features/agents/AgentsPage", () => ({ Agents: screens.Agents }));
+vi.mock("./features/settings/SettingsPage", () => ({
+  Settings: screens.Settings,
+}));
+vi.mock("./components/Management", () => ({ Management: screens.Management }));
 
 import {
   loadAgentsScreen,
@@ -20,16 +26,19 @@ import {
   loadDashboardScreen,
   loadManagementScreen,
   loadSettingsScreen,
-} from './screenLoaders';
+} from "./screenLoaders";
 
-describe('lazy screen loaders', () => {
+describe("lazy screen loaders", () => {
   it.each([
-    ['Campaigns', loadCampaignsScreen, screens.Campaigns],
-    ['Dashboard', loadDashboardScreen, screens.Dashboard],
-    ['Agents', loadAgentsScreen, screens.Agents],
-    ['Settings', loadSettingsScreen, screens.Settings],
-    ['Management', loadManagementScreen, screens.Management],
-  ] as const)('maps %s named export to React.lazy default', async (_name, loader, component) => {
-    await expect(loader()).resolves.toEqual({ default: component });
-  });
+    ["Campaigns", loadCampaignsScreen, screens.Campaigns],
+    ["Dashboard", loadDashboardScreen, screens.Dashboard],
+    ["Agents", loadAgentsScreen, screens.Agents],
+    ["Settings", loadSettingsScreen, screens.Settings],
+    ["Management", loadManagementScreen, screens.Management],
+  ] as const)(
+    "maps %s named export to React.lazy default",
+    async (_name, loader, component) => {
+      await expect(loader()).resolves.toEqual({ default: component });
+    },
+  );
 });

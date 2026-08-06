@@ -19,6 +19,7 @@ import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from auth import AuthClaims, verify_oidc_token
@@ -44,6 +45,22 @@ REFRESH_POLL_SECONDS = 0.1
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 OPAQUE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 logger = logging.getLogger(__name__)
+
+
+class SessionProfileResponse(BaseModel):
+    sub: str
+    email: str | None = None
+    preferred_username: str | None = None
+    groups: list[str]
+
+
+class SessionStatusResponse(BaseModel):
+    profile: SessionProfileResponse
+    csrf_token: str
+
+
+class SessionLogoutResponse(BaseModel):
+    logout_url: str
 
 
 class ConcurrentSessionRefreshUnavailable(RuntimeError):
@@ -483,27 +500,33 @@ callback_router.add_api_route(
 )
 
 
-@router.get("")
+@router.get("", response_model=SessionStatusResponse)
 async def session_status(request: Request) -> JSONResponse:
     claims = await authenticate_session(request)
     settings, client, cipher, _ = _runtime()
     record = _unpack(cipher, await client.get(SESSION_PREFIX + request.cookies[_cookie_name(settings)])) or {}
-    return JSONResponse({
-        "profile": {
-            "sub": claims.sub, "email": claims.email,
-            "preferred_username": claims.preferred_username, "groups": claims.groups,
-        },
-        "csrf_token": record.get("csrf", ""),
-    }, headers={"Cache-Control": "no-store"})
+    payload = SessionStatusResponse(
+        profile=SessionProfileResponse(
+            sub=claims.sub,
+            email=claims.email,
+            preferred_username=claims.preferred_username,
+            groups=claims.groups,
+        ),
+        csrf_token=record.get("csrf", ""),
+    )
+    return JSONResponse(payload.model_dump(), headers={"Cache-Control": "no-store"})
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=SessionLogoutResponse)
 async def session_logout(request: Request) -> JSONResponse:
     await authenticate_session(request)
     settings, client, _, _ = _runtime()
     cookie_name = _cookie_name(settings)
     session_id = request.cookies.get(cookie_name, "")
     await client.delete(SESSION_PREFIX + session_id)
-    response = JSONResponse({"logout_url": settings.logout_url + "?" + urlencode({"post_logout_redirect_uri": settings.public_origin + "/"})})
+    payload = SessionLogoutResponse(
+        logout_url=settings.logout_url + "?" + urlencode({"post_logout_redirect_uri": settings.public_origin + "/"}),
+    )
+    response = JSONResponse(payload.model_dump())
     response.delete_cookie(cookie_name, path="/", secure=settings.secure_cookie, httponly=True, samesite="lax")
     return response

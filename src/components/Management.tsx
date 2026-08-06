@@ -4,7 +4,7 @@ import { TargetCalculatorSubtab } from '../features/target-calculator/TargetCalc
 import { SalariiSubtab } from './SalariiSubtab';
 import { PnlSubtab } from './PnlSubtab';
 import type { ManagementTab } from '../lib/tabs';
-import type { AppFilters } from './MainLayout';
+import type { AppFilters } from '../lib/appFilters';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
 import { cn } from '../lib/utils';

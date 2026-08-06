@@ -1,22 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
 from io import BytesIO
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from openpyxl import Workbook
 from openpyxl import load_workbook
 
-import services.exports as exports_module
+import services.exports.service as exports_module
+import services.exports.loaders as loaders_module
+import services.exports.table_renderer as table_renderer_module
+import services.exports.validation as validation_module
 from services.exports import (
     COMPARISON_LEVELS,
     ExportValidationError,
     ExportsService,
     XlsxArtifact,
 )
+from services.exports.calculations import pct, ratio
 from services.promotion_evaluation import PromotionEvaluationStatus
 
 
@@ -350,9 +355,9 @@ async def test_incentive_product_report_uses_focus_store_product_rules() -> None
         "2026-06": {("S1", "Agent 1", "P1"): 2},
     })
     with (
-        patch("services.exports.get_incentive_campaign", new_callable=AsyncMock, return_value={"id": 1}),
+        patch("services.exports.service.get_incentive_campaign", new_callable=AsyncMock, return_value={"id": 1}),
         patch(
-            "services.exports._get_store_incentive_multipliers",
+                "services.exports.service.get_store_incentive_multipliers",
             new_callable=AsyncMock,
             return_value=({"S1": 1.0, "S2": 0.5}, {"S1": 1.0, "S2": 0.9}),
         ),
@@ -529,8 +534,8 @@ def test_filters_keys_metrics_filename_and_number_formats() -> None:
         }
     ) == {"firma": ["Mobiup"], "regional": ["RM 1"]}
     assert service._valid_keys(None, {"a"}, ["a"], "test") == ["a"]
-    assert service._ratio(Decimal("10"), 0) is None
-    assert service._pct(Decimal("10"), Decimal("0")) is None
+    assert ratio(Decimal("10"), 0) is None
+    assert pct(Decimal("10"), Decimal("0")) is None
     assert service._json_value(Decimal("1.25")) == 1.25
     assert service._safe_filename("...") == "export_retail.xlsx"
     assert service._excel_number_format("currency") == "#,##0.00"
@@ -603,7 +608,7 @@ def test_attach_period_metrics_skips_unknown_row_and_sheet_helpers() -> None:
 def test_campaign_codes_by_month_handles_config_and_rule_variants(monkeypatch: pytest.MonkeyPatch) -> None:
     service = ExportsService(FakeRepo())  # type: ignore[arg-type]
 
-    monkeypatch.setattr(exports_module, "load_special_cards_config", lambda: ({}, "missing config"))
+    monkeypatch.setattr(loaders_module, "load_special_cards_config", lambda: ({}, "missing config"))
     with pytest.raises(ExportValidationError, match="configuratia Promo"):
         service._campaign_codes_by_month(["2026-06"])
 
@@ -620,14 +625,173 @@ def test_campaign_codes_by_month_handles_config_and_rule_variants(monkeypatch: p
             return {"discounted_codes": [f"D-{definition_id}"], "item_codes": ["ignored"]}, None
         return {"item_codes": ["I-selected", 7], "discounted_codes": ["ignored"]}, None
 
-    monkeypatch.setattr(exports_module, "load_special_cards_config", lambda: ({"promos": []}, None))
-    monkeypatch.setattr(exports_module, "parse_promotion_definitions", parse_definitions)
-    monkeypatch.setattr(exports_module, "load_promotion_rule_products", load_products)
+    monkeypatch.setattr(loaders_module, "load_special_cards_config", lambda: ({"promos": []}, None))
+    monkeypatch.setattr(loaders_module, "parse_promotion_definitions", parse_definitions)
+    monkeypatch.setattr(loaders_module, "load_promotion_rule_products", load_products)
 
     assert service._campaign_codes_by_month(["2026-05", "2026-06"]) == {
         "2026-05": ["7", "D-screen", "D-trigger", "I-selected"],
         "2026-06": ["7", "D-screen", "D-trigger", "I-selected"]
     }
+
+
+def test_export_resource_guards_and_promo_catalog_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ExportsService(FakeRepo())  # type: ignore[arg-type]
+
+    monkeypatch.setattr(validation_module, "EXPORT_MAX_ROWS", 1)
+    with pytest.raises(ExportValidationError, match="limita de 1 randuri"):
+        service._validate_export_budget(2, 1, operation="Raportul")
+
+    monkeypatch.setattr(validation_module, "EXPORT_MAX_CELLS", 1)
+    with pytest.raises(ExportValidationError, match="limita de 1 celule"):
+        service._validate_export_budget(1, 2, operation="Raportul")
+
+    monkeypatch.setattr(validation_module, "EXPORT_MAX_CELLS", 1_000_000)
+    monkeypatch.setattr(validation_module, "EXPORT_MAX_OUTPUT_BYTES", 4_000)
+    with pytest.raises(ExportValidationError, match="dimensiune estimata"):
+        service._validate_export_budget(1, 1, operation="Raportul")
+
+    assert service._record_total_count([]) is None
+    assert service._record_total_count([{}]) is None
+    assert service._record_total_count([{"total_count": "invalid"}]) is None
+    assert service._record_total_dimensions([]) is None
+    assert service._record_total_dimensions([{}]) is None
+    assert service._record_total_dimensions([{"total_dimensions": "invalid"}]) is None
+
+    with pytest.raises(ExportValidationError, match="Limita preview"):
+        service._preview_limit({"preview_limit": object()})
+    with pytest.raises(ExportValidationError, match="maxim"):
+        service._preview_limit({"preview_limit": 501})
+
+    monkeypatch.setattr(loaders_module, "load_special_cards_config", lambda: ({}, None))
+    monkeypatch.setattr(loaders_module, "parse_promotion_definitions", lambda _config, _month: ([], "invalid"))
+    with pytest.raises(ExportValidationError, match="definitiile Promo"):
+        service._campaign_codes_by_month(["2026-06"])
+
+    monkeypatch.setattr(
+        loaders_module,
+        "parse_promotion_definitions",
+        lambda _config, _month: ([{"id": "broken"}], None),
+    )
+    monkeypatch.setattr(loaders_module, "load_promotion_rule_products", lambda _definition: (None, "invalid"))
+    with pytest.raises(ExportValidationError, match="produsele Promo"):
+        service._campaign_codes_by_month(["2026-06"])
+
+
+def test_simple_xlsx_rejects_high_absolute_baseline_and_closes_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workbook = MagicMock()
+    stream = BytesIO()
+    monkeypatch.setattr(table_renderer_module, "SpooledTemporaryFile", lambda **_kwargs: stream)
+    monkeypatch.setattr(
+        table_renderer_module.resource,
+        "getrusage",
+        lambda *_args: SimpleNamespace(
+            ru_maxrss=(table_renderer_module.EXPORT_MAX_PROCESS_RSS_BYTES // 1024) + 1
+        ),
+    )
+    monkeypatch.setattr(table_renderer_module, "_current_rss_bytes", lambda: 1)
+
+    with pytest.raises(ExportValidationError, match="limita absoluta"):
+        table_renderer_module.XlsxRenderers._spool_workbook(
+            workbook,  # type: ignore[arg-type]
+            "report.xlsx",
+        )
+
+    workbook.save.assert_not_called()
+    workbook.close.assert_called_once()
+    assert stream.closed
+
+def test_spooled_workbook_closes_stream_after_output_or_rss_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(table_renderer_module, "EXPORT_MAX_OUTPUT_BYTES", 0)
+    with pytest.raises(ExportValidationError, match="dimensiune de output"):
+        ExportsService._spool_workbook(Workbook(), "export.xlsx")
+
+    monkeypatch.setattr(table_renderer_module, "EXPORT_MAX_OUTPUT_BYTES", 64 * 1024 * 1024)
+    monkeypatch.setattr(table_renderer_module, "EXPORT_MAX_PEAK_RSS_BYTES", 0)
+    with pytest.raises(ExportValidationError, match="memorie RSS"):
+        ExportsService._spool_workbook(Workbook(), "export.xlsx")
+
+
+def test_in_process_daily_comparison_writer_preserves_sheets_configuration_and_chart() -> None:
+    service = ExportsService(FakeRepo())  # type: ignore[arg-type]
+    table = service._daily_comparison_table(
+        level="general",
+        months=["2026-05", "2026-06"],
+        metrics=["total_sales"],
+        records=[
+            row(import_month="2026-05", day_of_month=1, total_sales=100),
+            row(import_month="2026-06", day_of_month=1, total_sales=120),
+        ],
+        selected_days=[1],
+    )
+
+    artifact = service._render_daily_comparison_xlsx(
+        {"filename": "daily / comparison"},
+        ["2026-05", "2026-06"],
+        ["total_sales"],
+        ["general"],
+        False,
+        [1],
+        [("general", table)],
+    )
+    try:
+        workbook = load_workbook(artifact.stream)
+        assert workbook.sheetnames == ["General", "Configuratie"]
+        assert workbook["Configuratie"]["B2"].value == "Evolutie zilnica comparativa"
+        assert len(workbook["General"]._charts) == 1
+        assert artifact.filename == "daily___comparison.xlsx"
+    finally:
+        artifact.close()
+
+
+@pytest.mark.asyncio
+async def test_complex_export_worker_output_caps_close_and_unlink_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    repo = FakeRepo()
+    service = ExportsService(repo)  # type: ignore[arg-type]
+
+    async def worker_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        path = tmp_path / "worker-output.xlsx"
+        content = b"x" * 100_001
+        path.write_bytes(content)
+        return {
+            "path": str(path),
+            "filename": "worker-output.xlsx",
+            "size": 100_001,
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "peak_rss": 1,
+            "build_seconds": 0.01,
+        }
+
+    class Loop:
+        def run_in_executor(self, *_args: Any, **_kwargs: Any) -> Any:
+            return worker_result()
+
+    monkeypatch.setattr(exports_module.asyncio, "get_running_loop", lambda: Loop())
+    monkeypatch.setattr(exports_module, "_complex_process_pool", lambda: object())
+    monkeypatch.setattr(exports_module, "EXPORT_MAX_OUTPUT_BYTES", 100_000)
+
+    with pytest.raises(ExportValidationError, match="dimensiune de output"):
+        await service._build_daily_comparison_xlsx_unlocked(
+            {"months": ["2026-06"], "daily_metrics": ["total_sales"], "comparison_levels": ["general"]}
+        )
+    assert not (tmp_path / "worker-output.xlsx").exists()
+
+    monkeypatch.setattr(exports_module, "EXPORT_MAX_OUTPUT_BYTES", 64 * 1024 * 1024)
+    monkeypatch.setattr(exports_module, "EXPORT_MAX_PEAK_RSS_BYTES", 0)
+    with pytest.raises(ExportValidationError, match="memorie RSS"):
+        await service._build_daily_comparison_xlsx_unlocked(
+            {"months": ["2026-06"], "daily_metrics": ["total_sales"], "comparison_levels": ["general"]}
+        )
+    assert not (tmp_path / "worker-output.xlsx").exists()
 
 
 @pytest.mark.asyncio
@@ -656,7 +820,7 @@ async def test_campaign_exclusions_by_month_reads_pool_context(monkeypatch: pyte
             promo_excluded_units=units,
         )
 
-    monkeypatch.setattr(exports_module, "_load_dashboard_campaign_context", load_context)
+    monkeypatch.setattr(loaders_module, "load_campaign_context", load_context)
 
     result = await service._campaign_exclusions_by_month(
         ["2026-05", "2026-06"],

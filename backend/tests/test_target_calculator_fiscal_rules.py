@@ -9,8 +9,8 @@ def test_new_target_scenario_captures_effective_vat_rule() -> None:
     assert len(assumptions["vat_ruleset_hash"]) == 64
 
 
-def test_legacy_target_scenario_keeps_previous_unversioned_behavior() -> None:
-    assumptions = TargetCalculatorService._legacy_profitability_assumptions()
+def test_unversioned_target_scenario_keeps_previous_behavior() -> None:
+    assumptions = TargetCalculatorService._fallback_profitability_assumptions()
 
     assert assumptions["vat_rule_id"] == "legacy-unversioned"
     assert assumptions["vat_multiplier"] == 1.21

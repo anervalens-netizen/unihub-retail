@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from schemas.erp_reconciliation import ErpReconciliationResponse
 
 from schemas.ai_forecast import (
     AiForecastDailyPoint,
@@ -220,8 +221,40 @@ class PromoActualImportResponse(BaseModel):
 class ImportJobStatus(BaseModel):
     job_id: str
     status: ImportJobState
+    job_kind: Literal["sales", "promo_actuals", "erp_reconciliation"] = "sales"
     result: ImportResponse | None = None
+    promo_result: PromoActualImportResponse | None = None
+    erp_result: ErpReconciliationResponse | None = None
     error: str | None = None
+
+
+class ExportOperationResponse(BaseModel):
+    id: int = Field(gt=0)
+    kind: Literal["daily_metrics", "daily_comparison"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled", "expired"]
+    job_id: str
+    filename: str | None = None
+    artifact_size: int | None = Field(default=None, ge=0)
+    artifact_sha256: str | None = None
+    peak_rss_bytes: int | None = Field(default=None, ge=0)
+    build_seconds: float | None = Field(default=None, ge=0)
+    cell_count: int | None = Field(default=None, ge=0)
+    error_code: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    expires_at: datetime | None = None
+    can_download: bool = False
+
+
+class ExportOperationPublishUncertainDetail(BaseModel):
+    status: Literal["unknown"]
+    job_id: str | None = None
+    operation_id: int | None = None
+
+
+class ExportOperationUnavailableResponse(BaseModel):
+    detail: str | ExportOperationPublishUncertainDetail
 
 
 class StoreActivityChangeRequest(BaseModel):
@@ -348,6 +381,10 @@ class StoreOption(BaseModel):
     firma: str
     regional: str
     asm: str
+
+
+class StoreTargetsSaveResponse(BaseModel):
+    inserted: NonNegativeInt
 
 
 class StoreTargetInput(BaseModel):

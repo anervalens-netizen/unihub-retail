@@ -17,7 +17,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { CampaignsPromotionsResponse } from '../api/types';
+import type { CampaignsPromotionsResponse } from '../api/generated/runtime-types';
 import { formatCurrency, formatInt } from '../lib/formatters';
 import { ExportTableButton } from './ExportTableButton';
 import { IncentiveQualificationSummary } from './IncentiveQualificationSummary';

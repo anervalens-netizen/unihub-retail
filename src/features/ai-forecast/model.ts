@@ -1,4 +1,4 @@
-import type { AiForecastDailyPoint, AiForecastMetric } from '../../api/types';
+import type { AiForecastDailyPoint, AiForecastMetric } from '../../api/generated/runtime-types';
 import { formatAmount, formatInt } from '../../lib/formatters';
 import { formatIsoDateTime, isIsoWeekendDate } from '../../lib/dates';
 

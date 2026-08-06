@@ -25,7 +25,7 @@ from schemas.dashboard import (
     DashboardSummary,
 )
 from services.dashboard_filters import canonical_dashboard_site_codes
-from services.dashboard_service import DashboardService, _gather_cancel_on_error
+from services.dashboard_service import DashboardService
 from services.request_deadline import RequestDeadline, RequestDeadlineExceeded
 
 
@@ -298,26 +298,6 @@ async def test_deadline_bounds_pool_acquire_and_reaps_the_waiter() -> None:
             pytest.fail("acquire must not succeed")
 
     assert acquire.cancelled is True
-
-
-@pytest.mark.asyncio
-async def test_child_failure_cancels_and_reaps_every_dashboard_task() -> None:
-    cancelled = asyncio.Event()
-
-    async def fail() -> None:
-        raise RuntimeError("boom")
-
-    async def wait_forever() -> None:
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            cancelled.set()
-            raise
-
-    with pytest.raises(RuntimeError, match="boom"):
-        await _gather_cancel_on_error(fail(), wait_forever(), task_name="dashboard:test")
-
-    assert cancelled.is_set()
 
 
 @pytest.mark.asyncio

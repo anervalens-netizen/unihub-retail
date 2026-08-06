@@ -21,15 +21,16 @@ import asyncpg
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = REPO_ROOT / "backend" / "outputs" / "agent_code_name_matches.csv"
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 load_dotenv(REPO_ROOT / ".env.migrations")
 load_dotenv(REPO_ROOT / ".env")
 
-from backend.db.connection import close_db_pool, get_database_url, init_db_pool
-from backend.services.spreadsheet_safety import csv_cell_value
+from db.connection import close_db_pool, get_database_url, init_db_pool
+from services.spreadsheet_safety import csv_cell_value
 
 
 def _open_private_csv(path: Path) -> TextIO:

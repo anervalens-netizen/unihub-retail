@@ -10,21 +10,16 @@ import {
 } from 'react';
 
 import { setCsrfTokenProvider } from '../api/client';
+import type {
+  RetailSessionLogoutResponse,
+  RetailSessionProfileResponse,
+  RetailSessionStatusResponse,
+} from '../api/generated/contracts';
 
-export type SessionProfile = {
-  sub: string;
-  email?: string;
-  preferred_username?: string;
-  groups: string[];
-};
+export type SessionProfile = RetailSessionProfileResponse;
 
 export type SessionUser = {
   profile: SessionProfile;
-};
-
-type SessionResponse = {
-  profile: SessionProfile;
-  csrf_token: string;
 };
 
 interface AuthContextValue {
@@ -37,7 +32,13 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+  onSessionCleared,
+}: {
+  children: ReactNode;
+  onSessionCleared?: () => void;
+}) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const csrfRef = useRef<string | null>(null);
@@ -69,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (!response.ok) throw new Error(`Session bootstrap failed: ${response.status}`);
-        const payload = await response.json() as SessionResponse;
+        const payload = await response.json() as RetailSessionStatusResponse;
         if (!payload.profile?.sub || !Array.isArray(payload.profile.groups) || !payload.csrf_token) {
           throw new Error('Session bootstrap returned an invalid contract');
         }
@@ -96,13 +97,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     csrfRef.current = null;
     setUser(null);
+    onSessionCleared?.();
     if (response.ok) {
-      const payload = await response.json() as { logout_url?: string };
+      const payload = await response.json() as RetailSessionLogoutResponse;
       window.location.assign(payload.logout_url || '/auth/session/login');
       return;
     }
     window.location.assign('/auth/session/login');
-  }, []);
+  }, [onSessionCleared]);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,

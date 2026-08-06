@@ -1,8 +1,10 @@
 import { generatedGet } from './generated/client';
-import type { FilterOptions } from './types';
+import type { RetailOperationQueries } from './generated/contracts';
+import type { FilterOptions } from './generated/runtime-types';
 
 export async function getFilterOptions(month: string, signal?: AbortSignal): Promise<FilterOptions> {
-  return generatedGet('get_filter_options_api_filters_options_get', { params: { month }, signal });
+  const params: RetailOperationQueries['get_filter_options_api_filters_options_get'] = { month };
+  return generatedGet('get_filter_options_api_filters_options_get', { params, signal });
 }
 
 export async function getAvailableMonths(signal?: AbortSignal): Promise<string[]> {

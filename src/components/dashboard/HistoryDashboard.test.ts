@@ -2,8 +2,8 @@ import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { DashboardSummary } from '../../api/types';
-import { HistoryDashboard, type HistoryPointView } from './HistoryDashboard';
+import type { DashboardSummary } from '../../api/generated/runtime-types';
+import { HistoryDashboard, type HistoryPointView } from '../../features/dashboard/HistoryDashboard';
 
 const currentSummary: DashboardSummary = {
   month: '2026-07',

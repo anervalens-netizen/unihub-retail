@@ -1,58 +1,29 @@
 import { generatedGet } from './generated/client';
+import type { RetailOperationQueries } from './generated/contracts';
 import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryResponse } from './generated/runtime-types';
 
-export type CampaignQuery = {
-  month: string;
-  firma?: string;
-  regional?: string;
-  asm?: string;
-  site_code?: string;
-  agent?: string;
-};
+export type CampaignQuery = RetailOperationQueries['get_campaign_overview_api_campaigns_overview_get'];
+export type CampaignPromotionsQuery = RetailOperationQueries['get_promotions_incentives_api_campaigns_promotions_incentives_get'];
 
 export async function getCampaignSnapshot(query: CampaignQuery, signal?: AbortSignal): Promise<CampaignSnapshot> {
-  return await generatedGet('get_campaign_overview_api_campaigns_overview_get', { params: query, signal }) as CampaignSnapshot;
+  return generatedGet('get_campaign_overview_api_campaigns_overview_get', { params: query, signal });
 }
 
 export async function getFocusHistory(
-  query: CampaignQuery & { months_back?: number },
+  query: RetailOperationQueries['get_focus_history_api_campaigns_history_get'],
   signal?: AbortSignal,
 ): Promise<FocusHistoryResponse> {
-  return await generatedGet('get_focus_history_api_campaigns_history_get', { params: query, signal }) as FocusHistoryResponse;
+  return generatedGet('get_focus_history_api_campaigns_history_get', { params: query, signal });
 }
 
 export async function getPromotionsIncentives(
-  startDate: string,
-  endDate: string,
-  filters?: {
-    firma?: string;
-    regional?: string;
-    asm?: string;
-    site_code?: string;
-    agent?: string;
-    promotion_key?: string;
-    view?: 'all' | 'promo' | 'incentive';
-    current_scope?: boolean;
-    include_closed_stores?: boolean;
-  },
+  query: CampaignPromotionsQuery,
   signal?: AbortSignal,
 ): Promise<CampaignsPromotionsResponse> {
   return await generatedGet('get_promotions_incentives_api_campaigns_promotions_incentives_get', {
-    params: {
-      start_date: startDate,
-      end_date: endDate,
-      ...(filters?.firma && { firma: filters.firma }),
-      ...(filters?.regional && { regional: filters.regional }),
-      ...(filters?.asm && { asm: filters.asm }),
-      ...(filters?.site_code && { site_code: filters.site_code }),
-      ...(filters?.agent && { agent: filters.agent }),
-      ...(filters?.promotion_key && { promotion_key: filters.promotion_key }),
-      ...(filters?.view && { view: filters.view }),
-      ...(filters?.current_scope !== undefined && { current_scope: filters.current_scope }),
-      ...(filters?.include_closed_stores !== undefined && { include_closed_stores: filters.include_closed_stores }),
-    },
+    params: query,
     signal,
-  }) as CampaignsPromotionsResponse;
+  });
 }
 
 export type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryResponse };

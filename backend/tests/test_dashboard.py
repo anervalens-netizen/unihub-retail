@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,10 @@ async def test_special_cards_promotion_config():
 
 
 @pytest.mark.anyio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL",
+)
 async def test_special_cards_incentive_config():
     """Test that incentive campaigns are stored in the DB (not hub_specials.json)."""
     from services.incentive_db import get_incentive_campaign

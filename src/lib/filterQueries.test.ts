@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildCurrentDashboardQuery, buildScopedMonthQuery } from './filterQueries';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from './filterValues';
-import type { AppFilters } from '../components/MainLayout';
+import type { AppFilters } from './appFilters';
 
 function makeFilters(overrides: Partial<AppFilters> = {}): AppFilters {
   return {

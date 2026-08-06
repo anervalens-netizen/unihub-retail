@@ -39,4 +39,36 @@ describe('queryKeys', () => {
       query,
     ]);
   });
+
+  it('scopes export catalog, filters and durable status to one identity', () => {
+    expect(queryKeys.settings.identity('user-a')).toEqual(['settings', 'user-a']);
+    expect(queryKeys.settings.imports('user-a')).toEqual([
+      'settings',
+      'user-a',
+      'imports',
+    ]);
+    expect(queryKeys.settings.exportCatalog('user-a')).toEqual([
+      'settings',
+      'user-a',
+      'export-catalog',
+    ]);
+    expect(queryKeys.settings.exportFilters('user-a', '2026-08')).toEqual([
+      'settings',
+      'user-a',
+      'export-filters',
+      '2026-08',
+    ]);
+    expect(queryKeys.settings.exportOperation('user-a', 7)).toEqual([
+      'settings',
+      'user-a',
+      'export-operation',
+      7,
+    ]);
+    expect(queryKeys.settings.exportResumable('user-a')).toEqual([
+      'settings',
+      'user-a',
+      'export-operation',
+      'resumable',
+    ]);
+  });
 });

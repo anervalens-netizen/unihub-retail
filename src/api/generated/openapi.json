@@ -4298,6 +4298,231 @@
         "title": "ExportFilters",
         "type": "object"
       },
+      "ExportOperationPublishUncertainDetail": {
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Id"
+          },
+          "status": {
+            "const": "unknown",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ExportOperationPublishUncertainDetail",
+        "type": "object"
+      },
+      "ExportOperationResponse": {
+        "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Sha256"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Size"
+          },
+          "build_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Seconds"
+          },
+          "can_download": {
+            "default": false,
+            "title": "Can Download",
+            "type": "boolean"
+          },
+          "cell_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Count"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "daily_metrics",
+              "daily_comparison"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "peak_rss_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Rss Bytes"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "job_id",
+          "created_at"
+        ],
+        "title": "ExportOperationResponse",
+        "type": "object"
+      },
+      "ExportOperationUnavailableResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ExportOperationPublishUncertainDetail"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ExportOperationUnavailableResponse",
+        "type": "object"
+      },
       "ExportPreviewResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5509,6 +5734,16 @@
       },
       "ImportJobStatus": {
         "properties": {
+          "erp_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErpReconciliationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "error": {
             "anyOf": [
               {
@@ -5523,6 +5758,26 @@
           "job_id": {
             "title": "Job Id",
             "type": "string"
+          },
+          "job_kind": {
+            "default": "sales",
+            "enum": [
+              "sales",
+              "promo_actuals",
+              "erp_reconciliation"
+            ],
+            "title": "Job Kind",
+            "type": "string"
+          },
+          "promo_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromoActualImportResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "result": {
             "anyOf": [
@@ -8797,6 +9052,79 @@
         "title": "SalesGenerationPromotionRequest",
         "type": "object"
       },
+      "SessionLogoutResponse": {
+        "properties": {
+          "logout_url": {
+            "title": "Logout Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logout_url"
+        ],
+        "title": "SessionLogoutResponse",
+        "type": "object"
+      },
+      "SessionProfileResponse": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "preferred_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Username"
+          },
+          "sub": {
+            "title": "Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sub",
+          "groups"
+        ],
+        "title": "SessionProfileResponse",
+        "type": "object"
+      },
+      "SessionStatusResponse": {
+        "properties": {
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/SessionProfileResponse"
+          }
+        },
+        "required": [
+          "profile",
+          "csrf_token"
+        ],
+        "title": "SessionStatusResponse",
+        "type": "object"
+      },
       "StoreActivityChangeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9192,6 +9520,42 @@
           "target_value"
         ],
         "title": "StoreTargetInput",
+        "type": "object"
+      },
+      "StoreTargetsSaveResponse": {
+        "properties": {
+          "inserted": {
+            "minimum": 0.0,
+            "title": "Inserted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inserted"
+        ],
+        "title": "StoreTargetsSaveResponse",
+        "type": "object"
+      },
+      "TargetApiErrorResponse": {
+        "description": "Documented shape of explicit Target HTTPException responses.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "TargetApiErrorResponse",
         "type": "object"
       },
       "TargetCalculationDetails": {
@@ -15461,6 +15825,265 @@
         ]
       }
     },
+    "/api/exports/operations": {
+      "post": {
+        "operationId": "create_export_operation_api_exports_operations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOperationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Cerere complexa invalida"
+          },
+          "409": {
+            "description": "Capacitate activa epuizata"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOperationUnavailableResponse"
+                }
+              }
+            },
+            "description": "Publicare ARQ indisponibila sau neconfirmata"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Export Operation",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/exports/operations/resumable": {
+      "get": {
+        "operationId": "get_resumable_export_operation_api_exports_operations_resumable_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ExportOperationResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Resumable Export Operation Api Exports Operations Resumable Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Resumable Export Operation",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/exports/operations/{operation_id}": {
+      "get": {
+        "operationId": "get_export_operation_api_exports_operations__operation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "title": "Operation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOperationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Operatie inexistenta sau apartinand altui subiect"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Export Operation",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/exports/operations/{operation_id}/cancel": {
+      "post": {
+        "operationId": "cancel_export_operation_api_exports_operations__operation_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "title": "Operation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOperationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Operatie inexistenta sau apartinand altui subiect"
+          },
+          "409": {
+            "description": "Operatie deja terminala"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Export Operation",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/exports/operations/{operation_id}/download": {
+      "get": {
+        "operationId": "download_export_operation_api_exports_operations__operation_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "title": "Operation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Operatie inexistenta sau apartinand altui subiect"
+          },
+          "409": {
+            "description": "Operatie nefinalizata sau artifact invalid"
+          },
+          "410": {
+            "description": "Artifact expirat"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Export Operation",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
     "/api/exports/preview": {
       "post": {
         "operationId": "preview_export_api_exports_preview_post",
@@ -16753,7 +17376,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErpReconciliationResponse"
+                  "$ref": "#/components/schemas/ImportJobStatus"
                 }
               }
             },
@@ -16876,7 +17499,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PromoActualImportResponse"
+                  "$ref": "#/components/schemas/ImportJobStatus"
                 }
               }
             },
@@ -17460,11 +18083,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "title": "Response Save Targets Api Stores Targets Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/StoreTargetsSaveResponse"
                 }
               }
             },
@@ -17562,6 +18181,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
           }
         },
         "security": [
@@ -17629,6 +18258,26 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17675,6 +18324,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -17726,6 +18395,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -17784,6 +18473,36 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17841,6 +18560,36 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17896,6 +18645,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "422": {
             "content": {
@@ -18518,7 +19277,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatusResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -18556,7 +19317,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLogoutResponse"
+                }
               }
             },
             "description": "Successful Response"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -70,7 +72,6 @@ async def test_sales_import_is_always_queued(
     )
     monkeypatch.setattr(imports_service, "enqueue_sales_import", enqueue)
     monkeypatch.setattr(imports_service, "get_job_status", status)
-    monkeypatch.setattr(imports_service, "validate_spreadsheet_upload", lambda *_args: None)
     upload = UploadFile(file=BytesIO(b"valid"), filename="sales.xlsx")
 
     result = await service().import_sales(upload)
@@ -287,3 +288,193 @@ async def test_sales_import_spools_bytes_outside_valkey_payload(
     assert call.args[4] == "sales.xlsx"
     assert call.kwargs["_queue_name"] == jobs_service.SALES_IMPORT_QUEUE_NAME
     assert b"excel bytes" not in call.args
+
+
+@pytest.mark.asyncio
+async def test_promo_import_spools_bytes_and_uses_distinct_job_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    queued = SimpleNamespace(job_id="promo-actuals:queued")
+    pool = MagicMock()
+    pool.enqueue_job = AsyncMock(return_value=queued)
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+
+    result = await jobs_service.enqueue_promo_actuals_import(
+        b"promo bytes",
+        filename="promo.xlsx",
+        import_month="2026-08",
+        cutoff_date="2026-08-05",
+    )
+
+    assert result is queued
+    call = pool.enqueue_job.await_args
+    assert call.args[0] == "import_promo_actuals_background"
+    assert Path(call.args[1]).read_bytes() == b"promo bytes"
+    assert call.args[2] == jobs_service.sha256(b"promo bytes").hexdigest()
+    assert call.args[4:] == ("promo.xlsx", "2026-08", "2026-08-05")
+    assert call.kwargs["_job_id"].startswith("promo-actuals:")
+    assert call.kwargs["_queue_name"] == jobs_service.SALES_IMPORT_QUEUE_NAME
+    assert b"promo bytes" not in call.args
+
+
+@pytest.mark.asyncio
+async def test_failed_spooled_erp_job_can_be_retried(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    replacement = SimpleNamespace(job_id="erp-reconciliation:replacement")
+    pool = MagicMock()
+    pool.enqueue_job = AsyncMock(side_effect=[None, replacement])
+    pool.delete = AsyncMock()
+    existing = MagicMock()
+    existing.status = AsyncMock(return_value=ArqJobStatus.complete)
+    existing.result_info = AsyncMock(return_value=SimpleNamespace(success=False))
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "Job", MagicMock(return_value=existing))
+
+    result = await jobs_service.enqueue_erp_reconciliation(
+        b"erp bytes",
+        filename="erp.xlsx",
+        import_month="2026-08",
+    )
+
+    assert result is replacement
+    pool.delete.assert_awaited_once()
+    assert pool.enqueue_job.await_count == 2
+    for call in pool.enqueue_job.await_args_list:
+        assert call.args[0] == "reconcile_erp_background"
+        assert call.args[4:] == ("erp.xlsx", "2026-08")
+        assert call.kwargs["_job_id"].startswith("erp-reconciliation:")
+    assert pool.enqueue_job.await_args_list[0].args[1] == pool.enqueue_job.await_args_list[1].args[1]
+
+
+@pytest.mark.asyncio
+async def test_same_bytes_for_distinct_erp_months_use_isolated_spool_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    pool = MagicMock()
+    pool.enqueue_job = AsyncMock(
+        side_effect=[
+            SimpleNamespace(job_id="erp-reconciliation:first"),
+            SimpleNamespace(job_id="erp-reconciliation:second"),
+        ]
+    )
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+
+    await jobs_service.enqueue_erp_reconciliation(
+        b"same erp bytes",
+        filename="erp.xlsx",
+        import_month="2026-07",
+    )
+    await jobs_service.enqueue_erp_reconciliation(
+        b"same erp bytes",
+        filename="erp.xlsx",
+        import_month="2026-08",
+    )
+
+    first_path = Path(pool.enqueue_job.await_args_list[0].args[1])
+    second_path = Path(pool.enqueue_job.await_args_list[1].args[1])
+    assert first_path != second_path
+    assert first_path.read_bytes() == second_path.read_bytes() == b"same erp bytes"
+
+
+def test_stale_failed_spool_artifacts_expire_after_bounded_retention(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_MAX_AGE_SECONDS", "3600")
+    digest = jobs_service.sha256(b"failed payload").hexdigest()
+    path = jobs_service.stage_sales_import_spool_file(
+        b"failed payload",
+        digest,
+        namespace="a" * 64,
+    )
+    stale_time = time.time() - 3601
+    os.utime(path, (stale_time, stale_time))
+
+    assert jobs_service.cleanup_stale_sales_import_spool_files() == 1
+    assert not path.exists()
+
+
+@pytest.mark.asyncio
+async def test_completed_spooled_job_removes_recreated_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    content = b"already complete"
+    digest = jobs_service.sha256(content).hexdigest()
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    pool = MagicMock()
+    pool.enqueue_job = AsyncMock(return_value=None)
+    existing = MagicMock()
+    existing.status = AsyncMock(return_value=ArqJobStatus.complete)
+    existing.result_info = AsyncMock(return_value=SimpleNamespace(success=True))
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "Job", MagicMock(return_value=existing))
+
+    result = await jobs_service.enqueue_erp_reconciliation(
+        content,
+        filename="erp.xlsx",
+        import_month="2026-08",
+    )
+
+    assert result is existing
+    assert not (tmp_path / f"{digest}.upload").exists()
+
+
+@pytest.mark.asyncio
+async def test_spooled_job_removes_artifact_on_confirmed_publish_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    content = b"confirmed failure"
+    digest = jobs_service.sha256(content).hexdigest()
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(
+        jobs_service,
+        "_publish_arq_job",
+        AsyncMock(side_effect=RuntimeError("rejected before publish")),
+    )
+
+    with pytest.raises(RuntimeError, match="rejected before publish"):
+        await jobs_service.enqueue_erp_reconciliation(
+            content,
+            filename="erp.xlsx",
+            import_month="2026-08",
+        )
+
+    assert not (tmp_path / f"{digest}.upload").exists()
+
+
+@pytest.mark.asyncio
+async def test_spooled_job_preserves_artifact_when_publish_is_unconfirmed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    content = b"possibly accepted"
+    digest = jobs_service.sha256(content).hexdigest()
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(
+        jobs_service,
+        "_publish_arq_job",
+        AsyncMock(side_effect=jobs_service.JobPublishUncertainError(job_id="erp-reconciliation:test")),
+    )
+
+    with pytest.raises(jobs_service.JobPublishUncertainError):
+        await jobs_service.enqueue_erp_reconciliation(
+            content,
+            filename="erp.xlsx",
+            import_month="2026-08",
+        )
+
+    artifacts = list(tmp_path.glob(f"{digest}.*.upload"))
+    assert len(artifacts) == 1
+    assert artifacts[0].read_bytes() == content

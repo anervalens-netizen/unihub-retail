@@ -81,6 +81,7 @@ retention >= cea mai lungă fereastră. Valorile versionate `2460/2400` pentru
 operations și `1860/1800` pentru import păstrează marja de shutdown de 60s.
 
 Web validează la startup și `DASHBOARD_REQUEST_DEADLINE_MS` (implicit 2500,
-maximum 3000) plus `DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY <=
+maximum 3000), `CAMPAIGNS_REQUEST_DEADLINE_MS` (implicit 5000, maximum 10000)
+plus `DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY <=
 DB_POOL_MAX_SIZE - 2`. Config invalid oprește procesul înainte de trafic; nu se
 ridică deadline-ul pentru a masca un query lent.

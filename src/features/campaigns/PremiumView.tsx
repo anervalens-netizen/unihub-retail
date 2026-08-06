@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { FirmaBadge } from '../../components/FirmaBadge';
-import { Metric } from '../../components/dashboard/DashboardWidgets';
+import { Metric } from '../../components/common/DataDisplay';
 import { SegmentedTabs } from '../../components/common/SegmentedTabs';
 import { SortableTable } from './SortableTable';
 import { formatInt, formatPercent } from '../../lib/formatters';
@@ -14,7 +14,7 @@ import type {
   PremiumGlassStoreStat,
   PremiumGlassSurfaceMode,
   PremiumGlassSurfaceStat,
-} from '../../api/types';
+} from '../../api/generated/runtime-types';
 
 const PREMIUM_SURFACE_OPTIONS: Array<{ value: PremiumGlassSurfaceMode; label: string }> = [
   { value: 'all', label: 'Toate' },
@@ -141,16 +141,16 @@ function PremiumGlassSurfaceBreakdown({ rows }: { rows: PremiumGlassSurfaceStat[
         <h3 className="text-sm font-bold">Ecran vs camera</h3>
         <p className="text-[11px] text-slate-500">Camera vine din lista operationala cu Premium = da/nu</p>
       </div>
-      <SortableTable<PremiumGlassSurfaceStat & Record<string, unknown>>
-        rows={rows as (PremiumGlassSurfaceStat & Record<string, unknown>)[]}
+      <SortableTable<PremiumGlassSurfaceStat>
+        rows={rows}
         defaultSortKey="total_qty"
         exportFilename="focus-folii-premium-ecran-camera"
         exportSheetName="Ecran camera folii"
         columns={[
-          { key: 'surface_label', label: 'Tip', render: (row) => <span className="font-semibold">{(row as PremiumGlassSurfaceStat).surface_label}</span> },
-          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassSurfaceStat).premium_qty)}</span> },
-          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassSurfaceStat).regular_qty) },
-          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassSurfaceStat).premium_qty_share_pct) },
+          { key: 'surface_label', label: 'Tip', render: (row) => <span className="font-semibold">{row.surface_label}</span> },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt(row.premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt(row.regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent(row.premium_qty_share_pct) },
         ]}
       />
     </div>
@@ -163,8 +163,8 @@ function PremiumGlassModelTable({ rows }: { rows: PremiumGlassModelStat[] }) {
         <h3 className="text-sm font-bold">Comparatie pe modele</h3>
         <p className="text-[11px] text-slate-500">Premium vs rest pentru acelasi model compatibil</p>
       </div>
-      <SortableTable<PremiumGlassModelStat & Record<string, unknown>>
-        rows={rows as (PremiumGlassModelStat & Record<string, unknown>)[]}
+      <SortableTable<PremiumGlassModelStat>
+        rows={rows}
         defaultSortKey="total_qty"
         exportFilename="focus-folii-premium-modele"
         exportSheetName="Modele folii premium"
@@ -175,10 +175,10 @@ function PremiumGlassModelTable({ rows }: { rows: PremiumGlassModelStat[] }) {
           { header: 'Share', value: (row) => row.premium_qty_share_pct, format: 'percentPoints' },
         ]}
         columns={[
-          { key: 'model_label', label: 'Model', render: (row) => <span className="font-semibold">{(row as PremiumGlassModelStat).model_label}</span> },
-          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassModelStat).premium_qty)}</span> },
-          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassModelStat).regular_qty) },
-          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassModelStat).premium_qty_share_pct) },
+          { key: 'model_label', label: 'Model', render: (row) => <span className="font-semibold">{row.model_label}</span> },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt(row.premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt(row.regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent(row.premium_qty_share_pct) },
         ]}
       />
     </div>
@@ -192,8 +192,8 @@ function PremiumGlassManagerTable({ rows }: { rows: PremiumGlassManagerStat[] })
         <h3 className="text-sm font-bold">Manageri</h3>
         <p className="text-[11px] text-slate-500">Cei 6 manageri activi, dupa cantitate premium</p>
       </div>
-      <SortableTable<PremiumGlassManagerStat & Record<string, unknown>>
-        rows={rows as (PremiumGlassManagerStat & Record<string, unknown>)[]}
+      <SortableTable<PremiumGlassManagerStat>
+        rows={rows}
         defaultSortKey="premium_qty"
         exportFilename="focus-folii-premium-manageri"
         exportSheetName="Manageri folii premium"
@@ -206,12 +206,12 @@ function PremiumGlassManagerTable({ rows }: { rows: PremiumGlassManagerStat[] })
           { header: 'Agenti', value: (row) => row.agent_count, format: 'integer' },
         ]}
         columns={[
-          { key: 'manager', label: 'Manager', render: (row) => <span className="font-semibold">{(row as PremiumGlassManagerStat).manager}</span> },
-          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassManagerStat).premium_qty)}</span> },
-          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassManagerStat).regular_qty) },
-          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassManagerStat).premium_qty_share_pct) },
-          { key: 'store_count', label: 'Mag.', align: 'right', render: (row) => formatInt((row as PremiumGlassManagerStat).store_count) },
-          { key: 'agent_count', label: 'Ag.', align: 'right', render: (row) => formatInt((row as PremiumGlassManagerStat).agent_count) },
+          { key: 'manager', label: 'Manager', render: (row) => <span className="font-semibold">{row.manager}</span> },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt(row.premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt(row.regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent(row.premium_qty_share_pct) },
+          { key: 'store_count', label: 'Mag.', align: 'right', render: (row) => formatInt(row.store_count) },
+          { key: 'agent_count', label: 'Ag.', align: 'right', render: (row) => formatInt(row.agent_count) },
         ]}
       />
     </div>
@@ -225,8 +225,8 @@ function PremiumGlassStoreTable({ rows }: { rows: PremiumGlassStoreStat[] }) {
         <h3 className="text-sm font-bold">Magazine</h3>
         <p className="text-[11px] text-slate-500">Toate magazinele cu vanzari eligibile, dupa cantitate premium</p>
       </div>
-      <SortableTable<PremiumGlassStoreStat & Record<string, unknown>>
-        rows={rows as (PremiumGlassStoreStat & Record<string, unknown>)[]}
+      <SortableTable<PremiumGlassStoreStat>
+        rows={rows}
         defaultSortKey="premium_qty"
         exportFilename="focus-folii-premium-magazine"
         exportSheetName="Magazine folii premium"
@@ -242,7 +242,7 @@ function PremiumGlassStoreTable({ rows }: { rows: PremiumGlassStoreStat[] }) {
             key: 'locatie',
             label: 'Magazin',
             render: (row) => {
-              const store = row as PremiumGlassStoreStat;
+              const store = row;
               return (
                 <span className="flex items-center">
                   <FirmaBadge firma={store.firma} />
@@ -251,9 +251,9 @@ function PremiumGlassStoreTable({ rows }: { rows: PremiumGlassStoreStat[] }) {
               );
             },
           },
-          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassStoreStat).premium_qty)}</span> },
-          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassStoreStat).regular_qty) },
-          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassStoreStat).premium_qty_share_pct) },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt(row.premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt(row.regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent(row.premium_qty_share_pct) },
         ]}
       />
     </div>
@@ -267,8 +267,8 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
         <h3 className="text-sm font-bold">Agenti</h3>
         <p className="text-[11px] text-slate-500">Toti agentii cu vanzari eligibile, dupa cantitate premium</p>
       </div>
-      <SortableTable<PremiumGlassAgentStat & Record<string, unknown>>
-        rows={rows as (PremiumGlassAgentStat & Record<string, unknown>)[]}
+      <SortableTable<PremiumGlassAgentStat>
+        rows={rows}
         defaultSortKey="premium_qty"
         exportFilename="focus-folii-premium-agenti"
         exportSheetName="Agenti folii premium"
@@ -285,7 +285,7 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
             key: 'agent',
             label: 'Agent',
             render: (row) => {
-              const agent = row as PremiumGlassAgentStat;
+              const agent = row;
               return (
                 <span className="block max-w-[120px] truncate font-semibold" title={`${agent.agent} - ${agent.locatie}`}>
                   {agent.agent}
@@ -293,9 +293,9 @@ function PremiumGlassAgentTable({ rows }: { rows: PremiumGlassAgentStat[] }) {
               );
             },
           },
-          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt((row as PremiumGlassAgentStat).premium_qty)}</span> },
-          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt((row as PremiumGlassAgentStat).regular_qty) },
-          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent((row as PremiumGlassAgentStat).premium_qty_share_pct) },
+          { key: 'premium_qty', label: 'Premium', align: 'right', render: (row) => <span className="font-black text-emerald-600">{formatInt(row.premium_qty)}</span> },
+          { key: 'regular_qty', label: 'Rest', align: 'right', render: (row) => formatInt(row.regular_qty) },
+          { key: 'premium_qty_share_pct', label: 'Share', align: 'right', render: (row) => formatPercent(row.premium_qty_share_pct) },
         ]}
       />
     </div>

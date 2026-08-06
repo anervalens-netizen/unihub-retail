@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from collections import defaultdict
+from io import BytesIO
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -29,6 +31,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import asyncpg
 import openpyxl
+from services.spreadsheet_safety import (
+    HISTORY_SPREADSHEET_LIMITS,
+    SpreadsheetParserMeasurement,
+    SpreadsheetUploadError,
+    validate_spreadsheet_upload,
+)
 
 SUMMARY_FILE = (
     Path(__file__).resolve().parent.parent.parent
@@ -50,28 +58,50 @@ def load_summary() -> dict[tuple[str, str], dict[int, dict[str, float]]]:
     """
     Returnează: {(firma, locatie_upper): {2022: {value, qty}, 2023: {value, qty}}}
     """
-    wb = openpyxl.load_workbook(str(SUMMARY_FILE), read_only=True)
-    # data[(firma, locatie)] = {2022: {value, qty}, 2023: {value, qty}}
-    data: dict[tuple[str, str], dict[int, dict[str, float]]] = defaultdict(
-        lambda: {2022: {"value": 0.0, "qty": 0.0}, 2023: {"value": 0.0, "qty": 0.0}}
+    content = SUMMARY_FILE.read_bytes()
+    measurement = SpreadsheetParserMeasurement("historical_annual_sales")
+    with measurement:
+        try:
+            preflight = validate_spreadsheet_upload(
+                content,
+                SUMMARY_FILE.suffix,
+                limits=HISTORY_SPREADSHEET_LIMITS,
+            )
+        except SpreadsheetUploadError as exc:
+            raise ValueError(f"{SUMMARY_FILE.name}: {exc}") from exc
+        measurement.set_preflight(preflight)
+        wb = openpyxl.load_workbook(BytesIO(content), read_only=True)
+        # data[(firma, locatie)] = {2022: {value, qty}, 2023: {value, qty}}
+        data: dict[tuple[str, str], dict[int, dict[str, float]]] = defaultdict(
+            lambda: {2022: {"value": 0.0, "qty": 0.0}, 2023: {"value": 0.0, "qty": 0.0}}
+        )
+        parsed_rows = 0
+
+        for sheet_name, (firma, tip) in SHEETS.items():
+            ws = wb[sheet_name]
+            for row in ws.iter_rows(values_only=True):
+                if row[0] != firma:
+                    continue
+                magazin = str(row[3]).upper().strip()
+                val_2023 = row[5]  # coloana F
+                val_2022 = row[6]  # coloana G
+                key = (firma, magazin)
+                if isinstance(val_2022, (int, float)):
+                    data[key][2022][tip] = float(val_2022)
+                if isinstance(val_2023, (int, float)):
+                    data[key][2023][tip] = float(val_2023)
+                parsed_rows += 1
+
+        wb.close()
+        measurement.set_rows(parsed_rows)
+    print(
+        "parser_resources="
+        + json.dumps(
+            measurement.as_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     )
-
-    for sheet_name, (firma, tip) in SHEETS.items():
-        ws = wb[sheet_name]
-        for row in ws.iter_rows(values_only=True):
-            if row[0] != firma:
-                continue
-            magazin = str(row[3]).upper().strip()
-            val_2024 = row[4]  # coloana E — ignorăm, avem date detaliate
-            val_2023 = row[5]  # coloana F
-            val_2022 = row[6]  # coloana G
-            key = (firma, magazin)
-            if isinstance(val_2022, (int, float)):
-                data[key][2022][tip] = float(val_2022)
-            if isinstance(val_2023, (int, float)):
-                data[key][2023][tip] = float(val_2023)
-
-    wb.close()
     return dict(data)
 
 

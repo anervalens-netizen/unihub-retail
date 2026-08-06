@@ -7,8 +7,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from services.campaigns import (
+    CampaignContext,
+    fetch_promo_incentive_summary,
+    get_store_incentive_multipliers,
+)
 from services.dashboard.queries import (
-    DashboardCampaignContext,
     _enrich_store_stats_with_campaign,
     _fetch_agent_stats_rows,
     _fetch_asm_stats,
@@ -18,11 +22,9 @@ from services.dashboard.queries import (
     _fetch_focus_subcategory_mix,
     _fetch_period_comparison,
     _fetch_period_comparison_cutoff_day,
-    _fetch_promo_incentive_summary,
     _fetch_receipt_bucket_mix,
     _fetch_regional_stats,
     _fetch_store_stats_rows,
-    _get_store_incentive_multipliers,
 )
 from services.promo_copurchase import PromoCoPurchaseResult
 from services.promotion_evaluation import (
@@ -49,7 +51,7 @@ class TestStoreIncentiveMultipliers:
     async def test_no_rows(self, mock_conn):
         mock_conn.fetchrow.return_value = FakeRow(business_factor=1.0)
         mock_conn.fetch.return_value = []
-        mults, achs = await _get_store_incentive_multipliers(mock_conn, "2026-05", None, None, None, None)
+        mults, achs = await get_store_incentive_multipliers(mock_conn, "2026-05", None, None, None, None)
         assert mults == {}
         assert achs == {}
 
@@ -60,7 +62,7 @@ class TestStoreIncentiveMultipliers:
             FakeRow(site_code="S1", store_sales=Decimal("50000"), target=Decimal("60000")),
             FakeRow(site_code="S2", store_sales=Decimal("10000"), target=Decimal("0")),
         ]
-        mults, achs = await _get_store_incentive_multipliers(mock_conn, "2026-05", None, None, None, None)
+        mults, achs = await get_store_incentive_multipliers(mock_conn, "2026-05", None, None, None, None)
         assert "S1" in mults
         assert "S2" in mults
         assert achs["S2"] is None
@@ -71,7 +73,7 @@ class TestStoreIncentiveMultipliers:
         mock_conn.fetch.return_value = [
             FakeRow(site_code="S1", store_sales=Decimal("30000"), target=Decimal("60000")),
         ]
-        mults, achs = await _get_store_incentive_multipliers(mock_conn, "2026-05", None, None, None, None)
+        mults, achs = await get_store_incentive_multipliers(mock_conn, "2026-05", None, None, None, None)
         assert achs["S1"] is not None
         assert achs["S1"] == pytest.approx(1.0, abs=0.1)
 
@@ -538,14 +540,14 @@ class TestFetchBrandMixWithData:
 class TestFetchPromoIncentiveSummary:
     @pytest.mark.asyncio
     async def test_no_data(self, mock_conn):
-        result = await _fetch_promo_incentive_summary(mock_conn, month="2026-05", firma=None, regional=None,
+        result = await fetch_promo_incentive_summary(mock_conn, month="2026-05", firma=None, regional=None,
                                                        asm=None, site_code=None, agent=None)
         assert result.promo_qty == 0
         assert result.incentive_qty == 0
 
     @pytest.mark.asyncio
     @patch(
-        "services.dashboard.queries._compute_dashboard_promotion_result",
+        "services.campaigns.summary.compute_promotion_result",
         new_callable=AsyncMock,
         return_value=PromotionEvaluation(
             result=PromoCoPurchaseResult(),
@@ -555,7 +557,7 @@ class TestFetchPromoIncentiveSummary:
         ),
     )
     @patch(
-        "services.dashboard.queries._get_store_incentive_multipliers",
+        "services.campaigns.summary.get_store_incentive_multipliers",
         new_callable=AsyncMock,
         return_value=({}, {}),
     )
@@ -570,7 +572,7 @@ class TestFetchPromoIncentiveSummary:
             "start_date": date(2026, 5, 1),
             "end_date": date(2026, 5, 31),
         }
-        context = DashboardCampaignContext(
+        context = CampaignContext(
             config_error=None,
             promotion_definitions=[definition],
             promotion_definition=None,
@@ -586,7 +588,7 @@ class TestFetchPromoIncentiveSummary:
             promo_excluded_units={},
         )
 
-        await _fetch_promo_incentive_summary(
+        await fetch_promo_incentive_summary(
             mock_conn,
             month="2026-05",
             firma=None,
@@ -605,27 +607,35 @@ class TestFetchPromoIncentiveSummary:
             assert call.kwargs["include_closed_stores"] is False
 
     @pytest.mark.asyncio
-    @patch("services.dashboard.queries.load_special_cards_config", return_value=({}, None))
-    @patch("services.dashboard.queries.parse_promotion_definition")
-    @patch("services.dashboard.queries.get_incentive_campaign", new_callable=AsyncMock, return_value=None)
-    async def test_with_promo_data(self, mock_inc, mock_promo, mock_config, mock_conn):
+    async def test_with_promo_data(self, mock_conn):
         from datetime import date
-        mock_promo.return_value = (
-            {"item_codes": ["C1", "C2"], "start_date": date(2026, 5, 1), "end_date": date(2026, 5, 31)},
-            None,
+        promotion = {
+            "item_codes": ["C1", "C2"],
+            "start_date": date(2026, 5, 1),
+            "end_date": date(2026, 5, 31),
+        }
+        context = CampaignContext(
+            config_error=None,
+            promotion_definitions=[promotion],
+            promotion_definition=promotion,
+            promotion_error=None,
+            incentive_campaign=None,
+            promotion_results=[],
+            promo_excluded_units={},
         )
         mock_conn.fetchrow.return_value = FakeRow(promo_qty=50, promo_sales=Decimal("5000"))
-        result = await _fetch_promo_incentive_summary(mock_conn, month="2026-05", firma=None, regional=None,
-                                                       asm=None, site_code=None, agent=None)
+        result = await fetch_promo_incentive_summary(mock_conn, month="2026-05", firma=None, regional=None,
+                                                       asm=None, site_code=None, agent=None,
+                                                       campaign_context=context)
         assert result.promo_qty == 50
         assert result.promo_sales == Decimal("5000")
         assert result.promo_impact == Decimal("1000.0")
 
     @pytest.mark.asyncio
-    @patch("services.dashboard.queries.load_special_cards_config", return_value=({}, None))
-    @patch("services.dashboard.queries.parse_promotion_definition", return_value=(None, None))
-    @patch("services.dashboard.queries.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.dashboard.queries._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.context.load_special_cards_config", return_value=({}, None))
+    @patch("services.campaigns.context.parse_promotion_definition", return_value=(None, None))
+    @patch("services.campaigns.context.get_incentive_campaign", new_callable=AsyncMock)
+    @patch("services.campaigns.summary.get_store_incentive_multipliers", new_callable=AsyncMock)
     async def test_with_incentive_data(self, mock_mults, mock_inc, mock_promo, mock_config, mock_conn):
         mock_inc.return_value = {"reward_map": {"C1": 10.0, "C2": 5.0}, "title": "Test"}
         mock_mults.return_value = ({"S1": 1.0}, {"S1": 1.1})
@@ -634,7 +644,7 @@ class TestFetchPromoIncentiveSummary:
             FakeRow(site_code="S1", item_code="C2", qty=10),
         ]
         mock_conn.fetchrow.return_value = FakeRow(cnt=5)
-        result = await _fetch_promo_incentive_summary(mock_conn, month="2026-05", firma=None, regional=None,
+        result = await fetch_promo_incentive_summary(mock_conn, month="2026-05", firma=None, regional=None,
                                                        asm=None, site_code=None, agent=None)
         assert result.incentive_qty == 30
         assert result.incentive_value > 0

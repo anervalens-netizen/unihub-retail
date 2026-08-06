@@ -1,5 +1,5 @@
 import { Filter, LogOut } from 'lucide-react';
-import type { AppFilters } from './MainLayout';
+import type { AppFilters } from '../lib/appFilters';
 import { TAB_LABELS, MGMT_SUBTAB_LABELS, type ManagementTab, type TabId } from '../lib/tabs';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { cn } from '../lib/utils';

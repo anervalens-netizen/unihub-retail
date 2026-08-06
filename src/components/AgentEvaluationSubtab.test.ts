@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AgentEvaluationSubtab } from './AgentEvaluationSubtab';
+import { AgentEvaluationSubtab } from '../features/agent-evaluation/AgentEvaluationPage';
 
 describe('AgentEvaluationSubtab', () => {
   it('defaults to the initial analysis and the latest closed month', () => {

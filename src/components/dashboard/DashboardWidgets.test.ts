@@ -11,13 +11,13 @@ import {
   describeFilterScope,
   getBon2AccTone,
   getFocusTone,
-} from './DashboardWidgets';
-import type { AgentStat, RegionalStat, AsmStat, StoreStat } from '../../api/types';
-import type { AppFilters } from '../MainLayout';
+} from '../../features/dashboard/DashboardWidgets';
+import type { AgentStat, RegionalStat, AsmStat, StoreStat } from '../../api/generated/runtime-types';
+import type { AppFilters } from '../../lib/appFilters';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../../lib/filterValues';
 
 function makeAgent(overrides: Partial<AgentStat> = {}): AgentStat {
-  return {
+  const agent: AgentStat = {
     import_month: '2026-05',
     agent: 'Test Agent',
     site_code: 'STORE01',
@@ -38,14 +38,15 @@ function makeAgent(overrides: Partial<AgentStat> = {}): AgentStat {
     target: 15000,
     proc_realizare_target: 66.67,
     promo_qty: 5,
+    promo_discount_value: 0,
     incentive_qty: 3,
     return_receipt_count: 0,
-    ...overrides,
   };
+  return Object.assign(agent, overrides);
 }
 
 function makeStore(overrides: Partial<StoreStat> = {}): StoreStat {
-  return {
+  const store: StoreStat = {
     import_month: '2026-05',
     site_code: 'STORE01',
     locatie: 'Test Store',
@@ -61,15 +62,18 @@ function makeStore(overrides: Partial<StoreStat> = {}): StoreStat {
     proc_realizare_target: 83.33,
     forecast_target_pct: 95,
     medie_produs: 250,
+    proc_bon2acc: 60,
+    prc_focus_acc_qty: 20,
     promo_qty: 10,
+    promo_discount_value: 0,
     incentive_qty: 5,
     return_receipt_count: 0,
-    ...overrides,
   };
+  return Object.assign(store, overrides);
 }
 
 function makeRegional(overrides: Partial<RegionalStat> = {}): RegionalStat {
-  return {
+  const regional: RegionalStat = {
     regional: 'RM1',
     total_vanzari: 200000,
     qty_total: 800,
@@ -80,18 +84,19 @@ function makeRegional(overrides: Partial<RegionalStat> = {}): RegionalStat {
     proc_realizare_target: 80,
     forecast_target_pct: 90,
     promo_qty: 30,
+    promo_discount_value: 0,
     incentive_qty: 15,
     medie_zilnica: 9090.9,
     medie_produs: 250,
     proc_bon2acc: 62,
     prc_focus_acc_qty: 25,
     return_receipt_count: 0,
-    ...overrides,
   };
+  return Object.assign(regional, overrides);
 }
 
 function makeAsm(overrides: Partial<AsmStat> = {}): AsmStat {
-  return {
+  const asm: AsmStat = {
     asm: 'ASM1',
     regional: 'RM1',
     total_vanzari: 100000,
@@ -107,8 +112,9 @@ function makeAsm(overrides: Partial<AsmStat> = {}): AsmStat {
     medie_produs: 250,
     proc_bon2acc: 60,
     prc_focus_acc_qty: 30,
-    ...overrides,
+    promo_discount_value: 0,
   };
+  return Object.assign(asm, overrides);
 }
 
 function makeFilters(overrides: Partial<AppFilters> = {}): AppFilters {

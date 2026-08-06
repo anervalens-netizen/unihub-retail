@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ImportJobStatus } from '../api/types';
+import type { ImportJobStatus } from '../api/generated/runtime-types';
 import { pollImportJob } from './importJobPolling';
 
 const queued: ImportJobStatus = {
   job_id: 'sales-import:test',
+  job_kind: 'sales',
   status: 'queued',
   result: null,
+  promo_result: null,
+  erp_result: null,
   error: null,
 };
 

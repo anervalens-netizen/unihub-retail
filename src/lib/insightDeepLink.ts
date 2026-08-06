@@ -1,4 +1,4 @@
-import type { AppFilters } from '../components/MainLayout';
+import type { AppFilters } from './appFilters';
 import type { ManagementTab, TabId } from './tabs';
 
 export type InsightHubSection = 'current' | 'history' | 'visits';

@@ -1,5 +1,5 @@
 import { Building2, Users } from 'lucide-react';
-import type { CampaignsPromotionsResponse } from '../api/types';
+import type { CampaignsPromotionsResponse } from '../api/generated/runtime-types';
 import { formatInt } from '../lib/formatters';
 
 export function IncentiveQualificationSummary({

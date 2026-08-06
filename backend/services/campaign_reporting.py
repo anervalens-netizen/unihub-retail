@@ -20,7 +20,10 @@ from typing import Any, Literal
 import asyncpg
 
 from repositories.campaigns import CampaignsRepository
-from services.campaigns import CampaignsService, _build_campaign_context
+from services.campaigns import (
+    build_campaign_context,
+    build_promotions_incentives_on_snapshot,
+)
 from services.dashboard_specials import (
     load_special_cards_config,
     parse_promotion_definition,
@@ -500,7 +503,7 @@ class CampaignReportingPublisher:
             agents_by_store: dict[str, list[_StoreAgent]] = defaultdict(list)
             for store_agent in store_agents:
                 agents_by_store[store_agent.store.site_code].append(store_agent)
-            campaign_service = CampaignsService(CampaignsRepository(self.pool), self.pool)
+            campaign_repo = CampaignsRepository(self.pool)
             year, month = (int(value) for value in period.split("-", 1))
             campaign_start = date(year, month, 1)
             campaign_end = date(
@@ -512,7 +515,7 @@ class CampaignReportingPublisher:
 
             for site_code, store_scopes in agents_by_store.items():
                 store = store_scopes[0].store
-                context = await _build_campaign_context(
+                context = await build_campaign_context(
                     conn,
                     config_error=config_error,
                     promotion_definitions=definitions,
@@ -568,7 +571,9 @@ class CampaignReportingPublisher:
                         )
 
                 if incentive_campaign is not None:
-                    canonical_incentive = await campaign_service.get_promotions_incentives(
+                    canonical_incentive = await build_promotions_incentives_on_snapshot(
+                        campaign_repo,
+                        conn,
                         campaign_start,
                         campaign_end,
                         firma=None,

@@ -1,5 +1,5 @@
 import { BrowserContext } from '@playwright/test';
-import type { CampaignsPromotionsResponse } from '../src/api/types';
+import type { CampaignsPromotionsResponse } from '../src/api/generated/runtime-types';
 
 export const MOCK_USER = {
   sub: 'test-user-123',

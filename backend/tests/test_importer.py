@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from openpyxl import Workbook
 
+import services.importer as importer_module
 from services.importer import (
     SALES_COLUMNS,
     detect_month,
@@ -118,6 +119,45 @@ def test_load_sales_dataframe_preserves_identical_sales_rows() -> None:
     assert len(frame) == 2
     assert frame.loc[0, SALES_COLUMNS].equals(frame.loc[1, SALES_COLUMNS])
     assert frame["Cantitate"].sum() == 4
+
+
+def test_sales_loader_parses_the_worksheet_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = importer_module.pd.ExcelFile
+    parse_calls: list[dict[str, object]] = []
+
+    class TrackingExcelFile:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self._inner = original(*args, **kwargs)
+
+        def __enter__(self) -> "TrackingExcelFile":
+            self._inner.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self._inner.__exit__(*args)
+
+        def parse(self, *args: object, **kwargs: object) -> pd.DataFrame:
+            parse_calls.append(dict(kwargs))
+            return self._inner.parse(*args, **kwargs)
+
+    monkeypatch.setattr(importer_module.pd, "ExcelFile", TrackingExcelFile)
+
+    load_sales_dataframe(sales_workbook([sales_row()]))
+
+    assert parse_calls == [{"header": None}]
+
+
+def test_sales_loader_keeps_finite_parser_resources_for_manifest() -> None:
+    frame = load_sales_dataframe(sales_workbook([sales_row()]))
+
+    resources = frame.attrs["parser_resource_stats"]
+    assert resources["parser"] == "sales"
+    assert resources["format"] == "xlsx"
+    assert resources["rows"] == 1
+    assert int(resources["compressed_bytes"]) > 0
+    assert int(resources["expanded_bytes"]) > 0
+    assert float(resources["parse_seconds"]) >= 0
+    assert int(resources["peak_rss_bytes"]) > 0
 
 
 def test_load_sales_dataframe_rejects_duplicate_raw_excel_headers() -> None:
@@ -241,3 +281,42 @@ def test_load_targets_dataframe_extracts_years_and_skips_empty_values(
             "target_value": Decimal("250.56"),
         },
     ]
+
+
+def test_targets_loader_parses_the_worksheet_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "targets.xlsx"
+    write_targets_workbook(source)
+    original = importer_module.pd.ExcelFile
+    parse_calls: list[dict[str, object]] = []
+
+    class TrackingExcelFile:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self._inner = original(*args, **kwargs)
+
+        def __enter__(self) -> "TrackingExcelFile":
+            self._inner.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self._inner.__exit__(*args)
+
+        def parse(self, *args: object, **kwargs: object) -> pd.DataFrame:
+            parse_calls.append(dict(kwargs))
+            return self._inner.parse(*args, **kwargs)
+
+    monkeypatch.setattr(importer_module.pd, "ExcelFile", TrackingExcelFile)
+
+    load_targets_dataframe(source)
+
+    assert parse_calls == [{"header": None}]
+
+
+def test_targets_loader_runs_structural_preflight(tmp_path: Path) -> None:
+    source = tmp_path / "targets.xlsx"
+    source.write_bytes(b"not-an-xlsx")
+
+    with pytest.raises(ValueError, match="semnătură"):
+        load_targets_dataframe(source)

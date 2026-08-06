@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
+import math
 from zipfile import ZipFile
 
 import pytest
@@ -12,6 +13,12 @@ from services.spreadsheet_safety import (
     TrustedFormula,
     SpreadsheetUploadError,
     SpreadsheetUploadLimits,
+    SpreadsheetParserMeasurement,
+    ERP_RECONCILIATION_SPREADSHEET_LIMITS,
+    HISTORY_SPREADSHEET_LIMITS,
+    PROMO_ACTUALS_SPREADSHEET_LIMITS,
+    SALES_SPREADSHEET_LIMITS,
+    TARGETS_SPREADSHEET_LIMITS,
     append_openpyxl_row,
     csv_cell_value,
     google_sheets_value,
@@ -32,7 +39,12 @@ def workbook_bytes(rows: int = 1) -> bytes:
 
 
 def test_xlsx_structural_preflight_accepts_bounded_workbook() -> None:
-    validate_spreadsheet_upload(workbook_bytes(2), ".xlsx")
+    content = workbook_bytes(2)
+    stats = validate_spreadsheet_upload(content, ".xlsx")
+
+    assert stats.compressed_bytes == len(content)
+    assert stats.uncompressed_bytes > len(content)
+    assert stats.cells == 2
 
 
 def test_spreadsheet_preflight_rejects_signature_and_cell_budget() -> None:
@@ -53,6 +65,41 @@ def test_spreadsheet_preflight_rejects_expansion_budget() -> None:
             ".xlsx",
             limits=SpreadsheetUploadLimits(max_uncompressed_bytes=1),
         )
+
+
+def test_xls_preflight_reports_unavailable_structure_honestly() -> None:
+    content = bytes.fromhex("d0cf11e0a1b11ae1") + b"legacy"
+
+    stats = validate_spreadsheet_upload(content, ".xls")
+
+    assert stats.source_bytes == len(content)
+    assert stats.compressed_bytes is None
+    assert stats.uncompressed_bytes is None
+    assert stats.cells is None
+    assert stats.format == "xls"
+
+
+def test_import_policies_are_explicit_and_parser_measurement_is_finite() -> None:
+    assert len(
+        {
+            SALES_SPREADSHEET_LIMITS.max_cells,
+            PROMO_ACTUALS_SPREADSHEET_LIMITS.max_cells,
+            ERP_RECONCILIATION_SPREADSHEET_LIMITS.max_cells,
+            TARGETS_SPREADSHEET_LIMITS.max_cells,
+            HISTORY_SPREADSHEET_LIMITS.max_cells,
+        }
+    ) == 5
+    content = workbook_bytes(2)
+    measurement = SpreadsheetParserMeasurement("test_parser")
+    with measurement:
+        measurement.set_preflight(validate_spreadsheet_upload(content, ".xlsx"))
+        measurement.set_rows(2)
+
+    resources = measurement.as_dict()
+    for key in ("source_bytes", "compressed_bytes", "expanded_bytes", "cells", "rows", "parse_seconds", "peak_rss_bytes"):
+        value = resources[key]
+        assert value is not None
+        assert math.isfinite(float(value))
 
 
 @pytest.mark.parametrize(

@@ -98,7 +98,19 @@ def make_service() -> tuple[TargetCalculatorService, MagicMock]:
     connection = MagicMock()
     repo.pool.acquire.return_value.__aenter__ = AsyncMock(return_value=connection)
     repo.pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
-    return TargetCalculatorService(repo), repo
+    async def forecast_factor(conn: object, month: str) -> Any:
+        return await target_module.get_forecast_factor(conn, month)
+
+    def allocator(
+        rows: list[dict[str, Any]], requested_total: Decimal
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        return target_module.allocate_with_bounds(rows, requested_total)
+
+    return TargetCalculatorService(
+        repo,
+        forecast_factor_loader=forecast_factor,
+        allocator=allocator,
+    ), repo
 
 
 def scenario_header(**overrides: object) -> dict:

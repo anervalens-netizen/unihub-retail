@@ -62,6 +62,7 @@ release-ului `v2.1.0` include:
 | 052 | `052_insight_planning_hash_acl.sql` | `3cb4411dba9ef15723ee82df7dff7dbb75f58efa61c9dbe751000ce1986aec4d` | bridge definer îngust pentru verificarea read-only a digestului forecast promovat |
 | 053 | `053_insight_campaign_publication.sql` | `bf3a4f5ae58dee480a224acc4664f2c294aa3f0d9d09f9339fcee44910f58ad2` | generații Campanii immutable, CAS/ledger, publisher canonic Focus/Promo/Incentive pe magazin+agent, `reporting_source_snapshot_v4` și `reporting_campaign_month_v2`; v1/v3 rămân rollback |
 | 054 | `054_campaign_reporting_publisher_acl.sql` | `8b04375c053ca1d1e081ba17d06e3049e0b48035f547c32b8743ef7237608db8` | grant read-only minim pentru evaluatorul Incentive folosit de publisherul izolat |
+| 055 | `055_durable_export_operations.sql` | `69e02b01dbfab1caf207b30a46b7abf2b1dcbeb7f51e26bcfabc5c1ec0c63b28` | operații XLSX complexe owner-bound, rezervare înainte de ARQ, lease/epoch fencing, artifact privat hash-uit, auto-download revendicat atomic și retry explicit până la TTL |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 

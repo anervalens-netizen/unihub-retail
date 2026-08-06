@@ -169,6 +169,11 @@ def test_parse_erp_report_uses_detail_sheets_and_excludes_tr() -> None:
     assert parsed.stores[("S1",)]["AccValRealizat"] == Decimal("500")
     assert parsed.stores[("S1",)]["AccFocusQtty"] == Decimal("3")
     assert parsed.stores[("S1",)]["FoliiQtty"] == Decimal("4")
+    assert parsed.parser_resources is not None
+    assert parsed.parser_resources["parser"] == "erp_reconciliation"
+    assert parsed.parser_resources["rows"] == 2
+    assert int(parsed.parser_resources["expanded_bytes"]) > 0
+    assert int(parsed.parser_resources["peak_rss_bytes"]) > 0
 
 
 def test_parse_erp_report_rejects_cutoff_outside_selected_month() -> None:

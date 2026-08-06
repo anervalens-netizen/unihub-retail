@@ -2,19 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check, ChevronDown, Filter, Search, X } from 'lucide-react';
 import { getFilterOptions } from '../api/filters';
-import type { FilterOptions } from '../api/types';
+import type { FilterOptions } from '../api/generated/runtime-types';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES, defaultAppFilters } from '../lib/filterValues';
 import { cn } from '../lib/utils';
 import { ALL_TABS, type ManagementTab, type TabId } from '../lib/tabs';
+import type { AppFilters } from '../lib/appFilters';
 import { DesktopSidebar } from './DesktopSidebar';
 import { DesktopTopBar } from './DesktopTopBar';
 
-export interface AppFilters {
-  firma: string;
-  rm: string;
-  magazin: string;
-  agent: string;
-}
 
 interface FilterValueOption {
   label: string;

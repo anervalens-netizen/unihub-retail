@@ -1,5 +1,5 @@
 import type { DashboardQuery } from '../api/dashboard';
-import type { AppFilters } from '../components/MainLayout';
+import type { AppFilters } from './appFilters';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from './filterValues';
 
 export function buildScopedMonthQuery(

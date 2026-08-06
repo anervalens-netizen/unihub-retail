@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import {
   getVisitDetail,
-  getVisitPhotoUrl,
+  getVisitPhoto,
   getVisitsReport,
   getVisitsTree,
   type TeamLeaderGroup,
@@ -20,24 +20,24 @@ import {
   type VisitReportResponse,
   type VisitSummaryItem,
 } from '../api/visitsReport';
-import { client } from '../api/client';
 import { getFilterOptions } from '../api/filters';
 import { FirmaBadge } from './FirmaBadge';
-import type { AppFilters } from './MainLayout';
+import type { AppFilters } from '../lib/appFilters';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
+import { buildVisitsReportQuery, buildVisitsTreeQuery } from '../lib/visitQueries';
 import { formatIsoDate, formatIsoMonth } from '../lib/dates';
 import { cn } from '../lib/utils';
 import { queryKeys } from '../lib/queryKeys';
 
 // ── AuthImage — fetch cu token, afișează blob URL ─────────────────────────────
-function AuthImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+function AuthImage({ visitId, filename, alt, className }: { visitId: string; filename: string; alt: string; className?: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     let url: string | null = null;
-    client.get<Blob>(src, { responseType: 'blob', signal: controller.signal }).then((r) => {
-      url = URL.createObjectURL(r.data);
+    getVisitPhoto(visitId, filename, controller.signal).then((blob) => {
+      url = URL.createObjectURL(blob);
       setBlobUrl(url);
     }).catch(() => {
       if (!controller.signal.aborted) setBlobUrl(null);
@@ -46,7 +46,7 @@ function AuthImage({ src, alt, className }: { src: string; alt: string; classNam
       controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [src]);
+  }, [visitId, filename]);
 
   if (!blobUrl) {
     return (
@@ -197,7 +197,8 @@ function VisitDrawer({
             {currentPhoto && (
               <div className="overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
                 <AuthImage
-                  src={getVisitPhotoUrl(detail.id, currentPhoto)}
+                  visitId={detail.id}
+                  filename={currentPhoto}
                   alt={`foto ${photoIdx + 1}`}
                   className="h-56 w-full object-cover"
                 />
@@ -206,7 +207,8 @@ function VisitDrawer({
                     {detail.photos.map((f, i) => (
                       <button key={f} onClick={() => setPhotoIdx(i)}>
                         <AuthImage
-                          src={getVisitPhotoUrl(detail.id, f)}
+                          visitId={detail.id}
+                          filename={f}
                           alt={`thumb ${i + 1}`}
                           className={cn(
                             'h-12 w-12 rounded-lg object-cover ring-2 transition-all',
@@ -544,13 +546,13 @@ export function VisiteSubtab({ currentMonth, months }: VisiteSubtabProps) {
 
   const summaryQuery = useQuery({
     queryKey: queryKeys.visits.report(selectedMonth),
-    queryFn: ({ signal }) => getVisitsReport(selectedMonth, ALL_FILTERS, signal),
+    queryFn: ({ signal }) => getVisitsReport(buildVisitsReportQuery(selectedMonth, ALL_FILTERS), signal),
     enabled: Boolean(selectedMonth),
     staleTime: 5 * 60 * 1000,
   });
   const treeQuery = useQuery({
     queryKey: queryKeys.visits.tree(selectedMonth),
-    queryFn: ({ signal }) => getVisitsTree(selectedMonth, ALL_FILTERS, signal),
+    queryFn: ({ signal }) => getVisitsTree(buildVisitsTreeQuery(selectedMonth, ALL_FILTERS), signal),
     enabled: Boolean(selectedMonth),
     staleTime: 5 * 60 * 1000,
   });

@@ -6,99 +6,80 @@ import os
 import resource
 import tempfile
 import time
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.chart import LineChart, Reference
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font
 
 from services.spreadsheet_safety import append_openpyxl_row
+from services.export_xlsx_formatting import (
+    add_daily_comparison_chart,
+    days_filename_suffix,
+    safe_filename,
+    write_table_sheet,
+)
 
 
-def _safe_filename(value: str) -> str:
-    safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in value).strip("._")
-    if not safe:
-        safe = "export_retail"
-    if not safe.lower().endswith(".xlsx"):
-        safe += ".xlsx"
-    return safe[:140]
+def _peak_rss_bytes() -> int:
+    """Return Linux RSS in bytes (the supported production platform)."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
 
 
-def _days_filename_suffix(selected_days: list[int] | None) -> str:
-    if not selected_days:
-        return ""
-    value = (
-        "-".join(str(day) for day in selected_days)
-        if len(selected_days) <= 10
-        else f"{len(selected_days)}selectate"
-    )
-    return f"_zile_{value}"
+def _enforce_memory_limit(limit_bytes: int) -> None:
+    """Fence a chart writer before it can allocate an unbounded cell graph.
+
+    The web process only sends charted exports to this spawned process.  Keep
+    the inherited hard limit intact: an operator may have configured a lower
+    cgroup/systemd ceiling, which must always win.
+    """
+    if limit_bytes <= 0:
+        raise ValueError("complex export memory limit must be positive")
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    effective = limit_bytes if hard == resource.RLIM_INFINITY else min(limit_bytes, hard)
+    if soft != resource.RLIM_INFINITY:
+        effective = min(effective, soft)
+    resource.setrlimit(resource.RLIMIT_AS, (effective, hard))
 
 
-def _configure_day_axis(chart: LineChart) -> None:
-    chart.x_axis.title = "Zi"
-    chart.x_axis.delete = False
-    chart.x_axis.axPos = "b"
-    chart.x_axis.tickLblPos = "nextTo"
-    chart.x_axis.tickLblSkip = 1
-    chart.x_axis.tickMarkSkip = 1
-    chart.x_axis.majorTickMark = "out"
-    chart.x_axis.noMultiLvlLbl = True
+def _assert_memory_budget(limit_bytes: int) -> int:
+    peak_rss = _peak_rss_bytes()
+    if peak_rss > limit_bytes:
+        raise MemoryError("complex export exceeded RSS budget")
+    return peak_rss
 
 
-def _write_table_sheet(
-    ws: Any,
-    columns: list[dict[str, str]],
-    rows: list[dict[str, Any]],
-) -> None:
-    append_openpyxl_row(ws, [column["label"] for column in columns])
-    for cell in ws[1]:
-        cell.font = Font(bold=True, color="1f2937")
-        cell.fill = PatternFill("solid", fgColor="DCFCE7")
-    for row in rows:
-        append_openpyxl_row(ws, [row.get(column["key"]) for column in columns])
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
-    for index, column in enumerate(columns, start=1):
-        letter = get_column_letter(index)
-        ws.column_dimensions[letter].width = max(10, min(30, len(column["label"]) + 3))
-        number_format = {"currency": "#,##0.00", "percent": "0.00", "integer": "0"}.get(column["type"])
-        if number_format:
-            for cell in ws[letter][1:]:
-                cell.number_format = number_format
-
-
-def _add_chart(
-    ws: Any,
+def _save_hashed_workbook(
+    workbook: Workbook,
     *,
-    months: list[str],
-    metric_label: str,
-    max_row: int,
-    first_data_col: int,
-) -> None:
-    if not months or max_row < 2:
-        return
-    chart = LineChart()
-    chart.title = f"Comparatie zilnica - {metric_label}"
-    chart.y_axis.title = metric_label
-    _configure_day_axis(chart)
-    chart.visible_cells_only = True
-    chart.style = 13
-    data = Reference(
-        ws,
-        min_col=first_data_col,
-        max_col=first_data_col + len(months) - 1,
-        min_row=1,
-        max_row=max_row,
-    )
-    categories = Reference(ws, min_col=first_data_col - 1, min_row=2, max_row=max_row)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(categories)
-    chart.height = 8
-    chart.width = 20
-    ws.add_chart(chart, f"{get_column_letter(first_data_col + len(months) + 3)}2")
+    max_output_bytes: int,
+    max_peak_rss_bytes: int,
+) -> dict[str, Any]:
+    """Save to a private temporary artifact and attest its exact bytes."""
+    _assert_memory_budget(max_peak_rss_bytes)
+    descriptor, path_value = tempfile.mkstemp(prefix="unihub-export-", suffix=".xlsx")
+    os.close(descriptor)
+    path = Path(path_value)
+    try:
+        workbook.save(path)
+        size = path.stat().st_size
+        if size > max_output_bytes:
+            raise ValueError("complex export exceeded output budget")
+        peak_rss = _assert_memory_budget(max_peak_rss_bytes)
+        digest = sha256()
+        with path.open("rb") as artifact:
+            for chunk in iter(lambda: artifact.read(256 * 1024), b""):
+                digest.update(chunk)
+        return {
+            "path": str(path),
+            "size": size,
+            "sha256": digest.hexdigest(),
+            "peak_rss": peak_rss,
+        }
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
 
 
 def render_daily_comparison_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
@@ -114,6 +95,9 @@ def render_daily_comparison_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
     tables: list[tuple[str, dict[str, Any]]] = payload["tables"]
     include_closed_stores = bool(payload["include_closed_stores"])
 
+    max_output_bytes = int(payload["max_output_bytes"])
+    max_peak_rss_bytes = int(payload["max_peak_rss_bytes"])
+    _enforce_memory_limit(max_peak_rss_bytes)
     workbook = Workbook()
     first_sheet = True
     total_rows = 0
@@ -123,9 +107,14 @@ def render_daily_comparison_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
             ws = workbook.active if first_sheet else workbook.create_sheet(sheet_name)
             ws.title = sheet_name
             first_sheet = False
-            _write_table_sheet(ws, table["columns"], table["rows"])
+            write_table_sheet(
+                ws,
+                table["columns"],
+                table["rows"],
+                header_fill="DCFCE7",
+            )
             total_rows += len(table["rows"])
-            _add_chart(
+            add_daily_comparison_chart(
                 ws,
                 months=months,
                 metric_label=metric_labels[metrics[0]],
@@ -153,23 +142,74 @@ def render_daily_comparison_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
 
         filename = request.get("filename") or (
             f"export_retail_evolutie_zilnica_{'_'.join(months)}"
-            f"{_days_filename_suffix(selected_days)}.xlsx"
+            f"{days_filename_suffix(selected_days)}.xlsx"
+        )
+        artifact = _save_hashed_workbook(
+            workbook,
+            max_output_bytes=max_output_bytes,
+            max_peak_rss_bytes=max_peak_rss_bytes,
+        )
+        return {
+            **artifact,
+            "filename": safe_filename(str(filename)),
+            "build_seconds": time.perf_counter() - started_at,
+        }
+    finally:
+        workbook.close()
+
+
+def render_daily_metrics_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build the charted daily-metrics variant in the same fenced process.
+
+    The compatibility renderer deliberately remains the single source for the
+    workbook layout.  This worker owns only isolation, output attestation and
+    lifecycle, so no database work or web-request state crosses the boundary.
+    """
+    started_at = time.perf_counter()
+    max_output_bytes = int(payload["max_output_bytes"])
+    max_peak_rss_bytes = int(payload["max_peak_rss_bytes"])
+    _enforce_memory_limit(max_peak_rss_bytes)
+
+    # Import at execution time: this module is imported by exports.py and the
+    # spawned child must not form an import cycle while module initialization is
+    # still in progress.
+    from services.exports import ExportsService
+
+    service = ExportsService(None)  # type: ignore[arg-type]
+    artifact = None
+    try:
+        artifact = service._render_table_xlsx(
+            payload["request"],
+            payload["result"],
+            payload["selected_days"],
+            payload["daily_rows"],
         )
         descriptor, path_value = tempfile.mkstemp(prefix="unihub-export-", suffix=".xlsx")
         os.close(descriptor)
         path = Path(path_value)
-        workbook.save(path)
-        size = path.stat().st_size
-        return {
-            "path": str(path),
-            "filename": _safe_filename(str(filename)),
-            "size": size,
-            "peak_rss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
-            "build_seconds": time.perf_counter() - started_at,
-        }
-    except Exception:
-        if "path" in locals() and path.exists():
-            path.unlink()
-        raise
+        try:
+            with path.open("wb") as destination:
+                for chunk in artifact.iter_chunks():
+                    destination.write(chunk)
+            size = path.stat().st_size
+            if size > max_output_bytes:
+                raise ValueError("complex export exceeded output budget")
+            peak_rss = _assert_memory_budget(max_peak_rss_bytes)
+            digest = sha256()
+            with path.open("rb") as output:
+                for chunk in iter(lambda: output.read(256 * 1024), b""):
+                    digest.update(chunk)
+            return {
+                "path": str(path),
+                "filename": safe_filename(str(payload["filename"])),
+                "size": size,
+                "sha256": digest.hexdigest(),
+                "peak_rss": peak_rss,
+                "build_seconds": time.perf_counter() - started_at,
+            }
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
     finally:
-        workbook.close()
+        if artifact is not None:
+            artifact.close()

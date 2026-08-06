@@ -102,7 +102,8 @@ numeric values, and CSV scripts pass every field through `csv_cell_value`.
 
 The implementation inventory must include, but not be limited to:
 
-- generic reports in `backend/services/exports.py`;
+- generic reports in `backend/services/exports/` and the isolated
+  `backend/services/export_complex_worker.py` renderer;
 - Target Calculator workbook export;
 - Grile final salary workbook and Audit sheet;
 - any salary, campaign, incentive, forecast or visits export;

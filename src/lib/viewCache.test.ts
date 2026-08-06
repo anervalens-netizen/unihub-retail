@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getCachedView, setCachedView } from './viewCache';
+import {
+  clearCachedViews,
+  getCachedView,
+  removeCachedView,
+  setCachedView,
+} from './viewCache';
 
 // Chei unice per test — evită shared state din modulul singleton
 let keyCounter = 0;
@@ -8,6 +13,23 @@ function nextKey() {
 }
 
 describe('getCachedView', () => {
+  it('clears session-scoped cached views on logout', () => {
+    const key = nextKey();
+    setCachedView(key, 'private');
+    clearCachedViews();
+    expect(getCachedView(key, 5000).value).toBeNull();
+  });
+
+  it('invalidates one permission-scoped view without clearing the rest', () => {
+    const removedKey = nextKey();
+    const retainedKey = nextKey();
+    setCachedView(removedKey, 'private');
+    setCachedView(retainedKey, 'safe');
+    removeCachedView(removedKey);
+    expect(getCachedView(removedKey, 5000).value).toBeNull();
+    expect(getCachedView(retainedKey, 5000).value).toBe('safe');
+  });
+
   it('returns null + not fresh for unknown key', () => {
     const { value, isFresh } = getCachedView(nextKey(), 5000);
     expect(value).toBeNull();

@@ -123,6 +123,7 @@ _VALKEY_SETTINGS: Optional[RedisSettings] = None
 SALES_IMPORT_QUEUE_NAME = "arq:retail:imports"
 DEFAULT_SALES_IMPORT_SPOOL_MAX_AGE_SECONDS = 24 * 60 * 60
 _SALES_ARTIFACT_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_IMPORT_SPOOL_NAMESPACE = re.compile(r"^[0-9a-f]{64}$")
 MONTHLY_QUEUE_PUBLISH_FAILED = "monthly_queue_publish_failed"
 
 
@@ -199,14 +200,22 @@ def verify_sales_import_artifact(
     return size
 
 
-def stage_sales_import_spool_file(content: bytes, digest: str) -> Path:
+def stage_sales_import_spool_file(
+    content: bytes,
+    digest: str,
+    *,
+    namespace: str | None = None,
+) -> Path:
     if not _SALES_ARTIFACT_DIGEST.fullmatch(digest):
         raise ValueError("Invalid sales import source digest")
+    if namespace is not None and not _IMPORT_SPOOL_NAMESPACE.fullmatch(namespace):
+        raise ValueError("Invalid import spool namespace")
     spool_dir = get_sales_import_spool_dir()
     spool_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     spool_dir.chmod(0o700)
-    destination = spool_dir / f"{digest}.upload"
-    temporary = spool_dir / f".{digest}.{uuid4().hex}.tmp"
+    artifact_stem = f"{digest}.{namespace}" if namespace is not None else digest
+    destination = spool_dir / f"{artifact_stem}.upload"
+    temporary = spool_dir / f".{artifact_stem}.{uuid4().hex}.tmp"
     if destination.exists():
         actual_digest, actual_size = _file_digest_and_size(destination)
         if actual_digest != digest or actual_size != len(content):
@@ -558,6 +567,129 @@ async def enqueue_sales_promotion(
     return replacement
 
 
+async def enqueue_promo_actuals_import(
+    content: bytes,
+    *,
+    filename: str,
+    import_month: str,
+    cutoff_date: str,
+) -> Job:
+    """Stage a content-addressed promo report and publish one deterministic import job.
+
+    Statusul și rezultatul rămân recuperabile din ARQ minimum 3600s implicit,
+    peste fereastra de polling UI de 1800s; nu este necesară o tabelă DB.
+    """
+    digest = sha256(content).hexdigest()
+    job_id = f"promo-actuals:{digest}:{import_month}:{cutoff_date}"
+    return await _enqueue_spooled_import_job(
+        content=content,
+        digest=digest,
+        job_id=job_id,
+        function_name="import_promo_actuals_background",
+        function_args=(filename, import_month, cutoff_date),
+    )
+
+
+async def enqueue_erp_reconciliation(
+    content: bytes,
+    *,
+    filename: str,
+    import_month: str,
+) -> Job:
+    digest = sha256(content).hexdigest()
+    job_id = f"erp-reconciliation:{digest}:{import_month}"
+    return await _enqueue_spooled_import_job(
+        content=content,
+        digest=digest,
+        job_id=job_id,
+        function_name="reconcile_erp_background",
+        function_args=(filename, import_month),
+    )
+
+
+async def _enqueue_spooled_import_job(
+    *,
+    content: bytes,
+    digest: str,
+    job_id: str,
+    function_name: str,
+    function_args: tuple[Any, ...],
+) -> Job:
+    """Publish a verified spool reference and replace only a failed terminal job."""
+    pool = await _require_arq_pool()
+    # The same bytes may legitimately be reconciled for different months or
+    # promo cutoffs.  Namespace the artifact by deterministic job identity so
+    # one successful job cannot delete another queued job's source.  A retry
+    # of the same job still reuses the exact same content-addressed path.
+    spool_namespace = sha256(job_id.encode("utf-8")).hexdigest()
+    spool_path = await asyncio.to_thread(
+        stage_sales_import_spool_file,
+        content,
+        digest,
+        namespace=spool_namespace,
+    )
+    enqueue_args = (
+        function_name,
+        str(spool_path),
+        digest,
+        len(content),
+        *function_args,
+    )
+    try:
+        job = await _publish_arq_job(
+            pool,
+            *enqueue_args,
+            _job_id=job_id,
+            _queue_name=SALES_IMPORT_QUEUE_NAME,
+        )
+    except JobPublishUncertainError:
+        # Valkey may have accepted the job; its worker still needs the spool.
+        raise
+    except Exception:
+        await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+        raise
+    if job is not None:
+        return job
+    existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
+    try:
+        existing_status = await existing.status()
+    except ARQ_TRANSPORT_ERRORS as exc:
+        # enqueue_job(None) means the deterministic id already exists. If its
+        # status cannot be read, preserve the artifact for a possibly queued job.
+        raise JobPublishUncertainError(job_id=job_id) from exc
+    if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
+        return existing
+    if existing_status == ArqJobStatus.complete:
+        try:
+            info = await existing.result_info()
+        except ARQ_TRANSPORT_ERRORS as exc:
+            raise JobPublishUncertainError(job_id=job_id) from exc
+        if info and info.success:
+            await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+            return existing
+        try:
+            await pool.delete(result_key_prefix + job_id)
+        except Exception:
+            await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+            raise
+        try:
+            replacement = await _publish_arq_job(
+                pool,
+                *enqueue_args,
+                _job_id=job_id,
+                _queue_name=SALES_IMPORT_QUEUE_NAME,
+            )
+        except JobPublishUncertainError:
+            raise
+        except Exception:
+            await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+            raise
+        if replacement is not None:
+            return replacement
+    await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
+    raise RuntimeError(f"Failed to enqueue import job {job_id}")
+
+
 async def enqueue_campaign_reporting_publication(
     *,
     month: str,
@@ -605,6 +737,34 @@ async def enqueue_campaign_reporting_publication(
         if replacement is not None:
             return replacement
     raise RuntimeError("Failed to enqueue campaign reporting publication")
+
+
+async def enqueue_complex_export(operation_id: int) -> Job:
+    """Publish one durable export operation to the serialized operations worker."""
+    if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
+        raise ValueError("Invalid export operation id")
+    pool = await _require_arq_pool()
+    job_id = f"export-complex:{operation_id}"
+    job = await _publish_arq_job(
+        pool,
+        "build_complex_export_background",
+        operation_id,
+        _job_id=job_id,
+    )
+    if job is not None:
+        return job
+    existing = Job(job_id, pool)
+    try:
+        existing_status = await existing.status()
+    except ARQ_TRANSPORT_ERRORS as exc:
+        raise JobPublishUncertainError(job_id=job_id, operation_id=operation_id) from exc
+    if existing_status in {
+        ArqJobStatus.queued,
+        ArqJobStatus.in_progress,
+        ArqJobStatus.complete,
+    }:
+        return existing
+    raise RuntimeError("Failed to enqueue complex export operation")
 
 
 async def enqueue_grile_check(
@@ -907,7 +1067,7 @@ async def get_job_status(job_id: str) -> JobResult:
     try:
         queue_name = (
             SALES_IMPORT_QUEUE_NAME
-            if job_id.startswith(("sales-import:", "sales-promote:"))
+            if job_id.startswith(("sales-import:", "sales-promote:", "promo-actuals:", "erp-reconciliation:"))
             else None
         )
         job = Job(job_id, pool, _queue_name=queue_name) if queue_name else Job(job_id, pool)

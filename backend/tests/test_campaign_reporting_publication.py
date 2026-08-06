@@ -165,8 +165,9 @@ async def test_campaign_publisher_acl_is_select_only_in_postgres() -> None:
 
 
 def test_publisher_reuses_canonical_evaluators_and_preserves_agent_totals() -> None:
-    assert "_build_campaign_context(" in PUBLISHER
-    assert "campaign_service.get_promotions_incentives(" in PUBLISHER
+    assert "build_campaign_context(" in PUBLISHER
+    assert "build_promotions_incentives_on_snapshot(" in PUBLISHER
+    assert "CampaignsService(" not in PUBLISHER
     assert "Pointerul promo s-a schimbat în timpul publicării" in PUBLISHER
     assert "Snapshotul sales s-a schimbat în timpul publicării" in PUBLISHER
     assert '"active_product_codes": normalized_product_codes' in PUBLISHER

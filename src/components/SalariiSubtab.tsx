@@ -16,11 +16,11 @@ import type {
   SalaryComparisonPoint,
   SalaryTrendMonth,
 } from '../api/salarii';
-import type { AppFilters } from './MainLayout';
+import type { AppFilters } from '../lib/appFilters';
 import { SalaryAreaChart } from './SalaryAreaChart';
 import { SalaryDrawer } from './SalaryDrawer';
 import { ExportTableButton } from './ExportTableButton';
-import { SortableHeader } from './dashboard/DashboardWidgets';
+import { SortableTableHeader as SortableHeader } from './common/TableHeader';
 import { formatMonthSpanLabel } from '../lib/dates';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 import { cn } from '../lib/utils';
@@ -352,7 +352,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               sheetName="Salarii magazine"
               rows={sortedSummary}
               beforeExport={() =>
-                auditSalaryExport('store_summary', sortedSummary.length)
+                auditSalaryExport({ export_kind: 'store_summary', row_count: sortedSummary.length })
               }
               columns={[
                 { header: 'Locatie', value: (row) => row.locatie ?? row.site_code },
@@ -484,7 +484,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               sheetName="Evolutie salarii"
               rows={sortedTrend}
               beforeExport={() =>
-                auditSalaryExport('monthly_trend', sortedTrend.length)
+                auditSalaryExport({ export_kind: 'monthly_trend', row_count: sortedTrend.length })
               }
               columns={[
                 { header: 'Luna', value: (row) => row.month, format: 'month' },
@@ -584,7 +584,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 sheetName="Salarii agenti"
                 rows={agents}
                 beforeExport={() =>
-                  auditSalaryExport('agents_page', agents.length)
+                  auditSalaryExport({ export_kind: 'agents_page', row_count: agents.length })
                 }
                 columns={[
                   { header: 'Agent', value: (row) => row.full_name },

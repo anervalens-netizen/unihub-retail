@@ -1,5 +1,6 @@
 import { generatedGet, generatedPatch, generatedPost } from './generated/client';
 import { downloadBlob } from '../lib/download';
+import type { RetailOperationPaths } from './generated/contracts';
 import type {
   TargetCalculationDetails,
   TargetCalculationInput,
@@ -18,55 +19,63 @@ import type {
   TargetStoreDetail,
   TargetStoreHistoryPoint,
 } from './generated/runtime-types';
+import type { GeneratedRequest } from './generated/runtime-types';
 
 export async function fetchTargetCalculatorContext(): Promise<TargetCalculatorContext> {
-  return await generatedGet('get_context_api_target_calculator_context_get') as TargetCalculatorContext;
+  return generatedGet('get_context_api_target_calculator_context_get');
 }
 
 export async function fetchTargetScenarios(): Promise<TargetScenarioSummary[]> {
-  return await generatedGet('list_scenarios_api_target_calculator_scenarios_get') as TargetScenarioSummary[];
+  return generatedGet('list_scenarios_api_target_calculator_scenarios_get');
 }
 
-export async function fetchTargetScenario(id: number): Promise<TargetScenario> {
+export async function fetchTargetScenario(id: RetailOperationPaths['get_scenario_api_target_calculator_scenarios__scenario_id__get']['scenario_id']): Promise<TargetScenario> {
   return await generatedGet('get_scenario_api_target_calculator_scenarios__scenario_id__get', {
     pathParams: { scenario_id: id },
-  }) as TargetScenario;
+  });
 }
 
 export async function calculateTargetScenario(input: TargetCalculationInput): Promise<TargetScenario> {
-  return await generatedPost('calculate_scenario_api_target_calculator_scenarios_calculate_post', input) as TargetScenario;
+  return generatedPost('calculate_scenario_api_target_calculator_scenarios_calculate_post', input);
 }
 
 export async function saveTargetFinalValues(
-  id: number,
-  expectedRevision: number,
-  rows: Array<{ site_code: string; final_target: number | null; note: string | null }>,
+  id: RetailOperationPaths['update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch']['scenario_id'],
+  request: GeneratedRequest<'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch'>,
 ): Promise<TargetScenario> {
   return await generatedPatch(
     'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch',
-    { expected_revision: expectedRevision, rows },
+    request,
     { pathParams: { scenario_id: id } },
-  ) as TargetScenario;
+  );
 }
 
-export async function fetchTargetStoreDetail(scenarioId: number, siteCode: string): Promise<TargetStoreDetail> {
+export async function fetchTargetStoreDetail(
+  scenarioId: RetailOperationPaths['get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get']['scenario_id'],
+  siteCode: RetailOperationPaths['get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get']['site_code'],
+): Promise<TargetStoreDetail> {
   return await generatedGet('get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get', {
     pathParams: { scenario_id: scenarioId, site_code: siteCode },
-  }) as TargetStoreDetail;
+  });
 }
 
-export async function finalizeTargetScenario(id: number, expectedRevision: number): Promise<TargetScenario> {
+export async function finalizeTargetScenario(
+  id: RetailOperationPaths['finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post']['scenario_id'],
+  request: GeneratedRequest<'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post'>,
+): Promise<TargetScenario> {
   return await generatedPost(
     'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post',
-    { expected_revision: expectedRevision },
+    request,
     { pathParams: { scenario_id: id } },
-  ) as TargetScenario;
+  );
 }
 
-export async function downloadTargetScenario(id: number, filename: string): Promise<void> {
+export async function downloadTargetScenario(
+  id: RetailOperationPaths['export_scenario_api_target_calculator_scenarios__scenario_id__export_get']['scenario_id'],
+  filename: string,
+): Promise<void> {
   const data = await generatedGet('export_scenario_api_target_calculator_scenarios__scenario_id__export_get', {
     pathParams: { scenario_id: id },
-    responseType: 'blob',
   });
   downloadBlob(data, filename);
 }

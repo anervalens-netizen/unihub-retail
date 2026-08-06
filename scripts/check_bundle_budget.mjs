@@ -56,11 +56,15 @@ function collectBudget() {
 
 const current = collectBudget();
 const update = process.argv.includes('--update-baseline');
-if (update || !existsSync(baselinePath)) {
+if (update) {
   writeFileSync(baselinePath, `${JSON.stringify(current, null, 2)}\n`);
   console.log(`Bundle baseline written: ${relative(root, baselinePath)}`);
   console.log(JSON.stringify(current.budget, null, 2));
   process.exit(0);
+}
+if (!existsSync(baselinePath)) {
+  console.error('Bundle baseline is missing. Create it only with the explicit --update-baseline review path.');
+  process.exit(1);
 }
 
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));

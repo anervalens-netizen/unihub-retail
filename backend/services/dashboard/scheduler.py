@@ -9,14 +9,20 @@ from collections.abc import Awaitable
 from typing import Any
 
 from services.dashboard.metrics import (
+    dashboard_component_finished,
+    dashboard_component_started,
     record_dashboard_component_global_queue,
     record_dashboard_component_queue,
+    set_dashboard_component_global_limit,
 )
 
 DASHBOARD_COMPONENT_CONCURRENCY = 4
 DEFAULT_DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY = 6
 _dashboard_global_slots: weakref.WeakKeyDictionary[
     asyncio.AbstractEventLoop, dict[int, asyncio.Semaphore]
+] = weakref.WeakKeyDictionary()
+_dashboard_global_active: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop, dict[int, int]
 ] = weakref.WeakKeyDictionary()
 
 
@@ -67,6 +73,7 @@ async def _gather_named(
 
     semaphore = asyncio.Semaphore(max_concurrency)
     global_slots = _get_dashboard_global_slots(global_component_concurrency)
+    set_dashboard_component_global_limit(global_component_concurrency)
 
     async def run_component(name: str, component: Awaitable[Any]) -> Any:
         queued_at = time.perf_counter()
@@ -81,7 +88,26 @@ async def _gather_named(
                     name,
                     time.perf_counter() - global_queued_at,
                 )
-                return await component
+                loop = asyncio.get_running_loop()
+                active_by_limit = _dashboard_global_active.setdefault(loop, {})
+                active = active_by_limit.get(global_component_concurrency, 0) + 1
+                active_by_limit[global_component_concurrency] = active
+                dashboard_component_started(
+                    active=active,
+                    limit=global_component_concurrency,
+                )
+                try:
+                    return await component
+                finally:
+                    current_active = active_by_limit.get(
+                        global_component_concurrency,
+                        0,
+                    )
+                    active_by_limit[global_component_concurrency] = max(
+                        0,
+                        current_active - 1,
+                    )
+                    dashboard_component_finished()
 
     names = tuple(components)
     tasks = {

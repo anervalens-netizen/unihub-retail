@@ -5,7 +5,12 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../api/client';
-import { classifyAvailableMonths, useAvailableMonths } from './useAvailableMonths';
+import {
+  classifyAvailableMonths,
+  clearAvailableMonthsCache,
+  readCachedMonths,
+  useAvailableMonths,
+} from './useAvailableMonths';
 
 function wrapper() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -15,6 +20,12 @@ function wrapper() {
 }
 
 describe('useAvailableMonths', () => {
+  it('clears the session-scoped persistent fallback on logout', () => {
+    localStorage.setItem('unihub_available_months_v1', '{"version":1}');
+    clearAvailableMonthsCache();
+    expect(localStorage.getItem('unihub_available_months_v1')).toBeNull();
+  });
+
   it('classifies empty, stale, and session-expired states explicitly', () => {
     expect(classifyAvailableMonths(true, false, false, null, [], null)).toBe('empty');
     expect(classifyAvailableMonths(true, false, true, new Error('network'), undefined, {
@@ -29,6 +40,24 @@ describe('useAvailableMonths', () => {
       months: ['2026-08', '2026-07'],
       savedAt: '2026-08-06T10:00:00.000Z',
     })).toBe('session_expired');
+  });
+
+  it('keeps one last valid month as the recoverable stale fallback', () => {
+    localStorage.setItem(
+      'unihub_available_months_v1',
+      JSON.stringify({
+        version: 1,
+        identityKey: 'subject-single-month',
+        months: ['2026-08'],
+        savedAt: '2026-08-06T10:00:00.000Z',
+      }),
+    );
+
+    expect(readCachedMonths('subject-single-month')).toEqual({
+      version: 1,
+      months: ['2026-08'],
+      savedAt: '2026-08-06T10:00:00.000Z',
+    });
   });
 
   it('loads a valid month list and exposes retry without page reload', async () => {

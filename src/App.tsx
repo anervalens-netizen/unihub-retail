@@ -1,8 +1,9 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { MainLayout, type AppFilters } from './components/MainLayout';
+import { MainLayout } from './components/MainLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { defaultAppFilters, normalizeAppFilters } from './lib/filterValues';
+import type { AppFilters } from './lib/appFilters';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 import { sanitizeActiveTab } from './lib/navigationAccess';
 import {
@@ -21,6 +22,10 @@ import { selectCurrentMonth } from './lib/currentMonth';
 import { parseInsightDeepLink } from './lib/insightDeepLink';
 import { usePersistentState } from './lib/usePersistentState';
 import { useAvailableMonths } from './hooks/useAvailableMonths';
+import {
+  reportFrontendBootstrapFailure,
+  type FrontendBootstrapFailureReason,
+} from './lib/frontendMetrics';
 import { AvailableMonthsStatus } from './components/AvailableMonthsStatus';
 
 const Campaigns = lazy(loadCampaignsScreen);
@@ -122,8 +127,24 @@ export default function App() {
   );
   const [currentMonth, setCurrentMonth] = useState('');
   const [focusFilterMonth, setFocusFilterMonth] = useState('');
-  const availableMonths = useAvailableMonths(isAuthenticated);
+  const availableMonths = useAvailableMonths(
+    isAuthenticated,
+    user?.profile.sub ?? 'anonymous',
+  );
   const { months, status: monthsStatus, isLoading: isMonthsLoading, setMonths, retry: retryMonths } = availableMonths;
+  const lastBootstrapFailure = useRef<FrontendBootstrapFailureReason | null>(null);
+  useEffect(() => {
+    const reason: FrontendBootstrapFailureReason | null =
+      monthsStatus === 'unavailable' || monthsStatus === 'session_expired'
+        ? monthsStatus
+        : monthsStatus === 'stale'
+          ? 'stale_cache'
+          : null;
+    if (reason && lastBootstrapFailure.current !== reason) {
+      reportFrontendBootstrapFailure(reason);
+    }
+    lastBootstrapFailure.current = reason;
+  }, [monthsStatus]);
   const [mgmtSubTab, setMgmtSubTab] = usePersistentState<ManagementTab>(
     MANAGEMENT_SUBTAB_STORAGE_KEY,
     insightDeepLink?.managementSubtab ?? 'asm',

@@ -258,19 +258,22 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   sunt ignorate. Toate valorile comparabile sunt recalculate strict pentru
   intervalul 1-cutoff.
   Verificarea compara acoperirea magazinelor si agentilor, targetul, vanzarile,
-  cantitatile, bonurile si categoriile Focus, fara sa pastreze fisierul si fara
-  sa modifice snapshotul. Daca foaia `Locatii` expune doar procentele Focus,
+  cantitatile, bonurile si categoriile Focus, fara sa modifice snapshotul.
+  Spoolul privat este șters după succes; la eșec rămâne pe aceeași cale
+  content-addressed pentru retry și expiră automat după 24h. Daca foaia
+  `Locatii` expune doar procentele Focus,
   valorile absolute lipsa sunt agregate din foaia `Agenti` dupa `CodLocatie`.
   Valorile Promo/Incentive sunt afisate separat ca
   informatie Retail: raportul agregat nu contine codurile, identitatea bonului
   si unitatile promo necesare unei reconcilieri independente.
 - Setari -> Importuri permite si incarcarea raportului POS de promo al firmei:
-  administratorul selecteaza luna si data cutoff, iar aplicatia valideaza foaia
+  administratorul selecteaza luna si data cutoff, iar import workerul valideaza foaia
   `AccesoriPromoLunar` (SiteCode, Cod, Promo Luna Curenta), valideaza integral
   configuratia si materializeaza config + surse intr-o generatie imutabila sub
   `data/promo_generations/`. Pointerul `current.json` este mutat atomic cu
   lock si hash-CAS numai dupa validare. Runtime-ul reverifica hashurile inainte
-  de folosire. Retururile negative sunt agregate cu vanzarile pe SiteCode/Cod,
+  de folosire. Retry-ul aceluiași job reutilizează spoolul privat; succesul îl
+  șterge, iar eșecurile abandonate expiră după 24h. Retururile negative sunt agregate cu vanzarile pe SiteCode/Cod,
   iar calculul foloseste numai cantitatea neta pozitiva. Pana la cutoff raportul este sursa corectiva pentru Focus si
   exporturi;
   dupa cutoff calculul continua din regula pe bonuri.
@@ -315,14 +318,20 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   iar randurile lunare fara atribuire de agent nu sunt amestecate in exportul
   pe agent. Query-ul de itemi activeaza CTE-urile campaniei numai cand coloanele
   cerute au nevoie de ele.
-  Downloadul server-side scrie workbookul intr-un `SpooledTemporaryFile` cu
-  prag de memorie 8 MiB si livreaza raspunsul in chunkuri de 256 KiB; spoolul
-  este inchis de background cleanup inclusiv dupa terminarea raspunsului.
-  Astfel nu mai exista `BytesIO.getvalue()` plus un singur chunk HTTP care
-  dubla fisierul final in memorie. Modelul OpenPyXL si randurile extrase raman
-  inca in proces pe durata writerului, deci benchmarkul exporturilor mari si
-  separarea plan/extract/transform/writer raman gate-uri masurate, nu beneficii
-  revendicate implicit.
+  Exporturile tabelare simple folosesc writer write-only, un
+  `SpooledTemporaryFile` cu prag de memorie 8 MiB si raspuns in chunkuri de
+  256 KiB; spoolul este inchis inclusiv dupa terminarea raspunsului. Exporturile
+  cu grafice/daily sheets sunt operatii durabile in `export_operations`, cu
+  maximum trei operatii active global si una per owner. Workerul serializat
+  porneste rendererul intr-un proces `spawn` separat, aplica `RLIMIT_AS`,
+  verifica peak RSS, numarul de randuri/celule, dimensiunea si SHA-256, apoi
+  adopta atomic artefactul privat `0600`. Lease-ul si epoch-ul fencesc workerii
+  intarziati; starea DB terminala castiga fata de ARQ. UI persista operation ID
+  separat pe identitatea autentificata, poate relua pollingul dupa reload,
+  afiseaza progres/cancel/retry si sterge cheia numai dupa descarcarea completa.
+  Artefactele completate pot fi descarcate repetat pana la TTL (implicit o ora,
+  configurabil intre 5 minute si 24 ore); operations workerul expira DB-ul si
+  curata artefactele orfane. Web-ul nu executa sweep global.
   Exporturile rapide din carduri scriu valorile, procentele si lunile ca
   tipuri Excel native, nu ca text formatat pentru UI; identificatorii precum
   codurile de magazin si produs raman text pentru a nu pierde zerourile initiale.
@@ -383,7 +392,7 @@ Backend-ul foloseste modelul `router -> service -> repository`.
 | HR/CRM/Tasks/Calculator Target | straturi separate per domeniu |
 | Grile lunar | `services/grile_monthly.py` -> `repositories/grile_monthly_operations.py` + state machine pur |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
-| Exporturi | `routers/exports.py` -> `services/exports.py` -> `repositories/exports.py` |
+| Exporturi | `routers/exports.py` -> `services/exports/` + `services/export_operations.py` -> `repositories/exports.py` + `repositories/export_operations.py` |
 
 Repository-ul Grile detine rezervarea tranzactionala, expirarea lease-urilor si
 checkpointurile per magazin. Claim-ul `pending -> running` si finalizarea din
@@ -509,6 +518,24 @@ SECURITY DEFINER cu owner fencing, digest rehash și CAS. Politica
 dispariția unor site-days și regresia de cutoff ca evidence informativă a
 înlocuirii oficiale; blochează numai contradicții interne ale candidatului
 (lună/cutoff/schema/digest/staging). Rândurile identice rămân unități distincte.
+
+### Contractul parserelor spreadsheet
+
+Sales, Promo actuals, reconcilierea ERP, targetele și sursele istorice folosesc
+politici structurale distincte pentru source bytes, membri, expanded bytes,
+raport de compresie și celule. XLSX expune bytes comprimați/extinși și celule
+prin preflight ZIP/XML. Formatul legacy XLS/OLE expune numai source bytes;
+compressed/expanded/cells sunt `null` în evidence și `0` împreună cu
+`measurement_available=0` în Prometheus, niciodată valori inventate.
+
+Fiecare parser emite source/compressed/expanded bytes, cells, business rows,
+parse seconds și peak RSS eșantionat strict pe durata rulării. Registrul
+Prometheus al import workerului nu este servit de procesul web, de aceea
+evidence-ul fără date business este păstrat și durabil: Sales în manifestul
+generației, Promo în pointerul generației, iar ERP în rezultatul recuperabil al
+jobului. Web-ul validează extensia și limita de bytes, apoi scrie spoolul privat.
+Workerul reverifică SHA-ul și execută singurul preflight ZIP/XML, urmat de o
+singură deschidere a workbookului pentru antet și date.
 
 ### P&L/TVA: shadow și protecție
 
@@ -715,6 +742,16 @@ luna; vanzarea foloseste lista si reward-ul active la data sa, iar rezultatele
 per perioada se insumeaza inaintea multiplicatorului lunar. Pragurile sunt
 exact 90% pentru plata 50% si 100% pentru plata integrala.
 
+`services/campaigns` este boundary-ul public unic pentru contextul campaniei,
+evaluarea Promo, sumarul Promo/Incentive și multiplicatorii per magazin.
+Dashboard, exporturile, reconcilierea ERP și publisherul Insight nu importă
+helpers privați din Dashboard. Endpointul `promotions-incentives` creează
+înainte de rezolvarea poolului un deadline monotonic request-wide,
+`CAMPAIGNS_REQUEST_DEADLINE_MS` (implicit 5000 ms, maximum 10000 ms), care
+include pool wait, snapshotul repeatable-read și compute-ul de răspuns. La
+expirare query-ul este anulat, conexiunea este eliberată, răspunsul este 504 și
+metrica folosește numai fazele finite `pool_wait`, `db_load`, `compute`.
+
 Promotiile speciale si concursurile pornesc din JSON-uri operationale din
 `data/`, care sunt gitignored pe server:
 
@@ -740,6 +777,19 @@ suprapuneri fara coliziuni de produse, cutoff neregresiv, coduri finite si
 nefractionare in actuals si mastere de produse materializate. Pointerul contine
 hashurile de config, material si surse. Un writer stale, o sursa lipsa sau un
 hash diferit nu muta pointerul si nu afecteaza ultima generatie buna.
+Import workerul parsează raportul Excel o singură dată și scrie în aceeași
+generație atât sursa originală, cât și `promo_actuals.json` canonic, agregat pe
+`(site_code, item_code)` cu qty/value nete și cutoff explicit. Configul și
+pointerul leagă ambele fișiere prin SHA-256. Dashboard și Campanii verifică
+hashurile și citesc exclusiv JSON-ul; lipsa materializării sau orice tamper
+oprește calculul fail-closed, fără Pandas/openpyxl în requestul web.
+Un deploy care găsește pointer Promo v1 trebuie să ruleze înainte de restart
+`backend/scripts/migrate_promo_generation_v1_to_v2.py` întâi dry-run, apoi cu
+`--apply`. Utilitarul reparsă toate sursele aprobate folosind foaia configurată,
+verifică hashurile și materialul business, copiază sursele și JSON-urile în
+generația privată și face un singur switch CAS. Pointerul v1 este păstrat
+byte-for-byte și hash-uit în generația v2; orice eroare lasă pointerul activ
+neschimbat. Restartul este permis numai după `migrated` sau `already_v2`.
 
 Evaluatorul comun `services/promotion_evaluation.py` clasifica sursa POS
 corectiva drept `complete`, `partial` sau `invalid`. Promo partial ramane

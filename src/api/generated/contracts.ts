@@ -1,135 +1,7 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'f97f73f17a1d18c7c0403e068947dfa9b86251b63b72d4098ef01afe019ff262' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'd7a6a67c7c71aa9b5710885796de4233ab8e3e0b46df5432b4b513b18ff46c3e' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
-
-export const RETAIL_DECIMAL_KEYS = new Set<string>([
-  "accessory_margin_pct",
-  "actual_realized",
-  "actual_sales",
-  "attainment_pct",
-  "avg_monthly_sales",
-  "avg_receipt",
-  "avg_receipt_value",
-  "avg_sales_16m",
-  "avg_seniority_months",
-  "base_salary_per_agent",
-  "base_value",
-  "best_month_sales",
-  "blended_factor",
-  "bon2acc_pct",
-  "bon2acc_points",
-  "bonuri_pct",
-  "bonuri_score",
-  "break_even_gross_sales",
-  "break_even_total",
-  "calculated_weight",
-  "cap_target",
-  "career_total_sales",
-  "cumulative_actual",
-  "cumulative_forecast",
-  "current_forecast",
-  "current_forecast_total",
-  "daily_average",
-  "daily_reference",
-  "daily_score",
-  "daily_vs_reference_pct",
-  "default_min_floor",
-  "default_previous_month_cap_pct",
-  "default_previous_month_floor_pct",
-  "delta_pct",
-  "delta_sales",
-  "difference",
-  "expected_sales_to_date",
-  "final_growth_vs_current_pct",
-  "final_target",
-  "final_total",
-  "floor_target",
-  "floor_total",
-  "focus_pct",
-  "focus_points",
-  "focus_score",
-  "focus_share_pct",
-  "forecast_factor",
-  "forecast_sales",
-  "forecast_target_pct",
-  "forecast_target_progress_pct",
-  "forecast_total",
-  "incentive_potential",
-  "incentive_sales",
-  "incentive_value",
-  "last_year_base_total",
-  "last_year_growth_pct",
-  "last_year_store_factor",
-  "last_year_target_total",
-  "max",
-  "medie_produs",
-  "medie_zilnica",
-  "min",
-  "min_floor",
-  "multiyear_store_factor",
-  "network_factor",
-  "normalized_weight",
-  "operating_costs",
-  "operating_costs_total",
-  "peer_daily_average",
-  "prc_focus_acc_qty",
-  "premium_glass_pct",
-  "premium_glass_score",
-  "premium_qty_share_pct",
-  "premium_sales",
-  "premium_sales_share_pct",
-  "previous_month_cap_pct",
-  "previous_month_floor_pct",
-  "proc_bon2acc",
-  "proc_realizare_target",
-  "promo_discount_value",
-  "promo_impact",
-  "promo_sales",
-  "proposed_growth_vs_current_pct",
-  "proposed_target",
-  "proposed_total",
-  "ratio",
-  "raw_adjustment",
-  "raw_estimate",
-  "realized",
-  "regular_sales",
-  "remaining_difference",
-  "report_value",
-  "retail_value",
-  "retention_rate",
-  "salary_cost_at_90_pct",
-  "salary_total",
-  "sales",
-  "sales_16m",
-  "sales_share_pct",
-  "sales_total",
-  "share_pct",
-  "stability_rate",
-  "store_factor",
-  "store_target",
-  "suggested_total_target",
-  "target",
-  "target_forecast_pct",
-  "target_pct",
-  "target_points",
-  "target_progress_pct",
-  "target_score",
-  "target_value",
-  "total_focus_sales",
-  "total_sales",
-  "total_score",
-  "total_target",
-  "total_vanzari",
-  "trend_daily_pct",
-  "used_adjustment",
-  "used_factor",
-  "value",
-  "value_reper",
-  "value_reper_score",
-  "weight",
-  "zone_factor",
-]);
 
 export interface RetailAgentEvaluationOption {
   "label": string;
@@ -854,6 +726,35 @@ export interface RetailExportFilters {
   "site_code"?: Array<string>;
 }
 
+export interface RetailExportOperationPublishUncertainDetail {
+  "job_id"?: string | null;
+  "operation_id"?: number | null;
+  "status": string;
+}
+
+export interface RetailExportOperationResponse {
+  "artifact_sha256"?: string | null;
+  "artifact_size"?: number | null;
+  "build_seconds"?: number | null;
+  "can_download"?: boolean;
+  "cell_count"?: number | null;
+  "created_at": string;
+  "error_code"?: string | null;
+  "expires_at"?: string | null;
+  "filename"?: string | null;
+  "finished_at"?: string | null;
+  "id": number;
+  "job_id": string;
+  "kind": "daily_metrics" | "daily_comparison";
+  "peak_rss_bytes"?: number | null;
+  "started_at"?: string | null;
+  "status": "queued" | "running" | "completed" | "failed" | "cancelled" | "expired";
+}
+
+export interface RetailExportOperationUnavailableResponse {
+  "detail": string | RetailExportOperationPublishUncertainDetail;
+}
+
 export interface RetailExportPreviewResponse {
   "columns": Array<RetailExportColumnDef>;
   "rows": Array<Record<string, unknown>>;
@@ -1059,8 +960,11 @@ export interface RetailImportHistoryEntry {
 }
 
 export interface RetailImportJobStatus {
+  "erp_result"?: RetailErpReconciliationResponse | null;
   "error"?: string | null;
   "job_id": string;
+  "job_kind"?: "sales" | "promo_actuals" | "erp_reconciliation";
+  "promo_result"?: RetailPromoActualImportResponse | null;
   "result"?: RetailImportResponse | null;
   "status": "queued" | "in_progress" | "complete" | "not_found";
 }
@@ -1652,6 +1556,22 @@ export interface RetailSalesGenerationPromotionRequest {
   "override_reason"?: string | null;
 }
 
+export interface RetailSessionLogoutResponse {
+  "logout_url": string;
+}
+
+export interface RetailSessionProfileResponse {
+  "email"?: string | null;
+  "groups": Array<string>;
+  "preferred_username"?: string | null;
+  "sub": string;
+}
+
+export interface RetailSessionStatusResponse {
+  "csrf_token": string;
+  "profile": RetailSessionProfileResponse;
+}
+
 export interface RetailStoreActivityChangeRequest {
   "expected_is_active": boolean;
   "is_active": boolean;
@@ -1724,6 +1644,14 @@ export interface RetailStoreTargetInput {
   "import_month": string;
   "site_code": string;
   "target_value": number | RetailDecimal;
+}
+
+export interface RetailStoreTargetsSaveResponse {
+  "inserted": number;
+}
+
+export interface RetailTargetApiErrorResponse {
+  "detail": string | Record<string, unknown>;
 }
 
 export interface RetailTargetCalculationDetails {
@@ -2217,6 +2145,11 @@ export type RetailOperationId =
   'get_summary_api_dashboard_summary_get' |
   'get_catalog_api_exports_catalog_get' |
   'download_export_api_exports_download_post' |
+  'create_export_operation_api_exports_operations_post' |
+  'get_resumable_export_operation_api_exports_operations_resumable_get' |
+  'get_export_operation_api_exports_operations__operation_id__get' |
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post' |
+  'download_export_operation_api_exports_operations__operation_id__download_get' |
   'preview_export_api_exports_preview_post' |
   'get_available_months_api_filters_months_get' |
   'get_filter_options_api_filters_options_get' |
@@ -2437,6 +2370,39 @@ export interface RetailOperationResponses {
     '422': RetailHTTPValidationError;
   }
 
+  'create_export_operation_api_exports_operations_post': {
+    '200': RetailExportOperationResponse;
+    '400': void;
+    '409': void;
+    '422': RetailHTTPValidationError;
+    '503': RetailExportOperationUnavailableResponse;
+  }
+
+  'get_resumable_export_operation_api_exports_operations_resumable_get': {
+    '200': RetailExportOperationResponse | null;
+  }
+
+  'get_export_operation_api_exports_operations__operation_id__get': {
+    '200': RetailExportOperationResponse;
+    '404': void;
+    '422': RetailHTTPValidationError;
+  }
+
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': {
+    '200': RetailExportOperationResponse;
+    '404': void;
+    '409': void;
+    '422': RetailHTTPValidationError;
+  }
+
+  'download_export_operation_api_exports_operations__operation_id__download_get': {
+    '200': Blob;
+    '404': void;
+    '409': void;
+    '410': void;
+    '422': RetailHTTPValidationError;
+  }
+
   'preview_export_api_exports_preview_post': {
     '200': RetailExportPreviewResponse;
     '422': RetailHTTPValidationError;
@@ -2556,7 +2522,7 @@ export interface RetailOperationResponses {
   }
 
   'reconcile_erp_report_file_api_import_erp_reconciliation_post': {
-    '200': RetailErpReconciliationResponse;
+    '200': RetailImportJobStatus;
     '422': RetailHTTPValidationError;
   }
 
@@ -2570,7 +2536,7 @@ export interface RetailOperationResponses {
   }
 
   'upload_promo_actuals_file_api_import_promo_actuals_post': {
-    '200': RetailPromoActualImportResponse;
+    '200': RetailImportJobStatus;
     '422': RetailHTTPValidationError;
   }
 
@@ -2617,7 +2583,7 @@ export interface RetailOperationResponses {
   }
 
   'save_targets_api_stores_targets_post': {
-    '200': Record<string, number>;
+    '200': RetailStoreTargetsSaveResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -2628,6 +2594,7 @@ export interface RetailOperationResponses {
 
   'get_context_api_target_calculator_context_get': {
     '200': RetailTargetContextResponse;
+    '404': RetailTargetApiErrorResponse;
   }
 
   'list_scenarios_api_target_calculator_scenarios_get': {
@@ -2636,31 +2603,44 @@ export interface RetailOperationResponses {
 
   'calculate_scenario_api_target_calculator_scenarios_calculate_post': {
     '200': RetailTargetScenarioResponse;
+    '400': RetailTargetApiErrorResponse;
+    '409': RetailTargetApiErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
   'get_scenario_api_target_calculator_scenarios__scenario_id__get': {
     '200': RetailTargetScenarioResponse;
+    '404': RetailTargetApiErrorResponse;
+    '409': RetailTargetApiErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
   'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': {
     '200': Blob;
+    '404': RetailTargetApiErrorResponse;
+    '409': RetailTargetApiErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
   'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': {
     '200': RetailTargetScenarioResponse;
+    '400': RetailTargetApiErrorResponse;
+    '404': RetailTargetApiErrorResponse;
+    '409': RetailTargetApiErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
   'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': {
     '200': RetailTargetScenarioResponse;
+    '400': RetailTargetApiErrorResponse;
+    '404': RetailTargetApiErrorResponse;
+    '409': RetailTargetApiErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
   'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': {
     '200': RetailTargetStoreDetailResponse;
+    '404': RetailTargetApiErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -2705,7 +2685,7 @@ export interface RetailOperationResponses {
   }
 
   'session_status_auth_session_get': {
-    '200': unknown;
+    '200': RetailSessionStatusResponse;
   }
 
   'session_login_auth_session_login_get': {
@@ -2713,7 +2693,7 @@ export interface RetailOperationResponses {
   }
 
   'session_logout_auth_session_logout_post': {
-    '200': unknown;
+    '200': RetailSessionLogoutResponse;
   }
 
   'metrics_metrics_get': {
@@ -2772,104 +2752,2580 @@ export interface RetailOperationResponses {
 
 }
 
+export interface RetailOperationSuccesses {
+  'get_agent_evaluation_api_agents_evaluation_get': RetailAgentEvaluationResponse;
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': RetailAgentEvaluationV2Response;
+  'get_agent_history_api_agents_history_get': RetailAgentHistoryResponse;
+  'get_agents_list_api_agents_list_get': RetailAgentListResponse;
+  'get_agents_movement_api_agents_movement_get': RetailAgentMovementResponse;
+  'get_agents_overview_api_agents_overview_get': RetailAgentsOverviewResponse;
+  'get_agent_profile_api_agents_profile_get': RetailAgentProfileResponse;
+  'get_stores_coverage_api_agents_stores_coverage_get': RetailStoreCoverageResponse;
+  'get_current_ai_forecast_api_ai_forecast_current_get': RetailAiForecastResponse;
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': RetailAiForecastRollingResponse;
+  'get_focus_history_api_campaigns_history_get': RetailFocusHistoryResponse;
+  'get_campaign_overview_api_campaigns_overview_get': RetailCampaignSnapshot;
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': RetailCampaignsPromotionsResponse;
+  'get_active_contest_api_contests_active_get': RetailContestResponse | null;
+  'get_active_contests_api_contests_active_all_get': Array<RetailContestResponse>;
+  'get_alerts_api_crm_alerts_get': Array<RetailCrmAlertResponse>;
+  'get_scores_api_crm_scores_get': Array<RetailCrmScoreResponse>;
+  'recalculate_scores_api_crm_scores_recalculate_post': RetailCrmRecalculateResponse;
+  'get_dashboard_all_api_dashboard_all_get': RetailDashboardAllResponse;
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': RetailDashboardAllBatchResponse;
+  'get_daily_sales_api_dashboard_daily_get': Array<RetailDailySalesPoint>;
+  'get_monthly_history_api_dashboard_history_get': RetailDashboardHistoryResponse;
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': RetailDashboardAllBatchResponse;
+  'get_history_by_year_api_dashboard_history_year_get': RetailYearHistoryResponse;
+  'get_performance_detail_api_dashboard_performance_detail_get': RetailPerformanceDetailResponse;
+  'get_premium_glass_api_dashboard_premium_glass_get': RetailPremiumGlassAnalysis;
+  'get_special_cards_api_dashboard_special_cards_get': RetailDashboardSpecialCardsResponse;
+  'get_summary_api_dashboard_summary_get': RetailDashboardSummary;
+  'get_catalog_api_exports_catalog_get': RetailExportCatalogResponse;
+  'download_export_api_exports_download_post': Blob;
+  'create_export_operation_api_exports_operations_post': RetailExportOperationResponse;
+  'get_resumable_export_operation_api_exports_operations_resumable_get': RetailExportOperationResponse | null;
+  'get_export_operation_api_exports_operations__operation_id__get': RetailExportOperationResponse;
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': RetailExportOperationResponse;
+  'download_export_operation_api_exports_operations__operation_id__download_get': Blob;
+  'preview_export_api_exports_preview_post': RetailExportPreviewResponse;
+  'get_available_months_api_filters_months_get': Array<string>;
+  'get_filter_options_api_filters_options_get': RetailFilterOptions;
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': Record<string, unknown>;
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': Record<string, unknown>;
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': Record<string, unknown>;
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': unknown;
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': Record<string, unknown>;
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': Record<string, unknown>;
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': Record<string, unknown>;
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<string, unknown>;
+  'grile_monthly_run_api_grile_monthly_run_post': Record<string, unknown>;
+  'grile_overview_api_grile_overview_get': Record<string, unknown>;
+  'grile_run_api_grile_run_post': Record<string, unknown>;
+  'grile_run_status_api_grile_run_status_get': Record<string, unknown>;
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': Record<string, unknown>;
+  'get_asm_perf_api_hr_asm_performance_get': Array<RetailHrAsmPerformanceItem>;
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': Array<RetailHrAsmHistoryItem>;
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': RetailHrAsmSalaryBreakdown;
+  'get_leave_requests_api_hr_leave_requests_get': RetailLeaveRequestListResponse;
+  'post_leave_request_api_hr_leave_requests_post': RetailLeaveRequestItem;
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': RetailLeaveRequestItem;
+  'get_manager_overview_api_hr_manager_overview_get': Array<RetailHrManagerOverviewItem>;
+  'get_performance_api_hr_performance__agent_name__get': Array<RetailHrAgentPerformanceItem>;
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': RetailImportJobStatus;
+  'get_import_history_api_import_history_get': Array<RetailImportHistoryEntry>;
+  'get_import_job_status_api_import_jobs__job_id__get': RetailImportJobStatus;
+  'upload_promo_actuals_file_api_import_promo_actuals_post': RetailImportJobStatus;
+  'upload_sales_file_api_import_sales_post': RetailImportJobStatus;
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': RetailImportJobStatus;
+  'annual_api_store_pnl_annual_get': RetailPnlAnnualResponse;
+  'months_api_store_pnl_months_get': RetailPnlMonthsResponse;
+  'overview_api_store_pnl_overview_get': RetailPnlOverviewResponse;
+  'pnl_permissions_api_store_pnl_permissions_get': RetailPnlPermissionsResponse;
+  'regions_api_store_pnl_regions_get': RetailPnlRegionsResponse;
+  'stores_api_store_pnl_stores_get': RetailPnlStoresResponse;
+  'list_stores_api_stores_get': Array<RetailStoreOption>;
+  'save_targets_api_stores_targets_post': RetailStoreTargetsSaveResponse;
+  'change_store_activity_api_stores__site_code__activity_post': RetailStoreActivityChangeResponse;
+  'get_context_api_target_calculator_context_get': RetailTargetContextResponse;
+  'list_scenarios_api_target_calculator_scenarios_get': Array<RetailTargetScenarioSummaryResponse>;
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': RetailTargetScenarioResponse;
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': RetailTargetScenarioResponse;
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': Blob;
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': RetailTargetScenarioResponse;
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': RetailTargetScenarioResponse;
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': RetailTargetStoreDetailResponse;
+  'get_tasks_api_tasks_get': RetailTaskListResponse;
+  'post_task_api_tasks_post': RetailTaskItem;
+  'remove_task_api_tasks__task_id__delete': RetailTaskDeleteResponse;
+  'patch_task_api_tasks__task_id__patch': RetailTaskItem;
+  'get_visits_report_api_visits_report_get': RetailVisitReportResponse;
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': Blob;
+  'get_visits_tree_api_visits_report_tree_get': RetailVisitTreeResponse;
+  'get_visit_detail_api_visits_report_visit__visit_id__get': RetailVisitDetail;
+  'session_status_auth_session_get': RetailSessionStatusResponse;
+  'session_login_auth_session_login_get': unknown;
+  'session_logout_auth_session_logout_post': RetailSessionLogoutResponse;
+  'metrics_metrics_get': unknown;
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': RetailSalaryHistoryResponse;
+  'agents_summary_salarii_agents_summary_get': RetailSalaryAgentsSummaryResponse;
+  'agent_history_salarii_agents__person_id__history_get': RetailSalaryHistoryResponse;
+  'audit_salary_export_salarii_audit_export_post': void;
+  'salarii_evolution_salarii_evolution_get': Array<RetailSalaryEvolutionPoint>;
+  'salarii_overview_salarii_overview_get': RetailSalaryOverviewResponse;
+  'list_records_salarii_records_get': Array<RetailSalaryRecordPublic>;
+  'salarii_stores_salarii_stores_get': Array<RetailSalaryStoreOption>;
+  'salarii_summary_salarii_summary_get': RetailSalarySummaryResponse;
+  'salarii_trend_salarii_trend_get': Array<RetailSalaryTrendPoint>;
+}
+
+export interface RetailOperationErrors {
+  'get_agent_evaluation_api_agents_evaluation_get': { '422': RetailHTTPValidationError };
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': { '422': RetailHTTPValidationError };
+  'get_agent_history_api_agents_history_get': { '422': RetailHTTPValidationError };
+  'get_agents_list_api_agents_list_get': { '422': RetailHTTPValidationError };
+  'get_agents_movement_api_agents_movement_get': { '422': RetailHTTPValidationError };
+  'get_agents_overview_api_agents_overview_get': { '422': RetailHTTPValidationError };
+  'get_agent_profile_api_agents_profile_get': { '422': RetailHTTPValidationError };
+  'get_stores_coverage_api_agents_stores_coverage_get': { '422': RetailHTTPValidationError };
+  'get_current_ai_forecast_api_ai_forecast_current_get': { '422': RetailHTTPValidationError };
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { '422': RetailHTTPValidationError };
+  'get_focus_history_api_campaigns_history_get': { '422': RetailHTTPValidationError };
+  'get_campaign_overview_api_campaigns_overview_get': { '422': RetailHTTPValidationError };
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': { '422': RetailHTTPValidationError };
+  'get_active_contest_api_contests_active_get': { '422': RetailHTTPValidationError };
+  'get_active_contests_api_contests_active_all_get': { '422': RetailHTTPValidationError };
+  'get_alerts_api_crm_alerts_get': { '422': RetailHTTPValidationError };
+  'get_scores_api_crm_scores_get': { '422': RetailHTTPValidationError };
+  'recalculate_scores_api_crm_scores_recalculate_post': { '422': RetailHTTPValidationError };
+  'get_dashboard_all_api_dashboard_all_get': { '422': RetailHTTPValidationError };
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': { '422': RetailHTTPValidationError };
+  'get_daily_sales_api_dashboard_daily_get': { '422': RetailHTTPValidationError };
+  'get_monthly_history_api_dashboard_history_get': { '422': RetailHTTPValidationError };
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': { '422': RetailHTTPValidationError };
+  'get_history_by_year_api_dashboard_history_year_get': { '422': RetailHTTPValidationError };
+  'get_performance_detail_api_dashboard_performance_detail_get': { '422': RetailHTTPValidationError };
+  'get_premium_glass_api_dashboard_premium_glass_get': { '422': RetailHTTPValidationError };
+  'get_special_cards_api_dashboard_special_cards_get': { '422': RetailHTTPValidationError };
+  'get_summary_api_dashboard_summary_get': { '422': RetailHTTPValidationError };
+  'get_catalog_api_exports_catalog_get': Record<never, never>;
+  'download_export_api_exports_download_post': { '422': RetailHTTPValidationError };
+  'create_export_operation_api_exports_operations_post': { '400': void; '409': void; '422': RetailHTTPValidationError; '503': RetailExportOperationUnavailableResponse };
+  'get_resumable_export_operation_api_exports_operations_resumable_get': Record<never, never>;
+  'get_export_operation_api_exports_operations__operation_id__get': { '404': void; '422': RetailHTTPValidationError };
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': { '404': void; '409': void; '422': RetailHTTPValidationError };
+  'download_export_operation_api_exports_operations__operation_id__download_get': { '404': void; '409': void; '410': void; '422': RetailHTTPValidationError };
+  'preview_export_api_exports_preview_post': { '422': RetailHTTPValidationError };
+  'get_available_months_api_filters_months_get': Record<never, never>;
+  'get_filter_options_api_filters_options_get': { '422': RetailHTTPValidationError };
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': { '422': RetailHTTPValidationError };
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': { '422': RetailHTTPValidationError };
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': { '422': RetailHTTPValidationError };
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': { '422': RetailHTTPValidationError };
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': { '422': RetailHTTPValidationError };
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': { '422': RetailHTTPValidationError };
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': { '422': RetailHTTPValidationError };
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<never, never>;
+  'grile_monthly_run_api_grile_monthly_run_post': { '422': RetailHTTPValidationError };
+  'grile_overview_api_grile_overview_get': { '422': RetailHTTPValidationError };
+  'grile_run_api_grile_run_post': { '422': RetailHTTPValidationError };
+  'grile_run_status_api_grile_run_status_get': { '422': RetailHTTPValidationError };
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': { '422': RetailHTTPValidationError };
+  'get_asm_perf_api_hr_asm_performance_get': { '422': RetailHTTPValidationError };
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { '422': RetailHTTPValidationError };
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': { '422': RetailHTTPValidationError };
+  'get_leave_requests_api_hr_leave_requests_get': { '422': RetailHTTPValidationError };
+  'post_leave_request_api_hr_leave_requests_post': { '422': RetailHTTPValidationError };
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': { '422': RetailHTTPValidationError };
+  'get_manager_overview_api_hr_manager_overview_get': { '422': RetailHTTPValidationError };
+  'get_performance_api_hr_performance__agent_name__get': { '422': RetailHTTPValidationError };
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': { '422': RetailHTTPValidationError };
+  'get_import_history_api_import_history_get': Record<never, never>;
+  'get_import_job_status_api_import_jobs__job_id__get': { '422': RetailHTTPValidationError };
+  'upload_promo_actuals_file_api_import_promo_actuals_post': { '422': RetailHTTPValidationError };
+  'upload_sales_file_api_import_sales_post': { '422': RetailHTTPValidationError };
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { '422': RetailHTTPValidationError };
+  'annual_api_store_pnl_annual_get': { '422': RetailHTTPValidationError };
+  'months_api_store_pnl_months_get': Record<never, never>;
+  'overview_api_store_pnl_overview_get': { '422': RetailHTTPValidationError };
+  'pnl_permissions_api_store_pnl_permissions_get': Record<never, never>;
+  'regions_api_store_pnl_regions_get': { '422': RetailHTTPValidationError };
+  'stores_api_store_pnl_stores_get': { '422': RetailHTTPValidationError };
+  'list_stores_api_stores_get': Record<never, never>;
+  'save_targets_api_stores_targets_post': { '422': RetailHTTPValidationError };
+  'change_store_activity_api_stores__site_code__activity_post': { '422': RetailHTTPValidationError };
+  'get_context_api_target_calculator_context_get': { '404': RetailTargetApiErrorResponse };
+  'list_scenarios_api_target_calculator_scenarios_get': Record<never, never>;
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': { '400': RetailTargetApiErrorResponse; '409': RetailTargetApiErrorResponse; '422': RetailHTTPValidationError };
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': { '404': RetailTargetApiErrorResponse; '409': RetailTargetApiErrorResponse; '422': RetailHTTPValidationError };
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': { '404': RetailTargetApiErrorResponse; '409': RetailTargetApiErrorResponse; '422': RetailHTTPValidationError };
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': { '400': RetailTargetApiErrorResponse; '404': RetailTargetApiErrorResponse; '409': RetailTargetApiErrorResponse; '422': RetailHTTPValidationError };
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': { '400': RetailTargetApiErrorResponse; '404': RetailTargetApiErrorResponse; '409': RetailTargetApiErrorResponse; '422': RetailHTTPValidationError };
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': { '404': RetailTargetApiErrorResponse; '422': RetailHTTPValidationError };
+  'get_tasks_api_tasks_get': { '422': RetailHTTPValidationError };
+  'post_task_api_tasks_post': { '422': RetailHTTPValidationError };
+  'remove_task_api_tasks__task_id__delete': { '422': RetailHTTPValidationError };
+  'patch_task_api_tasks__task_id__patch': { '422': RetailHTTPValidationError };
+  'get_visits_report_api_visits_report_get': { '422': RetailHTTPValidationError };
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': { '422': RetailHTTPValidationError };
+  'get_visits_tree_api_visits_report_tree_get': { '422': RetailHTTPValidationError };
+  'get_visit_detail_api_visits_report_visit__visit_id__get': { '422': RetailHTTPValidationError };
+  'session_status_auth_session_get': Record<never, never>;
+  'session_login_auth_session_login_get': Record<never, never>;
+  'session_logout_auth_session_logout_post': Record<never, never>;
+  'metrics_metrics_get': Record<never, never>;
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { '422': RetailHTTPValidationError };
+  'agents_summary_salarii_agents_summary_get': { '422': RetailHTTPValidationError };
+  'agent_history_salarii_agents__person_id__history_get': { '422': RetailHTTPValidationError };
+  'audit_salary_export_salarii_audit_export_post': { '422': RetailHTTPValidationError };
+  'salarii_evolution_salarii_evolution_get': { '422': RetailHTTPValidationError };
+  'salarii_overview_salarii_overview_get': { '422': RetailHTTPValidationError };
+  'list_records_salarii_records_get': { '422': RetailHTTPValidationError };
+  'salarii_stores_salarii_stores_get': { '422': RetailHTTPValidationError };
+  'salarii_summary_salarii_summary_get': { '422': RetailHTTPValidationError };
+  'salarii_trend_salarii_trend_get': { '422': RetailHTTPValidationError };
+}
+
+export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationId]: ReadonlySet<string> } = {
+  'get_agent_evaluation_api_agents_evaluation_get': new Set<string>([
+    '422',
+  ]),
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': new Set<string>([
+    '422',
+  ]),
+  'get_agent_history_api_agents_history_get': new Set<string>([
+    '422',
+  ]),
+  'get_agents_list_api_agents_list_get': new Set<string>([
+    '422',
+  ]),
+  'get_agents_movement_api_agents_movement_get': new Set<string>([
+    '422',
+  ]),
+  'get_agents_overview_api_agents_overview_get': new Set<string>([
+    '422',
+  ]),
+  'get_agent_profile_api_agents_profile_get': new Set<string>([
+    '422',
+  ]),
+  'get_stores_coverage_api_agents_stores_coverage_get': new Set<string>([
+    '422',
+  ]),
+  'get_current_ai_forecast_api_ai_forecast_current_get': new Set<string>([
+    '422',
+  ]),
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
+    '422',
+  ]),
+  'get_focus_history_api_campaigns_history_get': new Set<string>([
+    '422',
+  ]),
+  'get_campaign_overview_api_campaigns_overview_get': new Set<string>([
+    '422',
+  ]),
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': new Set<string>([
+    '422',
+  ]),
+  'get_active_contest_api_contests_active_get': new Set<string>([
+    '422',
+  ]),
+  'get_active_contests_api_contests_active_all_get': new Set<string>([
+    '422',
+  ]),
+  'get_alerts_api_crm_alerts_get': new Set<string>([
+    '422',
+  ]),
+  'get_scores_api_crm_scores_get': new Set<string>([
+    '422',
+  ]),
+  'recalculate_scores_api_crm_scores_recalculate_post': new Set<string>([
+    '422',
+  ]),
+  'get_dashboard_all_api_dashboard_all_get': new Set<string>([
+    '422',
+  ]),
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': new Set<string>([
+    '422',
+  ]),
+  'get_daily_sales_api_dashboard_daily_get': new Set<string>([
+    '422',
+  ]),
+  'get_monthly_history_api_dashboard_history_get': new Set<string>([
+    '422',
+  ]),
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': new Set<string>([
+    '422',
+  ]),
+  'get_history_by_year_api_dashboard_history_year_get': new Set<string>([
+    '422',
+  ]),
+  'get_performance_detail_api_dashboard_performance_detail_get': new Set<string>([
+    '422',
+  ]),
+  'get_premium_glass_api_dashboard_premium_glass_get': new Set<string>([
+    '422',
+  ]),
+  'get_special_cards_api_dashboard_special_cards_get': new Set<string>([
+    '422',
+  ]),
+  'get_summary_api_dashboard_summary_get': new Set<string>([
+    '422',
+  ]),
+  'get_catalog_api_exports_catalog_get': new Set<string>([
+  ]),
+  'download_export_api_exports_download_post': new Set<string>([
+    '422',
+  ]),
+  'create_export_operation_api_exports_operations_post': new Set<string>([
+    '400',
+    '409',
+    '422',
+    '503',
+  ]),
+  'get_resumable_export_operation_api_exports_operations_resumable_get': new Set<string>([
+  ]),
+  'get_export_operation_api_exports_operations__operation_id__get': new Set<string>([
+    '404',
+    '422',
+  ]),
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': new Set<string>([
+    '404',
+    '409',
+    '422',
+  ]),
+  'download_export_operation_api_exports_operations__operation_id__download_get': new Set<string>([
+    '404',
+    '409',
+    '410',
+    '422',
+  ]),
+  'preview_export_api_exports_preview_post': new Set<string>([
+    '422',
+  ]),
+  'get_available_months_api_filters_months_get': new Set<string>([
+  ]),
+  'get_filter_options_api_filters_options_get': new Set<string>([
+    '422',
+  ]),
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': new Set<string>([
+    '422',
+  ]),
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': new Set<string>([
+    '422',
+  ]),
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': new Set<string>([
+    '422',
+  ]),
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': new Set<string>([
+    '422',
+  ]),
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': new Set<string>([
+    '422',
+  ]),
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': new Set<string>([
+    '422',
+  ]),
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': new Set<string>([
+    '422',
+  ]),
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': new Set<string>([
+  ]),
+  'grile_monthly_run_api_grile_monthly_run_post': new Set<string>([
+    '422',
+  ]),
+  'grile_overview_api_grile_overview_get': new Set<string>([
+    '422',
+  ]),
+  'grile_run_api_grile_run_post': new Set<string>([
+    '422',
+  ]),
+  'grile_run_status_api_grile_run_status_get': new Set<string>([
+    '422',
+  ]),
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
+    '422',
+  ]),
+  'get_asm_perf_api_hr_asm_performance_get': new Set<string>([
+    '422',
+  ]),
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': new Set<string>([
+    '422',
+  ]),
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': new Set<string>([
+    '422',
+  ]),
+  'get_leave_requests_api_hr_leave_requests_get': new Set<string>([
+    '422',
+  ]),
+  'post_leave_request_api_hr_leave_requests_post': new Set<string>([
+    '422',
+  ]),
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': new Set<string>([
+    '422',
+  ]),
+  'get_manager_overview_api_hr_manager_overview_get': new Set<string>([
+    '422',
+  ]),
+  'get_performance_api_hr_performance__agent_name__get': new Set<string>([
+    '422',
+  ]),
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': new Set<string>([
+    '422',
+  ]),
+  'get_import_history_api_import_history_get': new Set<string>([
+  ]),
+  'get_import_job_status_api_import_jobs__job_id__get': new Set<string>([
+    '422',
+  ]),
+  'upload_promo_actuals_file_api_import_promo_actuals_post': new Set<string>([
+    '422',
+  ]),
+  'upload_sales_file_api_import_sales_post': new Set<string>([
+    '422',
+  ]),
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': new Set<string>([
+    '422',
+  ]),
+  'annual_api_store_pnl_annual_get': new Set<string>([
+    '422',
+  ]),
+  'months_api_store_pnl_months_get': new Set<string>([
+  ]),
+  'overview_api_store_pnl_overview_get': new Set<string>([
+    '422',
+  ]),
+  'pnl_permissions_api_store_pnl_permissions_get': new Set<string>([
+  ]),
+  'regions_api_store_pnl_regions_get': new Set<string>([
+    '422',
+  ]),
+  'stores_api_store_pnl_stores_get': new Set<string>([
+    '422',
+  ]),
+  'list_stores_api_stores_get': new Set<string>([
+  ]),
+  'save_targets_api_stores_targets_post': new Set<string>([
+    '422',
+  ]),
+  'change_store_activity_api_stores__site_code__activity_post': new Set<string>([
+    '422',
+  ]),
+  'get_context_api_target_calculator_context_get': new Set<string>([
+    '404',
+  ]),
+  'list_scenarios_api_target_calculator_scenarios_get': new Set<string>([
+  ]),
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': new Set<string>([
+    '400',
+    '409',
+    '422',
+  ]),
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': new Set<string>([
+    '404',
+    '409',
+    '422',
+  ]),
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': new Set<string>([
+    '404',
+    '409',
+    '422',
+  ]),
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': new Set<string>([
+    '400',
+    '404',
+    '409',
+    '422',
+  ]),
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': new Set<string>([
+    '400',
+    '404',
+    '409',
+    '422',
+  ]),
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': new Set<string>([
+    '404',
+    '422',
+  ]),
+  'get_tasks_api_tasks_get': new Set<string>([
+    '422',
+  ]),
+  'post_task_api_tasks_post': new Set<string>([
+    '422',
+  ]),
+  'remove_task_api_tasks__task_id__delete': new Set<string>([
+    '422',
+  ]),
+  'patch_task_api_tasks__task_id__patch': new Set<string>([
+    '422',
+  ]),
+  'get_visits_report_api_visits_report_get': new Set<string>([
+    '422',
+  ]),
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': new Set<string>([
+    '422',
+  ]),
+  'get_visits_tree_api_visits_report_tree_get': new Set<string>([
+    '422',
+  ]),
+  'get_visit_detail_api_visits_report_visit__visit_id__get': new Set<string>([
+    '422',
+  ]),
+  'session_status_auth_session_get': new Set<string>([
+  ]),
+  'session_login_auth_session_login_get': new Set<string>([
+  ]),
+  'session_logout_auth_session_logout_post': new Set<string>([
+  ]),
+  'metrics_metrics_get': new Set<string>([
+  ]),
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': new Set<string>([
+    '422',
+  ]),
+  'agents_summary_salarii_agents_summary_get': new Set<string>([
+    '422',
+  ]),
+  'agent_history_salarii_agents__person_id__history_get': new Set<string>([
+    '422',
+  ]),
+  'audit_salary_export_salarii_audit_export_post': new Set<string>([
+    '422',
+  ]),
+  'salarii_evolution_salarii_evolution_get': new Set<string>([
+    '422',
+  ]),
+  'salarii_overview_salarii_overview_get': new Set<string>([
+    '422',
+  ]),
+  'list_records_salarii_records_get': new Set<string>([
+    '422',
+  ]),
+  'salarii_stores_salarii_stores_get': new Set<string>([
+    '422',
+  ]),
+  'salarii_summary_salarii_summary_get': new Set<string>([
+    '422',
+  ]),
+  'salarii_trend_salarii_trend_get': new Set<string>([
+    '422',
+  ]),
+};
+
+export interface RetailOperationQueries {
+  'get_agent_evaluation_api_agents_evaluation_get': { "month"?: string | null; "months"?: string | null; "firma"?: string | null; "asm"?: string | null; "site_code"?: string | null };
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': { "month"?: string | null; "months"?: string | null; "firma"?: string | null; "asm"?: string | null; "site_code"?: string | null };
+  'get_agent_history_api_agents_history_get': { "agent": string };
+  'get_agents_list_api_agents_list_get': { "selected_month": string; "search"?: string | null; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null };
+  'get_agents_movement_api_agents_movement_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_agents_overview_api_agents_overview_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_agent_profile_api_agents_profile_get': { "agent": string; "selected_month": string };
+  'get_stores_coverage_api_agents_stores_coverage_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null };
+  'get_current_ai_forecast_api_ai_forecast_current_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null };
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null };
+  'get_focus_history_api_campaigns_history_get': { "month": string; "months_back"?: number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_campaign_overview_api_campaigns_overview_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': { "start_date": string; "end_date": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "promotion_key"?: string | null; "view"?: "all" | "promo" | "incentive"; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_active_contest_api_contests_active_get': { "month": string; "site_codes"?: string | null };
+  'get_active_contests_api_contests_active_all_get': { "month": string; "site_codes"?: string | null };
+  'get_alerts_api_crm_alerts_get': { "month": string };
+  'get_scores_api_crm_scores_get': { "month": string };
+  'recalculate_scores_api_crm_scores_recalculate_post': { "month": string };
+  'get_dashboard_all_api_dashboard_all_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': Record<never, never>;
+  'get_daily_sales_api_dashboard_daily_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_monthly_history_api_dashboard_history_get': { "month": string; "months_back"?: number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': Record<never, never>;
+  'get_history_by_year_api_dashboard_history_year_get': { "year": number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_performance_detail_api_dashboard_performance_detail_get': { "month": string; "level": "regional" | "store" | "agent"; "key": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_premium_glass_api_dashboard_premium_glass_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "surface"?: "all" | "screen" | "camera"; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_special_cards_api_dashboard_special_cards_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_summary_api_dashboard_summary_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_catalog_api_exports_catalog_get': Record<never, never>;
+  'download_export_api_exports_download_post': Record<never, never>;
+  'create_export_operation_api_exports_operations_post': Record<never, never>;
+  'get_resumable_export_operation_api_exports_operations_resumable_get': Record<never, never>;
+  'get_export_operation_api_exports_operations__operation_id__get': Record<never, never>;
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': Record<never, never>;
+  'download_export_operation_api_exports_operations__operation_id__download_get': Record<never, never>;
+  'preview_export_api_exports_preview_post': Record<never, never>;
+  'get_available_months_api_filters_months_get': Record<never, never>;
+  'get_filter_options_api_filters_options_get': { "month": string };
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': Record<never, never>;
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': Record<never, never>;
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': Record<never, never>;
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': Record<never, never>;
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': Record<never, never>;
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': Record<never, never>;
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': Record<never, never>;
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<never, never>;
+  'grile_monthly_run_api_grile_monthly_run_post': Record<never, never>;
+  'grile_overview_api_grile_overview_get': { "month"?: string | null };
+  'grile_run_api_grile_run_post': { "month"?: string | null };
+  'grile_run_status_api_grile_run_status_get': { "month"?: string | null };
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': { "month"?: string | null };
+  'get_asm_perf_api_hr_asm_performance_get': { "month": string; "regional"?: string | null };
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { "months"?: number };
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': { "month": string };
+  'get_leave_requests_api_hr_leave_requests_get': { "status"?: string | null; "agent_name"?: string | null; "limit"?: number; "offset"?: number };
+  'post_leave_request_api_hr_leave_requests_post': Record<never, never>;
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': Record<never, never>;
+  'get_manager_overview_api_hr_manager_overview_get': { "month": string };
+  'get_performance_api_hr_performance__agent_name__get': Record<never, never>;
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': Record<never, never>;
+  'get_import_history_api_import_history_get': Record<never, never>;
+  'get_import_job_status_api_import_jobs__job_id__get': Record<never, never>;
+  'upload_promo_actuals_file_api_import_promo_actuals_post': Record<never, never>;
+  'upload_sales_file_api_import_sales_post': Record<never, never>;
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': Record<never, never>;
+  'annual_api_store_pnl_annual_get': { "company"?: string | null; "site_code"?: string | null; "site_company"?: string | null; "regional"?: string | null };
+  'months_api_store_pnl_months_get': Record<never, never>;
+  'overview_api_store_pnl_overview_get': { "start_month": string; "end_month": string; "company"?: string | null; "site_code"?: string | null; "site_company"?: string | null; "regional"?: string | null };
+  'pnl_permissions_api_store_pnl_permissions_get': Record<never, never>;
+  'regions_api_store_pnl_regions_get': { "company"?: string | null };
+  'stores_api_store_pnl_stores_get': { "company"?: string | null; "regional"?: string | null };
+  'list_stores_api_stores_get': Record<never, never>;
+  'save_targets_api_stores_targets_post': Record<never, never>;
+  'change_store_activity_api_stores__site_code__activity_post': Record<never, never>;
+  'get_context_api_target_calculator_context_get': Record<never, never>;
+  'list_scenarios_api_target_calculator_scenarios_get': Record<never, never>;
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': Record<never, never>;
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': Record<never, never>;
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': Record<never, never>;
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': Record<never, never>;
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': Record<never, never>;
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': Record<never, never>;
+  'get_tasks_api_tasks_get': { "status"?: string | null; "assignee"?: string | null; "site_code"?: string | null; "limit"?: number; "offset"?: number };
+  'post_task_api_tasks_post': Record<never, never>;
+  'remove_task_api_tasks__task_id__delete': Record<never, never>;
+  'patch_task_api_tasks__task_id__patch': Record<never, never>;
+  'get_visits_report_api_visits_report_get': { "month": string; "firma"?: string | null; "rm"?: string | null; "asm"?: string | null; "magazin"?: string | null };
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': Record<never, never>;
+  'get_visits_tree_api_visits_report_tree_get': { "month": string; "firma"?: string | null; "rm"?: string | null; "asm"?: string | null; "magazin"?: string | null };
+  'get_visit_detail_api_visits_report_visit__visit_id__get': Record<never, never>;
+  'session_status_auth_session_get': Record<never, never>;
+  'session_login_auth_session_login_get': Record<never, never>;
+  'session_logout_auth_session_logout_post': Record<never, never>;
+  'metrics_metrics_get': Record<never, never>;
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { "agent_code": string; "site_code": string };
+  'agents_summary_salarii_agents_summary_get': { "q"?: string | null; "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null; "limit"?: number; "offset"?: number };
+  'agent_history_salarii_agents__person_id__history_get': Record<never, never>;
+  'audit_salary_export_salarii_audit_export_post': Record<never, never>;
+  'salarii_evolution_salarii_evolution_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null };
+  'salarii_overview_salarii_overview_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null };
+  'list_records_salarii_records_get': { "company_name"?: string | null; "year"?: number | null; "month"?: number | null; "site_code"?: string | null; "limit"?: number; "offset"?: number };
+  'salarii_stores_salarii_stores_get': { "company_name"?: string | null };
+  'salarii_summary_salarii_summary_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null };
+  'salarii_trend_salarii_trend_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null };
+}
+
+export interface RetailOperationPaths {
+  'get_agent_evaluation_api_agents_evaluation_get': Record<never, never>;
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': Record<never, never>;
+  'get_agent_history_api_agents_history_get': Record<never, never>;
+  'get_agents_list_api_agents_list_get': Record<never, never>;
+  'get_agents_movement_api_agents_movement_get': Record<never, never>;
+  'get_agents_overview_api_agents_overview_get': Record<never, never>;
+  'get_agent_profile_api_agents_profile_get': Record<never, never>;
+  'get_stores_coverage_api_agents_stores_coverage_get': Record<never, never>;
+  'get_current_ai_forecast_api_ai_forecast_current_get': Record<never, never>;
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': Record<never, never>;
+  'get_focus_history_api_campaigns_history_get': Record<never, never>;
+  'get_campaign_overview_api_campaigns_overview_get': Record<never, never>;
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': Record<never, never>;
+  'get_active_contest_api_contests_active_get': Record<never, never>;
+  'get_active_contests_api_contests_active_all_get': Record<never, never>;
+  'get_alerts_api_crm_alerts_get': Record<never, never>;
+  'get_scores_api_crm_scores_get': Record<never, never>;
+  'recalculate_scores_api_crm_scores_recalculate_post': Record<never, never>;
+  'get_dashboard_all_api_dashboard_all_get': Record<never, never>;
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': Record<never, never>;
+  'get_daily_sales_api_dashboard_daily_get': Record<never, never>;
+  'get_monthly_history_api_dashboard_history_get': Record<never, never>;
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': Record<never, never>;
+  'get_history_by_year_api_dashboard_history_year_get': Record<never, never>;
+  'get_performance_detail_api_dashboard_performance_detail_get': Record<never, never>;
+  'get_premium_glass_api_dashboard_premium_glass_get': Record<never, never>;
+  'get_special_cards_api_dashboard_special_cards_get': Record<never, never>;
+  'get_summary_api_dashboard_summary_get': Record<never, never>;
+  'get_catalog_api_exports_catalog_get': Record<never, never>;
+  'download_export_api_exports_download_post': Record<never, never>;
+  'create_export_operation_api_exports_operations_post': Record<never, never>;
+  'get_resumable_export_operation_api_exports_operations_resumable_get': Record<never, never>;
+  'get_export_operation_api_exports_operations__operation_id__get': { "operation_id": number };
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': { "operation_id": number };
+  'download_export_operation_api_exports_operations__operation_id__download_get': { "operation_id": number };
+  'preview_export_api_exports_preview_post': Record<never, never>;
+  'get_available_months_api_filters_months_get': Record<never, never>;
+  'get_filter_options_api_filters_options_get': Record<never, never>;
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': Record<never, never>;
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': { "operation_id": number };
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': Record<never, never>;
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': { "kind": "final" | "archive"; "month": string };
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': { "job_id": string };
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': { "manifest_id": number };
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': { "month": string };
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<never, never>;
+  'grile_monthly_run_api_grile_monthly_run_post': Record<never, never>;
+  'grile_overview_api_grile_overview_get': Record<never, never>;
+  'grile_run_api_grile_run_post': Record<never, never>;
+  'grile_run_status_api_grile_run_status_get': Record<never, never>;
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': { "site_code": string };
+  'get_asm_perf_api_hr_asm_performance_get': Record<never, never>;
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { "asm_name": string };
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': { "asm_name": string };
+  'get_leave_requests_api_hr_leave_requests_get': Record<never, never>;
+  'post_leave_request_api_hr_leave_requests_post': Record<never, never>;
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': { "request_id": number };
+  'get_manager_overview_api_hr_manager_overview_get': Record<never, never>;
+  'get_performance_api_hr_performance__agent_name__get': { "agent_name": string };
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': Record<never, never>;
+  'get_import_history_api_import_history_get': Record<never, never>;
+  'get_import_job_status_api_import_jobs__job_id__get': { "job_id": string };
+  'upload_promo_actuals_file_api_import_promo_actuals_post': Record<never, never>;
+  'upload_sales_file_api_import_sales_post': Record<never, never>;
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { "snapshot_id": number };
+  'annual_api_store_pnl_annual_get': Record<never, never>;
+  'months_api_store_pnl_months_get': Record<never, never>;
+  'overview_api_store_pnl_overview_get': Record<never, never>;
+  'pnl_permissions_api_store_pnl_permissions_get': Record<never, never>;
+  'regions_api_store_pnl_regions_get': Record<never, never>;
+  'stores_api_store_pnl_stores_get': Record<never, never>;
+  'list_stores_api_stores_get': Record<never, never>;
+  'save_targets_api_stores_targets_post': Record<never, never>;
+  'change_store_activity_api_stores__site_code__activity_post': { "site_code": string };
+  'get_context_api_target_calculator_context_get': Record<never, never>;
+  'list_scenarios_api_target_calculator_scenarios_get': Record<never, never>;
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': Record<never, never>;
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': { "scenario_id": number };
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': { "scenario_id": number };
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': { "scenario_id": number };
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': { "scenario_id": number };
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': { "scenario_id": number; "site_code": string };
+  'get_tasks_api_tasks_get': Record<never, never>;
+  'post_task_api_tasks_post': Record<never, never>;
+  'remove_task_api_tasks__task_id__delete': { "task_id": number };
+  'patch_task_api_tasks__task_id__patch': { "task_id": number };
+  'get_visits_report_api_visits_report_get': Record<never, never>;
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': { "visit_id": string; "filename": string };
+  'get_visits_tree_api_visits_report_tree_get': Record<never, never>;
+  'get_visit_detail_api_visits_report_visit__visit_id__get': { "visit_id": string };
+  'session_status_auth_session_get': Record<never, never>;
+  'session_login_auth_session_login_get': Record<never, never>;
+  'session_logout_auth_session_logout_post': Record<never, never>;
+  'metrics_metrics_get': Record<never, never>;
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': Record<never, never>;
+  'agents_summary_salarii_agents_summary_get': Record<never, never>;
+  'agent_history_salarii_agents__person_id__history_get': { "person_id": string };
+  'audit_salary_export_salarii_audit_export_post': Record<never, never>;
+  'salarii_evolution_salarii_evolution_get': Record<never, never>;
+  'salarii_overview_salarii_overview_get': Record<never, never>;
+  'list_records_salarii_records_get': Record<never, never>;
+  'salarii_stores_salarii_stores_get': Record<never, never>;
+  'salarii_summary_salarii_summary_get': Record<never, never>;
+  'salarii_trend_salarii_trend_get': Record<never, never>;
+}
+
+export interface RetailOperationBodies {
+  'get_agent_evaluation_api_agents_evaluation_get': undefined;
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': undefined;
+  'get_agent_history_api_agents_history_get': undefined;
+  'get_agents_list_api_agents_list_get': undefined;
+  'get_agents_movement_api_agents_movement_get': undefined;
+  'get_agents_overview_api_agents_overview_get': undefined;
+  'get_agent_profile_api_agents_profile_get': undefined;
+  'get_stores_coverage_api_agents_stores_coverage_get': undefined;
+  'get_current_ai_forecast_api_ai_forecast_current_get': undefined;
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': undefined;
+  'get_focus_history_api_campaigns_history_get': undefined;
+  'get_campaign_overview_api_campaigns_overview_get': undefined;
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': undefined;
+  'get_active_contest_api_contests_active_get': undefined;
+  'get_active_contests_api_contests_active_all_get': undefined;
+  'get_alerts_api_crm_alerts_get': undefined;
+  'get_scores_api_crm_scores_get': undefined;
+  'recalculate_scores_api_crm_scores_recalculate_post': undefined;
+  'get_dashboard_all_api_dashboard_all_get': undefined;
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': RetailDashboardAllBatchRequest;
+  'get_daily_sales_api_dashboard_daily_get': undefined;
+  'get_monthly_history_api_dashboard_history_get': undefined;
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': RetailDashboardAllBatchRequest;
+  'get_history_by_year_api_dashboard_history_year_get': undefined;
+  'get_performance_detail_api_dashboard_performance_detail_get': undefined;
+  'get_premium_glass_api_dashboard_premium_glass_get': undefined;
+  'get_special_cards_api_dashboard_special_cards_get': undefined;
+  'get_summary_api_dashboard_summary_get': undefined;
+  'get_catalog_api_exports_catalog_get': undefined;
+  'download_export_api_exports_download_post': RetailExportRequest;
+  'create_export_operation_api_exports_operations_post': RetailExportRequest;
+  'get_resumable_export_operation_api_exports_operations_resumable_get': undefined;
+  'get_export_operation_api_exports_operations__operation_id__get': undefined;
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': undefined;
+  'download_export_operation_api_exports_operations__operation_id__download_get': undefined;
+  'preview_export_api_exports_preview_post': RetailExportRequest;
+  'get_available_months_api_filters_months_get': undefined;
+  'get_filter_options_api_filters_options_get': undefined;
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': RetailAgentTargetRunRequest;
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': undefined;
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': RetailAgentTargetRunRequest;
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': undefined;
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': undefined;
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': undefined;
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': undefined;
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': undefined;
+  'grile_monthly_run_api_grile_monthly_run_post': RetailMonthlyRunRequest;
+  'grile_overview_api_grile_overview_get': undefined;
+  'grile_run_api_grile_run_post': undefined;
+  'grile_run_status_api_grile_run_status_get': undefined;
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': undefined;
+  'get_asm_perf_api_hr_asm_performance_get': undefined;
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': undefined;
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': undefined;
+  'get_leave_requests_api_hr_leave_requests_get': undefined;
+  'post_leave_request_api_hr_leave_requests_post': RetailLeaveRequestCreate;
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': RetailLeaveStatusUpdate;
+  'get_manager_overview_api_hr_manager_overview_get': undefined;
+  'get_performance_api_hr_performance__agent_name__get': undefined;
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': FormData;
+  'get_import_history_api_import_history_get': undefined;
+  'get_import_job_status_api_import_jobs__job_id__get': undefined;
+  'upload_promo_actuals_file_api_import_promo_actuals_post': FormData;
+  'upload_sales_file_api_import_sales_post': FormData;
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': RetailSalesGenerationPromotionRequest;
+  'annual_api_store_pnl_annual_get': undefined;
+  'months_api_store_pnl_months_get': undefined;
+  'overview_api_store_pnl_overview_get': undefined;
+  'pnl_permissions_api_store_pnl_permissions_get': undefined;
+  'regions_api_store_pnl_regions_get': undefined;
+  'stores_api_store_pnl_stores_get': undefined;
+  'list_stores_api_stores_get': undefined;
+  'save_targets_api_stores_targets_post': Array<RetailStoreTargetInput>;
+  'change_store_activity_api_stores__site_code__activity_post': RetailStoreActivityChangeRequest;
+  'get_context_api_target_calculator_context_get': undefined;
+  'list_scenarios_api_target_calculator_scenarios_get': undefined;
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': RetailTargetCalculationRequest;
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': undefined;
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': undefined;
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': RetailTargetFinalizeRequest;
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': RetailTargetFinalRowsRequest;
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': undefined;
+  'get_tasks_api_tasks_get': undefined;
+  'post_task_api_tasks_post': RetailTaskCreate;
+  'remove_task_api_tasks__task_id__delete': undefined;
+  'patch_task_api_tasks__task_id__patch': RetailTaskUpdate;
+  'get_visits_report_api_visits_report_get': undefined;
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': undefined;
+  'get_visits_tree_api_visits_report_tree_get': undefined;
+  'get_visit_detail_api_visits_report_visit__visit_id__get': undefined;
+  'session_status_auth_session_get': undefined;
+  'session_login_auth_session_login_get': undefined;
+  'session_logout_auth_session_logout_post': undefined;
+  'metrics_metrics_get': undefined;
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': undefined;
+  'agents_summary_salarii_agents_summary_get': undefined;
+  'agent_history_salarii_agents__person_id__history_get': undefined;
+  'audit_salary_export_salarii_audit_export_post': RetailSalaryExportAudit;
+  'salarii_evolution_salarii_evolution_get': undefined;
+  'salarii_overview_salarii_overview_get': undefined;
+  'list_records_salarii_records_get': undefined;
+  'salarii_stores_salarii_stores_get': undefined;
+  'salarii_summary_salarii_summary_get': undefined;
+  'salarii_trend_salarii_trend_get': undefined;
+}
+
+export interface RetailOperationMeta {
+  'get_agent_evaluation_api_agents_evaluation_get': { method: 'get'; path: '/api/agents/evaluation'; responseType: 'json' };
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': { method: 'get'; path: '/api/agents/evaluation-v2'; responseType: 'json' };
+  'get_agent_history_api_agents_history_get': { method: 'get'; path: '/api/agents/history'; responseType: 'json' };
+  'get_agents_list_api_agents_list_get': { method: 'get'; path: '/api/agents/list'; responseType: 'json' };
+  'get_agents_movement_api_agents_movement_get': { method: 'get'; path: '/api/agents/movement'; responseType: 'json' };
+  'get_agents_overview_api_agents_overview_get': { method: 'get'; path: '/api/agents/overview'; responseType: 'json' };
+  'get_agent_profile_api_agents_profile_get': { method: 'get'; path: '/api/agents/profile'; responseType: 'json' };
+  'get_stores_coverage_api_agents_stores_coverage_get': { method: 'get'; path: '/api/agents/stores-coverage'; responseType: 'json' };
+  'get_current_ai_forecast_api_ai_forecast_current_get': { method: 'get'; path: '/api/ai-forecast/current'; responseType: 'json' };
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { method: 'get'; path: '/api/ai-forecast/rolling-12'; responseType: 'json' };
+  'get_focus_history_api_campaigns_history_get': { method: 'get'; path: '/api/campaigns/history'; responseType: 'json' };
+  'get_campaign_overview_api_campaigns_overview_get': { method: 'get'; path: '/api/campaigns/overview'; responseType: 'json' };
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': { method: 'get'; path: '/api/campaigns/promotions-incentives'; responseType: 'json' };
+  'get_active_contest_api_contests_active_get': { method: 'get'; path: '/api/contests/active'; responseType: 'json' };
+  'get_active_contests_api_contests_active_all_get': { method: 'get'; path: '/api/contests/active/all'; responseType: 'json' };
+  'get_alerts_api_crm_alerts_get': { method: 'get'; path: '/api/crm/alerts'; responseType: 'json' };
+  'get_scores_api_crm_scores_get': { method: 'get'; path: '/api/crm/scores'; responseType: 'json' };
+  'recalculate_scores_api_crm_scores_recalculate_post': { method: 'post'; path: '/api/crm/scores/recalculate'; responseType: 'json' };
+  'get_dashboard_all_api_dashboard_all_get': { method: 'get'; path: '/api/dashboard/all'; responseType: 'json' };
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': { method: 'post'; path: '/api/dashboard/all-batch'; responseType: 'json' };
+  'get_daily_sales_api_dashboard_daily_get': { method: 'get'; path: '/api/dashboard/daily'; responseType: 'json' };
+  'get_monthly_history_api_dashboard_history_get': { method: 'get'; path: '/api/dashboard/history'; responseType: 'json' };
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': { method: 'post'; path: '/api/dashboard/history-details-batch'; responseType: 'json' };
+  'get_history_by_year_api_dashboard_history_year_get': { method: 'get'; path: '/api/dashboard/history-year'; responseType: 'json' };
+  'get_performance_detail_api_dashboard_performance_detail_get': { method: 'get'; path: '/api/dashboard/performance-detail'; responseType: 'json' };
+  'get_premium_glass_api_dashboard_premium_glass_get': { method: 'get'; path: '/api/dashboard/premium-glass'; responseType: 'json' };
+  'get_special_cards_api_dashboard_special_cards_get': { method: 'get'; path: '/api/dashboard/special-cards'; responseType: 'json' };
+  'get_summary_api_dashboard_summary_get': { method: 'get'; path: '/api/dashboard/summary'; responseType: 'json' };
+  'get_catalog_api_exports_catalog_get': { method: 'get'; path: '/api/exports/catalog'; responseType: 'json' };
+  'download_export_api_exports_download_post': { method: 'post'; path: '/api/exports/download'; responseType: 'blob' };
+  'create_export_operation_api_exports_operations_post': { method: 'post'; path: '/api/exports/operations'; responseType: 'json' };
+  'get_resumable_export_operation_api_exports_operations_resumable_get': { method: 'get'; path: '/api/exports/operations/resumable'; responseType: 'json' };
+  'get_export_operation_api_exports_operations__operation_id__get': { method: 'get'; path: '/api/exports/operations/{operation_id}'; responseType: 'json' };
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': { method: 'post'; path: '/api/exports/operations/{operation_id}/cancel'; responseType: 'json' };
+  'download_export_operation_api_exports_operations__operation_id__download_get': { method: 'get'; path: '/api/exports/operations/{operation_id}/download'; responseType: 'blob' };
+  'preview_export_api_exports_preview_post': { method: 'post'; path: '/api/exports/preview'; responseType: 'json' };
+  'get_available_months_api_filters_months_get': { method: 'get'; path: '/api/filters/months'; responseType: 'json' };
+  'get_filter_options_api_filters_options_get': { method: 'get'; path: '/api/filters/options'; responseType: 'json' };
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': { method: 'post'; path: '/api/grile/agent-targets/diff'; responseType: 'json' };
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': { method: 'get'; path: '/api/grile/agent-targets/operations/{operation_id}'; responseType: 'json' };
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': { method: 'post'; path: '/api/grile/agent-targets/sync'; responseType: 'json' };
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': { method: 'get'; path: '/api/grile/monthly/download/{kind}/{month}'; responseType: 'json' };
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': { method: 'get'; path: '/api/grile/monthly/job/{job_id}'; responseType: 'json' };
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': { method: 'post'; path: '/api/grile/monthly/manifests/{manifest_id}/approve'; responseType: 'json' };
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': { method: 'get'; path: '/api/grile/monthly/manifests/{month}'; responseType: 'json' };
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': { method: 'get'; path: '/api/grile/monthly/permissions'; responseType: 'json' };
+  'grile_monthly_run_api_grile_monthly_run_post': { method: 'post'; path: '/api/grile/monthly/run'; responseType: 'json' };
+  'grile_overview_api_grile_overview_get': { method: 'get'; path: '/api/grile/overview'; responseType: 'json' };
+  'grile_run_api_grile_run_post': { method: 'post'; path: '/api/grile/run'; responseType: 'json' };
+  'grile_run_status_api_grile_run_status_get': { method: 'get'; path: '/api/grile/run-status'; responseType: 'json' };
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': { method: 'post'; path: '/api/grile/stores/{site_code}/refresh'; responseType: 'json' };
+  'get_asm_perf_api_hr_asm_performance_get': { method: 'get'; path: '/api/hr/asm-performance'; responseType: 'json' };
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { method: 'get'; path: '/api/hr/asm-performance/{asm_name}/history'; responseType: 'json' };
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': { method: 'get'; path: '/api/hr/asm-salary/{asm_name}'; responseType: 'json' };
+  'get_leave_requests_api_hr_leave_requests_get': { method: 'get'; path: '/api/hr/leave-requests'; responseType: 'json' };
+  'post_leave_request_api_hr_leave_requests_post': { method: 'post'; path: '/api/hr/leave-requests'; responseType: 'json' };
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': { method: 'patch'; path: '/api/hr/leave-requests/{request_id}'; responseType: 'json' };
+  'get_manager_overview_api_hr_manager_overview_get': { method: 'get'; path: '/api/hr/manager-overview'; responseType: 'json' };
+  'get_performance_api_hr_performance__agent_name__get': { method: 'get'; path: '/api/hr/performance/{agent_name}'; responseType: 'json' };
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': { method: 'post'; path: '/api/import/erp-reconciliation'; responseType: 'json' };
+  'get_import_history_api_import_history_get': { method: 'get'; path: '/api/import/history'; responseType: 'json' };
+  'get_import_job_status_api_import_jobs__job_id__get': { method: 'get'; path: '/api/import/jobs/{job_id}'; responseType: 'json' };
+  'upload_promo_actuals_file_api_import_promo_actuals_post': { method: 'post'; path: '/api/import/promo-actuals'; responseType: 'json' };
+  'upload_sales_file_api_import_sales_post': { method: 'post'; path: '/api/import/sales'; responseType: 'json' };
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { method: 'post'; path: '/api/import/sales/{snapshot_id}/promote'; responseType: 'json' };
+  'annual_api_store_pnl_annual_get': { method: 'get'; path: '/api/store-pnl/annual'; responseType: 'json' };
+  'months_api_store_pnl_months_get': { method: 'get'; path: '/api/store-pnl/months'; responseType: 'json' };
+  'overview_api_store_pnl_overview_get': { method: 'get'; path: '/api/store-pnl/overview'; responseType: 'json' };
+  'pnl_permissions_api_store_pnl_permissions_get': { method: 'get'; path: '/api/store-pnl/permissions'; responseType: 'json' };
+  'regions_api_store_pnl_regions_get': { method: 'get'; path: '/api/store-pnl/regions'; responseType: 'json' };
+  'stores_api_store_pnl_stores_get': { method: 'get'; path: '/api/store-pnl/stores'; responseType: 'json' };
+  'list_stores_api_stores_get': { method: 'get'; path: '/api/stores'; responseType: 'json' };
+  'save_targets_api_stores_targets_post': { method: 'post'; path: '/api/stores/targets'; responseType: 'json' };
+  'change_store_activity_api_stores__site_code__activity_post': { method: 'post'; path: '/api/stores/{site_code}/activity'; responseType: 'json' };
+  'get_context_api_target_calculator_context_get': { method: 'get'; path: '/api/target-calculator/context'; responseType: 'json' };
+  'list_scenarios_api_target_calculator_scenarios_get': { method: 'get'; path: '/api/target-calculator/scenarios'; responseType: 'json' };
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': { method: 'post'; path: '/api/target-calculator/scenarios/calculate'; responseType: 'json' };
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': { method: 'get'; path: '/api/target-calculator/scenarios/{scenario_id}'; responseType: 'json' };
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': { method: 'get'; path: '/api/target-calculator/scenarios/{scenario_id}/export'; responseType: 'blob' };
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': { method: 'post'; path: '/api/target-calculator/scenarios/{scenario_id}/finalize'; responseType: 'json' };
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': { method: 'patch'; path: '/api/target-calculator/scenarios/{scenario_id}/rows'; responseType: 'json' };
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': { method: 'get'; path: '/api/target-calculator/scenarios/{scenario_id}/stores/{site_code}'; responseType: 'json' };
+  'get_tasks_api_tasks_get': { method: 'get'; path: '/api/tasks'; responseType: 'json' };
+  'post_task_api_tasks_post': { method: 'post'; path: '/api/tasks'; responseType: 'json' };
+  'remove_task_api_tasks__task_id__delete': { method: 'delete'; path: '/api/tasks/{task_id}'; responseType: 'json' };
+  'patch_task_api_tasks__task_id__patch': { method: 'patch'; path: '/api/tasks/{task_id}'; responseType: 'json' };
+  'get_visits_report_api_visits_report_get': { method: 'get'; path: '/api/visits-report'; responseType: 'json' };
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': { method: 'get'; path: '/api/visits-report/photo/{visit_id}/{filename}'; responseType: 'blob' };
+  'get_visits_tree_api_visits_report_tree_get': { method: 'get'; path: '/api/visits-report/tree'; responseType: 'json' };
+  'get_visit_detail_api_visits_report_visit__visit_id__get': { method: 'get'; path: '/api/visits-report/visit/{visit_id}'; responseType: 'json' };
+  'session_status_auth_session_get': { method: 'get'; path: '/auth/session'; responseType: 'json' };
+  'session_login_auth_session_login_get': { method: 'get'; path: '/auth/session/login'; responseType: 'json' };
+  'session_logout_auth_session_logout_post': { method: 'post'; path: '/auth/session/logout'; responseType: 'json' };
+  'metrics_metrics_get': { method: 'get'; path: '/metrics'; responseType: 'json' };
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { method: 'get'; path: '/salarii/agents/history-by-retail-code'; responseType: 'json' };
+  'agents_summary_salarii_agents_summary_get': { method: 'get'; path: '/salarii/agents/summary'; responseType: 'json' };
+  'agent_history_salarii_agents__person_id__history_get': { method: 'get'; path: '/salarii/agents/{person_id}/history'; responseType: 'json' };
+  'audit_salary_export_salarii_audit_export_post': { method: 'post'; path: '/salarii/audit/export'; responseType: 'json' };
+  'salarii_evolution_salarii_evolution_get': { method: 'get'; path: '/salarii/evolution'; responseType: 'json' };
+  'salarii_overview_salarii_overview_get': { method: 'get'; path: '/salarii/overview'; responseType: 'json' };
+  'list_records_salarii_records_get': { method: 'get'; path: '/salarii/records'; responseType: 'json' };
+  'salarii_stores_salarii_stores_get': { method: 'get'; path: '/salarii/stores'; responseType: 'json' };
+  'salarii_summary_salarii_summary_get': { method: 'get'; path: '/salarii/summary'; responseType: 'json' };
+  'salarii_trend_salarii_trend_get': { method: 'get'; path: '/salarii/trend'; responseType: 'json' };
+}
+
+export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: ReadonlySet<string> } = {
+  'get_agent_evaluation_api_agents_evaluation_get': new Set<string>([
+    'rows/*/bonuri_pct',
+    'rows/*/daily_average',
+    'rows/*/focus_pct',
+    'rows/*/peer_daily_average',
+    'rows/*/premium_glass_pct',
+    'rows/*/store_target',
+    'rows/*/target_pct',
+    'rows/*/target_value',
+    'rows/*/total_sales',
+    'rows/*/value_reper',
+  ]),
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': new Set<string>([
+    'rows/*/bonuri_pct',
+    'rows/*/bonuri_score',
+    'rows/*/daily_average',
+    'rows/*/daily_reference',
+    'rows/*/daily_score',
+    'rows/*/daily_vs_reference_pct',
+    'rows/*/focus_pct',
+    'rows/*/focus_score',
+    'rows/*/forecast_factor',
+    'rows/*/forecast_sales',
+    'rows/*/premium_glass_pct',
+    'rows/*/premium_glass_score',
+    'rows/*/target_forecast_pct',
+    'rows/*/target_pct',
+    'rows/*/target_score',
+    'rows/*/target_value',
+    'rows/*/total_sales',
+    'rows/*/total_score',
+    'rows/*/trend_daily_pct',
+    'rows/*/value_reper',
+    'rows/*/value_reper_score',
+  ]),
+  'get_agent_history_api_agents_history_get': new Set<string>([
+    'history/*/total_sales',
+  ]),
+  'get_agents_list_api_agents_list_get': new Set<string>([
+    'items/*/total_sales',
+  ]),
+  'get_agents_movement_api_agents_movement_get': new Set<string>([
+  ]),
+  'get_agents_overview_api_agents_overview_get': new Set<string>([
+    'avg_seniority_months',
+    'retention_rate',
+    'stability_rate',
+  ]),
+  'get_agent_profile_api_agents_profile_get': new Set<string>([
+    'avg_monthly_sales',
+    'best_month_sales',
+    'career_total_sales',
+  ]),
+  'get_stores_coverage_api_agents_stores_coverage_get': new Set<string>([
+  ]),
+  'get_current_ai_forecast_api_ai_forecast_current_get': new Set<string>([
+    'daily/*/actual_sales',
+    'daily/*/cumulative_actual',
+    'daily/*/cumulative_forecast',
+    'daily/*/forecast_sales',
+    'managers/*/actual_sales',
+    'managers/*/delta_pct',
+    'managers/*/delta_sales',
+    'managers/*/expected_sales_to_date',
+    'managers/*/forecast_sales',
+    'stores/*/actual_sales',
+    'stores/*/delta_pct',
+    'stores/*/delta_sales',
+    'stores/*/expected_sales_to_date',
+    'stores/*/forecast_sales',
+    'summary/actual_sales',
+    'summary/delta_pct',
+    'summary/delta_sales',
+    'summary/expected_sales_to_date',
+    'summary/forecast_sales',
+  ]),
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
+    'managers/*/actual_sales',
+    'managers/*/delta_pct',
+    'managers/*/delta_sales',
+    'managers/*/forecast_sales',
+    'months/*/actual_sales',
+    'months/*/delta_pct',
+    'months/*/delta_sales',
+    'months/*/forecast_sales',
+    'stores/*/actual_sales',
+    'stores/*/delta_pct',
+    'stores/*/delta_sales',
+    'stores/*/forecast_sales',
+    'summary/actual_sales',
+    'summary/delta_pct',
+    'summary/delta_sales',
+    'summary/forecast_sales',
+  ]),
+  'get_focus_history_api_campaigns_history_get': new Set<string>([
+    'history/*/focus_share_pct',
+    'history/*/total_focus_sales',
+  ]),
+  'get_campaign_overview_api_campaigns_overview_get': new Set<string>([
+    'overview/focus_share_pct',
+    'overview/total_focus_sales',
+    'products/*/sales_total',
+    'stores/*/sales_total',
+  ]),
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': new Set<string>([
+    'promo_discount_value',
+  ]),
+  'get_active_contest_api_contests_active_get': new Set<string>([
+  ]),
+  'get_active_contests_api_contests_active_all_get': new Set<string>([
+  ]),
+  'get_alerts_api_crm_alerts_get': new Set<string>([
+  ]),
+  'get_scores_api_crm_scores_get': new Set<string>([
+  ]),
+  'recalculate_scores_api_crm_scores_recalculate_post': new Set<string>([
+  ]),
+  'get_dashboard_all_api_dashboard_all_get': new Set<string>([
+    'agents/*/medie_produs',
+    'agents/*/medie_zilnica',
+    'agents/*/prc_focus_acc_qty',
+    'agents/*/proc_bon2acc',
+    'agents/*/proc_realizare_target',
+    'agents/*/promo_discount_value',
+    'agents/*/target',
+    'agents/*/total_vanzari',
+    'asms/*/medie_produs',
+    'asms/*/medie_zilnica',
+    'asms/*/prc_focus_acc_qty',
+    'asms/*/proc_bon2acc',
+    'asms/*/proc_realizare_target',
+    'asms/*/promo_discount_value',
+    'asms/*/target',
+    'asms/*/total_vanzari',
+    'brand_mix/*/sales_total',
+    'brand_mix/*/share_pct',
+    'category_mix/*/sales_total',
+    'category_mix/*/share_pct',
+    'daily/*/total_sales',
+    'daily_last_year/*/total_sales',
+    'focus_subcategory_mix/*/sales_total',
+    'focus_subcategory_mix/*/share_pct',
+    'period_comparison/current/avg_receipt_value',
+    'period_comparison/current/daily_average',
+    'period_comparison/current/medie_produs',
+    'period_comparison/current/prc_focus_acc_qty',
+    'period_comparison/current/proc_bon2acc',
+    'period_comparison/current/total_sales',
+    'period_comparison/previous/avg_receipt_value',
+    'period_comparison/previous/daily_average',
+    'period_comparison/previous/medie_produs',
+    'period_comparison/previous/prc_focus_acc_qty',
+    'period_comparison/previous/proc_bon2acc',
+    'period_comparison/previous/total_sales',
+    'period_comparison/year_over_year/avg_receipt_value',
+    'period_comparison/year_over_year/daily_average',
+    'period_comparison/year_over_year/medie_produs',
+    'period_comparison/year_over_year/prc_focus_acc_qty',
+    'period_comparison/year_over_year/proc_bon2acc',
+    'period_comparison/year_over_year/total_sales',
+    'premium_glass/agents/*/premium_qty_share_pct',
+    'premium_glass/agents/*/premium_sales',
+    'premium_glass/agents/*/regular_sales',
+    'premium_glass/agents/*/total_sales',
+    'premium_glass/managers/*/premium_qty_share_pct',
+    'premium_glass/managers/*/premium_sales',
+    'premium_glass/managers/*/regular_sales',
+    'premium_glass/managers/*/total_sales',
+    'premium_glass/models/*/premium_qty_share_pct',
+    'premium_glass/models/*/premium_sales',
+    'premium_glass/models/*/regular_sales',
+    'premium_glass/models/*/total_sales',
+    'premium_glass/products/*/sales',
+    'premium_glass/stores/*/premium_qty_share_pct',
+    'premium_glass/stores/*/premium_sales',
+    'premium_glass/stores/*/regular_sales',
+    'premium_glass/stores/*/total_sales',
+    'premium_glass/summary/premium_qty_share_pct',
+    'premium_glass/summary/premium_sales',
+    'premium_glass/summary/premium_sales_share_pct',
+    'premium_glass/summary/regular_sales',
+    'premium_glass/summary/total_sales',
+    'premium_glass/surfaces/*/premium_qty_share_pct',
+    'premium_glass/surfaces/*/premium_sales',
+    'premium_glass/surfaces/*/regular_sales',
+    'premium_glass/surfaces/*/total_sales',
+    'promo_incentive/incentive_potential',
+    'promo_incentive/incentive_sales',
+    'promo_incentive/incentive_value',
+    'promo_incentive/promo_impact',
+    'promo_incentive/promo_sales',
+    'receipt_bucket_mix/*/share_pct',
+    'regionals/*/forecast_target_pct',
+    'regionals/*/medie_produs',
+    'regionals/*/medie_zilnica',
+    'regionals/*/prc_focus_acc_qty',
+    'regionals/*/proc_bon2acc',
+    'regionals/*/proc_realizare_target',
+    'regionals/*/promo_discount_value',
+    'regionals/*/target',
+    'regionals/*/total_vanzari',
+    'stores/*/forecast_target_pct',
+    'stores/*/medie_produs',
+    'stores/*/prc_focus_acc_qty',
+    'stores/*/proc_bon2acc',
+    'stores/*/proc_realizare_target',
+    'stores/*/promo_discount_value',
+    'stores/*/target',
+    'stores/*/total_vanzari',
+    'summary/daily_average',
+    'summary/forecast_sales',
+    'summary/forecast_target_progress_pct',
+    'summary/medie_produs',
+    'summary/prc_focus_acc_qty',
+    'summary/proc_bon2acc',
+    'summary/target_progress_pct',
+    'summary/total_sales',
+    'summary/total_target',
+  ]),
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': new Set<string>([
+    'results/*/agents/*/medie_produs',
+    'results/*/agents/*/medie_zilnica',
+    'results/*/agents/*/prc_focus_acc_qty',
+    'results/*/agents/*/proc_bon2acc',
+    'results/*/agents/*/proc_realizare_target',
+    'results/*/agents/*/promo_discount_value',
+    'results/*/agents/*/target',
+    'results/*/agents/*/total_vanzari',
+    'results/*/asms/*/medie_produs',
+    'results/*/asms/*/medie_zilnica',
+    'results/*/asms/*/prc_focus_acc_qty',
+    'results/*/asms/*/proc_bon2acc',
+    'results/*/asms/*/proc_realizare_target',
+    'results/*/asms/*/promo_discount_value',
+    'results/*/asms/*/target',
+    'results/*/asms/*/total_vanzari',
+    'results/*/brand_mix/*/sales_total',
+    'results/*/brand_mix/*/share_pct',
+    'results/*/category_mix/*/sales_total',
+    'results/*/category_mix/*/share_pct',
+    'results/*/daily/*/total_sales',
+    'results/*/daily_last_year/*/total_sales',
+    'results/*/focus_subcategory_mix/*/sales_total',
+    'results/*/focus_subcategory_mix/*/share_pct',
+    'results/*/period_comparison/current/avg_receipt_value',
+    'results/*/period_comparison/current/daily_average',
+    'results/*/period_comparison/current/medie_produs',
+    'results/*/period_comparison/current/prc_focus_acc_qty',
+    'results/*/period_comparison/current/proc_bon2acc',
+    'results/*/period_comparison/current/total_sales',
+    'results/*/period_comparison/previous/avg_receipt_value',
+    'results/*/period_comparison/previous/daily_average',
+    'results/*/period_comparison/previous/medie_produs',
+    'results/*/period_comparison/previous/prc_focus_acc_qty',
+    'results/*/period_comparison/previous/proc_bon2acc',
+    'results/*/period_comparison/previous/total_sales',
+    'results/*/period_comparison/year_over_year/avg_receipt_value',
+    'results/*/period_comparison/year_over_year/daily_average',
+    'results/*/period_comparison/year_over_year/medie_produs',
+    'results/*/period_comparison/year_over_year/prc_focus_acc_qty',
+    'results/*/period_comparison/year_over_year/proc_bon2acc',
+    'results/*/period_comparison/year_over_year/total_sales',
+    'results/*/premium_glass/agents/*/premium_qty_share_pct',
+    'results/*/premium_glass/agents/*/premium_sales',
+    'results/*/premium_glass/agents/*/regular_sales',
+    'results/*/premium_glass/agents/*/total_sales',
+    'results/*/premium_glass/managers/*/premium_qty_share_pct',
+    'results/*/premium_glass/managers/*/premium_sales',
+    'results/*/premium_glass/managers/*/regular_sales',
+    'results/*/premium_glass/managers/*/total_sales',
+    'results/*/premium_glass/models/*/premium_qty_share_pct',
+    'results/*/premium_glass/models/*/premium_sales',
+    'results/*/premium_glass/models/*/regular_sales',
+    'results/*/premium_glass/models/*/total_sales',
+    'results/*/premium_glass/products/*/sales',
+    'results/*/premium_glass/stores/*/premium_qty_share_pct',
+    'results/*/premium_glass/stores/*/premium_sales',
+    'results/*/premium_glass/stores/*/regular_sales',
+    'results/*/premium_glass/stores/*/total_sales',
+    'results/*/premium_glass/summary/premium_qty_share_pct',
+    'results/*/premium_glass/summary/premium_sales',
+    'results/*/premium_glass/summary/premium_sales_share_pct',
+    'results/*/premium_glass/summary/regular_sales',
+    'results/*/premium_glass/summary/total_sales',
+    'results/*/premium_glass/surfaces/*/premium_qty_share_pct',
+    'results/*/premium_glass/surfaces/*/premium_sales',
+    'results/*/premium_glass/surfaces/*/regular_sales',
+    'results/*/premium_glass/surfaces/*/total_sales',
+    'results/*/promo_incentive/incentive_potential',
+    'results/*/promo_incentive/incentive_sales',
+    'results/*/promo_incentive/incentive_value',
+    'results/*/promo_incentive/promo_impact',
+    'results/*/promo_incentive/promo_sales',
+    'results/*/receipt_bucket_mix/*/share_pct',
+    'results/*/regionals/*/forecast_target_pct',
+    'results/*/regionals/*/medie_produs',
+    'results/*/regionals/*/medie_zilnica',
+    'results/*/regionals/*/prc_focus_acc_qty',
+    'results/*/regionals/*/proc_bon2acc',
+    'results/*/regionals/*/proc_realizare_target',
+    'results/*/regionals/*/promo_discount_value',
+    'results/*/regionals/*/target',
+    'results/*/regionals/*/total_vanzari',
+    'results/*/stores/*/forecast_target_pct',
+    'results/*/stores/*/medie_produs',
+    'results/*/stores/*/prc_focus_acc_qty',
+    'results/*/stores/*/proc_bon2acc',
+    'results/*/stores/*/proc_realizare_target',
+    'results/*/stores/*/promo_discount_value',
+    'results/*/stores/*/target',
+    'results/*/stores/*/total_vanzari',
+    'results/*/summary/daily_average',
+    'results/*/summary/forecast_sales',
+    'results/*/summary/forecast_target_progress_pct',
+    'results/*/summary/medie_produs',
+    'results/*/summary/prc_focus_acc_qty',
+    'results/*/summary/proc_bon2acc',
+    'results/*/summary/target_progress_pct',
+    'results/*/summary/total_sales',
+    'results/*/summary/total_target',
+  ]),
+  'get_daily_sales_api_dashboard_daily_get': new Set<string>([
+    '*/total_sales',
+  ]),
+  'get_monthly_history_api_dashboard_history_get': new Set<string>([
+    'history/*/daily_average',
+    'history/*/medie_produs',
+    'history/*/prc_focus_acc_qty',
+    'history/*/proc_bon2acc',
+    'history/*/target_progress_pct',
+    'history/*/total_sales',
+    'history/*/total_target',
+  ]),
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': new Set<string>([
+    'results/*/agents/*/medie_produs',
+    'results/*/agents/*/medie_zilnica',
+    'results/*/agents/*/prc_focus_acc_qty',
+    'results/*/agents/*/proc_bon2acc',
+    'results/*/agents/*/proc_realizare_target',
+    'results/*/agents/*/promo_discount_value',
+    'results/*/agents/*/target',
+    'results/*/agents/*/total_vanzari',
+    'results/*/asms/*/medie_produs',
+    'results/*/asms/*/medie_zilnica',
+    'results/*/asms/*/prc_focus_acc_qty',
+    'results/*/asms/*/proc_bon2acc',
+    'results/*/asms/*/proc_realizare_target',
+    'results/*/asms/*/promo_discount_value',
+    'results/*/asms/*/target',
+    'results/*/asms/*/total_vanzari',
+    'results/*/brand_mix/*/sales_total',
+    'results/*/brand_mix/*/share_pct',
+    'results/*/category_mix/*/sales_total',
+    'results/*/category_mix/*/share_pct',
+    'results/*/daily/*/total_sales',
+    'results/*/daily_last_year/*/total_sales',
+    'results/*/focus_subcategory_mix/*/sales_total',
+    'results/*/focus_subcategory_mix/*/share_pct',
+    'results/*/period_comparison/current/avg_receipt_value',
+    'results/*/period_comparison/current/daily_average',
+    'results/*/period_comparison/current/medie_produs',
+    'results/*/period_comparison/current/prc_focus_acc_qty',
+    'results/*/period_comparison/current/proc_bon2acc',
+    'results/*/period_comparison/current/total_sales',
+    'results/*/period_comparison/previous/avg_receipt_value',
+    'results/*/period_comparison/previous/daily_average',
+    'results/*/period_comparison/previous/medie_produs',
+    'results/*/period_comparison/previous/prc_focus_acc_qty',
+    'results/*/period_comparison/previous/proc_bon2acc',
+    'results/*/period_comparison/previous/total_sales',
+    'results/*/period_comparison/year_over_year/avg_receipt_value',
+    'results/*/period_comparison/year_over_year/daily_average',
+    'results/*/period_comparison/year_over_year/medie_produs',
+    'results/*/period_comparison/year_over_year/prc_focus_acc_qty',
+    'results/*/period_comparison/year_over_year/proc_bon2acc',
+    'results/*/period_comparison/year_over_year/total_sales',
+    'results/*/premium_glass/agents/*/premium_qty_share_pct',
+    'results/*/premium_glass/agents/*/premium_sales',
+    'results/*/premium_glass/agents/*/regular_sales',
+    'results/*/premium_glass/agents/*/total_sales',
+    'results/*/premium_glass/managers/*/premium_qty_share_pct',
+    'results/*/premium_glass/managers/*/premium_sales',
+    'results/*/premium_glass/managers/*/regular_sales',
+    'results/*/premium_glass/managers/*/total_sales',
+    'results/*/premium_glass/models/*/premium_qty_share_pct',
+    'results/*/premium_glass/models/*/premium_sales',
+    'results/*/premium_glass/models/*/regular_sales',
+    'results/*/premium_glass/models/*/total_sales',
+    'results/*/premium_glass/products/*/sales',
+    'results/*/premium_glass/stores/*/premium_qty_share_pct',
+    'results/*/premium_glass/stores/*/premium_sales',
+    'results/*/premium_glass/stores/*/regular_sales',
+    'results/*/premium_glass/stores/*/total_sales',
+    'results/*/premium_glass/summary/premium_qty_share_pct',
+    'results/*/premium_glass/summary/premium_sales',
+    'results/*/premium_glass/summary/premium_sales_share_pct',
+    'results/*/premium_glass/summary/regular_sales',
+    'results/*/premium_glass/summary/total_sales',
+    'results/*/premium_glass/surfaces/*/premium_qty_share_pct',
+    'results/*/premium_glass/surfaces/*/premium_sales',
+    'results/*/premium_glass/surfaces/*/regular_sales',
+    'results/*/premium_glass/surfaces/*/total_sales',
+    'results/*/promo_incentive/incentive_potential',
+    'results/*/promo_incentive/incentive_sales',
+    'results/*/promo_incentive/incentive_value',
+    'results/*/promo_incentive/promo_impact',
+    'results/*/promo_incentive/promo_sales',
+    'results/*/receipt_bucket_mix/*/share_pct',
+    'results/*/regionals/*/forecast_target_pct',
+    'results/*/regionals/*/medie_produs',
+    'results/*/regionals/*/medie_zilnica',
+    'results/*/regionals/*/prc_focus_acc_qty',
+    'results/*/regionals/*/proc_bon2acc',
+    'results/*/regionals/*/proc_realizare_target',
+    'results/*/regionals/*/promo_discount_value',
+    'results/*/regionals/*/target',
+    'results/*/regionals/*/total_vanzari',
+    'results/*/stores/*/forecast_target_pct',
+    'results/*/stores/*/medie_produs',
+    'results/*/stores/*/prc_focus_acc_qty',
+    'results/*/stores/*/proc_bon2acc',
+    'results/*/stores/*/proc_realizare_target',
+    'results/*/stores/*/promo_discount_value',
+    'results/*/stores/*/target',
+    'results/*/stores/*/total_vanzari',
+    'results/*/summary/daily_average',
+    'results/*/summary/forecast_sales',
+    'results/*/summary/forecast_target_progress_pct',
+    'results/*/summary/medie_produs',
+    'results/*/summary/prc_focus_acc_qty',
+    'results/*/summary/proc_bon2acc',
+    'results/*/summary/target_progress_pct',
+    'results/*/summary/total_sales',
+    'results/*/summary/total_target',
+  ]),
+  'get_history_by_year_api_dashboard_history_year_get': new Set<string>([
+    'points/*/total_sales',
+    'points/*/total_target',
+  ]),
+  'get_performance_detail_api_dashboard_performance_detail_get': new Set<string>([
+    'context_summary/daily_average',
+    'context_summary/forecast_sales',
+    'context_summary/forecast_target_progress_pct',
+    'context_summary/medie_produs',
+    'context_summary/prc_focus_acc_qty',
+    'context_summary/proc_bon2acc',
+    'context_summary/target_progress_pct',
+    'context_summary/total_sales',
+    'context_summary/total_target',
+    'daily/*/total_sales',
+    'history/*/daily_average',
+    'history/*/medie_produs',
+    'history/*/prc_focus_acc_qty',
+    'history/*/proc_bon2acc',
+    'history/*/target_progress_pct',
+    'history/*/total_sales',
+    'history/*/total_target',
+    'peer_rows/*/forecast_target_pct',
+    'peer_rows/*/prc_focus_acc_qty',
+    'peer_rows/*/proc_bon2acc',
+    'peer_rows/*/target_progress_pct',
+    'peer_rows/*/total_sales',
+    'score_breakdown/bon2acc_points',
+    'score_breakdown/focus_points',
+    'score_breakdown/target_points',
+    'summary/daily_average',
+    'summary/forecast_sales',
+    'summary/forecast_target_progress_pct',
+    'summary/medie_produs',
+    'summary/prc_focus_acc_qty',
+    'summary/proc_bon2acc',
+    'summary/target_progress_pct',
+    'summary/total_sales',
+    'summary/total_target',
+  ]),
+  'get_premium_glass_api_dashboard_premium_glass_get': new Set<string>([
+    'agents/*/premium_qty_share_pct',
+    'agents/*/premium_sales',
+    'agents/*/regular_sales',
+    'agents/*/total_sales',
+    'managers/*/premium_qty_share_pct',
+    'managers/*/premium_sales',
+    'managers/*/regular_sales',
+    'managers/*/total_sales',
+    'models/*/premium_qty_share_pct',
+    'models/*/premium_sales',
+    'models/*/regular_sales',
+    'models/*/total_sales',
+    'products/*/sales',
+    'stores/*/premium_qty_share_pct',
+    'stores/*/premium_sales',
+    'stores/*/regular_sales',
+    'stores/*/total_sales',
+    'summary/premium_qty_share_pct',
+    'summary/premium_sales',
+    'summary/premium_sales_share_pct',
+    'summary/regular_sales',
+    'summary/total_sales',
+    'surfaces/*/premium_qty_share_pct',
+    'surfaces/*/premium_sales',
+    'surfaces/*/regular_sales',
+    'surfaces/*/total_sales',
+  ]),
+  'get_special_cards_api_dashboard_special_cards_get': new Set<string>([
+  ]),
+  'get_summary_api_dashboard_summary_get': new Set<string>([
+    'daily_average',
+    'forecast_sales',
+    'forecast_target_progress_pct',
+    'medie_produs',
+    'prc_focus_acc_qty',
+    'proc_bon2acc',
+    'target_progress_pct',
+    'total_sales',
+    'total_target',
+  ]),
+  'get_catalog_api_exports_catalog_get': new Set<string>([
+  ]),
+  'download_export_api_exports_download_post': new Set<string>([
+  ]),
+  'create_export_operation_api_exports_operations_post': new Set<string>([
+  ]),
+  'get_resumable_export_operation_api_exports_operations_resumable_get': new Set<string>([
+  ]),
+  'get_export_operation_api_exports_operations__operation_id__get': new Set<string>([
+  ]),
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': new Set<string>([
+  ]),
+  'download_export_operation_api_exports_operations__operation_id__download_get': new Set<string>([
+  ]),
+  'preview_export_api_exports_preview_post': new Set<string>([
+  ]),
+  'get_available_months_api_filters_months_get': new Set<string>([
+  ]),
+  'get_filter_options_api_filters_options_get': new Set<string>([
+  ]),
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': new Set<string>([
+  ]),
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': new Set<string>([
+  ]),
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': new Set<string>([
+  ]),
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': new Set<string>([
+  ]),
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': new Set<string>([
+  ]),
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': new Set<string>([
+  ]),
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': new Set<string>([
+  ]),
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': new Set<string>([
+  ]),
+  'grile_monthly_run_api_grile_monthly_run_post': new Set<string>([
+  ]),
+  'grile_overview_api_grile_overview_get': new Set<string>([
+  ]),
+  'grile_run_api_grile_run_post': new Set<string>([
+  ]),
+  'grile_run_status_api_grile_run_status_get': new Set<string>([
+  ]),
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
+  ]),
+  'get_asm_perf_api_hr_asm_performance_get': new Set<string>([
+  ]),
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': new Set<string>([
+  ]),
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': new Set<string>([
+  ]),
+  'get_leave_requests_api_hr_leave_requests_get': new Set<string>([
+  ]),
+  'post_leave_request_api_hr_leave_requests_post': new Set<string>([
+  ]),
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': new Set<string>([
+  ]),
+  'get_manager_overview_api_hr_manager_overview_get': new Set<string>([
+  ]),
+  'get_performance_api_hr_performance__agent_name__get': new Set<string>([
+  ]),
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': new Set<string>([
+    'erp_result/app_only_metrics/*/value',
+    'erp_result/issues/*/difference',
+    'erp_result/issues/*/report_value',
+    'erp_result/issues/*/retail_value',
+    'erp_result/metrics/*/difference',
+    'erp_result/metrics/*/report_value',
+    'erp_result/metrics/*/retail_value',
+  ]),
+  'get_import_history_api_import_history_get': new Set<string>([
+  ]),
+  'get_import_job_status_api_import_jobs__job_id__get': new Set<string>([
+    'erp_result/app_only_metrics/*/value',
+    'erp_result/issues/*/difference',
+    'erp_result/issues/*/report_value',
+    'erp_result/issues/*/retail_value',
+    'erp_result/metrics/*/difference',
+    'erp_result/metrics/*/report_value',
+    'erp_result/metrics/*/retail_value',
+  ]),
+  'upload_promo_actuals_file_api_import_promo_actuals_post': new Set<string>([
+    'erp_result/app_only_metrics/*/value',
+    'erp_result/issues/*/difference',
+    'erp_result/issues/*/report_value',
+    'erp_result/issues/*/retail_value',
+    'erp_result/metrics/*/difference',
+    'erp_result/metrics/*/report_value',
+    'erp_result/metrics/*/retail_value',
+  ]),
+  'upload_sales_file_api_import_sales_post': new Set<string>([
+    'erp_result/app_only_metrics/*/value',
+    'erp_result/issues/*/difference',
+    'erp_result/issues/*/report_value',
+    'erp_result/issues/*/retail_value',
+    'erp_result/metrics/*/difference',
+    'erp_result/metrics/*/report_value',
+    'erp_result/metrics/*/retail_value',
+  ]),
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': new Set<string>([
+    'erp_result/app_only_metrics/*/value',
+    'erp_result/issues/*/difference',
+    'erp_result/issues/*/report_value',
+    'erp_result/issues/*/retail_value',
+    'erp_result/metrics/*/difference',
+    'erp_result/metrics/*/report_value',
+    'erp_result/metrics/*/retail_value',
+  ]),
+  'annual_api_store_pnl_annual_get': new Set<string>([
+  ]),
+  'months_api_store_pnl_months_get': new Set<string>([
+  ]),
+  'overview_api_store_pnl_overview_get': new Set<string>([
+  ]),
+  'pnl_permissions_api_store_pnl_permissions_get': new Set<string>([
+  ]),
+  'regions_api_store_pnl_regions_get': new Set<string>([
+  ]),
+  'stores_api_store_pnl_stores_get': new Set<string>([
+  ]),
+  'list_stores_api_stores_get': new Set<string>([
+  ]),
+  'save_targets_api_stores_targets_post': new Set<string>([
+  ]),
+  'change_store_activity_api_stores__site_code__activity_post': new Set<string>([
+  ]),
+  'get_context_api_target_calculator_context_get': new Set<string>([
+    'default_min_floor',
+    'default_previous_month_cap_pct',
+    'default_previous_month_floor_pct',
+    'suggested_total_target',
+  ]),
+  'list_scenarios_api_target_calculator_scenarios_get': new Set<string>([
+    '*/final_total',
+    '*/min_floor',
+    '*/previous_month_floor_pct',
+    '*/proposed_total',
+    '*/total_target',
+  ]),
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': new Set<string>([
+    'final_total',
+    'min_floor',
+    'previous_month_floor_pct',
+    'profitability_summary/break_even_total',
+    'profitability_summary/forecast_total',
+    'profitability_summary/operating_costs_total',
+    'profitability_summary/salary_total',
+    'proposed_total',
+    'regional_summary/*/current_forecast_total',
+    'regional_summary/*/final_growth_vs_current_pct',
+    'regional_summary/*/final_total',
+    'regional_summary/*/floor_total',
+    'regional_summary/*/last_year_base_total',
+    'regional_summary/*/last_year_growth_pct',
+    'regional_summary/*/last_year_target_total',
+    'regional_summary/*/proposed_growth_vs_current_pct',
+    'regional_summary/*/proposed_total',
+    'remaining_difference',
+    'rows/*/calculated_weight',
+    'rows/*/calculation_details/cap_target',
+    'rows/*/calculation_details/current_forecast',
+    'rows/*/calculation_details/floor_target',
+    'rows/*/calculation_details/raw_estimate',
+    'rows/*/calculation_details/seasonality/blended_factor',
+    'rows/*/calculation_details/seasonality/last_year_store_factor',
+    'rows/*/calculation_details/seasonality/max',
+    'rows/*/calculation_details/seasonality/min',
+    'rows/*/calculation_details/seasonality/multiyear_store_factor',
+    'rows/*/calculation_details/seasonality/network_factor',
+    'rows/*/calculation_details/seasonality/network_years/*/base_value',
+    'rows/*/calculation_details/seasonality/network_years/*/ratio',
+    'rows/*/calculation_details/seasonality/network_years/*/target_value',
+    'rows/*/calculation_details/seasonality/store_factor',
+    'rows/*/calculation_details/seasonality/store_years/*/base_value',
+    'rows/*/calculation_details/seasonality/store_years/*/ratio',
+    'rows/*/calculation_details/seasonality/store_years/*/target_value',
+    'rows/*/calculation_details/seasonality/used_factor',
+    'rows/*/calculation_details/seasonality/weights/*',
+    'rows/*/calculation_details/seasonality/zone_factor',
+    'rows/*/calculation_details/seasonality/zone_years/*/base_value',
+    'rows/*/calculation_details/seasonality/zone_years/*/ratio',
+    'rows/*/calculation_details/seasonality/zone_years/*/target_value',
+    'rows/*/calculation_details/trend/max',
+    'rows/*/calculation_details/trend/min',
+    'rows/*/calculation_details/trend/ratio',
+    'rows/*/calculation_details/trend/raw_adjustment',
+    'rows/*/calculation_details/trend/used_adjustment',
+    'rows/*/calculation_details/trend/weight',
+    'rows/*/cap_target',
+    'rows/*/final_target',
+    'rows/*/floor_target',
+    'rows/*/history/*/actual_realized',
+    'rows/*/history/*/attainment_pct',
+    'rows/*/history/*/forecast_factor',
+    'rows/*/history/*/realized',
+    'rows/*/history/*/target',
+    'rows/*/history/*/weight',
+    'rows/*/normalized_weight',
+    'rows/*/profitability/accessory_margin_pct',
+    'rows/*/profitability/base_salary_per_agent',
+    'rows/*/profitability/break_even_gross_sales',
+    'rows/*/profitability/forecast_sales',
+    'rows/*/profitability/operating_costs',
+    'rows/*/profitability/salary_cost_at_90_pct',
+    'rows/*/proposed_target',
+    'source_summary/*/actual_realized',
+    'source_summary/*/attainment_pct',
+    'source_summary/*/forecast_factor',
+    'source_summary/*/realized',
+    'source_summary/*/target',
+    'total_target',
+  ]),
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': new Set<string>([
+    'final_total',
+    'min_floor',
+    'previous_month_floor_pct',
+    'profitability_summary/break_even_total',
+    'profitability_summary/forecast_total',
+    'profitability_summary/operating_costs_total',
+    'profitability_summary/salary_total',
+    'proposed_total',
+    'regional_summary/*/current_forecast_total',
+    'regional_summary/*/final_growth_vs_current_pct',
+    'regional_summary/*/final_total',
+    'regional_summary/*/floor_total',
+    'regional_summary/*/last_year_base_total',
+    'regional_summary/*/last_year_growth_pct',
+    'regional_summary/*/last_year_target_total',
+    'regional_summary/*/proposed_growth_vs_current_pct',
+    'regional_summary/*/proposed_total',
+    'remaining_difference',
+    'rows/*/calculated_weight',
+    'rows/*/calculation_details/cap_target',
+    'rows/*/calculation_details/current_forecast',
+    'rows/*/calculation_details/floor_target',
+    'rows/*/calculation_details/raw_estimate',
+    'rows/*/calculation_details/seasonality/blended_factor',
+    'rows/*/calculation_details/seasonality/last_year_store_factor',
+    'rows/*/calculation_details/seasonality/max',
+    'rows/*/calculation_details/seasonality/min',
+    'rows/*/calculation_details/seasonality/multiyear_store_factor',
+    'rows/*/calculation_details/seasonality/network_factor',
+    'rows/*/calculation_details/seasonality/network_years/*/base_value',
+    'rows/*/calculation_details/seasonality/network_years/*/ratio',
+    'rows/*/calculation_details/seasonality/network_years/*/target_value',
+    'rows/*/calculation_details/seasonality/store_factor',
+    'rows/*/calculation_details/seasonality/store_years/*/base_value',
+    'rows/*/calculation_details/seasonality/store_years/*/ratio',
+    'rows/*/calculation_details/seasonality/store_years/*/target_value',
+    'rows/*/calculation_details/seasonality/used_factor',
+    'rows/*/calculation_details/seasonality/weights/*',
+    'rows/*/calculation_details/seasonality/zone_factor',
+    'rows/*/calculation_details/seasonality/zone_years/*/base_value',
+    'rows/*/calculation_details/seasonality/zone_years/*/ratio',
+    'rows/*/calculation_details/seasonality/zone_years/*/target_value',
+    'rows/*/calculation_details/trend/max',
+    'rows/*/calculation_details/trend/min',
+    'rows/*/calculation_details/trend/ratio',
+    'rows/*/calculation_details/trend/raw_adjustment',
+    'rows/*/calculation_details/trend/used_adjustment',
+    'rows/*/calculation_details/trend/weight',
+    'rows/*/cap_target',
+    'rows/*/final_target',
+    'rows/*/floor_target',
+    'rows/*/history/*/actual_realized',
+    'rows/*/history/*/attainment_pct',
+    'rows/*/history/*/forecast_factor',
+    'rows/*/history/*/realized',
+    'rows/*/history/*/target',
+    'rows/*/history/*/weight',
+    'rows/*/normalized_weight',
+    'rows/*/profitability/accessory_margin_pct',
+    'rows/*/profitability/base_salary_per_agent',
+    'rows/*/profitability/break_even_gross_sales',
+    'rows/*/profitability/forecast_sales',
+    'rows/*/profitability/operating_costs',
+    'rows/*/profitability/salary_cost_at_90_pct',
+    'rows/*/proposed_target',
+    'source_summary/*/actual_realized',
+    'source_summary/*/attainment_pct',
+    'source_summary/*/forecast_factor',
+    'source_summary/*/realized',
+    'source_summary/*/target',
+    'total_target',
+  ]),
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': new Set<string>([
+  ]),
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': new Set<string>([
+    'final_total',
+    'min_floor',
+    'previous_month_floor_pct',
+    'profitability_summary/break_even_total',
+    'profitability_summary/forecast_total',
+    'profitability_summary/operating_costs_total',
+    'profitability_summary/salary_total',
+    'proposed_total',
+    'regional_summary/*/current_forecast_total',
+    'regional_summary/*/final_growth_vs_current_pct',
+    'regional_summary/*/final_total',
+    'regional_summary/*/floor_total',
+    'regional_summary/*/last_year_base_total',
+    'regional_summary/*/last_year_growth_pct',
+    'regional_summary/*/last_year_target_total',
+    'regional_summary/*/proposed_growth_vs_current_pct',
+    'regional_summary/*/proposed_total',
+    'remaining_difference',
+    'rows/*/calculated_weight',
+    'rows/*/calculation_details/cap_target',
+    'rows/*/calculation_details/current_forecast',
+    'rows/*/calculation_details/floor_target',
+    'rows/*/calculation_details/raw_estimate',
+    'rows/*/calculation_details/seasonality/blended_factor',
+    'rows/*/calculation_details/seasonality/last_year_store_factor',
+    'rows/*/calculation_details/seasonality/max',
+    'rows/*/calculation_details/seasonality/min',
+    'rows/*/calculation_details/seasonality/multiyear_store_factor',
+    'rows/*/calculation_details/seasonality/network_factor',
+    'rows/*/calculation_details/seasonality/network_years/*/base_value',
+    'rows/*/calculation_details/seasonality/network_years/*/ratio',
+    'rows/*/calculation_details/seasonality/network_years/*/target_value',
+    'rows/*/calculation_details/seasonality/store_factor',
+    'rows/*/calculation_details/seasonality/store_years/*/base_value',
+    'rows/*/calculation_details/seasonality/store_years/*/ratio',
+    'rows/*/calculation_details/seasonality/store_years/*/target_value',
+    'rows/*/calculation_details/seasonality/used_factor',
+    'rows/*/calculation_details/seasonality/weights/*',
+    'rows/*/calculation_details/seasonality/zone_factor',
+    'rows/*/calculation_details/seasonality/zone_years/*/base_value',
+    'rows/*/calculation_details/seasonality/zone_years/*/ratio',
+    'rows/*/calculation_details/seasonality/zone_years/*/target_value',
+    'rows/*/calculation_details/trend/max',
+    'rows/*/calculation_details/trend/min',
+    'rows/*/calculation_details/trend/ratio',
+    'rows/*/calculation_details/trend/raw_adjustment',
+    'rows/*/calculation_details/trend/used_adjustment',
+    'rows/*/calculation_details/trend/weight',
+    'rows/*/cap_target',
+    'rows/*/final_target',
+    'rows/*/floor_target',
+    'rows/*/history/*/actual_realized',
+    'rows/*/history/*/attainment_pct',
+    'rows/*/history/*/forecast_factor',
+    'rows/*/history/*/realized',
+    'rows/*/history/*/target',
+    'rows/*/history/*/weight',
+    'rows/*/normalized_weight',
+    'rows/*/profitability/accessory_margin_pct',
+    'rows/*/profitability/base_salary_per_agent',
+    'rows/*/profitability/break_even_gross_sales',
+    'rows/*/profitability/forecast_sales',
+    'rows/*/profitability/operating_costs',
+    'rows/*/profitability/salary_cost_at_90_pct',
+    'rows/*/proposed_target',
+    'source_summary/*/actual_realized',
+    'source_summary/*/attainment_pct',
+    'source_summary/*/forecast_factor',
+    'source_summary/*/realized',
+    'source_summary/*/target',
+    'total_target',
+  ]),
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': new Set<string>([
+    'final_total',
+    'min_floor',
+    'previous_month_floor_pct',
+    'profitability_summary/break_even_total',
+    'profitability_summary/forecast_total',
+    'profitability_summary/operating_costs_total',
+    'profitability_summary/salary_total',
+    'proposed_total',
+    'regional_summary/*/current_forecast_total',
+    'regional_summary/*/final_growth_vs_current_pct',
+    'regional_summary/*/final_total',
+    'regional_summary/*/floor_total',
+    'regional_summary/*/last_year_base_total',
+    'regional_summary/*/last_year_growth_pct',
+    'regional_summary/*/last_year_target_total',
+    'regional_summary/*/proposed_growth_vs_current_pct',
+    'regional_summary/*/proposed_total',
+    'remaining_difference',
+    'rows/*/calculated_weight',
+    'rows/*/calculation_details/cap_target',
+    'rows/*/calculation_details/current_forecast',
+    'rows/*/calculation_details/floor_target',
+    'rows/*/calculation_details/raw_estimate',
+    'rows/*/calculation_details/seasonality/blended_factor',
+    'rows/*/calculation_details/seasonality/last_year_store_factor',
+    'rows/*/calculation_details/seasonality/max',
+    'rows/*/calculation_details/seasonality/min',
+    'rows/*/calculation_details/seasonality/multiyear_store_factor',
+    'rows/*/calculation_details/seasonality/network_factor',
+    'rows/*/calculation_details/seasonality/network_years/*/base_value',
+    'rows/*/calculation_details/seasonality/network_years/*/ratio',
+    'rows/*/calculation_details/seasonality/network_years/*/target_value',
+    'rows/*/calculation_details/seasonality/store_factor',
+    'rows/*/calculation_details/seasonality/store_years/*/base_value',
+    'rows/*/calculation_details/seasonality/store_years/*/ratio',
+    'rows/*/calculation_details/seasonality/store_years/*/target_value',
+    'rows/*/calculation_details/seasonality/used_factor',
+    'rows/*/calculation_details/seasonality/weights/*',
+    'rows/*/calculation_details/seasonality/zone_factor',
+    'rows/*/calculation_details/seasonality/zone_years/*/base_value',
+    'rows/*/calculation_details/seasonality/zone_years/*/ratio',
+    'rows/*/calculation_details/seasonality/zone_years/*/target_value',
+    'rows/*/calculation_details/trend/max',
+    'rows/*/calculation_details/trend/min',
+    'rows/*/calculation_details/trend/ratio',
+    'rows/*/calculation_details/trend/raw_adjustment',
+    'rows/*/calculation_details/trend/used_adjustment',
+    'rows/*/calculation_details/trend/weight',
+    'rows/*/cap_target',
+    'rows/*/final_target',
+    'rows/*/floor_target',
+    'rows/*/history/*/actual_realized',
+    'rows/*/history/*/attainment_pct',
+    'rows/*/history/*/forecast_factor',
+    'rows/*/history/*/realized',
+    'rows/*/history/*/target',
+    'rows/*/history/*/weight',
+    'rows/*/normalized_weight',
+    'rows/*/profitability/accessory_margin_pct',
+    'rows/*/profitability/base_salary_per_agent',
+    'rows/*/profitability/break_even_gross_sales',
+    'rows/*/profitability/forecast_sales',
+    'rows/*/profitability/operating_costs',
+    'rows/*/profitability/salary_cost_at_90_pct',
+    'rows/*/proposed_target',
+    'source_summary/*/actual_realized',
+    'source_summary/*/attainment_pct',
+    'source_summary/*/forecast_factor',
+    'source_summary/*/realized',
+    'source_summary/*/target',
+    'total_target',
+  ]),
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': new Set<string>([
+    'agents/*/avg_receipt',
+    'agents/*/bon2acc_pct',
+    'agents/*/focus_pct',
+    'agents/*/sales_16m',
+    'agents/*/sales_share_pct',
+    'agents/*/total_sales',
+    'avg_sales_16m',
+    'best_month/avg_receipt',
+    'best_month/bon2acc_pct',
+    'best_month/focus_pct',
+    'best_month/target_pct',
+    'best_month/target_value',
+    'best_month/total_sales',
+    'final_target',
+    'history/*/avg_receipt',
+    'history/*/bon2acc_pct',
+    'history/*/focus_pct',
+    'history/*/target_pct',
+    'history/*/target_value',
+    'history/*/total_sales',
+    'latest/avg_receipt',
+    'latest/bon2acc_pct',
+    'latest/focus_pct',
+    'latest/target_pct',
+    'latest/target_value',
+    'latest/total_sales',
+    'proposed_target',
+  ]),
+  'get_tasks_api_tasks_get': new Set<string>([
+  ]),
+  'post_task_api_tasks_post': new Set<string>([
+  ]),
+  'remove_task_api_tasks__task_id__delete': new Set<string>([
+  ]),
+  'patch_task_api_tasks__task_id__patch': new Set<string>([
+  ]),
+  'get_visits_report_api_visits_report_get': new Set<string>([
+  ]),
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': new Set<string>([
+  ]),
+  'get_visits_tree_api_visits_report_tree_get': new Set<string>([
+  ]),
+  'get_visit_detail_api_visits_report_visit__visit_id__get': new Set<string>([
+  ]),
+  'session_status_auth_session_get': new Set<string>([
+  ]),
+  'session_login_auth_session_login_get': new Set<string>([
+  ]),
+  'session_logout_auth_session_logout_post': new Set<string>([
+  ]),
+  'metrics_metrics_get': new Set<string>([
+  ]),
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': new Set<string>([
+  ]),
+  'agents_summary_salarii_agents_summary_get': new Set<string>([
+  ]),
+  'agent_history_salarii_agents__person_id__history_get': new Set<string>([
+  ]),
+  'audit_salary_export_salarii_audit_export_post': new Set<string>([
+  ]),
+  'salarii_evolution_salarii_evolution_get': new Set<string>([
+  ]),
+  'salarii_overview_salarii_overview_get': new Set<string>([
+  ]),
+  'list_records_salarii_records_get': new Set<string>([
+  ]),
+  'salarii_stores_salarii_stores_get': new Set<string>([
+  ]),
+  'salarii_summary_salarii_summary_get': new Set<string>([
+  ]),
+  'salarii_trend_salarii_trend_get': new Set<string>([
+  ]),
+};
+
+export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySet<string> } = {
+  'get_agent_evaluation_api_agents_evaluation_get': new Set<string>([
+  ]),
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': new Set<string>([
+  ]),
+  'get_agent_history_api_agents_history_get': new Set<string>([
+  ]),
+  'get_agents_list_api_agents_list_get': new Set<string>([
+  ]),
+  'get_agents_movement_api_agents_movement_get': new Set<string>([
+  ]),
+  'get_agents_overview_api_agents_overview_get': new Set<string>([
+  ]),
+  'get_agent_profile_api_agents_profile_get': new Set<string>([
+  ]),
+  'get_stores_coverage_api_agents_stores_coverage_get': new Set<string>([
+  ]),
+  'get_current_ai_forecast_api_ai_forecast_current_get': new Set<string>([
+    'daily/*/forecast_date',
+    'summary/actual_last_date',
+  ]),
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
+  ]),
+  'get_focus_history_api_campaigns_history_get': new Set<string>([
+  ]),
+  'get_campaign_overview_api_campaigns_overview_get': new Set<string>([
+  ]),
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': new Set<string>([
+  ]),
+  'get_active_contest_api_contests_active_get': new Set<string>([
+  ]),
+  'get_active_contests_api_contests_active_all_get': new Set<string>([
+  ]),
+  'get_alerts_api_crm_alerts_get': new Set<string>([
+  ]),
+  'get_scores_api_crm_scores_get': new Set<string>([
+  ]),
+  'recalculate_scores_api_crm_scores_recalculate_post': new Set<string>([
+  ]),
+  'get_dashboard_all_api_dashboard_all_get': new Set<string>([
+    'daily/*/sale_date',
+    'daily_last_year/*/sale_date',
+    'summary/last_sale_date',
+  ]),
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': new Set<string>([
+    'results/*/daily/*/sale_date',
+    'results/*/daily_last_year/*/sale_date',
+    'results/*/summary/last_sale_date',
+  ]),
+  'get_daily_sales_api_dashboard_daily_get': new Set<string>([
+    '*/sale_date',
+  ]),
+  'get_monthly_history_api_dashboard_history_get': new Set<string>([
+  ]),
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': new Set<string>([
+    'results/*/daily/*/sale_date',
+    'results/*/daily_last_year/*/sale_date',
+    'results/*/summary/last_sale_date',
+  ]),
+  'get_history_by_year_api_dashboard_history_year_get': new Set<string>([
+  ]),
+  'get_performance_detail_api_dashboard_performance_detail_get': new Set<string>([
+    'context_summary/last_sale_date',
+    'daily/*/sale_date',
+    'summary/last_sale_date',
+  ]),
+  'get_premium_glass_api_dashboard_premium_glass_get': new Set<string>([
+  ]),
+  'get_special_cards_api_dashboard_special_cards_get': new Set<string>([
+  ]),
+  'get_summary_api_dashboard_summary_get': new Set<string>([
+    'last_sale_date',
+  ]),
+  'get_catalog_api_exports_catalog_get': new Set<string>([
+  ]),
+  'download_export_api_exports_download_post': new Set<string>([
+  ]),
+  'create_export_operation_api_exports_operations_post': new Set<string>([
+  ]),
+  'get_resumable_export_operation_api_exports_operations_resumable_get': new Set<string>([
+  ]),
+  'get_export_operation_api_exports_operations__operation_id__get': new Set<string>([
+  ]),
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': new Set<string>([
+  ]),
+  'download_export_operation_api_exports_operations__operation_id__download_get': new Set<string>([
+  ]),
+  'preview_export_api_exports_preview_post': new Set<string>([
+  ]),
+  'get_available_months_api_filters_months_get': new Set<string>([
+  ]),
+  'get_filter_options_api_filters_options_get': new Set<string>([
+  ]),
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': new Set<string>([
+  ]),
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': new Set<string>([
+  ]),
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': new Set<string>([
+  ]),
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': new Set<string>([
+  ]),
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': new Set<string>([
+  ]),
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': new Set<string>([
+  ]),
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': new Set<string>([
+  ]),
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': new Set<string>([
+  ]),
+  'grile_monthly_run_api_grile_monthly_run_post': new Set<string>([
+  ]),
+  'grile_overview_api_grile_overview_get': new Set<string>([
+  ]),
+  'grile_run_api_grile_run_post': new Set<string>([
+  ]),
+  'grile_run_status_api_grile_run_status_get': new Set<string>([
+  ]),
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
+  ]),
+  'get_asm_perf_api_hr_asm_performance_get': new Set<string>([
+  ]),
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': new Set<string>([
+  ]),
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': new Set<string>([
+  ]),
+  'get_leave_requests_api_hr_leave_requests_get': new Set<string>([
+  ]),
+  'post_leave_request_api_hr_leave_requests_post': new Set<string>([
+  ]),
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': new Set<string>([
+  ]),
+  'get_manager_overview_api_hr_manager_overview_get': new Set<string>([
+  ]),
+  'get_performance_api_hr_performance__agent_name__get': new Set<string>([
+  ]),
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': new Set<string>([
+    'erp_result/report_cutoff_date',
+    'erp_result/retail_cutoff_date',
+    'promo_result/cutoff_date',
+    'result/manifest/cutoff_date',
+  ]),
+  'get_import_history_api_import_history_get': new Set<string>([
+    '*/upload_date',
+  ]),
+  'get_import_job_status_api_import_jobs__job_id__get': new Set<string>([
+    'erp_result/report_cutoff_date',
+    'erp_result/retail_cutoff_date',
+    'promo_result/cutoff_date',
+    'result/manifest/cutoff_date',
+  ]),
+  'upload_promo_actuals_file_api_import_promo_actuals_post': new Set<string>([
+    'erp_result/report_cutoff_date',
+    'erp_result/retail_cutoff_date',
+    'promo_result/cutoff_date',
+    'result/manifest/cutoff_date',
+  ]),
+  'upload_sales_file_api_import_sales_post': new Set<string>([
+    'erp_result/report_cutoff_date',
+    'erp_result/retail_cutoff_date',
+    'promo_result/cutoff_date',
+    'result/manifest/cutoff_date',
+  ]),
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': new Set<string>([
+    'erp_result/report_cutoff_date',
+    'erp_result/retail_cutoff_date',
+    'promo_result/cutoff_date',
+    'result/manifest/cutoff_date',
+  ]),
+  'annual_api_store_pnl_annual_get': new Set<string>([
+  ]),
+  'months_api_store_pnl_months_get': new Set<string>([
+  ]),
+  'overview_api_store_pnl_overview_get': new Set<string>([
+  ]),
+  'pnl_permissions_api_store_pnl_permissions_get': new Set<string>([
+  ]),
+  'regions_api_store_pnl_regions_get': new Set<string>([
+  ]),
+  'stores_api_store_pnl_stores_get': new Set<string>([
+  ]),
+  'list_stores_api_stores_get': new Set<string>([
+  ]),
+  'save_targets_api_stores_targets_post': new Set<string>([
+  ]),
+  'change_store_activity_api_stores__site_code__activity_post': new Set<string>([
+  ]),
+  'get_context_api_target_calculator_context_get': new Set<string>([
+  ]),
+  'list_scenarios_api_target_calculator_scenarios_get': new Set<string>([
+  ]),
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': new Set<string>([
+  ]),
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': new Set<string>([
+  ]),
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': new Set<string>([
+  ]),
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': new Set<string>([
+  ]),
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': new Set<string>([
+  ]),
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': new Set<string>([
+  ]),
+  'get_tasks_api_tasks_get': new Set<string>([
+  ]),
+  'post_task_api_tasks_post': new Set<string>([
+  ]),
+  'remove_task_api_tasks__task_id__delete': new Set<string>([
+  ]),
+  'patch_task_api_tasks__task_id__patch': new Set<string>([
+  ]),
+  'get_visits_report_api_visits_report_get': new Set<string>([
+  ]),
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': new Set<string>([
+  ]),
+  'get_visits_tree_api_visits_report_tree_get': new Set<string>([
+  ]),
+  'get_visit_detail_api_visits_report_visit__visit_id__get': new Set<string>([
+  ]),
+  'session_status_auth_session_get': new Set<string>([
+  ]),
+  'session_login_auth_session_login_get': new Set<string>([
+  ]),
+  'session_logout_auth_session_logout_post': new Set<string>([
+  ]),
+  'metrics_metrics_get': new Set<string>([
+  ]),
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': new Set<string>([
+  ]),
+  'agents_summary_salarii_agents_summary_get': new Set<string>([
+  ]),
+  'agent_history_salarii_agents__person_id__history_get': new Set<string>([
+  ]),
+  'audit_salary_export_salarii_audit_export_post': new Set<string>([
+  ]),
+  'salarii_evolution_salarii_evolution_get': new Set<string>([
+  ]),
+  'salarii_overview_salarii_overview_get': new Set<string>([
+  ]),
+  'list_records_salarii_records_get': new Set<string>([
+  ]),
+  'salarii_stores_salarii_stores_get': new Set<string>([
+  ]),
+  'salarii_summary_salarii_summary_get': new Set<string>([
+  ]),
+  'salarii_trend_salarii_trend_get': new Set<string>([
+  ]),
+};
+
+export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: ReadonlySet<string> } = {
+  'get_agent_evaluation_api_agents_evaluation_get': new Set<string>([
+  ]),
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': new Set<string>([
+  ]),
+  'get_agent_history_api_agents_history_get': new Set<string>([
+  ]),
+  'get_agents_list_api_agents_list_get': new Set<string>([
+  ]),
+  'get_agents_movement_api_agents_movement_get': new Set<string>([
+  ]),
+  'get_agents_overview_api_agents_overview_get': new Set<string>([
+  ]),
+  'get_agent_profile_api_agents_profile_get': new Set<string>([
+  ]),
+  'get_stores_coverage_api_agents_stores_coverage_get': new Set<string>([
+  ]),
+  'get_current_ai_forecast_api_ai_forecast_current_get': new Set<string>([
+    'run/generated_at',
+  ]),
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
+    'runs/*/generated_at',
+  ]),
+  'get_focus_history_api_campaigns_history_get': new Set<string>([
+  ]),
+  'get_campaign_overview_api_campaigns_overview_get': new Set<string>([
+  ]),
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': new Set<string>([
+  ]),
+  'get_active_contest_api_contests_active_get': new Set<string>([
+  ]),
+  'get_active_contests_api_contests_active_all_get': new Set<string>([
+  ]),
+  'get_alerts_api_crm_alerts_get': new Set<string>([
+  ]),
+  'get_scores_api_crm_scores_get': new Set<string>([
+  ]),
+  'recalculate_scores_api_crm_scores_recalculate_post': new Set<string>([
+  ]),
+  'get_dashboard_all_api_dashboard_all_get': new Set<string>([
+  ]),
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': new Set<string>([
+  ]),
+  'get_daily_sales_api_dashboard_daily_get': new Set<string>([
+  ]),
+  'get_monthly_history_api_dashboard_history_get': new Set<string>([
+  ]),
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': new Set<string>([
+  ]),
+  'get_history_by_year_api_dashboard_history_year_get': new Set<string>([
+  ]),
+  'get_performance_detail_api_dashboard_performance_detail_get': new Set<string>([
+  ]),
+  'get_premium_glass_api_dashboard_premium_glass_get': new Set<string>([
+  ]),
+  'get_special_cards_api_dashboard_special_cards_get': new Set<string>([
+  ]),
+  'get_summary_api_dashboard_summary_get': new Set<string>([
+  ]),
+  'get_catalog_api_exports_catalog_get': new Set<string>([
+  ]),
+  'download_export_api_exports_download_post': new Set<string>([
+  ]),
+  'create_export_operation_api_exports_operations_post': new Set<string>([
+    'created_at',
+    'expires_at',
+    'finished_at',
+    'started_at',
+  ]),
+  'get_resumable_export_operation_api_exports_operations_resumable_get': new Set<string>([
+    'created_at',
+    'expires_at',
+    'finished_at',
+    'started_at',
+  ]),
+  'get_export_operation_api_exports_operations__operation_id__get': new Set<string>([
+    'created_at',
+    'expires_at',
+    'finished_at',
+    'started_at',
+  ]),
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': new Set<string>([
+    'created_at',
+    'expires_at',
+    'finished_at',
+    'started_at',
+  ]),
+  'download_export_operation_api_exports_operations__operation_id__download_get': new Set<string>([
+  ]),
+  'preview_export_api_exports_preview_post': new Set<string>([
+  ]),
+  'get_available_months_api_filters_months_get': new Set<string>([
+  ]),
+  'get_filter_options_api_filters_options_get': new Set<string>([
+  ]),
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': new Set<string>([
+  ]),
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': new Set<string>([
+  ]),
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': new Set<string>([
+  ]),
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': new Set<string>([
+  ]),
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': new Set<string>([
+  ]),
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': new Set<string>([
+  ]),
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': new Set<string>([
+  ]),
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': new Set<string>([
+  ]),
+  'grile_monthly_run_api_grile_monthly_run_post': new Set<string>([
+  ]),
+  'grile_overview_api_grile_overview_get': new Set<string>([
+  ]),
+  'grile_run_api_grile_run_post': new Set<string>([
+  ]),
+  'grile_run_status_api_grile_run_status_get': new Set<string>([
+  ]),
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
+  ]),
+  'get_asm_perf_api_hr_asm_performance_get': new Set<string>([
+  ]),
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': new Set<string>([
+  ]),
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': new Set<string>([
+  ]),
+  'get_leave_requests_api_hr_leave_requests_get': new Set<string>([
+  ]),
+  'post_leave_request_api_hr_leave_requests_post': new Set<string>([
+  ]),
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': new Set<string>([
+  ]),
+  'get_manager_overview_api_hr_manager_overview_get': new Set<string>([
+  ]),
+  'get_performance_api_hr_performance__agent_name__get': new Set<string>([
+  ]),
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': new Set<string>([
+  ]),
+  'get_import_history_api_import_history_get': new Set<string>([
+    '*/created_at',
+    '*/finished_at',
+  ]),
+  'get_import_job_status_api_import_jobs__job_id__get': new Set<string>([
+  ]),
+  'upload_promo_actuals_file_api_import_promo_actuals_post': new Set<string>([
+  ]),
+  'upload_sales_file_api_import_sales_post': new Set<string>([
+  ]),
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': new Set<string>([
+  ]),
+  'annual_api_store_pnl_annual_get': new Set<string>([
+  ]),
+  'months_api_store_pnl_months_get': new Set<string>([
+  ]),
+  'overview_api_store_pnl_overview_get': new Set<string>([
+  ]),
+  'pnl_permissions_api_store_pnl_permissions_get': new Set<string>([
+  ]),
+  'regions_api_store_pnl_regions_get': new Set<string>([
+  ]),
+  'stores_api_store_pnl_stores_get': new Set<string>([
+  ]),
+  'list_stores_api_stores_get': new Set<string>([
+  ]),
+  'save_targets_api_stores_targets_post': new Set<string>([
+  ]),
+  'change_store_activity_api_stores__site_code__activity_post': new Set<string>([
+  ]),
+  'get_context_api_target_calculator_context_get': new Set<string>([
+  ]),
+  'list_scenarios_api_target_calculator_scenarios_get': new Set<string>([
+  ]),
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': new Set<string>([
+  ]),
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': new Set<string>([
+  ]),
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': new Set<string>([
+  ]),
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': new Set<string>([
+  ]),
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': new Set<string>([
+  ]),
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': new Set<string>([
+  ]),
+  'get_tasks_api_tasks_get': new Set<string>([
+  ]),
+  'post_task_api_tasks_post': new Set<string>([
+  ]),
+  'remove_task_api_tasks__task_id__delete': new Set<string>([
+  ]),
+  'patch_task_api_tasks__task_id__patch': new Set<string>([
+  ]),
+  'get_visits_report_api_visits_report_get': new Set<string>([
+  ]),
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': new Set<string>([
+  ]),
+  'get_visits_tree_api_visits_report_tree_get': new Set<string>([
+  ]),
+  'get_visit_detail_api_visits_report_visit__visit_id__get': new Set<string>([
+  ]),
+  'session_status_auth_session_get': new Set<string>([
+  ]),
+  'session_login_auth_session_login_get': new Set<string>([
+  ]),
+  'session_logout_auth_session_logout_post': new Set<string>([
+  ]),
+  'metrics_metrics_get': new Set<string>([
+  ]),
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': new Set<string>([
+  ]),
+  'agents_summary_salarii_agents_summary_get': new Set<string>([
+  ]),
+  'agent_history_salarii_agents__person_id__history_get': new Set<string>([
+  ]),
+  'audit_salary_export_salarii_audit_export_post': new Set<string>([
+  ]),
+  'salarii_evolution_salarii_evolution_get': new Set<string>([
+  ]),
+  'salarii_overview_salarii_overview_get': new Set<string>([
+  ]),
+  'list_records_salarii_records_get': new Set<string>([
+  ]),
+  'salarii_stores_salarii_stores_get': new Set<string>([
+  ]),
+  'salarii_summary_salarii_summary_get': new Set<string>([
+  ]),
+  'salarii_trend_salarii_trend_get': new Set<string>([
+  ]),
+};
+
 export const RETAIL_OPERATION_ROUTES = {
-  'get_agent_evaluation_api_agents_evaluation_get': { method: 'get', path: '/api/agents/evaluation' },
-  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': { method: 'get', path: '/api/agents/evaluation-v2' },
-  'get_agent_history_api_agents_history_get': { method: 'get', path: '/api/agents/history' },
-  'get_agents_list_api_agents_list_get': { method: 'get', path: '/api/agents/list' },
-  'get_agents_movement_api_agents_movement_get': { method: 'get', path: '/api/agents/movement' },
-  'get_agents_overview_api_agents_overview_get': { method: 'get', path: '/api/agents/overview' },
-  'get_agent_profile_api_agents_profile_get': { method: 'get', path: '/api/agents/profile' },
-  'get_stores_coverage_api_agents_stores_coverage_get': { method: 'get', path: '/api/agents/stores-coverage' },
-  'get_current_ai_forecast_api_ai_forecast_current_get': { method: 'get', path: '/api/ai-forecast/current' },
-  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { method: 'get', path: '/api/ai-forecast/rolling-12' },
-  'get_focus_history_api_campaigns_history_get': { method: 'get', path: '/api/campaigns/history' },
-  'get_campaign_overview_api_campaigns_overview_get': { method: 'get', path: '/api/campaigns/overview' },
-  'get_promotions_incentives_api_campaigns_promotions_incentives_get': { method: 'get', path: '/api/campaigns/promotions-incentives' },
-  'get_active_contest_api_contests_active_get': { method: 'get', path: '/api/contests/active' },
-  'get_active_contests_api_contests_active_all_get': { method: 'get', path: '/api/contests/active/all' },
-  'get_alerts_api_crm_alerts_get': { method: 'get', path: '/api/crm/alerts' },
-  'get_scores_api_crm_scores_get': { method: 'get', path: '/api/crm/scores' },
-  'recalculate_scores_api_crm_scores_recalculate_post': { method: 'post', path: '/api/crm/scores/recalculate' },
-  'get_dashboard_all_api_dashboard_all_get': { method: 'get', path: '/api/dashboard/all' },
-  'get_dashboard_all_batch_api_dashboard_all_batch_post': { method: 'post', path: '/api/dashboard/all-batch' },
-  'get_daily_sales_api_dashboard_daily_get': { method: 'get', path: '/api/dashboard/daily' },
-  'get_monthly_history_api_dashboard_history_get': { method: 'get', path: '/api/dashboard/history' },
-  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': { method: 'post', path: '/api/dashboard/history-details-batch' },
-  'get_history_by_year_api_dashboard_history_year_get': { method: 'get', path: '/api/dashboard/history-year' },
-  'get_performance_detail_api_dashboard_performance_detail_get': { method: 'get', path: '/api/dashboard/performance-detail' },
-  'get_premium_glass_api_dashboard_premium_glass_get': { method: 'get', path: '/api/dashboard/premium-glass' },
-  'get_special_cards_api_dashboard_special_cards_get': { method: 'get', path: '/api/dashboard/special-cards' },
-  'get_summary_api_dashboard_summary_get': { method: 'get', path: '/api/dashboard/summary' },
-  'get_catalog_api_exports_catalog_get': { method: 'get', path: '/api/exports/catalog' },
-  'download_export_api_exports_download_post': { method: 'post', path: '/api/exports/download' },
-  'preview_export_api_exports_preview_post': { method: 'post', path: '/api/exports/preview' },
-  'get_available_months_api_filters_months_get': { method: 'get', path: '/api/filters/months' },
-  'get_filter_options_api_filters_options_get': { method: 'get', path: '/api/filters/options' },
-  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': { method: 'post', path: '/api/grile/agent-targets/diff' },
-  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': { method: 'get', path: '/api/grile/agent-targets/operations/{operation_id}' },
-  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': { method: 'post', path: '/api/grile/agent-targets/sync' },
-  'grile_monthly_download_api_grile_monthly_download__kind___month__get': { method: 'get', path: '/api/grile/monthly/download/{kind}/{month}' },
-  'grile_monthly_job_api_grile_monthly_job__job_id__get': { method: 'get', path: '/api/grile/monthly/job/{job_id}' },
-  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': { method: 'post', path: '/api/grile/monthly/manifests/{manifest_id}/approve' },
-  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': { method: 'get', path: '/api/grile/monthly/manifests/{month}' },
-  'grile_monthly_permissions_api_grile_monthly_permissions_get': { method: 'get', path: '/api/grile/monthly/permissions' },
-  'grile_monthly_run_api_grile_monthly_run_post': { method: 'post', path: '/api/grile/monthly/run' },
-  'grile_overview_api_grile_overview_get': { method: 'get', path: '/api/grile/overview' },
-  'grile_run_api_grile_run_post': { method: 'post', path: '/api/grile/run' },
-  'grile_run_status_api_grile_run_status_get': { method: 'get', path: '/api/grile/run-status' },
-  'grile_store_refresh_api_grile_stores__site_code__refresh_post': { method: 'post', path: '/api/grile/stores/{site_code}/refresh' },
-  'get_asm_perf_api_hr_asm_performance_get': { method: 'get', path: '/api/hr/asm-performance' },
-  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { method: 'get', path: '/api/hr/asm-performance/{asm_name}/history' },
-  'get_asm_salary_api_hr_asm_salary__asm_name__get': { method: 'get', path: '/api/hr/asm-salary/{asm_name}' },
-  'get_leave_requests_api_hr_leave_requests_get': { method: 'get', path: '/api/hr/leave-requests' },
-  'post_leave_request_api_hr_leave_requests_post': { method: 'post', path: '/api/hr/leave-requests' },
-  'patch_leave_request_api_hr_leave_requests__request_id__patch': { method: 'patch', path: '/api/hr/leave-requests/{request_id}' },
-  'get_manager_overview_api_hr_manager_overview_get': { method: 'get', path: '/api/hr/manager-overview' },
-  'get_performance_api_hr_performance__agent_name__get': { method: 'get', path: '/api/hr/performance/{agent_name}' },
-  'reconcile_erp_report_file_api_import_erp_reconciliation_post': { method: 'post', path: '/api/import/erp-reconciliation' },
-  'get_import_history_api_import_history_get': { method: 'get', path: '/api/import/history' },
-  'get_import_job_status_api_import_jobs__job_id__get': { method: 'get', path: '/api/import/jobs/{job_id}' },
-  'upload_promo_actuals_file_api_import_promo_actuals_post': { method: 'post', path: '/api/import/promo-actuals' },
-  'upload_sales_file_api_import_sales_post': { method: 'post', path: '/api/import/sales' },
-  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { method: 'post', path: '/api/import/sales/{snapshot_id}/promote' },
-  'annual_api_store_pnl_annual_get': { method: 'get', path: '/api/store-pnl/annual' },
-  'months_api_store_pnl_months_get': { method: 'get', path: '/api/store-pnl/months' },
-  'overview_api_store_pnl_overview_get': { method: 'get', path: '/api/store-pnl/overview' },
-  'pnl_permissions_api_store_pnl_permissions_get': { method: 'get', path: '/api/store-pnl/permissions' },
-  'regions_api_store_pnl_regions_get': { method: 'get', path: '/api/store-pnl/regions' },
-  'stores_api_store_pnl_stores_get': { method: 'get', path: '/api/store-pnl/stores' },
-  'list_stores_api_stores_get': { method: 'get', path: '/api/stores' },
-  'save_targets_api_stores_targets_post': { method: 'post', path: '/api/stores/targets' },
-  'change_store_activity_api_stores__site_code__activity_post': { method: 'post', path: '/api/stores/{site_code}/activity' },
-  'get_context_api_target_calculator_context_get': { method: 'get', path: '/api/target-calculator/context' },
-  'list_scenarios_api_target_calculator_scenarios_get': { method: 'get', path: '/api/target-calculator/scenarios' },
-  'calculate_scenario_api_target_calculator_scenarios_calculate_post': { method: 'post', path: '/api/target-calculator/scenarios/calculate' },
-  'get_scenario_api_target_calculator_scenarios__scenario_id__get': { method: 'get', path: '/api/target-calculator/scenarios/{scenario_id}' },
-  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': { method: 'get', path: '/api/target-calculator/scenarios/{scenario_id}/export' },
-  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': { method: 'post', path: '/api/target-calculator/scenarios/{scenario_id}/finalize' },
-  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': { method: 'patch', path: '/api/target-calculator/scenarios/{scenario_id}/rows' },
-  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': { method: 'get', path: '/api/target-calculator/scenarios/{scenario_id}/stores/{site_code}' },
-  'get_tasks_api_tasks_get': { method: 'get', path: '/api/tasks' },
-  'post_task_api_tasks_post': { method: 'post', path: '/api/tasks' },
-  'remove_task_api_tasks__task_id__delete': { method: 'delete', path: '/api/tasks/{task_id}' },
-  'patch_task_api_tasks__task_id__patch': { method: 'patch', path: '/api/tasks/{task_id}' },
-  'get_visits_report_api_visits_report_get': { method: 'get', path: '/api/visits-report' },
-  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': { method: 'get', path: '/api/visits-report/photo/{visit_id}/{filename}' },
-  'get_visits_tree_api_visits_report_tree_get': { method: 'get', path: '/api/visits-report/tree' },
-  'get_visit_detail_api_visits_report_visit__visit_id__get': { method: 'get', path: '/api/visits-report/visit/{visit_id}' },
-  'session_status_auth_session_get': { method: 'get', path: '/auth/session' },
-  'session_login_auth_session_login_get': { method: 'get', path: '/auth/session/login' },
-  'session_logout_auth_session_logout_post': { method: 'post', path: '/auth/session/logout' },
-  'metrics_metrics_get': { method: 'get', path: '/metrics' },
-  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { method: 'get', path: '/salarii/agents/history-by-retail-code' },
-  'agents_summary_salarii_agents_summary_get': { method: 'get', path: '/salarii/agents/summary' },
-  'agent_history_salarii_agents__person_id__history_get': { method: 'get', path: '/salarii/agents/{person_id}/history' },
-  'audit_salary_export_salarii_audit_export_post': { method: 'post', path: '/salarii/audit/export' },
-  'salarii_evolution_salarii_evolution_get': { method: 'get', path: '/salarii/evolution' },
-  'salarii_overview_salarii_overview_get': { method: 'get', path: '/salarii/overview' },
-  'list_records_salarii_records_get': { method: 'get', path: '/salarii/records' },
-  'salarii_stores_salarii_stores_get': { method: 'get', path: '/salarii/stores' },
-  'salarii_summary_salarii_summary_get': { method: 'get', path: '/salarii/summary' },
-  'salarii_trend_salarii_trend_get': { method: 'get', path: '/salarii/trend' },
+  'get_agent_evaluation_api_agents_evaluation_get': { method: 'get', path: '/api/agents/evaluation', responseType: 'json' },
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': { method: 'get', path: '/api/agents/evaluation-v2', responseType: 'json' },
+  'get_agent_history_api_agents_history_get': { method: 'get', path: '/api/agents/history', responseType: 'json' },
+  'get_agents_list_api_agents_list_get': { method: 'get', path: '/api/agents/list', responseType: 'json' },
+  'get_agents_movement_api_agents_movement_get': { method: 'get', path: '/api/agents/movement', responseType: 'json' },
+  'get_agents_overview_api_agents_overview_get': { method: 'get', path: '/api/agents/overview', responseType: 'json' },
+  'get_agent_profile_api_agents_profile_get': { method: 'get', path: '/api/agents/profile', responseType: 'json' },
+  'get_stores_coverage_api_agents_stores_coverage_get': { method: 'get', path: '/api/agents/stores-coverage', responseType: 'json' },
+  'get_current_ai_forecast_api_ai_forecast_current_get': { method: 'get', path: '/api/ai-forecast/current', responseType: 'json' },
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { method: 'get', path: '/api/ai-forecast/rolling-12', responseType: 'json' },
+  'get_focus_history_api_campaigns_history_get': { method: 'get', path: '/api/campaigns/history', responseType: 'json' },
+  'get_campaign_overview_api_campaigns_overview_get': { method: 'get', path: '/api/campaigns/overview', responseType: 'json' },
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': { method: 'get', path: '/api/campaigns/promotions-incentives', responseType: 'json' },
+  'get_active_contest_api_contests_active_get': { method: 'get', path: '/api/contests/active', responseType: 'json' },
+  'get_active_contests_api_contests_active_all_get': { method: 'get', path: '/api/contests/active/all', responseType: 'json' },
+  'get_alerts_api_crm_alerts_get': { method: 'get', path: '/api/crm/alerts', responseType: 'json' },
+  'get_scores_api_crm_scores_get': { method: 'get', path: '/api/crm/scores', responseType: 'json' },
+  'recalculate_scores_api_crm_scores_recalculate_post': { method: 'post', path: '/api/crm/scores/recalculate', responseType: 'json' },
+  'get_dashboard_all_api_dashboard_all_get': { method: 'get', path: '/api/dashboard/all', responseType: 'json' },
+  'get_dashboard_all_batch_api_dashboard_all_batch_post': { method: 'post', path: '/api/dashboard/all-batch', responseType: 'json' },
+  'get_daily_sales_api_dashboard_daily_get': { method: 'get', path: '/api/dashboard/daily', responseType: 'json' },
+  'get_monthly_history_api_dashboard_history_get': { method: 'get', path: '/api/dashboard/history', responseType: 'json' },
+  'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': { method: 'post', path: '/api/dashboard/history-details-batch', responseType: 'json' },
+  'get_history_by_year_api_dashboard_history_year_get': { method: 'get', path: '/api/dashboard/history-year', responseType: 'json' },
+  'get_performance_detail_api_dashboard_performance_detail_get': { method: 'get', path: '/api/dashboard/performance-detail', responseType: 'json' },
+  'get_premium_glass_api_dashboard_premium_glass_get': { method: 'get', path: '/api/dashboard/premium-glass', responseType: 'json' },
+  'get_special_cards_api_dashboard_special_cards_get': { method: 'get', path: '/api/dashboard/special-cards', responseType: 'json' },
+  'get_summary_api_dashboard_summary_get': { method: 'get', path: '/api/dashboard/summary', responseType: 'json' },
+  'get_catalog_api_exports_catalog_get': { method: 'get', path: '/api/exports/catalog', responseType: 'json' },
+  'download_export_api_exports_download_post': { method: 'post', path: '/api/exports/download', responseType: 'blob' },
+  'create_export_operation_api_exports_operations_post': { method: 'post', path: '/api/exports/operations', responseType: 'json' },
+  'get_resumable_export_operation_api_exports_operations_resumable_get': { method: 'get', path: '/api/exports/operations/resumable', responseType: 'json' },
+  'get_export_operation_api_exports_operations__operation_id__get': { method: 'get', path: '/api/exports/operations/{operation_id}', responseType: 'json' },
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post': { method: 'post', path: '/api/exports/operations/{operation_id}/cancel', responseType: 'json' },
+  'download_export_operation_api_exports_operations__operation_id__download_get': { method: 'get', path: '/api/exports/operations/{operation_id}/download', responseType: 'blob' },
+  'preview_export_api_exports_preview_post': { method: 'post', path: '/api/exports/preview', responseType: 'json' },
+  'get_available_months_api_filters_months_get': { method: 'get', path: '/api/filters/months', responseType: 'json' },
+  'get_filter_options_api_filters_options_get': { method: 'get', path: '/api/filters/options', responseType: 'json' },
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': { method: 'post', path: '/api/grile/agent-targets/diff', responseType: 'json' },
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': { method: 'get', path: '/api/grile/agent-targets/operations/{operation_id}', responseType: 'json' },
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': { method: 'post', path: '/api/grile/agent-targets/sync', responseType: 'json' },
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get': { method: 'get', path: '/api/grile/monthly/download/{kind}/{month}', responseType: 'json' },
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': { method: 'get', path: '/api/grile/monthly/job/{job_id}', responseType: 'json' },
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': { method: 'post', path: '/api/grile/monthly/manifests/{manifest_id}/approve', responseType: 'json' },
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': { method: 'get', path: '/api/grile/monthly/manifests/{month}', responseType: 'json' },
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': { method: 'get', path: '/api/grile/monthly/permissions', responseType: 'json' },
+  'grile_monthly_run_api_grile_monthly_run_post': { method: 'post', path: '/api/grile/monthly/run', responseType: 'json' },
+  'grile_overview_api_grile_overview_get': { method: 'get', path: '/api/grile/overview', responseType: 'json' },
+  'grile_run_api_grile_run_post': { method: 'post', path: '/api/grile/run', responseType: 'json' },
+  'grile_run_status_api_grile_run_status_get': { method: 'get', path: '/api/grile/run-status', responseType: 'json' },
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': { method: 'post', path: '/api/grile/stores/{site_code}/refresh', responseType: 'json' },
+  'get_asm_perf_api_hr_asm_performance_get': { method: 'get', path: '/api/hr/asm-performance', responseType: 'json' },
+  'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { method: 'get', path: '/api/hr/asm-performance/{asm_name}/history', responseType: 'json' },
+  'get_asm_salary_api_hr_asm_salary__asm_name__get': { method: 'get', path: '/api/hr/asm-salary/{asm_name}', responseType: 'json' },
+  'get_leave_requests_api_hr_leave_requests_get': { method: 'get', path: '/api/hr/leave-requests', responseType: 'json' },
+  'post_leave_request_api_hr_leave_requests_post': { method: 'post', path: '/api/hr/leave-requests', responseType: 'json' },
+  'patch_leave_request_api_hr_leave_requests__request_id__patch': { method: 'patch', path: '/api/hr/leave-requests/{request_id}', responseType: 'json' },
+  'get_manager_overview_api_hr_manager_overview_get': { method: 'get', path: '/api/hr/manager-overview', responseType: 'json' },
+  'get_performance_api_hr_performance__agent_name__get': { method: 'get', path: '/api/hr/performance/{agent_name}', responseType: 'json' },
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post': { method: 'post', path: '/api/import/erp-reconciliation', responseType: 'json' },
+  'get_import_history_api_import_history_get': { method: 'get', path: '/api/import/history', responseType: 'json' },
+  'get_import_job_status_api_import_jobs__job_id__get': { method: 'get', path: '/api/import/jobs/{job_id}', responseType: 'json' },
+  'upload_promo_actuals_file_api_import_promo_actuals_post': { method: 'post', path: '/api/import/promo-actuals', responseType: 'json' },
+  'upload_sales_file_api_import_sales_post': { method: 'post', path: '/api/import/sales', responseType: 'json' },
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { method: 'post', path: '/api/import/sales/{snapshot_id}/promote', responseType: 'json' },
+  'annual_api_store_pnl_annual_get': { method: 'get', path: '/api/store-pnl/annual', responseType: 'json' },
+  'months_api_store_pnl_months_get': { method: 'get', path: '/api/store-pnl/months', responseType: 'json' },
+  'overview_api_store_pnl_overview_get': { method: 'get', path: '/api/store-pnl/overview', responseType: 'json' },
+  'pnl_permissions_api_store_pnl_permissions_get': { method: 'get', path: '/api/store-pnl/permissions', responseType: 'json' },
+  'regions_api_store_pnl_regions_get': { method: 'get', path: '/api/store-pnl/regions', responseType: 'json' },
+  'stores_api_store_pnl_stores_get': { method: 'get', path: '/api/store-pnl/stores', responseType: 'json' },
+  'list_stores_api_stores_get': { method: 'get', path: '/api/stores', responseType: 'json' },
+  'save_targets_api_stores_targets_post': { method: 'post', path: '/api/stores/targets', responseType: 'json' },
+  'change_store_activity_api_stores__site_code__activity_post': { method: 'post', path: '/api/stores/{site_code}/activity', responseType: 'json' },
+  'get_context_api_target_calculator_context_get': { method: 'get', path: '/api/target-calculator/context', responseType: 'json' },
+  'list_scenarios_api_target_calculator_scenarios_get': { method: 'get', path: '/api/target-calculator/scenarios', responseType: 'json' },
+  'calculate_scenario_api_target_calculator_scenarios_calculate_post': { method: 'post', path: '/api/target-calculator/scenarios/calculate', responseType: 'json' },
+  'get_scenario_api_target_calculator_scenarios__scenario_id__get': { method: 'get', path: '/api/target-calculator/scenarios/{scenario_id}', responseType: 'json' },
+  'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': { method: 'get', path: '/api/target-calculator/scenarios/{scenario_id}/export', responseType: 'blob' },
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': { method: 'post', path: '/api/target-calculator/scenarios/{scenario_id}/finalize', responseType: 'json' },
+  'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': { method: 'patch', path: '/api/target-calculator/scenarios/{scenario_id}/rows', responseType: 'json' },
+  'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': { method: 'get', path: '/api/target-calculator/scenarios/{scenario_id}/stores/{site_code}', responseType: 'json' },
+  'get_tasks_api_tasks_get': { method: 'get', path: '/api/tasks', responseType: 'json' },
+  'post_task_api_tasks_post': { method: 'post', path: '/api/tasks', responseType: 'json' },
+  'remove_task_api_tasks__task_id__delete': { method: 'delete', path: '/api/tasks/{task_id}', responseType: 'json' },
+  'patch_task_api_tasks__task_id__patch': { method: 'patch', path: '/api/tasks/{task_id}', responseType: 'json' },
+  'get_visits_report_api_visits_report_get': { method: 'get', path: '/api/visits-report', responseType: 'json' },
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': { method: 'get', path: '/api/visits-report/photo/{visit_id}/{filename}', responseType: 'blob' },
+  'get_visits_tree_api_visits_report_tree_get': { method: 'get', path: '/api/visits-report/tree', responseType: 'json' },
+  'get_visit_detail_api_visits_report_visit__visit_id__get': { method: 'get', path: '/api/visits-report/visit/{visit_id}', responseType: 'json' },
+  'session_status_auth_session_get': { method: 'get', path: '/auth/session', responseType: 'json' },
+  'session_login_auth_session_login_get': { method: 'get', path: '/auth/session/login', responseType: 'json' },
+  'session_logout_auth_session_logout_post': { method: 'post', path: '/auth/session/logout', responseType: 'json' },
+  'metrics_metrics_get': { method: 'get', path: '/metrics', responseType: 'json' },
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { method: 'get', path: '/salarii/agents/history-by-retail-code', responseType: 'json' },
+  'agents_summary_salarii_agents_summary_get': { method: 'get', path: '/salarii/agents/summary', responseType: 'json' },
+  'agent_history_salarii_agents__person_id__history_get': { method: 'get', path: '/salarii/agents/{person_id}/history', responseType: 'json' },
+  'audit_salary_export_salarii_audit_export_post': { method: 'post', path: '/salarii/audit/export', responseType: 'json' },
+  'salarii_evolution_salarii_evolution_get': { method: 'get', path: '/salarii/evolution', responseType: 'json' },
+  'salarii_overview_salarii_overview_get': { method: 'get', path: '/salarii/overview', responseType: 'json' },
+  'list_records_salarii_records_get': { method: 'get', path: '/salarii/records', responseType: 'json' },
+  'salarii_stores_salarii_stores_get': { method: 'get', path: '/salarii/stores', responseType: 'json' },
+  'salarii_summary_salarii_summary_get': { method: 'get', path: '/salarii/summary', responseType: 'json' },
+  'salarii_trend_salarii_trend_get': { method: 'get', path: '/salarii/trend', responseType: 'json' },
 } as const;

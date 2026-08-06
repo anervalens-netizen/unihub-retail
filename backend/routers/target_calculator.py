@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -81,6 +82,31 @@ class TargetFinalizeRequest(BaseModel):
 
 class TargetOpenModel(BaseModel):
     model_config = ConfigDict(extra="allow")
+
+
+class TargetApiErrorResponse(BaseModel):
+    """Documented shape of explicit Target HTTPException responses."""
+
+    detail: str | dict[str, object]
+
+
+TargetErrorResponses = dict[int | str, dict[str, Any]]
+
+
+TARGET_BAD_REQUEST_RESPONSES: TargetErrorResponses = {
+    400: {"model": TargetApiErrorResponse},
+}
+TARGET_NOT_FOUND_RESPONSES: TargetErrorResponses = {
+    404: {"model": TargetApiErrorResponse},
+}
+TARGET_CONFLICT_RESPONSES: TargetErrorResponses = {
+    409: {"model": TargetApiErrorResponse},
+}
+TARGET_MUTATION_ERROR_RESPONSES: TargetErrorResponses = {
+    **TARGET_BAD_REQUEST_RESPONSES,
+    **TARGET_NOT_FOUND_RESPONSES,
+    **TARGET_CONFLICT_RESPONSES,
+}
 
 
 class TargetContextResponse(TargetOpenModel):
@@ -343,7 +369,7 @@ async def get_target_calculator_service() -> TargetCalculatorService:
     return TargetCalculatorService(TargetCalculatorRepository(pool))
 
 
-@router.get("/context")
+@router.get("/context", responses=TARGET_NOT_FOUND_RESPONSES)
 async def get_context(
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
     claims: AuthClaims = Depends(require_auth),
@@ -361,7 +387,10 @@ async def list_scenarios(
     return [TargetScenarioSummaryResponse.model_validate(item) for item in await svc.list_scenarios()]
 
 
-@router.post("/scenarios/calculate")
+@router.post("/scenarios/calculate", responses={
+    **TARGET_BAD_REQUEST_RESPONSES,
+    **TARGET_CONFLICT_RESPONSES,
+})
 async def calculate_scenario(
     body: TargetCalculationRequest,
     _claims: AuthClaims = Depends(require_target_owner),
@@ -371,7 +400,7 @@ async def calculate_scenario(
     return TargetScenarioResponse.model_validate(await svc.calculate(body.model_dump()))
 
 
-@router.patch("/scenarios/{scenario_id}/rows")
+@router.patch("/scenarios/{scenario_id}/rows", responses=TARGET_MUTATION_ERROR_RESPONSES)
 async def update_final_targets(
     scenario_id: int,
     body: TargetFinalRowsRequest,
@@ -389,7 +418,7 @@ async def update_final_targets(
     )
 
 
-@router.post("/scenarios/{scenario_id}/finalize")
+@router.post("/scenarios/{scenario_id}/finalize", responses=TARGET_MUTATION_ERROR_RESPONSES)
 async def finalize_scenario(
     scenario_id: int,
     body: TargetFinalizeRequest,
@@ -405,6 +434,8 @@ async def finalize_scenario(
 @router.get(
     "/scenarios/{scenario_id}/export",
     responses={
+        **TARGET_NOT_FOUND_RESPONSES,
+        **TARGET_CONFLICT_RESPONSES,
         200: {
             "content": {
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
@@ -427,7 +458,7 @@ async def export_scenario(
     )
 
 
-@router.get("/scenarios/{scenario_id}/stores/{site_code}")
+@router.get("/scenarios/{scenario_id}/stores/{site_code}", responses=TARGET_NOT_FOUND_RESPONSES)
 async def get_store_detail(
     scenario_id: int,
     site_code: str,
@@ -438,7 +469,10 @@ async def get_store_detail(
     )
 
 
-@router.get("/scenarios/{scenario_id}")
+@router.get("/scenarios/{scenario_id}", responses={
+    **TARGET_NOT_FOUND_RESPONSES,
+    **TARGET_CONFLICT_RESPONSES,
+})
 async def get_scenario(
     scenario_id: int,
     svc: TargetCalculatorService = Depends(get_target_calculator_service),

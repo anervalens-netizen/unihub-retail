@@ -1,4 +1,4 @@
-import type { ImportJobStatus } from '../api/types';
+import type { ImportJobStatus } from '../api/generated/runtime-types';
 
 export type ImportJobPollOutcome =
   | { kind: 'complete'; job: ImportJobStatus }

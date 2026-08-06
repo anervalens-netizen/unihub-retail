@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from models import PromoIncentiveSummary
-from services.dashboard.queries import DashboardCampaignContext
+from services.campaigns import CampaignContext
 from services.dashboard.specials_data import _get_special_cards_data
 
 
@@ -18,7 +18,7 @@ class FakeRow(dict):
 
 @pytest.mark.asyncio
 async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> None:
-    context = DashboardCampaignContext(
+    context = CampaignContext(
         config_error=None,
         promotion_definitions=[],
         promotion_definition=None,
@@ -85,11 +85,11 @@ async def test_special_cards_reuses_context_and_scans_incentive_rows_once() -> N
             return_value=pool,
         ),
         patch(
-            "services.dashboard.specials_data._load_dashboard_campaign_context",
+            "services.dashboard.specials_data.load_campaign_context",
             new_callable=AsyncMock,
         ) as mock_load_context,
         patch(
-            "services.dashboard.specials_data._fetch_promo_incentive_summary",
+            "services.dashboard.specials_data.fetch_promo_incentive_summary",
             new_callable=AsyncMock,
         ) as mock_fetch_summary,
     ):

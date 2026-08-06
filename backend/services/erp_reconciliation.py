@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -13,6 +14,7 @@ from typing import Any, Iterable, Literal, Mapping
 
 import asyncpg
 import pandas as pd
+from arq.jobs import Job
 from fastapi import HTTPException, UploadFile, status
 
 from repositories.erp_reconciliation import ErpReconciliationRepository
@@ -23,8 +25,11 @@ from schemas.erp_reconciliation import (
     ErpReconciliationMetric,
     ErpReconciliationResponse,
 )
-from services.dashboard.queries import _fetch_promo_incentive_summary
+from services.campaigns import fetch_promo_incentive_summary
+from services.jobs import enqueue_erp_reconciliation
 from services.spreadsheet_safety import (
+    ERP_RECONCILIATION_SPREADSHEET_LIMITS,
+    SpreadsheetParserMeasurement,
     SpreadsheetUploadError,
     validate_spreadsheet_upload,
 )
@@ -76,6 +81,7 @@ class ParsedErpReport:
     cutoff_date: date
     stores: dict[tuple[str], dict[str, Any]]
     agents: dict[tuple[str, str], dict[str, Any]]
+    parser_resources: dict[str, int | float | str | None] | None = None
 
 
 def _cell_text(value: Any) -> str:
@@ -169,7 +175,7 @@ def _parse_sheet(
     return parsed
 
 
-def parse_erp_report(
+def _parse_erp_report_impl(
     content: bytes,
     import_month: str,
     *,
@@ -266,6 +272,33 @@ def parse_erp_report(
         stores=stores,
         agents=agents,
     )
+
+
+def parse_erp_report(
+    content: bytes,
+    import_month: str,
+    *,
+    cutoff_date: date,
+    source_suffix: str = ".xlsx",
+) -> ParsedErpReport:
+    measurement = SpreadsheetParserMeasurement("erp_reconciliation")
+    with measurement:
+        try:
+            preflight = validate_spreadsheet_upload(
+                content,
+                source_suffix,
+                limits=ERP_RECONCILIATION_SPREADSHEET_LIMITS,
+            )
+        except SpreadsheetUploadError as exc:
+            raise ErpReportValidationError(str(exc)) from exc
+        measurement.set_preflight(preflight)
+        parsed = _parse_erp_report_impl(
+            content,
+            import_month,
+            cutoff_date=cutoff_date,
+        )
+        measurement.set_rows(len(parsed.stores) + len(parsed.agents))
+    return replace(parsed, parser_resources=measurement.as_dict())
 
 
 def _sum(rows: Iterable[Mapping[str, Any]], key: str) -> Decimal:
@@ -732,6 +765,13 @@ def reconcile_erp_report(
             "Toate interogarile comparabile sunt limitate la perioada 1-cutoff a snapshotului Retail activ; coloanele ZileLuna/ZileTrecute/ZileRamase din raport sunt ignorate.",
             "Sunt folosite randurile detaliate din foile Locatii si Agenti; randul de subtotal cache-uit deasupra antetului nu este sursa de adevar.",
             "Locatiile TR sunt excluse, identic cu KPI-urile Retail.",
+            "parser_resources="
+            + json.dumps(
+                parsed.parser_resources or {},
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
         ],
     )
 
@@ -746,7 +786,7 @@ class ErpReconciliationService:
         *,
         file: UploadFile,
         import_month: str,
-    ) -> ErpReconciliationResponse:
+    ) -> Job:
         if not file.filename or Path(file.filename).suffix.casefold() not in ALLOWED_ERP_EXTENSIONS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -767,16 +807,22 @@ class ErpReconciliationService:
         if not content:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raportul este gol")
         try:
-            await asyncio.to_thread(
-                validate_spreadsheet_upload,
-                content,
-                Path(file.filename).suffix,
-            )
-        except SpreadsheetUploadError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
+            date.fromisoformat(f"{import_month}-01")
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Luna selectata este invalida") from exc
+        return await enqueue_erp_reconciliation(
+            content,
+            filename=file.filename,
+            import_month=import_month,
+        )
+
+    async def process(
+        self,
+        *,
+        content: bytes,
+        filename: str,
+        import_month: str,
+    ) -> ErpReconciliationResponse:
         try:
             date.fromisoformat(f"{import_month}-01")
         except ValueError as exc:
@@ -796,6 +842,7 @@ class ErpReconciliationService:
                 content,
                 import_month,
                 cutoff_date=retail_cutoff_date,
+                source_suffix=Path(filename).suffix,
             )
         except ErpReportValidationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -815,7 +862,7 @@ class ErpReconciliationService:
                 else None
             )
             async with self.pool.acquire() as conn:
-                campaign_summary = await _fetch_promo_incentive_summary(
+                campaign_summary = await fetch_promo_incentive_summary(
                     conn,
                     import_month,
                     None,
@@ -835,6 +882,6 @@ class ErpReconciliationService:
             reference,
             campaign_summary,
             import_month=import_month,
-            filename=file.filename,
+            filename=filename,
             file_digest=hashlib.sha256(content).hexdigest()[:12],
         )

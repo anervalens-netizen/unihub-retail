@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { TargetWorkflow } from './TargetWorkflow';
-import { TargetErrorNotice } from '../../components/TargetCalculatorSubtab';
+import { TargetErrorNotice } from './TargetCalculatorPage';
 
 describe('TargetWorkflow', () => {
   it('exposes the active step and progress in the DOM', () => {

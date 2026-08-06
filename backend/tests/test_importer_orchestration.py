@@ -250,7 +250,7 @@ async def test_import_sales_file_delegates_loaded_dataframe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     frame = sales_frame().iloc[:1]
-    load = lambda source: frame
+    load = lambda source, **_kwargs: frame
     run_import = AsyncMock(return_value="result")
     monkeypatch.setattr(importer, "load_sales_dataframe", load)
     monkeypatch.setattr(importer, "import_sales_dataframe", run_import)
@@ -275,6 +275,7 @@ async def test_import_sales_file_delegates_loaded_dataframe(
         source_artifact_required=False,
         source_artifact_path=None,
         source_artifact_bytes=None,
+        parser_resource_stats={},
     )
 
 

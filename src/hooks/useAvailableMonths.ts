@@ -6,10 +6,19 @@ import { ApiError } from '../api/client';
 
 export const AVAILABLE_MONTHS_QUERY_KEY = ['filters', 'available-months'] as const;
 const AVAILABLE_MONTHS_CACHE_KEY = 'unihub_available_months_v1';
-const MIN_CACHED_MONTHS = 2;
+const MIN_CACHED_MONTHS = 1;
+
+export function clearAvailableMonthsCache(): void {
+  try {
+    window.localStorage.removeItem(AVAILABLE_MONTHS_CACHE_KEY);
+  } catch {
+    // Storage can be disabled; the in-memory query cache is cleared separately.
+  }
+}
 
 type CachedMonths = {
   version: 1;
+  identityKey?: string;
   months: string[];
   savedAt: string;
 };
@@ -33,13 +42,14 @@ export type AvailableMonthsState = {
   setMonths: (months: string[] | ((previous: string[]) => string[])) => void;
 };
 
-function readCachedMonths(): CachedMonths | null {
+export function readCachedMonths(identityKey: string): CachedMonths | null {
   try {
     const raw = window.localStorage.getItem(AVAILABLE_MONTHS_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedMonths>;
     if (
       parsed.version !== 1 ||
+      parsed.identityKey !== identityKey ||
       !Array.isArray(parsed.months) ||
       parsed.months.length < MIN_CACHED_MONTHS ||
       !parsed.months.every((month): month is string => /^\d{4}-(0[1-9]|1[0-2])$/.test(month)) ||
@@ -53,11 +63,12 @@ function readCachedMonths(): CachedMonths | null {
   }
 }
 
-function writeCachedMonths(months: string[]): void {
+function writeCachedMonths(months: string[], identityKey: string): void {
   if (months.length < MIN_CACHED_MONTHS) return;
   try {
     const payload: CachedMonths = {
       version: 1,
+      identityKey,
       months: [...new Set(months)].sort().reverse(),
       savedAt: new Date().toISOString(),
     };
@@ -91,11 +102,21 @@ export function classifyAvailableMonths(
   return cached ? 'stale' : 'unavailable';
 }
 
-export function useAvailableMonths(authenticated: boolean): AvailableMonthsState {
+export function useAvailableMonths(
+  authenticated: boolean,
+  identityKey = 'authenticated',
+): AvailableMonthsState {
   const queryClient = useQueryClient();
-  const cached = useMemo(() => (authenticated ? readCachedMonths() : null), [authenticated]);
+  const cached = useMemo(
+    () => (authenticated ? readCachedMonths(identityKey) : null),
+    [authenticated, identityKey],
+  );
+  const queryKey = useMemo(
+    () => [...AVAILABLE_MONTHS_QUERY_KEY, identityKey] as const,
+    [identityKey],
+  );
   const query = useQuery({
-    queryKey: AVAILABLE_MONTHS_QUERY_KEY,
+    queryKey,
     enabled: authenticated,
     queryFn: ({ signal }) => getAvailableMonths(signal),
     retry: shouldRetry,
@@ -104,16 +125,16 @@ export function useAvailableMonths(authenticated: boolean): AvailableMonthsState
   });
 
   useEffect(() => {
-    if (query.data) writeCachedMonths(query.data);
-  }, [query.data]);
+    if (query.data) writeCachedMonths(query.data, identityKey);
+  }, [identityKey, query.data]);
 
   const setMonths = useCallback(
     (next: string[] | ((previous: string[]) => string[])) => {
-      queryClient.setQueryData<string[]>(AVAILABLE_MONTHS_QUERY_KEY, (previous = []) =>
+      queryClient.setQueryData<string[]>(queryKey, (previous = []) =>
         typeof next === 'function' ? next(previous) : next,
       );
     },
-    [queryClient],
+    [queryClient, queryKey],
   );
 
   const status = classifyAvailableMonths(

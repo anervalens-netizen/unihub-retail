@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import date
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
@@ -12,6 +14,8 @@ from openpyxl import Workbook
 
 import services.imports as imports_module
 from services.imports import ImportsService
+from services.dashboard_specials import _generated_config_path
+from services.promo_copurchase import load_promo_actual_units, load_promo_actual_values
 
 
 def service() -> ImportsService:
@@ -20,7 +24,14 @@ def service() -> ImportsService:
 
 def workbook_bytes() -> bytes:
     workbook = Workbook()
-    workbook.active["A1"] = "promo"
+    sheet = workbook.active
+    sheet.title = "AccesoriPromoLunar"
+    sheet.append(
+        ["SiteCode", "Cod", "Promo Luna Curenta", "PromoValoare Luna Curenta"]
+    )
+    sheet.append(["S1", "I1", 2, "20.00"])
+    sheet.append(["S2", "I2", 2, "30.00"])
+    sheet.append(["S3", "I3", 3, "40.00"])
     stream = BytesIO()
     workbook.save(stream)
     return stream.getvalue()
@@ -28,6 +39,15 @@ def workbook_bytes() -> bytes:
 
 def upload(content: bytes | None = None, filename: str | None = "promo.xlsx") -> UploadFile:
     return UploadFile(file=BytesIO(content if content is not None else workbook_bytes()), filename=filename)
+
+
+async def process_promo_actuals(*, file: UploadFile, import_month: str, cutoff_date: date):
+    return await service().process_promo_actuals(
+        content=await file.read(),
+        filename=file.filename or "promo.xlsx",
+        import_month=import_month,
+        cutoff_date=cutoff_date,
+    )
 
 
 def configure_paths(
@@ -109,14 +129,8 @@ async def test_promo_actuals_reports_unreadable_config(
 ) -> None:
     missing = tmp_path / "missing.json"
     monkeypatch.setattr(imports_module, "get_special_cards_config_path", lambda: missing)
-    monkeypatch.setattr(
-        ImportsService,
-        "_validate_promo_actuals_report",
-        staticmethod(lambda _: (1, 2)),
-    )
-
     with pytest.raises(HTTPException) as exc:
-        await service().import_promo_actuals(
+        await process_promo_actuals(
             file=upload(),
             import_month="2026-06",
             cutoff_date=date(2026, 6, 15),
@@ -133,14 +147,8 @@ async def test_promo_actuals_rejects_invalid_config_shape(
     config: object,
 ) -> None:
     configure_paths(monkeypatch, tmp_path, config)
-    monkeypatch.setattr(
-        ImportsService,
-        "_validate_promo_actuals_report",
-        staticmethod(lambda _: (1, 2)),
-    )
-
     with pytest.raises(HTTPException) as exc:
-        await service().import_promo_actuals(
+        await process_promo_actuals(
             file=upload(),
             import_month="2026-06",
             cutoff_date=date(2026, 6, 15),
@@ -169,19 +177,13 @@ async def test_promo_actuals_persists_file_and_updates_only_matching_promotions(
                     "key": "active",
                     "start_date": "2026-06-01",
                     "end_date": "2026-06-30",
-                    "item_codes": ["ACTIVE"],
+                    "item_codes": ["I1", "I2", "I3"],
                 },
             ]
         },
     )
-    monkeypatch.setattr(
-        ImportsService,
-        "_validate_promo_actuals_report",
-        staticmethod(lambda _: (3, 7)),
-    )
-
     report_content = workbook_bytes()
-    result = await service().import_promo_actuals(
+    result = await process_promo_actuals(
         file=upload(content=report_content, filename="PROMO.XLSX"),
         import_month="2026-06",
         cutoff_date=date(2026, 6, 15),
@@ -210,11 +212,37 @@ async def test_promo_actuals_persists_file_and_updates_only_matching_promotions(
     assert destination.suffix == ".xlsx"
     assert active["actuals_sheet"] == "AccesoriPromoLunar"
     assert active["actuals_cutoff_date"] == "2026-06-15"
+    assert active["actuals_source_sha256"] == result.source_sha256
+    material_path = Path(active["actuals_material_file"])
+    assert material_path.is_file()
+    assert active["actuals_material_sha256"] == hashlib.sha256(
+        material_path.read_bytes()
+    ).hexdigest()
+    material = json.loads(material_path.read_text(encoding="utf-8"))
+    assert material["report_rows"] == 3
+    assert material["promo_units"] == 7
+    assert material["cutoff_date"] == "2026-06-15"
+    units, units_error = load_promo_actual_units(active, item_codes=["I1", "I2", "I3"])
+    values, values_error = load_promo_actual_values(active, item_codes=["I1", "I2", "I3"])
+    assert units_error is None
+    assert values_error is None
+    assert units == {("S1", "I1"): 2, ("S2", "I2"): 2, ("S3", "I3"): 3}
+    assert values == {
+        ("S1", "I1"): Decimal("20.00"),
+        ("S2", "I2"): Decimal("30.00"),
+        ("S3", "I3"): Decimal("40.00"),
+    }
     other = next(item for item in stored["promotions"] if item["key"] == "other-month")
     assert "actuals_source_file" not in other
     assert pointer["actuals"] == [
         {"file": str(destination), "sha256": result.source_sha256}
     ]
+    assert pointer["version"] == 2
+    assert pointer["actuals_materials"] == [
+        {"file": str(material_path), "sha256": active["actuals_material_sha256"]}
+    ]
+    assert pointer["parser_resources"]["rows"] == 3
+    assert _generated_config_path(tmp_path / "data") == generated_config_path
 
 
 @pytest.mark.asyncio
@@ -227,14 +255,8 @@ async def test_promo_actuals_removes_saved_file_when_no_promotion_matches(
         tmp_path,
         {"promotions": [{"start_date": "2026-05-01", "end_date": "2026-05-31"}]},
     )
-    monkeypatch.setattr(
-        ImportsService,
-        "_validate_promo_actuals_report",
-        staticmethod(lambda _: (1, 1)),
-    )
-
     with pytest.raises(HTTPException) as exc:
-        await service().import_promo_actuals(
+        await process_promo_actuals(
             file=upload(),
             import_month="2026-06",
             cutoff_date=date(2026, 6, 15),
@@ -266,14 +288,8 @@ async def test_promo_actuals_rejects_cutoff_regression(
             ]
         },
     )
-    monkeypatch.setattr(
-        ImportsService,
-        "_validate_promo_actuals_report",
-        staticmethod(lambda _: (1, 1)),
-    )
-
     with pytest.raises(HTTPException) as exc:
-        await service().import_promo_actuals(
+        await process_promo_actuals(
             file=upload(),
             import_month="2026-06",
             cutoff_date=date(2026, 6, 14),
@@ -395,6 +411,8 @@ def test_publish_promo_generation_rejects_stale_pointer(tmp_path: Path) -> None:
             content=b"report",
             suffix=".xlsx",
             material_sha256="a" * 64,
+            actuals_material=b"{}\n",
+            parser_resources={"rows": 1},
             expected_pointer_sha256=None,
         )
     assert pointer_path.read_bytes() == original_pointer

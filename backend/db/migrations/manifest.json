@@ -59,6 +59,7 @@
     "051_insight_planning_promotion_read_model.sql": "1f7fafe8d3889d77affb2602502d0411d4bb28df0ab31a897c796e3ddf4f3bb0",
     "052_insight_planning_hash_acl.sql": "3cb4411dba9ef15723ee82df7dff7dbb75f58efa61c9dbe751000ce1986aec4d",
     "053_insight_campaign_publication.sql": "bf3a4f5ae58dee480a224acc4664f2c294aa3f0d9d09f9339fcee44910f58ad2",
-    "054_campaign_reporting_publisher_acl.sql": "8b04375c053ca1d1e081ba17d06e3049e0b48035f547c32b8743ef7237608db8"
+    "054_campaign_reporting_publisher_acl.sql": "8b04375c053ca1d1e081ba17d06e3049e0b48035f547c32b8743ef7237608db8",
+    "055_durable_export_operations.sql": "69e02b01dbfab1caf207b30a46b7abf2b1dcbeb7f51e26bcfabc5c1ec0c63b28"
   }
 }

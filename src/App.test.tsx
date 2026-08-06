@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const authState = {
+const authState: {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: ReturnType<typeof vi.fn>;
+  logout: ReturnType<typeof vi.fn>;
+  user: { profile: { sub: string; groups: string[] } } | null;
+} = {
   isAuthenticated: false,
   isLoading: false,
   login: vi.fn(),
@@ -72,7 +78,8 @@ describe('App bootstrap boundary', () => {
     render(<App />);
 
     expect(screen.getByText('Lunile disponibile nu au putut fi încărcate.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reîncearcă' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reîncearcă' }));
+    expect(monthsState.retry).toHaveBeenCalledOnce();
   });
 
   it('does not offer blind retry after session expiry', () => {
@@ -83,5 +90,18 @@ describe('App bootstrap boundary', () => {
 
     expect(screen.getByText(/Sesiunea a expirat/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reîncearcă' })).not.toBeInTheDocument();
+  });
+
+  it('continues bootstrap when authentication becomes valid', () => {
+    const view = render(<App />);
+    expect(screen.getByText('Nu ești autentificat.')).toBeInTheDocument();
+
+    authState.isAuthenticated = true;
+    authState.user = { profile: { sub: 'subject-a', groups: [] } };
+    monthsState.months = ['2026-08'];
+    monthsState.status = 'ready';
+    view.rerender(<App />);
+
+    expect(screen.getByTestId('main-layout')).toBeInTheDocument();
   });
 });

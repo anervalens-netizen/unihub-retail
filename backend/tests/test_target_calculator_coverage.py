@@ -20,6 +20,9 @@ from services.target_calculator import (
     allocate_with_bounds,
     allocate_with_floors,
 )
+from services.target_calculator.export import manager_allocation_analysis
+from services.target_calculator.scenarios import has_pending_final_targets
+from services.target_calculator.serialization import regional_summary, source_summary
 from services.target_rule_registry import canonical_rules_hash, validate_target_rule_set
 
 
@@ -64,6 +67,48 @@ def bounded_row(weight: str = "1", floor: str = "0", cap: str = "100") -> dict[s
     }
 
 
+def test_response_aggregations_keep_half_cent_money_exact_until_public_boundary() -> None:
+    history = [
+        {"month": "2025-05", "label": "Baza", "role": "seasonality_base_y1", "target": Decimal("0.005"), "realized": Decimal("0.005")},
+        {"month": "2025-06", "label": "Target", "role": "seasonality_target_y1", "target": Decimal("0.005"), "realized": Decimal("0.005")},
+        {"month": "2026-05", "label": "Forecast", "role": "floor_reference", "target": Decimal("0.005"), "realized": Decimal("0.005"), "actual_realized": Decimal("0.005"), "is_forecast": True},
+    ]
+    rows = [
+        {
+            "regional": "Regional A",
+            "floor_target": Decimal("0.005"),
+            "proposed_target": Decimal("0.005"),
+            "final_target": Decimal("0.005"),
+            "calculation_details": {"current_month": "2026-05", "current_forecast": Decimal("0.005")},
+            "history": history,
+        }
+        for _ in range(10_000)
+    ]
+
+    regional = regional_summary(rows)[0]
+    sources = {item["month"]: item for item in source_summary(rows)}
+    manager = manager_allocation_analysis({"target_month": "2026-06", "rows": [
+        {
+            "regional": "Regional A",
+            "proposed_target": Decimal("0.005"),
+            "history": history,
+            "profitability": {"forecast_sales": Decimal("0.005")},
+        }
+        for _ in range(10_000)
+    ]})[-1]
+
+    assert regional["proposed_total"] == 50.0
+    assert regional["current_forecast_total"] == 50.0
+    assert sources["2026-05"]["realized"] == 50.0
+    assert manager["target"] == 50.0
+    assert manager["forecast"] == 50.0
+
+
+def test_scenario_pending_final_policy_is_explicit() -> None:
+    assert has_pending_final_targets({"pending_final_count": 1}) is True
+    assert has_pending_final_targets({"pending_final_count": 0}) is False
+
+
 def make_calculation_service() -> tuple[TargetCalculatorService, MagicMock]:
     repo = MagicMock()
     repo.get_latest_sales_month = AsyncMock(return_value="2026-05")
@@ -102,7 +147,19 @@ def make_calculation_service() -> tuple[TargetCalculatorService, MagicMock]:
     connection = MagicMock()
     repo.pool.acquire.return_value.__aenter__ = AsyncMock(return_value=connection)
     repo.pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
-    return TargetCalculatorService(repo), repo
+    async def forecast_factor(conn: object, month: str) -> Any:
+        return await target.get_forecast_factor(conn, month)
+
+    def allocator(
+        rows: list[dict[str, Any]], requested_total: Decimal
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        return target.allocate_with_bounds(rows, requested_total)
+
+    return TargetCalculatorService(
+        repo,
+        forecast_factor_loader=forecast_factor,
+        allocator=allocator,
+    ), repo
 
 
 def calculation_payload() -> dict[str, Any]:
@@ -114,6 +171,23 @@ def calculation_payload() -> dict[str, Any]:
         "previous_month_cap_pct": 1.7,
         "expected_revision": 2,
     }
+
+
+@pytest.mark.asyncio
+async def test_context_uses_latest_target_fallback_and_rejects_missing_sales_month() -> None:
+    service, repo = make_calculation_service()
+    repo.get_target_total = AsyncMock(side_effect=[Decimal("0"), Decimal("45000")])
+
+    context = await service.get_context()
+
+    assert context["latest_sales_month"] == "2026-05"
+    assert context["suggested_target_month"] == "2026-06"
+    assert context["suggested_total_target"] == 45000.0
+    repo.get_target_total.assert_has_awaits([(("2026-06",), {}), (("2026-05",), {})])
+
+    repo.get_latest_sales_month.return_value = None
+    with pytest.raises(HTTPException, match="Nu exista date"):
+        await service.get_context()
 
 
 def profitability_inputs() -> dict[str, Any]:

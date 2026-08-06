@@ -6,6 +6,14 @@ type CacheEntry<T> = {
 const MAX_CACHE_SIZE = 50;
 const cache = new Map<string, CacheEntry<unknown>>();
 
+export function clearCachedViews(): void {
+  cache.clear();
+}
+
+export function removeCachedView(key: string): void {
+  cache.delete(key);
+}
+
 export function getCachedView<T>(
   key: string,
   maxAgeMs: number
@@ -41,4 +49,3 @@ export function setCachedView<T>(key: string, value: T) {
     timestamp: Date.now(),
   });
 }
-

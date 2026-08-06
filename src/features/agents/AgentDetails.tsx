@@ -3,6 +3,7 @@ import { Activity, Award, LayoutGrid, RefreshCw, Store, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from 'recharts';
 import { fetchAgentHistory, fetchAgentProfile, type AgentHistoryPoint } from '../../api/agents';
+import { queryKeys } from '../../lib/queryKeys';
 
 const nf = new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'RON', maximumFractionDigits: 0 });
 const nfNum = new Intl.NumberFormat('ro-RO');
@@ -15,12 +16,12 @@ type ChartTooltipProps = TooltipContentProps;
 
 export function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
   const { data: profile, isLoading: profileLoading } = useQuery({
-    queryKey: ['agents', 'profile', agent, currentMonth],
+    queryKey: queryKeys.agents.profile(agent, currentMonth),
     queryFn: ({ signal }) => fetchAgentProfile(agent, currentMonth, signal),
   });
 
   const { data: history, isLoading: historyLoading } = useQuery({
-    queryKey: ['agents', 'history', agent],
+    queryKey: queryKeys.agents.history(agent),
     queryFn: ({ signal }) => fetchAgentHistory(agent, signal),
   });
 

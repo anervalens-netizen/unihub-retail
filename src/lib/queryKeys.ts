@@ -40,6 +40,14 @@ export const queryKeys = {
       ['agents', 'evaluation', query] as const,
     evaluationV2: (query: QueryKeyParams) =>
       ['agents', 'evaluation-v2', query] as const,
+    profile: (agent: string, month: string) =>
+      ['agents', 'profile', agent, month] as const,
+    history: (agent: string) => ['agents', 'history', agent] as const,
+    movement: (query: QueryKeyParams) =>
+      ['agents', 'movement', query] as const,
+    coverage: (query: QueryKeyParams) =>
+      ['agents', 'coverage', query] as const,
+    list: (query: QueryKeyParams) => ['agents', 'list', query] as const,
   },
   grile: {
     all: ['grile'] as const,
@@ -49,8 +57,17 @@ export const queryKeys = {
       ['grile', 'monthly-operations', month] as const,
   },
   settings: {
-    imports: () => ['settings', 'imports'] as const,
+    identity: (identityKey: string) => ['settings', identityKey] as const,
+    imports: (identityKey: string) => ['settings', identityKey, 'imports'] as const,
     exports: (query: QueryKeyParams) => ['settings', 'exports', query] as const,
+    exportCatalog: (identityKey: string) =>
+      ['settings', identityKey, 'export-catalog'] as const,
+    exportFilters: (identityKey: string, month: string) =>
+      ['settings', identityKey, 'export-filters', month] as const,
+    exportOperation: (identityKey: string, operationId: number) =>
+      ['settings', identityKey, 'export-operation', operationId] as const,
+    exportResumable: (identityKey: string) =>
+      ['settings', identityKey, 'export-operation', 'resumable'] as const,
   },
   visits: {
     report: (month: string) => ['visits', 'report', month] as const,

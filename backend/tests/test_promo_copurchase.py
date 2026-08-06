@@ -1,6 +1,7 @@
 """Tests for promo co-purchase helper — aggregation logic + scope wiring."""
 from __future__ import annotations
 
+import hashlib
 from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock
@@ -8,18 +9,46 @@ from unittest.mock import AsyncMock
 import pandas as pd
 import pytest
 
+from services.imports import ImportsService, _promo_actuals_material_bytes
 from services.promo_copurchase import (
     PromoActualsError,
     PromoCoPurchaseResult,
     compute_promo_actuals_from_report,
     compute_promo_copurchase,
     compute_promo_same_model_pair,
+    load_promo_actual_units,
+    load_promo_actual_values,
 )
 
 
 class FakeRow(dict):
     def __getattr__(self, name: str):
         return self[name]
+
+
+def materialized_definition(
+    source,
+    *,
+    cutoff: str = "2026-06-16",
+) -> dict[str, str]:
+    content = source.read_bytes()
+    source_sha256 = hashlib.sha256(content).hexdigest()
+    parsed = ImportsService._validate_promo_actuals_report(content)
+    material = _promo_actuals_material_bytes(
+        parsed,
+        source_sha256=source_sha256,
+        import_month=cutoff[:7],
+        cutoff_date=date.fromisoformat(cutoff),
+    )
+    material_path = source.with_suffix(".json")
+    material_path.write_bytes(material)
+    return {
+        "actuals_source_file": str(source),
+        "actuals_source_sha256": source_sha256,
+        "actuals_material_file": str(material_path),
+        "actuals_material_sha256": hashlib.sha256(material).hexdigest(),
+        "actuals_cutoff_date": cutoff,
+    }
 
 
 class TestExcludedAggregation:
@@ -198,6 +227,76 @@ class TestComputePromoSameModelPair:
 
 
 class TestComputePromoActualsFromReport:
+    def test_actuals_money_uses_decimal_half_up_and_exact_large_aggregate(
+        self,
+        tmp_path,
+    ) -> None:
+        source = tmp_path / "promo_decimal_boundaries.xlsx"
+        rows = [
+            {
+                "SiteCode": "S1",
+                "Cod": "CL1",
+                "Promo Luna Curenta": 1,
+                "PromoValoare Luna Curenta": "0.005",
+            },
+            {
+                "SiteCode": "S1",
+                "Cod": "CL1",
+                "Promo Luna Curenta": 1,
+                "PromoValoare Luna Curenta": "0.005",
+            },
+            *[
+                {
+                    "SiteCode": "S2",
+                    "Cod": "CL1",
+                    "Promo Luna Curenta": 250_000,
+                    "PromoValoare Luna Curenta": "249999999999.995",
+                }
+                for _ in range(4)
+            ],
+        ]
+        pd.DataFrame(rows).to_excel(
+            source,
+            sheet_name="AccesoriPromoLunar",
+            index=False,
+        )
+        definition = materialized_definition(source)
+
+        units, units_error = load_promo_actual_units(definition, item_codes=["CL1"])
+        values, values_error = load_promo_actual_values(definition, item_codes=["CL1"])
+
+        assert units_error is None
+        assert values_error is None
+        assert units == {("S1", "CL1"): 2, ("S2", "CL1"): 1_000_000}
+        assert values == {
+            ("S1", "CL1"): Decimal("0.02"),
+            ("S2", "CL1"): Decimal("1000000000000.00"),
+        }
+
+    @pytest.mark.parametrize("tamper_target", ["source", "material"])
+    def test_materialized_actuals_fail_closed_on_tamper(
+        self,
+        tmp_path,
+        tamper_target: str,
+    ) -> None:
+        source = tmp_path / "promo_actuals.xlsx"
+        pd.DataFrame(
+            [{"SiteCode": "S1", "Cod": "CL1", "Promo Luna Curenta": 2}]
+        ).to_excel(source, sheet_name="AccesoriPromoLunar", index=False)
+        definition = materialized_definition(source)
+        target = (
+            source
+            if tamper_target == "source"
+            else tmp_path / "promo_actuals.json"
+        )
+        target.write_bytes(target.read_bytes() + b"tamper")
+
+        units, error = load_promo_actual_units(definition, item_codes=["CL1"])
+
+        assert units is None
+        assert error is not None
+        assert "hashului aprobat" in error
+
     @pytest.mark.asyncio
     async def test_no_actuals_source_returns_none_for_rule_fallback(self):
         conn = AsyncMock()
@@ -231,7 +330,9 @@ class TestComputePromoActualsFromReport:
                 month="2026-06",
                 definition={
                     "actuals_source_file": str(source),
-                    "actuals_sheet": "MissingSheet",
+                    "actuals_source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                    "actuals_material_file": str(tmp_path / "missing.json"),
+                    "actuals_material_sha256": "a" * 64,
                     "actuals_cutoff_date": "2026-06-16",
                     "start_date": date(2026, 6, 1),
                     "end_date": date(2026, 6, 30),
@@ -277,9 +378,7 @@ class TestComputePromoActualsFromReport:
             conn,
             month="2026-06",
             definition={
-                "actuals_source_file": str(source),
-                "actuals_sheet": "AccesoriPromoLunar",
-                "actuals_cutoff_date": "2026-06-16",
+                **materialized_definition(source),
                 "start_date": date(2026, 6, 1),
                 "end_date": date(2026, 6, 30),
             },
@@ -344,9 +443,7 @@ class TestComputePromoActualsFromReport:
             conn,
             month="2026-06",
             definition={
-                "actuals_source_file": str(source),
-                "actuals_sheet": "AccesoriPromoLunar",
-                "actuals_cutoff_date": "2026-06-16",
+                **materialized_definition(source),
                 "start_date": date(2026, 6, 1),
                 "end_date": date(2026, 6, 30),
             },
@@ -382,9 +479,7 @@ class TestComputePromoActualsFromReport:
             conn,
             month="2026-06",
             definition={
-                "actuals_source_file": str(source),
-                "actuals_sheet": "AccesoriPromoLunar",
-                "actuals_cutoff_date": "2026-06-16",
+                **materialized_definition(source),
                 "start_date": date(2026, 6, 1),
                 "end_date": date(2026, 6, 30),
             },

@@ -121,6 +121,10 @@ jobs:
         run: |
           venv/bin/python -c "from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())"
 
+      - name: OpenAPI contract drift
+        working-directory: .
+        run: PYTHONPATH=backend backend/venv/bin/python scripts/generate_retail_contract.py --check
+
       - name: Operational configuration validation
         working-directory: .
         env:
@@ -201,6 +205,10 @@ jobs:
             --cov=rate_limits \
             --cov=db.migration_runner \
             --cov=permissions \
+            --cov=repositories.export_operations \
+            --cov=services.export_complex_worker \
+            --cov=services.export_operations \
+            --cov=services.export_xlsx_formatting \
             --cov=services.exports \
             --cov=services.grile_monthly \
             --cov=services.importer \
@@ -273,6 +281,9 @@ jobs:
       - name: Verify production RUM artifact
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         run: npm run verify:rum-build
+
+      - name: Bundle budget
+        run: node scripts/check_bundle_budget.mjs
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

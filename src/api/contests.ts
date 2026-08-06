@@ -1,5 +1,6 @@
 import { generatedGet } from './generated/client';
-import type { ContestResponse } from './types';
+import type { RetailOperationQueries } from './generated/contracts';
+import type { ContestResponse } from './generated/runtime-types';
 
 /**
  * Concursul activ pentru luna data (sau null daca nu exista).
@@ -7,9 +8,11 @@ import type { ContestResponse } from './types';
  * deci nu trimite filtrele globale ale aplicatiei.
  */
 export async function getActiveContest(month: string): Promise<ContestResponse | null> {
-  return await generatedGet('get_active_contest_api_contests_active_get', { params: { month } }) as ContestResponse | null;
+  const params: RetailOperationQueries['get_active_contest_api_contests_active_get'] = { month };
+  return generatedGet('get_active_contest_api_contests_active_get', { params });
 }
 
 export async function getActiveContests(month: string, signal?: AbortSignal): Promise<ContestResponse[]> {
-  return await generatedGet('get_active_contests_api_contests_active_all_get', { params: { month }, signal }) as ContestResponse[];
+  const params: RetailOperationQueries['get_active_contests_api_contests_active_all_get'] = { month };
+  return generatedGet('get_active_contests_api_contests_active_all_get', { params, signal });
 }

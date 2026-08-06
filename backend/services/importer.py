@@ -10,8 +10,6 @@ import json
 import math
 from pathlib import Path
 import re
-import resource
-import time
 from typing import Any
 from uuid import uuid4
 
@@ -48,6 +46,14 @@ from services.jobs import (
     retain_sales_import_spool_file,
     verify_sales_import_artifact,
 )
+from services.spreadsheet_safety import (
+    SALES_SPREADSHEET_LIMITS,
+    TARGETS_SPREADSHEET_LIMITS,
+    SpreadsheetParserMeasurement,
+    SpreadsheetUploadError,
+    SpreadsheetUploadStats,
+    validate_spreadsheet_upload,
+)
 
 SALES_COLUMNS = [
     "Data",
@@ -74,7 +80,11 @@ IMPORT_COMPRESSED_BYTES = Gauge(
 )
 IMPORT_EXPANDED_BYTES = Gauge(
     "sales_import_expanded_bytes",
-    "Expanded DataFrame bytes produced by the sales import loader.",
+    "Actual uncompressed XLSX entry bytes accepted by the sales import loader.",
+)
+IMPORT_DATAFRAME_BYTES = Gauge(
+    "sales_import_dataframe_bytes",
+    "In-memory DataFrame bytes produced by the sales import loader.",
 )
 IMPORT_ROWS = Gauge("sales_import_rows", "Rows produced by the sales import loader.")
 IMPORT_PARSE_SECONDS = Histogram(
@@ -349,22 +359,36 @@ async def _reconcile_sales_artifacts(pool: asyncpg.Pool) -> list[int]:
     return reconciled
 
 
-def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
-    started_at = time.perf_counter()
-    source_bytes = (
-        len(source)
-        if isinstance(source, bytes)
-        else Path(source).stat().st_size
-    )
-    content: str | BytesIO = BytesIO(source) if isinstance(source, bytes) else str(source)
-    # Keep one ExcelFile open for header inspection and data parsing.  This
-    # preserves the duplicate-header safety gate without opening/parsing the
-    # uploaded workbook twice.
+def _load_sales_dataframe_impl(
+    source: str | Path | bytes,
+    *,
+    source_filename: str | None = None,
+) -> tuple[pd.DataFrame, SpreadsheetUploadStats]:
+    raw_content = source if isinstance(source, bytes) else Path(source).read_bytes()
+    suffix = Path(source_filename or (str(source) if not isinstance(source, bytes) else "")).suffix
+    if not suffix:
+        suffix = ".xls" if raw_content.startswith(bytes.fromhex("d0cf11e0a1b11ae1")) else ".xlsx"
+    try:
+        archive_stats = validate_spreadsheet_upload(
+            raw_content,
+            suffix,
+            limits=SALES_SPREADSHEET_LIMITS,
+        )
+    except SpreadsheetUploadError as exc:
+        _raise_structural_contradiction("invalid_workbook", str(exc))
+        raise AssertionError("unreachable") from exc
+    content = BytesIO(raw_content)
+    # Parse the worksheet exactly once.  Pandas otherwise reads it once for
+    # duplicate-header inspection and once for data, which doubles CPU and
+    # decompression pressure for the worker-owned import path.
     with pd.ExcelFile(content) as workbook:
-        raw_header = workbook.parse(header=None, nrows=1)
+        raw_sheet = workbook.parse(header=None)
+        if raw_sheet.empty:
+            _raise_structural_contradiction("empty_workbook", "Fișierul nu conține date.")
+        raw_header = raw_sheet.iloc[0]
         raw_columns = [
             "" if pd.isna(value) else str(value).strip()
-            for value in raw_header.iloc[0].tolist()
+            for value in raw_header.tolist()
         ]
         duplicate_headers = sorted(
             {
@@ -379,9 +403,8 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
                 "Fișierul conține antete duplicate.",
                 headers=duplicate_headers,
             )
-        df = workbook.parse()
-    normalized_columns = [str(value).strip() for value in df.columns]
-    df.columns = normalized_columns
+        df = raw_sheet.iloc[1:].copy().reset_index(drop=True)
+    df.columns = raw_columns
     missing = [column for column in SALES_COLUMNS if column not in df.columns]
     if missing:
         _raise_structural_contradiction(
@@ -443,11 +466,40 @@ def load_sales_dataframe(source: str | Path | bytes) -> pd.DataFrame:
     df["is_cartela"] = df["Categorie"].isna() | (df["Categorie"].astype(str).str.strip() == "")
     df["is_return"] = df["Cantitate"] < 0
     validate_sales_dataframe(df)
-    IMPORT_COMPRESSED_BYTES.set(source_bytes)
-    IMPORT_EXPANDED_BYTES.set(int(df.memory_usage(deep=True).sum()))
+    return df, archive_stats
+
+
+def load_sales_dataframe(
+    source: str | Path | bytes,
+    *,
+    source_filename: str | None = None,
+) -> pd.DataFrame:
+    """Parse one sales workbook in the import process after a SHA check.
+
+    The web boundary performs a cheap untrusted-upload preflight.  This second
+    validation is intentional: the worker re-establishes trust after reading
+    the content-addressed spool and verifying its SHA-256.
+    """
+
+    measurement = SpreadsheetParserMeasurement("sales")
+    with measurement:
+        df, archive_stats = _load_sales_dataframe_impl(
+            source,
+            source_filename=source_filename,
+        )
+        measurement.set_preflight(archive_stats)
+        measurement.set_rows(len(df))
+    resource_stats = measurement.as_dict()
+    df.attrs["parser_resource_stats"] = resource_stats
+
+    # Backward-compatible sales metric names remain available in the worker
+    # registry; durable evidence is also copied into the generation manifest.
+    IMPORT_COMPRESSED_BYTES.set(max(0, archive_stats.compressed_bytes or 0))
+    IMPORT_EXPANDED_BYTES.set(max(0, archive_stats.uncompressed_bytes or 0))
+    IMPORT_DATAFRAME_BYTES.set(int(df.memory_usage(deep=True).sum()))
     IMPORT_ROWS.set(len(df))
-    IMPORT_PARSE_SECONDS.observe(time.perf_counter() - started_at)
-    IMPORT_PEAK_RSS_BYTES.set(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024)
+    IMPORT_PARSE_SECONDS.observe(float(resource_stats["parse_seconds"] or 0))
+    IMPORT_PEAK_RSS_BYTES.set(int(resource_stats["peak_rss_bytes"] or 0))
     return df
 
 
@@ -1017,6 +1069,7 @@ async def import_sales_dataframe(
     source_artifact_required: bool = False,
     source_artifact_path: str | None = None,
     source_artifact_bytes: int | None = None,
+    parser_resource_stats: dict[str, int | float | str | None] | None = None,
 ) -> ImportResult:
     validate_sales_dataframe(df)
     rows_in_file_total = len(df)
@@ -1065,6 +1118,8 @@ async def import_sales_dataframe(
             rows_in_file=rows_in_file_total,
             rows_filtered=rows_filtered,
         )
+        if parser_resource_stats is not None:
+            manifest["parser_resources"] = dict(parser_resource_stats)
         manifest["anomalies"] = compare_sales_generation_manifests(
             manifest,
             previous_manifest,
@@ -1169,7 +1224,7 @@ async def import_sales_file(
         digest = sha256(source).hexdigest()
     else:
         digest = sha256(Path(source).read_bytes()).hexdigest()
-    df = load_sales_dataframe(source)
+    df = load_sales_dataframe(source, source_filename=filename)
     return await import_sales_dataframe(
         conn,
         df,
@@ -1182,51 +1237,73 @@ async def import_sales_file(
         source_artifact_required=source_artifact_required,
         source_artifact_path=source_artifact_path,
         source_artifact_bytes=source_artifact_bytes,
+        parser_resource_stats=dict(df.attrs.get("parser_resource_stats") or {}),
     )
 
 
 def load_targets_dataframe(source: str | Path) -> list[dict[str, Any]]:
-    with pd.ExcelFile(source) as workbook:
-        df = workbook.parse(header=1)
-        raw_header = workbook.parse(header=None, nrows=2)
-    df = df.rename(columns=lambda value: str(value).strip() if value is not None else "")
-    month_columns: list[tuple[int, str, int, int]] = []
-    current_year: int | None = None
-    for idx, column in enumerate(df.columns):
-        column_name = str(column).strip()
-        header_year = raw_header.iloc[0, idx]
-        if pd.notna(header_year):
-            current_year = int(header_year)
-        if not column_name.startswith("TG L"):
-            continue
-        if current_year is None:
-            continue
-        match = re.search(r"TG L(\d{2})", column_name)
-        if not match:
-            continue
-        month = int(match.group(1))
-        month_columns.append((idx, column_name, current_year, month))
-
-    target_rows: list[dict[str, Any]] = []
-    for row in df.to_dict(orient="records"):
-        raw_site_code = row.get("SiteCode")
-        if pd.isna(raw_site_code):
-            continue
-        site_code = str(raw_site_code).strip()
-        if not site_code:
-            continue
-        for _, column_name, year, month in month_columns:
-            value = row.get(column_name)
-            if pd.isna(value):
-                continue
-            target_rows.append(
-                {
-                    "site_code": site_code,
-                    "import_month": f"{year}-{month:02d}",
-                    "target_value": _to_decimal(value),
-                }
+    source_path = Path(source)
+    content = source_path.read_bytes()
+    measurement = SpreadsheetParserMeasurement("targets")
+    with measurement:
+        try:
+            stats = validate_spreadsheet_upload(
+                content,
+                source_path.suffix,
+                limits=TARGETS_SPREADSHEET_LIMITS,
             )
-    return target_rows
+        except SpreadsheetUploadError as exc:
+            raise ValueError(str(exc)) from exc
+        measurement.set_preflight(stats)
+        with pd.ExcelFile(BytesIO(content)) as workbook:
+            raw_sheet = workbook.parse(header=None)
+        if len(raw_sheet.index) < 2:
+            measurement.set_rows(0)
+            return []
+        raw_header = raw_sheet.iloc[:2]
+        df = raw_sheet.iloc[2:].copy()
+        df.columns = [
+            str(value).strip() if pd.notna(value) else ""
+            for value in raw_header.iloc[1].tolist()
+        ]
+        month_columns: list[tuple[int, str, int, int]] = []
+        current_year: int | None = None
+        for idx, column in enumerate(df.columns):
+            column_name = str(column).strip()
+            header_year = raw_header.iloc[0, idx]
+            if pd.notna(header_year):
+                current_year = int(header_year)
+            if not column_name.startswith("TG L"):
+                continue
+            if current_year is None:
+                continue
+            match = re.search(r"TG L(\d{2})", column_name)
+            if not match:
+                continue
+            month = int(match.group(1))
+            month_columns.append((idx, column_name, current_year, month))
+
+        target_rows: list[dict[str, Any]] = []
+        for row in df.to_dict(orient="records"):
+            raw_site_code = row.get("SiteCode")
+            if pd.isna(raw_site_code):
+                continue
+            site_code = str(raw_site_code).strip()
+            if not site_code:
+                continue
+            for _, column_name, year, month in month_columns:
+                value = row.get(column_name)
+                if pd.isna(value):
+                    continue
+                target_rows.append(
+                    {
+                        "site_code": site_code,
+                        "import_month": f"{year}-{month:02d}",
+                        "target_value": _to_decimal(value),
+                    }
+                )
+        measurement.set_rows(len(target_rows))
+        return target_rows
 
 
 async def upsert_store_targets(

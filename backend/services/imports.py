@@ -7,8 +7,9 @@ import json
 import logging
 import os
 import shutil
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
@@ -40,6 +41,7 @@ from services.jobs import (
     retain_sales_import_spool_file,
     enqueue_grile_check,
     enqueue_campaign_reporting_publication,
+    enqueue_promo_actuals_import,
     enqueue_sales_import,
     enqueue_sales_promotion,
     get_job_status,
@@ -58,6 +60,8 @@ from services.product_lists import (
     resolve_path,
 )
 from services.spreadsheet_safety import (
+    PROMO_ACTUALS_SPREADSHEET_LIMITS,
+    SpreadsheetParserMeasurement,
     SpreadsheetUploadError,
     validate_spreadsheet_upload,
 )
@@ -69,6 +73,12 @@ PROMO_REPORT_SHEET = "AccesoriPromoLunar"
 PROMO_REPORT_SITE_ALIASES = {"sitecode", "site_code", "site"}
 PROMO_REPORT_CODE_ALIASES = {"cod", "item_code", "itemcode", "cod_produs"}
 PROMO_REPORT_QTY_ALIASES = {"promo_luna_curenta", "promo_qty", "cantitate_promo", "promo"}
+PROMO_REPORT_VALUE_ALIASES = {
+    "promovaloare_luna_curenta",
+    "promo_valoare_luna_curenta",
+    "promo_value",
+    "valoare_promo",
+}
 
 
 class PromoGenerationConflictError(RuntimeError):
@@ -77,6 +87,53 @@ class PromoGenerationConflictError(RuntimeError):
 
 class PromoGenerationPointerIntegrityError(PromoGenerationConflictError):
     """Raised when the current promo pointer cannot preserve rollback lineage."""
+
+
+@dataclass(frozen=True, slots=True)
+class PromoActualsParseResult:
+    report_rows: int
+    promo_units: int
+    rows: tuple[dict[str, str | int], ...]
+
+    def __iter__(self):
+        # Compatibility for callers that historically unpacked the two totals.
+        yield self.report_rows
+        yield self.promo_units
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, tuple) and len(other) == 2:
+            return (self.report_rows, self.promo_units) == other
+        if isinstance(other, PromoActualsParseResult):
+            return (
+                self.report_rows,
+                self.promo_units,
+                self.rows,
+            ) == (
+                other.report_rows,
+                other.promo_units,
+                other.rows,
+            )
+        return NotImplemented
+
+
+def _promo_actuals_material_bytes(
+    parsed: PromoActualsParseResult,
+    *,
+    source_sha256: str,
+    import_month: str,
+    cutoff_date: date,
+) -> bytes:
+    return _canonical_json_bytes(
+        {
+            "version": 1,
+            "source_sha256": source_sha256,
+            "import_month": import_month,
+            "cutoff_date": cutoff_date.isoformat(),
+            "report_rows": parsed.report_rows,
+            "promo_units": parsed.promo_units,
+            "rows": list(parsed.rows),
+        }
+    )
 
 
 def _previous_promo_generation_id(pointer_path: Path) -> str | None:
@@ -106,11 +163,22 @@ def _to_public_import_status(result: JobResult) -> ImportJobStatus:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Job status unavailable",
         )
-    payload = ImportResponse(**result.result) if result.result else None
+    job_kind = (
+        "promo_actuals"
+        if result.job_id.startswith("promo-actuals:")
+        else "erp_reconciliation"
+        if result.job_id.startswith("erp-reconciliation:")
+        else "sales"
+    )
+    payload = ImportResponse(**result.result) if result.result and job_kind == "sales" else None
+    promo_payload = PromoActualImportResponse(**result.result) if result.result and job_kind == "promo_actuals" else None
     return ImportJobStatus(
         job_id=result.job_id,
         status=result.status.value,
+        job_kind=job_kind,
         result=payload,
+        promo_result=promo_payload,
+        erp_result=result.result if result.result and job_kind == "erp_reconciliation" else None,
         error=result.error,
     )
 
@@ -125,6 +193,27 @@ def _canonical_json_bytes(payload: dict) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_durable_private_file(path: Path, content: bytes) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        view = memoryview(content)
+        while view:
+            written = os.write(descriptor, view)
+            view = view[written:]
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _promo_pointer_sha256(data_dir: Path) -> str | None:
@@ -143,26 +232,51 @@ def _publish_promo_generation(
     content: bytes,
     suffix: str,
     material_sha256: str,
-    expected_pointer_sha256: str | None,
+    actuals_material: bytes | None = None,
+    parser_resources: dict[str, int | float | str | None] | None = None,
+    expected_pointer_sha256: str | None = None,
 ) -> tuple[str, str, str]:
     generation_root = data_dir / "promo_generations"
     source_sha256 = hashlib.sha256(content).hexdigest()
+    if actuals_material is None:
+        # Compatibility for offline/private generation callers.  The public
+        # import worker always supplies the fully parsed canonical payload.
+        actuals_material = _canonical_json_bytes(
+            {
+                "version": 1,
+                "source_sha256": source_sha256,
+                "import_month": "",
+                "cutoff_date": "",
+                "report_rows": 0,
+                "promo_units": 0,
+                "rows": [],
+            }
+        )
+    parser_resources = dict(parser_resources or {})
+    actuals_material_sha256 = hashlib.sha256(actuals_material).hexdigest()
     seed = hashlib.sha256(
         _canonical_json_bytes(config)
         + source_sha256.encode("ascii")
         + material_sha256.encode("ascii")
+        + actuals_material_sha256.encode("ascii")
     ).hexdigest()
     generation_id = seed[:32]
     generation_dir = generation_root / generation_id
     actual_name = f"promo_actuals{suffix}"
+    actuals_material_name = "promo_actuals.json"
     config_name = "hub_specials.json"
     final_actual_path = generation_dir / actual_name
+    final_material_path = generation_dir / actuals_material_name
     for promotion in config["promotions"]:
         if promotion.get("actuals_source_file") == "@GENERATION_ACTUALS@":
             promotion["actuals_source_file"] = str(final_actual_path)
+            promotion["actuals_source_sha256"] = source_sha256
+            promotion["actuals_material_file"] = str(final_material_path)
+            promotion["actuals_material_sha256"] = actuals_material_sha256
     config_bytes = _canonical_json_bytes(config)
     config_sha256 = hashlib.sha256(config_bytes).hexdigest()
     actuals_manifest: list[dict[str, str]] = []
+    actuals_material_manifest: list[dict[str, str]] = []
     for source_file in sorted(
         {
             str(promotion["actuals_source_file"])
@@ -178,17 +292,39 @@ def _publish_promo_generation(
         else:
             raise ValueError("Sursa actuals promo lipsește")
         actuals_manifest.append({"file": source_file, "sha256": actuals_sha256})
+    for material_file in sorted(
+        {
+            str(promotion["actuals_material_file"])
+            for promotion in config["promotions"]
+            if promotion.get("actuals_material_file")
+        }
+    ):
+        material_path = resolve_path(material_file, get_repo_root())
+        if material_path == final_material_path:
+            candidate_sha256 = actuals_material_sha256
+        elif material_path.is_file():
+            candidate_sha256 = hashlib.sha256(material_path.read_bytes()).hexdigest()
+        else:
+            raise ValueError("Materializarea actuals promo lipsește")
+        actuals_material_manifest.append(
+            {"file": material_file, "sha256": candidate_sha256}
+        )
 
-    generation_root.mkdir(parents=True, exist_ok=True)
+    generation_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    generation_root.chmod(0o700)
     staging = generation_root / f".staging-{uuid4()}"
     lock_path = generation_root / ".promotion.lock"
     try:
         with lock_path.open("a+b") as lock_file:
+            os.fchmod(lock_file.fileno(), 0o600)
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             pointer_path = generation_root / "current.json"
+            pointer_bytes = pointer_path.read_bytes() if pointer_path.exists() else None
+            if pointer_bytes is not None:
+                pointer_path.chmod(0o600)
             current_pointer_sha256 = (
-                hashlib.sha256(pointer_path.read_bytes()).hexdigest()
-                if pointer_path.exists()
+                hashlib.sha256(pointer_bytes).hexdigest()
+                if pointer_bytes is not None
                 else None
             )
             if current_pointer_sha256 != expected_pointer_sha256:
@@ -196,36 +332,77 @@ def _publish_promo_generation(
                     "Pointerul promo a fost schimbat de alt worker"
                 )
             previous_generation_id = _previous_promo_generation_id(pointer_path)
+            current_pointer = (
+                json.loads(pointer_bytes)
+                if pointer_bytes is not None
+                else None
+            )
             if generation_dir.exists():
                 config_path = generation_dir / config_name
                 if (
                     not final_actual_path.is_file()
                     or hashlib.sha256(final_actual_path.read_bytes()).hexdigest()
                     != source_sha256
+                    or not final_material_path.is_file()
+                    or hashlib.sha256(final_material_path.read_bytes()).hexdigest()
+                    != actuals_material_sha256
                     or not config_path.is_file()
                     or hashlib.sha256(config_path.read_bytes()).hexdigest()
                     != config_sha256
                 ):
                     raise RuntimeError("Coliziune de generație promo")
+                generation_dir.chmod(0o700)
+                final_actual_path.chmod(0o600)
+                final_material_path.chmod(0o600)
+                config_path.chmod(0o600)
             else:
                 staging.mkdir(mode=0o700)
-                (staging / actual_name).write_bytes(content)
-                (staging / config_name).write_bytes(config_bytes)
+                _write_durable_private_file(staging / actual_name, content)
+                _write_durable_private_file(
+                    staging / actuals_material_name,
+                    actuals_material,
+                )
+                _write_durable_private_file(staging / config_name, config_bytes)
+                _fsync_directory(staging)
+                _fsync_directory(generation_root)
                 staging.replace(generation_dir)
-            pointer = {
-                "version": 1,
+                _fsync_directory(generation_root)
+
+            expected_pointer_hashes = {
+                "version": 2,
                 "generation_id": generation_id,
-                "previous_generation_id": previous_generation_id,
                 "config_file": f"{generation_id}/{config_name}",
                 "config_sha256": config_sha256,
                 "actuals_sha256": source_sha256,
                 "actuals": actuals_manifest,
+                "actuals_material_sha256": actuals_material_sha256,
+                "actuals_materials": actuals_material_manifest,
                 "material_sha256": material_sha256,
+            }
+            if (
+                isinstance(current_pointer, dict)
+                and current_pointer.get("generation_id") == generation_id
+            ):
+                if any(
+                    current_pointer.get(key) != value
+                    for key, value in expected_pointer_hashes.items()
+                ) or current_pointer.get("previous_generation_id") == generation_id:
+                    raise PromoGenerationPointerIntegrityError(
+                        "Pointerul generației promo identice este inconsistent"
+                    )
+                # Exact retry: keep lineage and promoted_at byte-for-byte.
+                return generation_id, config_sha256, source_sha256
+            pointer = {
+                **expected_pointer_hashes,
+                "previous_generation_id": previous_generation_id,
+                "parser_resources": parser_resources,
                 "promoted_at": datetime.now(timezone.utc).isoformat(),
             }
             pointer_tmp = generation_root / f".current-{uuid4()}.tmp"
-            pointer_tmp.write_bytes(_canonical_json_bytes(pointer))
+            _write_durable_private_file(pointer_tmp, _canonical_json_bytes(pointer))
+            _fsync_directory(generation_root)
             pointer_tmp.replace(pointer_path)
+            _fsync_directory(generation_root)
     finally:
         if staging.exists():
             shutil.rmtree(staging)
@@ -283,7 +460,12 @@ async def trigger_campaign_reporting_publication(
         logger.exception(
             "enqueue campaign reporting publication esuat pentru %s",
             import_month,
-        )
+    )
+
+
+async def get_public_import_job_status(job_id: str) -> ImportJobStatus:
+    """Canonical typed projection for every public import-worker job."""
+    return _to_public_import_status(await get_job_status(job_id))
 
 
 class ImportsService:
@@ -320,18 +502,6 @@ class ImportsService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Fisierul este gol",
             )
-        try:
-            await asyncio.to_thread(
-                validate_spreadsheet_upload,
-                content,
-                Path(file.filename).suffix,
-            )
-        except SpreadsheetUploadError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
-
         if cutoff_date is not None:
             source_sha256 = hashlib.sha256(content).hexdigest()
             recovered = await self.repo.get_validated_sales_generation(
@@ -468,7 +638,7 @@ class ImportsService:
         file: UploadFile,
         import_month: str,
         cutoff_date: date,
-    ) -> PromoActualImportResponse:
+    ) -> ImportJobStatus:
         if not file.filename or Path(file.filename).suffix.casefold() not in ALLOWED_SALES_EXTENSIONS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -493,23 +663,50 @@ class ImportsService:
             )
         if not content:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raportul este gol")
+        job = await enqueue_promo_actuals_import(
+            content,
+            filename=file.filename,
+            import_month=import_month,
+            cutoff_date=cutoff_date.isoformat(),
+        )
+        return _to_public_import_status(await get_job_status(job.job_id))
+
+    async def process_promo_actuals(
+        self,
+        *,
+        content: bytes,
+        filename: str,
+        import_month: str,
+        cutoff_date: date,
+    ) -> PromoActualImportResponse:
+        measurement = SpreadsheetParserMeasurement("promo_actuals")
         try:
-            await asyncio.to_thread(
-                validate_spreadsheet_upload,
-                content,
-                Path(file.filename).suffix,
-            )
+            with measurement:
+                preflight = validate_spreadsheet_upload(
+                    content,
+                    Path(filename).suffix,
+                    limits=PROMO_ACTUALS_SPREADSHEET_LIMITS,
+                )
+                measurement.set_preflight(preflight)
+                parsed = await asyncio.to_thread(
+                    self._validate_promo_actuals_report,
+                    content,
+                )
+                if not isinstance(parsed, PromoActualsParseResult):
+                    raise RuntimeError("Parserul promo nu a produs materializarea canonică")
+                measurement.set_rows(parsed.report_rows)
         except SpreadsheetUploadError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
         data_dir = get_data_dir()
         expected_pointer_sha256 = _promo_pointer_sha256(data_dir)
-        report_rows, promo_units = await asyncio.to_thread(
-            self._validate_promo_actuals_report,
-            content,
+        report_rows, promo_units = parsed
+        source_sha256 = hashlib.sha256(content).hexdigest()
+        actuals_material = _promo_actuals_material_bytes(
+            parsed,
+            source_sha256=source_sha256,
+            import_month=import_month,
+            cutoff_date=cutoff_date,
         )
         try:
             config_path = get_special_cards_config_path()
@@ -585,8 +782,10 @@ class ImportsService:
                 data_dir=data_dir,
                 config=config,
                 content=content,
-                suffix=Path(file.filename).suffix.casefold(),
+                suffix=Path(filename).suffix.casefold(),
                 material_sha256=material_sha256,
+                actuals_material=actuals_material,
+                parser_resources=measurement.as_dict(),
                 expected_pointer_sha256=expected_pointer_sha256,
             )
         except PromoGenerationPointerIntegrityError as exc:
@@ -625,7 +824,7 @@ class ImportsService:
         return PromoActualImportResponse(
             import_month=import_month,
             cutoff_date=cutoff_date,
-            filename=file.filename,
+            filename=filename,
             report_rows=report_rows,
             promo_units=promo_units,
             updated_promotions=updated_promotions,
@@ -636,28 +835,37 @@ class ImportsService:
         )
 
     @staticmethod
-    def _validate_promo_actuals_report(content: bytes) -> tuple[int, int]:
+    def _validate_promo_actuals_report(
+        content: bytes,
+        *,
+        sheet_name: str = PROMO_REPORT_SHEET,
+    ) -> PromoActualsParseResult:
         try:
             dataframe = pd.read_excel(
                 BytesIO(content),
-                sheet_name=PROMO_REPORT_SHEET,
+                sheet_name=sheet_name,
                 keep_default_na=False,
             )
         except Exception as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Raportul trebuie sa contina foaia {PROMO_REPORT_SHEET}",
+                detail=f"Raportul trebuie sa contina foaia {sheet_name}",
             ) from exc
         columns = {normalize_column_name(column): str(column) for column in dataframe.columns}
         site_column = next((columns[key] for key in PROMO_REPORT_SITE_ALIASES if key in columns), None)
         code_column = next((columns[key] for key in PROMO_REPORT_CODE_ALIASES if key in columns), None)
         promo_column = next((columns[key] for key in PROMO_REPORT_QTY_ALIASES if key in columns), None)
+        promo_value_column = next(
+            (columns[key] for key in PROMO_REPORT_VALUE_ALIASES if key in columns),
+            None,
+        )
         if not site_column or not code_column or not promo_column:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Raportul trebuie sa contina coloanele SiteCode, Cod si Promo Luna Curenta",
             )
         net_units: dict[tuple[str, str], int] = {}
+        net_values: dict[tuple[str, str], Decimal] = {}
         for index, raw_value in dataframe[promo_column].items():
             if raw_value is None or str(raw_value).strip() == "":
                 continue
@@ -685,17 +893,54 @@ class ImportsService:
                 )
             key = (site_code, item_code)
             net_units[key] = net_units.get(key, 0) + quantity
-        positive_net_units = [quantity for quantity in net_units.values() if quantity > 0]
+            if promo_value_column is not None:
+                raw_promo_value = dataframe.at[index, promo_value_column]
+                promo_value_text = (
+                    ""
+                    if raw_promo_value is None or pd.isna(raw_promo_value)
+                    else str(raw_promo_value).strip()
+                )
+                try:
+                    promo_value = Decimal(promo_value_text or "0")
+                except (InvalidOperation, ValueError):
+                    promo_value = Decimal("NaN")
+                if not promo_value.is_finite():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Valorile promo trebuie sa fie finite",
+                    )
+                net_values[key] = net_values.get(key, Decimal("0")) + promo_value.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+        positive_rows_list: list[dict[str, str | int]] = []
+        positive_net_units: list[int] = []
+        for (site_code, item_code), quantity in sorted(net_units.items()):
+            if quantity <= 0:
+                continue
+            positive_net_units.append(quantity)
+            positive_rows_list.append(
+                {
+                    "site_code": site_code,
+                    "item_code": item_code,
+                    "quantity": quantity,
+                    "value": f"{net_values.get((site_code, item_code), Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):.2f}",
+                }
+            )
+        positive_rows = tuple(positive_rows_list)
         if not positive_net_units:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Raportul nu contine unitati promo nete pozitive",
             )
-        return len(positive_net_units), sum(positive_net_units)
+        return PromoActualsParseResult(
+            report_rows=len(positive_rows),
+            promo_units=sum(positive_net_units),
+            rows=positive_rows,
+        )
 
     async def get_import_job_status(self, job_id: str) -> ImportJobStatus:
-        result = await get_job_status(job_id)
-        return _to_public_import_status(result)
+        return await get_public_import_job_status(job_id)
 
     async def get_import_history(self) -> list[ImportHistoryEntry]:
         rows = await self.repo.get_import_history()

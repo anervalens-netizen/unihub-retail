@@ -21,44 +21,32 @@ unit_price pe bon. Aceasta unitate NU se incentiveaza (vezi services/dashboard).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any
 
 import asyncpg
-import pandas as pd
 
 from business_rules import PROMOTION_DISCOUNT_RATE
 from services.dashboard.utils import _expand_current_manager_scope
 from services.filters import build_scoped_params, normalize_filter, scoped_clauses
-from services.product_lists import get_repo_root, normalize_column_name, resolve_path
+from services.product_lists import get_repo_root, resolve_path
 
 
 PromoActualUnitsLoadResult = tuple[dict[tuple[str, str], int] | None, str | None]
 
-_ACTUALS_SITE_ALIASES = {"sitecode", "site_code", "site"}
-_ACTUALS_CODE_ALIASES = {"cod", "item_code", "itemcode", "cod_produs"}
-_ACTUALS_PROMO_QTY_ALIASES = {
-    "promo_luna_curenta",
-    "promo_qty",
-    "cantitate_promo",
-    "promo",
-}
-_ACTUALS_PROMO_VALUE_ALIASES = {
-    "promovaloare_luna_curenta",
-    "promo_valoare_luna_curenta",
-    "promo_value",
-    "valoare_promo",
-}
 _promo_actuals_cache: dict[
-    tuple[str, float, str],
+    tuple[str, int, str, int, str, str],
     tuple[
         dict[tuple[str, str], int] | None,
         dict[tuple[str, str], Decimal] | None,
         str | None,
     ],
 ] = {}
+_MONEY_QUANTUM = Decimal("0.01")
 
 
 def _promo_scope_clauses(
@@ -116,14 +104,108 @@ class PromoCoPurchaseResult:
         return sum(self.excluded_discount_values.values(), Decimal("0"))
 
 
-def _find_actuals_column(
-    normalized_columns: dict[str, str],
-    aliases: set[str],
-) -> str | None:
-    for alias in aliases:
-        if alias in normalized_columns:
-            return normalized_columns[alias]
-    return None
+def _load_promo_actuals_material(
+    definition: dict[str, Any],
+) -> tuple[
+    dict[tuple[str, str], int] | None,
+    dict[tuple[str, str], Decimal] | None,
+    str | None,
+]:
+    source_file = definition.get("actuals_source_file") or definition.get("actuals_file")
+    if not source_file:
+        return None, None, None
+    material_file = definition.get("actuals_material_file")
+    expected_source_sha256 = str(definition.get("actuals_source_sha256") or "")
+    expected_material_sha256 = str(definition.get("actuals_material_sha256") or "")
+    if (
+        not material_file
+        or len(expected_source_sha256) != 64
+        or len(expected_material_sha256) != 64
+    ):
+        return None, None, "Generația promo nu are materializarea JSON verificabilă."
+
+    source_path = resolve_path(str(source_file), get_repo_root())
+    material_path = resolve_path(str(material_file), get_repo_root())
+    if not source_path.is_file():
+        return None, None, f"Raportul promo `{source_path}` nu exista."
+    if not material_path.is_file():
+        return None, None, f"Materializarea promo `{material_path}` nu exista."
+
+    try:
+        source_bytes = source_path.read_bytes()
+        material_bytes = material_path.read_bytes()
+    except OSError as exc:
+        return None, None, f"Generația promo nu poate fi citită: {exc}."
+    if hashlib.sha256(source_bytes).hexdigest() != expected_source_sha256:
+        return None, None, "Sursa originală promo nu corespunde hashului aprobat."
+    if hashlib.sha256(material_bytes).hexdigest() != expected_material_sha256:
+        return None, None, "Materializarea promo nu corespunde hashului aprobat."
+
+    cache_key = (
+        str(source_path),
+        source_path.stat().st_mtime_ns,
+        str(material_path),
+        material_path.stat().st_mtime_ns,
+        expected_source_sha256,
+        expected_material_sha256,
+    )
+    if cache_key in _promo_actuals_cache:
+        return _promo_actuals_cache[cache_key]
+
+    try:
+        payload = json.loads(material_bytes)
+        if (
+            not isinstance(payload, dict)
+            or payload.get("version") != 1
+            or payload.get("source_sha256") != expected_source_sha256
+            or not isinstance(payload.get("rows"), list)
+        ):
+            raise ValueError("schema invalidă")
+        configured_cutoff = str(definition.get("actuals_cutoff_date") or "")
+        if configured_cutoff and payload.get("cutoff_date") != configured_cutoff:
+            raise ValueError("cutoff diferit de configurația aprobată")
+
+        raw_units: dict[tuple[str, str], int] = {}
+        raw_values: dict[tuple[str, str], Decimal] = {}
+        for row in payload["rows"]:
+            if not isinstance(row, dict):
+                raise ValueError("rând invalid")
+            site_code = str(row.get("site_code") or "").strip()
+            item_code = str(row.get("item_code") or "").strip()
+            quantity = row.get("quantity")
+            if (
+                not site_code
+                or not item_code
+                or isinstance(quantity, bool)
+                or not isinstance(quantity, int)
+                or quantity <= 0
+            ):
+                raise ValueError("identitate sau cantitate invalidă")
+            value = Decimal(str(row.get("value") or "0"))
+            if not value.is_finite():
+                raise ValueError("valoare promo nefinita")
+            key = (site_code, item_code)
+            if key in raw_units:
+                raise ValueError("cheie promo duplicată")
+            raw_units[key] = quantity
+            raw_values[key] = value.quantize(_MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+        if payload.get("report_rows") != len(raw_units):
+            raise ValueError("număr de rânduri inconsistent")
+        if payload.get("promo_units") != sum(raw_units.values()):
+            raise ValueError("total de unități inconsistent")
+    except (InvalidOperation, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        error = f"Materializarea promo `{material_path.name}` este invalidă: {exc}."
+        result: tuple[
+            dict[tuple[str, str], int] | None,
+            dict[tuple[str, str], Decimal] | None,
+            str | None,
+        ] = (None, None, error)
+        _promo_actuals_cache[cache_key] = result
+        return result
+
+    result = (raw_units, raw_values, None)
+    _promo_actuals_cache[cache_key] = result
+    return result
 
 
 def load_promo_actual_units(
@@ -142,69 +224,7 @@ def load_promo_actual_units(
     if not source_file:
         return None, None
 
-    source_path = resolve_path(str(source_file), get_repo_root())
-    if not source_path.exists():
-        return None, f"Raportul promo `{source_path}` nu exista."
-
-    sheet_name = str(definition.get("actuals_sheet") or "AccesoriPromoLunar")
-    cache_key = (str(source_path), source_path.stat().st_mtime, sheet_name)
-    if cache_key in _promo_actuals_cache:
-        cached_units, _cached_values, cached_error = _promo_actuals_cache[cache_key]
-    else:
-        try:
-            df = pd.read_excel(source_path, sheet_name=sheet_name, engine=None)
-        except Exception as exc:  # pragma: no cover - depends on external Excel parser
-            error = f"Raportul promo `{source_path.name}` nu a putut fi citit: {exc}"
-            _promo_actuals_cache[cache_key] = (None, None, error)
-            return None, error
-
-        normalized_columns = {
-            normalize_column_name(column): str(column)
-            for column in df.columns
-        }
-        site_column = _find_actuals_column(normalized_columns, _ACTUALS_SITE_ALIASES)
-        code_column = _find_actuals_column(normalized_columns, _ACTUALS_CODE_ALIASES)
-        promo_qty_column = _find_actuals_column(
-            normalized_columns,
-            _ACTUALS_PROMO_QTY_ALIASES,
-        )
-        if not site_column or not code_column or not promo_qty_column:
-            error = "Raportul promo trebuie sa contina coloanele SiteCode, Cod si Promo Luna Curenta."
-            _promo_actuals_cache[cache_key] = (None, None, error)
-            return None, error
-
-        raw_units: dict[tuple[str, str], int] = {}
-        raw_values: dict[tuple[str, str], Decimal] = {}
-        promo_qty = pd.to_numeric(df[promo_qty_column], errors="coerce").fillna(0)
-        promo_value_column = _find_actuals_column(
-            normalized_columns,
-            _ACTUALS_PROMO_VALUE_ALIASES,
-        )
-        promo_value = (
-            pd.to_numeric(df[promo_value_column], errors="coerce").fillna(0)
-            if promo_value_column
-            else None
-        )
-        for idx, qty_value in promo_qty.items():
-            qty = int(round(float(qty_value or 0)))
-            if qty == 0:
-                continue
-            site_code = str(df.at[idx, site_column]).strip()
-            item_code = str(df.at[idx, code_column]).strip()
-            if not site_code or site_code.lower() == "nan":
-                continue
-            if not item_code or item_code.lower() == "nan":
-                continue
-            key = (site_code, item_code)
-            raw_units[key] = raw_units.get(key, 0) + qty
-            if promo_value is not None:
-                value = Decimal(str(float(promo_value.at[idx] or 0))).quantize(
-                    Decimal("0.01"),
-                    rounding=ROUND_HALF_UP,
-                )
-                raw_values[key] = raw_values.get(key, Decimal("0")) + value
-        _promo_actuals_cache[cache_key] = (raw_units, raw_values, None)
-        cached_units, _cached_values, cached_error = _promo_actuals_cache[cache_key]
+    cached_units, _cached_values, cached_error = _load_promo_actuals_material(definition)
 
     if cached_units is None or cached_error is not None:
         return cached_units, cached_error
@@ -229,11 +249,7 @@ def load_promo_actual_values(
     if units is None or error is not None:
         return None, error
 
-    source_file = definition.get("actuals_source_file") or definition.get("actuals_file")
-    source_path = resolve_path(str(source_file), get_repo_root())
-    sheet_name = str(definition.get("actuals_sheet") or "AccesoriPromoLunar")
-    cache_key = (str(source_path), source_path.stat().st_mtime, sheet_name)
-    _cached_units, cached_values, cached_error = _promo_actuals_cache[cache_key]
+    _cached_units, cached_values, cached_error = _load_promo_actuals_material(definition)
     if cached_values is None or cached_error is not None:
         return cached_values, cached_error
     return {
@@ -410,22 +426,25 @@ async def compute_promo_actuals_from_report(
     An empty result means a configured source report explicitly has no promo
     units for this promotion and scope.
     """
-    actual_units, error = load_promo_actual_units(definition, item_codes=item_codes)
-    if actual_units is None:
+    all_units, all_values, error = _load_promo_actuals_material(definition)
+    if all_units is None:
         if (definition.get("actuals_source_file") or definition.get("actuals_file")) and error:
             raise PromoActualsError(error)
         return None
     if error is not None:
         raise PromoActualsError(error)
+    allowed_codes = {str(code).strip() for code in item_codes if str(code).strip()}
+    actual_units = {
+        key: units
+        for key, units in all_units.items()
+        if key[1] in allowed_codes and units > 0
+    }
     if not actual_units:
         return PromoCoPurchaseResult()
-    actual_values, value_error = load_promo_actual_values(
-        definition,
-        item_codes=item_codes,
-    )
-    if value_error is not None:
-        raise PromoActualsError(value_error)
-    actual_values = actual_values or {}
+    actual_values = {
+        key: (all_values or {}).get(key, Decimal("0"))
+        for key in actual_units
+    }
 
     source_sites: list[str] = []
     source_codes: list[str] = []
@@ -873,7 +892,7 @@ async def compute_promo_same_model_pair(
         )
         key = (site, receipt_agent, item_code)
         units, gross_value = aggregated.get(key, (0, Decimal("0")))
-        aggregated[key] = (units + 1, gross_value + Decimal(unit_price))
+        aggregated[key] = (units + 1, gross_value + Decimal(str(unit_price)))
 
     discounted_rows = [
         {
@@ -923,7 +942,7 @@ def _result_from_discounted_rows(
         units = int(row["units"])
         key = (str(row["site_code"]), str(row["agent"]), str(row["item_code"]))
         excluded_units[key] = units
-        gross_value = Decimal(row.get("gross_value") or 0)
+        gross_value = Decimal(str(row.get("gross_value") or 0))
         excluded_discount_values[key] = (gross_value * discount_rate).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,

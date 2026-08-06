@@ -11,39 +11,23 @@ import pytest
 from models import AgentStats, DashboardAllResponse, DashboardSummary, DailySalesPoint, MonthlyHistoryPoint, PremiumGlassAnalysis, PremiumGlassSummary
 from pydantic import ValidationError
 from schemas.dashboard import DashboardAllBatchRequest, DashboardAllQuery
-from services.dashboard.queries import DashboardCampaignContext
-from services.dashboard.metrics import record_dashboard_component_queue
-from services.dashboard_service import DashboardService, _gather_named
+from services.campaigns import CampaignContext
+from services.dashboard.metrics import (
+    record_dashboard_component_queue,
+)
+from services.dashboard.performance import (
+    apply_agent_target_summary,
+    performance_note,
+    performance_signals,
+    score_breakdown,
+    score_total,
+)
+from services.dashboard_service import DashboardService
 
 
 class FakeRow(dict):
     def __getattr__(self, name: str):
         return self[name]
-
-
-@pytest.mark.asyncio
-async def test_gather_named_bounds_component_concurrency() -> None:
-    active = 0
-    peak_active = 0
-
-    async def component(value: int) -> int:
-        nonlocal active, peak_active
-        active += 1
-        peak_active = max(peak_active, active)
-        await asyncio.sleep(0.01)
-        active -= 1
-        return value
-
-    result = await _gather_named(
-        2,
-        summary=component(1),
-        agents=component(2),
-        stores=component(3),
-        daily=component(4),
-    )
-
-    assert result == {"summary": 1, "agents": 2, "stores": 3, "daily": 4}
-    assert peak_active == 2
 
 
 def test_dashboard_queue_metric_rejects_unbounded_labels() -> None:
@@ -81,8 +65,8 @@ def _empty_premium_glass(month: str = "2026-05") -> PremiumGlassAnalysis:
     return PremiumGlassAnalysis(summary=PremiumGlassSummary(month=month))
 
 
-def _empty_campaign_context() -> DashboardCampaignContext:
-    return DashboardCampaignContext(
+def _empty_campaign_context() -> CampaignContext:
+    return CampaignContext(
         config_error=None,
         promotion_definitions=[],
         promotion_definition=None,
@@ -228,7 +212,7 @@ class TestGetSummary:
             is_month_final=False,
         ))
 
-        result = service._apply_agent_target_summary(
+        result = apply_agent_target_summary(
             summary,
             MagicMock(target=Decimal("30000")),
         )
@@ -264,7 +248,7 @@ class TestGetSummary:
             proc_realizare_target=Decimal("40.00"),
         )
 
-        result = service._apply_agent_target_summary(summary, agent_stats)
+        result = apply_agent_target_summary(summary, agent_stats)
 
         assert result.total_target == Decimal("30000")
         assert result.target_progress_pct == Decimal("40.00")
@@ -322,8 +306,8 @@ class TestGetSummary:
             ),
         ]
 
-        strengths, risks = service._performance_signals(summary, history, "agent")
-        note = service._performance_note(summary, history, "Bun", [], "agent")
+        strengths, risks = performance_signals(summary, history, "agent")
+        note = performance_note(summary, history, "Bun", [], "agent")
 
         assert "Agentul este peste media ultimelor 3 luni." in strengths
         assert "Agentul este sub media ultimelor 3 luni." not in risks
@@ -349,9 +333,9 @@ class TestGetSummary:
             prc_focus_acc_qty=Decimal("8.01"),
         ))
 
-        assert service._performance_score(service._performance_score_breakdown(weak)) == 0
-        assert service._performance_score(service._performance_score_breakdown(ok)) == 27
-        assert service._performance_score(service._performance_score_breakdown(strong)) == 40
+        assert score_total(score_breakdown(weak)) == 0
+        assert score_total(score_breakdown(ok)) == 27
+        assert score_total(score_breakdown(strong)) == 40
 
     def test_performance_score_breakdown_explains_score(self, service):
         summary = DashboardSummary(**_make_summary_row(
@@ -361,12 +345,12 @@ class TestGetSummary:
             prc_focus_acc_qty=Decimal("1.11"),
         ))
 
-        breakdown = service._performance_score_breakdown(summary)
+        breakdown = score_breakdown(summary)
 
         assert breakdown.target_points == Decimal("48.9")
         assert breakdown.bon2acc_points == Decimal("20.0")
         assert breakdown.focus_points == Decimal("0.0")
-        assert service._performance_score(breakdown) == 69
+        assert score_total(breakdown) == 69
 
     def test_performance_signals_use_requested_bon2acc_and_focus_bands(self, service):
         very_weak = DashboardSummary(**_make_summary_row(
@@ -382,14 +366,14 @@ class TestGetSummary:
             prc_focus_acc_qty=Decimal("8.01"),
         ))
 
-        _strengths, risks = service._performance_signals(very_weak, [], "agent")
+        _strengths, risks = performance_signals(very_weak, [], "agent")
         assert "Bon2Acc este critic scazut, sub 20%." in risks
         assert "Focus-ul este scazut, sub 6%." in risks
 
-        strengths, risks = service._performance_signals(ok, [], "agent")
+        strengths, risks = performance_signals(ok, [], "agent")
         assert not any("Bon2Acc" in item or "Focus" in item for item in strengths + risks)
 
-        strengths, _risks = service._performance_signals(strong, [], "agent")
+        strengths, _risks = performance_signals(strong, [], "agent")
         assert "Bon2Acc este foarte bine, peste 35%." in strengths
         assert "Focus-ul este bun, peste 8%." in strengths
 
@@ -537,9 +521,9 @@ class TestGetSpecialCards:
     @pytest.mark.asyncio
     async def test_special_cards(self, service):
         with (
-            patch("services.dashboard_service._get_special_cards_data", new_callable=AsyncMock) as mock_fn,
+            patch("services.dashboard.views._get_special_cards_data", new_callable=AsyncMock) as mock_fn,
             patch(
-                "services.dashboard_service.get_premium_glass_analysis",
+                "services.dashboard.views.get_premium_glass_analysis",
                 new_callable=AsyncMock,
                 return_value=_empty_premium_glass(),
             ),
@@ -552,19 +536,19 @@ class TestGetSpecialCards:
 
 class TestGetDashboardAll:
     @pytest.mark.asyncio
-    @patch("services.dashboard_service._get_special_cards_data", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_agent_stats_rows", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_store_stats_rows", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._enrich_store_stats_with_campaign", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_period_comparison", new_callable=AsyncMock, return_value=None)
-    @patch("services.dashboard_service._fetch_category_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_receipt_bucket_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_focus_subcategory_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_brand_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.dashboard_service._fetch_regional_stats", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_asm_stats", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service.get_premium_glass_analysis", new_callable=AsyncMock, return_value=_empty_premium_glass())
+    @patch("services.dashboard.orchestration._get_special_cards_data", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_agent_stats_rows", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_store_stats_rows", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._enrich_store_stats_with_campaign", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_period_comparison", new_callable=AsyncMock, return_value=None)
+    @patch("services.dashboard.orchestration._fetch_category_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_receipt_bucket_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_focus_subcategory_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_brand_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.dashboard.orchestration._fetch_regional_stats", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_asm_stats", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.views.get_premium_glass_analysis", new_callable=AsyncMock, return_value=_empty_premium_glass())
     async def test_dashboard_all_empty(
         self, mock_premium, mock_asm, mock_regional, mock_promo, mock_brand, mock_focus_sub,
         mock_receipt, mock_cat, mock_period, mock_enrich, mock_stores,
@@ -576,7 +560,7 @@ class TestGetDashboardAll:
 
         campaign_context = _empty_campaign_context()
         with patch(
-            "services.dashboard_service._load_dashboard_campaign_context",
+            "services.dashboard.orchestration.load_campaign_context",
             new_callable=AsyncMock,
             return_value=campaign_context,
         ) as mock_load_context:
@@ -612,18 +596,18 @@ class TestGetDashboardAll:
         assert shared_summary.result() is result.promo_incentive
 
     @pytest.mark.asyncio
-    @patch("services.dashboard_service._get_special_cards_data", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_agent_stats_rows", new_callable=AsyncMock)
-    @patch("services.dashboard_service._fetch_store_stats_rows", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._enrich_store_stats_with_campaign", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_period_comparison", new_callable=AsyncMock, return_value=None)
-    @patch("services.dashboard_service._fetch_category_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_receipt_bucket_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_focus_subcategory_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_brand_mix", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.dashboard_service._fetch_regional_stats", new_callable=AsyncMock, return_value=[])
-    @patch("services.dashboard_service._fetch_asm_stats", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._get_special_cards_data", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_agent_stats_rows", new_callable=AsyncMock)
+    @patch("services.dashboard.orchestration._fetch_store_stats_rows", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._enrich_store_stats_with_campaign", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_period_comparison", new_callable=AsyncMock, return_value=None)
+    @patch("services.dashboard.orchestration._fetch_category_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_receipt_bucket_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_focus_subcategory_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_brand_mix", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.dashboard.orchestration._fetch_regional_stats", new_callable=AsyncMock, return_value=[])
+    @patch("services.dashboard.orchestration._fetch_asm_stats", new_callable=AsyncMock, return_value=[])
     async def test_dashboard_all_with_agent_data(
         self, mock_asm, mock_regional, mock_promo, mock_brand, mock_focus_sub,
         mock_receipt, mock_cat, mock_period, mock_enrich, mock_stores,

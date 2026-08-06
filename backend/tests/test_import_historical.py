@@ -4,8 +4,11 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from openpyxl import Workbook
 
 import scripts.import_historical as historical
+import scripts.import_historical_monthly_sales as historical_monthly
+import scripts.import_annual_summary as historical_annual
 
 
 LEGACY_COLUMNS = historical.OLD_COLUMNS
@@ -45,6 +48,10 @@ def test_historical_workbook_is_validated_without_database_dependencies(tmp_path
     assert report.rows_in_file == 1
     assert report.rows_without_valid_asm == 0
     assert report.stores == 1
+    assert report.parser_resources["format"] == "xlsx"
+    assert report.parser_resources["rows"] == 1
+    assert float(report.parser_resources["parse_seconds"]) >= 0
+    assert int(report.parser_resources["peak_rss_bytes"]) > 0
     assert list(loaded.columns) == historical.OLD_COLUMNS
     assert "Categorie" not in loaded.columns
     assert "is_cartela" not in loaded.columns
@@ -58,6 +65,14 @@ def test_validation_rejects_bad_source_instead_of_coercing_to_zero(tmp_path: Pat
     legacy_workbook(source, Valoare="not-a-number")
 
     with pytest.raises(ValueError, match="Valoare"):
+        historical.load_historical_df(source)
+
+
+def test_validation_rejects_non_workbook_before_pandas_parse(tmp_path: Path) -> None:
+    source = tmp_path / "invalid.xlsx"
+    source.write_bytes(b"not-an-xlsx")
+
+    with pytest.raises(ValueError, match="semnătură"):
         historical.load_historical_df(source)
 
 
@@ -92,3 +107,68 @@ def test_historical_validator_has_no_output_or_apply_surface() -> None:
         "import_sales_dataframe",
     ):
         assert forbidden not in source
+
+
+def test_monthly_history_parser_preflights_and_streams_one_open(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "monthly.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append([])
+    sheet.append([])
+    sheet.append(["A2022", "MobiUp", historical_monthly.VALUE_TYPE, "Manager", "Store", *range(1, 13)])
+    workbook.save(source)
+    monkeypatch.setattr(historical_monthly, "SOURCE_FILES", [source])
+
+    records, duplicates = historical_monthly.load_source_files()
+
+    assert duplicates == []
+    assert len(records) == 1
+    assert next(iter(records.values())).values[12] == 12
+    output = capsys.readouterr().out
+    assert 'parser_resources={"cells":' in output
+    assert '"expanded_bytes":' in output
+    assert '"parser":"historical_monthly_sales"' in output
+
+
+def test_annual_history_parser_preflights_and_streams_all_sheets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "annual.xlsx"
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    for sheet_name, (firma, _kind) in historical_annual.SHEETS.items():
+        sheet = workbook.create_sheet(sheet_name)
+        sheet.append([firma, None, None, "Store", 0, 30, 20])
+    workbook.save(source)
+    monkeypatch.setattr(historical_annual, "SUMMARY_FILE", source)
+
+    summary = historical_annual.load_summary()
+
+    assert summary[("MobiUp", "STORE")][2022]["value"] == 20
+    assert summary[("MobiCell", "STORE")][2023]["qty"] == 30
+    output = capsys.readouterr().out
+    assert output.startswith('parser_resources={"cells":')
+    assert '"expanded_bytes":' in output
+    assert '"parser":"historical_annual_sales"' in output
+
+
+def test_historical_cli_emits_parser_resource_evidence(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "2024" / "legacy.xlsx"
+    source.parent.mkdir(parents=True)
+    legacy_workbook(source)
+
+    assert historical.main(tmp_path) == 0
+
+    output = capsys.readouterr().out
+    assert 'parser_resources={"cells":' in output
+    assert '"expanded_bytes":' in output
+    assert '"parser":"historical_sales"' in output

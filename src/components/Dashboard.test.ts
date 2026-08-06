@@ -5,7 +5,7 @@ import type {
   DashboardAllResponse,
   DashboardSummary,
   StoreStat,
-} from '../api/types';
+} from '../api/generated/runtime-types';
 
 function summary(month: string, overrides: Partial<DashboardSummary>): DashboardSummary {
   return {

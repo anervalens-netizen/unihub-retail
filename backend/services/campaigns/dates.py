@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
+
+
+CampaignDateRangeReason = Literal[
+    "invalid_iso_date",
+    "start_date_after_end_date",
+    "cross_month_range_not_supported",
+]
 
 
 class CampaignDateRangeError(ValueError):
@@ -10,7 +18,7 @@ class CampaignDateRangeError(ValueError):
 
     code = "campaign_date_range_invalid"
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: CampaignDateRangeReason) -> None:
         self.reason = reason
         super().__init__(reason)
 

@@ -2,11 +2,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
-import { Campaigns } from './Campaigns';
+import { CampaignsPage as Campaigns } from '../features/campaigns/CampaignsPage';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { defaultAppFilters } from '../lib/filterValues';
 import { queryKeys } from '../lib/queryKeys';
-import type { CampaignsPromotionsResponse } from '../api/types';
+import type { CampaignsPromotionsResponse } from '../api/generated/runtime-types';
 
 vi.mock('../api/campaigns', () => ({
   getCampaignSnapshot: vi.fn(),

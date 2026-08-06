@@ -6,14 +6,13 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from auth import AuthClaims
 from db.connection import get_pool
-from models import ImportHistoryEntry, ImportJobStatus, ImportResponse, PromoActualImportResponse, SalesGenerationPromotionRequest
+from models import ImportHistoryEntry, ImportJobStatus, SalesGenerationPromotionRequest
 from permissions import require_import_admin
 from repositories.erp_reconciliation import ErpReconciliationRepository
 from repositories.imports import ImportsRepository
 from rate_limits import SALES_IMPORT_UPLOAD_LIMIT, rate_limit
-from schemas.erp_reconciliation import ErpReconciliationResponse
 from services.erp_reconciliation import ErpReconciliationService
-from services.imports import ImportsService
+from services.imports import ImportsService, get_public_import_job_status
 
 router = APIRouter(prefix="/api/import", tags=["imports"])
 
@@ -58,14 +57,14 @@ async def promote_sales_generation(
     )
 
 
-@router.post("/promo-actuals", response_model=PromoActualImportResponse)
+@router.post("/promo-actuals", response_model=ImportJobStatus)
 async def upload_promo_actuals_file(
     import_month: str = Form(...),
     cutoff_date: date = Form(...),
     file: UploadFile = File(...),
     _rate_limit: None = Depends(rate_limit(SALES_IMPORT_UPLOAD_LIMIT)),
     svc: ImportsService = Depends(get_imports_service),
-) -> PromoActualImportResponse:
+) -> ImportJobStatus:
     return await svc.import_promo_actuals(
         file=file,
         import_month=import_month,
@@ -73,14 +72,15 @@ async def upload_promo_actuals_file(
     )
 
 
-@router.post("/erp-reconciliation", response_model=ErpReconciliationResponse)
+@router.post("/erp-reconciliation", response_model=ImportJobStatus)
 async def reconcile_erp_report_file(
     import_month: str = Form(...),
     file: UploadFile = File(...),
     _rate_limit: None = Depends(rate_limit(SALES_IMPORT_UPLOAD_LIMIT)),
     svc: ErpReconciliationService = Depends(get_erp_reconciliation_service),
-) -> ErpReconciliationResponse:
-    return await svc.reconcile(file=file, import_month=import_month)
+) -> ImportJobStatus:
+    job = await svc.reconcile(file=file, import_month=import_month)
+    return await get_public_import_job_status(job.job_id)
 
 
 @router.get("/jobs/{job_id}", response_model=ImportJobStatus)

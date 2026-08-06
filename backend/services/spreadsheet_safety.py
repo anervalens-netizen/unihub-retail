@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import math
 import io
+import os
+import resource
+import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Iterable
 from defusedxml import ElementTree
+from prometheus_client import Gauge, Histogram
 
 
 _DANGEROUS_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
@@ -21,6 +27,7 @@ class SpreadsheetUploadError(ValueError):
 
 @dataclass(frozen=True)
 class SpreadsheetUploadLimits:
+    max_source_bytes: int = 32 * 1024 * 1024
     max_members: int = 2_048
     max_member_bytes: int = 64 * 1024 * 1024
     max_uncompressed_bytes: int = 256 * 1024 * 1024
@@ -28,25 +35,221 @@ class SpreadsheetUploadLimits:
     max_cells: int = 2_000_000
 
 
+@dataclass(frozen=True)
+class SpreadsheetUploadStats:
+    """Measured archive expansion, not an estimate from parsed Python objects."""
+
+    source_bytes: int
+    compressed_bytes: int | None
+    uncompressed_bytes: int | None
+    cells: int | None
+    format: str
+
+
+# These are deliberately separate contracts.  A compact targets workbook and
+# a wide historical workbook must not inherit the same decompression/cell cap.
+SALES_SPREADSHEET_LIMITS = SpreadsheetUploadLimits(
+    max_source_bytes=32 * 1024 * 1024,
+    max_members=2_048,
+    max_member_bytes=64 * 1024 * 1024,
+    max_uncompressed_bytes=256 * 1024 * 1024,
+    max_compression_ratio=100,
+    max_cells=2_000_000,
+)
+PROMO_ACTUALS_SPREADSHEET_LIMITS = SpreadsheetUploadLimits(
+    max_source_bytes=32 * 1024 * 1024,
+    max_members=1_024,
+    max_member_bytes=32 * 1024 * 1024,
+    max_uncompressed_bytes=128 * 1024 * 1024,
+    max_compression_ratio=80,
+    max_cells=750_000,
+)
+ERP_RECONCILIATION_SPREADSHEET_LIMITS = SpreadsheetUploadLimits(
+    max_source_bytes=16 * 1024 * 1024,
+    max_members=1_024,
+    max_member_bytes=32 * 1024 * 1024,
+    max_uncompressed_bytes=128 * 1024 * 1024,
+    max_compression_ratio=80,
+    max_cells=1_000_000,
+)
+TARGETS_SPREADSHEET_LIMITS = SpreadsheetUploadLimits(
+    max_source_bytes=16 * 1024 * 1024,
+    max_members=512,
+    max_member_bytes=16 * 1024 * 1024,
+    max_uncompressed_bytes=64 * 1024 * 1024,
+    max_compression_ratio=50,
+    max_cells=250_000,
+)
+HISTORY_SPREADSHEET_LIMITS = SpreadsheetUploadLimits(
+    max_source_bytes=64 * 1024 * 1024,
+    max_members=4_096,
+    max_member_bytes=128 * 1024 * 1024,
+    max_uncompressed_bytes=512 * 1024 * 1024,
+    max_compression_ratio=100,
+    max_cells=4_000_000,
+)
+
+
+SPREADSHEET_SOURCE_BYTES = Gauge(
+    "spreadsheet_parser_source_bytes",
+    "Source file bytes observed by the latest spreadsheet parser run.",
+    ("parser", "format"),
+)
+SPREADSHEET_COMPRESSED_BYTES = Gauge(
+    "spreadsheet_parser_compressed_bytes",
+    "Compressed ZIP bytes observed by the latest spreadsheet parser run; zero when unavailable.",
+    ("parser", "format"),
+)
+SPREADSHEET_EXPANDED_BYTES = Gauge(
+    "spreadsheet_parser_expanded_bytes",
+    "Expanded ZIP bytes observed by the latest spreadsheet parser run; zero when unavailable.",
+    ("parser", "format"),
+)
+SPREADSHEET_CELLS = Gauge(
+    "spreadsheet_parser_cells",
+    "Structural worksheet cells observed by the latest spreadsheet parser run; zero when unavailable.",
+    ("parser", "format"),
+)
+SPREADSHEET_ROWS = Gauge(
+    "spreadsheet_parser_rows",
+    "Business rows emitted by the latest spreadsheet parser run.",
+    ("parser", "format"),
+)
+SPREADSHEET_PARSE_SECONDS = Histogram(
+    "spreadsheet_parser_parse_seconds",
+    "Spreadsheet preflight, parse and business-validation duration.",
+    ("parser", "format"),
+    buckets=(0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120),
+)
+SPREADSHEET_PEAK_RSS_BYTES = Gauge(
+    "spreadsheet_parser_peak_rss_bytes",
+    "Maximum resident set size sampled while the latest parser run was active.",
+    ("parser", "format"),
+)
+SPREADSHEET_MEASUREMENT_AVAILABLE = Gauge(
+    "spreadsheet_parser_measurement_available",
+    "Whether a structural metric is measurable for the source format.",
+    ("parser", "format", "metric"),
+)
+
+
+def _current_rss_bytes() -> int:
+    """Return current RSS, using a finite process-lifetime fallback off Linux."""
+
+    try:
+        statm = Path("/proc/self/statm").read_text(encoding="ascii").split()
+        return max(0, int(statm[1]) * os.sysconf("SC_PAGE_SIZE"))
+    except (OSError, ValueError, IndexError):
+        value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        return max(0, value * (1024 if os.name == "posix" else 1))
+
+
+class SpreadsheetParserMeasurement:
+    """Measure one parser run without treating process-lifetime max RSS as its peak."""
+
+    def __init__(self, parser: str) -> None:
+        self.parser = parser
+        self.stats: SpreadsheetUploadStats | None = None
+        self.rows = 0
+        self.peak_rss_bytes = 0
+        self._started_at = 0.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> "SpreadsheetParserMeasurement":
+        self._started_at = time.perf_counter()
+        self.peak_rss_bytes = _current_rss_bytes()
+
+        def sample() -> None:
+            while not self._stop.wait(0.01):
+                self.peak_rss_bytes = max(self.peak_rss_bytes, _current_rss_bytes())
+
+        self._thread = threading.Thread(target=sample, name=f"rss-{self.parser}", daemon=True)
+        self._thread.start()
+        return self
+
+    def set_preflight(self, stats: SpreadsheetUploadStats) -> None:
+        self.stats = stats
+
+    def set_rows(self, rows: int) -> None:
+        self.rows = max(0, int(rows))
+
+    def as_dict(self) -> dict[str, int | float | str | None]:
+        stats = self.stats
+        return {
+            "parser": self.parser,
+            "format": stats.format if stats is not None else "unknown",
+            "source_bytes": stats.source_bytes if stats is not None else 0,
+            "compressed_bytes": stats.compressed_bytes if stats is not None else None,
+            "expanded_bytes": stats.uncompressed_bytes if stats is not None else None,
+            "cells": stats.cells if stats is not None else None,
+            "rows": self.rows,
+            "parse_seconds": max(0.0, time.perf_counter() - self._started_at),
+            "peak_rss_bytes": max(0, self.peak_rss_bytes),
+        }
+
+    def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=0.1)
+        self.peak_rss_bytes = max(self.peak_rss_bytes, _current_rss_bytes())
+        stats = self.stats
+        source_format = stats.format if stats is not None else "unknown"
+        labels = {"parser": self.parser, "format": source_format}
+        source_bytes = stats.source_bytes if stats is not None else 0
+        compressed = stats.compressed_bytes if stats is not None else None
+        expanded = stats.uncompressed_bytes if stats is not None else None
+        cells = stats.cells if stats is not None else None
+        SPREADSHEET_SOURCE_BYTES.labels(**labels).set(max(0, source_bytes))
+        SPREADSHEET_COMPRESSED_BYTES.labels(**labels).set(max(0, compressed or 0))
+        SPREADSHEET_EXPANDED_BYTES.labels(**labels).set(max(0, expanded or 0))
+        SPREADSHEET_CELLS.labels(**labels).set(max(0, cells or 0))
+        SPREADSHEET_ROWS.labels(**labels).set(self.rows)
+        SPREADSHEET_PEAK_RSS_BYTES.labels(**labels).set(self.peak_rss_bytes)
+        SPREADSHEET_PARSE_SECONDS.labels(**labels).observe(
+            max(0.0, time.perf_counter() - self._started_at)
+        )
+        for metric, value in (
+            ("compressed_bytes", compressed),
+            ("expanded_bytes", expanded),
+            ("cells", cells),
+        ):
+            SPREADSHEET_MEASUREMENT_AVAILABLE.labels(
+                **labels,
+                metric=metric,
+            ).set(1 if value is not None else 0)
+
+
 def validate_spreadsheet_upload(
     content: bytes,
     suffix: str,
     *,
     limits: SpreadsheetUploadLimits | None = None,
-) -> None:
+) -> SpreadsheetUploadStats:
     """Validate file signature and bounded XLSX expansion before parsing."""
 
     normalized_suffix = suffix.casefold()
+    policy = limits or SALES_SPREADSHEET_LIMITS
+    if len(content) > policy.max_source_bytes:
+        raise SpreadsheetUploadError("Workbook-ul depășește limita sursei")
     if normalized_suffix == ".xls":
         if not content.startswith(_OLE_COMPOUND_MAGIC):
             raise SpreadsheetUploadError("Fișierul .xls are o semnătură invalidă")
-        return
+        # OLE2 does not expose ZIP member expansion or worksheet cell counts.
+        # Report those dimensions as unavailable instead of inventing equality
+        # between source and expanded bytes.
+        return SpreadsheetUploadStats(
+            source_bytes=len(content),
+            compressed_bytes=None,
+            uncompressed_bytes=None,
+            cells=None,
+            format="xls",
+        )
     if normalized_suffix != ".xlsx":
         raise SpreadsheetUploadError("Format spreadsheet neacceptat")
     if not content.startswith(b"PK"):
         raise SpreadsheetUploadError("Fișierul .xlsx are o semnătură invalidă")
 
-    policy = limits or SpreadsheetUploadLimits()
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             members = archive.infolist()
@@ -87,6 +290,13 @@ def validate_spreadsheet_upload(
                                     "Workbook-ul depășește limita de celule"
                                 )
                         element.clear()
+            return SpreadsheetUploadStats(
+                source_bytes=len(content),
+                compressed_bytes=len(content),
+                uncompressed_bytes=expanded,
+                cells=cell_count,
+                format="xlsx",
+            )
     except SpreadsheetUploadError:
         raise
     except (zipfile.BadZipFile, OSError, ElementTree.ParseError) as exc:

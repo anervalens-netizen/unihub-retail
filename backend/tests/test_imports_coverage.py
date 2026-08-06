@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -24,7 +25,11 @@ from services.jobs import JobResult, JobStatus
 def bypass_structural_preflight_for_business_flow_tests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(imports_module, "validate_spreadsheet_upload", lambda *_args: None)
+    monkeypatch.setattr(
+        imports_module,
+        "validate_spreadsheet_upload",
+        lambda *_args, **_kwargs: None,
+    )
 
 
 def _service(pool: object | None = None) -> ImportsService:
@@ -104,7 +109,20 @@ def _configure_promo_paths(
     monkeypatch.setattr(
         ImportsService,
         "_validate_promo_actuals_report",
-        staticmethod(lambda _: (1, 1)),
+        staticmethod(
+            lambda _: imports_module.PromoActualsParseResult(
+                report_rows=1,
+                promo_units=1,
+                rows=(
+                    {
+                        "site_code": "S1",
+                        "item_code": "I1",
+                        "quantity": 1,
+                        "value": "0.00",
+                    },
+                ),
+            )
+        ),
     )
 
 
@@ -114,6 +132,16 @@ def _promotion_request() -> SalesGenerationPromotionRequest:
         manifest_sha256="b" * 64,
         override_reason="operator approved promotion",
     )
+
+
+def test_promo_parse_result_compatibility_equality() -> None:
+    rows = ({"site_code": "S1", "item_code": "I1", "quantity": 1, "value": "0.00"},)
+    first = imports_module.PromoActualsParseResult(1, 1, rows)
+    same = imports_module.PromoActualsParseResult(1, 1, rows)
+
+    assert first == (1, 1)
+    assert first == same
+    assert first.__eq__(object()) is NotImplemented
 
 
 @pytest.mark.parametrize("state", [JobStatus.BACKEND_UNAVAILABLE, JobStatus.UNKNOWN])
@@ -162,6 +190,47 @@ def test_publish_promo_generation_hashes_external_source_and_rejects_missing_sou
         )
 
 
+def test_publish_promo_generation_hashes_external_material_and_rejects_missing_material(
+    tmp_path: Path,
+) -> None:
+    external_actuals = tmp_path / "external.xlsx"
+    external_material = tmp_path / "external.json"
+    external_actuals.write_bytes(b"external-actuals")
+    external_material.write_bytes(b'{"rows":[]}\n')
+    config = _promotion_config(source_file=str(external_actuals))
+    promotion = cast(list[dict[str, object]], config["promotions"])[0]
+    promotion["actuals_material_file"] = str(external_material)
+
+    imports_module._publish_promo_generation(
+        data_dir=tmp_path / "data",
+        config=config,
+        content=b"uploaded-actuals",
+        suffix=".xlsx",
+        material_sha256="c" * 64,
+        expected_pointer_sha256=None,
+    )
+    pointer = json.loads(
+        (tmp_path / "data" / "promo_generations" / "current.json").read_text()
+    )
+    assert pointer["actuals_materials"] == [
+        {
+            "file": str(external_material),
+            "sha256": hashlib.sha256(external_material.read_bytes()).hexdigest(),
+        }
+    ]
+
+    external_material.unlink()
+    with pytest.raises(ValueError, match="Materializarea actuals promo lipsește"):
+        imports_module._publish_promo_generation(
+            data_dir=tmp_path / "missing-material-data",
+            config=config,
+            content=b"uploaded-actuals",
+            suffix=".xlsx",
+            material_sha256="c" * 64,
+            expected_pointer_sha256=None,
+        )
+
+
 def test_publish_promo_generation_reuses_exact_generation(
     tmp_path: Path,
 ) -> None:
@@ -174,6 +243,9 @@ def test_publish_promo_generation_reuses_exact_generation(
         material_sha256="d" * 64,
         expected_pointer_sha256=None,
     )
+    generation_root = data_dir / "promo_generations"
+    pointer_path = generation_root / "current.json"
+    pointer_before = pointer_path.read_bytes()
     second = imports_module._publish_promo_generation(
         data_dir=data_dir,
         config=_promotion_config(),
@@ -184,14 +256,57 @@ def test_publish_promo_generation_reuses_exact_generation(
     )
 
     assert second == first
+    assert pointer_path.read_bytes() == pointer_before
+    pointer = json.loads(pointer_before)
+    assert pointer["previous_generation_id"] != pointer["generation_id"]
+    generation_dir = generation_root / first[0]
+    assert stat.S_IMODE(generation_root.stat().st_mode) == 0o700
+    assert stat.S_IMODE(generation_dir.stat().st_mode) == 0o700
+    for artifact in (
+        pointer_path,
+        generation_dir / "promo_actuals.xlsx",
+        generation_dir / "promo_actuals.json",
+        generation_dir / "hub_specials.json",
+    ):
+        assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+
+
+def test_publish_promo_generation_rejects_inconsistent_exact_retry_pointer(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    first = imports_module._publish_promo_generation(
+        data_dir=data_dir,
+        config=_promotion_config(),
+        content=b"uploaded-actuals",
+        suffix=".xlsx",
+        material_sha256="d" * 64,
+        expected_pointer_sha256=None,
+    )
+    pointer_path = data_dir / "promo_generations" / "current.json"
+    pointer = json.loads(pointer_path.read_text())
+    pointer["previous_generation_id"] = first[0]
+    pointer_path.write_bytes(imports_module._canonical_json_bytes(pointer))
+
+    with pytest.raises(imports_module.PromoGenerationPointerIntegrityError):
+        imports_module._publish_promo_generation(
+            data_dir=data_dir,
+            config=_promotion_config(),
+            content=b"uploaded-actuals",
+            suffix=".xlsx",
+            material_sha256="d" * 64,
+            expected_pointer_sha256=imports_module._promo_pointer_sha256(data_dir),
+        )
 
 
 @pytest.mark.parametrize(
     ("artifact_name", "mutation"),
     [
         ("promo_actuals.xlsx", "missing"),
+        ("promo_actuals.json", "missing"),
         ("hub_specials.json", "missing"),
         ("promo_actuals.xlsx", "tampered"),
+        ("promo_actuals.json", "tampered"),
         ("hub_specials.json", "tampered"),
     ],
 )
@@ -262,8 +377,9 @@ async def test_promo_actuals_fails_closed_for_invalid_current_pointer(
     }
 
     with pytest.raises(HTTPException) as exc:
-        await _service().import_promo_actuals(
-            file=_upload(b"uploaded-actuals"),
+        await _service().process_promo_actuals(
+            content=b"uploaded-actuals",
+            filename="promo.xlsx",
             import_month="2026-06",
             cutoff_date=date(2026, 6, 15),
         )
@@ -327,6 +443,52 @@ async def test_sales_import_with_explicit_cutoff_preserves_audit_context(
         cutoff_date="2026-06-20",
         requested_by_sub="owner:123",
     )
+
+
+@pytest.mark.asyncio
+async def test_promo_import_enqueues_and_returns_public_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueue = AsyncMock(return_value=SimpleNamespace(job_id="promo-import:1"))
+    monkeypatch.setattr(imports_module, "enqueue_promo_actuals_import", enqueue)
+    monkeypatch.setattr(
+        imports_module,
+        "get_job_status",
+        AsyncMock(return_value=JobResult(job_id="promo-import:1", status=JobStatus.QUEUED)),
+    )
+
+    result = await _service().import_promo_actuals(
+        file=_upload(b"promo", "promo.xlsx"),
+        import_month="2026-06",
+        cutoff_date=date(2026, 6, 15),
+    )
+
+    assert result.job_id == "promo-import:1"
+    enqueue.assert_awaited_once_with(
+        b"promo",
+        filename="promo.xlsx",
+        import_month="2026-06",
+        cutoff_date="2026-06-15",
+    )
+
+
+@pytest.mark.asyncio
+async def test_promo_processing_rejects_noncanonical_parser_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ImportsService,
+        "_validate_promo_actuals_report",
+        staticmethod(lambda _content: (1, 1)),
+    )
+
+    with pytest.raises(RuntimeError, match="materializarea canonică"):
+        await _service().process_promo_actuals(
+            content=b"promo",
+            filename="promo.xlsx",
+            import_month="2026-06",
+            cutoff_date=date(2026, 6, 15),
+        )
 
 
 @pytest.mark.asyncio
@@ -570,8 +732,11 @@ async def test_promo_actuals_refuses_config_pointer_changed_before_read(
     monkeypatch.setattr(imports_module, "_promo_pointer_sha256", lambda _: next(pointers))
 
     with pytest.raises(HTTPException) as exc:
-        await _service().import_promo_actuals(
-            file=_upload(), import_month="2026-06", cutoff_date=date(2026, 6, 15)
+        await _service().process_promo_actuals(
+            content=b"report",
+            filename="promo.xlsx",
+            import_month="2026-06",
+            cutoff_date=date(2026, 6, 15),
         )
 
     assert exc.value.status_code == 409
@@ -609,8 +774,11 @@ async def test_promo_actuals_fails_closed_for_invalid_promotion_entries(
     _configure_promo_paths(monkeypatch, tmp_path, config)
 
     with pytest.raises(HTTPException) as exc:
-        await _service().import_promo_actuals(
-            file=_upload(), import_month="2026-06", cutoff_date=date(2026, 6, 15)
+        await _service().process_promo_actuals(
+            content=b"report",
+            filename="promo.xlsx",
+            import_month="2026-06",
+            cutoff_date=date(2026, 6, 15),
         )
 
     assert exc.value.status_code == 500
@@ -640,8 +808,11 @@ async def test_promo_actuals_maps_generation_faults_without_partial_success(
 
     monkeypatch.setattr(imports_module, "_publish_promo_generation", fail_publish)
     with pytest.raises(HTTPException) as exc:
-        await _service().import_promo_actuals(
-            file=_upload(), import_month="2026-06", cutoff_date=date(2026, 6, 15)
+        await _service().process_promo_actuals(
+            content=b"report",
+            filename="promo.xlsx",
+            import_month="2026-06",
+            cutoff_date=date(2026, 6, 15),
         )
 
     assert exc.value.status_code == status_code
@@ -665,3 +836,20 @@ def test_validate_promo_actuals_rejects_invalid_decimal_or_missing_positive_key(
         ImportsService._validate_promo_actuals_report(b"report")
 
     assert exc.value.status_code == 400
+
+
+def test_validate_promo_actuals_rejects_nonfinite_promo_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataframe = pd.DataFrame(
+        {
+            "site_code": ["S1"],
+            "item_code": ["I1"],
+            "promo_qty": [1],
+            "promo_value": ["not-a-number"],
+        }
+    )
+    monkeypatch.setattr(imports_module.pd, "read_excel", lambda *args, **kwargs: dataframe)
+
+    with pytest.raises(HTTPException, match="Valorile promo trebuie sa fie finite"):
+        ImportsService._validate_promo_actuals_report(b"report")

@@ -4,8 +4,10 @@ import { ExportTableButton } from '../../components/ExportTableButton';
 import { SortableTableHeader, TableHeaderCell } from '../../components/common/TableHeader';
 import { useSortable, type SortDirection } from '../../lib/useSortable';
 
-interface ColDef<T> {
-  key: keyof T | 'rank';
+type ColumnKey<T extends object> = Extract<keyof T, string> | 'rank';
+
+interface ColDef<T extends object> {
+  key: ColumnKey<T>;
   label: string;
   align?: 'left' | 'right';
   sortable?: boolean;
@@ -13,7 +15,7 @@ interface ColDef<T> {
   render: (row: T, index: number) => React.ReactNode;
 }
 
-export function SortableTable<T extends Record<string, unknown>>({
+export function SortableTable<T extends object>({
   rows,
   columns,
   defaultSortKey,
@@ -43,7 +45,7 @@ export function SortableTable<T extends Record<string, unknown>>({
     direction: defaultSortDir,
   });
 
-  function handleSort(key: keyof T | 'rank') {
+  function handleSort(key: ColumnKey<T>) {
     if (key === 'rank') return;
     handleSortableSort(key as keyof T);
   }
@@ -60,7 +62,7 @@ export function SortableTable<T extends Record<string, unknown>>({
             value: (row, index): string | number | null | undefined => {
               if (column.exportValue) return column.exportValue(row, index);
               if (column.key === 'rank') return index + 1;
-              const value: unknown = row[column.key as keyof T];
+              const value: unknown = row[column.key];
               if (value === null || value === undefined) return null;
               if (typeof value === 'string' || typeof value === 'number') return value;
               return String(value);

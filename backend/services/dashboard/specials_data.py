@@ -7,10 +7,12 @@ from typing import Any
 from db.connection import get_pool
 from schemas.dashboard import DashboardSpecialCard
 from schemas.campaigns import PromoIncentiveSummary
+from services.campaigns import (
+    CampaignContext,
+    fetch_promo_incentive_summary,
+    load_campaign_context,
+)
 from services.dashboard.queries import (
-    DashboardCampaignContext,
-    _fetch_promo_incentive_summary,
-    _load_dashboard_campaign_context,
     _scope_clauses,
     _scope_join,
 )
@@ -30,7 +32,7 @@ async def _get_special_cards_data(
     *,
     current_scope: bool = False,
     include_closed_stores: bool = False,
-    campaign_context: DashboardCampaignContext | None = None,
+    campaign_context: CampaignContext | None = None,
     promo_incentive_summary: Awaitable[PromoIncentiveSummary] | None = None,
     pool: Any | None = None,
 ) -> list[DashboardSpecialCard]:
@@ -38,7 +40,7 @@ async def _get_special_cards_data(
     active_pool = pool or await get_pool()
     if campaign_context is None:
         async with active_pool.acquire() as conn:
-            campaign_context = await _load_dashboard_campaign_context(
+            campaign_context = await load_campaign_context(
                 conn,
                 month,
                 firma,
@@ -152,7 +154,7 @@ async def _get_special_cards_data(
                 item_rows = [row for row in rows if not row["is_meta"]]
                 meta_row = next((row for row in rows if row["is_meta"]), None)
                 if promo_incentive_summary is None:
-                    summary = await _fetch_promo_incentive_summary(
+                    summary = await fetch_promo_incentive_summary(
                         conn,
                         month,
                         firma,

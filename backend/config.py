@@ -132,6 +132,7 @@ class RuntimeConfig:
     db_lock_timeout_ms: int
     db_idle_transaction_timeout_ms: int
     dashboard_request_deadline_ms: int | None
+    campaigns_request_deadline_ms: int | None
     dashboard_global_component_concurrency: int | None
     valkey_host: str
     valkey_port: int
@@ -246,6 +247,17 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
         if process_role == "web"
         else None
     )
+    campaigns_request_deadline_ms = (
+        _parse_runtime_int(
+            "CAMPAIGNS_REQUEST_DEADLINE_MS",
+            5000,
+            errors,
+            minimum=100,
+            maximum=10000,
+        )
+        if process_role == "web"
+        else None
+    )
     dashboard_global_component_concurrency: int | None = None
     if process_role == "web":
         dashboard_component_ceiling = db_pool_max_size - WEB_MIN_DB_POOL_MAX_SIZE
@@ -337,6 +349,7 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
         db_lock_timeout_ms=db_lock_timeout_ms,
         db_idle_transaction_timeout_ms=db_idle_transaction_timeout_ms,
         dashboard_request_deadline_ms=dashboard_request_deadline_ms,
+        campaigns_request_deadline_ms=campaigns_request_deadline_ms,
         dashboard_global_component_concurrency=dashboard_global_component_concurrency,
         valkey_host=os.getenv("VALKEY_HOST", "127.0.0.1").strip() or "127.0.0.1",
         valkey_port=valkey_port,

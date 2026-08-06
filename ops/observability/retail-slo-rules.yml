@@ -31,6 +31,15 @@ groups:
             }[5m]))
           )
 
+      - record: unihub_retail:dashboard_latency_p95_seconds:rate5m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{
+              job="unihub_retail",
+              handler="/api/dashboard/all"
+            }[5m]))
+          )
+
   - name: unihub-retail-slo-alerts
     rules:
       - alert: UniHubRetailReadinessProbeMissing
@@ -85,3 +94,29 @@ groups:
         annotations:
           summary: "Retail request exceeded 3 seconds"
           description: "{{ $labels.method }} {{ $labels.handler }} ({{ $labels.status }}) had {{ $value | humanize }} slow request(s) in 5 minutes."
+
+      - alert: UniHubRetailDashboardBudgetViolation
+        expr: >-
+          increase(dashboard_component_budget_violation_total{
+            job="unihub_retail"
+          }[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Retail Dashboard exceeded its global concurrency budget"
+          description: "The bounded Dashboard scheduler reported {{ $value | humanize }} violation(s) in 5 minutes."
+
+      - alert: UniHubRetailDashboardLatencySLO
+        expr: >-
+          unihub_retail:dashboard_latency_p95_seconds:rate5m > 1
+          and
+          sum(rate(http_requests_total{
+            job="unihub_retail",
+            handler="/api/dashboard/all"
+          }[5m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Retail Dashboard p95 exceeds 1 second"
+          description: "Dashboard p95 is {{ $value | humanizeDuration }}."

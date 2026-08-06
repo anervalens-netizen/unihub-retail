@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from scripts.check_critical_coverage import evaluate_coverage
@@ -69,3 +72,26 @@ def test_critical_coverage_aggregates_modular_package() -> None:
 
     assert results[0].covered == pytest.approx(90.0)
     assert results[0].passed is True
+
+
+def test_split_export_boundaries_replace_the_removed_monolith_gate() -> None:
+    backend = Path(__file__).resolve().parents[1]
+    thresholds = json.loads(
+        (backend / "critical_coverage_thresholds.json").read_text(encoding="utf-8")
+    )
+
+    assert "services/exports.py" not in thresholds
+    expected = {
+        "repositories/export_operations.py",
+        "services/export_complex_worker.py",
+        "services/export_operations.py",
+        "services/export_xlsx_formatting.py",
+        "services/exports/artifact.py",
+        "services/exports/loaders.py",
+        "services/exports/planner.py",
+        "services/exports/service.py",
+        "services/exports/table_renderer.py",
+        "services/exports/validation.py",
+    }
+    assert expected.issubset(thresholds)
+    assert all(float(thresholds[module]) >= 95 for module in expected)

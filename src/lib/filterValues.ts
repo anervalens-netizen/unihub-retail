@@ -1,4 +1,4 @@
-import type { AppFilters } from '../components/MainLayout';
+import type { AppFilters } from './appFilters';
 
 export const ALL_FIRMS = 'Toate';
 export const ALL_SCOPE = 'Toti';

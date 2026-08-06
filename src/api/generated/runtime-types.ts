@@ -1,3 +1,4 @@
+/* HANDWRITTEN RETAIL BOUNDARY: stable UI-facing aliases over generated contracts. */
 import type * as Contract from './contracts';
 import type { DecodeRetail } from './decoded';
 
@@ -20,6 +21,7 @@ export type DeepRequired<T> = T extends (...args: never[]) => unknown
 
 export type Runtime<T> = DecodeRetail<T>;
 export type RequiredRuntime<T> = DeepRequired<Runtime<T>>;
+export type GeneratedRequest<Id extends Contract.RetailOperationId> = Runtime<Contract.RetailOperationBodies[Id]>;
 
 export type DashboardSummary = RequiredRuntime<Contract.RetailDashboardSummary>;
 export type ReceiptBucketItem = RequiredRuntime<Contract.RetailReceiptBucketItem>;
@@ -49,31 +51,25 @@ export type PremiumGlassManagerStat = RequiredRuntime<Contract.RetailPremiumGlas
 export type PremiumGlassAgentStat = RequiredRuntime<Contract.RetailPremiumGlassAgentStat>;
 export type PremiumGlassProductStat = RequiredRuntime<Contract.RetailPremiumGlassProductStat>;
 export type PremiumGlassAnalysis = RequiredRuntime<Contract.RetailPremiumGlassAnalysis>;
-export type PremiumGlassSurfaceMode = 'all' | 'screen' | 'camera';
+export type PremiumGlassSurfaceMode = NonNullable<
+  Contract.RetailOperationQueries['get_premium_glass_api_dashboard_premium_glass_get']['surface']
+>;
 export type CampaignOverview = RequiredRuntime<Contract.RetailCampaignOverview>;
 export type CampaignProductStat = RequiredRuntime<Contract.RetailCampaignProductStat>;
 export type CampaignStoreStat = RequiredRuntime<Contract.RetailCampaignStoreStat>;
 export type CampaignSnapshot = RequiredRuntime<Contract.RetailCampaignSnapshot>;
 export type FocusHistoryPoint = RequiredRuntime<Contract.RetailFocusHistoryPoint>;
 export type FocusHistoryResponse = RequiredRuntime<Contract.RetailFocusHistoryResponse>;
-export type AgentStat = Omit<RequiredRuntime<Contract.RetailAgentStats>, 'promo_discount_value'> & {
-  promo_discount_value?: number;
-};
-export type StoreStat = Omit<RequiredRuntime<Contract.RetailStoreStats>, 'promo_discount_value' | 'proc_bon2acc' | 'prc_focus_acc_qty'> & {
-  promo_discount_value?: number;
-  proc_bon2acc?: number | null;
-  prc_focus_acc_qty?: number | null;
-};
-export type RegionalStat = Omit<RequiredRuntime<Contract.RetailRegionalStats>, 'promo_discount_value'> & {
-  promo_discount_value?: number;
-};
-export type PerformanceDetailLevel = 'regional' | 'store' | 'agent';
+export type AgentStat = RequiredRuntime<Contract.RetailAgentStats>;
+export type StoreStat = RequiredRuntime<Contract.RetailStoreStats>;
+export type RegionalStat = RequiredRuntime<Contract.RetailRegionalStats>;
+export type PerformanceDetailLevel = NonNullable<
+  Contract.RetailOperationQueries['get_performance_detail_api_dashboard_performance_detail_get']['level']
+>;
 export type PerformancePeerRow = RequiredRuntime<Contract.RetailPerformancePeerRow>;
 export type PerformanceScoreBreakdown = RequiredRuntime<Contract.RetailPerformanceScoreBreakdown>;
 export type PerformanceDetailResponse = RequiredRuntime<Contract.RetailPerformanceDetailResponse>;
-export type AsmStat = Omit<RequiredRuntime<Contract.RetailAsmStats>, 'promo_discount_value'> & {
-  promo_discount_value?: number;
-};
+export type AsmStat = RequiredRuntime<Contract.RetailAsmStats>;
 export type AgentOption = RequiredRuntime<Contract.RetailAgentOption>;
 export type StoreOption = RequiredRuntime<Contract.RetailStoreOption>;
 export type FilterOptions = RequiredRuntime<Contract.RetailFilterOptions>;
@@ -82,28 +78,7 @@ export type ImportResponse = RequiredRuntime<Contract.RetailImportResponse>;
 export type ImportJobStatus = RequiredRuntime<Contract.RetailImportJobStatus>;
 export type ImportCoverageReport = RequiredRuntime<Contract.RetailImportCoverageReport>;
 export type SalesGenerationManifest = RequiredRuntime<Contract.RetailSalesGenerationManifest>;
-export type DashboardAllResponse = Omit<
-  Runtime<Contract.RetailDashboardAllResponse>,
-  'agents' | 'asms' | 'brand_mix' | 'category_mix' | 'daily' | 'daily_last_year'
-    | 'focus_subcategory_mix' | 'period_comparison' | 'premium_glass' | 'promo_incentive'
-    | 'receipt_bucket_mix' | 'regionals' | 'special_cards' | 'stores' | 'summary'
-> & {
-  agents: AgentStat[];
-  asms: AsmStat[];
-  brand_mix: BrandMixItem[];
-  category_mix: CategoryMixItem[];
-  daily: DailySalesPoint[];
-  daily_last_year: DailySalesPoint[];
-  focus_subcategory_mix: CategoryMixItem[];
-  period_comparison: PeriodComparisonPayload | null;
-  premium_glass: PremiumGlassAnalysis | null;
-  promo_incentive: PromoIncentiveSummary;
-  receipt_bucket_mix: ReceiptBucketItem[];
-  regionals: RegionalStat[];
-  special_cards: DashboardSpecialCard[];
-  stores: StoreStat[];
-  summary: DashboardSummary;
-};
+export type DashboardAllResponse = RequiredRuntime<Contract.RetailDashboardAllResponse>;
 export type DashboardHistoryResponse = RequiredRuntime<Contract.RetailDashboardHistoryResponse>;
 export type YearHistoryPoint = RequiredRuntime<Contract.RetailYearHistoryPoint>;
 export type YearHistoryResponse = RequiredRuntime<Contract.RetailYearHistoryResponse>;
@@ -179,12 +154,7 @@ export type SalaryAgentsSummaryResponse = RequiredRuntime<Contract.RetailSalaryA
 export type SalaryStoreOption = RequiredRuntime<Contract.RetailSalaryStoreOption>;
 
 export type TargetCalculatorContext = RequiredRuntime<Contract.RetailTargetContextResponse>;
-export type TargetCalculationInput = Omit<Runtime<Contract.RetailTargetCalculationRequest>, 'min_floor' | 'previous_month_floor_pct' | 'target_month' | 'total_target'> & {
-  target_month: string;
-  total_target: number;
-  min_floor: number;
-  previous_month_floor_pct: number;
-};
+export type TargetCalculationInput = GeneratedRequest<'calculate_scenario_api_target_calculator_scenarios_calculate_post'>;
 export type TargetSourceMonth = RequiredRuntime<Contract.RetailTargetSourceMonth>;
 export type TargetHistoryValue = RequiredRuntime<Contract.RetailTargetHistoryValue>;
 export type TargetScenarioRow = RequiredRuntime<Contract.RetailTargetScenarioRowResponse>;

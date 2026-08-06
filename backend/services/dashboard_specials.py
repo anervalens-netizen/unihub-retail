@@ -84,6 +84,7 @@ def _generated_config_path(data_dir: Path) -> Path | None:
         relative = str(pointer["config_file"])
         expected_config_sha256 = str(pointer["config_sha256"])
         actuals_manifest = pointer["actuals"]
+        actuals_material_manifest = pointer.get("actuals_materials", [])
     except Exception as exc:
         raise ValueError("Pointerul generației promo este invalid.") from exc
     if (
@@ -92,6 +93,7 @@ def _generated_config_path(data_dir: Path) -> Path | None:
         or ".." in Path(relative).parts
         or len(expected_config_sha256) != 64
         or not isinstance(actuals_manifest, list)
+        or not isinstance(actuals_material_manifest, list)
     ):
         raise ValueError("Pointerul generației promo este invalid.")
     candidate = (generation_root / relative).resolve()
@@ -119,6 +121,20 @@ def _generated_config_path(data_dir: Path) -> Path | None:
                 and len(str(entry.get("sha256") or "")) == 64
             )
         }
+        declared_materials = {
+            str(entry["actuals_material_file"])
+            for entry in config["promotions"]
+            if isinstance(entry, dict) and entry.get("actuals_material_file")
+        }
+        expected_materials = {
+            str(entry["file"]): str(entry["sha256"])
+            for entry in actuals_material_manifest
+            if (
+                isinstance(entry, dict)
+                and entry.get("file")
+                and len(str(entry.get("sha256") or "")) == 64
+            )
+        }
     except Exception as exc:
         raise ValueError("Manifestul surselor promo este invalid.") from exc
     if (
@@ -126,6 +142,11 @@ def _generated_config_path(data_dir: Path) -> Path | None:
         or set(expected_sources) != declared_sources
     ):
         raise ValueError("Manifestul surselor promo nu corespunde configului aprobat.")
+    if (
+        len(expected_materials) != len(actuals_material_manifest)
+        or set(expected_materials) != declared_materials
+    ):
+        raise ValueError("Manifestul materializărilor promo nu corespunde configului aprobat.")
     for source_file, expected_sha256 in expected_sources.items():
         source_path = resolve_path(source_file, get_repo_root())
         if (
@@ -133,6 +154,13 @@ def _generated_config_path(data_dir: Path) -> Path | None:
             or hashlib.sha256(source_path.read_bytes()).hexdigest() != expected_sha256
         ):
             raise ValueError("Sursa actuals promo nu corespunde hashului aprobat.")
+    for material_file, expected_sha256 in expected_materials.items():
+        material_path = resolve_path(material_file, get_repo_root())
+        if (
+            not material_path.is_file()
+            or hashlib.sha256(material_path.read_bytes()).hexdigest() != expected_sha256
+        ):
+            raise ValueError("Materializarea actuals promo nu corespunde hashului aprobat.")
     return candidate
 
 
@@ -235,6 +263,21 @@ def _parse_single_promotion(
             "actuals_source_file": (
                 str(raw.get("actuals_source_file") or raw.get("actuals_file"))
                 if (raw.get("actuals_source_file") or raw.get("actuals_file"))
+                else None
+            ),
+            "actuals_source_sha256": (
+                str(raw.get("actuals_source_sha256"))
+                if raw.get("actuals_source_sha256")
+                else None
+            ),
+            "actuals_material_file": (
+                str(raw.get("actuals_material_file"))
+                if raw.get("actuals_material_file")
+                else None
+            ),
+            "actuals_material_sha256": (
+                str(raw.get("actuals_material_sha256"))
+                if raw.get("actuals_material_sha256")
                 else None
             ),
             "actuals_sheet": str(raw.get("actuals_sheet") or "AccesoriPromoLunar"),

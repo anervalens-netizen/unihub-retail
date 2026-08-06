@@ -17,10 +17,22 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from io import BytesIO
+import json
 import math
 from pathlib import Path
+import sys
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from services.spreadsheet_safety import (  # noqa: E402
+    HISTORY_SPREADSHEET_LIMITS,
+    SpreadsheetParserMeasurement,
+    SpreadsheetUploadError,
+    validate_spreadsheet_upload,
+)
 
 
 BASE = Path(__file__).resolve().parent.parent.parent / "data" / "vanzari 2022, 2023 si 2024"
@@ -54,6 +66,7 @@ class HistoricalFileReport:
     rows_in_file: int
     rows_without_valid_asm: int
     stores: int
+    parser_resources: dict[str, int | float | str | None]
 
 
 def _normalize_firma(value: object) -> str:
@@ -123,35 +136,50 @@ def load_historical_df(path: Path | str) -> pd.DataFrame:
     """
 
     source = Path(path)
-    df = pd.read_excel(str(source), sheet_name="MobiUp_MobiCell", engine=None)
-    df = df.rename(columns=lambda value: str(value).strip())
+    content = source.read_bytes()
+    measurement = SpreadsheetParserMeasurement("historical_sales")
+    with measurement:
+        try:
+            preflight = validate_spreadsheet_upload(
+                content,
+                source.suffix,
+                limits=HISTORY_SPREADSHEET_LIMITS,
+            )
+        except SpreadsheetUploadError as exc:
+            raise ValueError(str(exc)) from exc
+        measurement.set_preflight(preflight)
+        with pd.ExcelFile(BytesIO(content)) as workbook:
+            df = workbook.parse(sheet_name="MobiUp_MobiCell")
+        df = df.rename(columns=lambda value: str(value).strip())
 
-    missing = [column for column in OLD_COLUMNS if column not in df.columns]
-    if missing:
-        raise ValueError(f"Lipsesc coloane obligatorii: {', '.join(missing)}")
+        missing = [column for column in OLD_COLUMNS if column not in df.columns]
+        if missing:
+            raise ValueError(f"Lipsesc coloane obligatorii: {', '.join(missing)}")
 
-    df = df[OLD_COLUMNS].copy()
-    try:
-        df["Data"] = pd.to_datetime(
-            df["Data"], format="%d.%m.%Y", errors="raise"
-        ).dt.date
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Coloana Data conține valori invalide.") from exc
+        df = df[OLD_COLUMNS].copy()
+        try:
+            df["Data"] = pd.to_datetime(
+                df["Data"], format="%d.%m.%Y", errors="raise"
+            ).dt.date
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Coloana Data conține valori invalide.") from exc
 
-    df["Cantitate"] = _validate_numeric_column(df, "Cantitate", integer=True)
-    df["Pret"] = _validate_numeric_column(df, "Pret")
-    df["Valoare"] = _validate_numeric_column(df, "Valoare")
+        df["Cantitate"] = _validate_numeric_column(df, "Cantitate", integer=True)
+        df["Pret"] = _validate_numeric_column(df, "Pret")
+        df["Valoare"] = _validate_numeric_column(df, "Valoare")
 
-    df["Nr"] = df["Nr"].fillna("").map(lambda value: str(value).strip())
-    for column in ["SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "ASM", "Regional"]:
-        df[column] = df[column].fillna("").map(lambda value: str(value).strip())
-    df["Firma"] = df["Firma"].map(_normalize_firma)
-    df["Brand"] = df["Brand"].where(pd.notna(df["Brand"]), None)
-    df["Brand"] = df["Brand"].map(lambda value: str(value).strip() if isinstance(value, str) else value)
+        df["Nr"] = df["Nr"].fillna("").map(lambda value: str(value).strip())
+        for column in ["SiteCode", "ItemCode", "ItemName", "Locatie", "Firma", "ASM", "Regional"]:
+            df[column] = df[column].fillna("").map(lambda value: str(value).strip())
+        df["Firma"] = df["Firma"].map(_normalize_firma)
+        df["Brand"] = df["Brand"].where(pd.notna(df["Brand"]), None)
+        df["Brand"] = df["Brand"].map(lambda value: str(value).strip() if isinstance(value, str) else value)
 
-    _validate_identifiers(df)
-
-    return df[OLD_COLUMNS].copy()
+        _validate_identifiers(df)
+        measurement.set_rows(len(df))
+    result = df[OLD_COLUMNS].copy()
+    result.attrs["parser_resource_stats"] = measurement.as_dict()
+    return result
 
 
 def detect_month(df: pd.DataFrame) -> str:
@@ -187,6 +215,7 @@ def validate_historical_file(path: Path | str) -> HistoricalFileReport:
         rows_in_file=len(df),
         rows_without_valid_asm=int((~valid_asm).sum()),
         stores=int(df.loc[valid_asm, "SiteCode"].nunique()),
+        parser_resources=dict(df.attrs["parser_resource_stats"]),
     )
 
 
@@ -218,6 +247,14 @@ def main(input_dir: Path = BASE) -> int:
             f"{report.rows_in_file:,} rânduri | "
             f"{report.rows_without_valid_asm:,} fără ASM valid | "
             f"{report.stores:,} magazine"
+        )
+        print(
+            "    parser_resources="
+            + json.dumps(
+                report.parser_resources,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
         )
     return 0
 

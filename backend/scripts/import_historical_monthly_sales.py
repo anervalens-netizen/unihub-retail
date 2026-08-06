@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -28,6 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import asyncpg
 import openpyxl
+from services.spreadsheet_safety import (
+    HISTORY_SPREADSHEET_LIMITS,
+    SpreadsheetParserMeasurement,
+    SpreadsheetUploadError,
+    validate_spreadsheet_upload,
+)
 
 BASE_DIR = (
     Path(__file__).resolve().parent.parent.parent
@@ -119,49 +127,74 @@ def load_source_files() -> tuple[dict[SourceKey, SourceRecord], list[str]]:
     for path in SOURCE_FILES:
         if not path.exists():
             continue
-        workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
-        worksheet = workbook.active
-        seen_in_file = 0
-
-        for row in worksheet.iter_rows(min_row=3, values_only=True):
-            year = parse_year(row[0] if row else None)
-            firma = str(row[1] or "").strip()
-            data_type = str(row[2] or "").strip()
-            store_name = str(row[4] or "").strip()
-            if not year or not firma or not store_name:
-                continue
-            if normalize_text(store_name).startswith("TR "):
-                continue
-            if data_type not in {VALUE_TYPE, QTY_TYPE}:
-                continue
-
-            key = SourceKey(firma=normalize_text(firma), year=year, store_name=normalize_text(store_name))
-            record = records.get(key)
-            if record is None:
-                record = SourceRecord(
-                    firma=firma,
-                    year=year,
-                    store_name=store_name,
-                    manager=str(row[3]).strip() if row[3] else None,
-                    source_file=path.name,
-                    had_inchis_prefix="INCHIS" in store_name.upper(),
-                    values={},
-                    quantities={},
+        content = path.read_bytes()
+        measurement = SpreadsheetParserMeasurement("historical_monthly_sales")
+        with measurement:
+            try:
+                preflight = validate_spreadsheet_upload(
+                    content,
+                    path.suffix,
+                    limits=HISTORY_SPREADSHEET_LIMITS,
                 )
-                records[key] = record
-            elif record.source_file != path.name:
-                duplicate_files.append(f"{path.name}: {firma} / {year} / {store_name}")
+            except SpreadsheetUploadError as exc:
+                raise ValueError(f"{path.name}: {exc}") from exc
+            measurement.set_preflight(preflight)
+            workbook = openpyxl.load_workbook(
+                BytesIO(content),
+                read_only=True,
+                data_only=True,
+            )
+            worksheet = workbook.active
+            seen_in_file = 0
 
-            for column_index, month_number in MONTH_COLUMNS.items():
-                amount = numeric(row[column_index])
-                if data_type == QTY_TYPE:
-                    record.quantities[month_number] = int(round(amount))
-                else:
-                    record.values[month_number] = amount
-            seen_in_file += 1
+            for row in worksheet.iter_rows(min_row=3, values_only=True):
+                year = parse_year(row[0] if row else None)
+                firma = str(row[1] or "").strip()
+                data_type = str(row[2] or "").strip()
+                store_name = str(row[4] or "").strip()
+                if not year or not firma or not store_name:
+                    continue
+                if normalize_text(store_name).startswith("TR "):
+                    continue
+                if data_type not in {VALUE_TYPE, QTY_TYPE}:
+                    continue
 
-        workbook.close()
-        print(f"{path.name}: {seen_in_file} source rows read")
+                key = SourceKey(firma=normalize_text(firma), year=year, store_name=normalize_text(store_name))
+                record = records.get(key)
+                if record is None:
+                    record = SourceRecord(
+                        firma=firma,
+                        year=year,
+                        store_name=store_name,
+                        manager=str(row[3]).strip() if row[3] else None,
+                        source_file=path.name,
+                        had_inchis_prefix="INCHIS" in store_name.upper(),
+                        values={},
+                        quantities={},
+                    )
+                    records[key] = record
+                elif record.source_file != path.name:
+                    duplicate_files.append(f"{path.name}: {firma} / {year} / {store_name}")
+
+                for column_index, month_number in MONTH_COLUMNS.items():
+                    amount = numeric(row[column_index])
+                    if data_type == QTY_TYPE:
+                        record.quantities[month_number] = int(round(amount))
+                    else:
+                        record.values[month_number] = amount
+                seen_in_file += 1
+
+            workbook.close()
+            measurement.set_rows(seen_in_file)
+        print(
+            f"{path.name}: {seen_in_file} source rows read "
+            "parser_resources="
+            + json.dumps(
+                measurement.as_dict(),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
 
     return records, duplicate_files
 

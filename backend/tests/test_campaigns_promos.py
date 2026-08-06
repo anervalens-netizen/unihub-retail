@@ -108,12 +108,12 @@ class TestPromoIncentivesNoConfig:
             ),
         )
         monkeypatch.setattr(
-            "services.campaigns._get_store_incentive_multipliers",
+            "services.campaigns.get_store_incentive_multipliers",
             AsyncMock(return_value=({}, {})),
         )
         compute = AsyncMock(return_value=evaluation)
         monkeypatch.setattr(
-            "services.campaigns._compute_promotion_result",
+            "services.campaigns.compute_promotion_result",
             compute,
         )
 
@@ -129,7 +129,7 @@ class TestPromoIncentivesNoConfig:
             return PromoIncentiveSummary()
 
         monkeypatch.setattr(
-            "services.campaigns._fetch_promo_incentive_summary",
+            "services.campaigns.fetch_promo_incentive_summary",
             summary_with_cached_periods,
         )
         service, _conn = service_and_conn
@@ -194,11 +194,11 @@ class TestPromoIncentivesNoConfig:
             }),
         )
         monkeypatch.setattr(
-            "services.campaigns._fetch_promo_incentive_summary",
+            "services.campaigns.fetch_promo_incentive_summary",
             AsyncMock(return_value=PromoIncentiveSummary()),
         )
         monkeypatch.setattr(
-            "services.campaigns._get_store_incentive_multipliers",
+            "services.campaigns.get_store_incentive_multipliers",
             AsyncMock(return_value=({}, {})),
         )
         evaluation = PromotionEvaluation(
@@ -208,7 +208,7 @@ class TestPromoIncentivesNoConfig:
             status=PromotionEvaluationStatus.COMPLETE,
         )
         compute = AsyncMock(return_value=evaluation)
-        monkeypatch.setattr("services.campaigns._compute_promotion_result", compute)
+        monkeypatch.setattr("services.campaigns.compute_promotion_result", compute)
         service, _conn = service_and_conn
 
         await service.get_promotions_incentives(
@@ -262,8 +262,8 @@ class TestPromoIncentivesNoConfig:
         )
         summary = AsyncMock(return_value=PromoIncentiveSummary())
         multipliers = AsyncMock(return_value=({}, {}))
-        monkeypatch.setattr("services.campaigns._fetch_promo_incentive_summary", summary)
-        monkeypatch.setattr("services.campaigns._get_store_incentive_multipliers", multipliers)
+        monkeypatch.setattr("services.campaigns.fetch_promo_incentive_summary", summary)
+        monkeypatch.setattr("services.campaigns.get_store_incentive_multipliers", multipliers)
         service, _conn = service_and_conn
 
         await service.get_promotions_incentives(
@@ -324,15 +324,15 @@ class TestPromoIncentivesNoConfig:
             }),
         )
         monkeypatch.setattr(
-            "services.campaigns._fetch_promo_incentive_summary",
+            "services.campaigns.fetch_promo_incentive_summary",
             AsyncMock(return_value=PromoIncentiveSummary()),
         )
         monkeypatch.setattr(
-            "services.campaigns._get_store_incentive_multipliers",
+            "services.campaigns.get_store_incentive_multipliers",
             AsyncMock(return_value=({}, {})),
         )
         monkeypatch.setattr(
-            "services.campaigns._compute_promotion_result",
+            "services.campaigns.compute_promotion_result",
             AsyncMock(side_effect=[
                 PromotionEvaluation(
                     result=PromoCoPurchaseResult(),
@@ -365,7 +365,7 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock, return_value=None)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
     async def test_no_promo_no_incentive(self, mock_summary, mock_inc, mock_promo, mock_config, service_and_conn):
         service, conn = service_and_conn
         from models import PromoIncentiveSummary
@@ -383,7 +383,7 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition")
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock, return_value=None)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
     async def test_with_active_promotion(self, mock_summary, mock_inc, mock_promo, mock_config, service_and_conn, mock_repo):
         service, conn = service_and_conn
         mock_promo.return_value = (
@@ -416,8 +416,8 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.get_store_incentive_multipliers", new_callable=AsyncMock)
     async def test_with_incentive_campaign(self, mock_mults, mock_summary, mock_inc, mock_promo, mock_config, service_and_conn, mock_repo):
         service, conn = service_and_conn
         mock_inc.return_value = {
@@ -461,8 +461,8 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.get_store_incentive_multipliers", new_callable=AsyncMock)
     async def test_incentive_agent_rows_remain_scoped_to_each_store(
         self, mock_mults, mock_summary, mock_inc, mock_promo, mock_config,
         service_and_conn, mock_repo,
@@ -509,8 +509,8 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.get_store_incentive_multipliers", new_callable=AsyncMock)
     async def test_agent_returns_reconcile_to_canonical_store_incentive(
         self, mock_mults, mock_summary, mock_inc, mock_promo, mock_config,
         service_and_conn, mock_repo,
@@ -541,8 +541,8 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition")
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.get_store_incentive_multipliers", new_callable=AsyncMock)
     @patch("services.promotion_evaluation.compute_promo_copurchase", new_callable=AsyncMock)
     async def test_with_both_promo_and_incentive(self, mock_cp, mock_mults, mock_summary, mock_inc, mock_promo, mock_config, service_and_conn, mock_repo):
         service, conn = service_and_conn
@@ -588,13 +588,25 @@ class TestPromoIncentivesNoConfig:
         assert result["incentive_title"] == "Incentive"
         assert result["incentive_product_count"] == 1
         assert len(result["top_stores"]) == 1
+        service.pool.acquire.assert_awaited_once()
+        conn.transaction.assert_called_once_with(
+            isolation="repeatable_read",
+            readonly=True,
+        )
+        for query in (
+            mock_repo.fetch_promo_total,
+            mock_repo.fetch_promo_store_rows,
+            mock_repo.fetch_incentive_store_rows,
+            mock_repo.fetch_incentive_agent_rows,
+        ):
+            assert query.await_args.args[0] is conn
 
     @pytest.mark.asyncio
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition")
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.get_store_incentive_multipliers", new_callable=AsyncMock)
     @patch("services.promotion_evaluation.compute_promo_copurchase", new_callable=AsyncMock)
     async def test_copurchase_excludes_discounted_units_from_incentive(
         self, mock_cp, mock_mults, mock_summary, mock_inc, mock_promo, mock_config, service_and_conn, mock_repo
@@ -672,8 +684,8 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.parse_promotion_definition")
     @patch("services.promotion_evaluation.load_promotion_rule_products")
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.get_store_incentive_multipliers", new_callable=AsyncMock)
     @patch("services.promotion_evaluation.compute_promo_copurchase", new_callable=AsyncMock)
     @patch("services.promotion_evaluation.compute_promo_trigger_discounted", new_callable=AsyncMock)
     async def test_all_active_promo_discounted_units_are_excluded_from_incentive(
@@ -772,8 +784,8 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition", return_value=(None, None))
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
-    @patch("services.campaigns._get_store_incentive_multipliers", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.get_store_incentive_multipliers", new_callable=AsyncMock)
     async def test_incentive_no_promo_builds_stores_from_incentive(self, mock_mults, mock_summary, mock_inc, mock_promo, mock_config, service_and_conn, mock_repo):
         service, conn = service_and_conn
         mock_inc.return_value = {
@@ -799,7 +811,7 @@ class TestPromoIncentivesNoConfig:
     @patch("services.campaigns.load_special_cards_config", return_value=({}, None))
     @patch("services.campaigns.parse_promotion_definition")
     @patch("services.campaigns.get_incentive_campaign", new_callable=AsyncMock, return_value=None)
-    @patch("services.campaigns._fetch_promo_incentive_summary", new_callable=AsyncMock)
+    @patch("services.campaigns.fetch_promo_incentive_summary", new_callable=AsyncMock)
     async def test_with_filters(self, mock_summary, mock_inc, mock_promo, mock_config, service_and_conn, mock_repo):
         service, conn = service_and_conn
         mock_promo.return_value = (

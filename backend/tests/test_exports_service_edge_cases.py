@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import services.exports as exports_module
+import services.exports.service as exports_module
+import services.exports.loaders as loaders_module
 import services.promotion_evaluation as promotion_evaluation_module
 from services.exports import ExportValidationError, ExportsService
 from services.promo_copurchase import PromoCoPurchaseResult
@@ -120,7 +121,7 @@ async def test_incentive_export_handles_missing_campaign_multiple_periods_and_un
     monkeypatch.setattr(exports_module, "get_incentive_campaign", campaign)
     monkeypatch.setattr(
         exports_module,
-        "_get_store_incentive_multipliers",
+            "get_store_incentive_multipliers",
         AsyncMock(
             return_value=(
                 {"S3": 0.0, "S4": 0.0},
@@ -221,7 +222,7 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
         "end_date": date(2026, 2, 12),
     }
 
-    monkeypatch.setattr(exports_module, "load_special_cards_config", lambda: ({"promotions": []}, None))
+    monkeypatch.setattr(loaders_module, "load_special_cards_config", lambda: ({"promotions": []}, None))
 
     def definitions(
         _config: dict[str, Any],
@@ -229,7 +230,7 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
     ) -> tuple[list[dict[str, Any]], str | None]:
         return [outside_definition, active_definition], None
 
-    monkeypatch.setattr(exports_module, "parse_promotion_definitions", definitions)
+    monkeypatch.setattr(loaders_module, "parse_promotion_definitions", definitions)
     monkeypatch.setattr(
         promotion_evaluation_module,
         "promo_actuals_cutoff_date",
@@ -255,7 +256,7 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
             status=PromotionEvaluationStatus.COMPLETE,
         )
 
-    monkeypatch.setattr(exports_module, "_compute_dashboard_promotion_result", compute)
+    monkeypatch.setattr(loaders_module, "compute_promotion_result", compute)
 
     result = await service._campaign_exclusions_by_month(
         ["2026-02"],
@@ -293,9 +294,9 @@ async def test_selected_day_campaign_exclusions_fail_closed_on_config_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = ExportsService(SimpleNamespace(pool=FakePool()))  # type: ignore[arg-type]
-    monkeypatch.setattr(exports_module, "load_special_cards_config", lambda: ({}, "bad config"))
+    monkeypatch.setattr(loaders_module, "load_special_cards_config", lambda: ({}, "bad config"))
     monkeypatch.setattr(
-        exports_module,
+        loaders_module,
         "parse_promotion_definitions",
         lambda _config, _month: ([], None),
     )
@@ -306,6 +307,76 @@ async def test_selected_day_campaign_exclusions_fail_closed_on_config_errors(
             {},
             selected_days=[1],
         )
+
+
+@pytest.mark.asyncio
+async def test_campaign_exclusions_fail_closed_when_evaluation_is_incomplete_or_over_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ExportsService(SimpleNamespace(pool=FakePool()))  # type: ignore[arg-type]
+
+    async def incomplete(*_args: object, **_kwargs: object) -> PromotionEvaluation:
+        return PromotionEvaluation(
+            result=None,
+            item_codes=[],
+            rule_type="selected_item_copurchase",
+            status=PromotionEvaluationStatus.PARTIAL,
+        )
+
+    monkeypatch.setattr(loaders_module, "load_special_cards_config", lambda: ({}, None))
+    monkeypatch.setattr(
+        loaders_module,
+        "parse_promotion_definitions",
+        lambda _config, _month: ([{"start_date": date(2026, 6, 1), "end_date": date(2026, 6, 1)}], None),
+    )
+    monkeypatch.setattr(loaders_module, "compute_promotion_result", incomplete)
+
+    with pytest.raises(ExportValidationError, match="nu pot fi validate complet"):
+        await service._campaign_exclusions_by_month(["2026-06"], {}, selected_days=[1])
+
+    async def too_many(*_args: object, **_kwargs: object) -> PromotionEvaluation:
+        return PromotionEvaluation(
+            result=PromoCoPurchaseResult(excluded_units={("S1", "A", "P"): 1}),
+            item_codes=["P"],
+            rule_type="selected_item_copurchase",
+            status=PromotionEvaluationStatus.COMPLETE,
+        )
+
+    monkeypatch.setattr(loaders_module, "compute_promotion_result", too_many)
+    with pytest.raises(ExportValidationError, match="depasesc limita"):
+        await service._campaign_exclusions_by_month(
+            ["2026-06"],
+            {},
+            selected_days=[1],
+            max_entries=0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_campaign_exclusions_without_selected_days_fail_closed_on_status_and_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ExportsService(SimpleNamespace(pool=FakePool()))  # type: ignore[arg-type]
+
+    async def incomplete_context(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            promotion_status=PromotionEvaluationStatus.PARTIAL,
+            promo_excluded_units={},
+        )
+
+    monkeypatch.setattr(loaders_module, "load_campaign_context", incomplete_context)
+    with pytest.raises(ExportValidationError, match="nu pot fi validate complet"):
+        await service._campaign_exclusions_by_month(["2026-06"], {})
+
+    async def too_large_context(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            promotion_status=PromotionEvaluationStatus.COMPLETE,
+            promo_excluded_units={("S1", "Agent", "P1"): 1},
+        )
+
+    monkeypatch.setattr(loaders_module, "load_campaign_context", too_large_context)
+    with pytest.raises(ExportValidationError, match="depasesc limita"):
+        await service._campaign_exclusions_by_month(["2026-06"], {}, max_entries=0)
 
 
 @pytest.mark.asyncio

@@ -11,8 +11,8 @@ import type {
   ReceiptBucketItem,
   RegionalStat,
   StoreStat,
-} from '../../api/types';
-import type { AggregatedDashboardDetails } from '../../components/dashboard/useDashboardData';
+} from '../../api/generated/runtime-types';
+import type { AggregatedDashboardDetails } from './useDashboardData';
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const n = (value: number | null | undefined): number => Number(value ?? 0);
