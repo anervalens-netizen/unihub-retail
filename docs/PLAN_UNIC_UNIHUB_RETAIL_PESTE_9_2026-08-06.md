@@ -102,8 +102,10 @@ Constatări reconfirmate în codul curent:
 ## 4.1 Implementare curentă și dovezi
 
 Implementarea curentă este verificată local pe `dell-standby`; candidații
-`035f81ca4d79be307d5d8c336963d5a8958acc87` și
-`97e96d651d15d918351763e60e211a29f65dd8cb` sunt sincronizați și deployați pe
+`035f81ca4d79be307d5d8c336963d5a8958acc87`,
+`97e96d651d15d918351763e60e211a29f65dd8cb`,
+`500e0aaec7b89d0df78a9aca7e36ec12970096f8` și
+`a6c602f2fa4e53ddec4e5a6ad59a5431756539c3` sunt sincronizați și deployați pe
 primary. Dovezi deja obținute:
 
 - `npm run typecheck`, `npm run typecheck:strict`, `npm run lint`: verde;
@@ -116,7 +118,8 @@ primary. Dovezi deja obținute:
 - full backend local: `1506` verzi, `127` skip; `36` teste DB/Valkey sunt protejate de
   guardul `UNIHUB_TEST_DATABASE=1` și nu au fost executate pe baza shared/producție.
 
-R-07, R-13, R-17, R-18 și R-20 rămân explicit parțiale; nu se revendică
+R-07, R-13, R-17 și R-18 rămân explicit parțiale; R-20 are acum facade,
+date/money boundaries și formatare frontend extrase, dar nu se revendică
 închiderea globală a planului înaintea extragerilor și migrării de contract
 specificate în loturile 2, 5 și 6.
 
