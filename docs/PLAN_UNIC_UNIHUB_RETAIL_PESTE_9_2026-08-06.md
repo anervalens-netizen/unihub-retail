@@ -114,9 +114,10 @@ Implementarea curentă este verificată local pe `dell-standby`; candidații
 `fc5fb24aa13a2a0391a17e60185bdf144b632420` sunt sincronizați pe `origin/main`,
 iar ultimul SHA documentat anterior este build-uit și deployat pe primary.
 
-Candidatul final de cod este `e689c06ebc65fda45ba6e46666f7020397757f82`, iar
-primary are checkout-ul exact al acestui SHA; buildul, serviciile și health checks
-sunt verificate pe release. Schimbările livrate:
+Candidatul final de cod este `e689c06ebc65fda45ba6e46666f7020397757f82`;
+commiturile ulterioare sunt docs-only pentru closure, iar primary a fost
+resincronizat pe checkout-ul final fără schimbare runtime. Buildul, serviciile și
+health checks sunt verificate pe release. Schimbările livrate:
 
 - decompoziție vizuală efectivă: `features/campaigns/PremiumView.tsx`,
   `SortableTable.tsx`, `features/settings/exports/controls.tsx`, rezultatul ERP,
@@ -175,7 +176,8 @@ Nicio recomandare nu este omisă. Sunt două adaptări justificate:
 ## 4.2 Closure evidence — 2026-08-06
 
 Implementarea finală de cod este `e689c06ebc65fda45ba6e46666f7020397757f82`,
-sincronizată pe `origin/main` și verificată pe primary la același SHA. Schimbările
+sincronizată pe `origin/main` și verificată pe primary înaintea commiturilor
+docs-only de closure. Schimbările
 livrate:
 
 - contracte Retail generate offline în `src/api/generated/`, decoder runtime
@@ -212,8 +214,8 @@ Dovezi finale pe conținut neschimbat:
 
 Dovadă live exact-SHA:
 
-- primary `server`: `e689c06ebc65fda45ba6e46666f7020397757f82`,
-  `unihub-backend`, `unihub-worker` și `unihub-import-worker` active;
+- primary `server`: checkout final sincronizat, `unihub-backend`,
+  `unihub-worker` și `unihub-import-worker` active;
 - `/health` și `/readyz` locale: `200` cu `{"status":"ok"}`;
 - `https://retail.unihub.ro/`: `200`, `/readyz`: `200`,
   `/api/filters/months` fără sesiune: `401 Authentication required`;
