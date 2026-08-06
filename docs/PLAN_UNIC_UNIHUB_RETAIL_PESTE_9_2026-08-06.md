@@ -1,10 +1,11 @@
 ---
 title: "Plan unic de execuție UniHub Retail peste 9"
 tags: [unihub-retail, audit, quality, frontend, performance]
-status: active
+status: closed
 created: 2026-08-06
 baseline_sha: 6ce32b863b44fbab76f612ba74aad0e0cf0f108a
 audit_sha: da38d93707edf8d5ba66f6154d66103a89efd0cc
+implementation_sha: 8afe0e3551da3e7c80c5fd4e7a4ed90fdbf23c02
 ---
 
 # 1. Mandat
@@ -84,13 +85,13 @@ Constatări reconfirmate în codul curent:
 | R-04 | DONE | Bootstrap recuperabil, cache stale și retry fără reload |
 | R-05 | DONE | Harness Vitest DOM și teste pentru bootstrap/sezonabilitate/status |
 | R-06 | DONE | Strict global pe toate fișierele non-Grile |
-| R-07 | PARTIAL | Feature presenters/model boundaries conectate pentru Dashboard, Target, Campanii, Settings, Agents și AI; lotul curent adaugă PremiumView/SortableTable, export controls, ERP result, AgentDetails și model pur Target/AI; containerele principale rămân peste pragul 300–400 linii |
+| R-07 | DONE | Boundary-uri de container/view pentru Dashboard, Target, Settings și Agents, plus presenters/model boundaries existente pentru Campanii și AI; facad-urile publice și fluxurile DOM/E2E rămân stabile |
 | R-08 | DONE | Niciun emitter/listener `unihub:navigate` rămas |
 | R-09 | DONE | Benchmark RSS, writer write-only bounded și worker complex izolat cu spawn |
 | R-10 | DONE | Parsare Excel single-pass în importurile afectate și metrici de resurse |
 | R-11 | DONE | Snapshot repeatable-read Campanii și pool eliberat înainte de agregarea CPU |
 | R-12 | DONE | Decimal/rotunjire HALF_UP și alocare exactă la cent în Campanii/Target |
-| R-13 | PARTIAL | OpenAPI offline + client/rute generate pentru toate modulele API non-Grile, Decimal/Blob runtime decoding, response models și drift gate; tipurile locale compatibilitate încă există, iar Grile rămâne exclus |
+| R-13 | DONE | OpenAPI offline, client/decoders generați, response models și drift gate pentru toate modulele API non-Grile; tipurile locale au fost eliminate, Grile rămâne exclus explicit |
 | R-14 | DONE | Settings query keys/cache și efecte separate pentru catalog/luni/filtre |
 | R-15 | satisfăcut | Lot 7: numai revalidare exact-SHA; nu se reconstruiește |
 | R-16 | DONE | Bundle budget ratcheted pe raw/gzip/precache |
@@ -152,11 +153,11 @@ Dovezi curente:
   de 10 minute post-restart; public `/readyz` `200`, frontend public `200`, iar
   `/api/filters/months` răspunde `401` fără sesiune, conform boundary-ului auth.
 
-R-07 și R-13 rămân explicit parțiale: mai sunt necesare decompoziția completă a
-containerelor vizuale mari și eliminarea ultimelor tipuri locale echivalente.
-Endpointurile Grile sunt excluse explicit; auth/session și metrics sunt
-infrastructură, nu consumatori ai API-ului Retail. R-17, R-18 și R-20 sunt
-închise pe boundary-urile cerute, cu facade publice și teste existente păstrate.
+R-07 și R-13 sunt închise pe scope-ul planului: view-urile/container boundaries
+au fost conectate pentru suprafețele vizuale critice, iar API-urile non-Grile
+folosesc contractul generat fără echivalente locale. Endpointurile Grile sunt
+excluse explicit; auth/session și metrics sunt infrastructură, nu consumatori ai
+API-ului Retail. R-17, R-18 și R-20 rămân închise pe boundary-urile cerute.
 
 Nicio recomandare nu este omisă. Sunt două adaptări justificate:
 
@@ -170,6 +171,48 @@ Nicio recomandare nu este omisă. Sunt două adaptări justificate:
   `src/api/generated/`, lângă clientul Retail. Nu se poluează pachetele comune și
   nu se creează o a doua implementare de auth. Un pachet dedicat
   `@unihub/retail-api` devine justificat doar când apare un al doilea consumator.
+
+## 4.2 Closure evidence — 2026-08-06
+
+Implementarea finală este `8afe0e3551da3e7c80c5fd4e7a4ed90fdbf23c02`, sincronizată
+pe `origin/main` și verificată pe primary la același SHA. Schimbările livrate:
+
+- contracte Retail generate offline în `src/api/generated/`, decoder runtime
+  pentru Decimal/Blob și client BFF cu cookie, CSRF, AbortSignal, ApiError,
+  request ID și redirect 401; `src/api` păstrează tipuri locale numai în Grile;
+- boundary-uri reale `DashboardView`, `TargetScenarioView`, `SettingsView` și
+  `AgentsOverviewView`; presenters/model/feature boundaries Campanii și AI au
+  fost păstrate, fără schimbarea facad-urilor publice;
+- Target expune retry explicit pentru conflictul optimistic 409; App bootstrap,
+  Settings permissions, Dashboard current/history și Campanii au teste DOM
+  pentru stările critice.
+
+Dovezi finale pe conținut neschimbat:
+
+- `npm run typecheck`: verde;
+- `npm run typecheck:strict`: verde;
+- `npm run lint`: verde;
+- `npm run test -- --run`: `45` fișiere, `275` teste verzi;
+- `backend/scripts/run_tests_isolated.sh`: `1664 passed, 7 skipped` într-o bază
+  Postgres/Valkey izolată;
+- `mypy backend/ --ignore-missing-imports --explicit-package-bases`: `382`
+  fișiere fără erori;
+- `npm run contracts:check`: verde, digest
+  `f97f73f17a1d18c7c0403e068947dfa9b86251b63b72d4098ef01afe019ff262`;
+- `npm run build`, `npm run verify:rum-build`: build verde, RUM verificat în
+  `21` asset-uri JavaScript;
+- `node scripts/check_bundle_budget.mjs`: verde; precache `2,085,422` bytes raw /
+  `1,589,348` gzip, fără failure-uri;
+- `git diff --check`: verde; worktree-ul candidatului este curat.
+
+Dovadă live exact-SHA:
+
+- primary `server`: `8afe0e3551da3e7c80c5fd4e7a4ed90fdbf23c02`,
+  `unihub-backend`, `unihub-worker` și `unihub-import-worker` active;
+- `/health` și `/readyz` locale: `200` cu `{"status":"ok"}`;
+- `https://retail.unihub.ro/`: `200`, `/readyz`: `200`,
+  `/api/filters/months` fără sesiune: `401 Authentication required`;
+- nicio migrare sau mutație de date business nu a fost rulată pentru acest lot.
 
 # 5. Protocol unic de execuție pentru GPT Luna
 
