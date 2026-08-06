@@ -44,6 +44,7 @@ from services.campaigns.money import (
     money as _money,
     money_float as _money_float,
 )
+from services.campaigns.dates import CampaignDateRangeError, validate_campaign_date_range
 
 
 def _merge_excluded_units(
@@ -61,32 +62,6 @@ def _excluded_by_site_item(
     for (site_code, _agent, item_code), units in excluded_units.items():
         out[(site_code, item_code)] = out.get((site_code, item_code), 0) + units
     return out
-
-
-class CampaignDateRangeError(ValueError):
-    """Finite, client-safe validation failure for monthly campaign ranges."""
-
-    code = "campaign_date_range_invalid"
-
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(reason)
-
-
-def validate_campaign_date_range(start_date: date | str, end_date: date | str) -> str:
-    """Validate the authoritative monthly Campaigns boundary and return YYYY-MM."""
-    # The HTTP boundary is typed as ``date``.  Keep direct calls from older
-    # workers/tests compatible while normalizing immediately at this boundary.
-    try:
-        start_date = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
-        end_date = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
-    except ValueError as exc:
-        raise CampaignDateRangeError("invalid_iso_date") from exc
-    if start_date > end_date:
-        raise CampaignDateRangeError("start_date_after_end_date")
-    if (start_date.year, start_date.month) != (end_date.year, end_date.month):
-        raise CampaignDateRangeError("cross_month_range_not_supported")
-    return start_date.strftime("%Y-%m")
 
 
 async def _compute_promotion_result(

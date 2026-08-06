@@ -486,12 +486,34 @@ from services.target_calculator.allocation import (
     allocate_with_floors as calculation_allocate_with_floors,
 )
 from services.target_calculator.calculations import MONEY as CALCULATION_MONEY
+from services.target_calculator.seasonality import (
+    build_source_month_configuration as calculation_build_source_month_configuration,
+    month_label_ro as calculation_month_label_ro,
+    seasonality_pair_configuration as calculation_seasonality_pair_configuration,
+    seasonal_year_weights as calculation_seasonal_year_weights,
+    shift_month as calculation_shift_month,
+    source_month_configuration as calculation_source_month_configuration,
+    weighted_ratio as calculation_weighted_ratio,
+)
+from services.target_calculator.serialization import (
+    serialize_header as calculation_serialize_header,
+    serialize_row as calculation_serialize_row,
+)
 
 MONEY = CALCULATION_MONEY
 TargetBudgetInfeasibleError = CalculationBudgetInfeasibleError  # type: ignore[misc]
 allocate_with_bounds = calculation_allocate_with_bounds
 allocate_with_floors = calculation_allocate_with_floors
 money = calculation_money
+build_source_month_configuration = calculation_build_source_month_configuration
+month_label_ro = calculation_month_label_ro
+seasonality_pair_configuration = calculation_seasonality_pair_configuration
+seasonal_year_weights = calculation_seasonal_year_weights
+shift_month = calculation_shift_month
+source_month_configuration = calculation_source_month_configuration
+weighted_ratio = calculation_weighted_ratio
+serialize_header = calculation_serialize_header
+serialize_row = calculation_serialize_row
 
 
 class TargetCalculatorService:
@@ -1900,35 +1922,10 @@ class TargetCalculatorService:
         }
 
     def _serialize_header(self, row: dict[str, Any]) -> dict[str, Any]:
-        for key in ("total_target", "min_floor", "previous_month_floor_pct", "proposed_total", "final_total"):
-            if key in row:
-                row[key] = float(row[key] or 0)
-        for key in ("source_months", "warnings", "calculation_params", "rule_set_snapshot"):
-            if key in row and isinstance(row[key], str):
-                row[key] = json.loads(row[key])
-        row.setdefault("source_months", [])
-        row.setdefault("warnings", [])
-        row.setdefault("calculation_params", {})
-        row.setdefault("rule_set_snapshot", None)
-        if "store_count" in row:
-            row["store_count"] = int(row["store_count"])
-        row["pending_final_count"] = int(row.get("pending_final_count") or 0)
-        return row
+        return serialize_header(row)
 
     def _serialize_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        for key in ("calculated_weight", "floor_target", "cap_target", "proposed_target"):
-            if key in row:
-                row[key] = float(row[key] or 0)
-        for key in ("final_target", "manager_override_target"):
-            row[key] = float(row[key]) if row.get(key) is not None else None
-        if isinstance(row.get("profitability_snapshot"), str):
-            row["profitability_snapshot"] = json.loads(row["profitability_snapshot"])
-        if isinstance(row.get("history"), str):
-            row["history"] = json.loads(row["history"])
-        if isinstance(row.get("calculation_details"), str):
-            row["calculation_details"] = json.loads(row["calculation_details"])
-        row.setdefault("calculation_details", {})
-        return row
+        return serialize_row(row)
 
     def _regional_summary(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         summary: dict[str, dict[str, Any]] = defaultdict(
