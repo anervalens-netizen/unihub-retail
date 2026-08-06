@@ -19,11 +19,15 @@ MIGRATION = (
 SQL = MIGRATION.read_text(encoding="utf-8")
 SALES_DAY_MIGRATION = MIGRATION.with_name("048_insight_sales_day_read_model.sql")
 SALES_DAY_SQL = SALES_DAY_MIGRATION.read_text(encoding="utf-8")
+VISITS_V2_MIGRATION = MIGRATION.with_name(
+    "049_insight_visits_team_leader_read_model.sql"
+)
+VISITS_V2_SQL = VISITS_V2_MIGRATION.read_text(encoding="utf-8")
 
 
 def _view_columns(view_name: str) -> tuple[str, ...]:
     match = re.search(
-        rf"CREATE OR REPLACE VIEW {view_name} \((.*?)\)\nWITH \(security_barrier = true\)",
+        rf"CREATE OR REPLACE VIEW {view_name} \((.*?)\)\s*WITH \(security_barrier = true\)",
         SQL,
         flags=re.DOTALL,
     )
@@ -45,6 +49,16 @@ def _sales_day_columns() -> tuple[str, ...]:
         flags=re.DOTALL,
     )
     assert match, "missing versioned security-barrier daily Sales view"
+    return tuple(column.strip() for column in match.group(1).split(","))
+
+
+def _visits_v2_columns(view_name: str) -> tuple[str, ...]:
+    match = re.search(
+        rf"CREATE OR REPLACE VIEW {view_name} \((.*?)\)\s*WITH \(security_barrier = true\)",
+        VISITS_V2_SQL,
+        flags=re.DOTALL,
+    )
+    assert match, f"missing versioned security-barrier view {view_name}"
     return tuple(column.strip() for column in match.group(1).split(","))
 
 
@@ -89,6 +103,58 @@ def test_sales_day_contract_is_observed_additive_and_snapshot_bound() -> None:
     assert "sales_transactions" not in SALES_DAY_SQL
     assert "GRANT SELECT ON TABLE reporting_sales_day_v1" in SALES_DAY_SQL
     assert "DROP " not in SALES_DAY_SQL.upper()
+
+
+def test_visits_v2_uses_the_authoritative_team_leader_snapshot() -> None:
+    assert _visits_v2_columns("reporting_source_snapshot_v2") == _view_columns(
+        "reporting_source_snapshot_v1"
+    )
+    assert _visits_v2_columns("reporting_visit_month_v2") == (
+        "period",
+        "team_leader_id",
+        "team_leader_name",
+        "site_code",
+        "locatie",
+        "firma",
+        "regional",
+        "asm",
+        "total_visits",
+        "avg_completion",
+        "avg_duration",
+        "distinct_stores",
+        "checklist_score",
+        "approved_pct",
+        "source",
+        "source_generation",
+        "authority",
+        "authority_head",
+        "contract_version",
+        "rule_version",
+        "status",
+        "as_of",
+        "cutoff",
+        "is_final",
+        "coverage_numerator",
+        "coverage_denominator",
+        "produced_at",
+        "warnings",
+    )
+    assert "FROM fieldops_visits AS visit" in VISITS_V2_SQL
+    assert "to_regclass('public.fieldops_visits') IS NULL" in VISITS_V2_SQL
+    assert "visit.team_leader_id" in VISITS_V2_SQL
+    assert "visit.team_leader_name" in VISITS_V2_SQL
+    assert "JOIN stores AS store" in VISITS_V2_SQL
+    assert "store.site_code = visit.magazin" in VISITS_V2_SQL
+    assert "visit.status <> 'draft'" in VISITS_V2_SQL
+    assert "store.locatie NOT ILIKE 'TR %'" in VISITS_V2_SQL
+    assert "store.locatie NOT ILIKE '%cartel%'" in VISITS_V2_SQL
+    assert "legacy_asm" not in VISITS_V2_SQL
+    assert "visits_snapshot" not in VISITS_V2_SQL
+    assert "reporting_source_snapshot_v1 AS snapshot" in VISITS_V2_SQL
+    assert "snapshot.domain <> 'visits'" in VISITS_V2_SQL
+    assert "GRANT SELECT ON TABLE " in VISITS_V2_SQL
+    assert "reporting_source_snapshot_v2, reporting_visit_month_v2" in VISITS_V2_SQL
+    assert "DROP " not in VISITS_V2_SQL.upper()
 
 
 def test_source_snapshot_v1_has_the_exact_cross_domain_contract() -> None:
