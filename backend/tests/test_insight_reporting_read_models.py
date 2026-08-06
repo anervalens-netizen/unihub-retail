@@ -23,6 +23,10 @@ VISITS_V2_MIGRATION = MIGRATION.with_name(
     "049_insight_visits_team_leader_read_model.sql"
 )
 VISITS_V2_SQL = VISITS_V2_MIGRATION.read_text(encoding="utf-8")
+VISITS_COMPLETION_MIGRATION = MIGRATION.with_name(
+    "050_insight_visits_completion_semantics.sql"
+)
+VISITS_COMPLETION_SQL = VISITS_COMPLETION_MIGRATION.read_text(encoding="utf-8")
 
 
 def _view_columns(view_name: str) -> tuple[str, ...]:
@@ -155,6 +159,16 @@ def test_visits_v2_uses_the_authoritative_team_leader_snapshot() -> None:
     assert "GRANT SELECT ON TABLE " in VISITS_V2_SQL
     assert "reporting_source_snapshot_v2, reporting_visit_month_v2" in VISITS_V2_SQL
     assert "DROP " not in VISITS_V2_SQL.upper()
+
+
+def test_visits_completion_is_recomputed_from_authoritative_fields() -> None:
+    assert "canonical_completion_pct" in VISITS_COMPLETION_SQL
+    assert "* 100.0 / 19.0" in VISITS_COMPLETION_SQL
+    assert "AVG(visit.completion_pct)" not in VISITS_COMPLETION_SQL
+    assert "fieldops-visits-v3:" in VISITS_COMPLETION_SQL
+    assert "visit-author-team-leader-recomputed-completion-v3" in VISITS_COMPLETION_SQL
+    assert "UPDATE fieldops_visits" not in VISITS_COMPLETION_SQL
+    assert "DROP " not in VISITS_COMPLETION_SQL.upper()
 
 
 def test_source_snapshot_v1_has_the_exact_cross_domain_contract() -> None:

@@ -54,6 +54,7 @@
     "046_revoke_legacy_grile_authority.sql": "0cadf58076c820856c801c8c7bbf7c38b38e80ff26794ceb24178442c7207432",
     "047_insight_reporting_read_models.sql": "3e920d96b1f4deb81e591085b14361ae54dba058bf54fad2e1c9928e9431e9f9",
     "048_insight_sales_day_read_model.sql": "4e75756277b6d1f0351dcd456d72eb78d0531c95474a145847c1ffc038bbca79",
-    "049_insight_visits_team_leader_read_model.sql": "5b24cd25bf0a79a6a4ea37e370b4ab5249724726f1dc78692526c338d6be3c5c"
+    "049_insight_visits_team_leader_read_model.sql": "5b24cd25bf0a79a6a4ea37e370b4ab5249724726f1dc78692526c338d6be3c5c",
+    "050_insight_visits_completion_semantics.sql": "681a2e396f3d14713d4c1d40b8c93351329390a980320b6ac2e56db597963b0d"
   }
 }

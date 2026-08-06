@@ -983,6 +983,10 @@ modifica un scenariu deja salvat/finalizat.
 - Autoritatea activa este PostgreSQL `fieldops_visits`, detinuta de migrarile
   FieldOps. Retail are acces `SELECT` si foloseste
   `RETAIL_VISITS_READ_SOURCE=postgres`.
+- `reporting_visit_month_v2` grupeaza după snapshotul Team Leader autor și
+  recalculează `avg_completion` din cele 19 câmpuri canonice FieldOps. Regula
+  v3 repară analitic valorile istorice înghețate fără UPDATE pe autoritatea
+  operațională; schimbarea de regulă intră în `source_generation`.
 - Cutover-ul coordonat a fost finalizat pe 2026-07-16 dupa backup pre/post,
   doua comparatii consecutive identice si validarea report/tree/detail,
   snapshot Manageri si CRM. SQLite este arhiva pre-cutover, nu fallback.
