@@ -52,6 +52,7 @@
     "044_grile_monthly_recovery_fencing.sql": "762c6352f8a00deb6989bd24ffac5ebefc9d537817233507d92e8dd4422d7a1c",
     "045_salary_approval_replay_fence.sql": "2be9541709f7e8a9e6dfa031e8e1330e4c75779109030078a4add64e92551011",
     "046_revoke_legacy_grile_authority.sql": "0cadf58076c820856c801c8c7bbf7c38b38e80ff26794ceb24178442c7207432",
-    "047_insight_reporting_read_models.sql": "3e920d96b1f4deb81e591085b14361ae54dba058bf54fad2e1c9928e9431e9f9"
+    "047_insight_reporting_read_models.sql": "3e920d96b1f4deb81e591085b14361ae54dba058bf54fad2e1c9928e9431e9f9",
+    "048_insight_sales_day_read_model.sql": "4e75756277b6d1f0351dcd456d72eb78d0531c95474a145847c1ffc038bbca79"
   }
 }

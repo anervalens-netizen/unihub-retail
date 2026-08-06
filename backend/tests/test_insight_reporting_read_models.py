@@ -17,6 +17,8 @@ MIGRATION = (
     / "047_insight_reporting_read_models.sql"
 )
 SQL = MIGRATION.read_text(encoding="utf-8")
+SALES_DAY_MIGRATION = MIGRATION.with_name("048_insight_sales_day_read_model.sql")
+SALES_DAY_SQL = SALES_DAY_MIGRATION.read_text(encoding="utf-8")
 
 
 def _view_columns(view_name: str) -> tuple[str, ...]:
@@ -34,6 +36,59 @@ def _view_sql(view_name: str) -> str:
     start = SQL.index(marker)
     next_view = SQL.find("CREATE OR REPLACE VIEW ", start + len(marker))
     return SQL[start : next_view if next_view != -1 else len(SQL)]
+
+
+def _sales_day_columns() -> tuple[str, ...]:
+    match = re.search(
+        r"CREATE OR REPLACE VIEW reporting_sales_day_v1 \((.*?)\)\nWITH \(security_barrier = true\)",
+        SALES_DAY_SQL,
+        flags=re.DOTALL,
+    )
+    assert match, "missing versioned security-barrier daily Sales view"
+    return tuple(column.strip() for column in match.group(1).split(","))
+
+
+def test_sales_day_contract_is_observed_additive_and_snapshot_bound() -> None:
+    assert _sales_day_columns() == (
+        "period",
+        "sale_date",
+        "site_code",
+        "locatie",
+        "firma",
+        "regional",
+        "asm",
+        "agent",
+        "net_sales",
+        "net_quantity",
+        "positive_quantity",
+        "return_quantity",
+        "receipt_count",
+        "receipt_2plus_count",
+        "coverage_state",
+        "source",
+        "source_generation",
+        "authority",
+        "authority_head",
+        "contract_version",
+        "rule_version",
+        "status",
+        "as_of",
+        "cutoff",
+        "is_final",
+        "coverage_numerator",
+        "coverage_denominator",
+        "produced_at",
+        "warnings",
+    )
+    assert "FROM reporting_agent_day AS daily" in SALES_DAY_SQL
+    assert "FROM reporting_item_day AS item" in SALES_DAY_SQL
+    assert "JOIN reporting_source_snapshot_v1 AS snapshot" in SALES_DAY_SQL
+    assert "snapshot.domain = 'sales'" in SALES_DAY_SQL
+    assert "'observed'::text" in SALES_DAY_SQL
+    assert "generate_series" not in SALES_DAY_SQL
+    assert "sales_transactions" not in SALES_DAY_SQL
+    assert "GRANT SELECT ON TABLE reporting_sales_day_v1" in SALES_DAY_SQL
+    assert "DROP " not in SALES_DAY_SQL.upper()
 
 
 def test_source_snapshot_v1_has_the_exact_cross_domain_contract() -> None:

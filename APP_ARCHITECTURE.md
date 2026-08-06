@@ -558,6 +558,15 @@ Familii de tabele:
 | Planificare target | `target_scenarios`, `target_scenario_rows`; publicare finala in `store_targets` |
 | Operare | `import_snapshots`, `store_activity_events`, `visits_snapshot`, `error_logs` |
 
+Migrarea 048 publică aditiv `reporting_sales_day_v1` pentru UniHub Insight.
+View-ul leagă fiecare rând zi–magazin–agent de head-ul Sales eligibil și expune
+vânzarea netă, cantitatea netă/pozitivă/retur, bonurile și Bon2Acc din
+agregatele Retail. `coverage_state=observed` afirmă numai existența rândului;
+zilele absente rămân lipsă, nu zero. Cantitatea de retur rămâne negativă, iar
+bonurile de retur nu sunt expuse până la un read-model cu identitatea canonică
+de bon. Reader-ul Insight primește `SELECT` numai pe view, nu pe
+`reporting_item_day`.
+
 `stores` este master data curenta pentru apartenenta magazinelor. In Retail
 exista un singur layer activ de management; coloanele `regional` si `asm` sunt
 pastrate pentru compatibilitate cu rapoartele, dar pentru magazinele active din
