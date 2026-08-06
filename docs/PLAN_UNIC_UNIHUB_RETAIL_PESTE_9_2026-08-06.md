@@ -981,7 +981,7 @@ prin fluxul local-first autorizat de ADR-005, dar statusul documentului devine
 
 Status: `closed` după consumarea dovezii formale exact-SHA descrise mai jos.
 `implementation_sha` pentru remedierea runtime este
-`074489b2364023a66b9fa9ce15c92db8d264f5af`. `release_sha`, runul CI și runul
+`0eb9e524344f2e32cf2071a2d8ef3d2a2083b48b`. `release_sha`, runul CI și runul
 deploy sunt identitatea machine-readable a ultimului artefact formal consumat;
 se citesc din runurile GitHub și auditul immutable al approval/deployului, fără
 un commit docs-only auto-referențial după deploy.
