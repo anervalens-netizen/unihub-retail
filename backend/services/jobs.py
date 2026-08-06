@@ -558,6 +558,55 @@ async def enqueue_sales_promotion(
     return replacement
 
 
+async def enqueue_campaign_reporting_publication(
+    *,
+    month: str,
+    requested_by_sub: str,
+    reason: str,
+) -> Job:
+    """Queue one idempotent Campaigns read-model publication per month.
+
+    A queued/running job intentionally absorbs newer source generations: the
+    worker reads the current immutable promo pointer and current sales head when
+    it starts.  A completed result is removed before a later source event gets
+    a fresh publication attempt.
+    """
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+        raise ValueError("Campaign reporting month is invalid")
+    pool = await _require_arq_pool()
+    job_id = f"campaign-reporting:{month}"
+    enqueue_args = (
+        "publish_campaign_reporting_background",
+        month,
+        requested_by_sub,
+        reason,
+        get_request_id(),
+    )
+    job = await _publish_arq_job(
+        pool,
+        *enqueue_args,
+        _job_id=job_id,
+        _queue_name=SALES_IMPORT_QUEUE_NAME,
+    )
+    if job is not None:
+        return job
+    existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
+    existing_status = await existing.status()
+    if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
+        return existing
+    if existing_status == ArqJobStatus.complete:
+        await pool.delete(result_key_prefix + job_id)
+        replacement = await _publish_arq_job(
+            pool,
+            *enqueue_args,
+            _job_id=job_id,
+            _queue_name=SALES_IMPORT_QUEUE_NAME,
+        )
+        if replacement is not None:
+            return replacement
+    raise RuntimeError("Failed to enqueue campaign reporting publication")
+
+
 async def enqueue_grile_check(
     *,
     month: str,

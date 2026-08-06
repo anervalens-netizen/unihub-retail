@@ -60,8 +60,26 @@ release-ului `v2.1.0` include:
 | 050 | `050_insight_visits_completion_semantics.sql` | `681a2e396f3d14713d4c1d40b8c93351329390a980320b6ac2e56db597963b0d` | semantică de completare Visits canonică și fail-closed |
 | 051 | `051_insight_planning_promotion_read_model.sql` | `1f7fafe8d3889d77affb2602502d0411d4bb28df0ab31a897c796e3ddf4f3bb0` | head și ledger Planning cu CAS, snapshot v3 și scenariu v2 fără promovare implicită |
 | 052 | `052_insight_planning_hash_acl.sql` | `3cb4411dba9ef15723ee82df7dff7dbb75f58efa61c9dbe751000ce1986aec4d` | bridge definer îngust pentru verificarea read-only a digestului forecast promovat |
+| 053 | `053_insight_campaign_publication.sql` | `2e7df7912da482f72be902e03808c2695442308d2aa446ac2cf7d3d816ab23b1` | generații Campanii immutable, CAS/ledger, publisher canonic Focus/Promo/Incentive pe magazin+agent, `reporting_source_snapshot_v4` și `reporting_campaign_month_v2`; v1/v3 rămân rollback |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
+
+### Campaigns v2 publication (053)
+
+După aplicarea 053, pornește imports workerul cu codul care conține
+`publish_campaign_reporting_background`, apoi rulează întâi read-only:
+
+```bash
+cd backend
+python3 scripts/publish_campaign_reporting.py --month YYYY-MM
+```
+
+Backfill-ul scrie numai cu `--apply`, `CAMPAIGN_REPORTING_DATABASE_URL` al
+imports workerului și actor/motiv explicit. El publică prin funcția CAS
+`publish_campaign_reporting_generation`; nu face `UPDATE`/`DELETE` pe
+business data. `reporting_source_snapshot_v4` semnalizează explicit
+`campaign_reporting_not_published` până la primul head, iar v1/v3 rămân
+ancorele rollback N-1.
 
 Migrațiile nu activează singure TVA live sau importul salarial live. Promotion pointer-ul P&L și batchul salary sunt contracte de audit/recovery; apply-ul financiar și reconcilierea HR rămân explicit blocate la P0.
 

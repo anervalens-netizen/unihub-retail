@@ -13,7 +13,9 @@ class PromoIncentiveSummary(BaseModel):
     promo_sales: Decimal = Decimal(0)
     promo_impact: Decimal = Decimal(0)
     incentive_sold_qty: int = 0
+    incentive_sales: Decimal = Decimal(0)
     incentive_qty: int | None = 0
+    incentive_potential: Decimal | None = Decimal(0)
     incentive_value: Decimal | None = Decimal(0)
     incentive_qualified_qty: int | None = 0
     incentive_qualified_stores: int = 0

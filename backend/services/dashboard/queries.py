@@ -1748,7 +1748,11 @@ async def _fetch_promo_incentive_summary(
     promo_sales: Decimal = Decimal("0")
     promo_impact = Decimal("0")
     incentive_sold_qty = 0
+    incentive_sales: Decimal = Decimal("0")
     incentive_qty: int | None = 0 if calculation_status == "complete" else None
+    incentive_potential: Decimal | None = (
+        Decimal("0") if calculation_status == "complete" else None
+    )
     incentive_value: Decimal | None = (
         Decimal("0") if calculation_status == "complete" else None
     )
@@ -1886,6 +1890,7 @@ async def _fetch_promo_incentive_summary(
                                 or "Excluderile promo nu pot fi alocate complet pe perioade."
                             )
                             incentive_qty = None
+                            incentive_potential = None
                             incentive_value = None
                             incentive_qualified_qty = None
                         result = evaluation.result
@@ -1921,7 +1926,8 @@ async def _fetch_promo_incentive_summary(
                 f"""
                 SELECT agg.site_code, agg.item_code,
                        ip.valid_from, ip.valid_to, ip.reward_value,
-                       COALESCE(SUM(agg.net_quantity), 0)::INT AS qty
+                       COALESCE(SUM(agg.net_quantity), 0)::INT AS qty,
+                       COALESCE(SUM(agg.total_sales), 0) AS sales
                 FROM reporting_item_day agg
                 {_scope_join(current_scope)}
                 JOIN incentive_campaigns ic ON ic.month = agg.import_month
@@ -1955,8 +1961,23 @@ async def _fetch_promo_incentive_summary(
                 return max(0, int(row["qty"]) - excluded)
 
             incentive_sold_qty = sum(int(row["qty"] or 0) for row in item_rows)
+            incentive_sales = sum(
+                (Decimal(row.get("sales") or 0) for row in item_rows),
+                Decimal("0"),
+            )
             if calculation_status == "complete":
                 incentive_qty = sum(eligible_qty(row) for row in item_rows)
+                incentive_potential = sum(
+                    (
+                        Decimal(eligible_qty(row))
+                        * Decimal(str(
+                            row.get("reward_value")
+                            or incentive_campaign.get("reward_map", {}).get(row["item_code"], 0)
+                        ))
+                        for row in item_rows
+                    ),
+                    Decimal("0"),
+                )
                 incentive_value = Decimal(str(
                     sum(
                         eligible_qty(r)
@@ -2038,7 +2059,9 @@ async def _fetch_promo_incentive_summary(
         promo_sales=promo_sales,
         promo_impact=promo_impact,
         incentive_sold_qty=incentive_sold_qty,
+        incentive_sales=incentive_sales,
         incentive_qty=incentive_qty,
+        incentive_potential=incentive_potential,
         incentive_value=incentive_value,
         incentive_qualified_qty=incentive_qualified_qty,
         incentive_qualified_stores=incentive_qualified_stores,

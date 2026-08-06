@@ -48,6 +48,7 @@ def test_import_worker_uses_dedicated_queue(monkeypatch: pytest.MonkeyPatch) -> 
     assert settings["functions"] == [
         worker.import_sales_background,
         worker.promote_sales_background,
+        worker.publish_campaign_reporting_background,
     ]
     assert settings["max_jobs"] == 1
     assert settings["job_timeout"] == 1800

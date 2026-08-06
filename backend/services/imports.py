@@ -37,6 +37,7 @@ from services.jobs import (
     JobStatus,
     retain_sales_import_spool_file,
     enqueue_grile_check,
+    enqueue_campaign_reporting_publication,
     enqueue_sales_import,
     enqueue_sales_promotion,
     get_job_status,
@@ -252,6 +253,35 @@ async def trigger_grile_check_after_import(import_month: str, snapshot_id: int |
         )
     except Exception:  # noqa: BLE001 — best-effort, nu strica importul
         logger.exception("enqueue grile check (auto) esuat pentru %s", import_month)
+
+
+async def trigger_campaign_reporting_publication(
+    import_month: str,
+    *,
+    requested_by_sub: str,
+    reason: str,
+) -> None:
+    """Best-effort hook after a campaign input becomes authoritative.
+
+    Publishing is bounded to the imports worker; an unavailable queue must not
+    roll back a successful sales/promo generation.
+    """
+    try:
+        job = await enqueue_campaign_reporting_publication(
+            month=import_month,
+            requested_by_sub=requested_by_sub,
+            reason=reason,
+        )
+        logger.info(
+            "campaign reporting publication queued month=%s job=%s",
+            import_month,
+            job.job_id,
+        )
+    except Exception:  # noqa: BLE001 -- source promotion stays successful
+        logger.exception(
+            "enqueue campaign reporting publication esuat pentru %s",
+            import_month,
+        )
 
 
 class ImportsService:
@@ -584,6 +614,11 @@ class ImportsService:
             report_rows,
             promo_units,
             generation_id,
+        )
+        await trigger_campaign_reporting_publication(
+            import_month,
+            requested_by_sub="system:promo-actuals",
+            reason=f"promo_actuals_generation:{generation_id}",
         )
         return PromoActualImportResponse(
             import_month=import_month,

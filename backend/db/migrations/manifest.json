@@ -57,6 +57,7 @@
     "049_insight_visits_team_leader_read_model.sql": "5b24cd25bf0a79a6a4ea37e370b4ab5249724726f1dc78692526c338d6be3c5c",
     "050_insight_visits_completion_semantics.sql": "681a2e396f3d14713d4c1d40b8c93351329390a980320b6ac2e56db597963b0d",
     "051_insight_planning_promotion_read_model.sql": "1f7fafe8d3889d77affb2602502d0411d4bb28df0ab31a897c796e3ddf4f3bb0",
-    "052_insight_planning_hash_acl.sql": "3cb4411dba9ef15723ee82df7dff7dbb75f58efa61c9dbe751000ce1986aec4d"
+    "052_insight_planning_hash_acl.sql": "3cb4411dba9ef15723ee82df7dff7dbb75f58efa61c9dbe751000ce1986aec4d",
+    "053_insight_campaign_publication.sql": "2e7df7912da482f72be902e03808c2695442308d2aa446ac2cf7d3d816ab23b1"
   }
 }

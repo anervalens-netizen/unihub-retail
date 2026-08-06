@@ -274,12 +274,20 @@ async def promote_sales_background(
             import_month = str(row["import_month"])
 
         from routers.filters import clear_filter_options_cache
-        from services.imports import trigger_grile_check_after_import
+        from services.imports import (
+            trigger_campaign_reporting_publication,
+            trigger_grile_check_after_import,
+        )
         from services.retail_metrics import update_business_metrics
 
         clear_filter_options_cache()
         await update_business_metrics(pool)
         await trigger_grile_check_after_import(import_month, snapshot_id)
+        await trigger_campaign_reporting_publication(
+            import_month,
+            requested_by_sub="system:sales-promotion",
+            reason=f"sales_generation:{snapshot_id}",
+        )
         manifest_value = row["manifest"]
         if isinstance(manifest_value, str):
             manifest_value = json.loads(manifest_value)
@@ -303,6 +311,34 @@ async def promote_sales_background(
             "manifest_sha256": manifest_sha256,
             "manifest": manifest,
         }
+    finally:
+        if token is not None:
+            reset_request_id(token)
+
+
+async def publish_campaign_reporting_background(
+    ctx: dict,
+    period: str,
+    requested_by_sub: str,
+    reason: str,
+    request_id: str | None = None,
+) -> dict:
+    """Run the bounded, canonical Campaigns publisher in the imports worker."""
+    from dataclasses import asdict
+    from services.campaign_reporting import CampaignReportingPublisher
+
+    token = bind_request_id(request_id) if request_id else None
+    try:
+        pool = ctx.get("db_pool")
+        if pool is None:
+            from db.connection import get_pool
+            pool = await get_pool()
+        publication = await CampaignReportingPublisher(pool).publish_month(
+            period,
+            requested_by_sub=requested_by_sub,
+            reason=reason,
+        )
+        return asdict(publication)
     finally:
         if token is not None:
             reset_request_id(token)
@@ -676,7 +712,11 @@ def main() -> None:
     runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
     worker_role = runtime.worker_role or "operations"
     functions = (
-        [import_sales_background, promote_sales_background]
+        [
+            import_sales_background,
+            promote_sales_background,
+            publish_campaign_reporting_background,
+        ]
         if worker_role == "imports"
         else [
             grile_check_background,
