@@ -539,6 +539,24 @@ def test_filters_keys_metrics_filename_and_number_formats() -> None:
     assert service._excel_number_format("text") is None
 
 
+def test_daily_comparison_chart_writes_chart_for_nonempty_table() -> None:
+    service = ExportsService(FakeRepo())  # type: ignore[arg-type]
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["Zi", "Iunie"])
+    sheet.append([1, 100])
+
+    service._add_daily_comparison_chart(
+        sheet,
+        months=["2026-06"],
+        metric="total_sales",
+        max_row=2,
+        first_data_col=2,
+    )
+
+    assert len(sheet._charts) == 1
+
+
 def test_attach_period_metrics_skips_unknown_row_and_sheet_helpers() -> None:
     service = ExportsService(FakeRepo())  # type: ignore[arg-type]
     rows = {("S001",): {"site_code": "S001"}}

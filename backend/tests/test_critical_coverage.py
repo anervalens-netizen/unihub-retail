@@ -50,3 +50,22 @@ def test_critical_coverage_reports_regression_and_missing_module() -> None:
 def test_critical_coverage_rejects_invalid_report() -> None:
     with pytest.raises(ValueError, match="files object"):
         evaluate_coverage({}, {"services/importer.py": 95})
+
+
+def test_critical_coverage_aggregates_modular_package() -> None:
+    results = evaluate_coverage(
+        {
+            "files": {
+                "services/target_calculator/__init__.py": {
+                    "summary": {"covered_lines": 90, "num_statements": 100}
+                },
+                "services/target_calculator/scenarios.py": {
+                    "summary": {"covered_lines": 9, "num_statements": 10}
+                },
+            }
+        },
+        {"services/target_calculator/*": 90},
+    )
+
+    assert results[0].covered == pytest.approx(90.0)
+    assert results[0].passed is True

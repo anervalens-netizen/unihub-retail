@@ -43,6 +43,29 @@ def evaluate_coverage(
     for module, raw_threshold in sorted(thresholds.items()):
         threshold = float(raw_threshold)
         details = files.get(module)
+        if details is None and module.endswith("/*"):
+            prefix = module[:-1]
+            summaries: list[dict[str, Any]] = []
+            for path, value in files.items():
+                if not path.startswith(prefix) or not isinstance(value, dict):
+                    continue
+                summary = value.get("summary")
+                if isinstance(summary, dict):
+                    summaries.append(summary)
+            statement_count = sum(
+                int(summary.get("num_statements", 0))
+                for summary in summaries
+            )
+            covered_count = sum(
+                int(summary.get("covered_lines", 0))
+                for summary in summaries
+            )
+            if statement_count:
+                details = {
+                    "summary": {
+                        "percent_covered": covered_count * 100 / statement_count,
+                    }
+                }
         covered: float | None = None
         if isinstance(details, dict):
             summary = details.get("summary")
