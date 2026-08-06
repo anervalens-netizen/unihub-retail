@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import {
   AlertTriangle,
   Calculator,
@@ -35,11 +35,12 @@ import {
   finalizeTargetScenario,
   saveTargetFinalValues,
   type TargetCalculatorContext,
+  type TargetProfitability,
   type TargetScenario,
   type TargetScenarioRow,
   type TargetStoreDetail,
 } from '../api/targetCalculator';
-import {getApiErrorMessage} from '../api/client';
+import { ApiError, getApiErrorMessage } from '../api/client';
 import { formatCurrency, formatPercent } from '../lib/formatters';
 import { shiftMonth } from '../lib/dates';
 import { TargetWorkflow } from '../features/target-calculator/TargetWorkflow';
@@ -63,6 +64,26 @@ import { resolveSeasonalityMode, seasonalityYearsFromMode } from '../lib/targetS
 
 const inputCls = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 const finalInputCls = 'rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-amber-600 dark:bg-amber-950/30 dark:text-slate-100';
+
+const MISSING_PROFITABILITY: TargetProfitability = {
+  agent_count: Number.NaN,
+  base_salary_per_agent: Number.NaN,
+  salary_cost_at_90_pct: Number.NaN,
+  operating_costs: null,
+  accessory_margin_pct: null,
+  break_even_gross_sales: null,
+  forecast_sales: null,
+  anomaly_flags: ['PNL_INCOMPLETE'],
+};
+
+function profitabilityFor(row: TargetScenarioRow): TargetProfitability {
+  return row.profitability ?? MISSING_PROFITABILITY;
+}
+
+function isBelowBreakEven(row: TargetScenarioRow, value: number | null): boolean {
+  const breakEven = profitabilityFor(row).break_even_gross_sales;
+  return value != null && breakEven != null && value < breakEven;
+}
 
 type StoreChartMode = 'sales' | 'bon2acc' | 'focus';
 
@@ -340,6 +361,137 @@ function KpiRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+type TargetRegionalViewRow = {
+  regional: string;
+  store_count: number;
+  proposed_total: number;
+  final_total: number;
+  current_month: string | null;
+  current_forecast_total: number;
+  proposed_growth_vs_current_pct: number | null;
+  last_year_base_month: string | null;
+  last_year_target_month: string | null;
+  last_year_base_total: number;
+  last_year_target_total: number;
+  last_year_growth_pct: number | null;
+};
+
+type TargetSourceViewRow = {
+  month: string;
+  target: number;
+  realized: number;
+  actualRealized: number;
+  isForecast: boolean;
+  showTarget: boolean;
+};
+
+type TargetAllocationViewRow = {
+  manager: string;
+  storeCount: number;
+  targetShare: number;
+  targetVsPreviousSharePp: number | null;
+  target: number;
+  targetVsPreviousPct: number | null;
+  targetVsSeasonalPct: number | null;
+  targetVsPreviousYearPct: number | null;
+  targetVsForecastPct: number | null;
+  signal: string;
+};
+
+type TargetTableTotals = {
+  history: Array<{ month: string; target: number; realized: number; attainment: number | null }>;
+  normalizedWeight: number;
+  proposedTarget: number;
+  finalTarget: number | null;
+  salary: number;
+  operatingCosts: number | null;
+  breakEven: number | null;
+  forecast: number | null;
+};
+
+interface TargetScenarioViewProps {
+  workflowStep: 1 | 2 | 3 | 4;
+  context: TargetCalculatorContext | null;
+  busy: boolean;
+  loadInitial: () => Promise<void>;
+  targetMonth: string;
+  setTargetMonth: (value: string) => void;
+  totalTarget: string;
+  setTotalTarget: (value: string) => void;
+  minFloor: string;
+  setMinFloor: (value: string) => void;
+  seasonalityMode: SeasonalityMode;
+  selectSeasonalityMode: (mode: 'multi' | 'single') => void;
+  handleCalculate: () => Promise<void>;
+  logicOpen: boolean;
+  setLogicOpen: Dispatch<SetStateAction<boolean>>;
+  error: string | null;
+  conflictRetryAvailable: boolean;
+  scenario: TargetScenario | null;
+  savingRows: Set<string>;
+  dirty: boolean;
+  displayWarnings: string[];
+  activeSeasonalityLabel: string;
+  regionalChart: TargetRegionalViewRow[];
+  sourceChart: TargetSourceViewRow[];
+  isDesktop: boolean;
+  regionalFilter: string;
+  setRegionalFilter: (value: string) => void;
+  regionals: string[];
+  regionalAllocation: TargetAllocationViewRow[];
+  filteredRows: TargetScenarioRow[];
+  resetToProposal: () => void;
+  handleSave: () => Promise<void>;
+  handleFinalize: () => Promise<void>;
+  handleExport: () => Promise<void>;
+  profitabilitySummary: TargetScenario['profitability_summary'];
+  locationFilterRef: RefObject<HTMLDivElement | null>;
+  locationDropdownOpen: boolean;
+  setLocationDropdownOpen: Dispatch<SetStateAction<boolean>>;
+  selectedLocationCodes: string[];
+  selectedLocationSet: Set<string>;
+  setSelectedLocationCodes: Dispatch<SetStateAction<string[]>>;
+  locationOptions: TargetScenarioRow[];
+  toggleLocationFilter: (siteCode: string) => void;
+  removeLocationFilter: (siteCode: string) => void;
+  displaySourceMonths: Array<{ month: string; label: string; role: string }>;
+  tableTotals: TargetTableTotals;
+  updateRow: (siteCode: string, field: 'final_target' | 'note', value: number | string | null) => void;
+  detailSiteCode: string | null;
+  setDetailSiteCode: Dispatch<SetStateAction<string | null>>;
+}
+
+export function TargetErrorNotice({
+  error,
+  conflictRetryAvailable,
+  busy,
+  dirty,
+  onRetry,
+}: {
+  error: string;
+  conflictRetryAvailable: boolean;
+  busy: boolean;
+  dirty: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">
+      <AlertTriangle size={15} />
+      <span className="flex-1">{error}</span>
+      {conflictRetryAvailable && (
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={busy || !dirty}
+          className="rounded-xl bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/40 dark:text-red-100 dark:hover:bg-red-900/60"
+        >
+          Reîncearcă salvarea
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function TargetCalculatorSubtab() {
   const [context, setContext] = useState<TargetCalculatorContext | null>(null);
   const [scenario, setScenario] = useState<TargetScenario | null>(null);
@@ -357,6 +509,7 @@ export function TargetCalculatorSubtab() {
   const [dirtyRows, setDirtyRows] = useState<Set<string>>(() => new Set());
   const [savingRows, setSavingRows] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const [conflictRetryAvailable, setConflictRetryAvailable] = useState(false);
   const scenarioRef = useRef<TargetScenario | null>(null);
   const dirtyRowsRef = useRef<Set<string>>(new Set());
   const editVersionsRef = useRef<Map<string, number>>(new Map());
@@ -485,15 +638,15 @@ export function TargetCalculatorSubtab() {
     };
     return {
       history,
-      normalizedWeight: filteredRows.reduce((total, row) => total + row.normalized_weight, 0),
+      normalizedWeight: filteredRows.reduce((total, row) => total + (row.normalized_weight ?? 0), 0),
       proposedTarget: sum(filteredRows.map((row) => row.proposed_target)),
       finalTarget: filteredRows.length > 0 && filteredRows.every((row) => row.final_target != null)
         ? sum(filteredRows.map((row) => Number(row.final_target)))
         : null,
-      salary: sum(filteredRows.map((row) => row.profitability.salary_cost_at_90_pct)),
-      operatingCosts: completeTotal((row) => row.profitability.operating_costs),
-      breakEven: completeTotal((row) => row.profitability.break_even_gross_sales),
-      forecast: completeTotal((row) => row.profitability.forecast_sales),
+      salary: sum(filteredRows.map((row) => profitabilityFor(row).salary_cost_at_90_pct)),
+      operatingCosts: completeTotal((row) => profitabilityFor(row).operating_costs),
+      breakEven: completeTotal((row) => profitabilityFor(row).break_even_gross_sales),
+      forecast: completeTotal((row) => profitabilityFor(row).forecast_sales),
     };
   }, [displaySourceMonths, filteredRows]);
   const sourceChart = useMemo(() => {
@@ -532,7 +685,7 @@ export function TargetCalculatorSubtab() {
       const previous = sum(rows.map((row) => realized(row, previousMonth)));
       const previousYearBase = sum(rows.map((row) => realized(row, previousYearBaseMonth)));
       const previousYearTarget = sum(rows.map((row) => realized(row, previousYearTargetMonth)));
-      const forecastValues = rows.map((row) => row.profitability.forecast_sales);
+      const forecastValues = rows.map((row) => profitabilityFor(row).forecast_sales);
       const forecast = forecastValues.every((value) => value != null)
         ? sum(forecastValues.map((value) => Number(value)))
         : null;
@@ -771,8 +924,12 @@ export function TargetCalculatorSubtab() {
       ));
       replaceScenario(recalculateVisibleScenario(saved, mergedRows));
       setError(null);
+      setConflictRetryAvailable(false);
       return saved;
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setConflictRetryAvailable(true);
+      }
       try {
         const latest = await fetchTargetScenario(current.id);
         const latestLocal = scenarioRef.current;
@@ -809,10 +966,14 @@ export function TargetCalculatorSubtab() {
   const handleSave = async () => {
     setBusy(true);
     setError(null);
+    setConflictRetryAvailable(false);
     try {
       await persistDraft();
     } catch (err) {
       console.error(err);
+      if (err instanceof ApiError && err.status === 409) {
+        setConflictRetryAvailable(true);
+      }
       setError(getApiErrorMessage(err, 'Targetele finale nu au putut fi salvate.'));
     } finally {
       setBusy(false);
@@ -907,7 +1068,114 @@ export function TargetCalculatorSubtab() {
       : scenario.manual_adjustments_count === 0 && scenario.pending_final_count === scenario.store_count
         ? 2
         : 3;
+  const profitabilitySummary = scenario?.profitability_summary ?? null;
 
+  return (
+    <TargetScenarioView
+      workflowStep={workflowStep}
+      context={context}
+      busy={busy}
+      loadInitial={loadInitial}
+      targetMonth={targetMonth}
+      setTargetMonth={setTargetMonth}
+      totalTarget={totalTarget}
+      setTotalTarget={setTotalTarget}
+      minFloor={minFloor}
+      setMinFloor={setMinFloor}
+      seasonalityMode={seasonalityMode}
+      selectSeasonalityMode={selectSeasonalityMode}
+      handleCalculate={handleCalculate}
+      logicOpen={logicOpen}
+      setLogicOpen={setLogicOpen}
+      error={error}
+      conflictRetryAvailable={conflictRetryAvailable}
+      scenario={scenario}
+      savingRows={savingRows}
+      dirty={dirty}
+      displayWarnings={displayWarnings}
+      activeSeasonalityLabel={activeSeasonalityLabel}
+      regionalChart={regionalChart}
+      sourceChart={sourceChart}
+      isDesktop={isDesktop}
+      regionalFilter={regionalFilter}
+      setRegionalFilter={setRegionalFilter}
+      regionals={regionals}
+      regionalAllocation={regionalAllocation}
+      filteredRows={filteredRows}
+      resetToProposal={resetToProposal}
+      handleSave={handleSave}
+      handleFinalize={handleFinalize}
+      handleExport={handleExport}
+      profitabilitySummary={profitabilitySummary}
+      locationFilterRef={locationFilterRef}
+      locationDropdownOpen={locationDropdownOpen}
+      setLocationDropdownOpen={setLocationDropdownOpen}
+      selectedLocationCodes={selectedLocationCodes}
+      selectedLocationSet={selectedLocationSet}
+      setSelectedLocationCodes={setSelectedLocationCodes}
+      locationOptions={locationOptions}
+      toggleLocationFilter={toggleLocationFilter}
+      removeLocationFilter={removeLocationFilter}
+      displaySourceMonths={displaySourceMonths}
+      tableTotals={tableTotals}
+      updateRow={updateRow}
+      detailSiteCode={detailSiteCode}
+      setDetailSiteCode={setDetailSiteCode}
+    />
+  );
+}
+
+function TargetScenarioView({
+workflowStep,
+context,
+busy,
+loadInitial,
+targetMonth,
+setTargetMonth,
+totalTarget,
+setTotalTarget,
+minFloor,
+setMinFloor,
+seasonalityMode,
+selectSeasonalityMode,
+handleCalculate,
+logicOpen,
+setLogicOpen,
+error,
+conflictRetryAvailable,
+scenario,
+savingRows,
+dirty,
+displayWarnings,
+activeSeasonalityLabel,
+regionalChart,
+sourceChart,
+isDesktop,
+regionalFilter,
+setRegionalFilter,
+regionals,
+regionalAllocation,
+filteredRows,
+resetToProposal,
+handleSave,
+handleFinalize,
+handleExport,
+profitabilitySummary,
+locationFilterRef,
+locationDropdownOpen,
+setLocationDropdownOpen,
+selectedLocationCodes,
+selectedLocationSet,
+setSelectedLocationCodes,
+locationOptions,
+toggleLocationFilter,
+removeLocationFilter,
+displaySourceMonths,
+tableTotals,
+updateRow,
+detailSiteCode,
+setDetailSiteCode
+}: TargetScenarioViewProps) {
   return (
     <div className="p-4 lg:p-6 space-y-4">
       <TargetWorkflow step={workflowStep} />
@@ -1007,10 +1275,13 @@ export function TargetCalculatorSubtab() {
       )}
 
       {error && (
-        <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">
-          <AlertTriangle size={15} />
-          {error}
-        </div>
+        <TargetErrorNotice
+          error={error}
+          conflictRetryAvailable={conflictRetryAvailable}
+          busy={busy}
+          dirty={dirty}
+          onRetry={() => void handleSave()}
+        />
       )}
 
       {scenario && <div className="sticky top-2 z-20 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95">
@@ -1356,9 +1627,9 @@ export function TargetCalculatorSubtab() {
               </div>
             </div>
 
-            {scenario.profitability_summary.status !== 'ready' && (
+            {profitabilitySummary && profitabilitySummary.status !== 'ready' && (
               <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                Surse financiare parțiale: P&amp;L {scenario.profitability_summary.pnl_store_count}/{scenario.store_count} magazine · forecast {scenario.profitability_summary.forecast_store_count}/{scenario.store_count}. Valorile lipsă rămân marcate, nu sunt estimate.
+                Surse financiare parțiale: P&amp;L {profitabilitySummary.pnl_store_count}/{scenario.store_count} magazine · forecast {profitabilitySummary.forecast_store_count}/{scenario.store_count}. Valorile lipsă rămân marcate, nu sunt estimate.
               </div>
             )}
 
@@ -1458,15 +1729,13 @@ export function TargetCalculatorSubtab() {
                   </button>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className={`rounded-xl p-2 ${
-                      row.profitability.break_even_gross_sales != null
-                      && row.proposed_target < row.profitability.break_even_gross_sales
+                      isBelowBreakEven(row, row.proposed_target)
                         ? 'bg-red-50 dark:bg-red-950/25'
                         : 'bg-slate-50 dark:bg-slate-800/60'
                     }`}>
                       <p className="text-[10px] uppercase tracking-wide text-slate-400">Calcul target</p>
                       <p className={`font-semibold ${
-                        row.profitability.break_even_gross_sales != null
-                        && row.proposed_target < row.profitability.break_even_gross_sales
+                        isBelowBreakEven(row, row.proposed_target)
                           ? 'text-red-600 dark:text-red-400'
                           : 'text-indigo-600 dark:text-indigo-300'
                       }`}>{formatCurrency(row.proposed_target)}</p>
@@ -1503,41 +1772,37 @@ export function TargetCalculatorSubtab() {
                   <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                     <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/60">
                       <p className="text-slate-400">Cheltuieli salariale</p>
-                      <p className="font-semibold text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.salary_cost_at_90_pct)}</p>
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{formatTableNumber(profitabilityFor(row).salary_cost_at_90_pct)}</p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800/60">
                       <p className="text-slate-400">Cheltuieli operaționale</p>
-                      <p className="font-semibold text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.operating_costs)}</p>
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{formatTableNumber(profitabilityFor(row).operating_costs)}</p>
                     </div>
                     <div className="rounded-xl bg-orange-50 p-2 dark:bg-orange-950/20">
                       <p className="text-orange-700 dark:text-orange-300">Break-even brut</p>
-                      <p className="font-semibold text-orange-800 dark:text-orange-200">{formatTableNumber(row.profitability.break_even_gross_sales)}</p>
+                      <p className="font-semibold text-orange-800 dark:text-orange-200">{formatTableNumber(profitabilityFor(row).break_even_gross_sales)}</p>
                     </div>
                     <div className={`rounded-xl p-2 ${
-                      row.profitability.forecast_sales != null
-                      && row.profitability.break_even_gross_sales != null
-                      && row.profitability.forecast_sales < row.profitability.break_even_gross_sales
+                      isBelowBreakEven(row, profitabilityFor(row).forecast_sales)
                         ? 'bg-red-50 dark:bg-red-950/25'
                         : 'bg-emerald-50 dark:bg-emerald-950/20'
                     }`}>
                       <p className="text-slate-500 dark:text-slate-300">Forecast</p>
                       <p className={`font-semibold ${
-                        row.profitability.forecast_sales != null
-                        && row.profitability.break_even_gross_sales != null
-                        && row.profitability.forecast_sales < row.profitability.break_even_gross_sales
+                        isBelowBreakEven(row, profitabilityFor(row).forecast_sales)
                           ? 'text-red-600 dark:text-red-400'
                           : 'text-emerald-600 dark:text-emerald-400'
-                      }`}>{formatTableNumber(row.profitability.forecast_sales)}</p>
+                      }`}>{formatTableNumber(profitabilityFor(row).forecast_sales)}</p>
                     </div>
                   </div>
-                  {[...(row.calculation_details.flags ?? []), ...row.profitability.anomaly_flags].length > 0 && (
+                  {[...(row.calculation_details.flags ?? []), ...profitabilityFor(row).anomaly_flags].length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(row.calculation_details.flags ?? []).slice(0, 2).map((flag) => (
                         <span key={flag} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                           {flagLabel(flag)}
                         </span>
                       ))}
-                      {row.profitability.anomaly_flags.map((flag) => (
+                      {profitabilityFor(row).anomaly_flags.map((flag) => (
                         <span key={flag} className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
                           {profitabilityFlagLabel(flag)}
                         </span>
@@ -1648,13 +1913,13 @@ export function TargetCalculatorSubtab() {
                       <td className="truncate whitespace-nowrap px-1.5 py-1 text-slate-600 dark:text-slate-300" title={row.regional}>{row.regional}</td>
                       <td
                         className={`px-1.5 py-1 ${
-                          row.profitability.anomaly_flags.includes('PNL_INCOMPLETE')
+                          profitabilityFor(row).anomaly_flags.includes('PNL_INCOMPLETE')
                             ? 'bg-red-50 dark:bg-red-950/20'
                             : ''
                         }`}
                         title={
-                          row.profitability.anomaly_flags.length > 0
-                            ? `Anomalii: ${row.profitability.anomaly_flags.map(profitabilityFlagLabel).join(', ')}`
+                          profitabilityFor(row).anomaly_flags.length > 0
+                            ? `Anomalii: ${profitabilityFor(row).anomaly_flags.map(profitabilityFlagLabel).join(', ')}`
                             : undefined
                         }
                       >
@@ -1679,11 +1944,10 @@ export function TargetCalculatorSubtab() {
                         );
                       })}
                       <td className="px-1.5 py-1 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                        {formatPercent(row.normalized_weight * 100)}
+                        {formatPercent(row.normalized_weight == null ? null : row.normalized_weight * 100)}
                       </td>
                       <td className={`px-1.5 py-1 text-right font-semibold tabular-nums ${
-                        row.profitability.break_even_gross_sales != null
-                        && row.proposed_target < row.profitability.break_even_gross_sales
+                        isBelowBreakEven(row, row.proposed_target)
                           ? 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400'
                           : 'text-slate-800 dark:text-slate-100'
                       }`}>
@@ -1710,19 +1974,18 @@ export function TargetCalculatorSubtab() {
                         />
                         </div>
                       </td>
-                      <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.salary_cost_at_90_pct)}</td>
-                      <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(row.profitability.operating_costs)}</td>
-                      <td className="bg-orange-50 px-1.5 py-1 text-right font-semibold tabular-nums text-orange-800 dark:bg-orange-950/20 dark:text-orange-200">{formatTableNumber(row.profitability.break_even_gross_sales)}</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(profitabilityFor(row).salary_cost_at_90_pct)}</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums text-slate-700 dark:text-slate-200">{formatTableNumber(profitabilityFor(row).operating_costs)}</td>
+                      <td className="bg-orange-50 px-1.5 py-1 text-right font-semibold tabular-nums text-orange-800 dark:bg-orange-950/20 dark:text-orange-200">{formatTableNumber(profitabilityFor(row).break_even_gross_sales)}</td>
                       <td className={`px-1.5 py-1 text-right font-semibold tabular-nums ${
-                        row.profitability.forecast_sales == null
+                        profitabilityFor(row).forecast_sales == null
                           ? 'text-slate-400'
-                          : row.profitability.break_even_gross_sales != null
-                          && row.profitability.forecast_sales < row.profitability.break_even_gross_sales
+                          : isBelowBreakEven(row, profitabilityFor(row).forecast_sales)
                             ? 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400'
-                            : row.profitability.anomaly_flags.includes('FORECAST_BELOW_TARGET')
+                            : profitabilityFor(row).anomaly_flags.includes('FORECAST_BELOW_TARGET')
                               ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-300'
                             : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300'
-                      }`}>{formatTableNumber(row.profitability.forecast_sales)}</td>
+                      }`}>{formatTableNumber(profitabilityFor(row).forecast_sales)}</td>
                     </tr>
                   ))}
                 </tbody>

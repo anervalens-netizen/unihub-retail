@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { ThemeSwitcher } from './ThemeSwitcher';
@@ -70,504 +70,190 @@ type ExportMode = 'table' | 'daily_comparison';
 type SettingsSection = 'imports' | 'exports' | 'preferences';
 const INCENTIVE_PRODUCTS_DATASET = 'incentive_products';
 
+type SettingsCatalog = Awaited<ReturnType<typeof getExportCatalog>>;
+type SettingsDataset = SettingsCatalog['datasets'][number];
+
+interface SettingsViewProps {
+  theme: string;
+  setTheme: (theme: string) => void;
+  canImportSales: boolean;
+  canUseExports: boolean;
+  section: SettingsSection;
+  setSection: Dispatch<SetStateAction<SettingsSection>>;
+  file: File | null;
+  setFile: Dispatch<SetStateAction<File | null>>;
+  salesReplaceConfirmed: boolean;
+  setSalesReplaceConfirmed: Dispatch<SetStateAction<boolean>>;
+  setPendingSalesGeneration: Dispatch<SetStateAction<ImportResponse | null>>;
+  salesCutoff: string;
+  setSalesCutoff: Dispatch<SetStateAction<string>>;
+  uploading: boolean;
+  handleUpload: () => Promise<void>;
+  message: string;
+  messageType: 'success' | 'warning' | 'error';
+  pendingSalesGeneration: ImportResponse | null;
+  salesOverrideReason: string;
+  setSalesOverrideReason: Dispatch<SetStateAction<string>>;
+  promotingSales: boolean;
+  handleSalesPromotion: () => Promise<void>;
+  history: ImportHistoryEntry[];
+  erpReconciliationMonths: string[];
+  erpReconciliationMonth: string;
+  setErpReconciliationMonth: Dispatch<SetStateAction<string>>;
+  erpReconciliationFile: File | null;
+  setErpReconciliationFile: Dispatch<SetStateAction<File | null>>;
+  setErpReconciliationError: Dispatch<SetStateAction<string>>;
+  setErpReconciliationResult: Dispatch<SetStateAction<ErpReconciliationResponse | null>>;
+  erpReconciliationBusy: boolean;
+  handleErpReconciliation: () => Promise<void>;
+  erpReconciliationError: string;
+  erpReconciliationResult: ErpReconciliationResponse | null;
+  promoActualsFile: File | null;
+  setPromoActualsFile: Dispatch<SetStateAction<File | null>>;
+  promoActualsMonth: string;
+  setPromoActualsMonth: Dispatch<SetStateAction<string>>;
+  promoActualsCutoff: string;
+  setPromoActualsCutoff: Dispatch<SetStateAction<string>>;
+  promoActualsUploading: boolean;
+  handlePromoActualsUpload: () => Promise<void>;
+  promoActualsMessage: string;
+  availableYears: string[];
+  selectedYears: string[];
+  toggleYear: (year: string) => void;
+  availableMonthNumbers: string[];
+  selectedMonthNumbers: string[];
+  toggleMonthNumber: (month: string) => void;
+  selectedDays: number[];
+  setSelectedDays: Dispatch<SetStateAction<number[]>>;
+  toggleDay: (day: number) => void;
+  exportMode: ExportMode;
+  handleExportModeChange: (mode: ExportMode) => void;
+  exportDataset: string;
+  handleDatasetChange: (dataset: string) => void;
+  catalog: SettingsCatalog | null;
+  selectedDataset: SettingsDataset | null;
+  exportMonths: string[];
+  includeClosedStores: boolean;
+  setIncludeClosedStores: Dispatch<SetStateAction<boolean>>;
+  isIncentiveProductsExport: boolean;
+  filterOptions: FilterOptions | null;
+  exportFilters: ExportFilters;
+  toggleFilter: (key: keyof ExportFilters, value: string) => void;
+  exportDimensions: string[];
+  setExportDimensions: Dispatch<SetStateAction<string[]>>;
+  exportMetrics: string[];
+  setExportMetrics: Dispatch<SetStateAction<string[]>>;
+  monthlyMetrics: string[];
+  setMonthlyMetrics: Dispatch<SetStateAction<string[]>>;
+  dailyMetrics: string[];
+  setDailyMetrics: Dispatch<SetStateAction<string[]>>;
+  comparisonLevels: string[];
+  setComparisonLevels: Dispatch<SetStateAction<string[]>>;
+  exportStep: ExportStep;
+  setExportStep: Dispatch<SetStateAction<ExportStep>>;
+  exportBusy: boolean;
+  handlePreviewExport: () => Promise<void>;
+  handleDownloadExport: () => Promise<void>;
+  exportMessage: string;
+  preview: ExportPreview | null;
+  setPreview: Dispatch<SetStateAction<ExportPreview | null>>;
+}
+
 function yesterdayInputValue(): string {
   return shiftIsoDate(formatIsoDateInput(), -1);
 }
 
-export function Settings({
+function SettingsView({
   theme,
   setTheme,
-  onImportCompleted,
-}: SettingsProps) {
-  const { user } = useAuth();
-  const canImportSales = canAdministerImports(user?.profile);
-  const canUseExports = canExportReports(user?.profile);
-  const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [salesReplaceConfirmed, setSalesReplaceConfirmed] = useState(false);
-  const [salesCutoff, setSalesCutoff] = useState(yesterdayInputValue);
-  const [pendingSalesGeneration, setPendingSalesGeneration] = useState<ImportResponse | null>(null);
-  const [salesOverrideReason, setSalesOverrideReason] = useState('');
-  const [promotingSales, setPromotingSales] = useState(false);
-  const [promoActualsFile, setPromoActualsFile] = useState<File | null>(null);
-  const [promoActualsMonth, setPromoActualsMonth] = useState(getCurrentYearMonth);
-  const [promoActualsCutoff, setPromoActualsCutoff] = useState(yesterdayInputValue);
-  const [promoActualsUploading, setPromoActualsUploading] = useState(false);
-  const [promoActualsMessage, setPromoActualsMessage] = useState('');
-  const [erpReconciliationFile, setErpReconciliationFile] = useState<File | null>(null);
-  const [erpReconciliationMonth, setErpReconciliationMonth] = useState('');
-  const [erpReconciliationBusy, setErpReconciliationBusy] = useState(false);
-  const [erpReconciliationError, setErpReconciliationError] = useState('');
-  const [erpReconciliationResult, setErpReconciliationResult] = useState<ErpReconciliationResponse | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState<'success' | 'warning' | 'error'>('success');
-  const [section, setSection] = useState<SettingsSection>(
-    canImportSales ? 'imports' : canUseExports ? 'exports' : 'preferences',
-  );
-  const [exportMode, setExportMode] = useState<ExportMode>('table');
-  const [exportDataset, setExportDataset] = useState('agents');
-  const [selectedYears, setSelectedYears] = useState<string[]>([]);
-  const [selectedMonthNumbers, setSelectedMonthNumbers] = useState<string[]>([]);
-  const [selectedDays, setSelectedDays] = useState<number[]>(ALL_DAYS);
-  const [exportDimensions, setExportDimensions] = useState<string[]>([]);
-  const [exportMetrics, setExportMetrics] = useState<string[]>(DEFAULT_EXPORT_METRICS);
-  const [monthlyMetrics, setMonthlyMetrics] = useState<string[]>([]);
-  const [dailyMetrics, setDailyMetrics] = useState<string[]>([]);
-  const [comparisonLevels, setComparisonLevels] = useState<string[]>(DEFAULT_COMPARISON_LEVELS);
-  const [exportFilters, setExportFilters] = useState<ExportFilters>(EMPTY_EXPORT_FILTERS);
-  const [includeClosedStores, setIncludeClosedStores] = useState(false);
-  const [preview, setPreview] = useState<ExportPreview | null>(null);
-  const [exportMessage, setExportMessage] = useState('');
-  const [exportBusy, setExportBusy] = useState(false);
-  const [exportStep, setExportStep] = useState<ExportStep>(1);
-
-  useEffect(() => {
-    if (!canImportSales && section === 'imports') {
-      setSection(canUseExports ? 'exports' : 'preferences');
-    }
-    if (!canUseExports && section === 'exports') {
-      setSection(canImportSales ? 'imports' : 'preferences');
-    }
-  }, [canImportSales, canUseExports, section]);
-
-  useEffect(() => {
-    if (!canImportSales) return;
-    const cached = getCachedView<{ history: ImportHistoryEntry[] }>(CACHE_KEY, SETTINGS_CACHE_TTL_MS);
-    if (cached.value) {
-      setHistory(cached.value.history);
-    }
-
-    getImportHistory()
-      .then((historyData) => {
-        setHistory(historyData);
-        setCachedView(CACHE_KEY, { history: historyData });
-      })
-      .catch(() => {
-        setHistory([]);
-        setMessage('Nu am putut încărca istoricul importurilor.');
-        setMessageType('error');
-      });
-  }, [canImportSales]);
-
-  const erpReconciliationMonths = useMemo(
-    () => Array.from(new Set(
-      history
-        .filter((entry) => entry.status === 'completed')
-        .map((entry) => entry.import_month),
-    )).sort((left, right) => right.localeCompare(left)),
-    [history],
-  );
-
-  useEffect(() => {
-    if (erpReconciliationMonths.length === 0) {
-      setErpReconciliationMonth('');
-      return;
-    }
-    setErpReconciliationMonth((current) => (
-      erpReconciliationMonths.includes(current)
-        ? current
-        : erpReconciliationMonths[0] ?? ''
-    ));
-  }, [erpReconciliationMonths]);
-
-  const canLoadExportData = section === 'exports' && canUseExports;
-  const availableMonthsQuery = useAvailableMonths(Boolean(user) && canLoadExportData);
-  const months = availableMonthsQuery.months;
-  const catalogQuery = useQuery({
-    queryKey: ['settings', 'export-catalog', canUseExports],
-    enabled: canLoadExportData,
-    queryFn: ({ signal }) => getExportCatalog(signal),
-    staleTime: 5 * 60_000,
-    retry: 1,
-  });
-  const catalog = catalogQuery.data ?? null;
-
-  const selectedMonthForFilters = months
-    .filter((month) => selectedYears.includes(month.slice(0, 4)) && selectedMonthNumbers.includes(month.slice(5, 7)))
-    .sort()
-    .at(0) ?? months[0] ?? '';
-  const filterOptionsQuery = useQuery({
-    queryKey: ['settings', 'filter-options', selectedMonthForFilters],
-    enabled: canLoadExportData && Boolean(selectedMonthForFilters),
-    queryFn: ({ signal }) => getFilterOptions(selectedMonthForFilters, signal),
-    staleTime: 5 * 60_000,
-    retry: 1,
-  });
-  const filterOptions: FilterOptions | null = filterOptionsQuery.data ?? null;
-
-  useEffect(() => {
-    if (!catalogQuery.data) return;
-    const defaultDataset = catalogQuery.data.datasets.find((item) => item.key === exportDataset) ?? catalogQuery.data.datasets[0];
-    if (!defaultDataset) return;
-    setExportDataset((current) => catalogQuery.data?.datasets.some((item) => item.key === current) ? current : defaultDataset.key);
-    setExportDimensions((current) => current.length > 0 ? current : defaultDataset.dimensions.map((item) => item.key));
-  }, [catalogQuery.data, exportDataset]);
-
-  useEffect(() => {
-    const firstMonth = months[0];
-    if (!firstMonth) return;
-    setSelectedYears((current) => current.length > 0 ? current : [firstMonth.slice(0, 4)]);
-    setSelectedMonthNumbers((current) => current.length > 0 ? current : [firstMonth.slice(5, 7)]);
-  }, [months]);
-
-  const selectedDataset = useMemo(
-    () => catalog?.datasets.find((item) => item.key === exportDataset) ?? null,
-    [catalog, exportDataset]
-  );
-  const isIncentiveProductsExport = exportMode === 'table' && exportDataset === INCENTIVE_PRODUCTS_DATASET;
-
-  const availableYears = useMemo(
-    () => Array.from(new Set(months.map((month) => month.slice(0, 4)))).sort((a, b) => Number(b) - Number(a)),
-    [months],
-  );
-
-  const availableMonthNumbers = useMemo(
-    () => Array.from(new Set(
-      months
-        .filter((month) => selectedYears.includes(month.slice(0, 4)))
-        .map((month) => month.slice(5, 7)),
-    )).sort(),
-    [months, selectedYears],
-  );
-
-  useEffect(() => {
-    if (availableMonthNumbers.length === 0) return;
-    setSelectedMonthNumbers((current) => {
-      const valid = current.filter((month) => availableMonthNumbers.includes(month));
-      const firstMonthNumber = availableMonthNumbers[0];
-      return valid.length > 0 ? valid : firstMonthNumber ? [firstMonthNumber] : [];
-    });
-  }, [availableMonthNumbers]);
-
-  const exportMonths = useMemo(
-    () => months.filter((month) => (
-      selectedYears.includes(month.slice(0, 4))
-      && selectedMonthNumbers.includes(month.slice(5, 7))
-    )).sort(),
-    [months, selectedMonthNumbers, selectedYears],
-  );
-
-  const exportRequest = useMemo<ExportRequest>(() => {
-    const effectiveDailyMetrics = exportMode === 'daily_comparison'
-      ? (dailyMetrics.length > 0 ? dailyMetrics : DEFAULT_DAILY_COMPARISON_METRICS)
-      : dailyMetrics;
-    return {
-      export_mode: exportMode,
-      dataset: exportDataset,
-      months: exportMonths,
-      dimensions: exportMode === 'table' ? exportDimensions : [],
-      metrics: exportMode === 'table' ? exportMetrics : [],
-      monthly_metrics: exportMode === 'table' ? monthlyMetrics : [],
-      daily_metrics: effectiveDailyMetrics,
-      comparison_levels: exportMode === 'daily_comparison' ? comparisonLevels : [],
-      selected_days: selectedDays,
-      filters: exportFilters,
-      include_closed_stores: includeClosedStores,
-      preview_limit: 100,
-      filename: settingsPresenters.formatExportFilename(exportMode, exportDataset, exportMonths, selectedDays),
-    };
-  }, [
-    comparisonLevels,
-    dailyMetrics,
-    exportDataset,
-    exportDimensions,
-    exportFilters,
-    exportMetrics,
-    exportMode,
-    exportMonths,
-    includeClosedStores,
-    monthlyMetrics,
-    selectedDays,
-  ]);
-
-  const handleUpload = async () => {
-    if (!file || !salesReplaceConfirmed) return;
-    let uploadAccepted = false;
-    try {
-      setUploading(true);
-      setMessage('');
-      setMessageType('success');
-      const initialJob = await uploadSalesFile(file, salesCutoff);
-      uploadAccepted = true;
-      setMessage('Fișier încărcat. Importul rulează în worker.');
-      const outcome = await pollImportJob(initialJob, {
-        intervalMs: IMPORT_POLL_INTERVAL_MS,
-        maxAttempts: IMPORT_POLL_LIMIT,
-        maxConsecutiveErrors: IMPORT_POLL_MAX_CONSECUTIVE_ERRORS,
-        getStatus: getImportJobStatus,
-        onConnectionIssue: () => {
-          setMessageType('warning');
-          setMessage('Conexiune întreruptă temporar. Importul continuă în worker; reconectez automat.');
-        },
-        onConnectionRestored: () => {
-          setMessageType('success');
-          setMessage('Conexiune restabilită. Importul rulează în worker.');
-        },
-      });
-      if (outcome.kind === 'unconfirmed') {
-        setMessageType('warning');
-        setMessage(
-          'Fișierul a fost încărcat, dar statusul final nu poate fi confirmat momentan. '
-          + 'Importul poate continua în worker; reîncarcă pagina și verifică istoricul înainte de a retrimite fișierul.',
-        );
-        return;
-      }
-      const job = outcome.job;
-      if (job.error || !job.result) {
-        if (job.error) throw new Error(job.error);
-        setMessageType('warning');
-        setMessage('Workerul a încheiat jobul, dar rezultatul nu poate fi confirmat. Verifică istoricul importurilor.');
-        return;
-      }
-      const response = job.result;
-      if (response.generation_state === 'validated') {
-        if (!response.generation_token || !response.manifest_sha256 || !response.manifest) {
-          throw new Error('Manifestul generației validate este incomplet.');
-        }
-        setPendingSalesGeneration(response);
-        setSalesOverrideReason('');
-        setMessageType('warning');
-        setMessage(
-          `Generația ${response.import_month} a fost validată; datele live nu s-au schimbat. `
-          + 'Verifică manifestul și promovează explicit.',
-        );
-        setFile(null);
-        setSalesReplaceConfirmed(false);
-        return;
-      }
-      try {
-        const historyData = await getImportHistory();
-        setHistory(historyData);
-        setCachedView(CACHE_KEY, { history: historyData });
-      } catch {
-        // Importul este deja confirmat de worker. Un refresh de istoric esuat
-        // nu trebuie reclasificat drept esec al importului.
-      }
-      onImportCompleted(response.import_month);
-      setErpReconciliationMonth(response.import_month);
-      const parts = [
-        `Import ${response.import_month}: ${response.rows_imported} rânduri importate`,
-      ];
-      if (response.rows_filtered > 0) {
-        parts.push(`${response.rows_filtered} rânduri non-ASM filtrate`);
-      }
-      const coverage = response.coverage_report;
-      if (coverage.active_store_coverage_pct != null) {
-        parts.push(`coverage magazine active ${coverage.active_store_coverage_pct}%`);
-      }
-      if ((coverage.missing_active_store_count ?? 0) > 0) {
-        parts.push(`${coverage.missing_active_store_count} magazine active absente, fără schimbare de stare`);
-      }
-      if (response.is_month_final) {
-        parts.push('Luna a fost marcată ca FINALĂ');
-      } else {
-        parts.push('Import intermediar (lună în curs)');
-      }
-      setMessage(parts.join(' · '));
-      setFile(null);
-      setSalesReplaceConfirmed(false);
-    } catch (error) {
-      const isConfirmedRejection = uploadAccepted || (error instanceof ApiError && error.status < 500);
-      if (!isConfirmedRejection) {
-        setMessage(
-          'Conexiunea s-a întrerupt înainte de confirmare. Fișierul poate fi deja în procesare; '
-          + 'reîncarcă pagina și verifică istoricul înainte de a retrimite.',
-        );
-        setMessageType('warning');
-        return;
-      }
-      const detail = error instanceof Error ? error.message : '';
-      setMessage(
-        detail && !detail.startsWith('API error')
-          ? `Importul a eșuat: ${detail}`
-          : 'Importul a eșuat. Verifică fișierul și încearcă din nou.',
-      );
-      setMessageType('error');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleSalesPromotion = async () => {
-    const pending = pendingSalesGeneration;
-    if (!pending?.generation_token || !pending.manifest_sha256 || !pending.manifest) return;
-    const hasBlockingAnomaly = pending.manifest.anomalies.some((item) => item.blocking);
-    if (hasBlockingAnomaly && salesOverrideReason.trim().length < 10) {
-      setMessageType('error');
-      setMessage('Anomaliile blocante necesită un motiv explicit de minimum 10 caractere.');
-      return;
-    }
-    try {
-      setPromotingSales(true);
-      setMessageType('success');
-      setMessage('Promovarea generației rulează în worker.');
-      const initialJob = await promoteSalesGeneration(
-        pending.snapshot_id,
-        pending.generation_token,
-        pending.manifest_sha256,
-        hasBlockingAnomaly ? salesOverrideReason.trim() : undefined,
-      );
-      const outcome = await pollImportJob(initialJob, {
-        intervalMs: IMPORT_POLL_INTERVAL_MS,
-        maxAttempts: IMPORT_POLL_LIMIT,
-        maxConsecutiveErrors: IMPORT_POLL_MAX_CONSECUTIVE_ERRORS,
-        getStatus: getImportJobStatus,
-      });
-      if (outcome.kind === 'unconfirmed') {
-        setMessageType('warning');
-        setMessage('Promovarea nu poate fi confirmată momentan; verifică istoricul înainte de retry.');
-        return;
-      }
-      const job = outcome.job;
-      if (job.error || !job.result || job.result.generation_state !== 'promoted') {
-        throw new Error(job.error || 'Promovarea nu are un rezultat terminal verificat.');
-      }
-      const response = job.result;
-      try {
-        const historyData = await getImportHistory();
-        setHistory(historyData);
-        setCachedView(CACHE_KEY, { history: historyData });
-      } catch {
-        // Promovarea este deja confirmată de worker.
-      }
-      onImportCompleted(response.import_month);
-      setErpReconciliationMonth(response.import_month);
-      setPendingSalesGeneration(null);
-      setSalesOverrideReason('');
-      setMessageType('success');
-      setMessage(
-        `Import ${response.import_month} promovat: ${response.rows_imported} rânduri · `
-        + `hash business ${response.manifest?.business_sha256.slice(0, 12) ?? 'indisponibil'}.`,
-      );
-    } catch (error) {
-      setMessageType('error');
-      setMessage(settingsPresenters.formatExportError(error, 'Promovarea generației de vânzări a eșuat.'));
-    } finally {
-      setPromotingSales(false);
-    }
-  };
-
-  const handlePromoActualsUpload = async () => {
-    if (!promoActualsFile) return;
-    try {
-      setPromoActualsUploading(true);
-      setPromoActualsMessage('');
-      const result = await uploadPromoActualsFile(
-        promoActualsFile,
-        promoActualsMonth,
-        promoActualsCutoff,
-      );
-      setPromoActualsMessage(
-        `Raport aplicat: ${result.promo_units.toLocaleString('ro-RO')} unități promo, `
-        + `cutoff ${result.cutoff_date}, ${result.updated_promotions} promoții actualizate. `
-        + `Generație ${result.generation_id.slice(0, 12)}.`,
-      );
-      setPromoActualsFile(null);
-    } catch (error) {
-      setPromoActualsMessage(settingsPresenters.formatExportError(error, 'Importul raportului promo a eșuat.'));
-    } finally {
-      setPromoActualsUploading(false);
-    }
-  };
-
-  const handleErpReconciliation = async () => {
-    if (!erpReconciliationFile) return;
-    try {
-      setErpReconciliationBusy(true);
-      setErpReconciliationError('');
-      setErpReconciliationResult(null);
-      const result = await uploadErpReconciliationFile(
-        erpReconciliationFile,
-        erpReconciliationMonth,
-      );
-      setErpReconciliationResult(result);
-    } catch (error) {
-      setErpReconciliationError(
-        settingsPresenters.formatExportError(error, 'Verificarea raportului ERP a eșuat.'),
-      );
-    } finally {
-      setErpReconciliationBusy(false);
-    }
-  };
-
-  const handleDatasetChange = (dataset: string) => {
-    const nextDataset = catalog?.datasets.find((item) => item.key === dataset);
-    setExportDataset(dataset);
-    setPreview(null);
-    if (nextDataset) {
-      setExportDimensions(nextDataset.dimensions.map((item) => item.key));
-    }
-  };
-
-  const handleExportModeChange = (mode: ExportMode) => {
-    setExportMode(mode);
-    setPreview(null);
-    if (mode === 'daily_comparison') {
-      setDailyMetrics((current) => current.length > 0 && current.length <= 4 ? current : DEFAULT_DAILY_COMPARISON_METRICS);
-      setComparisonLevels((current) => current.length > 0 ? current : DEFAULT_COMPARISON_LEVELS);
-    }
-  };
-
+  canImportSales,
+  canUseExports,
+  section,
+  setSection,
+  file,
+  setFile,
+  salesReplaceConfirmed,
+  setSalesReplaceConfirmed,
+  setPendingSalesGeneration,
+  salesCutoff,
+  setSalesCutoff,
+  uploading,
+  handleUpload,
+  message,
+  messageType,
+  pendingSalesGeneration,
+  salesOverrideReason,
+  setSalesOverrideReason,
+  promotingSales,
+  handleSalesPromotion,
+  history,
+  erpReconciliationMonths,
+  erpReconciliationMonth,
+  setErpReconciliationMonth,
+  erpReconciliationFile,
+  setErpReconciliationFile,
+  setErpReconciliationError,
+  setErpReconciliationResult,
+  erpReconciliationBusy,
+  handleErpReconciliation,
+  erpReconciliationError,
+  erpReconciliationResult,
+  promoActualsFile,
+  setPromoActualsFile,
+  promoActualsMonth,
+  setPromoActualsMonth,
+  promoActualsCutoff,
+  setPromoActualsCutoff,
+  promoActualsUploading,
+  handlePromoActualsUpload,
+  promoActualsMessage,
+  availableYears,
+  selectedYears,
+  toggleYear,
+  availableMonthNumbers,
+  selectedMonthNumbers,
+  toggleMonthNumber,
+  selectedDays,
+  setSelectedDays,
+  toggleDay,
+  exportMode,
+  handleExportModeChange,
+  exportDataset,
+  handleDatasetChange,
+  catalog,
+  selectedDataset,
+  exportMonths,
+  includeClosedStores,
+  setIncludeClosedStores,
+  isIncentiveProductsExport,
+  filterOptions,
+  exportFilters,
+  toggleFilter,
+  exportDimensions,
+  setExportDimensions,
+  exportMetrics,
+  setExportMetrics,
+  monthlyMetrics,
+  setMonthlyMetrics,
+  dailyMetrics,
+  setDailyMetrics,
+  comparisonLevels,
+  setComparisonLevels,
+  exportStep,
+  setExportStep,
+  exportBusy,
+  handlePreviewExport,
+  handleDownloadExport,
+  exportMessage,
+  preview,
+  setPreview,
+}: SettingsViewProps) {
   const toggleValue = (values: string[], value: string, minOne = false): string[] => {
     if (values.includes(value)) {
       if (minOne && values.length === 1) return values;
       return values.filter((item) => item !== value);
     }
     return [...values, value];
-  };
-
-  const toggleFilter = (key: keyof ExportFilters, value: string) => {
-    setExportFilters((current) => ({
-      ...current,
-      [key]: toggleValue(current[key], value),
-    }));
-    setPreview(null);
-  };
-
-  const toggleYear = (year: string) => {
-    setSelectedYears((current) => toggleValue(current, year, true).sort());
-    setPreview(null);
-  };
-
-  const toggleMonthNumber = (month: string) => {
-    setSelectedMonthNumbers((current) => toggleValue(current, month, true).sort());
-    setPreview(null);
-  };
-
-  const toggleDay = (day: number) => {
-    setSelectedDays((current) => toggleValue(
-      current.map(String),
-      String(day),
-      true,
-    ).map(Number).sort((left, right) => left - right));
-    setPreview(null);
-  };
-
-  const handlePreviewExport = async () => {
-    try {
-      setExportBusy(true);
-      setExportMessage('');
-      const data = await previewExport(exportRequest);
-      setPreview(data);
-    } catch (error) {
-      setExportMessage(settingsPresenters.formatExportError(error, 'Preview-ul nu a putut fi generat. Verifica selectia.'));
-    } finally {
-      setExportBusy(false);
-    }
-  };
-
-  const handleDownloadExport = async () => {
-    try {
-      setExportBusy(true);
-      setExportMessage('');
-      const blob = await downloadExport(exportRequest);
-      downloadBlob(blob, `${exportRequest.filename || 'export_retail'}.xlsx`);
-    } catch (error) {
-      setExportMessage(settingsPresenters.formatExportError(error, 'Exportul nu a putut fi generat. Verifica selectia.'));
-    } finally {
-      setExportBusy(false);
-    }
   };
 
   return (
@@ -698,14 +384,14 @@ export function Settings({
                   <dt className="text-slate-500">Lună / cutoff</dt>
                   <dd className="text-right font-semibold">{pendingSalesGeneration.import_month} / {pendingSalesGeneration.manifest.cutoff_date}</dd>
                   <dt className="text-slate-500">Rânduri / bonuri</dt>
-                  <dd className="text-right font-semibold">{pendingSalesGeneration.rows_imported.toLocaleString('ro-RO')} / {pendingSalesGeneration.manifest.receipt_count.toLocaleString('ro-RO')}</dd>
+                  <dd className="text-right font-semibold">{pendingSalesGeneration.rows_imported.toLocaleString('ro-RO')} / {(pendingSalesGeneration.manifest.receipt_count ?? 0).toLocaleString('ro-RO')}</dd>
                   <dt className="text-slate-500">Magazin-zile</dt>
-                  <dd className="text-right font-semibold">{pendingSalesGeneration.manifest.site_day_count.toLocaleString('ro-RO')}</dd>
+                  <dd className="text-right font-semibold">{(pendingSalesGeneration.manifest.site_day_count ?? 0).toLocaleString('ro-RO')}</dd>
                   <dt className="text-slate-500">Valoare / cantitate</dt>
-                  <dd className="text-right font-semibold">{Number(pendingSalesGeneration.manifest.total_value).toLocaleString('ro-RO')} RON / {pendingSalesGeneration.manifest.total_quantity.toLocaleString('ro-RO')}</dd>
+                  <dd className="text-right font-semibold">{Number(pendingSalesGeneration.manifest.total_value ?? 0).toLocaleString('ro-RO')} RON / {(pendingSalesGeneration.manifest.total_quantity ?? 0).toLocaleString('ro-RO')}</dd>
                   <dt className="text-slate-500">Hash business</dt>
-                  <dd className="truncate text-right font-mono text-[10px]" title={pendingSalesGeneration.manifest.business_sha256}>
-                    {pendingSalesGeneration.manifest.business_sha256}
+                  <dd className="truncate text-right font-mono text-[10px]" title={pendingSalesGeneration.manifest.business_sha256 ?? undefined}>
+                    {pendingSalesGeneration.manifest.business_sha256 ?? 'indisponibil'}
                   </dd>
                 </dl>
                 {pendingSalesGeneration.manifest.anomalies.length > 0 && (
@@ -1195,5 +881,590 @@ export function Settings({
         </div>
       )}
     </div>
+  );
+}
+
+export function Settings({
+  theme,
+  setTheme,
+  onImportCompleted,
+}: SettingsProps) {
+  const { user } = useAuth();
+  const canImportSales = canAdministerImports(user?.profile);
+  const canUseExports = canExportReports(user?.profile);
+  const [history, setHistory] = useState<ImportHistoryEntry[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [salesReplaceConfirmed, setSalesReplaceConfirmed] = useState(false);
+  const [salesCutoff, setSalesCutoff] = useState(yesterdayInputValue);
+  const [pendingSalesGeneration, setPendingSalesGeneration] = useState<ImportResponse | null>(null);
+  const [salesOverrideReason, setSalesOverrideReason] = useState('');
+  const [promotingSales, setPromotingSales] = useState(false);
+  const [promoActualsFile, setPromoActualsFile] = useState<File | null>(null);
+  const [promoActualsMonth, setPromoActualsMonth] = useState(getCurrentYearMonth);
+  const [promoActualsCutoff, setPromoActualsCutoff] = useState(yesterdayInputValue);
+  const [promoActualsUploading, setPromoActualsUploading] = useState(false);
+  const [promoActualsMessage, setPromoActualsMessage] = useState('');
+  const [erpReconciliationFile, setErpReconciliationFile] = useState<File | null>(null);
+  const [erpReconciliationMonth, setErpReconciliationMonth] = useState('');
+  const [erpReconciliationBusy, setErpReconciliationBusy] = useState(false);
+  const [erpReconciliationError, setErpReconciliationError] = useState('');
+  const [erpReconciliationResult, setErpReconciliationResult] = useState<ErpReconciliationResponse | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'warning' | 'error'>('success');
+  const [section, setSection] = useState<SettingsSection>(
+    canImportSales ? 'imports' : canUseExports ? 'exports' : 'preferences',
+  );
+  const [exportMode, setExportMode] = useState<ExportMode>('table');
+  const [exportDataset, setExportDataset] = useState('agents');
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [selectedMonthNumbers, setSelectedMonthNumbers] = useState<string[]>([]);
+  const [selectedDays, setSelectedDays] = useState<number[]>(ALL_DAYS);
+  const [exportDimensions, setExportDimensions] = useState<string[]>([]);
+  const [exportMetrics, setExportMetrics] = useState<string[]>(DEFAULT_EXPORT_METRICS);
+  const [monthlyMetrics, setMonthlyMetrics] = useState<string[]>([]);
+  const [dailyMetrics, setDailyMetrics] = useState<string[]>([]);
+  const [comparisonLevels, setComparisonLevels] = useState<string[]>(DEFAULT_COMPARISON_LEVELS);
+  const [exportFilters, setExportFilters] = useState<ExportFilters>(EMPTY_EXPORT_FILTERS);
+  const [includeClosedStores, setIncludeClosedStores] = useState(false);
+  const [preview, setPreview] = useState<ExportPreview | null>(null);
+  const [exportMessage, setExportMessage] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportStep, setExportStep] = useState<ExportStep>(1);
+
+  useEffect(() => {
+    if (!canImportSales && section === 'imports') {
+      setSection(canUseExports ? 'exports' : 'preferences');
+    }
+    if (!canUseExports && section === 'exports') {
+      setSection(canImportSales ? 'imports' : 'preferences');
+    }
+  }, [canImportSales, canUseExports, section]);
+
+  useEffect(() => {
+    if (!canImportSales) return;
+    const cached = getCachedView<{ history: ImportHistoryEntry[] }>(CACHE_KEY, SETTINGS_CACHE_TTL_MS);
+    if (cached.value) {
+      setHistory(cached.value.history);
+    }
+
+    getImportHistory()
+      .then((historyData) => {
+        setHistory(historyData);
+        setCachedView(CACHE_KEY, { history: historyData });
+      })
+      .catch(() => {
+        setHistory([]);
+        setMessage('Nu am putut încărca istoricul importurilor.');
+        setMessageType('error');
+      });
+  }, [canImportSales]);
+
+  const erpReconciliationMonths = useMemo(
+    () => Array.from(new Set(
+      history
+        .filter((entry) => entry.status === 'completed')
+        .map((entry) => entry.import_month),
+    )).sort((left, right) => right.localeCompare(left)),
+    [history],
+  );
+
+  useEffect(() => {
+    if (erpReconciliationMonths.length === 0) {
+      setErpReconciliationMonth('');
+      return;
+    }
+    setErpReconciliationMonth((current) => (
+      erpReconciliationMonths.includes(current)
+        ? current
+        : erpReconciliationMonths[0] ?? ''
+    ));
+  }, [erpReconciliationMonths]);
+
+  const canLoadExportData = section === 'exports' && canUseExports;
+  const availableMonthsQuery = useAvailableMonths(Boolean(user) && canLoadExportData);
+  const months = availableMonthsQuery.months;
+  const catalogQuery = useQuery({
+    queryKey: ['settings', 'export-catalog', canUseExports],
+    enabled: canLoadExportData,
+    queryFn: ({ signal }) => getExportCatalog(signal),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const catalog = catalogQuery.data ?? null;
+
+  const selectedMonthForFilters = months
+    .filter((month) => selectedYears.includes(month.slice(0, 4)) && selectedMonthNumbers.includes(month.slice(5, 7)))
+    .sort()
+    .at(0) ?? months[0] ?? '';
+  const filterOptionsQuery = useQuery({
+    queryKey: ['settings', 'filter-options', selectedMonthForFilters],
+    enabled: canLoadExportData && Boolean(selectedMonthForFilters),
+    queryFn: ({ signal }) => getFilterOptions(selectedMonthForFilters, signal),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const filterOptions: FilterOptions | null = filterOptionsQuery.data ?? null;
+
+  useEffect(() => {
+    if (!catalogQuery.data) return;
+    const defaultDataset = catalogQuery.data.datasets.find((item) => item.key === exportDataset) ?? catalogQuery.data.datasets[0];
+    if (!defaultDataset) return;
+    setExportDataset((current) => catalogQuery.data?.datasets.some((item) => item.key === current) ? current : defaultDataset.key);
+    setExportDimensions((current) => current.length > 0 ? current : defaultDataset.dimensions.map((item) => item.key));
+  }, [catalogQuery.data, exportDataset]);
+
+  useEffect(() => {
+    const firstMonth = months[0];
+    if (!firstMonth) return;
+    setSelectedYears((current) => current.length > 0 ? current : [firstMonth.slice(0, 4)]);
+    setSelectedMonthNumbers((current) => current.length > 0 ? current : [firstMonth.slice(5, 7)]);
+  }, [months]);
+
+  const selectedDataset = useMemo(
+    () => catalog?.datasets.find((item) => item.key === exportDataset) ?? null,
+    [catalog, exportDataset]
+  );
+  const isIncentiveProductsExport = exportMode === 'table' && exportDataset === INCENTIVE_PRODUCTS_DATASET;
+
+  const availableYears = useMemo(
+    () => Array.from(new Set(months.map((month) => month.slice(0, 4)))).sort((a, b) => Number(b) - Number(a)),
+    [months],
+  );
+
+  const availableMonthNumbers = useMemo(
+    () => Array.from(new Set(
+      months
+        .filter((month) => selectedYears.includes(month.slice(0, 4)))
+        .map((month) => month.slice(5, 7)),
+    )).sort(),
+    [months, selectedYears],
+  );
+
+  useEffect(() => {
+    if (availableMonthNumbers.length === 0) return;
+    setSelectedMonthNumbers((current) => {
+      const valid = current.filter((month) => availableMonthNumbers.includes(month));
+      const firstMonthNumber = availableMonthNumbers[0];
+      return valid.length > 0 ? valid : firstMonthNumber ? [firstMonthNumber] : [];
+    });
+  }, [availableMonthNumbers]);
+
+  const exportMonths = useMemo(
+    () => months.filter((month) => (
+      selectedYears.includes(month.slice(0, 4))
+      && selectedMonthNumbers.includes(month.slice(5, 7))
+    )).sort(),
+    [months, selectedMonthNumbers, selectedYears],
+  );
+
+  const exportRequest = useMemo<ExportRequest>(() => {
+    const effectiveDailyMetrics = exportMode === 'daily_comparison'
+      ? (dailyMetrics.length > 0 ? dailyMetrics : DEFAULT_DAILY_COMPARISON_METRICS)
+      : dailyMetrics;
+    return {
+      export_mode: exportMode,
+      dataset: exportDataset,
+      months: exportMonths,
+      dimensions: exportMode === 'table' ? exportDimensions : [],
+      metrics: exportMode === 'table' ? exportMetrics : [],
+      monthly_metrics: exportMode === 'table' ? monthlyMetrics : [],
+      daily_metrics: effectiveDailyMetrics,
+      comparison_levels: exportMode === 'daily_comparison' ? comparisonLevels : [],
+      selected_days: selectedDays,
+      filters: exportFilters,
+      include_closed_stores: includeClosedStores,
+      preview_limit: 100,
+      filename: settingsPresenters.formatExportFilename(exportMode, exportDataset, exportMonths, selectedDays),
+    };
+  }, [
+    comparisonLevels,
+    dailyMetrics,
+    exportDataset,
+    exportDimensions,
+    exportFilters,
+    exportMetrics,
+    exportMode,
+    exportMonths,
+    includeClosedStores,
+    monthlyMetrics,
+    selectedDays,
+  ]);
+
+  const handleUpload = async () => {
+    if (!file || !salesReplaceConfirmed) return;
+    let uploadAccepted = false;
+    try {
+      setUploading(true);
+      setMessage('');
+      setMessageType('success');
+      const initialJob = await uploadSalesFile(file, salesCutoff);
+      uploadAccepted = true;
+      setMessage('Fișier încărcat. Importul rulează în worker.');
+      const outcome = await pollImportJob(initialJob, {
+        intervalMs: IMPORT_POLL_INTERVAL_MS,
+        maxAttempts: IMPORT_POLL_LIMIT,
+        maxConsecutiveErrors: IMPORT_POLL_MAX_CONSECUTIVE_ERRORS,
+        getStatus: getImportJobStatus,
+        onConnectionIssue: () => {
+          setMessageType('warning');
+          setMessage('Conexiune întreruptă temporar. Importul continuă în worker; reconectez automat.');
+        },
+        onConnectionRestored: () => {
+          setMessageType('success');
+          setMessage('Conexiune restabilită. Importul rulează în worker.');
+        },
+      });
+      if (outcome.kind === 'unconfirmed') {
+        setMessageType('warning');
+        setMessage(
+          'Fișierul a fost încărcat, dar statusul final nu poate fi confirmat momentan. '
+          + 'Importul poate continua în worker; reîncarcă pagina și verifică istoricul înainte de a retrimite fișierul.',
+        );
+        return;
+      }
+      const job = outcome.job;
+      if (job.error || !job.result) {
+        if (job.error) throw new Error(job.error);
+        setMessageType('warning');
+        setMessage('Workerul a încheiat jobul, dar rezultatul nu poate fi confirmat. Verifică istoricul importurilor.');
+        return;
+      }
+      const response = job.result;
+      if (response.generation_state === 'validated') {
+        if (!response.generation_token || !response.manifest_sha256 || !response.manifest) {
+          throw new Error('Manifestul generației validate este incomplet.');
+        }
+        setPendingSalesGeneration(response);
+        setSalesOverrideReason('');
+        setMessageType('warning');
+        setMessage(
+          `Generația ${response.import_month} a fost validată; datele live nu s-au schimbat. `
+          + 'Verifică manifestul și promovează explicit.',
+        );
+        setFile(null);
+        setSalesReplaceConfirmed(false);
+        return;
+      }
+      try {
+        const historyData = await getImportHistory();
+        setHistory(historyData);
+        setCachedView(CACHE_KEY, { history: historyData });
+      } catch {
+        // Importul este deja confirmat de worker. Un refresh de istoric esuat
+        // nu trebuie reclasificat drept esec al importului.
+      }
+      onImportCompleted(response.import_month);
+      setErpReconciliationMonth(response.import_month);
+      const parts = [
+        `Import ${response.import_month}: ${response.rows_imported} rânduri importate`,
+      ];
+      if (response.rows_filtered > 0) {
+        parts.push(`${response.rows_filtered} rânduri non-ASM filtrate`);
+      }
+      const coverage = response.coverage_report;
+      if (coverage.active_store_coverage_pct != null) {
+        parts.push(`coverage magazine active ${coverage.active_store_coverage_pct}%`);
+      }
+      if ((coverage.missing_active_store_count ?? 0) > 0) {
+        parts.push(`${coverage.missing_active_store_count} magazine active absente, fără schimbare de stare`);
+      }
+      if (response.is_month_final) {
+        parts.push('Luna a fost marcată ca FINALĂ');
+      } else {
+        parts.push('Import intermediar (lună în curs)');
+      }
+      setMessage(parts.join(' · '));
+      setFile(null);
+      setSalesReplaceConfirmed(false);
+    } catch (error) {
+      const isConfirmedRejection = uploadAccepted || (error instanceof ApiError && error.status < 500);
+      if (!isConfirmedRejection) {
+        setMessage(
+          'Conexiunea s-a întrerupt înainte de confirmare. Fișierul poate fi deja în procesare; '
+          + 'reîncarcă pagina și verifică istoricul înainte de a retrimite.',
+        );
+        setMessageType('warning');
+        return;
+      }
+      const detail = error instanceof Error ? error.message : '';
+      setMessage(
+        detail && !detail.startsWith('API error')
+          ? `Importul a eșuat: ${detail}`
+          : 'Importul a eșuat. Verifică fișierul și încearcă din nou.',
+      );
+      setMessageType('error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSalesPromotion = async () => {
+    const pending = pendingSalesGeneration;
+    if (!pending?.generation_token || !pending.manifest_sha256 || !pending.manifest) return;
+    const hasBlockingAnomaly = pending.manifest.anomalies.some((item) => item.blocking);
+    if (hasBlockingAnomaly && salesOverrideReason.trim().length < 10) {
+      setMessageType('error');
+      setMessage('Anomaliile blocante necesită un motiv explicit de minimum 10 caractere.');
+      return;
+    }
+    try {
+      setPromotingSales(true);
+      setMessageType('success');
+      setMessage('Promovarea generației rulează în worker.');
+      const initialJob = await promoteSalesGeneration(
+        pending.snapshot_id,
+        pending.generation_token,
+        pending.manifest_sha256,
+        hasBlockingAnomaly ? salesOverrideReason.trim() : undefined,
+      );
+      const outcome = await pollImportJob(initialJob, {
+        intervalMs: IMPORT_POLL_INTERVAL_MS,
+        maxAttempts: IMPORT_POLL_LIMIT,
+        maxConsecutiveErrors: IMPORT_POLL_MAX_CONSECUTIVE_ERRORS,
+        getStatus: getImportJobStatus,
+      });
+      if (outcome.kind === 'unconfirmed') {
+        setMessageType('warning');
+        setMessage('Promovarea nu poate fi confirmată momentan; verifică istoricul înainte de retry.');
+        return;
+      }
+      const job = outcome.job;
+      if (job.error || !job.result || job.result.generation_state !== 'promoted') {
+        throw new Error(job.error || 'Promovarea nu are un rezultat terminal verificat.');
+      }
+      const response = job.result;
+      try {
+        const historyData = await getImportHistory();
+        setHistory(historyData);
+        setCachedView(CACHE_KEY, { history: historyData });
+      } catch {
+        // Promovarea este deja confirmată de worker.
+      }
+      onImportCompleted(response.import_month);
+      setErpReconciliationMonth(response.import_month);
+      setPendingSalesGeneration(null);
+      setSalesOverrideReason('');
+      setMessageType('success');
+      setMessage(
+        `Import ${response.import_month} promovat: ${response.rows_imported} rânduri · `
+        + `hash business ${response.manifest?.business_sha256?.slice(0, 12) ?? 'indisponibil'}.`,
+      );
+    } catch (error) {
+      setMessageType('error');
+      setMessage(settingsPresenters.formatExportError(error, 'Promovarea generației de vânzări a eșuat.'));
+    } finally {
+      setPromotingSales(false);
+    }
+  };
+
+  const handlePromoActualsUpload = async () => {
+    if (!promoActualsFile) return;
+    try {
+      setPromoActualsUploading(true);
+      setPromoActualsMessage('');
+      const result = await uploadPromoActualsFile(
+        promoActualsFile,
+        promoActualsMonth,
+        promoActualsCutoff,
+      );
+      setPromoActualsMessage(
+        `Raport aplicat: ${result.promo_units.toLocaleString('ro-RO')} unități promo, `
+        + `cutoff ${result.cutoff_date}, ${result.updated_promotions} promoții actualizate. `
+        + `Generație ${result.generation_id.slice(0, 12)}.`,
+      );
+      setPromoActualsFile(null);
+    } catch (error) {
+      setPromoActualsMessage(settingsPresenters.formatExportError(error, 'Importul raportului promo a eșuat.'));
+    } finally {
+      setPromoActualsUploading(false);
+    }
+  };
+
+  const handleErpReconciliation = async () => {
+    if (!erpReconciliationFile) return;
+    try {
+      setErpReconciliationBusy(true);
+      setErpReconciliationError('');
+      setErpReconciliationResult(null);
+      const result = await uploadErpReconciliationFile(
+        erpReconciliationFile,
+        erpReconciliationMonth,
+      );
+      setErpReconciliationResult(result);
+    } catch (error) {
+      setErpReconciliationError(
+        settingsPresenters.formatExportError(error, 'Verificarea raportului ERP a eșuat.'),
+      );
+    } finally {
+      setErpReconciliationBusy(false);
+    }
+  };
+
+  const handleDatasetChange = (dataset: string) => {
+    const nextDataset = catalog?.datasets.find((item) => item.key === dataset);
+    setExportDataset(dataset);
+    setPreview(null);
+    if (nextDataset) {
+      setExportDimensions(nextDataset.dimensions.map((item) => item.key));
+    }
+  };
+
+  const handleExportModeChange = (mode: ExportMode) => {
+    setExportMode(mode);
+    setPreview(null);
+    if (mode === 'daily_comparison') {
+      setDailyMetrics((current) => current.length > 0 && current.length <= 4 ? current : DEFAULT_DAILY_COMPARISON_METRICS);
+      setComparisonLevels((current) => current.length > 0 ? current : DEFAULT_COMPARISON_LEVELS);
+    }
+  };
+
+  const toggleValue = (values: string[], value: string, minOne = false): string[] => {
+    if (values.includes(value)) {
+      if (minOne && values.length === 1) return values;
+      return values.filter((item) => item !== value);
+    }
+    return [...values, value];
+  };
+
+  const toggleFilter = (key: keyof ExportFilters, value: string) => {
+    setExportFilters((current) => ({
+      ...current,
+      [key]: toggleValue(current[key], value),
+    }));
+    setPreview(null);
+  };
+
+  const toggleYear = (year: string) => {
+    setSelectedYears((current) => toggleValue(current, year, true).sort());
+    setPreview(null);
+  };
+
+  const toggleMonthNumber = (month: string) => {
+    setSelectedMonthNumbers((current) => toggleValue(current, month, true).sort());
+    setPreview(null);
+  };
+
+  const toggleDay = (day: number) => {
+    setSelectedDays((current) => toggleValue(
+      current.map(String),
+      String(day),
+      true,
+    ).map(Number).sort((left, right) => left - right));
+    setPreview(null);
+  };
+
+  const handlePreviewExport = async () => {
+    try {
+      setExportBusy(true);
+      setExportMessage('');
+      const data = await previewExport(exportRequest);
+      setPreview(data);
+    } catch (error) {
+      setExportMessage(settingsPresenters.formatExportError(error, 'Preview-ul nu a putut fi generat. Verifica selectia.'));
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const handleDownloadExport = async () => {
+    try {
+      setExportBusy(true);
+      setExportMessage('');
+      const blob = await downloadExport(exportRequest);
+      downloadBlob(blob, `${exportRequest.filename || 'export_retail'}.xlsx`);
+    } catch (error) {
+      setExportMessage(settingsPresenters.formatExportError(error, 'Exportul nu a putut fi generat. Verifica selectia.'));
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  return (
+    <SettingsView
+      theme={theme}
+      setTheme={setTheme}
+      canImportSales={canImportSales}
+      canUseExports={canUseExports}
+      section={section}
+      setSection={setSection}
+      file={file}
+      setFile={setFile}
+      salesReplaceConfirmed={salesReplaceConfirmed}
+      setSalesReplaceConfirmed={setSalesReplaceConfirmed}
+      setPendingSalesGeneration={setPendingSalesGeneration}
+      salesCutoff={salesCutoff}
+      setSalesCutoff={setSalesCutoff}
+      uploading={uploading}
+      handleUpload={handleUpload}
+      message={message}
+      messageType={messageType}
+      pendingSalesGeneration={pendingSalesGeneration}
+      salesOverrideReason={salesOverrideReason}
+      setSalesOverrideReason={setSalesOverrideReason}
+      promotingSales={promotingSales}
+      handleSalesPromotion={handleSalesPromotion}
+      history={history}
+      erpReconciliationMonths={erpReconciliationMonths}
+      erpReconciliationMonth={erpReconciliationMonth}
+      setErpReconciliationMonth={setErpReconciliationMonth}
+      erpReconciliationFile={erpReconciliationFile}
+      setErpReconciliationFile={setErpReconciliationFile}
+      setErpReconciliationError={setErpReconciliationError}
+      setErpReconciliationResult={setErpReconciliationResult}
+      erpReconciliationBusy={erpReconciliationBusy}
+      handleErpReconciliation={handleErpReconciliation}
+      erpReconciliationError={erpReconciliationError}
+      erpReconciliationResult={erpReconciliationResult}
+      promoActualsFile={promoActualsFile}
+      setPromoActualsFile={setPromoActualsFile}
+      promoActualsMonth={promoActualsMonth}
+      setPromoActualsMonth={setPromoActualsMonth}
+      promoActualsCutoff={promoActualsCutoff}
+      setPromoActualsCutoff={setPromoActualsCutoff}
+      promoActualsUploading={promoActualsUploading}
+      handlePromoActualsUpload={handlePromoActualsUpload}
+      promoActualsMessage={promoActualsMessage}
+      availableYears={availableYears}
+      selectedYears={selectedYears}
+      toggleYear={toggleYear}
+      availableMonthNumbers={availableMonthNumbers}
+      selectedMonthNumbers={selectedMonthNumbers}
+      toggleMonthNumber={toggleMonthNumber}
+      selectedDays={selectedDays}
+      setSelectedDays={setSelectedDays}
+      toggleDay={toggleDay}
+      exportMode={exportMode}
+      handleExportModeChange={handleExportModeChange}
+      exportDataset={exportDataset}
+      handleDatasetChange={handleDatasetChange}
+      catalog={catalog}
+      selectedDataset={selectedDataset}
+      exportMonths={exportMonths}
+      includeClosedStores={includeClosedStores}
+      setIncludeClosedStores={setIncludeClosedStores}
+      isIncentiveProductsExport={isIncentiveProductsExport}
+      filterOptions={filterOptions}
+      exportFilters={exportFilters}
+      toggleFilter={toggleFilter}
+      exportDimensions={exportDimensions}
+      setExportDimensions={setExportDimensions}
+      exportMetrics={exportMetrics}
+      setExportMetrics={setExportMetrics}
+      monthlyMetrics={monthlyMetrics}
+      setMonthlyMetrics={setMonthlyMetrics}
+      dailyMetrics={dailyMetrics}
+      setDailyMetrics={setDailyMetrics}
+      comparisonLevels={comparisonLevels}
+      setComparisonLevels={setComparisonLevels}
+      exportStep={exportStep}
+      setExportStep={setExportStep}
+      exportBusy={exportBusy}
+      handlePreviewExport={handlePreviewExport}
+      handleDownloadExport={handleDownloadExport}
+      exportMessage={exportMessage}
+      preview={preview}
+      setPreview={setPreview}
+    />
   );
 }

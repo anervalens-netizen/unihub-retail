@@ -145,6 +145,20 @@ class HrAsmSalaryZone(BaseModel):
     commission: float
 
 
+class HrAsmSalaryHomogeneity(BaseModel):
+    islands_count: int
+    qualifying_count: int
+    qualifying_pct: float
+    min_pct: float
+    eligible: bool
+    commission: float
+
+
+class HrAsmSalaryAccFocus(BaseModel):
+    pct: float | None = None
+    commission: float
+
+
 class HrAsmSalaryBreakdown(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -156,8 +170,8 @@ class HrAsmSalaryBreakdown(BaseModel):
     zone: HrAsmSalaryZone
     islands: list[HrAsmSalaryIsland] = Field(default_factory=list)
     islands_commission: float
-    homogeneity: dict[str, object]
-    acc_focus: dict[str, object]
+    homogeneity: HrAsmSalaryHomogeneity
+    acc_focus: HrAsmSalaryAccFocus
     total_salary: float
 
 

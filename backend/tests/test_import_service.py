@@ -174,7 +174,7 @@ async def test_import_history_maps_repository_rows() -> None:
     assert len(result) == 1
     assert result[0].id == 12
     assert result[0].status == "completed"
-    assert result[0].coverage_report == {
+    assert result[0].coverage_report.model_dump(exclude_none=True) == {
         "stores_present_count": 1,
         "stores_missing_count": 0,
     }

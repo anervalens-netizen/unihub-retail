@@ -93,6 +93,33 @@ class PnlMonthlyItemResponse(BaseModel):
     ebit: float
 
 
+class PnlStoreResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    company: str
+    site_code: str
+    source_site_code: str
+    location: str
+    regional: str | None = None
+    has_estimates: bool
+    revenue: float
+    cogs: float
+    gross_margin: float
+    operating_costs: float
+    ebitda: float
+    depreciation: float
+    ebit: float
+
+
+class PnlReconciliationResponse(BaseModel):
+    month: str
+    pnl_revenue: float
+    retail_sales_gross: float
+    retail_sales_net: float
+    difference_to_net: float
+    pnl_to_net_sales_pct: float | None = None
+
+
 class PnlOverviewResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -105,8 +132,8 @@ class PnlOverviewResponse(BaseModel):
     summary: PnlMetricsResponse
     monthly: list[PnlMonthlyItemResponse] = Field(default_factory=list)
     categories: dict[str, float] = Field(default_factory=dict)
-    stores: list[dict[str, object]] = Field(default_factory=list)
-    reconciliation: list[dict[str, object]] = Field(default_factory=list)
+    stores: list[PnlStoreResponse] = Field(default_factory=list)
+    reconciliation: list[PnlReconciliationResponse] = Field(default_factory=list)
 
 
 def can_access_store_pnl(claims: AuthClaims) -> bool:

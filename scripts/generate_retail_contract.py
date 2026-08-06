@@ -57,7 +57,13 @@ def ts_type(schema: Any) -> str:
     if "enum" in schema:
         values = [json.dumps(item, ensure_ascii=False) for item in schema["enum"]]
         return " | ".join(values) or "never"
+    if schema.get("type") == "array" and isinstance(schema.get("prefixItems"), list):
+        return f"[{', '.join(ts_type(item) for item in schema['prefixItems'])}]"
     if schema.get("type") == "array":
+        prefix_items = schema.get("prefixItems")
+        if isinstance(prefix_items, list):
+            item_types = [ts_type(item) for item in prefix_items]
+            return f"[{', '.join(item_types)}]"
         return f"Array<{ts_type(schema.get('items', {}))}>"
     if schema.get("type") == "object" or "properties" in schema:
         additional = schema.get("additionalProperties")

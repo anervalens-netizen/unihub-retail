@@ -1,24 +1,24 @@
 import { generatedGet } from './generated/client';
-import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryResponse } from './types';
+import type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryResponse } from './generated/runtime-types';
 
-export interface CampaignQuery {
+export type CampaignQuery = {
   month: string;
   firma?: string;
   regional?: string;
   asm?: string;
   site_code?: string;
   agent?: string;
-}
+};
 
 export async function getCampaignSnapshot(query: CampaignQuery, signal?: AbortSignal): Promise<CampaignSnapshot> {
-  return generatedGet('get_campaign_overview_api_campaigns_overview_get', { params: query, signal }) as unknown as CampaignSnapshot;
+  return await generatedGet('get_campaign_overview_api_campaigns_overview_get', { params: query, signal }) as CampaignSnapshot;
 }
 
 export async function getFocusHistory(
   query: CampaignQuery & { months_back?: number },
   signal?: AbortSignal,
 ): Promise<FocusHistoryResponse> {
-  return generatedGet('get_focus_history_api_campaigns_history_get', { params: query, signal }) as unknown as FocusHistoryResponse;
+  return await generatedGet('get_focus_history_api_campaigns_history_get', { params: query, signal }) as FocusHistoryResponse;
 }
 
 export async function getPromotionsIncentives(
@@ -37,7 +37,7 @@ export async function getPromotionsIncentives(
   },
   signal?: AbortSignal,
 ): Promise<CampaignsPromotionsResponse> {
-  return generatedGet('get_promotions_incentives_api_campaigns_promotions_incentives_get', {
+  return await generatedGet('get_promotions_incentives_api_campaigns_promotions_incentives_get', {
     params: {
       start_date: startDate,
       end_date: endDate,
@@ -52,5 +52,7 @@ export async function getPromotionsIncentives(
       ...(filters?.include_closed_stores !== undefined && { include_closed_stores: filters.include_closed_stores }),
     },
     signal,
-  }) as unknown as CampaignsPromotionsResponse;
+  }) as CampaignsPromotionsResponse;
 }
+
+export type { CampaignSnapshot, CampaignsPromotionsResponse, FocusHistoryResponse };

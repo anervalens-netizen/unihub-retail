@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'f847dbfd8029e331803f5cca023b7dde449312e11873de617933482130664921' as const;
+export const RETAIL_OPENAPI_SHA256 = 'f97f73f17a1d18c7c0403e068947dfa9b86251b63b72d4098ef01afe019ff262' as const;
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -945,18 +945,32 @@ export interface RetailHrAsmPerformanceItem {
   "total_visits": number;
 }
 
+export interface RetailHrAsmSalaryAccFocus {
+  "commission": number;
+  "pct"?: number | null;
+}
+
 export interface RetailHrAsmSalaryBreakdown {
-  "acc_focus": Record<string, unknown>;
+  "acc_focus": RetailHrAsmSalaryAccFocus;
   "asm": string;
   "fixed_salary": number;
   "forecast_factor": number;
-  "homogeneity": Record<string, unknown>;
+  "homogeneity": RetailHrAsmSalaryHomogeneity;
   "is_forecast": boolean;
   "islands"?: Array<RetailHrAsmSalaryIsland>;
   "islands_commission": number;
   "month": string;
   "total_salary": number;
   "zone": RetailHrAsmSalaryZone;
+}
+
+export interface RetailHrAsmSalaryHomogeneity {
+  "commission": number;
+  "eligible": boolean;
+  "islands_count": number;
+  "min_pct": number;
+  "qualifying_count": number;
+  "qualifying_pct": number;
 }
 
 export interface RetailHrAsmSalaryIsland {
@@ -1014,8 +1028,22 @@ export interface RetailHrManagerStoreItem {
   "site_code": string;
 }
 
+export interface RetailImportCoverageReport {
+  "active_store_count_before"?: number | null;
+  "active_store_coverage_pct"?: number | null;
+  "company_count"?: number | null;
+  "incoming_store_count"?: number | null;
+  "metadata_change_count"?: number | null;
+  "missing_active_store_count"?: number | null;
+  "missing_prior_store_count"?: number | null;
+  "new_store_count"?: number | null;
+  "prior_snapshot_coverage_pct"?: number | null;
+  "prior_snapshot_store_count"?: number | null;
+  "store_activity_writes"?: number | null;
+}
+
 export interface RetailImportHistoryEntry {
-  "coverage_report"?: Record<string, unknown>;
+  "coverage_report"?: RetailImportCoverageReport;
   "created_at": string;
   "duration_seconds"?: number | null;
   "error_message": string | null;
@@ -1039,13 +1067,13 @@ export interface RetailImportJobStatus {
 
 export interface RetailImportResponse {
   "agent_count": number;
-  "coverage_report"?: Record<string, unknown>;
+  "coverage_report"?: RetailImportCoverageReport;
   "filename": string;
   "generation_state"?: "validated" | "promoted";
   "generation_token"?: string | null;
   "import_month": string;
   "is_month_final": boolean;
-  "manifest"?: Record<string, unknown> | null;
+  "manifest"?: RetailSalesGenerationManifest | null;
   "manifest_sha256"?: string | null;
   "rows_filtered": number;
   "rows_imported": number;
@@ -1258,17 +1286,26 @@ export interface RetailPnlOverviewResponse {
   "company"?: string | null;
   "end_month": string;
   "monthly"?: Array<RetailPnlMonthlyItemResponse>;
-  "reconciliation"?: Array<Record<string, unknown>>;
+  "reconciliation"?: Array<RetailPnlReconciliationResponse>;
   "regional"?: string | null;
   "site_code"?: string | null;
   "site_company"?: string | null;
   "start_month": string;
-  "stores"?: Array<Record<string, unknown>>;
+  "stores"?: Array<RetailPnlStoreResponse>;
   "summary": RetailPnlMetricsResponse;
 }
 
 export interface RetailPnlPermissionsResponse {
   "can_view": boolean;
+}
+
+export interface RetailPnlReconciliationResponse {
+  "difference_to_net": number;
+  "month": string;
+  "pnl_revenue": number;
+  "pnl_to_net_sales_pct"?: number | null;
+  "retail_sales_gross": number;
+  "retail_sales_net": number;
 }
 
 export interface RetailPnlRegionsResponse {
@@ -1281,6 +1318,22 @@ export interface RetailPnlStoreOptionResponse {
   "regional"?: string | null;
   "scope_company"?: string | null;
   "site_code": string;
+}
+
+export interface RetailPnlStoreResponse {
+  "cogs": number;
+  "company": string;
+  "depreciation": number;
+  "ebit": number;
+  "ebitda": number;
+  "gross_margin": number;
+  "has_estimates": boolean;
+  "location": string;
+  "operating_costs": number;
+  "regional"?: string | null;
+  "revenue": number;
+  "site_code": string;
+  "source_site_code": string;
 }
 
 export interface RetailPnlStoresResponse {
@@ -1484,6 +1537,12 @@ export interface RetailSalaryAgentsSummaryResponse {
   "total": number;
 }
 
+export interface RetailSalaryCompanyTotal {
+  "company"?: string | null;
+  "name"?: string | null;
+  "total": number;
+}
+
 export interface RetailSalaryComparisonItem {
   "agent_count": number;
   "avg_agent_count": number;
@@ -1526,6 +1585,17 @@ export interface RetailSalaryHistoryResponse {
   "total": number;
 }
 
+export interface RetailSalaryOverviewResponse {
+  "agent_count"?: number | null;
+  "agent_month_count"?: number | null;
+  "avg_agent_month_count"?: number | null;
+  "avg_salary"?: number | null;
+  "by_company"?: Array<RetailSalaryCompanyTotal>;
+  "months_span"?: [number, number, number, number] | null;
+  "record_count"?: number | null;
+  "total"?: number | null;
+}
+
 export interface RetailSalaryRecordPublic {
   "company_name": string;
   "full_name": string;
@@ -1556,6 +1626,24 @@ export interface RetailSalaryTrendPoint {
   "month": string;
   "total_salary": number;
   "total_sales": number;
+}
+
+export interface RetailSalesGenerationAnomaly {
+  "blocking": boolean;
+  "code": string;
+  "count"?: number | null;
+  "message": string;
+}
+
+export interface RetailSalesGenerationManifest {
+  "anomalies"?: Array<RetailSalesGenerationAnomaly>;
+  "business_sha256"?: string | null;
+  "cutoff_date"?: string | null;
+  "generation_state"?: "validated" | "promoted" | null;
+  "receipt_count"?: number | null;
+  "site_day_count"?: number | null;
+  "total_quantity"?: number | null;
+  "total_value"?: string | null;
 }
 
 export interface RetailSalesGenerationPromotionRequest {
@@ -2658,7 +2746,7 @@ export interface RetailOperationResponses {
   }
 
   'salarii_overview_salarii_overview_get': {
-    '200': unknown;
+    '200': RetailSalaryOverviewResponse;
     '422': RetailHTTPValidationError;
   }
 

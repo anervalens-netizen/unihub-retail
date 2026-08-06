@@ -43,7 +43,7 @@ class SalaryOverviewResponse(BaseModel):
     agent_month_count: int | None = None
     avg_agent_month_count: int | None = None
     avg_salary: float | None = None
-    months_span: list[int] | None = None
+    months_span: tuple[int, int, int, int] | None = None
 
 
 class SalaryEvolutionPoint(BaseModel):
@@ -104,7 +104,11 @@ async def get_identity_salarii_service() -> SalariiService:
     return SalariiService(SalariiRepository(pool), key)
 
 
-@router.get("/overview")
+@router.get(
+    "/overview",
+    response_model=SalaryOverviewResponse,
+    response_model_exclude_unset=True,
+)
 async def salarii_overview(
     company_name: str | None = Query(None),
     site_code: str | None = Query(None),

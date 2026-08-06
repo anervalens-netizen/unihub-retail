@@ -126,6 +126,7 @@ export const MOCK_PROMOTIONS_RESPONSE: CampaignsPromotionsResponse = {
   promo_impact: 0,
   promo_qualifying_bons: 0,
   promo_discounted_units: 0,
+  promo_discount_value: 0,
   promo_active_stores: 0,
   promo_active_agents: 0,
   incentive_title: '',

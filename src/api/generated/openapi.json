@@ -4820,13 +4820,35 @@
         "title": "HrAsmPerformanceItem",
         "type": "object"
       },
+      "HrAsmSalaryAccFocus": {
+        "properties": {
+          "commission": {
+            "title": "Commission",
+            "type": "number"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          }
+        },
+        "required": [
+          "commission"
+        ],
+        "title": "HrAsmSalaryAccFocus",
+        "type": "object"
+      },
       "HrAsmSalaryBreakdown": {
         "additionalProperties": true,
         "properties": {
           "acc_focus": {
-            "additionalProperties": true,
-            "title": "Acc Focus",
-            "type": "object"
+            "$ref": "#/components/schemas/HrAsmSalaryAccFocus"
           },
           "asm": {
             "title": "Asm",
@@ -4841,9 +4863,7 @@
             "type": "number"
           },
           "homogeneity": {
-            "additionalProperties": true,
-            "title": "Homogeneity",
-            "type": "object"
+            "$ref": "#/components/schemas/HrAsmSalaryHomogeneity"
           },
           "is_forecast": {
             "title": "Is Forecast",
@@ -4885,6 +4905,44 @@
           "total_salary"
         ],
         "title": "HrAsmSalaryBreakdown",
+        "type": "object"
+      },
+      "HrAsmSalaryHomogeneity": {
+        "properties": {
+          "commission": {
+            "title": "Commission",
+            "type": "number"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "islands_count": {
+            "title": "Islands Count",
+            "type": "integer"
+          },
+          "min_pct": {
+            "title": "Min Pct",
+            "type": "number"
+          },
+          "qualifying_count": {
+            "title": "Qualifying Count",
+            "type": "integer"
+          },
+          "qualifying_pct": {
+            "title": "Qualifying Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "islands_count",
+          "qualifying_count",
+          "qualifying_pct",
+          "min_pct",
+          "eligible",
+          "commission"
+        ],
+        "title": "HrAsmSalaryHomogeneity",
         "type": "object"
       },
       "HrAsmSalaryIsland": {
@@ -5205,12 +5263,138 @@
         "title": "HrManagerStoreItem",
         "type": "object"
       },
+      "ImportCoverageReport": {
+        "additionalProperties": true,
+        "properties": {
+          "active_store_count_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Store Count Before"
+          },
+          "active_store_coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Store Coverage Pct"
+          },
+          "company_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Count"
+          },
+          "incoming_store_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoming Store Count"
+          },
+          "metadata_change_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Change Count"
+          },
+          "missing_active_store_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Active Store Count"
+          },
+          "missing_prior_store_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Prior Store Count"
+          },
+          "new_store_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Store Count"
+          },
+          "prior_snapshot_coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prior Snapshot Coverage Pct"
+          },
+          "prior_snapshot_store_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prior Snapshot Store Count"
+          },
+          "store_activity_writes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Store Activity Writes"
+          }
+        },
+        "title": "ImportCoverageReport",
+        "type": "object"
+      },
       "ImportHistoryEntry": {
         "properties": {
           "coverage_report": {
-            "additionalProperties": true,
-            "title": "Coverage Report",
-            "type": "object"
+            "$ref": "#/components/schemas/ImportCoverageReport"
           },
           "created_at": {
             "format": "date-time",
@@ -5376,9 +5560,7 @@
             "type": "integer"
           },
           "coverage_report": {
-            "additionalProperties": true,
-            "title": "Coverage Report",
-            "type": "object"
+            "$ref": "#/components/schemas/ImportCoverageReport"
           },
           "filename": {
             "title": "Filename",
@@ -5417,14 +5599,12 @@
           "manifest": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/SalesGenerationManifest"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Manifest"
+            ]
           },
           "manifest_sha256": {
             "anyOf": [
@@ -6575,8 +6755,7 @@
           },
           "reconciliation": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/PnlReconciliationResponse"
             },
             "title": "Reconciliation",
             "type": "array"
@@ -6620,8 +6799,7 @@
           },
           "stores": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/PnlStoreResponse"
             },
             "title": "Stores",
             "type": "array"
@@ -6649,6 +6827,50 @@
           "can_view"
         ],
         "title": "PnlPermissionsResponse",
+        "type": "object"
+      },
+      "PnlReconciliationResponse": {
+        "properties": {
+          "difference_to_net": {
+            "title": "Difference To Net",
+            "type": "number"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "pnl_revenue": {
+            "title": "Pnl Revenue",
+            "type": "number"
+          },
+          "pnl_to_net_sales_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pnl To Net Sales Pct"
+          },
+          "retail_sales_gross": {
+            "title": "Retail Sales Gross",
+            "type": "number"
+          },
+          "retail_sales_net": {
+            "title": "Retail Sales Net",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "pnl_revenue",
+          "retail_sales_gross",
+          "retail_sales_net",
+          "difference_to_net"
+        ],
+        "title": "PnlReconciliationResponse",
         "type": "object"
       },
       "PnlRegionsResponse": {
@@ -6711,6 +6933,86 @@
           "location"
         ],
         "title": "PnlStoreOptionResponse",
+        "type": "object"
+      },
+      "PnlStoreResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "cogs": {
+            "title": "Cogs",
+            "type": "number"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "depreciation": {
+            "title": "Depreciation",
+            "type": "number"
+          },
+          "ebit": {
+            "title": "Ebit",
+            "type": "number"
+          },
+          "ebitda": {
+            "title": "Ebitda",
+            "type": "number"
+          },
+          "gross_margin": {
+            "title": "Gross Margin",
+            "type": "number"
+          },
+          "has_estimates": {
+            "title": "Has Estimates",
+            "type": "boolean"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "operating_costs": {
+            "title": "Operating Costs",
+            "type": "number"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
+          },
+          "revenue": {
+            "title": "Revenue",
+            "type": "number"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "source_site_code": {
+            "title": "Source Site Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company",
+          "site_code",
+          "source_site_code",
+          "location",
+          "has_estimates",
+          "revenue",
+          "cogs",
+          "gross_margin",
+          "operating_costs",
+          "ebitda",
+          "depreciation",
+          "ebit"
+        ],
+        "title": "PnlStoreResponse",
         "type": "object"
       },
       "PnlStoresResponse": {
@@ -7810,6 +8112,42 @@
         "title": "SalaryAgentsSummaryResponse",
         "type": "object"
       },
+      "SalaryCompanyTotal": {
+        "additionalProperties": true,
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "SalaryCompanyTotal",
+        "type": "object"
+      },
       "SalaryComparisonItem": {
         "additionalProperties": true,
         "properties": {
@@ -8023,6 +8361,113 @@
         "title": "SalaryHistoryResponse",
         "type": "object"
       },
+      "SalaryOverviewResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "agent_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Count"
+          },
+          "agent_month_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Month Count"
+          },
+          "avg_agent_month_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Agent Month Count"
+          },
+          "avg_salary": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Salary"
+          },
+          "by_company": {
+            "items": {
+              "$ref": "#/components/schemas/SalaryCompanyTotal"
+            },
+            "title": "By Company",
+            "type": "array"
+          },
+          "months_span": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Span"
+          },
+          "record_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Count"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "title": "SalaryOverviewResponse",
+        "type": "object"
+      },
       "SalaryRecordPublic": {
         "additionalProperties": false,
         "properties": {
@@ -8182,6 +8627,140 @@
           "avg_salary"
         ],
         "title": "SalaryTrendPoint",
+        "type": "object"
+      },
+      "SalesGenerationAnomaly": {
+        "additionalProperties": true,
+        "properties": {
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "blocking",
+          "message"
+        ],
+        "title": "SalesGenerationAnomaly",
+        "type": "object"
+      },
+      "SalesGenerationManifest": {
+        "additionalProperties": true,
+        "properties": {
+          "anomalies": {
+            "items": {
+              "$ref": "#/components/schemas/SalesGenerationAnomaly"
+            },
+            "title": "Anomalies",
+            "type": "array"
+          },
+          "business_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Sha256"
+          },
+          "cutoff_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cutoff Date"
+          },
+          "generation_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "validated",
+                  "promoted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation State"
+          },
+          "receipt_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Count"
+          },
+          "site_day_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Day Count"
+          },
+          "total_quantity": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Quantity"
+          },
+          "total_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Value"
+          }
+        },
+        "title": "SalesGenerationManifest",
         "type": "object"
       },
       "SalesGenerationPromotionRequest": {
@@ -18499,7 +19078,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SalaryOverviewResponse"
+                }
               }
             },
             "description": "Successful Response"

@@ -127,6 +127,42 @@ class FilterOptions(BaseModel):
     agenti: list[AgentOption]
 
 
+class ImportCoverageReport(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    incoming_store_count: int | None = None
+    company_count: int | None = None
+    active_store_count_before: int | None = None
+    prior_snapshot_store_count: int | None = None
+    active_store_coverage_pct: float | None = None
+    prior_snapshot_coverage_pct: float | None = None
+    missing_active_store_count: int | None = None
+    missing_prior_store_count: int | None = None
+    new_store_count: int | None = None
+    metadata_change_count: int | None = None
+    store_activity_writes: int | None = None
+
+class SalesGenerationAnomaly(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    code: str
+    blocking: bool
+    message: str
+    count: int | None = None
+
+
+class SalesGenerationManifest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    cutoff_date: date | None = None
+    receipt_count: NonNegativeInt | None = None
+    total_value: str | None = None
+    total_quantity: NonNegativeInt | None = None
+    business_sha256: str | None = None
+    site_day_count: NonNegativeInt | None = None
+    anomalies: list[SalesGenerationAnomaly] = Field(default_factory=list)
+    generation_state: Literal["validated", "promoted"] | None = None
+
 class ImportHistoryEntry(BaseModel):
     id: int
     import_month: MonthStr
@@ -137,7 +173,7 @@ class ImportHistoryEntry(BaseModel):
     rows_imported: NonNegativeInt | None
     status: ImportSnapshotStatus
     error_message: str | None
-    coverage_report: dict[str, Any] = Field(default_factory=dict)
+    coverage_report: ImportCoverageReport = Field(default_factory=ImportCoverageReport)
     created_at: datetime
     finished_at: datetime | None = None
     duration_seconds: float | None = Field(default=None, ge=0)
@@ -153,11 +189,11 @@ class ImportResponse(BaseModel):
     snapshot_id: NonNegativeInt
     filename: str
     is_month_final: bool
-    coverage_report: dict[str, Any] = Field(default_factory=dict)
+    coverage_report: ImportCoverageReport = Field(default_factory=ImportCoverageReport)
     generation_state: Literal["validated", "promoted"] = "promoted"
     generation_token: str | None = Field(default=None, pattern=r"^[0-9a-f-]{36}$")
     manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    manifest: dict[str, Any] | None = None
+    manifest: SalesGenerationManifest | None = None
 
 
 class SalesGenerationPromotionRequest(BaseModel):

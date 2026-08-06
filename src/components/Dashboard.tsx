@@ -2,6 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { getPerformanceDetail, MAX_DASHBOARD_BATCH_MONTHS } from '../api/dashboard';
 import type {
   AgentStat,
+  DashboardSummary,
+  PeriodComparisonPayload,
   PerformanceDetailResponse,
   RegionalStat,
   StoreStat,
@@ -28,6 +30,7 @@ import {
 import type { BreakdownColumn } from './dashboard/BreakdownTable';
 import { CurrentDashboard } from './dashboard/CurrentDashboard';
 import { HistoryDashboard } from './dashboard/HistoryDashboard';
+import type { HistoryPointView } from './dashboard/HistoryDashboard';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
 import * as dashboardPresenters from '../features/dashboard/presenters';
@@ -116,6 +119,106 @@ function PromoMetric({ qty, discount }: { qty: number; discount: number }) {
       </span>
     </span>
   );
+}
+
+interface DashboardViewProps {
+  activeSection: DashboardSection;
+  agents: AgentStat[];
+  agentSort: { key: AgentSortKey; direction: 'asc' | 'desc' };
+  availableYears: number[];
+  brandMixChartData: Array<{ brand: string; sales_total: number; share_pct: number }>;
+  canViewSalaries: boolean;
+  comparisonDeltas: ReturnType<typeof dashboardPresenters['aggregateDashboardDetails']> extends never ? never : {
+    previousSales: number;
+    previousSalesPct: number | null;
+    previousReceipts: number;
+    previousReceiptsPct: number | null;
+    previousQuantity: number;
+    previousQuantityPct: number | null;
+    yearSales: number;
+    yearSalesPct: number | null;
+    yearReceipts: number;
+    yearReceiptsPct: number | null;
+    yearQuantity: number;
+    yearQuantityPct: number | null;
+  } | null;
+  currentHistoryChartData: Array<{ month: string; sales: number; target: number; progress: number; isForecast: boolean }>;
+  currentHistoryLoading: boolean;
+  currentMode: 'overview' | 'forecast';
+  currentMonth: string;
+  currentStatusLabel: string;
+  categoryMixChartData: Array<{ category: string; sales_total: number; quantity_total: number; share_pct: number }>;
+  dailyChartData: Array<{ day: string; sales: number | null; qty: number | null; receipts: number | null; sales_last_year: number | null; sales_forecast: number | null }>;
+  draftHistorySelectionLabel: string;
+  draftSelectedHistoryMonths: string[];
+  error: string | null;
+  filters: AppFilters;
+  filterScopeLabel: string;
+  focusSubcategoryChartData: Array<{ category: string; quantity_total: number; share_pct: number }>;
+  handleApplyHistoryMonths: () => void;
+  handleApplyHistoryPreset: (count: number) => void;
+  handleHistoryDropdownToggle: () => void;
+  handleSortAgents: (key: AgentSortKey) => void;
+  handleSortHistoryAgents: (key: AgentSortKey) => void;
+  handleSortHistoryRegionals: (key: RegionalSortKey) => void;
+  handleSortHistoryStores: (key: StoreSortKey) => void;
+  handleSortRegionals: (key: RegionalSortKey) => void;
+  handleSortStores: (key: StoreSortKey) => void;
+  handleToggleHistoryMonth: (month: string) => void;
+  historyAgentSort: { key: AgentSortKey; direction: 'asc' | 'desc' };
+  historyAgents: AgentStat[];
+  historyBrandMixChartData: Array<{ brand: string; sales_total: number; share_pct: number }>;
+  historyCategoryMixChartData: Array<{ category: string; sales_total: number; quantity_total: number; share_pct: number }>;
+  historyDailyChartData: Array<{ day: string; sales: number; qty: number; receipts: number }>;
+  historyError: string | null;
+  historyFocusSubcategoryChartData: Array<{ category: string; quantity_total: number; share_pct: number }>;
+  historyLoading: boolean;
+  historyMonthDropdownOpen: boolean;
+  historyMonthDropdownRef: React.RefObject<HTMLDetailsElement | null>;
+  historyReceiptBucketChartData: Array<{ bucket: string; receipt_count: number; share_pct: number }>;
+  historyRegionalSort: { key: RegionalSortKey; direction: 'asc' | 'desc' };
+  historyRegionals: RegionalStat[];
+  historySelectionLabel: string;
+  historySelectionSlug: string;
+  historyStoreSort: { key: StoreSortKey; direction: 'asc' | 'desc' };
+  historyStores: StoreStat[];
+  historyStatusLabel: string;
+  historySummary: DashboardSummary | null;
+  historyYearFilter: number | null;
+  includeClosedStores: boolean;
+  kpiChartData: Array<{ month: string; value: number }>;
+  kpiMetric: 'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts';
+  loading: boolean;
+  months: string[];
+  onClosePerformance: (selection: PerformanceSelection | null) => void;
+  onCurrentModeChange: (mode: 'overview' | 'forecast') => void;
+  onHistoryYearFilterChange: (year: number | null) => void;
+  onIncludeClosedStoresChange: (value: boolean) => void;
+  onKpiMetricChange: (metric: 'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts') => void;
+  onRetryCurrent: () => void;
+  onRetryHistory: () => void;
+  onSectionChange: (section: DashboardSection) => void;
+  openPerformanceDetail: (selection: PerformanceSelection) => void;
+  performanceDetail: PerformanceDetailResponse | null;
+  performanceError: string;
+  performanceLoading: boolean;
+  performanceSelection: PerformanceSelection | null;
+  periodComparison: PeriodComparisonPayload | null;
+  receiptBucketChartData: Array<{ bucket: string; receipt_count: number; share_pct: number }>;
+  regionals: RegionalStat[];
+  regionalSort: { key: RegionalSortKey; direction: 'asc' | 'desc' };
+  selectedHistoryPoint: HistoryPointView | null;
+  sortedAgents: AgentStat[];
+  sortedHistoryAgents: AgentStat[];
+  sortedHistoryRegionals: RegionalStat[];
+  sortedHistoryStores: StoreStat[];
+  sortedRegionals: RegionalStat[];
+  sortedStores: StoreStat[];
+  storeSort: { key: StoreSortKey; direction: 'asc' | 'desc' };
+  stores: StoreStat[];
+  summary: DashboardSummary | null;
+  yearHistoryChartData: Array<{ label: string; sales: number; target: number; progress: number; isAggregate: boolean }>;
+  yearHistoryLoading: boolean;
 }
 
 const CATEGORY_SHORT: Record<string, string> = {
@@ -878,13 +981,186 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
 
   const filterScopeLabel = useMemo(() => describeFilterScope(filters), [filters]);
 
-  const regionalColumnsVisible = CURRENT_REGIONAL_COLUMNS;
-  const storeColumnsVisible = CURRENT_STORE_COLUMNS;
-  const agentColumnsVisible = CURRENT_AGENT_COLUMNS;
   const openPerformanceDetail = (selection: PerformanceSelection) => {
     setPerformanceSelection(selection);
   };
 
+  return (
+    <DashboardView
+      activeSection={activeSection}
+      agents={agents}
+      agentSort={agentSort}
+      availableYears={availableYears}
+      brandMixChartData={brandMixChartData}
+      canViewSalaries={canViewSalaries}
+      comparisonDeltas={comparisonDeltas}
+      currentHistoryChartData={currentHistoryChartData}
+      currentHistoryLoading={currentHistoryLoading}
+      currentMode={currentMode}
+      currentMonth={currentMonth}
+      currentStatusLabel={currentStatusLabel}
+      categoryMixChartData={categoryMixChartData}
+      dailyChartData={dailyChartData}
+      draftHistorySelectionLabel={draftHistorySelectionLabel}
+      draftSelectedHistoryMonths={draftSelectedHistoryMonths}
+      error={error}
+      filters={filters}
+      filterScopeLabel={filterScopeLabel}
+      focusSubcategoryChartData={focusSubcategoryChartData}
+      handleApplyHistoryMonths={handleApplyHistoryMonths}
+      handleApplyHistoryPreset={handleApplyHistoryPreset}
+      handleHistoryDropdownToggle={handleHistoryDropdownToggle}
+      handleSortAgents={handleSortAgents}
+      handleSortHistoryAgents={handleSortHistoryAgents}
+      handleSortHistoryRegionals={handleSortHistoryRegionals}
+      handleSortHistoryStores={handleSortHistoryStores}
+      handleSortRegionals={handleSortRegionals}
+      handleSortStores={handleSortStores}
+      handleToggleHistoryMonth={handleToggleHistoryMonth}
+      historyAgentSort={historyAgentSort}
+      historyAgents={historyAgents}
+      historyBrandMixChartData={historyBrandMixChartData}
+      historyCategoryMixChartData={historyCategoryMixChartData}
+      historyDailyChartData={historyDailyChartData}
+      historyError={historyError}
+      historyFocusSubcategoryChartData={historyFocusSubcategoryChartData}
+      historyLoading={historyLoading}
+      historyMonthDropdownOpen={historyMonthDropdownOpen}
+      historyMonthDropdownRef={historyMonthDropdownRef}
+      historyReceiptBucketChartData={historyReceiptBucketChartData}
+      historyRegionalSort={historyRegionalSort}
+      historyRegionals={historyRegionals}
+      historySelectionLabel={historySelectionLabel}
+      historySelectionSlug={historySelectionSlug}
+      historyStoreSort={historyStoreSort}
+      historyStores={historyStores}
+      historyStatusLabel={historyStatusLabel}
+      historySummary={historySummary}
+      historyYearFilter={historyYearFilter}
+      includeClosedStores={includeClosedStores}
+      kpiChartData={kpiChartData}
+      kpiMetric={kpiMetric}
+      loading={loading}
+      months={months}
+      openPerformanceDetail={openPerformanceDetail}
+      onClosePerformance={(selection) => setPerformanceSelection(selection)}
+      onCurrentModeChange={setCurrentMode}
+      onHistoryYearFilterChange={setHistoryYearFilter}
+      onIncludeClosedStoresChange={setIncludeClosedStores}
+      onKpiMetricChange={setKpiMetric}
+      onRetryCurrent={refetchCurrentData}
+      onRetryHistory={refetchHistoryData}
+      onSectionChange={setActiveSection}
+      performanceDetail={performanceDetail}
+      performanceError={performanceError}
+      performanceLoading={performanceLoading}
+      performanceSelection={performanceSelection}
+      periodComparison={periodComparison}
+      receiptBucketChartData={receiptBucketChartData}
+      regionals={regionals}
+      regionalSort={regionalSort}
+      selectedHistoryPoint={selectedHistoryPoint}
+      sortedAgents={sortedAgents}
+      sortedHistoryAgents={sortedHistoryAgents}
+      sortedHistoryRegionals={sortedHistoryRegionals}
+      sortedHistoryStores={sortedHistoryStores}
+      sortedRegionals={sortedRegionals}
+      sortedStores={sortedStores}
+      storeSort={storeSort}
+      stores={stores}
+      summary={summary}
+      yearHistoryChartData={yearHistoryChartData}
+      yearHistoryLoading={yearHistoryLoading}
+    />
+  );
+}
+
+function DashboardView({
+  activeSection,
+  agents,
+  agentSort,
+  availableYears,
+  brandMixChartData,
+  canViewSalaries,
+  comparisonDeltas,
+  currentHistoryChartData,
+  currentHistoryLoading,
+  currentMode,
+  currentMonth,
+  currentStatusLabel,
+  categoryMixChartData,
+  dailyChartData,
+  draftHistorySelectionLabel,
+  draftSelectedHistoryMonths,
+  error,
+  filters,
+  filterScopeLabel,
+  focusSubcategoryChartData,
+  handleApplyHistoryMonths,
+  handleApplyHistoryPreset,
+  handleHistoryDropdownToggle,
+  handleSortAgents,
+  handleSortHistoryAgents,
+  handleSortHistoryRegionals,
+  handleSortHistoryStores,
+  handleSortRegionals,
+  handleSortStores,
+  handleToggleHistoryMonth,
+  historyAgentSort,
+  historyAgents,
+  historyBrandMixChartData,
+  historyCategoryMixChartData,
+  historyDailyChartData,
+  historyError,
+  historyFocusSubcategoryChartData,
+  historyLoading,
+  historyMonthDropdownOpen,
+  historyMonthDropdownRef,
+  historyReceiptBucketChartData,
+  historyRegionalSort,
+  historyRegionals,
+  historySelectionLabel,
+  historySelectionSlug,
+  historyStoreSort,
+  historyStores,
+  historyStatusLabel,
+  historySummary,
+  historyYearFilter,
+  includeClosedStores,
+  kpiChartData,
+  kpiMetric,
+  loading,
+  months,
+  openPerformanceDetail,
+  storeSort,
+  yearHistoryLoading,
+  onClosePerformance,
+  onCurrentModeChange: setCurrentMode,
+  onHistoryYearFilterChange: setHistoryYearFilter,
+  onIncludeClosedStoresChange: setIncludeClosedStores,
+  onKpiMetricChange: setKpiMetric,
+  onRetryCurrent: refetchCurrentData,
+  onRetryHistory: refetchHistoryData,
+  onSectionChange: setActiveSection,
+  performanceDetail,
+  performanceError,
+  performanceLoading,
+  performanceSelection,
+  periodComparison,
+  receiptBucketChartData,
+  regionals,
+  regionalSort,
+  selectedHistoryPoint,
+  sortedAgents,
+  sortedHistoryAgents,
+  sortedHistoryRegionals,
+  sortedHistoryStores,
+  sortedRegionals,
+  sortedStores,
+  stores,
+  summary,
+  yearHistoryChartData
+}: DashboardViewProps) {
   return (
     <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-3 lg:pb-6 xl:px-8">
       <PageHeader
@@ -930,17 +1206,17 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
           filterScopeLabel={filterScopeLabel}
           regionals={regionals}
           sortedRegionals={sortedRegionals}
-          regionalColumns={regionalBreakdownColumns(regionalColumnsVisible, openPerformanceDetail)}
+          regionalColumns={regionalBreakdownColumns(CURRENT_REGIONAL_COLUMNS, openPerformanceDetail)}
           regionalSort={regionalSort}
           onSortRegionals={handleSortRegionals}
           stores={stores}
           sortedStores={sortedStores}
-          storeColumns={storeBreakdownColumns(storeColumnsVisible, openPerformanceDetail)}
+          storeColumns={storeBreakdownColumns(CURRENT_STORE_COLUMNS, openPerformanceDetail)}
           storeSort={storeSort}
           onSortStores={handleSortStores}
           agents={agents}
           sortedAgents={sortedAgents}
-          agentColumns={agentBreakdownColumns(agentColumnsVisible, openPerformanceDetail)}
+          agentColumns={agentBreakdownColumns(CURRENT_AGENT_COLUMNS, openPerformanceDetail)}
           agentSort={agentSort}
           onSortAgents={handleSortAgents}
         />
@@ -1005,7 +1281,7 @@ export function Dashboard({ currentMonth, months, filters, initialSection = 'cur
         loading={performanceLoading}
         error={performanceError}
         canViewSalaries={canViewSalaries}
-        onClose={() => setPerformanceSelection(null)}
+        onClose={() => onClosePerformance(null)}
       />
     </div>
   );

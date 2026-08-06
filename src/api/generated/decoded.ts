@@ -4,7 +4,8 @@ import { RETAIL_DECIMAL_KEYS } from './contracts';
 export type DecodeRetail<T> =
   T extends RetailDecimal ? number :
   T extends Blob ? T :
-  T extends Array<infer Item> ? Array<DecodeRetail<Item>> :
+  T extends readonly unknown[] ?
+    number extends T['length'] ? Array<DecodeRetail<T[number]>> : { [Key in keyof T]: DecodeRetail<T[Key]> } :
   T extends object ? { [Key in keyof T]: DecodeRetail<T[Key]> } :
   T;
 
