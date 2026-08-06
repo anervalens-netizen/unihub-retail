@@ -84,20 +84,20 @@ Constatări reconfirmate în codul curent:
 | R-04 | DONE | Bootstrap recuperabil, cache stale și retry fără reload |
 | R-05 | DONE | Harness Vitest DOM și teste pentru bootstrap/sezonabilitate/status |
 | R-06 | DONE | Strict global pe toate fișierele non-Grile |
-| R-07 | PARTIAL | Facade-uri feature și boundary-uri extrase; hotspoturile vizuale mari încă cer lot separat |
+| R-07 | PARTIAL | Feature presenters/model boundaries conectate pentru Dashboard, Target, Campanii, Settings, Agents și AI; decompoziția completă a containerelor vizuale rămâne lot separat |
 | R-08 | DONE | Niciun emitter/listener `unihub:navigate` rămas |
 | R-09 | DONE | Benchmark RSS, writer write-only bounded și worker complex izolat cu spawn |
 | R-10 | DONE | Parsare Excel single-pass în importurile afectate și metrici de resurse |
 | R-11 | DONE | Snapshot repeatable-read Campanii și pool eliberat înainte de agregarea CPU |
 | R-12 | DONE | Decimal/rotunjire HALF_UP și alocare exactă la cent în Campanii/Target |
-| R-13 | PARTIAL | OpenAPI offline + contracte generate + drift gate; migrarea tuturor tipurilor locale continuă |
+| R-13 | PARTIAL | OpenAPI offline + client/rute generate folosite de filtre și exporturi + drift gate; migrarea tuturor tipurilor locale continuă |
 | R-14 | DONE | Settings query keys/cache și efecte separate pentru catalog/luni/filtre |
 | R-15 | satisfăcut | Lot 7: numai revalidare exact-SHA; nu se reconstruiește |
 | R-16 | DONE | Bundle budget ratcheted pe raw/gzip/precache |
-| R-17 | PARTIAL | Scheduler, batch și performance boundaries extrase; facade-ul încă include orchestrarea legacy |
-| R-18 | PARTIAL | Target package facade + allocation/calculation boundary; extragerile rămase continuă |
+| R-17 | DONE | Scheduler, batch, performance, history și orchestration boundaries extrase; facade-ul public rămâne stabil |
+| R-18 | DONE | Target package are context, rules, profitability, proposal, allocation, scenarios, editing, finalization, warnings și serialization boundaries; facade-ul și CAS/revision rămân stabile |
 | R-19 | DONE | Writer boundary + benchmark + worker complex separat, RSS/size raportate părintelui |
-| R-20 | PARTIAL | Campanii package facade + money boundary; restul submodulelor de domeniu continuă |
+| R-20 | DONE | Campanii are range, loader, context, promotions, incentives, aggregation, money, response și metrics boundaries; pool snapshot și statusurile publice rămân neschimbate |
 
 ## 4.1 Implementare curentă și dovezi
 
@@ -105,23 +105,29 @@ Implementarea curentă este verificată local pe `dell-standby`; candidații
 `035f81ca4d79be307d5d8c336963d5a8958acc87`,
 `97e96d651d15d918351763e60e211a29f65dd8cb`,
 `500e0aaec7b89d0df78a9aca7e36ec12970096f8` și
-`a6c602f2fa4e53ddec4e5a6ad59a5431756539c3` sunt sincronizați și deployați pe
-primary. Dovezi deja obținute:
+`a6c602f2fa4e53ddec4e5a6ad59a5431756539c3`,
+`d73de2ed770562359219ee21f89fb4257bbff0a7` și
+`4b94583027211ba6b525a8e2ffe20d1ceed44983` sunt sincronizați pe `origin/main`,
+iar ultimul SHA este deployat pe primary. Dovezi curente:
 
 - `npm run typecheck`, `npm run typecheck:strict`, `npm run lint`: verde;
-- `npm run test`: `39` fișiere, `261` teste verzi;
+- `npm run test -- --run`: `41` fișiere, `264` teste verzi;
 - contract drift: `b4781a979672b05a03ac21699386d22e743664263d7e9896d085196973d466ca`;
 - bundle ratchet: precache gzip `1,589,311` bytes, fără depășire;
 - export benchmark fresh-process: `50k x 20`, `33.815s`, peak RSS `138,018,816` bytes;
 - writer/exports țintit: `33` teste verzi; Dashboard țintit: `49` teste verzi, `2` skip;
-- Target țintit: `81` teste verzi, `2` skip; mypy pe modulele schimbate verde;
-- full backend local: `1506` verzi, `127` skip; `36` teste DB/Valkey sunt protejate de
+- Target/Campanii/Dashboard țintit după ultimele boundary-uri: `68` teste verzi, `2` skip;
+  Campanii complet țintit: `14` teste verzi; mypy pe `35` module schimbate verde;
+- full backend local înainte de re-rularea fixului final: `1491` verzi, `128` skip;
+  testele DB/Valkey sunt protejate de
   guardul `UNIHUB_TEST_DATABASE=1` și nu au fost executate pe baza shared/producție.
+- Smoke primary după ultimul deploy: backend/worker `active`, `/health` și `/readyz`
+  `200`, fără erori backend în ultimele 2 minute.
 
-R-07, R-13, R-17 și R-18 rămân explicit parțiale; R-20 are acum facade,
-date/money boundaries și formatare frontend extrase, dar nu se revendică
-închiderea globală a planului înaintea extragerilor și migrării de contract
-specificate în loturile 2, 5 și 6.
+R-07 și R-13 rămân explicit parțiale: mai sunt necesare decompoziția completă a
+containerelor vizuale mari și migrarea tuturor tipurilor locale către contractul
+generat. R-17, R-18 și R-20 sunt închise pe boundary-urile cerute, cu facade
+publice și teste existente păstrate.
 
 Nicio recomandare nu este omisă. Sunt două adaptări justificate:
 
