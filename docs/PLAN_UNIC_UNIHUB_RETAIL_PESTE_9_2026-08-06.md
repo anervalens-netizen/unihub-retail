@@ -84,7 +84,7 @@ Constatări reconfirmate în codul curent:
 | R-04 | DONE | Bootstrap recuperabil, cache stale și retry fără reload |
 | R-05 | DONE | Harness Vitest DOM și teste pentru bootstrap/sezonabilitate/status |
 | R-06 | DONE | Strict global pe toate fișierele non-Grile |
-| R-07 | PARTIAL | Feature presenters/model boundaries conectate pentru Dashboard, Target, Campanii, Settings, Agents și AI; decompoziția completă a containerelor vizuale rămâne lot separat |
+| R-07 | PARTIAL | Feature presenters/model boundaries conectate pentru Dashboard, Target, Campanii, Settings, Agents și AI; Dashboard aggregation presenter este acum scos din componentă, dar decompoziția completă a containerelor vizuale rămâne lot separat |
 | R-08 | DONE | Niciun emitter/listener `unihub:navigate` rămas |
 | R-09 | DONE | Benchmark RSS, writer write-only bounded și worker complex izolat cu spawn |
 | R-10 | DONE | Parsare Excel single-pass în importurile afectate și metrici de resurse |
@@ -107,8 +107,10 @@ Implementarea curentă este verificată local pe `dell-standby`; candidații
 `500e0aaec7b89d0df78a9aca7e36ec12970096f8` și
 `a6c602f2fa4e53ddec4e5a6ad59a5431756539c3`,
 `d73de2ed770562359219ee21f89fb4257bbff0a7` și
-`4b94583027211ba6b525a8e2ffe20d1ceed44983` sunt sincronizați pe `origin/main`,
-iar ultimul SHA este deployat pe primary. Dovezi curente:
+`4b94583027211ba6b525a8e2ffe20d1ceed44983`,
+`26c67c697d16ca00a754871c64440d16bee0f46d` și
+`fc5fb24aa13a2a0391a17e60185bdf144b632420` sunt sincronizați pe `origin/main`,
+iar ultimul SHA este build-uit și deployat pe primary. Dovezi curente:
 
 - `npm run typecheck`, `npm run typecheck:strict`, `npm run lint`: verde;
 - `npm run test -- --run`: `41` fișiere, `264` teste verzi;
