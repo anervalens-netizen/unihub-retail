@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  # Local Dell verification is the normal gate. Dispatch once only for a
-  # hosted final artifact when deployment or release evidence requires it.
+  # Local verification is the normal gate. Dispatch once on main for the
+  # immutable release artifact, using the isolated repo-scoped Dell runner.
   workflow_dispatch:
 
 concurrency:
@@ -15,41 +15,40 @@ permissions:
 jobs:
   runner-isolation:
     name: runner-isolation
-    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 5
     steps:
-      - name: Prove PR runner isolation
+      - name: Prove trusted Dell runner isolation
         env:
-          EXPECTED_RUNNER_ENVIRONMENT: github-hosted
+          EXPECTED_RUNNER_ENVIRONMENT: self-hosted
+          EXPECTED_RUNNER_NAME: dell-retail-build
           BLOCKED_TIMESFM_PEER: 100.74.73.114
         run: |
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = "$EXPECTED_RUNNER_ENVIRONMENT"
-          test "$RUNNER_NAME" != "unihub-server-runner"
-          test ! -e /opt/Mobiup/unihub-retail/.env
-          test ! -e /opt/Mobiup/ops/runners/retail
+          test "$RUNNER_NAME" = "$EXPECTED_RUNNER_NAME"
+          test "$(hostname)" = "dell-standby"
+          test ! -e /run/dell-compute/quiesced
+          test ! -e /var/lib/dell-standby/ACTIVE
+          test ! -r /opt/Mobiup/unihub-retail/.env
+          test ! -r /opt/Mobiup/.ssh/id_ed25519_mobiup_primary_admin
+          test ! -r /home/andrei/.ssh/id_ed25519
           test ! -e /storage/backups
           test ! -e /run/tailscale/tailscaled.sock
-          if ip link show tailscale0 >/dev/null 2>&1; then
-            echo "Unexpected Tailscale interface on PR runner" >&2
-            exit 1
-          fi
           if curl --silent --show-error --noproxy '*' \
             --connect-timeout 2 --max-time 4 \
             "http://$BLOCKED_TIMESFM_PEER:8000/" >/dev/null 2>&1; then
-            echo "PR runner unexpectedly reached the private TimesFM peer" >&2
+            echo "Build runner unexpectedly reached the private TimesFM peer" >&2
             exit 1
           fi
-          if test -S /var/run/docker.sock; then
-            docker_name="$(docker info --format '{{.Name}}' 2>/dev/null || true)"
-            test "$docker_name" != "unihub-server"
-            test "$docker_name" != "unihub-server-runner"
-          fi
+          test -S /var/run/docker.sock
+          test "$(docker info --format '{{.Name}}')" = "dell-standby"
 
   backend-check:
     name: backend-check
     needs: runner-isolation
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 30
     defaults:
       run:
@@ -242,7 +241,7 @@ jobs:
   frontend-check:
     name: frontend-check
     needs: runner-isolation
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 25
     env:
       VITE_GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
@@ -286,7 +285,7 @@ jobs:
         run: node scripts/check_bundle_budget.mjs
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Browser and accessibility tests
         run: npm run test:e2e

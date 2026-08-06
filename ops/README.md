@@ -54,6 +54,16 @@ reconcilierea salary live; aceste mutații rămân porți separate.
 ## Artifactul CI manual
 
 Pentru un release formal, pornește manual workflowul `CI` doar de pe `main`.
+Workflowul rulează exclusiv pe runnerul repo-scoped Dell
+`dell-retail-build`, cu etichetele `dell-compute`, `unihub-build` și
+`unihub-retail-build`; runnerul de producție `unihub-retail-deploy` rămâne
+rezervat workflowului de deploy. Serviciul build este
+`actions.runner.anervalens-netizen-unihub-retail.dell-retail-build.service`,
+iar hardening-ul versionat se instalează din
+`ops/systemd/unihub-retail-build-runner.conf`. Runnerul trebuie să fie online,
+Dell să rămână nefenced pentru compute și gate-ul `runner-isolation` să treacă
+înainte de orice job de test.
+
 După toate verificările, el rulează
 `ops/build-retail-release-artifact.sh` pentru exact `GITHUB_SHA` al runului și
 publică trei fișiere: `SOURCE_SHA`, `SHA256SUMS` și
