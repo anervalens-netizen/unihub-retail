@@ -70,13 +70,14 @@ def ts_type(schema: Any) -> str:
         if additional is not None:
             return f"Record<string, {ts_type(additional) if isinstance(additional, dict) else 'unknown'}>"
         return "Record<string, unknown>"
+    schema_type = schema.get("type")
     return {
         "string": "string",
         "integer": "number",
         "number": "number",
         "boolean": "boolean",
         "null": "null",
-    }.get(schema.get("type"), "unknown")
+    }.get(schema_type if isinstance(schema_type, str) else "", "unknown")
 
 
 def operation_id(method: str, path: str, operation: dict[str, Any]) -> str:

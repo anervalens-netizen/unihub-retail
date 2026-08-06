@@ -144,6 +144,7 @@ async def test_sales_recovery_decodes_persisted_json_payloads(
     assert result.status == "complete"
     assert result.result is not None
     assert result.result.coverage_report.model_dump(exclude_none=True) == {"stores_present_count": 3}
+    assert result.result.manifest is not None
     assert result.result.manifest.model_dump(exclude_none=True) == {
         "anomalies": [],
         "rows_filtered": 2,

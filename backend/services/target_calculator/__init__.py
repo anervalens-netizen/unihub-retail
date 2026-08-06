@@ -37,6 +37,10 @@ from services.target_rule_registry import (
     validate_store_exception_scope,
     validate_target_rule_set,
 )
+from services.target_calculator.calculations import (
+    MONEY as CALCULATION_MONEY,
+    TargetBudgetInfeasibleError,
+)
 
 MONEY = Decimal("0.01")
 DEFAULT_MIN_FLOOR = Decimal("35000")
@@ -274,18 +278,6 @@ def weighted_available(components: dict[str, tuple[Decimal | None, Decimal]]) ->
     )
 
 
-class TargetBudgetInfeasibleError(ValueError):
-    def __init__(self, requested_total: Decimal, floor_total: Decimal, cap_total: Decimal | None = None):
-        self.requested_total = money(requested_total)
-        self.floor_total = money(floor_total)
-        self.cap_total = money(cap_total) if cap_total is not None else None
-        if self.requested_total < self.floor_total:
-            detail = "Bugetul este sub suma floor-urilor"
-        else:
-            detail = "Bugetul depaseste suma cap-urilor"
-        super().__init__(detail)
-
-
 def _mark_bound(row: dict[str, Any], *, floor: bool = False, cap: bool = False) -> None:
     if floor:
         row["is_floor_limited"] = True
@@ -481,11 +473,9 @@ def allocate_with_bounds(
 # consumed by TargetCalculatorService and by the existing test imports.
 from services.target_calculator.allocation import (
     money as calculation_money,
-    TargetBudgetInfeasibleError as CalculationBudgetInfeasibleError,
     allocate_with_bounds as calculation_allocate_with_bounds,
     allocate_with_floors as calculation_allocate_with_floors,
 )
-from services.target_calculator.calculations import MONEY as CALCULATION_MONEY
 from services.target_calculator.seasonality import (
     build_source_month_configuration as calculation_build_source_month_configuration,
     month_label_ro as calculation_month_label_ro,
@@ -516,7 +506,6 @@ from services.target_calculator.warnings import unique_warnings
 from services.target_calculator.profitability import forecast_coverage
 
 MONEY = CALCULATION_MONEY
-TargetBudgetInfeasibleError = CalculationBudgetInfeasibleError  # type: ignore[misc]
 allocate_with_bounds = calculation_allocate_with_bounds
 allocate_with_floors = calculation_allocate_with_floors
 money = calculation_money

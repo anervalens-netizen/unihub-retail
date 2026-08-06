@@ -358,7 +358,7 @@ async def get_context(
 async def list_scenarios(
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 )-> list[TargetScenarioSummaryResponse]:
-    return await svc.list_scenarios()
+    return [TargetScenarioSummaryResponse.model_validate(item) for item in await svc.list_scenarios()]
 
 
 @router.post("/scenarios/calculate")
@@ -368,7 +368,7 @@ async def calculate_scenario(
     _rate_limit: None = Depends(rate_limit(TARGET_MUTATION_LIMIT)),
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 )-> TargetScenarioResponse:
-    return await svc.calculate(body.model_dump())
+    return TargetScenarioResponse.model_validate(await svc.calculate(body.model_dump()))
 
 
 @router.patch("/scenarios/{scenario_id}/rows")
@@ -379,11 +379,13 @@ async def update_final_targets(
     _rate_limit: None = Depends(rate_limit(TARGET_MUTATION_LIMIT)),
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 )-> TargetScenarioResponse:
-    return await svc.save_final_targets(
-        scenario_id,
-        [row.model_dump() for row in body.rows],
-        body.expected_revision,
-        actor=claims.sub,
+    return TargetScenarioResponse.model_validate(
+        await svc.save_final_targets(
+            scenario_id,
+            [row.model_dump() for row in body.rows],
+            body.expected_revision,
+            actor=claims.sub,
+        )
     )
 
 
@@ -395,7 +397,9 @@ async def finalize_scenario(
     _rate_limit: None = Depends(rate_limit(TARGET_MUTATION_LIMIT)),
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 )-> TargetScenarioResponse:
-    return await svc.finalize(scenario_id, body.expected_revision)
+    return TargetScenarioResponse.model_validate(
+        await svc.finalize(scenario_id, body.expected_revision)
+    )
 
 
 @router.get(
@@ -429,7 +433,9 @@ async def get_store_detail(
     site_code: str,
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 )-> TargetStoreDetailResponse:
-    return await svc.get_store_detail(scenario_id, site_code)
+    return TargetStoreDetailResponse.model_validate(
+        await svc.get_store_detail(scenario_id, site_code)
+    )
 
 
 @router.get("/scenarios/{scenario_id}")
@@ -437,4 +443,4 @@ async def get_scenario(
     scenario_id: int,
     svc: TargetCalculatorService = Depends(get_target_calculator_service),
 )-> TargetScenarioResponse:
-    return await svc.get_scenario_detail(scenario_id)
+    return TargetScenarioResponse.model_validate(await svc.get_scenario_detail(scenario_id))

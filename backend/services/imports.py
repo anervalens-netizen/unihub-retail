@@ -19,10 +19,12 @@ from fastapi import HTTPException, status
 from fastapi import UploadFile
 
 from models import (
+    ImportCoverageReport,
     ImportHistoryEntry,
     ImportJobStatus,
     ImportResponse,
     PromoActualImportResponse,
+    SalesGenerationManifest,
     SalesGenerationPromotionRequest,
 )
 from repositories.imports import ImportsRepository
@@ -424,11 +426,11 @@ class ImportsService:
                         snapshot_id=int(recovered["id"]),
                         filename=str(recovered["filename"]),
                         is_month_final=bool(recovered["is_month_final"]),
-                        coverage_report=dict(coverage_report or {}),
+                        coverage_report=ImportCoverageReport.model_validate(coverage_report or {}),
                         generation_state="validated",
                         generation_token=str(recovered["generation_token"]),
                         manifest_sha256=str(recovered["manifest_sha256"]),
-                        manifest=manifest,
+                        manifest=SalesGenerationManifest.model_validate(manifest),
                     ),
                 )
 
