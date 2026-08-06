@@ -14,6 +14,7 @@ BACKEND = ROOT / "backend"
 OUTPUT = ROOT / "src" / "api" / "generated"
 OPENAPI_PATH = OUTPUT / "openapi.json"
 TYPES_PATH = OUTPUT / "contracts.ts"
+DECIMAL_PATTERN_PREFIX = "^(?!^[-+.]*$)"
 
 
 def schema_ref(value: Any) -> str | None:
@@ -22,12 +23,31 @@ def schema_ref(value: Any) -> str | None:
     return None
 
 
+def is_decimal_schema(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("type") == "string"
+        and isinstance(value.get("pattern"), str)
+        and value["pattern"].startswith(DECIMAL_PATTERN_PREFIX)
+    )
+
+
+def contains_decimal_schema(value: Any) -> bool:
+    if is_decimal_schema(value):
+        return True
+    if not isinstance(value, dict):
+        return False
+    return any(contains_decimal_schema(item) for item in value.get("anyOf", []))
+
+
 def ts_type(schema: Any) -> str:
     if not isinstance(schema, dict):
         return "unknown"
     ref = schema_ref(schema)
     if ref:
         return f"Retail{ref}"
+    if is_decimal_schema(schema):
+        return "RetailDecimal"
     if "oneOf" in schema or "anyOf" in schema:
         key = "oneOf" if "oneOf" in schema else "anyOf"
         values = [ts_type(item) for item in schema.get(key, [])]
@@ -80,6 +100,12 @@ def validate_operations(schema: dict[str, Any]) -> list[tuple[str, str, str, dic
 
 def response_type(response: dict[str, Any]) -> str:
     content = response.get("content", {})
+    if any(
+        isinstance(value, dict)
+        and value.get("schema", {}).get("format") == "binary"
+        for value in content.values()
+    ):
+        return "Blob"
     if "application/json" in content:
         return ts_type(content["application/json"].get("schema", {}))
     if "application/octet-stream" in content or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in content:
@@ -88,9 +114,21 @@ def response_type(response: dict[str, Any]) -> str:
 
 
 def generate_types(schema: dict[str, Any], operations: list[tuple[str, str, str, dict[str, Any]]], digest: str) -> str:
+    decimal_keys = sorted({
+        property_name
+        for definition in schema.get("components", {}).get("schemas", {}).values()
+        for property_name, property_schema in definition.get("properties", {}).items()
+        if contains_decimal_schema(property_schema)
+    })
     lines = [
         "/* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */",
         f"export const RETAIL_OPENAPI_SHA256 = {digest!r} as const;",
+        "",
+        "export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };",
+        "",
+        "export const RETAIL_DECIMAL_KEYS = new Set<string>([",
+        *[f"  {json.dumps(key)}," for key in decimal_keys],
+        "]);",
         "",
     ]
     for name in sorted(schema.get("components", {}).get("schemas", {})):

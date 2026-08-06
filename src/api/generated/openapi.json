@@ -3062,6 +3062,157 @@
         "title": "ContestRuleInfo",
         "type": "object"
       },
+      "CrmAlertResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "asm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asm"
+          },
+          "locatie": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locatie"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_code",
+          "score"
+        ],
+        "title": "CrmAlertResponse",
+        "type": "object"
+      },
+      "CrmBreakdownResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "kpi_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpi Pct"
+          },
+          "target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Pct"
+          },
+          "trend_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Pct"
+          },
+          "visits_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visits Pct"
+          }
+        },
+        "title": "CrmBreakdownResponse",
+        "type": "object"
+      },
+      "CrmRecalculateResponse": {
+        "properties": {
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "recalculated": {
+            "title": "Recalculated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "recalculated",
+          "month"
+        ],
+        "title": "CrmRecalculateResponse",
+        "type": "object"
+      },
+      "CrmScoreResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "breakdown": {
+            "$ref": "#/components/schemas/CrmBreakdownResponse"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_code",
+          "score",
+          "breakdown"
+        ],
+        "title": "CrmScoreResponse",
+        "type": "object"
+      },
       "DailySalesPoint": {
         "properties": {
           "receipt_count": {
@@ -4406,6 +4557,654 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HrAgentPerformanceItem": {
+        "additionalProperties": true,
+        "properties": {
+          "active_days": {
+            "title": "Active Days",
+            "type": "integer"
+          },
+          "import_month": {
+            "title": "Import Month",
+            "type": "string"
+          },
+          "target_pct": {
+            "title": "Target Pct",
+            "type": "number"
+          },
+          "total_value": {
+            "title": "Total Value",
+            "type": "number"
+          },
+          "transaction_count": {
+            "title": "Transaction Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "import_month",
+          "total_value",
+          "transaction_count",
+          "active_days",
+          "target_pct"
+        ],
+        "title": "HrAgentPerformanceItem",
+        "type": "object"
+      },
+      "HrAsmHistoryItem": {
+        "additionalProperties": true,
+        "properties": {
+          "active_stores": {
+            "title": "Active Stores",
+            "type": "integer"
+          },
+          "avg_completion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Completion"
+          },
+          "avg_duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Duration"
+          },
+          "forecast_sales": {
+            "title": "Forecast Sales",
+            "type": "number"
+          },
+          "forecast_target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Target Pct"
+          },
+          "is_forecast": {
+            "title": "Is Forecast",
+            "type": "boolean"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Pct"
+          },
+          "total_sales": {
+            "title": "Total Sales",
+            "type": "number"
+          },
+          "total_target": {
+            "title": "Total Target",
+            "type": "number"
+          },
+          "total_visits": {
+            "title": "Total Visits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "total_sales",
+          "total_target",
+          "forecast_sales",
+          "is_forecast",
+          "active_stores",
+          "total_visits"
+        ],
+        "title": "HrAsmHistoryItem",
+        "type": "object"
+      },
+      "HrAsmPerformanceItem": {
+        "additionalProperties": true,
+        "properties": {
+          "active_agents": {
+            "title": "Active Agents",
+            "type": "integer"
+          },
+          "active_stores": {
+            "title": "Active Stores",
+            "type": "integer"
+          },
+          "approved_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Pct"
+          },
+          "asm": {
+            "title": "Asm",
+            "type": "string"
+          },
+          "avg_completion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Completion"
+          },
+          "avg_duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Duration"
+          },
+          "checklist_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checklist Score"
+          },
+          "distinct_stores_visited": {
+            "title": "Distinct Stores Visited",
+            "type": "integer"
+          },
+          "forecast_sales": {
+            "title": "Forecast Sales",
+            "type": "number"
+          },
+          "forecast_target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Target Pct"
+          },
+          "is_forecast": {
+            "title": "Is Forecast",
+            "type": "boolean"
+          },
+          "pct_bon2acc": {
+            "title": "Pct Bon2Acc",
+            "type": "number"
+          },
+          "pct_focus": {
+            "title": "Pct Focus",
+            "type": "number"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
+          },
+          "target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Pct"
+          },
+          "total_sales": {
+            "title": "Total Sales",
+            "type": "number"
+          },
+          "total_target": {
+            "title": "Total Target",
+            "type": "number"
+          },
+          "total_visits": {
+            "title": "Total Visits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asm",
+          "total_sales",
+          "total_target",
+          "forecast_sales",
+          "is_forecast",
+          "active_stores",
+          "active_agents",
+          "pct_bon2acc",
+          "pct_focus",
+          "total_visits",
+          "distinct_stores_visited"
+        ],
+        "title": "HrAsmPerformanceItem",
+        "type": "object"
+      },
+      "HrAsmSalaryBreakdown": {
+        "additionalProperties": true,
+        "properties": {
+          "acc_focus": {
+            "additionalProperties": true,
+            "title": "Acc Focus",
+            "type": "object"
+          },
+          "asm": {
+            "title": "Asm",
+            "type": "string"
+          },
+          "fixed_salary": {
+            "title": "Fixed Salary",
+            "type": "number"
+          },
+          "forecast_factor": {
+            "title": "Forecast Factor",
+            "type": "number"
+          },
+          "homogeneity": {
+            "additionalProperties": true,
+            "title": "Homogeneity",
+            "type": "object"
+          },
+          "is_forecast": {
+            "title": "Is Forecast",
+            "type": "boolean"
+          },
+          "islands": {
+            "items": {
+              "$ref": "#/components/schemas/HrAsmSalaryIsland"
+            },
+            "title": "Islands",
+            "type": "array"
+          },
+          "islands_commission": {
+            "title": "Islands Commission",
+            "type": "number"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "total_salary": {
+            "title": "Total Salary",
+            "type": "number"
+          },
+          "zone": {
+            "$ref": "#/components/schemas/HrAsmSalaryZone"
+          }
+        },
+        "required": [
+          "asm",
+          "month",
+          "is_forecast",
+          "forecast_factor",
+          "fixed_salary",
+          "zone",
+          "islands_commission",
+          "homogeneity",
+          "acc_focus",
+          "total_salary"
+        ],
+        "title": "HrAsmSalaryBreakdown",
+        "type": "object"
+      },
+      "HrAsmSalaryIsland": {
+        "additionalProperties": true,
+        "properties": {
+          "commission": {
+            "title": "Commission",
+            "type": "number"
+          },
+          "firma": {
+            "title": "Firma",
+            "type": "string"
+          },
+          "forecast_sales": {
+            "title": "Forecast Sales",
+            "type": "number"
+          },
+          "forecast_target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Target Pct"
+          },
+          "locatie": {
+            "title": "Locatie",
+            "type": "string"
+          },
+          "pct_used": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Used"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Pct"
+          },
+          "total_sales": {
+            "title": "Total Sales",
+            "type": "number"
+          },
+          "total_target": {
+            "title": "Total Target",
+            "type": "number"
+          }
+        },
+        "required": [
+          "site_code",
+          "locatie",
+          "firma",
+          "total_sales",
+          "total_target",
+          "forecast_sales",
+          "commission"
+        ],
+        "title": "HrAsmSalaryIsland",
+        "type": "object"
+      },
+      "HrAsmSalaryZone": {
+        "additionalProperties": true,
+        "properties": {
+          "commission": {
+            "title": "Commission",
+            "type": "number"
+          },
+          "forecast_sales": {
+            "title": "Forecast Sales",
+            "type": "number"
+          },
+          "forecast_target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Target Pct"
+          },
+          "pct_used": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Used"
+          },
+          "target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Pct"
+          },
+          "total_sales": {
+            "title": "Total Sales",
+            "type": "number"
+          },
+          "total_target": {
+            "title": "Total Target",
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_sales",
+          "total_target",
+          "forecast_sales",
+          "commission"
+        ],
+        "title": "HrAsmSalaryZone",
+        "type": "object"
+      },
+      "HrManagerOverviewItem": {
+        "additionalProperties": true,
+        "properties": {
+          "active_agents": {
+            "title": "Active Agents",
+            "type": "integer"
+          },
+          "active_stores": {
+            "title": "Active Stores",
+            "type": "integer"
+          },
+          "agent_delta": {
+            "title": "Agent Delta",
+            "type": "integer"
+          },
+          "agents_added": {
+            "title": "Agents Added",
+            "type": "integer"
+          },
+          "agents_left": {
+            "title": "Agents Left",
+            "type": "integer"
+          },
+          "agents_per_store": {
+            "title": "Agents Per Store",
+            "type": "number"
+          },
+          "approved_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Pct"
+          },
+          "avg_visit_completion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Visit Completion"
+          },
+          "checklist_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checklist Score"
+          },
+          "manager": {
+            "title": "Manager",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "previous_active_agents": {
+            "title": "Previous Active Agents",
+            "type": "integer"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
+          },
+          "reporting_available": {
+            "title": "Reporting Available",
+            "type": "boolean"
+          },
+          "stores": {
+            "items": {
+              "$ref": "#/components/schemas/HrManagerStoreItem"
+            },
+            "title": "Stores",
+            "type": "array"
+          },
+          "stores_without_agents": {
+            "title": "Stores Without Agents",
+            "type": "integer"
+          },
+          "total_visits": {
+            "title": "Total Visits",
+            "type": "integer"
+          },
+          "visit_coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Coverage Pct"
+          },
+          "visited_stores": {
+            "title": "Visited Stores",
+            "type": "integer"
+          },
+          "visits_available": {
+            "title": "Visits Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "manager",
+          "month",
+          "reporting_available",
+          "active_stores",
+          "active_agents",
+          "previous_active_agents",
+          "agent_delta",
+          "agents_added",
+          "agents_left",
+          "stores_without_agents",
+          "agents_per_store",
+          "visits_available",
+          "total_visits",
+          "visited_stores"
+        ],
+        "title": "HrManagerOverviewItem",
+        "type": "object"
+      },
+      "HrManagerStoreItem": {
+        "properties": {
+          "active_agents": {
+            "title": "Active Agents",
+            "type": "integer"
+          },
+          "agent_delta": {
+            "title": "Agent Delta",
+            "type": "integer"
+          },
+          "firma": {
+            "title": "Firma",
+            "type": "string"
+          },
+          "locatie": {
+            "title": "Locatie",
+            "type": "string"
+          },
+          "previous_active_agents": {
+            "title": "Previous Active Agents",
+            "type": "integer"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_code",
+          "locatie",
+          "firma",
+          "active_agents",
+          "previous_active_agents",
+          "agent_delta"
+        ],
+        "title": "HrManagerStoreItem",
+        "type": "object"
+      },
       "ImportHistoryEntry": {
         "properties": {
           "coverage_report": {
@@ -5526,6 +6325,410 @@
         "title": "PeriodComparisonPoint",
         "type": "object"
       },
+      "PnlAnnualItemResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "cogs": {
+            "title": "Cogs",
+            "type": "number"
+          },
+          "depreciation": {
+            "title": "Depreciation",
+            "type": "number"
+          },
+          "ebit": {
+            "title": "Ebit",
+            "type": "number"
+          },
+          "ebitda": {
+            "title": "Ebitda",
+            "type": "number"
+          },
+          "gross_margin": {
+            "title": "Gross Margin",
+            "type": "number"
+          },
+          "is_estimated": {
+            "title": "Is Estimated",
+            "type": "boolean"
+          },
+          "month_count": {
+            "title": "Month Count",
+            "type": "integer"
+          },
+          "operating_costs": {
+            "title": "Operating Costs",
+            "type": "number"
+          },
+          "revenue": {
+            "title": "Revenue",
+            "type": "number"
+          },
+          "store_count": {
+            "title": "Store Count",
+            "type": "integer"
+          },
+          "year": {
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        "required": [
+          "year",
+          "store_count",
+          "month_count",
+          "is_estimated",
+          "revenue",
+          "cogs",
+          "gross_margin",
+          "operating_costs",
+          "ebitda",
+          "depreciation",
+          "ebit"
+        ],
+        "title": "PnlAnnualItemResponse",
+        "type": "object"
+      },
+      "PnlAnnualResponse": {
+        "properties": {
+          "annual": {
+            "items": {
+              "$ref": "#/components/schemas/PnlAnnualItemResponse"
+            },
+            "title": "Annual",
+            "type": "array"
+          }
+        },
+        "required": [
+          "annual"
+        ],
+        "title": "PnlAnnualResponse",
+        "type": "object"
+      },
+      "PnlMetricsResponse": {
+        "properties": {
+          "cogs": {
+            "title": "Cogs",
+            "type": "number"
+          },
+          "depreciation": {
+            "title": "Depreciation",
+            "type": "number"
+          },
+          "ebit": {
+            "title": "Ebit",
+            "type": "number"
+          },
+          "ebitda": {
+            "title": "Ebitda",
+            "type": "number"
+          },
+          "gross_margin": {
+            "title": "Gross Margin",
+            "type": "number"
+          },
+          "operating_costs": {
+            "title": "Operating Costs",
+            "type": "number"
+          },
+          "revenue": {
+            "title": "Revenue",
+            "type": "number"
+          }
+        },
+        "required": [
+          "revenue",
+          "cogs",
+          "gross_margin",
+          "operating_costs",
+          "ebitda",
+          "depreciation",
+          "ebit"
+        ],
+        "title": "PnlMetricsResponse",
+        "type": "object"
+      },
+      "PnlMonthResponse": {
+        "properties": {
+          "has_actual": {
+            "title": "Has Actual",
+            "type": "boolean"
+          },
+          "has_estimated": {
+            "title": "Has Estimated",
+            "type": "boolean"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "has_actual",
+          "has_estimated"
+        ],
+        "title": "PnlMonthResponse",
+        "type": "object"
+      },
+      "PnlMonthlyItemResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "cogs": {
+            "title": "Cogs",
+            "type": "number"
+          },
+          "depreciation": {
+            "title": "Depreciation",
+            "type": "number"
+          },
+          "ebit": {
+            "title": "Ebit",
+            "type": "number"
+          },
+          "ebitda": {
+            "title": "Ebitda",
+            "type": "number"
+          },
+          "gross_margin": {
+            "title": "Gross Margin",
+            "type": "number"
+          },
+          "is_estimated": {
+            "title": "Is Estimated",
+            "type": "boolean"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "operating_costs": {
+            "title": "Operating Costs",
+            "type": "number"
+          },
+          "revenue": {
+            "title": "Revenue",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "is_estimated",
+          "revenue",
+          "cogs",
+          "gross_margin",
+          "operating_costs",
+          "ebitda",
+          "depreciation",
+          "ebit"
+        ],
+        "title": "PnlMonthlyItemResponse",
+        "type": "object"
+      },
+      "PnlMonthsResponse": {
+        "properties": {
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/PnlMonthResponse"
+            },
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "required": [
+          "months"
+        ],
+        "title": "PnlMonthsResponse",
+        "type": "object"
+      },
+      "PnlOverviewResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "categories": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Categories",
+            "type": "object"
+          },
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "end_month": {
+            "title": "End Month",
+            "type": "string"
+          },
+          "monthly": {
+            "items": {
+              "$ref": "#/components/schemas/PnlMonthlyItemResponse"
+            },
+            "title": "Monthly",
+            "type": "array"
+          },
+          "reconciliation": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Reconciliation",
+            "type": "array"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
+          "site_company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Company"
+          },
+          "start_month": {
+            "title": "Start Month",
+            "type": "string"
+          },
+          "stores": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Stores",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PnlMetricsResponse"
+          }
+        },
+        "required": [
+          "start_month",
+          "end_month",
+          "summary"
+        ],
+        "title": "PnlOverviewResponse",
+        "type": "object"
+      },
+      "PnlPermissionsResponse": {
+        "properties": {
+          "can_view": {
+            "title": "Can View",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_view"
+        ],
+        "title": "PnlPermissionsResponse",
+        "type": "object"
+      },
+      "PnlRegionsResponse": {
+        "properties": {
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Regions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "regions"
+        ],
+        "title": "PnlRegionsResponse",
+        "type": "object"
+      },
+      "PnlStoreOptionResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
+          },
+          "scope_company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Company"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company_name",
+          "site_code",
+          "location"
+        ],
+        "title": "PnlStoreOptionResponse",
+        "type": "object"
+      },
+      "PnlStoresResponse": {
+        "properties": {
+          "stores": {
+            "items": {
+              "$ref": "#/components/schemas/PnlStoreOptionResponse"
+            },
+            "title": "Stores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stores"
+        ],
+        "title": "PnlStoresResponse",
+        "type": "object"
+      },
       "PremiumGlassAgentStat": {
         "properties": {
           "agent": {
@@ -6607,6 +7810,94 @@
         "title": "SalaryAgentsSummaryResponse",
         "type": "object"
       },
+      "SalaryComparisonItem": {
+        "additionalProperties": true,
+        "properties": {
+          "agent_count": {
+            "title": "Agent Count",
+            "type": "integer"
+          },
+          "avg_agent_count": {
+            "title": "Avg Agent Count",
+            "type": "integer"
+          },
+          "avg_salary": {
+            "title": "Avg Salary",
+            "type": "number"
+          },
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "locatie": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locatie"
+          },
+          "ratio": {
+            "title": "Ratio",
+            "type": "number"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "total_salary": {
+            "title": "Total Salary",
+            "type": "number"
+          },
+          "total_sales": {
+            "title": "Total Sales",
+            "type": "number"
+          }
+        },
+        "required": [
+          "site_code",
+          "company_name",
+          "total_salary",
+          "agent_count",
+          "avg_agent_count",
+          "avg_salary",
+          "total_sales",
+          "ratio"
+        ],
+        "title": "SalaryComparisonItem",
+        "type": "object"
+      },
+      "SalaryEvolutionPoint": {
+        "properties": {
+          "mobicell": {
+            "title": "Mobicell",
+            "type": "number"
+          },
+          "mobiup": {
+            "title": "Mobiup",
+            "type": "number"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "total",
+          "mobicell",
+          "mobiup"
+        ],
+        "title": "SalaryEvolutionPoint",
+        "type": "object"
+      },
       "SalaryExportAudit": {
         "properties": {
           "export_kind": {
@@ -6799,6 +8090,98 @@
           "locatie"
         ],
         "title": "SalaryRecordPublic",
+        "type": "object"
+      },
+      "SalaryStoreOption": {
+        "properties": {
+          "locatie": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locatie"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_code"
+        ],
+        "title": "SalaryStoreOption",
+        "type": "object"
+      },
+      "SalarySummaryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SalaryComparisonItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          }
+        },
+        "title": "SalarySummaryResponse",
+        "type": "object"
+      },
+      "SalaryTrendPoint": {
+        "additionalProperties": true,
+        "properties": {
+          "agent_count": {
+            "title": "Agent Count",
+            "type": "integer"
+          },
+          "avg_agent_count": {
+            "title": "Avg Agent Count",
+            "type": "integer"
+          },
+          "avg_salary": {
+            "title": "Avg Salary",
+            "type": "number"
+          },
+          "by_company": {
+            "additionalProperties": true,
+            "title": "By Company",
+            "type": "object"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "total_salary": {
+            "title": "Total Salary",
+            "type": "number"
+          },
+          "total_sales": {
+            "title": "Total Sales",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "total_salary",
+          "total_sales",
+          "agent_count",
+          "avg_agent_count",
+          "avg_salary"
+        ],
+        "title": "SalaryTrendPoint",
         "type": "object"
       },
       "SalesGenerationPromotionRequest": {
@@ -7232,6 +8615,193 @@
         "title": "StoreTargetInput",
         "type": "object"
       },
+      "TargetCalculationDetails": {
+        "additionalProperties": true,
+        "properties": {
+          "allocation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocation Reason"
+          },
+          "cap_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cap Target"
+          },
+          "current_forecast": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Forecast"
+          },
+          "current_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Month"
+          },
+          "flags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "floor_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Target"
+          },
+          "is_cap_limited": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Cap Limited"
+          },
+          "is_floor_limited": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Floor Limited"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "raw_estimate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Estimate"
+          },
+          "seasonality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetSeasonalityDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seasonality_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seasonality Years"
+          },
+          "trend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetTrendDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TargetCalculationDetails",
+        "type": "object"
+      },
+      "TargetCalculationParams": {
+        "additionalProperties": true,
+        "properties": {
+          "profitability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetOpenModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profitability_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetOpenModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seasonality_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seasonality Years"
+          }
+        },
+        "title": "TargetCalculationParams",
+        "type": "object"
+      },
       "TargetCalculationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7334,6 +8904,77 @@
         "title": "TargetCalculationRequest",
         "type": "object"
       },
+      "TargetContextResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "active_store_count": {
+            "title": "Active Store Count",
+            "type": "integer"
+          },
+          "can_finalize": {
+            "title": "Can Finalize",
+            "type": "boolean"
+          },
+          "default_min_floor": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Default Min Floor",
+            "type": "string"
+          },
+          "default_previous_month_cap_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Default Previous Month Cap Pct",
+            "type": "string"
+          },
+          "default_previous_month_floor_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Default Previous Month Floor Pct",
+            "type": "string"
+          },
+          "default_seasonality_years": {
+            "title": "Default Seasonality Years",
+            "type": "integer"
+          },
+          "latest_sales_month": {
+            "title": "Latest Sales Month",
+            "type": "string"
+          },
+          "regionals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Regionals",
+            "type": "array"
+          },
+          "suggested_cohort_month": {
+            "title": "Suggested Cohort Month",
+            "type": "string"
+          },
+          "suggested_target_month": {
+            "title": "Suggested Target Month",
+            "type": "string"
+          },
+          "suggested_total_target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Suggested Total Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "latest_sales_month",
+          "suggested_target_month",
+          "suggested_cohort_month",
+          "suggested_total_target",
+          "default_min_floor",
+          "default_previous_month_floor_pct",
+          "default_previous_month_cap_pct",
+          "default_seasonality_years",
+          "active_store_count",
+          "regionals",
+          "can_finalize"
+        ],
+        "title": "TargetContextResponse",
+        "type": "object"
+      },
       "TargetFinalRow": {
         "additionalProperties": false,
         "properties": {
@@ -7428,6 +9069,1560 @@
         "title": "TargetFinalizeRequest",
         "type": "object"
       },
+      "TargetForecastRunResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "model_mode": {
+            "title": "Model Mode",
+            "type": "string"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "source_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Month"
+          },
+          "variant": {
+            "title": "Variant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "model_name",
+          "model_mode",
+          "variant",
+          "generated_at"
+        ],
+        "title": "TargetForecastRunResponse",
+        "type": "object"
+      },
+      "TargetHistoryValue": {
+        "additionalProperties": true,
+        "properties": {
+          "actual_realized": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Realized"
+          },
+          "attainment_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attainment Pct"
+          },
+          "forecast_factor": {
+            "default": "1",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Forecast Factor",
+            "type": "string"
+          },
+          "is_forecast": {
+            "default": false,
+            "title": "Is Forecast",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "realized": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Realized",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target",
+            "type": "string"
+          },
+          "weight": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Weight",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "role",
+          "target",
+          "realized"
+        ],
+        "title": "TargetHistoryValue",
+        "type": "object"
+      },
+      "TargetOpenModel": {
+        "additionalProperties": true,
+        "properties": {},
+        "title": "TargetOpenModel",
+        "type": "object"
+      },
+      "TargetProfitabilityResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "accessory_margin_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessory Margin Pct"
+          },
+          "agent_count": {
+            "title": "Agent Count",
+            "type": "integer"
+          },
+          "anomaly_flags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Anomaly Flags",
+            "type": "array"
+          },
+          "base_salary_per_agent": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Salary Per Agent",
+            "type": "string"
+          },
+          "break_even_gross_sales": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Break Even Gross Sales"
+          },
+          "forecast_sales": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Sales"
+          },
+          "operating_costs": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operating Costs"
+          },
+          "salary_cost_at_90_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Salary Cost At 90 Pct",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_count",
+          "base_salary_per_agent",
+          "salary_cost_at_90_pct"
+        ],
+        "title": "TargetProfitabilityResponse",
+        "type": "object"
+      },
+      "TargetProfitabilitySummaryResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "assumptions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetOpenModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "break_even_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Break Even Total"
+          },
+          "forecast_below_break_even_count": {
+            "title": "Forecast Below Break Even Count",
+            "type": "integer"
+          },
+          "forecast_coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetOpenModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forecast_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetForecastRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forecast_store_count": {
+            "title": "Forecast Store Count",
+            "type": "integer"
+          },
+          "forecast_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Total"
+          },
+          "operating_costs_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operating Costs Total"
+          },
+          "pnl_months": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pnl Months",
+            "type": "array"
+          },
+          "pnl_store_count": {
+            "title": "Pnl Store Count",
+            "type": "integer"
+          },
+          "salary_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Salary Total",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_below_break_even_count": {
+            "title": "Target Below Break Even Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "pnl_store_count",
+          "forecast_store_count",
+          "salary_total",
+          "forecast_below_break_even_count",
+          "target_below_break_even_count"
+        ],
+        "title": "TargetProfitabilitySummaryResponse",
+        "type": "object"
+      },
+      "TargetRegionalSummaryResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "current_forecast_total": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Current Forecast Total",
+            "type": "string"
+          },
+          "current_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Month"
+          },
+          "final_growth_vs_current_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Growth Vs Current Pct"
+          },
+          "final_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Final Total",
+            "type": "string"
+          },
+          "floor_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Floor Total",
+            "type": "string"
+          },
+          "last_year_base_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Year Base Month"
+          },
+          "last_year_base_total": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Last Year Base Total",
+            "type": "string"
+          },
+          "last_year_growth_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Year Growth Pct"
+          },
+          "last_year_target_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Year Target Month"
+          },
+          "last_year_target_total": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Last Year Target Total",
+            "type": "string"
+          },
+          "proposed_growth_vs_current_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Growth Vs Current Pct"
+          },
+          "proposed_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Proposed Total",
+            "type": "string"
+          },
+          "regional": {
+            "title": "Regional",
+            "type": "string"
+          },
+          "store_count": {
+            "title": "Store Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "regional",
+          "store_count",
+          "floor_total",
+          "proposed_total",
+          "final_total"
+        ],
+        "title": "TargetRegionalSummaryResponse",
+        "type": "object"
+      },
+      "TargetScenarioResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "calculation_method": {
+            "title": "Calculation Method",
+            "type": "string"
+          },
+          "calculation_params": {
+            "$ref": "#/components/schemas/TargetCalculationParams",
+            "default": {}
+          },
+          "cap_limited_count": {
+            "default": 0,
+            "title": "Cap Limited Count",
+            "type": "integer"
+          },
+          "cohort_month": {
+            "title": "Cohort Month",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "final_total": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Final Total",
+            "type": "string"
+          },
+          "finalized_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalized At"
+          },
+          "floor_limited_count": {
+            "title": "Floor Limited Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "manager_overrides_count": {
+            "default": 0,
+            "title": "Manager Overrides Count",
+            "type": "integer"
+          },
+          "manual_adjustments_count": {
+            "title": "Manual Adjustments Count",
+            "type": "integer"
+          },
+          "min_floor": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Min Floor",
+            "type": "string"
+          },
+          "pending_final_count": {
+            "title": "Pending Final Count",
+            "type": "integer"
+          },
+          "previous_month_floor_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous Month Floor Pct",
+            "type": "string"
+          },
+          "profitability_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetProfitabilitySummaryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposed_total": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Proposed Total",
+            "type": "string"
+          },
+          "regional_summary": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetRegionalSummaryResponse"
+            },
+            "title": "Regional Summary",
+            "type": "array"
+          },
+          "remaining_difference": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Remaining Difference",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TargetScenarioRowResponse"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "source_months": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetSourceMonth"
+            },
+            "title": "Source Months",
+            "type": "array"
+          },
+          "source_summary": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetSourceSummaryResponse"
+            },
+            "title": "Source Summary",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "store_count": {
+            "default": 0,
+            "title": "Store Count",
+            "type": "integer"
+          },
+          "target_month": {
+            "title": "Target Month",
+            "type": "string"
+          },
+          "total_target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Target",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "target_month",
+          "cohort_month",
+          "total_target",
+          "min_floor",
+          "previous_month_floor_pct",
+          "status",
+          "revision",
+          "calculation_method",
+          "pending_final_count",
+          "created_at",
+          "updated_at",
+          "remaining_difference",
+          "floor_limited_count",
+          "manual_adjustments_count",
+          "rows"
+        ],
+        "title": "TargetScenarioResponse",
+        "type": "object"
+      },
+      "TargetScenarioRowResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "asm": {
+            "title": "Asm",
+            "type": "string"
+          },
+          "calculated_weight": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Calculated Weight",
+            "type": "string"
+          },
+          "calculation_details": {
+            "$ref": "#/components/schemas/TargetCalculationDetails",
+            "default": {
+              "flags": []
+            }
+          },
+          "cap_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cap Target"
+          },
+          "final_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Target"
+          },
+          "firma": {
+            "title": "Firma",
+            "type": "string"
+          },
+          "floor_target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Floor Target",
+            "type": "string"
+          },
+          "history": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetHistoryValue"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "is_cap_limited": {
+            "default": false,
+            "title": "Is Cap Limited",
+            "type": "boolean"
+          },
+          "is_floor_limited": {
+            "default": false,
+            "title": "Is Floor Limited",
+            "type": "boolean"
+          },
+          "locatie": {
+            "title": "Locatie",
+            "type": "string"
+          },
+          "normalized_weight": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Weight"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "profitability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetProfitabilityResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposed_target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Proposed Target",
+            "type": "string"
+          },
+          "regional": {
+            "title": "Regional",
+            "type": "string"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "site_code",
+          "locatie",
+          "firma",
+          "regional",
+          "asm",
+          "calculated_weight",
+          "floor_target",
+          "proposed_target"
+        ],
+        "title": "TargetScenarioRowResponse",
+        "type": "object"
+      },
+      "TargetScenarioSummaryResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "calculation_method": {
+            "title": "Calculation Method",
+            "type": "string"
+          },
+          "calculation_params": {
+            "$ref": "#/components/schemas/TargetCalculationParams",
+            "default": {}
+          },
+          "cohort_month": {
+            "title": "Cohort Month",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "final_total": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Final Total",
+            "type": "string"
+          },
+          "finalized_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalized At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "min_floor": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Min Floor",
+            "type": "string"
+          },
+          "pending_final_count": {
+            "default": 0,
+            "title": "Pending Final Count",
+            "type": "integer"
+          },
+          "previous_month_floor_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous Month Floor Pct",
+            "type": "string"
+          },
+          "proposed_total": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Proposed Total",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "source_months": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetSourceMonth"
+            },
+            "title": "Source Months",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "store_count": {
+            "default": 0,
+            "title": "Store Count",
+            "type": "integer"
+          },
+          "target_month": {
+            "title": "Target Month",
+            "type": "string"
+          },
+          "total_target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Target",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "target_month",
+          "cohort_month",
+          "total_target",
+          "min_floor",
+          "previous_month_floor_pct",
+          "status",
+          "revision",
+          "calculation_method",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TargetScenarioSummaryResponse",
+        "type": "object"
+      },
+      "TargetSeasonalityDetails": {
+        "additionalProperties": true,
+        "properties": {
+          "blended_factor": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blended Factor"
+          },
+          "last_year_store_factor": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Year Store Factor"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "multiyear_store_factor": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multiyear Store Factor"
+          },
+          "network_factor": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Network Factor"
+          },
+          "network_years": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetSeasonalityYear"
+            },
+            "title": "Network Years",
+            "type": "array"
+          },
+          "store_factor": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Store Factor"
+          },
+          "store_years": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetSeasonalityYear"
+            },
+            "title": "Store Years",
+            "type": "array"
+          },
+          "used_factor": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Factor"
+          },
+          "weights": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weights"
+          },
+          "zone_factor": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone Factor"
+          },
+          "zone_years": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetSeasonalityYear"
+            },
+            "title": "Zone Years",
+            "type": "array"
+          }
+        },
+        "title": "TargetSeasonalityDetails",
+        "type": "object"
+      },
+      "TargetSeasonalityYear": {
+        "additionalProperties": true,
+        "properties": {
+          "base_month": {
+            "title": "Base Month",
+            "type": "string"
+          },
+          "base_value": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Value",
+            "type": "string"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          },
+          "target_month": {
+            "title": "Target Month",
+            "type": "string"
+          },
+          "target_value": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target Value",
+            "type": "string"
+          },
+          "year_offset": {
+            "title": "Year Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year_offset",
+          "base_month",
+          "target_month",
+          "base_value",
+          "target_value"
+        ],
+        "title": "TargetSeasonalityYear",
+        "type": "object"
+      },
+      "TargetSourceMonth": {
+        "additionalProperties": true,
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "role"
+        ],
+        "title": "TargetSourceMonth",
+        "type": "object"
+      },
+      "TargetSourceSummaryResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "actual_realized": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Actual Realized",
+            "type": "string"
+          },
+          "attainment_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attainment Pct"
+          },
+          "forecast_factor": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Forecast Factor",
+            "type": "string"
+          },
+          "is_forecast": {
+            "title": "Is Forecast",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "realized": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Realized",
+            "type": "string"
+          },
+          "target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "target",
+          "realized",
+          "actual_realized",
+          "is_forecast",
+          "forecast_factor"
+        ],
+        "title": "TargetSourceSummaryResponse",
+        "type": "object"
+      },
+      "TargetStoreAgentResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "active_months_16": {
+            "title": "Active Months 16",
+            "type": "integer"
+          },
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "avg_receipt": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Receipt"
+          },
+          "bon2acc_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bon2Acc Pct"
+          },
+          "focus_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Focus Pct"
+          },
+          "receipt_count": {
+            "title": "Receipt Count",
+            "type": "integer"
+          },
+          "sales_16m": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sales 16M",
+            "type": "string"
+          },
+          "sales_share_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sales Share Pct",
+            "type": "string"
+          },
+          "total_quantity": {
+            "title": "Total Quantity",
+            "type": "integer"
+          },
+          "total_sales": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Sales",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "total_sales",
+          "sales_share_pct",
+          "total_quantity",
+          "receipt_count",
+          "active_months_16",
+          "sales_16m"
+        ],
+        "title": "TargetStoreAgentResponse",
+        "type": "object"
+      },
+      "TargetStoreDetailResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "agents": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetStoreAgentResponse"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "asm": {
+            "title": "Asm",
+            "type": "string"
+          },
+          "avg_sales_16m": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Avg Sales 16M",
+            "type": "string"
+          },
+          "best_month": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetStoreHistoryPointResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cohort_month": {
+            "title": "Cohort Month",
+            "type": "string"
+          },
+          "final_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Target"
+          },
+          "firma": {
+            "title": "Firma",
+            "type": "string"
+          },
+          "history": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetStoreHistoryPointResponse"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetStoreHistoryPointResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "locatie": {
+            "title": "Locatie",
+            "type": "string"
+          },
+          "proposed_target": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Proposed Target",
+            "type": "string"
+          },
+          "regional": {
+            "title": "Regional",
+            "type": "string"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "target_month": {
+            "title": "Target Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_code",
+          "locatie",
+          "firma",
+          "regional",
+          "asm",
+          "target_month",
+          "cohort_month",
+          "proposed_target",
+          "avg_sales_16m"
+        ],
+        "title": "TargetStoreDetailResponse",
+        "type": "object"
+      },
+      "TargetStoreHistoryPointResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "active_agents": {
+            "title": "Active Agents",
+            "type": "integer"
+          },
+          "avg_receipt": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Receipt"
+          },
+          "bon2acc_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bon2Acc Pct"
+          },
+          "cartele_qty": {
+            "title": "Cartele Qty",
+            "type": "integer"
+          },
+          "focus_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Focus Pct"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "receipt_count": {
+            "title": "Receipt Count",
+            "type": "integer"
+          },
+          "target_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Pct"
+          },
+          "target_value": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target Value",
+            "type": "string"
+          },
+          "total_quantity": {
+            "title": "Total Quantity",
+            "type": "integer"
+          },
+          "total_sales": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Sales",
+            "type": "string"
+          },
+          "working_days": {
+            "title": "Working Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "total_sales",
+          "target_value",
+          "total_quantity",
+          "receipt_count",
+          "cartele_qty",
+          "active_agents",
+          "working_days"
+        ],
+        "title": "TargetStoreHistoryPointResponse",
+        "type": "object"
+      },
+      "TargetTrendDetails": {
+        "additionalProperties": true,
+        "properties": {
+          "base_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Month"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          },
+          "raw_adjustment": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Adjustment"
+          },
+          "used_adjustment": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Adjustment"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          }
+        },
+        "title": "TargetTrendDetails",
+        "type": "object"
+      },
       "TaskCreate": {
         "additionalProperties": false,
         "properties": {
@@ -7504,6 +10699,19 @@
           "title"
         ],
         "title": "TaskCreate",
+        "type": "object"
+      },
+      "TaskDeleteResponse": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "TaskDeleteResponse",
         "type": "object"
       },
       "TaskItem": {
@@ -10203,7 +13411,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CrmAlertResponse"
+                  },
+                  "title": "Response Get Alerts Api Crm Alerts Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -10248,7 +13462,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CrmScoreResponse"
+                  },
+                  "title": "Response Get Scores Api Crm Scores Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -10293,7 +13513,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CrmRecalculateResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -11628,6 +14850,12 @@
             "content": {
               "application/json": {
                 "schema": {}
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": "Successful Response"
@@ -12472,7 +15700,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HrAsmPerformanceItem"
+                  },
+                  "title": "Response Get Asm Perf Api Hr Asm Performance Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -12529,7 +15763,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HrAsmHistoryItem"
+                  },
+                  "title": "Response Get Asm Perf History Api Hr Asm Performance  Asm Name  History Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -12584,7 +15824,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HrAsmSalaryBreakdown"
+                }
               }
             },
             "description": "Successful Response"
@@ -12724,7 +15966,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LeaveRequestItem"
+                }
               }
             },
             "description": "Successful Response"
@@ -12779,7 +16023,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LeaveRequestItem"
+                }
               }
             },
             "description": "Successful Response"
@@ -12826,7 +16072,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HrManagerOverviewItem"
+                  },
+                  "title": "Response Get Manager Overview Api Hr Manager Overview Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -12871,7 +16123,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HrAgentPerformanceItem"
+                  },
+                  "title": "Response Get Performance Api Hr Performance  Agent Name  Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -13244,7 +16502,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PnlAnnualResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13278,7 +16538,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PnlMonthsResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13387,7 +16649,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PnlOverviewResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13423,11 +16687,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
-                  "title": "Response Pnl Permissions Api Store Pnl Permissions Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PnlPermissionsResponse"
                 }
               }
             },
@@ -13470,7 +16730,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PnlRegionsResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13538,7 +16800,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PnlStoresResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13713,7 +16977,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TargetContextResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13737,7 +17003,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TargetScenarioSummaryResponse"
+                  },
+                  "title": "Response List Scenarios Api Target Calculator Scenarios Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -13771,7 +17043,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TargetScenarioResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13816,7 +17090,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TargetScenarioResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13862,6 +17138,12 @@
             "content": {
               "application/json": {
                 "schema": {}
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": "Successful Response"
@@ -13916,7 +17198,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TargetScenarioResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -13971,7 +17255,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TargetScenarioResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -14025,7 +17311,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TargetStoreDetailResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -14183,7 +17471,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskItem"
+                }
               }
             },
             "description": "Successful Response"
@@ -14228,7 +17518,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDeleteResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -14281,7 +17573,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskItem"
+                }
               }
             },
             "description": "Successful Response"
@@ -14447,6 +17741,12 @@
             "content": {
               "application/json": {
                 "schema": {}
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": "Successful Response"
@@ -15093,7 +18393,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SalaryEvolutionPoint"
+                  },
+                  "title": "Response Salarii Evolution Salarii Evolution Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -15372,7 +18678,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SalaryStoreOption"
+                  },
+                  "title": "Response Salarii Stores Salarii Stores Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -15504,7 +18816,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SalarySummaryResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -15604,7 +18918,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SalaryTrendPoint"
+                  },
+                  "title": "Response Salarii Trend Salarii Trend Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"

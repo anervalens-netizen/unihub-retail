@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet } from './generated/client';
 import type { ContestResponse } from './types';
 
 /**
@@ -7,16 +7,9 @@ import type { ContestResponse } from './types';
  * deci nu trimite filtrele globale ale aplicatiei.
  */
 export async function getActiveContest(month: string): Promise<ContestResponse | null> {
-  const { data } = await client.get<ContestResponse | null>('/api/contests/active', {
-    params: { month },
-  });
-  return data ?? null;
+  return await generatedGet('get_active_contest_api_contests_active_get', { params: { month } }) as ContestResponse | null;
 }
 
 export async function getActiveContests(month: string, signal?: AbortSignal): Promise<ContestResponse[]> {
-  const { data } = await client.get<ContestResponse[]>('/api/contests/active/all', {
-    params: { month },
-    signal,
-  });
-  return data ?? [];
+  return await generatedGet('get_active_contests_api_contests_active_all_get', { params: { month }, signal }) as ContestResponse[];
 }

@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet, generatedPost } from './generated/client';
 
 export interface SalariiOverview {
   total: number;
@@ -101,8 +101,7 @@ export async function fetchSalariiOverview(params?: {
   regional?: string;
   asm?: string;
 }): Promise<SalariiOverview> {
-  const res = await client.get<SalariiOverview>('/salarii/overview', { params });
-  return res.data;
+  return generatedGet('salarii_overview_salarii_overview_get', { params }) as unknown as SalariiOverview;
 }
 
 export async function fetchSalaryEvolution(params?: {
@@ -111,8 +110,7 @@ export async function fetchSalaryEvolution(params?: {
   regional?: string;
   asm?: string;
 }): Promise<SalaryEvolutionPoint[]> {
-  const res = await client.get<SalaryEvolutionPoint[]>('/salarii/evolution', { params });
-  return res.data;
+  return generatedGet('salarii_evolution_salarii_evolution_get', { params }) as unknown as SalaryEvolutionPoint[];
 }
 
 export async function fetchSalaryAgents(params: {
@@ -126,23 +124,20 @@ export async function fetchSalaryAgents(params: {
   limit?: number;
   offset?: number;
 }): Promise<SalaryAgentsSummaryResponse> {
-  const res = await client.get<SalaryAgentsSummaryResponse>('/salarii/agents/summary', {
-    params,
-  });
-  return res.data;
+  return generatedGet('agents_summary_salarii_agents_summary_get', { params }) as unknown as SalaryAgentsSummaryResponse;
 }
 
 export async function fetchSalaryAgentHistory(personId: string): Promise<SalaryAgentHistory> {
-  const res = await client.get<SalaryAgentHistory>(`/salarii/agents/${encodeURIComponent(personId)}/history`);
-  return res.data;
+  return generatedGet('agent_history_salarii_agents__person_id__history_get', {
+    pathParams: { person_id: personId },
+  }) as unknown as SalaryAgentHistory;
 }
 
 export async function fetchSalaryAgentHistoryByRetailCode(params: {
   agent_code: string;
   site_code: string;
 }): Promise<SalaryAgentHistory> {
-  const res = await client.get<SalaryAgentHistory>('/salarii/agents/history-by-retail-code', { params });
-  return res.data;
+  return generatedGet('agent_history_by_retail_code_salarii_agents_history_by_retail_code_get', { params }) as unknown as SalaryAgentHistory;
 }
 
 export async function fetchSalarySummary(params: {
@@ -153,8 +148,7 @@ export async function fetchSalarySummary(params: {
   year?: number;
   month?: number;
 }): Promise<SalarySummaryResponse> {
-  const res = await client.get<SalarySummaryResponse>('/salarii/summary', { params });
-  return res.data;
+  return generatedGet('salarii_summary_salarii_summary_get', { params }) as unknown as SalarySummaryResponse;
 }
 
 export async function fetchSalaryTrend(params: {
@@ -163,15 +157,14 @@ export async function fetchSalaryTrend(params: {
   regional?: string;
   asm?: string;
 }): Promise<SalaryTrendMonth[]> {
-  const res = await client.get<SalaryTrendMonth[]>('/salarii/trend', { params });
-  return res.data;
+  return generatedGet('salarii_trend_salarii_trend_get', { params }) as unknown as SalaryTrendMonth[];
 }
 
 export async function auditSalaryExport(
   exportKind: 'store_summary' | 'monthly_trend' | 'agents_page',
   rowCount: number,
 ): Promise<void> {
-  await client.post<void>('/salarii/audit/export', {
+  await generatedPost('audit_salary_export_salarii_audit_export_post', {
     export_kind: exportKind,
     row_count: rowCount,
   });

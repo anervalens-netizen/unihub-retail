@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet } from './generated/client';
 
 export interface StoreScore {
   site_code: string;
@@ -26,6 +26,5 @@ export interface StoreScore {
 }
 
 export async function fetchScores(month: string): Promise<StoreScore[]> {
-  const { data } = await client.get<StoreScore[]>('/api/crm/scores', { params: { month } });
-  return data;
+  return generatedGet('get_scores_api_crm_scores_get', { params: { month } }) as unknown as StoreScore[];
 }

@@ -1,4 +1,3 @@
-import { client } from './client';
 import { generatedGet, generatedPost } from './generated/client';
 import type {
   RetailExportCatalogResponse,
@@ -15,7 +14,7 @@ export type ExportRequest = RetailExportRequest;
 export type ExportPreview = RetailExportPreviewResponse;
 
 export async function getExportCatalog(signal?: AbortSignal): Promise<ExportCatalog> {
-  return generatedGet('get_catalog_api_exports_catalog_get', undefined, signal);
+  return generatedGet('get_catalog_api_exports_catalog_get', { signal });
 }
 
 export async function previewExport(request: ExportRequest): Promise<ExportPreview> {
@@ -23,6 +22,5 @@ export async function previewExport(request: ExportRequest): Promise<ExportPrevi
 }
 
 export async function downloadExport(request: ExportRequest): Promise<Blob> {
-  const { data } = await client.post<Blob>('/api/exports/download', request, { responseType: 'blob' });
-  return data;
+  return generatedPost('download_export_api_exports_download_post', request, { responseType: 'blob' });
 }

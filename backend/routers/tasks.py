@@ -49,6 +49,10 @@ class TaskListResponse(BaseModel):
     offset: int = Field(ge=0)
 
 
+class TaskDeleteResponse(BaseModel):
+    ok: bool
+
+
 class TaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -109,7 +113,7 @@ async def get_tasks(
     return await svc.list_tasks(status, assignee, site_code, limit=limit, offset=offset)
 
 
-@router.post("")
+@router.post("", response_model=TaskItem)
 async def post_task(
     body: TaskCreate,
     svc: TasksService = Depends(get_tasks_service),
@@ -118,7 +122,7 @@ async def post_task(
     return await svc.create_task(body.model_dump())
 
 
-@router.patch("/{task_id}")
+@router.patch("/{task_id}", response_model=TaskItem)
 async def patch_task(
     task_id: int,
     body: TaskUpdate,
@@ -128,7 +132,7 @@ async def patch_task(
     return await svc.update_task(task_id, body.model_dump(exclude_none=True))
 
 
-@router.delete("/{task_id}")
+@router.delete("/{task_id}", response_model=TaskDeleteResponse)
 async def remove_task(
     task_id: int,
     svc: TasksService = Depends(get_tasks_service),

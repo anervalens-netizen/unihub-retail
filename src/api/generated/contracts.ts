@@ -1,5 +1,135 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'b4781a979672b05a03ac21699386d22e743664263d7e9896d085196973d466ca' as const;
+export const RETAIL_OPENAPI_SHA256 = 'f847dbfd8029e331803f5cca023b7dde449312e11873de617933482130664921' as const;
+
+export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
+
+export const RETAIL_DECIMAL_KEYS = new Set<string>([
+  "accessory_margin_pct",
+  "actual_realized",
+  "actual_sales",
+  "attainment_pct",
+  "avg_monthly_sales",
+  "avg_receipt",
+  "avg_receipt_value",
+  "avg_sales_16m",
+  "avg_seniority_months",
+  "base_salary_per_agent",
+  "base_value",
+  "best_month_sales",
+  "blended_factor",
+  "bon2acc_pct",
+  "bon2acc_points",
+  "bonuri_pct",
+  "bonuri_score",
+  "break_even_gross_sales",
+  "break_even_total",
+  "calculated_weight",
+  "cap_target",
+  "career_total_sales",
+  "cumulative_actual",
+  "cumulative_forecast",
+  "current_forecast",
+  "current_forecast_total",
+  "daily_average",
+  "daily_reference",
+  "daily_score",
+  "daily_vs_reference_pct",
+  "default_min_floor",
+  "default_previous_month_cap_pct",
+  "default_previous_month_floor_pct",
+  "delta_pct",
+  "delta_sales",
+  "difference",
+  "expected_sales_to_date",
+  "final_growth_vs_current_pct",
+  "final_target",
+  "final_total",
+  "floor_target",
+  "floor_total",
+  "focus_pct",
+  "focus_points",
+  "focus_score",
+  "focus_share_pct",
+  "forecast_factor",
+  "forecast_sales",
+  "forecast_target_pct",
+  "forecast_target_progress_pct",
+  "forecast_total",
+  "incentive_potential",
+  "incentive_sales",
+  "incentive_value",
+  "last_year_base_total",
+  "last_year_growth_pct",
+  "last_year_store_factor",
+  "last_year_target_total",
+  "max",
+  "medie_produs",
+  "medie_zilnica",
+  "min",
+  "min_floor",
+  "multiyear_store_factor",
+  "network_factor",
+  "normalized_weight",
+  "operating_costs",
+  "operating_costs_total",
+  "peer_daily_average",
+  "prc_focus_acc_qty",
+  "premium_glass_pct",
+  "premium_glass_score",
+  "premium_qty_share_pct",
+  "premium_sales",
+  "premium_sales_share_pct",
+  "previous_month_cap_pct",
+  "previous_month_floor_pct",
+  "proc_bon2acc",
+  "proc_realizare_target",
+  "promo_discount_value",
+  "promo_impact",
+  "promo_sales",
+  "proposed_growth_vs_current_pct",
+  "proposed_target",
+  "proposed_total",
+  "ratio",
+  "raw_adjustment",
+  "raw_estimate",
+  "realized",
+  "regular_sales",
+  "remaining_difference",
+  "report_value",
+  "retail_value",
+  "retention_rate",
+  "salary_cost_at_90_pct",
+  "salary_total",
+  "sales",
+  "sales_16m",
+  "sales_share_pct",
+  "sales_total",
+  "share_pct",
+  "stability_rate",
+  "store_factor",
+  "store_target",
+  "suggested_total_target",
+  "target",
+  "target_forecast_pct",
+  "target_pct",
+  "target_points",
+  "target_progress_pct",
+  "target_score",
+  "target_value",
+  "total_focus_sales",
+  "total_sales",
+  "total_score",
+  "total_target",
+  "total_vanzari",
+  "trend_daily_pct",
+  "used_adjustment",
+  "used_factor",
+  "value",
+  "value_reper",
+  "value_reper_score",
+  "weight",
+  "zone_factor",
+]);
 
 export interface RetailAgentEvaluationOption {
   "label": string;
@@ -17,20 +147,20 @@ export interface RetailAgentEvaluationResponse {
 export interface RetailAgentEvaluationRow {
   "agent": string;
   "asm": string;
-  "bonuri_pct": string | null;
+  "bonuri_pct": RetailDecimal | null;
   "bonuri_points": number;
-  "daily_average": string | null;
+  "daily_average": RetailDecimal | null;
   "daily_points": number;
   "firma": string;
-  "focus_pct": string | null;
+  "focus_pct": RetailDecimal | null;
   "focus_points": number;
   "focus_quantity": number;
   "glass_qty": number;
   "has_red_segment": boolean;
   "locatie": string;
   "month": string;
-  "peer_daily_average": string | null;
-  "premium_glass_pct": string | null;
+  "peer_daily_average": RetailDecimal | null;
+  "premium_glass_pct": RetailDecimal | null;
   "premium_glass_points": number;
   "premium_glass_qty": number;
   "qualifier": "Excelent" | "Foarte Bun" | "Bun" | "Mediu" | "Scazut";
@@ -38,15 +168,15 @@ export interface RetailAgentEvaluationRow {
   "receipt_count": number;
   "regional": string;
   "site_code": string;
-  "store_target": string;
+  "store_target": RetailDecimal;
   "store_working_days": number;
-  "target_pct": string | null;
+  "target_pct": RetailDecimal | null;
   "target_points": number;
-  "target_value": string;
+  "target_value": RetailDecimal;
   "total_points": number;
   "total_quantity": number;
-  "total_sales": string;
-  "value_reper": string | null;
+  "total_sales": RetailDecimal;
+  "value_reper": RetailDecimal | null;
   "value_reper_points": number;
   "working_days": number;
 }
@@ -62,22 +192,22 @@ export interface RetailAgentEvaluationV2Response {
 export interface RetailAgentEvaluationV2Row {
   "agent": string;
   "asm": string;
-  "bonuri_pct": string | null;
-  "bonuri_score": string | null;
+  "bonuri_pct": RetailDecimal | null;
+  "bonuri_score": RetailDecimal | null;
   "confidence_flags": Array<string>;
-  "daily_average": string | null;
-  "daily_reference": string | null;
+  "daily_average": RetailDecimal | null;
+  "daily_reference": RetailDecimal | null;
   "daily_reference_type": "colegi" | "istoric_locatie" | "media_manager" | "none";
-  "daily_score": string | null;
-  "daily_vs_reference_pct": string | null;
+  "daily_score": RetailDecimal | null;
+  "daily_vs_reference_pct": RetailDecimal | null;
   "eligibility_status": "eligibil" | "insuficient";
   "final_month_count": number;
   "firma": string;
-  "focus_pct": string | null;
+  "focus_pct": RetailDecimal | null;
   "focus_quantity": number;
-  "focus_score": string | null;
-  "forecast_factor": string;
-  "forecast_sales": string;
+  "focus_score": RetailDecimal | null;
+  "forecast_factor": RetailDecimal;
+  "forecast_sales": RetailDecimal;
   "glass_qty": number;
   "is_partial": boolean;
   "locatie": string;
@@ -85,26 +215,26 @@ export interface RetailAgentEvaluationV2Row {
   "month": string;
   "partial_month_count": number;
   "period_month_count": number;
-  "premium_glass_pct": string | null;
+  "premium_glass_pct": RetailDecimal | null;
   "premium_glass_qty": number;
-  "premium_glass_score": string | null;
+  "premium_glass_score": RetailDecimal | null;
   "rating": "Insuficient" | "Fara scor" | "Excelent" | "Foarte Bun" | "Bun" | "Risc" | "Critic";
   "receipt_2plus_count": number;
   "receipt_count": number;
   "regional": string;
   "site_code": string;
-  "target_forecast_pct": string | null;
-  "target_pct": string | null;
-  "target_score": string | null;
+  "target_forecast_pct": RetailDecimal | null;
+  "target_pct": RetailDecimal | null;
+  "target_score": RetailDecimal | null;
   "target_source": "partial_agent_target" | "allocated_store_target";
-  "target_value": string;
+  "target_value": RetailDecimal;
   "total_quantity": number;
-  "total_sales": string;
-  "total_score": string | null;
-  "trend_daily_pct": string | null;
+  "total_sales": RetailDecimal;
+  "total_score": RetailDecimal | null;
+  "trend_daily_pct": RetailDecimal | null;
   "trend_direction": "up" | "down" | "flat";
-  "value_reper": string | null;
-  "value_reper_score": string | null;
+  "value_reper": RetailDecimal | null;
+  "value_reper_score": RetailDecimal | null;
   "working_days": number;
 }
 
@@ -114,7 +244,7 @@ export interface RetailAgentHistoryPoint {
   "month": string;
   "receipt_count": number;
   "total_quantity": number;
-  "total_sales": string;
+  "total_sales": RetailDecimal;
 }
 
 export interface RetailAgentHistoryResponse {
@@ -130,7 +260,7 @@ export interface RetailAgentListItem {
   "is_reactivated": boolean;
   "store_name"?: string | null;
   "total_quantity": number;
-  "total_sales": string;
+  "total_sales": RetailDecimal;
 }
 
 export interface RetailAgentListResponse {
@@ -163,11 +293,11 @@ export interface RetailAgentOption {
 export interface RetailAgentProfileResponse {
   "active_months_count": number;
   "agent": string;
-  "avg_monthly_sales": string;
+  "avg_monthly_sales": RetailDecimal;
   "best_month": string | null;
-  "best_month_sales": string;
+  "best_month_sales": RetailDecimal;
   "career_total_quantity": number;
-  "career_total_sales": string;
+  "career_total_sales": RetailDecimal;
   "current_status": "active" | "inactive_recent" | "churned";
   "distinct_asm_count": number;
   "distinct_firma_count": number;
@@ -201,20 +331,20 @@ export interface RetailAgentStats {
   "import_month": string;
   "incentive_qty"?: number;
   "locatie": string;
-  "medie_produs"?: string | null;
-  "medie_zilnica": string | null;
+  "medie_produs"?: RetailDecimal | null;
+  "medie_zilnica": RetailDecimal | null;
   "nr_bon2acc": number;
   "nr_bonuri": number;
-  "prc_focus_acc_qty": string | null;
-  "proc_bon2acc": string | null;
-  "proc_realizare_target"?: string | null;
-  "promo_discount_value"?: string;
+  "prc_focus_acc_qty": RetailDecimal | null;
+  "proc_bon2acc": RetailDecimal | null;
+  "proc_realizare_target"?: RetailDecimal | null;
+  "promo_discount_value"?: RetailDecimal;
   "promo_qty"?: number;
   "regional": string;
   "return_receipt_count"?: number;
   "site_code": string;
-  "target"?: string | null;
-  "total_vanzari": string;
+  "target"?: RetailDecimal | null;
+  "total_vanzari": RetailDecimal;
   "zile_lucrate": number;
 }
 
@@ -224,30 +354,30 @@ export interface RetailAgentTargetRunRequest {
 
 export interface RetailAgentsOverviewResponse {
   "active_count": number;
-  "avg_seniority_months": string | null;
+  "avg_seniority_months": RetailDecimal | null;
   "churned_total_count": number;
   "left_this_month_count": number;
   "new_count": number;
   "reactivated_count": number;
-  "retention_rate": string | null;
-  "stability_rate": string | null;
+  "retention_rate": RetailDecimal | null;
+  "stability_rate": RetailDecimal | null;
   "total_unique_agents": number;
 }
 
 export interface RetailAiForecastDailyPoint {
-  "actual_sales": string;
-  "cumulative_actual": string;
-  "cumulative_forecast": string;
+  "actual_sales": RetailDecimal;
+  "cumulative_actual": RetailDecimal;
+  "cumulative_forecast": RetailDecimal;
   "forecast_date": string;
-  "forecast_sales": string;
+  "forecast_sales": RetailDecimal;
 }
 
 export interface RetailAiForecastManagerRow {
-  "actual_sales": string;
-  "delta_pct"?: string | null;
-  "delta_sales": string;
-  "expected_sales_to_date": string;
-  "forecast_sales": string;
+  "actual_sales": RetailDecimal;
+  "delta_pct"?: RetailDecimal | null;
+  "delta_sales": RetailDecimal;
+  "expected_sales_to_date": RetailDecimal;
+  "forecast_sales": RetailDecimal;
   "manager": string;
   "store_count": number;
 }
@@ -261,20 +391,20 @@ export interface RetailAiForecastResponse {
 }
 
 export interface RetailAiForecastRollingManagerRow {
-  "actual_sales"?: string | null;
-  "delta_pct"?: string | null;
-  "delta_sales"?: string | null;
-  "forecast_sales": string;
+  "actual_sales"?: RetailDecimal | null;
+  "delta_pct"?: RetailDecimal | null;
+  "delta_sales"?: RetailDecimal | null;
+  "forecast_sales": RetailDecimal;
   "manager": string;
   "store_count": number;
 }
 
 export interface RetailAiForecastRollingMonthlyPoint {
-  "actual_sales"?: string | null;
-  "delta_pct"?: string | null;
-  "delta_sales"?: string | null;
+  "actual_sales"?: RetailDecimal | null;
+  "delta_pct"?: RetailDecimal | null;
+  "delta_sales"?: RetailDecimal | null;
   "forecast_month": string;
-  "forecast_sales": string;
+  "forecast_sales": RetailDecimal;
   "store_count": number;
 }
 
@@ -287,23 +417,23 @@ export interface RetailAiForecastRollingResponse {
 }
 
 export interface RetailAiForecastRollingStoreRow {
-  "actual_sales"?: string | null;
+  "actual_sales"?: RetailDecimal | null;
   "asm": string;
-  "delta_pct"?: string | null;
-  "delta_sales"?: string | null;
+  "delta_pct"?: RetailDecimal | null;
+  "delta_sales"?: RetailDecimal | null;
   "firma": string;
-  "forecast_sales": string;
+  "forecast_sales": RetailDecimal;
   "locatie": string;
   "regional": string;
   "site_code": string;
 }
 
 export interface RetailAiForecastRollingSummary {
-  "actual_sales"?: string | null;
-  "delta_pct"?: string | null;
-  "delta_sales"?: string | null;
+  "actual_sales"?: RetailDecimal | null;
+  "delta_pct"?: RetailDecimal | null;
+  "delta_sales"?: RetailDecimal | null;
   "end_month": string;
-  "forecast_sales": string;
+  "forecast_sales": RetailDecimal;
   "month_count": number;
   "source_month": string;
   "start_month": string;
@@ -324,13 +454,13 @@ export interface RetailAiForecastRunInfo {
 }
 
 export interface RetailAiForecastStoreRow {
-  "actual_sales": string;
+  "actual_sales": RetailDecimal;
   "asm": string;
-  "delta_pct"?: string | null;
-  "delta_sales": string;
-  "expected_sales_to_date": string;
+  "delta_pct"?: RetailDecimal | null;
+  "delta_sales": RetailDecimal;
+  "expected_sales_to_date": RetailDecimal;
   "firma": string;
-  "forecast_sales": string;
+  "forecast_sales": RetailDecimal;
   "locatie": string;
   "regional": string;
   "site_code": string;
@@ -338,14 +468,14 @@ export interface RetailAiForecastStoreRow {
 
 export interface RetailAiForecastSummary {
   "actual_last_date"?: string | null;
-  "actual_sales": string;
+  "actual_sales": RetailDecimal;
   "days_elapsed"?: number;
   "days_in_month": number;
-  "delta_pct"?: string | null;
-  "delta_sales": string;
-  "expected_sales_to_date": string;
+  "delta_pct"?: RetailDecimal | null;
+  "delta_sales": RetailDecimal;
+  "expected_sales_to_date": RetailDecimal;
   "forecast_month": string;
-  "forecast_sales": string;
+  "forecast_sales": RetailDecimal;
   "source_month": string;
   "store_count": number;
 }
@@ -353,19 +483,19 @@ export interface RetailAiForecastSummary {
 export interface RetailAsmStats {
   "asm": string;
   "incentive_qty"?: number;
-  "medie_produs"?: string | null;
-  "medie_zilnica": string | null;
+  "medie_produs"?: RetailDecimal | null;
+  "medie_zilnica": RetailDecimal | null;
   "nr_agenti": number;
   "nr_bonuri": number;
-  "prc_focus_acc_qty": string | null;
-  "proc_bon2acc": string | null;
-  "proc_realizare_target": string | null;
-  "promo_discount_value"?: string;
+  "prc_focus_acc_qty": RetailDecimal | null;
+  "proc_bon2acc": RetailDecimal | null;
+  "proc_realizare_target": RetailDecimal | null;
+  "promo_discount_value"?: RetailDecimal;
   "promo_qty"?: number;
   "qty_total": number;
   "regional": string;
-  "target": string;
-  "total_vanzari": string;
+  "target": RetailDecimal;
+  "total_vanzari": RetailDecimal;
   "zile_active": number;
 }
 
@@ -388,24 +518,24 @@ export interface RetailBody_upload_sales_file_api_import_sales_post {
 export interface RetailBrandMixItem {
   "brand": string;
   "quantity_total": number;
-  "sales_total": string;
-  "share_pct": string | null;
+  "sales_total": RetailDecimal;
+  "share_pct": RetailDecimal | null;
 }
 
 export interface RetailCampaignOverview {
   "active_focus_products": number;
   "active_focus_stores": number;
-  "focus_share_pct": string | null;
+  "focus_share_pct": RetailDecimal | null;
   "month": string;
   "total_focus_qty": number;
-  "total_focus_sales": string;
+  "total_focus_sales": RetailDecimal;
 }
 
 export interface RetailCampaignProductStat {
   "item_code": string;
   "item_name": string;
   "qty_total": number;
-  "sales_total": string;
+  "sales_total": RetailDecimal;
   "store_count": number;
 }
 
@@ -424,7 +554,7 @@ export interface RetailCampaignStoreStat {
   "active_products": number;
   "locatie": string;
   "qty_total": number;
-  "sales_total": string;
+  "sales_total": RetailDecimal;
   "site_code": string;
 }
 
@@ -455,7 +585,7 @@ export interface RetailCampaignsPromotionsResponse {
   "promo_calculation_status"?: "complete" | "partial" | "invalid" | "not_configured";
   "promo_category_qty"?: number | null;
   "promo_description"?: string;
-  "promo_discount_value"?: string;
+  "promo_discount_value"?: RetailDecimal;
   "promo_discounted_units"?: number;
   "promo_impact"?: number;
   "promo_qty"?: number;
@@ -471,8 +601,8 @@ export interface RetailCampaignsPromotionsResponse {
 export interface RetailCategoryMixItem {
   "category": string;
   "quantity_total": number;
-  "sales_total": string;
-  "share_pct": string | null;
+  "sales_total": RetailDecimal;
+  "share_pct": RetailDecimal | null;
 }
 
 export interface RetailContestLeaderboardRow {
@@ -519,11 +649,38 @@ export interface RetailContestRuleInfo {
   "type": string;
 }
 
+export interface RetailCrmAlertResponse {
+  "asm"?: string | null;
+  "locatie"?: string | null;
+  "reasons"?: Array<string>;
+  "regional"?: string | null;
+  "score": number;
+  "site_code": string;
+}
+
+export interface RetailCrmBreakdownResponse {
+  "kpi_pct"?: number | null;
+  "target_pct"?: number | null;
+  "trend_pct"?: number | null;
+  "visits_pct"?: number | null;
+}
+
+export interface RetailCrmRecalculateResponse {
+  "month": string;
+  "recalculated": number;
+}
+
+export interface RetailCrmScoreResponse {
+  "breakdown": RetailCrmBreakdownResponse;
+  "score": number;
+  "site_code": string;
+}
+
 export interface RetailDailySalesPoint {
   "receipt_count": number;
   "sale_date": string;
   "total_quantity": number;
-  "total_sales": string;
+  "total_sales": RetailDecimal;
 }
 
 export interface RetailDashboardAllBatchRequest {
@@ -590,24 +747,24 @@ export interface RetailDashboardSpecialCardsResponse {
 
 export interface RetailDashboardSummary {
   "cartele_qty"?: number;
-  "daily_average": string | null;
+  "daily_average": RetailDecimal | null;
   "days_in_month"?: number | null;
-  "forecast_sales"?: string | null;
-  "forecast_target_progress_pct"?: string | null;
+  "forecast_sales"?: RetailDecimal | null;
+  "forecast_target_progress_pct"?: RetailDecimal | null;
   "imported_day_of_month"?: number | null;
   "is_month_final"?: boolean;
   "last_sale_date"?: string | null;
-  "medie_produs"?: string | null;
+  "medie_produs"?: RetailDecimal | null;
   "month": string;
-  "prc_focus_acc_qty": string | null;
-  "proc_bon2acc": string | null;
-  "target_progress_pct": string | null;
+  "prc_focus_acc_qty": RetailDecimal | null;
+  "proc_bon2acc": RetailDecimal | null;
+  "target_progress_pct": RetailDecimal | null;
   "total_agents": number;
   "total_quantity": number;
   "total_receipts": number;
-  "total_sales": string;
+  "total_sales": RetailDecimal;
   "total_stores": number;
-  "total_target": string;
+  "total_target": RetailDecimal;
   "working_days": number;
 }
 
@@ -616,28 +773,28 @@ export interface RetailErpReconciliationAppMetric {
   "label": string;
   "note": string;
   "unit": "RON" | "buc";
-  "value"?: string | null;
+  "value"?: RetailDecimal | null;
 }
 
 export interface RetailErpReconciliationIssue {
-  "difference"?: string | null;
+  "difference"?: RetailDecimal | null;
   "entity": string;
   "metric": string;
   "note": string;
-  "report_value"?: string | null;
-  "retail_value"?: string | null;
+  "report_value"?: RetailDecimal | null;
+  "retail_value"?: RetailDecimal | null;
   "scope": "report" | "store" | "agent";
   "severity": "warning" | "error";
   "site_code"?: string | null;
 }
 
 export interface RetailErpReconciliationMetric {
-  "difference"?: string | null;
+  "difference"?: RetailDecimal | null;
   "key": string;
   "label": string;
   "note"?: string | null;
-  "report_value"?: string | null;
-  "retail_value"?: string | null;
+  "report_value"?: RetailDecimal | null;
+  "retail_value"?: RetailDecimal | null;
   "status": "ok" | "explained" | "difference" | "not_comparable";
   "unit": "RON" | "buc" | "bonuri" | "magazine" | "agenti";
 }
@@ -731,10 +888,10 @@ export interface RetailFilterOptions {
 export interface RetailFocusHistoryPoint {
   "active_focus_products": number;
   "active_focus_stores": number;
-  "focus_share_pct": string | null;
+  "focus_share_pct": RetailDecimal | null;
   "month": string;
   "total_focus_qty": number;
-  "total_focus_sales": string;
+  "total_focus_sales": RetailDecimal;
 }
 
 export interface RetailFocusHistoryResponse {
@@ -743,6 +900,118 @@ export interface RetailFocusHistoryResponse {
 
 export interface RetailHTTPValidationError {
   "detail"?: Array<RetailValidationError>;
+}
+
+export interface RetailHrAgentPerformanceItem {
+  "active_days": number;
+  "import_month": string;
+  "target_pct": number;
+  "total_value": number;
+  "transaction_count": number;
+}
+
+export interface RetailHrAsmHistoryItem {
+  "active_stores": number;
+  "avg_completion"?: number | null;
+  "avg_duration"?: number | null;
+  "forecast_sales": number;
+  "forecast_target_pct"?: number | null;
+  "is_forecast": boolean;
+  "month": string;
+  "target_pct"?: number | null;
+  "total_sales": number;
+  "total_target": number;
+  "total_visits": number;
+}
+
+export interface RetailHrAsmPerformanceItem {
+  "active_agents": number;
+  "active_stores": number;
+  "approved_pct"?: number | null;
+  "asm": string;
+  "avg_completion"?: number | null;
+  "avg_duration"?: number | null;
+  "checklist_score"?: number | null;
+  "distinct_stores_visited": number;
+  "forecast_sales": number;
+  "forecast_target_pct"?: number | null;
+  "is_forecast": boolean;
+  "pct_bon2acc": number;
+  "pct_focus": number;
+  "regional"?: string | null;
+  "target_pct"?: number | null;
+  "total_sales": number;
+  "total_target": number;
+  "total_visits": number;
+}
+
+export interface RetailHrAsmSalaryBreakdown {
+  "acc_focus": Record<string, unknown>;
+  "asm": string;
+  "fixed_salary": number;
+  "forecast_factor": number;
+  "homogeneity": Record<string, unknown>;
+  "is_forecast": boolean;
+  "islands"?: Array<RetailHrAsmSalaryIsland>;
+  "islands_commission": number;
+  "month": string;
+  "total_salary": number;
+  "zone": RetailHrAsmSalaryZone;
+}
+
+export interface RetailHrAsmSalaryIsland {
+  "commission": number;
+  "firma": string;
+  "forecast_sales": number;
+  "forecast_target_pct"?: number | null;
+  "locatie": string;
+  "pct_used"?: number | null;
+  "site_code": string;
+  "target_pct"?: number | null;
+  "total_sales": number;
+  "total_target": number;
+}
+
+export interface RetailHrAsmSalaryZone {
+  "commission": number;
+  "forecast_sales": number;
+  "forecast_target_pct"?: number | null;
+  "pct_used"?: number | null;
+  "target_pct"?: number | null;
+  "total_sales": number;
+  "total_target": number;
+}
+
+export interface RetailHrManagerOverviewItem {
+  "active_agents": number;
+  "active_stores": number;
+  "agent_delta": number;
+  "agents_added": number;
+  "agents_left": number;
+  "agents_per_store": number;
+  "approved_pct"?: number | null;
+  "avg_visit_completion"?: number | null;
+  "checklist_score"?: number | null;
+  "manager": string;
+  "month": string;
+  "previous_active_agents": number;
+  "regional"?: string | null;
+  "reporting_available": boolean;
+  "stores"?: Array<RetailHrManagerStoreItem>;
+  "stores_without_agents": number;
+  "total_visits": number;
+  "visit_coverage_pct"?: number | null;
+  "visited_stores": number;
+  "visits_available": boolean;
+}
+
+export interface RetailHrManagerStoreItem {
+  "active_agents": number;
+  "agent_delta": number;
+  "firma": string;
+  "locatie": string;
+  "previous_active_agents": number;
+  "site_code": string;
 }
 
 export interface RetailImportHistoryEntry {
@@ -852,19 +1121,19 @@ export interface RetailLeaveStatusUpdate {
 }
 
 export interface RetailMonthlyHistoryPoint {
-  "daily_average": string | null;
-  "medie_produs"?: string | null;
+  "daily_average": RetailDecimal | null;
+  "medie_produs"?: RetailDecimal | null;
   "month": string;
-  "prc_focus_acc_qty": string | null;
-  "proc_bon2acc": string | null;
+  "prc_focus_acc_qty": RetailDecimal | null;
+  "proc_bon2acc": RetailDecimal | null;
   "return_receipt_count"?: number;
-  "target_progress_pct": string | null;
+  "target_progress_pct": RetailDecimal | null;
   "total_agents": number;
   "total_quantity": number;
   "total_receipts": number;
-  "total_sales": string;
+  "total_sales": RetailDecimal;
   "total_stores": number;
-  "total_target": string;
+  "total_target": RetailDecimal;
   "working_days": number;
 }
 
@@ -895,21 +1164,21 @@ export interface RetailPerformanceDetailResponse {
 }
 
 export interface RetailPerformancePeerRow {
-  "forecast_target_pct"?: string | null;
+  "forecast_target_pct"?: RetailDecimal | null;
   "is_selected"?: boolean;
   "label": string;
-  "prc_focus_acc_qty"?: string | null;
-  "proc_bon2acc"?: string | null;
+  "prc_focus_acc_qty"?: RetailDecimal | null;
+  "proc_bon2acc"?: RetailDecimal | null;
   "rank": number;
   "sublabel"?: string | null;
-  "target_progress_pct"?: string | null;
-  "total_sales": string;
+  "target_progress_pct"?: RetailDecimal | null;
+  "total_sales": RetailDecimal;
 }
 
 export interface RetailPerformanceScoreBreakdown {
-  "bon2acc_points": string;
-  "focus_points": string;
-  "target_points": string;
+  "bon2acc_points": RetailDecimal;
+  "focus_points": RetailDecimal;
+  "target_points": RetailDecimal;
 }
 
 export interface RetailPeriodComparisonPayload {
@@ -919,19 +1188,103 @@ export interface RetailPeriodComparisonPayload {
 }
 
 export interface RetailPeriodComparisonPoint {
-  "avg_receipt_value": string | null;
+  "avg_receipt_value": RetailDecimal | null;
   "cartele_qty"?: number;
-  "daily_average": string | null;
+  "daily_average": RetailDecimal | null;
   "day_range": string;
   "label": string;
-  "medie_produs"?: string | null;
+  "medie_produs"?: RetailDecimal | null;
   "month": string;
-  "prc_focus_acc_qty": string | null;
-  "proc_bon2acc": string | null;
+  "prc_focus_acc_qty": RetailDecimal | null;
+  "proc_bon2acc": RetailDecimal | null;
   "total_quantity": number;
   "total_receipts": number;
-  "total_sales": string;
+  "total_sales": RetailDecimal;
   "working_days": number;
+}
+
+export interface RetailPnlAnnualItemResponse {
+  "cogs": number;
+  "depreciation": number;
+  "ebit": number;
+  "ebitda": number;
+  "gross_margin": number;
+  "is_estimated": boolean;
+  "month_count": number;
+  "operating_costs": number;
+  "revenue": number;
+  "store_count": number;
+  "year": string;
+}
+
+export interface RetailPnlAnnualResponse {
+  "annual": Array<RetailPnlAnnualItemResponse>;
+}
+
+export interface RetailPnlMetricsResponse {
+  "cogs": number;
+  "depreciation": number;
+  "ebit": number;
+  "ebitda": number;
+  "gross_margin": number;
+  "operating_costs": number;
+  "revenue": number;
+}
+
+export interface RetailPnlMonthResponse {
+  "has_actual": boolean;
+  "has_estimated": boolean;
+  "month": string;
+}
+
+export interface RetailPnlMonthlyItemResponse {
+  "cogs": number;
+  "depreciation": number;
+  "ebit": number;
+  "ebitda": number;
+  "gross_margin": number;
+  "is_estimated": boolean;
+  "month": string;
+  "operating_costs": number;
+  "revenue": number;
+}
+
+export interface RetailPnlMonthsResponse {
+  "months": Array<RetailPnlMonthResponse>;
+}
+
+export interface RetailPnlOverviewResponse {
+  "categories"?: Record<string, number>;
+  "company"?: string | null;
+  "end_month": string;
+  "monthly"?: Array<RetailPnlMonthlyItemResponse>;
+  "reconciliation"?: Array<Record<string, unknown>>;
+  "regional"?: string | null;
+  "site_code"?: string | null;
+  "site_company"?: string | null;
+  "start_month": string;
+  "stores"?: Array<Record<string, unknown>>;
+  "summary": RetailPnlMetricsResponse;
+}
+
+export interface RetailPnlPermissionsResponse {
+  "can_view": boolean;
+}
+
+export interface RetailPnlRegionsResponse {
+  "regions": Array<string>;
+}
+
+export interface RetailPnlStoreOptionResponse {
+  "company_name": string;
+  "location": string;
+  "regional"?: string | null;
+  "scope_company"?: string | null;
+  "site_code": string;
+}
+
+export interface RetailPnlStoresResponse {
+  "stores": Array<RetailPnlStoreOptionResponse>;
 }
 
 export interface RetailPremiumGlassAgentStat {
@@ -939,13 +1292,13 @@ export interface RetailPremiumGlassAgentStat {
   "firma": string;
   "locatie": string;
   "premium_qty"?: number;
-  "premium_qty_share_pct"?: string | null;
-  "premium_sales"?: string;
+  "premium_qty_share_pct"?: RetailDecimal | null;
+  "premium_sales"?: RetailDecimal;
   "regular_qty"?: number;
-  "regular_sales"?: string;
+  "regular_sales"?: RetailDecimal;
   "site_code": string;
   "total_qty"?: number;
-  "total_sales"?: string;
+  "total_sales"?: RetailDecimal;
 }
 
 export interface RetailPremiumGlassAnalysis {
@@ -962,13 +1315,13 @@ export interface RetailPremiumGlassManagerStat {
   "agent_count"?: number;
   "manager": string;
   "premium_qty"?: number;
-  "premium_qty_share_pct"?: string | null;
-  "premium_sales"?: string;
+  "premium_qty_share_pct"?: RetailDecimal | null;
+  "premium_sales"?: RetailDecimal;
   "regular_qty"?: number;
-  "regular_sales"?: string;
+  "regular_sales"?: RetailDecimal;
   "store_count"?: number;
   "total_qty"?: number;
-  "total_sales"?: string;
+  "total_sales"?: RetailDecimal;
 }
 
 export interface RetailPremiumGlassModelStat {
@@ -976,13 +1329,13 @@ export interface RetailPremiumGlassModelStat {
   "model_label": string;
   "premium_item_count"?: number;
   "premium_qty"?: number;
-  "premium_qty_share_pct"?: string | null;
-  "premium_sales"?: string;
+  "premium_qty_share_pct"?: RetailDecimal | null;
+  "premium_sales"?: RetailDecimal;
   "regular_item_count"?: number;
   "regular_qty"?: number;
-  "regular_sales"?: string;
+  "regular_sales"?: RetailDecimal;
   "total_qty"?: number;
-  "total_sales"?: string;
+  "total_sales"?: RetailDecimal;
 }
 
 export interface RetailPremiumGlassProductStat {
@@ -991,7 +1344,7 @@ export interface RetailPremiumGlassProductStat {
   "item_name": string;
   "model_labels"?: Array<string>;
   "qty"?: number;
-  "sales"?: string;
+  "sales"?: RetailDecimal;
   "store_count"?: number;
 }
 
@@ -999,13 +1352,13 @@ export interface RetailPremiumGlassStoreStat {
   "firma": string;
   "locatie": string;
   "premium_qty"?: number;
-  "premium_qty_share_pct"?: string | null;
-  "premium_sales"?: string;
+  "premium_qty_share_pct"?: RetailDecimal | null;
+  "premium_sales"?: RetailDecimal;
   "regular_qty"?: number;
-  "regular_sales"?: string;
+  "regular_sales"?: RetailDecimal;
   "site_code": string;
   "total_qty"?: number;
-  "total_sales"?: string;
+  "total_sales"?: RetailDecimal;
 }
 
 export interface RetailPremiumGlassSummary {
@@ -1015,26 +1368,26 @@ export interface RetailPremiumGlassSummary {
   "premium_active_agents"?: number;
   "premium_active_stores"?: number;
   "premium_qty"?: number;
-  "premium_qty_share_pct"?: string | null;
-  "premium_sales"?: string;
-  "premium_sales_share_pct"?: string | null;
+  "premium_qty_share_pct"?: RetailDecimal | null;
+  "premium_sales"?: RetailDecimal;
+  "premium_sales_share_pct"?: RetailDecimal | null;
   "regular_qty"?: number;
-  "regular_sales"?: string;
+  "regular_sales"?: RetailDecimal;
   "target_model_count"?: number;
   "total_qty"?: number;
-  "total_sales"?: string;
+  "total_sales"?: RetailDecimal;
 }
 
 export interface RetailPremiumGlassSurfaceStat {
   "premium_qty"?: number;
-  "premium_qty_share_pct"?: string | null;
-  "premium_sales"?: string;
+  "premium_qty_share_pct"?: RetailDecimal | null;
+  "premium_sales"?: RetailDecimal;
   "regular_qty"?: number;
-  "regular_sales"?: string;
+  "regular_sales"?: RetailDecimal;
   "surface_key": "screen" | "camera";
   "surface_label": string;
   "total_qty"?: number;
-  "total_sales"?: string;
+  "total_sales"?: RetailDecimal;
 }
 
 export interface RetailPromoActualImportResponse {
@@ -1053,7 +1406,7 @@ export interface RetailPromoActualImportResponse {
 export interface RetailPromoIncentiveSummary {
   "calculation_status"?: "complete" | "invalid";
   "calculation_warnings"?: Array<string>;
-  "incentive_potential"?: string | null;
+  "incentive_potential"?: RetailDecimal | null;
   "incentive_qty"?: number | null;
   "incentive_qualified_agents"?: number;
   "incentive_qualified_agents_full"?: number;
@@ -1062,12 +1415,12 @@ export interface RetailPromoIncentiveSummary {
   "incentive_qualified_stores"?: number;
   "incentive_qualified_stores_full"?: number;
   "incentive_qualified_stores_half"?: number;
-  "incentive_sales"?: string;
+  "incentive_sales"?: RetailDecimal;
   "incentive_sold_qty"?: number;
-  "incentive_value"?: string | null;
-  "promo_impact"?: string;
+  "incentive_value"?: RetailDecimal | null;
+  "promo_impact"?: RetailDecimal;
   "promo_qty"?: number;
-  "promo_sales"?: string;
+  "promo_sales"?: RetailDecimal;
 }
 
 export interface RetailPromoTopAgent {
@@ -1092,26 +1445,26 @@ export interface RetailPromoTopStore {
 export interface RetailReceiptBucketItem {
   "bucket": string;
   "receipt_count": number;
-  "share_pct": string | null;
+  "share_pct": RetailDecimal | null;
 }
 
 export interface RetailRegionalStats {
-  "forecast_target_pct"?: string | null;
+  "forecast_target_pct"?: RetailDecimal | null;
   "incentive_qty"?: number;
-  "medie_produs"?: string | null;
-  "medie_zilnica": string | null;
+  "medie_produs"?: RetailDecimal | null;
+  "medie_zilnica": RetailDecimal | null;
   "nr_agenti": number;
   "nr_bonuri": number;
-  "prc_focus_acc_qty": string | null;
-  "proc_bon2acc": string | null;
-  "proc_realizare_target": string | null;
-  "promo_discount_value"?: string;
+  "prc_focus_acc_qty": RetailDecimal | null;
+  "proc_bon2acc": RetailDecimal | null;
+  "proc_realizare_target": RetailDecimal | null;
+  "promo_discount_value"?: RetailDecimal;
   "promo_qty"?: number;
   "qty_total": number;
   "regional": string;
   "return_receipt_count"?: number;
-  "target": string;
-  "total_vanzari": string;
+  "target": RetailDecimal;
+  "total_vanzari": RetailDecimal;
   "zile_active": number;
 }
 
@@ -1128,6 +1481,25 @@ export interface RetailSalaryAgentSummaryPublic {
 
 export interface RetailSalaryAgentsSummaryResponse {
   "items": Array<RetailSalaryAgentSummaryPublic>;
+  "total": number;
+}
+
+export interface RetailSalaryComparisonItem {
+  "agent_count": number;
+  "avg_agent_count": number;
+  "avg_salary": number;
+  "company_name": string;
+  "locatie"?: string | null;
+  "ratio": number;
+  "site_code": string;
+  "total_salary": number;
+  "total_sales": number;
+}
+
+export interface RetailSalaryEvolutionPoint {
+  "mobicell": number;
+  "mobiup": number;
+  "month": string;
   "total": number;
 }
 
@@ -1164,6 +1536,26 @@ export interface RetailSalaryRecordPublic {
   "site_code": string | null;
   "total_salary": number;
   "year": number;
+}
+
+export interface RetailSalaryStoreOption {
+  "locatie"?: string | null;
+  "site_code": string;
+}
+
+export interface RetailSalarySummaryResponse {
+  "items"?: Array<RetailSalaryComparisonItem>;
+  "month"?: string | null;
+}
+
+export interface RetailSalaryTrendPoint {
+  "agent_count": number;
+  "avg_agent_count": number;
+  "avg_salary": number;
+  "by_company"?: Record<string, unknown>;
+  "month": string;
+  "total_salary": number;
+  "total_sales": number;
 }
 
 export interface RetailSalesGenerationPromotionRequest {
@@ -1219,46 +1611,82 @@ export interface RetailStoreOption {
 export interface RetailStoreStats {
   "asm": string;
   "firma": string;
-  "forecast_target_pct"?: string | null;
+  "forecast_target_pct"?: RetailDecimal | null;
   "import_month": string;
   "incentive_qty"?: number;
   "locatie": string;
-  "medie_produs"?: string | null;
+  "medie_produs"?: RetailDecimal | null;
   "nr_agenti": number;
   "nr_bonuri": number;
-  "prc_focus_acc_qty"?: string | null;
-  "proc_bon2acc"?: string | null;
-  "proc_realizare_target": string | null;
-  "promo_discount_value"?: string;
+  "prc_focus_acc_qty"?: RetailDecimal | null;
+  "proc_bon2acc"?: RetailDecimal | null;
+  "proc_realizare_target": RetailDecimal | null;
+  "promo_discount_value"?: RetailDecimal;
   "promo_qty"?: number;
   "qty_total": number | null;
   "regional": string;
   "return_receipt_count"?: number;
   "site_code": string;
-  "target": string;
-  "total_vanzari": string;
+  "target": RetailDecimal;
+  "total_vanzari": RetailDecimal;
   "zile_active": number;
 }
 
 export interface RetailStoreTargetInput {
   "import_month": string;
   "site_code": string;
-  "target_value": number | string;
+  "target_value": number | RetailDecimal;
+}
+
+export interface RetailTargetCalculationDetails {
+  "allocation_reason"?: string | null;
+  "cap_target"?: RetailDecimal | null;
+  "current_forecast"?: RetailDecimal | null;
+  "current_month"?: string | null;
+  "flags"?: Array<string>;
+  "floor_target"?: RetailDecimal | null;
+  "is_cap_limited"?: boolean | null;
+  "is_floor_limited"?: boolean | null;
+  "method"?: string | null;
+  "raw_estimate"?: RetailDecimal | null;
+  "seasonality"?: RetailTargetSeasonalityDetails | null;
+  "seasonality_years"?: number | null;
+  "trend"?: RetailTargetTrendDetails | null;
+}
+
+export interface RetailTargetCalculationParams {
+  "profitability"?: RetailTargetOpenModel | null;
+  "profitability_summary"?: RetailTargetOpenModel | null;
+  "seasonality_years"?: number | null;
 }
 
 export interface RetailTargetCalculationRequest {
   "cohort_month"?: string | null;
   "expected_revision"?: number | null;
-  "min_floor"?: number | string;
-  "previous_month_cap_pct"?: number | string;
-  "previous_month_floor_pct"?: number | string;
+  "min_floor"?: number | RetailDecimal;
+  "previous_month_cap_pct"?: number | RetailDecimal;
+  "previous_month_floor_pct"?: number | RetailDecimal;
   "seasonality_years"?: number;
   "target_month": string;
-  "total_target": number | string;
+  "total_target": number | RetailDecimal;
+}
+
+export interface RetailTargetContextResponse {
+  "active_store_count": number;
+  "can_finalize": boolean;
+  "default_min_floor": RetailDecimal;
+  "default_previous_month_cap_pct": RetailDecimal;
+  "default_previous_month_floor_pct": RetailDecimal;
+  "default_seasonality_years": number;
+  "latest_sales_month": string;
+  "regionals": Array<string>;
+  "suggested_cohort_month": string;
+  "suggested_target_month": string;
+  "suggested_total_target": RetailDecimal;
 }
 
 export interface RetailTargetFinalRow {
-  "final_target"?: number | string | null;
+  "final_target"?: number | RetailDecimal | null;
   "note"?: string | null;
   "override_reason"?: string | null;
   "site_code": string;
@@ -1273,6 +1701,245 @@ export interface RetailTargetFinalizeRequest {
   "expected_revision": number;
 }
 
+export interface RetailTargetForecastRunResponse {
+  "generated_at": string;
+  "id": number;
+  "model_mode": string;
+  "model_name": string;
+  "source_month"?: string | null;
+  "variant": string;
+}
+
+export interface RetailTargetHistoryValue {
+  "actual_realized"?: RetailDecimal | null;
+  "attainment_pct"?: RetailDecimal | null;
+  "forecast_factor"?: RetailDecimal;
+  "is_forecast"?: boolean;
+  "label": string;
+  "month": string;
+  "realized": RetailDecimal;
+  "role": string;
+  "target": RetailDecimal;
+  "weight"?: RetailDecimal;
+}
+
+export type RetailTargetOpenModel = Record<string, unknown>;
+
+export interface RetailTargetProfitabilityResponse {
+  "accessory_margin_pct"?: RetailDecimal | null;
+  "agent_count": number;
+  "anomaly_flags"?: Array<string>;
+  "base_salary_per_agent": RetailDecimal;
+  "break_even_gross_sales"?: RetailDecimal | null;
+  "forecast_sales"?: RetailDecimal | null;
+  "operating_costs"?: RetailDecimal | null;
+  "salary_cost_at_90_pct": RetailDecimal;
+}
+
+export interface RetailTargetProfitabilitySummaryResponse {
+  "assumptions"?: RetailTargetOpenModel | null;
+  "break_even_total"?: RetailDecimal | null;
+  "forecast_below_break_even_count": number;
+  "forecast_coverage"?: RetailTargetOpenModel | null;
+  "forecast_run"?: RetailTargetForecastRunResponse | null;
+  "forecast_store_count": number;
+  "forecast_total"?: RetailDecimal | null;
+  "operating_costs_total"?: RetailDecimal | null;
+  "pnl_months"?: Array<string>;
+  "pnl_store_count": number;
+  "salary_total": RetailDecimal;
+  "status": string;
+  "target_below_break_even_count": number;
+}
+
+export interface RetailTargetRegionalSummaryResponse {
+  "current_forecast_total"?: RetailDecimal;
+  "current_month"?: string | null;
+  "final_growth_vs_current_pct"?: RetailDecimal | null;
+  "final_total": RetailDecimal;
+  "floor_total": RetailDecimal;
+  "last_year_base_month"?: string | null;
+  "last_year_base_total"?: RetailDecimal;
+  "last_year_growth_pct"?: RetailDecimal | null;
+  "last_year_target_month"?: string | null;
+  "last_year_target_total"?: RetailDecimal;
+  "proposed_growth_vs_current_pct"?: RetailDecimal | null;
+  "proposed_total": RetailDecimal;
+  "regional": string;
+  "store_count": number;
+}
+
+export interface RetailTargetScenarioResponse {
+  "calculation_method": string;
+  "calculation_params"?: RetailTargetCalculationParams;
+  "cap_limited_count"?: number;
+  "cohort_month": string;
+  "created_at": string;
+  "final_total"?: RetailDecimal;
+  "finalized_at"?: string | null;
+  "floor_limited_count": number;
+  "id": number;
+  "manager_overrides_count"?: number;
+  "manual_adjustments_count": number;
+  "min_floor": RetailDecimal;
+  "pending_final_count": number;
+  "previous_month_floor_pct": RetailDecimal;
+  "profitability_summary"?: RetailTargetProfitabilitySummaryResponse | null;
+  "proposed_total"?: RetailDecimal;
+  "regional_summary"?: Array<RetailTargetRegionalSummaryResponse>;
+  "remaining_difference": RetailDecimal;
+  "revision": number;
+  "rows": Array<RetailTargetScenarioRowResponse>;
+  "source_months"?: Array<RetailTargetSourceMonth>;
+  "source_summary"?: Array<RetailTargetSourceSummaryResponse>;
+  "status": string;
+  "store_count"?: number;
+  "target_month": string;
+  "total_target": RetailDecimal;
+  "updated_at": string;
+  "warnings"?: Array<string>;
+}
+
+export interface RetailTargetScenarioRowResponse {
+  "asm": string;
+  "calculated_weight": RetailDecimal;
+  "calculation_details"?: RetailTargetCalculationDetails;
+  "cap_target"?: RetailDecimal | null;
+  "final_target"?: RetailDecimal | null;
+  "firma": string;
+  "floor_target": RetailDecimal;
+  "history"?: Array<RetailTargetHistoryValue>;
+  "is_cap_limited"?: boolean;
+  "is_floor_limited"?: boolean;
+  "locatie": string;
+  "normalized_weight"?: RetailDecimal | null;
+  "note"?: string | null;
+  "profitability"?: RetailTargetProfitabilityResponse | null;
+  "proposed_target": RetailDecimal;
+  "regional": string;
+  "site_code": string;
+  "updated_at"?: string | null;
+}
+
+export interface RetailTargetScenarioSummaryResponse {
+  "calculation_method": string;
+  "calculation_params"?: RetailTargetCalculationParams;
+  "cohort_month": string;
+  "created_at": string;
+  "final_total"?: RetailDecimal;
+  "finalized_at"?: string | null;
+  "id": number;
+  "min_floor": RetailDecimal;
+  "pending_final_count"?: number;
+  "previous_month_floor_pct": RetailDecimal;
+  "proposed_total"?: RetailDecimal;
+  "revision": number;
+  "source_months"?: Array<RetailTargetSourceMonth>;
+  "status": string;
+  "store_count"?: number;
+  "target_month": string;
+  "total_target": RetailDecimal;
+  "updated_at": string;
+  "warnings"?: Array<string>;
+}
+
+export interface RetailTargetSeasonalityDetails {
+  "blended_factor"?: RetailDecimal | null;
+  "last_year_store_factor"?: RetailDecimal | null;
+  "max"?: RetailDecimal | null;
+  "min"?: RetailDecimal | null;
+  "multiyear_store_factor"?: RetailDecimal | null;
+  "network_factor"?: RetailDecimal | null;
+  "network_years"?: Array<RetailTargetSeasonalityYear>;
+  "store_factor"?: RetailDecimal | null;
+  "store_years"?: Array<RetailTargetSeasonalityYear>;
+  "used_factor"?: RetailDecimal | null;
+  "weights"?: Record<string, RetailDecimal> | null;
+  "zone_factor"?: RetailDecimal | null;
+  "zone_years"?: Array<RetailTargetSeasonalityYear>;
+}
+
+export interface RetailTargetSeasonalityYear {
+  "base_month": string;
+  "base_value": RetailDecimal;
+  "ratio"?: RetailDecimal | null;
+  "target_month": string;
+  "target_value": RetailDecimal;
+  "year_offset": number;
+}
+
+export interface RetailTargetSourceMonth {
+  "label": string;
+  "month": string;
+  "role": string;
+}
+
+export interface RetailTargetSourceSummaryResponse {
+  "actual_realized": RetailDecimal;
+  "attainment_pct"?: RetailDecimal | null;
+  "forecast_factor": RetailDecimal;
+  "is_forecast": boolean;
+  "label": string;
+  "month": string;
+  "realized": RetailDecimal;
+  "target": RetailDecimal;
+}
+
+export interface RetailTargetStoreAgentResponse {
+  "active_months_16": number;
+  "agent": string;
+  "avg_receipt"?: RetailDecimal | null;
+  "bon2acc_pct"?: RetailDecimal | null;
+  "focus_pct"?: RetailDecimal | null;
+  "receipt_count": number;
+  "sales_16m": RetailDecimal;
+  "sales_share_pct": RetailDecimal;
+  "total_quantity": number;
+  "total_sales": RetailDecimal;
+}
+
+export interface RetailTargetStoreDetailResponse {
+  "agents"?: Array<RetailTargetStoreAgentResponse>;
+  "asm": string;
+  "avg_sales_16m": RetailDecimal;
+  "best_month"?: RetailTargetStoreHistoryPointResponse | null;
+  "cohort_month": string;
+  "final_target"?: RetailDecimal | null;
+  "firma": string;
+  "history"?: Array<RetailTargetStoreHistoryPointResponse>;
+  "latest"?: RetailTargetStoreHistoryPointResponse | null;
+  "locatie": string;
+  "proposed_target": RetailDecimal;
+  "regional": string;
+  "site_code": string;
+  "target_month": string;
+}
+
+export interface RetailTargetStoreHistoryPointResponse {
+  "active_agents": number;
+  "avg_receipt"?: RetailDecimal | null;
+  "bon2acc_pct"?: RetailDecimal | null;
+  "cartele_qty": number;
+  "focus_pct"?: RetailDecimal | null;
+  "month": string;
+  "receipt_count": number;
+  "target_pct"?: RetailDecimal | null;
+  "target_value": RetailDecimal;
+  "total_quantity": number;
+  "total_sales": RetailDecimal;
+  "working_days": number;
+}
+
+export interface RetailTargetTrendDetails {
+  "base_month"?: string | null;
+  "max"?: RetailDecimal | null;
+  "min"?: RetailDecimal | null;
+  "ratio"?: RetailDecimal | null;
+  "raw_adjustment"?: RetailDecimal | null;
+  "used_adjustment"?: RetailDecimal | null;
+  "weight"?: RetailDecimal | null;
+}
+
 export interface RetailTaskCreate {
   "assignee"?: string | null;
   "deadline"?: string | null;
@@ -1281,6 +1948,10 @@ export interface RetailTaskCreate {
   "source_meta"?: Record<string, unknown> | null;
   "status"?: string;
   "title": string;
+}
+
+export interface RetailTaskDeleteResponse {
+  "ok": boolean;
 }
 
 export interface RetailTaskItem {
@@ -1419,8 +2090,8 @@ export interface RetailYearHistoryPoint {
   "label": string;
   "sort_key": string;
   "total_quantity": number;
-  "total_sales": string;
-  "total_target": string;
+  "total_sales": RetailDecimal;
+  "total_target": RetailDecimal;
 }
 
 export interface RetailYearHistoryResponse {
@@ -1605,17 +2276,17 @@ export interface RetailOperationResponses {
   }
 
   'get_alerts_api_crm_alerts_get': {
-    '200': unknown;
+    '200': Array<RetailCrmAlertResponse>;
     '422': RetailHTTPValidationError;
   }
 
   'get_scores_api_crm_scores_get': {
-    '200': unknown;
+    '200': Array<RetailCrmScoreResponse>;
     '422': RetailHTTPValidationError;
   }
 
   'recalculate_scores_api_crm_scores_recalculate_post': {
-    '200': unknown;
+    '200': RetailCrmRecalculateResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -1674,7 +2345,7 @@ export interface RetailOperationResponses {
   }
 
   'download_export_api_exports_download_post': {
-    '200': unknown;
+    '200': Blob;
     '422': RetailHTTPValidationError;
   }
 
@@ -1757,17 +2428,17 @@ export interface RetailOperationResponses {
   }
 
   'get_asm_perf_api_hr_asm_performance_get': {
-    '200': unknown;
+    '200': Array<RetailHrAsmPerformanceItem>;
     '422': RetailHTTPValidationError;
   }
 
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': {
-    '200': unknown;
+    '200': Array<RetailHrAsmHistoryItem>;
     '422': RetailHTTPValidationError;
   }
 
   'get_asm_salary_api_hr_asm_salary__asm_name__get': {
-    '200': unknown;
+    '200': RetailHrAsmSalaryBreakdown;
     '422': RetailHTTPValidationError;
   }
 
@@ -1777,22 +2448,22 @@ export interface RetailOperationResponses {
   }
 
   'post_leave_request_api_hr_leave_requests_post': {
-    '200': unknown;
+    '200': RetailLeaveRequestItem;
     '422': RetailHTTPValidationError;
   }
 
   'patch_leave_request_api_hr_leave_requests__request_id__patch': {
-    '200': unknown;
+    '200': RetailLeaveRequestItem;
     '422': RetailHTTPValidationError;
   }
 
   'get_manager_overview_api_hr_manager_overview_get': {
-    '200': unknown;
+    '200': Array<RetailHrManagerOverviewItem>;
     '422': RetailHTTPValidationError;
   }
 
   'get_performance_api_hr_performance__agent_name__get': {
-    '200': unknown;
+    '200': Array<RetailHrAgentPerformanceItem>;
     '422': RetailHTTPValidationError;
   }
 
@@ -1826,30 +2497,30 @@ export interface RetailOperationResponses {
   }
 
   'annual_api_store_pnl_annual_get': {
-    '200': unknown;
+    '200': RetailPnlAnnualResponse;
     '422': RetailHTTPValidationError;
   }
 
   'months_api_store_pnl_months_get': {
-    '200': unknown;
+    '200': RetailPnlMonthsResponse;
   }
 
   'overview_api_store_pnl_overview_get': {
-    '200': unknown;
+    '200': RetailPnlOverviewResponse;
     '422': RetailHTTPValidationError;
   }
 
   'pnl_permissions_api_store_pnl_permissions_get': {
-    '200': Record<string, boolean>;
+    '200': RetailPnlPermissionsResponse;
   }
 
   'regions_api_store_pnl_regions_get': {
-    '200': unknown;
+    '200': RetailPnlRegionsResponse;
     '422': RetailHTTPValidationError;
   }
 
   'stores_api_store_pnl_stores_get': {
-    '200': unknown;
+    '200': RetailPnlStoresResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -1868,40 +2539,40 @@ export interface RetailOperationResponses {
   }
 
   'get_context_api_target_calculator_context_get': {
-    '200': unknown;
+    '200': RetailTargetContextResponse;
   }
 
   'list_scenarios_api_target_calculator_scenarios_get': {
-    '200': unknown;
+    '200': Array<RetailTargetScenarioSummaryResponse>;
   }
 
   'calculate_scenario_api_target_calculator_scenarios_calculate_post': {
-    '200': unknown;
+    '200': RetailTargetScenarioResponse;
     '422': RetailHTTPValidationError;
   }
 
   'get_scenario_api_target_calculator_scenarios__scenario_id__get': {
-    '200': unknown;
+    '200': RetailTargetScenarioResponse;
     '422': RetailHTTPValidationError;
   }
 
   'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': {
-    '200': unknown;
+    '200': Blob;
     '422': RetailHTTPValidationError;
   }
 
   'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': {
-    '200': unknown;
+    '200': RetailTargetScenarioResponse;
     '422': RetailHTTPValidationError;
   }
 
   'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': {
-    '200': unknown;
+    '200': RetailTargetScenarioResponse;
     '422': RetailHTTPValidationError;
   }
 
   'get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get': {
-    '200': unknown;
+    '200': RetailTargetStoreDetailResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -1911,17 +2582,17 @@ export interface RetailOperationResponses {
   }
 
   'post_task_api_tasks_post': {
-    '200': unknown;
+    '200': RetailTaskItem;
     '422': RetailHTTPValidationError;
   }
 
   'remove_task_api_tasks__task_id__delete': {
-    '200': unknown;
+    '200': RetailTaskDeleteResponse;
     '422': RetailHTTPValidationError;
   }
 
   'patch_task_api_tasks__task_id__patch': {
-    '200': unknown;
+    '200': RetailTaskItem;
     '422': RetailHTTPValidationError;
   }
 
@@ -1931,7 +2602,7 @@ export interface RetailOperationResponses {
   }
 
   'get_visit_photo_api_visits_report_photo__visit_id___filename__get': {
-    '200': unknown;
+    '200': Blob;
     '422': RetailHTTPValidationError;
   }
 
@@ -1982,7 +2653,7 @@ export interface RetailOperationResponses {
   }
 
   'salarii_evolution_salarii_evolution_get': {
-    '200': unknown;
+    '200': Array<RetailSalaryEvolutionPoint>;
     '422': RetailHTTPValidationError;
   }
 
@@ -1997,17 +2668,17 @@ export interface RetailOperationResponses {
   }
 
   'salarii_stores_salarii_stores_get': {
-    '200': unknown;
+    '200': Array<RetailSalaryStoreOption>;
     '422': RetailHTTPValidationError;
   }
 
   'salarii_summary_salarii_summary_get': {
-    '200': unknown;
+    '200': RetailSalarySummaryResponse;
     '422': RetailHTTPValidationError;
   }
 
   'salarii_trend_salarii_trend_get': {
-    '200': unknown;
+    '200': Array<RetailSalaryTrendPoint>;
     '422': RetailHTTPValidationError;
   }
 

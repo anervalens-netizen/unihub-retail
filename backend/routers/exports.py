@@ -111,7 +111,18 @@ async def preview_export(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.post("/download")
+@router.post(
+    "/download",
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            }
+        }
+    },
+)
 async def download_export(
     body: ExportRequest,
     _rate_limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),

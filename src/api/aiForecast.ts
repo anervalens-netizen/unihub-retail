@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet } from './generated/client';
 import type { AiForecastMetric, AiForecastResponse, AiForecastRollingResponse } from './types';
 
 export interface AiForecastQuery {
@@ -11,11 +11,9 @@ export interface AiForecastQuery {
 }
 
 export async function getAiForecastCurrent(query: AiForecastQuery, signal?: AbortSignal): Promise<AiForecastResponse> {
-  const { data } = await client.get<AiForecastResponse>('/api/ai-forecast/current', { params: query, signal });
-  return data;
+  return generatedGet('get_current_ai_forecast_api_ai_forecast_current_get', { params: query, signal }) as unknown as AiForecastResponse;
 }
 
 export async function getAiForecastRolling12(query: AiForecastQuery, signal?: AbortSignal): Promise<AiForecastRollingResponse> {
-  const { data } = await client.get<AiForecastRollingResponse>('/api/ai-forecast/rolling-12', { params: query, signal });
-  return data;
+  return generatedGet('get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get', { params: query, signal }) as unknown as AiForecastRollingResponse;
 }

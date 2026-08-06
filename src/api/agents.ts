@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet } from './generated/client';
 
 export type AgentsQuery = {
   selected_month: string;
@@ -219,39 +219,33 @@ export interface AgentEvaluationV2Response {
 }
 
 export async function fetchAgentsOverview(query: AgentsQuery, signal?: AbortSignal): Promise<AgentsOverviewResponse> {
-  const { data } = await client.get<AgentsOverviewResponse>('/api/agents/overview', { params: query, signal });
-  return data;
+  return generatedGet('get_agents_overview_api_agents_overview_get', { params: query, signal }) as unknown as AgentsOverviewResponse;
 }
 
 export async function fetchAgentsMovement(query: AgentsQuery, signal?: AbortSignal): Promise<AgentMovementResponse> {
-  const { data } = await client.get<AgentMovementResponse>('/api/agents/movement', { params: query, signal });
-  return data;
+  return generatedGet('get_agents_movement_api_agents_movement_get', { params: query, signal }) as unknown as AgentMovementResponse;
 }
 
 export async function fetchAgentsList(query: AgentsQuery, signal?: AbortSignal): Promise<AgentListResponse> {
-  const { data } = await client.get<AgentListResponse>('/api/agents/list', { params: query, signal });
-  return data;
+  return generatedGet('get_agents_list_api_agents_list_get', { params: query, signal }) as unknown as AgentListResponse;
 }
 
 export async function fetchAgentProfile(agent: string, selectedMonth: string, signal?: AbortSignal): Promise<AgentProfileResponse> {
-  const { data } = await client.get<AgentProfileResponse>('/api/agents/profile', { 
+  return generatedGet('get_agent_profile_api_agents_profile_get', {
     params: { agent, selected_month: selectedMonth },
     signal,
-  });
-  return data;
+  }) as unknown as AgentProfileResponse;
 }
 
 export async function fetchAgentHistory(agent: string, signal?: AbortSignal): Promise<AgentHistoryResponse> {
-  const { data } = await client.get<AgentHistoryResponse>('/api/agents/history', {
+  return generatedGet('get_agent_history_api_agents_history_get', {
     params: { agent },
     signal,
-  });
-  return data;
+  }) as unknown as AgentHistoryResponse;
 }
 
 export async function fetchStoreCoverage(query: Partial<AgentsQuery>, signal?: AbortSignal): Promise<StoreCoverageResponse> {
-  const { data } = await client.get<StoreCoverageResponse>('/api/agents/stores-coverage', { params: query, signal });
-  return data;
+  return generatedGet('get_stores_coverage_api_agents_stores_coverage_get', { params: query, signal }) as unknown as StoreCoverageResponse;
 }
 
 export async function fetchAgentEvaluation(params: {
@@ -261,8 +255,7 @@ export async function fetchAgentEvaluation(params: {
   asm?: string;
   site_code?: string;
 } = {}): Promise<AgentEvaluationResponse> {
-  const { data } = await client.get<AgentEvaluationResponse>('/api/agents/evaluation', { params });
-  return data;
+  return generatedGet('get_agent_evaluation_api_agents_evaluation_get', { params }) as unknown as AgentEvaluationResponse;
 }
 
 export async function fetchAgentEvaluationV2(params: {
@@ -272,6 +265,5 @@ export async function fetchAgentEvaluationV2(params: {
   asm?: string;
   site_code?: string;
 } = {}): Promise<AgentEvaluationV2Response> {
-  const { data } = await client.get<AgentEvaluationV2Response>('/api/agents/evaluation-v2', { params });
-  return data;
+  return generatedGet('get_agent_evaluation_v2_api_agents_evaluation_v2_get', { params }) as unknown as AgentEvaluationV2Response;
 }

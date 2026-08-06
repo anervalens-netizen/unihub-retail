@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet, generatedPatch, generatedPost } from './generated/client';
 import { downloadBlob } from '../lib/download';
 
 export interface TargetCalculatorContext {
@@ -200,23 +200,21 @@ export interface TargetCalculationInput {
 }
 
 export async function fetchTargetCalculatorContext(): Promise<TargetCalculatorContext> {
-  const { data } = await client.get<TargetCalculatorContext>('/api/target-calculator/context');
-  return data;
+  return generatedGet('get_context_api_target_calculator_context_get') as unknown as TargetCalculatorContext;
 }
 
 export async function fetchTargetScenarios(): Promise<TargetScenarioSummary[]> {
-  const { data } = await client.get<TargetScenarioSummary[]>('/api/target-calculator/scenarios');
-  return data;
+  return generatedGet('list_scenarios_api_target_calculator_scenarios_get') as unknown as TargetScenarioSummary[];
 }
 
 export async function fetchTargetScenario(id: number): Promise<TargetScenario> {
-  const { data } = await client.get<TargetScenario>(`/api/target-calculator/scenarios/${id}`);
-  return data;
+  return generatedGet('get_scenario_api_target_calculator_scenarios__scenario_id__get', {
+    pathParams: { scenario_id: id },
+  }) as unknown as TargetScenario;
 }
 
 export async function calculateTargetScenario(input: TargetCalculationInput): Promise<TargetScenario> {
-  const { data } = await client.post<TargetScenario>('/api/target-calculator/scenarios/calculate', input);
-  return data;
+  return generatedPost('calculate_scenario_api_target_calculator_scenarios_calculate_post', input) as unknown as TargetScenario;
 }
 
 export async function saveTargetFinalValues(
@@ -224,11 +222,11 @@ export async function saveTargetFinalValues(
   expectedRevision: number,
   rows: Array<{ site_code: string; final_target: number | null; note: string | null }>,
 ): Promise<TargetScenario> {
-  const { data } = await client.patch<TargetScenario>(
-    `/api/target-calculator/scenarios/${id}/rows`,
+  return generatedPatch(
+    'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch',
     { expected_revision: expectedRevision, rows },
-  );
-  return data;
+    { pathParams: { scenario_id: id } },
+  ) as unknown as TargetScenario;
 }
 
 export interface TargetStoreHistoryPoint {
@@ -277,21 +275,23 @@ export interface TargetStoreDetail {
 }
 
 export async function fetchTargetStoreDetail(scenarioId: number, siteCode: string): Promise<TargetStoreDetail> {
-  const { data } = await client.get<TargetStoreDetail>(
-    `/api/target-calculator/scenarios/${scenarioId}/stores/${encodeURIComponent(siteCode)}`,
-  );
-  return data;
+  return generatedGet('get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get', {
+    pathParams: { scenario_id: scenarioId, site_code: siteCode },
+  }) as unknown as TargetStoreDetail;
 }
 
 export async function finalizeTargetScenario(id: number, expectedRevision: number): Promise<TargetScenario> {
-  const { data } = await client.post<TargetScenario>(
-    `/api/target-calculator/scenarios/${id}/finalize`,
+  return generatedPost(
+    'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post',
     { expected_revision: expectedRevision },
-  );
-  return data;
+    { pathParams: { scenario_id: id } },
+  ) as unknown as TargetScenario;
 }
 
 export async function downloadTargetScenario(id: number, filename: string): Promise<void> {
-  const { data } = await client.get<Blob>(`/api/target-calculator/scenarios/${id}/export`, { responseType: 'blob' });
+  const data = await generatedGet('export_scenario_api_target_calculator_scenarios__scenario_id__export_get', {
+    pathParams: { scenario_id: id },
+    responseType: 'blob',
+  });
   downloadBlob(data, filename);
 }

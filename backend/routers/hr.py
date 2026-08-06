@@ -35,6 +35,132 @@ class LeaveRequestListResponse(BaseModel):
     offset: int = Field(ge=0)
 
 
+class HrAgentPerformanceItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    import_month: str
+    total_value: float
+    transaction_count: int
+    active_days: int
+    target_pct: float
+
+
+class HrAsmPerformanceItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    asm: str
+    regional: str | None = None
+    total_sales: float
+    total_target: float
+    target_pct: float | None = None
+    forecast_sales: float
+    forecast_target_pct: float | None = None
+    is_forecast: bool
+    active_stores: int
+    active_agents: int
+    pct_bon2acc: float
+    pct_focus: float
+    total_visits: int
+    avg_completion: float | None = None
+    avg_duration: float | None = None
+    distinct_stores_visited: int
+    checklist_score: float | None = None
+    approved_pct: float | None = None
+
+
+class HrAsmHistoryItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    month: str
+    total_sales: float
+    total_target: float
+    target_pct: float | None = None
+    forecast_sales: float
+    forecast_target_pct: float | None = None
+    is_forecast: bool
+    active_stores: int
+    total_visits: int
+    avg_completion: float | None = None
+    avg_duration: float | None = None
+
+
+class HrManagerStoreItem(BaseModel):
+    site_code: str
+    locatie: str
+    firma: str
+    active_agents: int
+    previous_active_agents: int
+    agent_delta: int
+
+
+class HrManagerOverviewItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    manager: str
+    regional: str | None = None
+    month: str
+    reporting_available: bool
+    active_stores: int
+    active_agents: int
+    previous_active_agents: int
+    agent_delta: int
+    agents_added: int
+    agents_left: int
+    stores_without_agents: int
+    agents_per_store: float
+    visits_available: bool
+    total_visits: int
+    visited_stores: int
+    visit_coverage_pct: float | None = None
+    avg_visit_completion: float | None = None
+    checklist_score: float | None = None
+    approved_pct: float | None = None
+    stores: list[HrManagerStoreItem] = Field(default_factory=list)
+
+
+class HrAsmSalaryIsland(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    site_code: str
+    locatie: str
+    firma: str
+    total_sales: float
+    total_target: float
+    target_pct: float | None = None
+    forecast_sales: float
+    forecast_target_pct: float | None = None
+    pct_used: float | None = None
+    commission: float
+
+
+class HrAsmSalaryZone(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    total_sales: float
+    total_target: float
+    target_pct: float | None = None
+    forecast_sales: float
+    forecast_target_pct: float | None = None
+    pct_used: float | None = None
+    commission: float
+
+
+class HrAsmSalaryBreakdown(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    asm: str
+    month: str
+    is_forecast: bool
+    forecast_factor: float
+    fixed_salary: float
+    zone: HrAsmSalaryZone
+    islands: list[HrAsmSalaryIsland] = Field(default_factory=list)
+    islands_commission: float
+    homogeneity: dict[str, object]
+    acc_focus: dict[str, object]
+    total_salary: float
+
+
 def _trim_text(value: str, *, field_name: str) -> str:
     normalized = value.strip()
     if not normalized:
@@ -100,7 +226,7 @@ async def get_leave_requests(
     return await svc.list_leave_requests(status, agent_name, limit=limit, offset=offset)
 
 
-@router.post("/leave-requests")
+@router.post("/leave-requests", response_model=LeaveRequestItem)
 async def post_leave_request(
     body: LeaveRequestCreate,
     svc: HrService = Depends(get_hr_service),
@@ -108,7 +234,7 @@ async def post_leave_request(
     return await svc.create_leave_request(body.model_dump(mode="json"))
 
 
-@router.patch("/leave-requests/{request_id}")
+@router.patch("/leave-requests/{request_id}", response_model=LeaveRequestItem)
 async def patch_leave_request(
     request_id: int,
     body: LeaveStatusUpdate,
@@ -117,7 +243,7 @@ async def patch_leave_request(
     return await svc.update_leave_status(request_id, body.status)
 
 
-@router.get("/performance/{agent_name}")
+@router.get("/performance/{agent_name}", response_model=list[HrAgentPerformanceItem])
 async def get_performance(
     agent_name: str,
     svc: HrService = Depends(get_hr_service),
@@ -125,7 +251,7 @@ async def get_performance(
     return await svc.get_agent_performance(agent_name)
 
 
-@router.get("/asm-performance")
+@router.get("/asm-performance", response_model=list[HrAsmPerformanceItem])
 async def get_asm_perf(
     month: str = Query(...),
     regional: str | None = Query(None),
@@ -134,7 +260,7 @@ async def get_asm_perf(
     return await svc.get_asm_performance(month, regional)
 
 
-@router.get("/manager-overview")
+@router.get("/manager-overview", response_model=list[HrManagerOverviewItem])
 async def get_manager_overview(
     month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     svc: HrService = Depends(get_hr_service),
@@ -143,7 +269,7 @@ async def get_manager_overview(
     return await svc.get_manager_overview(month)
 
 
-@router.get("/asm-performance/{asm_name}/history")
+@router.get("/asm-performance/{asm_name}/history", response_model=list[HrAsmHistoryItem])
 async def get_asm_perf_history(
     asm_name: str,
     months: int = Query(6, ge=1, le=24),
@@ -152,7 +278,7 @@ async def get_asm_perf_history(
     return await svc.get_asm_performance_history(asm_name, months)
 
 
-@router.get("/asm-salary/{asm_name}")
+@router.get("/asm-salary/{asm_name}", response_model=HrAsmSalaryBreakdown)
 async def get_asm_salary(
     asm_name: str,
     month: str = Query(...),

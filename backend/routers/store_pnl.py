@@ -4,6 +4,7 @@ import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
@@ -14,6 +15,98 @@ from services.store_pnl import StorePnlService
 
 router = APIRouter(prefix="/api/store-pnl", tags=["store-pnl"])
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class PnlMetricsResponse(BaseModel):
+    revenue: float
+    cogs: float
+    gross_margin: float
+    operating_costs: float
+    ebitda: float
+    depreciation: float
+    ebit: float
+
+
+class PnlMonthResponse(BaseModel):
+    month: str
+    has_actual: bool
+    has_estimated: bool
+
+
+class PnlPermissionsResponse(BaseModel):
+    can_view: bool
+
+
+class PnlMonthsResponse(BaseModel):
+    months: list[PnlMonthResponse]
+
+
+class PnlStoreOptionResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    company_name: str
+    site_code: str
+    location: str
+    regional: str | None = None
+    scope_company: str | None = None
+
+
+class PnlStoresResponse(BaseModel):
+    stores: list[PnlStoreOptionResponse]
+
+
+class PnlRegionsResponse(BaseModel):
+    regions: list[str]
+
+
+class PnlAnnualItemResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    year: str
+    store_count: int
+    month_count: int
+    is_estimated: bool
+    revenue: float
+    cogs: float
+    gross_margin: float
+    operating_costs: float
+    ebitda: float
+    depreciation: float
+    ebit: float
+
+
+class PnlAnnualResponse(BaseModel):
+    annual: list[PnlAnnualItemResponse]
+
+
+class PnlMonthlyItemResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    month: str
+    is_estimated: bool
+    revenue: float
+    cogs: float
+    gross_margin: float
+    operating_costs: float
+    ebitda: float
+    depreciation: float
+    ebit: float
+
+
+class PnlOverviewResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    start_month: str
+    end_month: str
+    company: str | None = None
+    site_code: str | None = None
+    site_company: str | None = None
+    regional: str | None = None
+    summary: PnlMetricsResponse
+    monthly: list[PnlMonthlyItemResponse] = Field(default_factory=list)
+    categories: dict[str, float] = Field(default_factory=dict)
+    stores: list[dict[str, object]] = Field(default_factory=list)
+    reconciliation: list[dict[str, object]] = Field(default_factory=list)
 
 
 def can_access_store_pnl(claims: AuthClaims) -> bool:
@@ -48,13 +141,13 @@ async def get_service() -> StorePnlService:
     return StorePnlService(StorePnlRepository(await get_pool()))
 
 
-@router.get("/permissions")
+@router.get("/permissions", response_model=PnlPermissionsResponse)
 async def pnl_permissions(claims: AuthClaims = Depends(require_auth)) -> dict[str, bool]:
     """Capability display endpoint; it intentionally does not emit audit events."""
     return {"can_view": can_access_store_pnl(claims)}
 
 
-@router.get("/months")
+@router.get("/months", response_model=PnlMonthsResponse)
 async def months(
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
@@ -67,7 +160,7 @@ def validate_company(company: str | None) -> None:
         raise HTTPException(status_code=422, detail="Companie P&L invalida.")
 
 
-@router.get("/stores")
+@router.get("/stores", response_model=PnlStoresResponse)
 async def stores(
     company: str | None = Query(default=None),
     regional: str | None = Query(default=None),
@@ -78,7 +171,7 @@ async def stores(
     return {"stores": await service.stores(company, regional)}
 
 
-@router.get("/regions")
+@router.get("/regions", response_model=PnlRegionsResponse)
 async def regions(
     company: str | None = Query(default=None),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
@@ -88,7 +181,7 @@ async def regions(
     return {"regions": await service.regions(company)}
 
 
-@router.get("/annual")
+@router.get("/annual", response_model=PnlAnnualResponse)
 async def annual(
     company: str | None = Query(default=None),
     site_code: str | None = Query(default=None, max_length=100),
@@ -102,7 +195,7 @@ async def annual(
     return {"annual": await service.annual(company, site_code, site_company, regional)}
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=PnlOverviewResponse)
 async def overview(
     start_month: str = Query(...),
     end_month: str = Query(...),

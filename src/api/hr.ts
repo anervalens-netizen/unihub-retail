@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet } from './generated/client';
 
 export interface AsmPerformance {
   asm: string;
@@ -36,13 +36,14 @@ export interface AsmHistoryPoint {
 }
 
 export async function fetchAsmPerformance(month: string, regional?: string): Promise<AsmPerformance[]> {
-  const { data } = await client.get<AsmPerformance[]>('/api/hr/asm-performance', { params: { month, regional } });
-  return data;
+  return generatedGet('get_asm_perf_api_hr_asm_performance_get', { params: { month, regional } }) as unknown as AsmPerformance[];
 }
 
 export async function fetchAsmHistory(asmName: string, months = 6): Promise<AsmHistoryPoint[]> {
-  const { data } = await client.get<AsmHistoryPoint[]>(`/api/hr/asm-performance/${encodeURIComponent(asmName)}/history`, { params: { months } });
-  return data;
+  return generatedGet('get_asm_perf_history_api_hr_asm_performance__asm_name__history_get', {
+    pathParams: { asm_name: asmName },
+    params: { months },
+  }) as unknown as AsmHistoryPoint[];
 }
 
 export interface ManagerStoreOverview {
@@ -78,8 +79,7 @@ export interface ManagerOverview {
 }
 
 export async function fetchManagerOverview(month: string, signal?: AbortSignal): Promise<ManagerOverview[]> {
-  const { data } = await client.get<ManagerOverview[]>('/api/hr/manager-overview', { params: { month }, signal });
-  return data;
+  return generatedGet('get_manager_overview_api_hr_manager_overview_get', { params: { month }, signal }) as unknown as ManagerOverview[];
 }
 
 export interface AsmSalaryIsland {
@@ -128,9 +128,8 @@ export interface AsmSalaryBreakdown {
 }
 
 export async function fetchAsmSalary(asm: string, month: string): Promise<AsmSalaryBreakdown> {
-  const { data } = await client.get<AsmSalaryBreakdown>(
-    `/api/hr/asm-salary/${encodeURIComponent(asm)}`,
-    { params: { month } },
-  );
-  return data;
+  return generatedGet('get_asm_salary_api_hr_asm_salary__asm_name__get', {
+    pathParams: { asm_name: asm },
+    params: { month },
+  }) as unknown as AsmSalaryBreakdown;
 }

@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet } from './generated/client';
 import type { AppFilters } from '../components/MainLayout';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
 
@@ -97,12 +97,12 @@ export interface VisitDetail {
   notes: string | null;
 }
 
-function buildParams(filters: AppFilters): URLSearchParams {
-  const params = new URLSearchParams();
-  if (filters.firma !== ALL_FIRMS) params.set('firma', filters.firma);
-  if (filters.rm !== ALL_SCOPE) params.set('rm', filters.rm);
-  if (filters.magazin !== ALL_STORES) params.set('magazin', filters.magazin);
-  return params;
+function buildParams(filters: AppFilters): Record<string, string> {
+  return {
+    ...(filters.firma !== ALL_FIRMS && { firma: filters.firma }),
+    ...(filters.rm !== ALL_SCOPE && { rm: filters.rm }),
+    ...(filters.magazin !== ALL_STORES && { magazin: filters.magazin }),
+  };
 }
 
 export async function getVisitsReport(
@@ -110,10 +110,10 @@ export async function getVisitsReport(
   filters: AppFilters,
   signal?: AbortSignal,
 ): Promise<VisitReportResponse> {
-  const params = buildParams(filters);
-  params.set('month', month);
-  const response = await client.get<VisitReportResponse>(`/api/visits-report?${params}`, { signal });
-  return response.data;
+  return await generatedGet('get_visits_report_api_visits_report_get', {
+    params: { ...buildParams(filters), month },
+    signal,
+  }) as VisitReportResponse;
 }
 
 export async function getVisitsTree(
@@ -121,15 +121,17 @@ export async function getVisitsTree(
   filters: AppFilters,
   signal?: AbortSignal,
 ): Promise<VisitTreeResponse> {
-  const params = buildParams(filters);
-  params.set('month', month);
-  const response = await client.get<VisitTreeResponse>(`/api/visits-report/tree?${params}`, { signal });
-  return response.data;
+  return await generatedGet('get_visits_tree_api_visits_report_tree_get', {
+    params: { ...buildParams(filters), month },
+    signal,
+  }) as VisitTreeResponse;
 }
 
 export async function getVisitDetail(visitId: string, signal?: AbortSignal): Promise<VisitDetail> {
-  const response = await client.get<VisitDetail>(`/api/visits-report/visit/${visitId}`, { signal });
-  return response.data;
+  return await generatedGet('get_visit_detail_api_visits_report_visit__visit_id__get', {
+    pathParams: { visit_id: visitId },
+    signal,
+  }) as VisitDetail;
 }
 
 export function getVisitPhotoUrl(visitId: string, filename: string): string {

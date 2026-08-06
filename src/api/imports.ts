@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet, generatedPost } from './generated/client';
 import type { ImportHistoryEntry, ImportJobStatus } from './types';
 
 export interface PromoActualImportResponse {
@@ -74,8 +74,7 @@ export async function uploadSalesFile(
   const formData = new FormData();
   formData.append('file', file);
   formData.append('cutoff_date', cutoffDate);
-  const { data } = await client.post<ImportJobStatus>('/api/import/sales', formData);
-  return data;
+  return generatedPost('upload_sales_file_api_import_sales_post', formData) as unknown as ImportJobStatus;
 }
 
 export async function promoteSalesGeneration(
@@ -84,27 +83,25 @@ export async function promoteSalesGeneration(
   manifestSha256: string,
   overrideReason?: string,
 ): Promise<ImportJobStatus> {
-  const { data } = await client.post<ImportJobStatus>(
-    `/api/import/sales/${snapshotId}/promote`,
+  return generatedPost(
+    'promote_sales_generation_api_import_sales__snapshot_id__promote_post',
     {
       generation_token: generationToken,
       manifest_sha256: manifestSha256,
       override_reason: overrideReason || null,
     },
-  );
-  return data;
+    { pathParams: { snapshot_id: snapshotId } },
+  ) as unknown as ImportJobStatus;
 }
 
 export async function getImportJobStatus(jobId: string): Promise<ImportJobStatus> {
-  const { data } = await client.get<ImportJobStatus>(
-    `/api/import/jobs/${encodeURIComponent(jobId)}`,
-  );
-  return data;
+  return generatedGet('get_import_job_status_api_import_jobs__job_id__get', {
+    pathParams: { job_id: jobId },
+  }) as unknown as ImportJobStatus;
 }
 
 export async function getImportHistory(): Promise<ImportHistoryEntry[]> {
-  const { data } = await client.get<ImportHistoryEntry[]>('/api/import/history');
-  return data;
+  return generatedGet('get_import_history_api_import_history_get') as unknown as ImportHistoryEntry[];
 }
 
 export async function uploadPromoActualsFile(
@@ -116,8 +113,7 @@ export async function uploadPromoActualsFile(
   formData.append('file', file);
   formData.append('import_month', importMonth);
   formData.append('cutoff_date', cutoffDate);
-  const { data } = await client.post<PromoActualImportResponse>('/api/import/promo-actuals', formData);
-  return data;
+  return generatedPost('upload_promo_actuals_file_api_import_promo_actuals_post', formData) as unknown as PromoActualImportResponse;
 }
 
 export async function uploadErpReconciliationFile(
@@ -127,9 +123,5 @@ export async function uploadErpReconciliationFile(
   const formData = new FormData();
   formData.append('file', file);
   formData.append('import_month', importMonth);
-  const { data } = await client.post<ErpReconciliationResponse>(
-    '/api/import/erp-reconciliation',
-    formData,
-  );
-  return data;
+  return generatedPost('reconcile_erp_report_file_api_import_erp_reconciliation_post', formData) as unknown as ErpReconciliationResponse;
 }

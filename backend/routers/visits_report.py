@@ -52,7 +52,16 @@ async def get_visit_detail(
     return await svc.get_visit_detail(visit_id)
 
 
-@router.get("/photo/{visit_id}/{filename}")
+@router.get(
+    "/photo/{visit_id}/{filename}",
+    responses={
+        200: {
+            "content": {
+                "image/*": {"schema": {"type": "string", "format": "binary"}}
+            }
+        }
+    },
+)
 async def get_visit_photo(
     visit_id: str,
     filename: str,

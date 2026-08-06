@@ -1,4 +1,4 @@
-import { client } from './client';
+import { generatedGet, generatedPost } from './generated/client';
 import type {
   DashboardAllResponse,
   DashboardHistoryResponse,
@@ -24,55 +24,47 @@ export interface DashboardQuery {
 export const MAX_DASHBOARD_BATCH_MONTHS = 12;
 
 export async function getDashboardAll(query: DashboardQuery, signal?: AbortSignal): Promise<DashboardAllResponse> {
-  const { data } = await client.get<DashboardAllResponse>('/api/dashboard/all', { params: query, signal });
-  return data;
+  return generatedGet('get_dashboard_all_api_dashboard_all_get', { params: query, signal }) as unknown as DashboardAllResponse;
 }
 
 export async function getDashboardAllBatch(queries: DashboardQuery[], signal?: AbortSignal): Promise<DashboardAllResponse[]> {
-  const { data } = await client.post<{ results: DashboardAllResponse[] }>(
-    '/api/dashboard/all-batch',
-    { queries },
-    { signal },
-  );
-  return data.results;
+  const response = await generatedPost('get_dashboard_all_batch_api_dashboard_all_batch_post', { queries }, { signal });
+  return response.results as unknown as DashboardAllResponse[];
 }
 
 export async function getDashboardHistoryDetailsBatch(
   queries: DashboardQuery[],
   signal?: AbortSignal,
 ): Promise<DashboardAllResponse[]> {
-  const { data } = await client.post<{ results: DashboardAllResponse[] }>(
-    '/api/dashboard/history-details-batch',
+  const response = await generatedPost(
+    'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post',
     { queries },
     { signal },
   );
-  return data.results;
+  return response.results as unknown as DashboardAllResponse[];
 }
 
 export async function getDashboardHistory(
   query: DashboardQuery & { months_back?: number },
   signal?: AbortSignal,
 ): Promise<DashboardHistoryResponse> {
-  const { data } = await client.get<DashboardHistoryResponse>('/api/dashboard/history', { params: query, signal });
-  return data;
+  return generatedGet('get_monthly_history_api_dashboard_history_get', { params: query, signal }) as unknown as DashboardHistoryResponse;
 }
 
 export async function getDashboardHistoryYear(
   query: Omit<DashboardQuery, 'month'> & { year: number },
   signal?: AbortSignal,
 ): Promise<YearHistoryResponse> {
-  const { data } = await client.get<YearHistoryResponse>('/api/dashboard/history-year', { params: query, signal });
-  return data;
+  return generatedGet('get_history_by_year_api_dashboard_history_year_get', { params: query, signal }) as unknown as YearHistoryResponse;
 }
 
 export async function getPremiumGlassAnalysis(query: DashboardQuery, signal?: AbortSignal): Promise<PremiumGlassAnalysis> {
-  const { data } = await client.get<PremiumGlassAnalysis>('/api/dashboard/premium-glass', { params: query, signal });
-  return data;
+  return generatedGet('get_premium_glass_api_dashboard_premium_glass_get', { params: query, signal }) as unknown as PremiumGlassAnalysis;
 }
 
 export async function getPerformanceDetail(
-  query: DashboardQuery & { level: PerformanceDetailLevel; key: string }
+  query: DashboardQuery & { level: PerformanceDetailLevel; key: string },
+  signal?: AbortSignal,
 ): Promise<PerformanceDetailResponse> {
-  const { data } = await client.get<PerformanceDetailResponse>('/api/dashboard/performance-detail', { params: query });
-  return data;
+  return generatedGet('get_performance_detail_api_dashboard_performance_detail_get', { params: query, signal }) as unknown as PerformanceDetailResponse;
 }

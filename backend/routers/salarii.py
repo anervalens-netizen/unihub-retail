@@ -4,7 +4,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from db.connection import get_pool
 from repositories.salarii import SalariiRepository
@@ -23,6 +23,70 @@ logger = logging.getLogger(__name__)
 class SalaryExportAudit(BaseModel):
     export_kind: Literal["store_summary", "monthly_trend", "agents_page"]
     row_count: int = Field(ge=0, le=5000)
+
+
+class SalaryCompanyTotal(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    company: str | None = None
+    name: str | None = None
+    total: float
+
+
+class SalaryOverviewResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    total: float | None = None
+    by_company: list[SalaryCompanyTotal] = Field(default_factory=list)
+    record_count: int | None = None
+    agent_count: int | None = None
+    agent_month_count: int | None = None
+    avg_agent_month_count: int | None = None
+    avg_salary: float | None = None
+    months_span: list[int] | None = None
+
+
+class SalaryEvolutionPoint(BaseModel):
+    month: str
+    total: float
+    mobicell: float
+    mobiup: float
+
+
+class SalaryComparisonItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    site_code: str
+    locatie: str | None = None
+    company_name: str
+    total_salary: float
+    agent_count: int
+    avg_agent_count: int
+    avg_salary: float
+    total_sales: float
+    ratio: float
+
+
+class SalarySummaryResponse(BaseModel):
+    month: str | None = None
+    items: list[SalaryComparisonItem] = Field(default_factory=list)
+
+
+class SalaryTrendPoint(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    month: str
+    total_salary: float
+    total_sales: float
+    agent_count: int
+    avg_agent_count: int
+    avg_salary: float
+    by_company: dict[str, object] = Field(default_factory=dict)
+
+
+class SalaryStoreOption(BaseModel):
+    site_code: str
+    locatie: str | None = None
 
 
 async def get_salarii_service() -> SalariiService:
@@ -51,7 +115,7 @@ async def salarii_overview(
     return await svc.get_overview(company_name, site_code, regional, asm)
 
 
-@router.get("/evolution")
+@router.get("/evolution", response_model=list[SalaryEvolutionPoint])
 async def salarii_evolution(
     company_name: str | None = Query(None),
     site_code: str | None = Query(None),
@@ -103,7 +167,7 @@ async def agent_history_by_retail_code(
     )
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=SalarySummaryResponse)
 async def salarii_summary(
     company_name: str | None = Query(None),
     site_code: str | None = Query(None),
@@ -116,7 +180,7 @@ async def salarii_summary(
     return await svc.get_summary(company_name, site_code, regional, asm, year, month)
 
 
-@router.get("/trend")
+@router.get("/trend", response_model=list[SalaryTrendPoint])
 async def salarii_trend(
     company_name: str | None = Query(None),
     site_code: str | None = Query(None),
@@ -127,7 +191,7 @@ async def salarii_trend(
     return await svc.get_trend(company_name, site_code, regional, asm)
 
 
-@router.get("/stores")
+@router.get("/stores", response_model=list[SalaryStoreOption])
 async def salarii_stores(
     company_name: str | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),

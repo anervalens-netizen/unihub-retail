@@ -23,8 +23,7 @@ import type {
   AiForecastRollingStoreRow,
   AiForecastStoreRow,
 } from '../api/types';
-import { formatAmount, formatInt, formatPercent } from '../lib/formatters';
-import { formatIsoDateTime } from '../lib/dates';
+import { formatInt, formatPercent } from '../lib/formatters';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { queryKeys } from '../lib/queryKeys';
 import type { AppFilters } from './MainLayout';
@@ -32,6 +31,15 @@ import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
 import { ErrorCard, LoadingCard, Metric, SortableHeader } from './dashboard/DashboardWidgets';
 import * as aiForecastModel from '../features/ai-forecast/model';
+import {
+  compareForecastValues,
+  deltaTone,
+  formatGeneratedAt,
+  formatMetricValue,
+  formatSignedAmount,
+  nextSortDirection,
+  riskLabel,
+} from '../features/ai-forecast/model';
 
 interface AiForecastPanelProps {
   currentMonth: string;
@@ -55,10 +63,8 @@ type StoreSortKey = keyof Pick<
   AiForecastStoreRow,
   'locatie' | 'asm' | 'forecast_sales' | 'expected_sales_to_date' | 'actual_sales' | 'delta_sales' | 'delta_pct'
 >;
-type RollingMonthSortKey = keyof Pick<AiForecastRollingMonthlyPoint, 'forecast_month' | 'store_count' | 'forecast_sales' | 'actual_sales' | 'delta_sales' | 'delta_pct'>;
 type RollingManagerSortKey = keyof Pick<AiForecastRollingManagerRow, 'manager' | 'store_count' | 'forecast_sales' | 'actual_sales' | 'delta_sales' | 'delta_pct'>;
 type RollingStoreSortKey = keyof Pick<AiForecastRollingStoreRow, 'locatie' | 'asm' | 'forecast_sales' | 'actual_sales' | 'delta_sales' | 'delta_pct'>;
-type ForecastSortKey = ManagerSortKey | StoreSortKey | RollingMonthSortKey | RollingManagerSortKey | RollingStoreSortKey;
 
 interface DailyCurvePoint {
   day: string;
@@ -68,67 +74,6 @@ interface DailyCurvePoint {
   actualDaily: number | null;
   cumulativeForecast: number;
   cumulativeActual: number | null;
-}
-
-function deltaTone(value: number | null | undefined) {
-  const numericValue = value ?? 0;
-  if (numericValue > 0) return 'text-emerald-600 dark:text-emerald-400';
-  if (numericValue < 0) return 'text-rose-600 dark:text-rose-400';
-  return 'text-slate-600 dark:text-slate-300';
-}
-
-function formatMetricValue(value: number | null | undefined, metric: AiForecastMetric) {
-  if (value === null || value === undefined) return '-';
-  return metric === 'units' ? formatInt(Math.round(value)) : formatAmount(value);
-}
-
-function formatSignedAmount(value: number | null | undefined, metric: AiForecastMetric) {
-  if (value === null || value === undefined) return '-';
-  const prefix = value > 0 ? '+' : '';
-  return `${prefix}${formatMetricValue(value, metric)}`;
-}
-
-function riskLabel(deltaPct: number | null) {
-  if (deltaPct === null) return 'Fara reper';
-  if (deltaPct >= 3) return 'Peste ritm';
-  if (deltaPct <= -5) return 'Risc';
-  if (deltaPct < 0) return 'Sub ritm';
-  return 'In ritm';
-}
-
-function formatGeneratedAt(value: string | undefined): string {
-  return formatIsoDateTime(value);
-}
-
-const NUMERIC_SORT_KEYS = new Set<ForecastSortKey>([
-  'store_count',
-  'forecast_sales',
-  'expected_sales_to_date',
-  'actual_sales',
-  'delta_sales',
-  'delta_pct',
-]);
-
-function compareForecastValues(
-  key: ForecastSortKey,
-  a: string | number | null | undefined,
-  b: string | number | null | undefined
-) {
-  if (a === null || a === undefined) return b === null || b === undefined ? 0 : -1;
-  if (b === null || b === undefined) return 1;
-  if (NUMERIC_SORT_KEYS.has(key)) {
-    const aNumber = Number(a);
-    const bNumber = Number(b);
-    if (Number.isNaN(aNumber)) return Number.isNaN(bNumber) ? 0 : -1;
-    if (Number.isNaN(bNumber)) return 1;
-    return aNumber - bNumber;
-  }
-  return String(a).localeCompare(String(b), 'ro-RO', { sensitivity: 'base' });
-}
-
-function nextSortDirection(currentKey: string, nextKey: string, currentDirection: ForecastSortDirection) {
-  if (currentKey === nextKey) return currentDirection === 'asc' ? 'desc' : 'asc';
-  return nextKey === 'manager' || nextKey === 'locatie' || nextKey === 'asm' || nextKey === 'forecast_month' ? 'asc' : 'desc';
 }
 
 export function AiForecastPanel({ currentMonth, filters }: AiForecastPanelProps) {

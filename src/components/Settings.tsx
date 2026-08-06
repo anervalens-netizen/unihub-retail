@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { ThemeSwitcher } from './ThemeSwitcher';
-import { AlertTriangle, CheckCircle2, Download, Eye, FileSpreadsheet, Info, LineChart as LineChartIcon, SlidersHorizontal, Table2, Upload } from 'lucide-react';
+import { Download, Eye, FileSpreadsheet, LineChart as LineChartIcon, SlidersHorizontal, Table2, Upload } from 'lucide-react';
 import { downloadExport, getExportCatalog, previewExport } from '../api/exports';
-import type { ExportColumnDef, ExportFilters, ExportPreview, ExportRequest } from '../api/exports';
+import type { ExportFilters, ExportPreview, ExportRequest } from '../api/exports';
 import { getFilterOptions } from '../api/filters';
 import { getImportHistory, getImportJobStatus, promoteSalesGeneration, uploadErpReconciliationFile, uploadPromoActualsFile, uploadSalesFile } from '../api/imports';
-import type { ErpReconciliationMetric, ErpReconciliationResponse } from '../api/imports';
+import type { ErpReconciliationResponse } from '../api/imports';
 import type { FilterOptions, ImportHistoryEntry, ImportResponse } from '../api/types';
 import { cn } from '../lib/utils';
 import { getCachedView, setCachedView } from '../lib/viewCache';
@@ -23,6 +22,19 @@ import { PageHeader } from './common/DesktopLayout';
 import { TableHeaderCell } from './common/TableHeader';
 import { useAvailableMonths } from '../hooks/useAvailableMonths';
 import * as settingsPresenters from '../features/settings/presenters';
+import {
+  ALL_DAYS,
+  ColumnBlock,
+  ExportWorkflow,
+  FieldBlock,
+  FilterBlock,
+  LevelBlock,
+  ModeButton,
+  PeriodSelector,
+  CheckRow,
+  type ExportStep,
+} from '../features/settings/exports/controls';
+import { ErpReconciliationResult } from '../features/settings/imports/ErpReconciliationResult';
 
 interface SettingsProps {
   theme: string;
@@ -54,24 +66,8 @@ const DEFAULT_EXPORT_METRICS = [
 ];
 const DEFAULT_DAILY_COMPARISON_METRICS = ['total_sales'];
 const DEFAULT_COMPARISON_LEVELS = ['general', 'asms', 'stores', 'agents'];
-const MONTH_LABELS = [
-  'Ianuarie',
-  'Februarie',
-  'Martie',
-  'Aprilie',
-  'Mai',
-  'Iunie',
-  'Iulie',
-  'August',
-  'Septembrie',
-  'Octombrie',
-  'Noiembrie',
-  'Decembrie',
-];
-const ALL_DAYS = Array.from({ length: 31 }, (_, index) => index + 1);
 type ExportMode = 'table' | 'daily_comparison';
 type SettingsSection = 'imports' | 'exports' | 'preferences';
-type ExportStep = 1 | 2 | 3 | 4;
 const INCENTIVE_PRODUCTS_DATASET = 'incentive_products';
 
 function yesterdayInputValue(): string {
@@ -1199,418 +1195,5 @@ export function Settings({
         </div>
       )}
     </div>
-  );
-}
-
-function ExportWorkflow({ step, onChange }: { step: ExportStep; onChange: (step: ExportStep) => void }) {
-  const steps: Array<{ value: ExportStep; label: string }> = [
-    { value: 1, label: 'Dataset' },
-    { value: 2, label: 'Perioadă și scope' },
-    { value: 3, label: 'Coloane' },
-    { value: 4, label: 'Preview și export' },
-  ];
-  return (
-    <nav aria-label="Pași export Excel" className="glass rounded-2xl p-2">
-      <div className="p-1 lg:hidden">
-        <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500"><span>Pasul {step} din 4</span><span>{steps[step - 1]?.label ?? ''}</span></div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${step * 25}%` }} /></div>
-      </div>
-      <ol className="hidden grid-cols-2 gap-2 lg:grid lg:grid-cols-4">
-        {steps.map((item) => (
-          <li key={item.value}>
-            <button
-              type="button"
-              onClick={() => onChange(item.value)}
-              aria-current={step === item.value ? 'step' : undefined}
-              className={cn(
-                'flex min-h-10 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors',
-                step === item.value
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : item.value < step
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
-                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800',
-              )}
-            >
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/80 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                {item.value < step ? '✓' : item.value}
-              </span>
-              {item.label}
-            </button>
-          </li>
-        ))}
-      </ol>
-    </nav>
-  );
-}
-
-function PeriodSelector({
-  years,
-  selectedYears,
-  onYearToggle,
-  monthNumbers,
-  selectedMonthNumbers,
-  onMonthToggle,
-  selectedDays,
-  onDayToggle,
-  onSelectAllDays,
-  onSelectFirstNineDays,
-  selectedMonthCount,
-}: {
-  years: string[];
-  selectedYears: string[];
-  onYearToggle: (year: string) => void;
-  monthNumbers: string[];
-  selectedMonthNumbers: string[];
-  onMonthToggle: (month: string) => void;
-  selectedDays: number[];
-  onDayToggle: (day: number) => void;
-  onSelectAllDays: () => void;
-  onSelectFirstNineDays: () => void;
-  selectedMonthCount: number;
-}) {
-  return (
-    <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <PeriodDropdown label="Ani" summary={selectedYears.join(', ')}>
-          {years.map((year) => (
-            <CheckRow key={year} label={year} checked={selectedYears.includes(year)} onChange={() => onYearToggle(year)} />
-          ))}
-        </PeriodDropdown>
-        <PeriodDropdown
-          label="Luni"
-          summary={selectedMonthNumbers.length <= 2
-            ? selectedMonthNumbers.map((month) => MONTH_LABELS[Number(month) - 1] ?? month).join(', ')
-            : `${selectedMonthNumbers.length} selectate`}
-        >
-          {monthNumbers.map((month) => (
-            <CheckRow
-              key={month}
-              label={MONTH_LABELS[Number(month) - 1] ?? month}
-              checked={selectedMonthNumbers.includes(month)}
-              onChange={() => onMonthToggle(month)}
-            />
-          ))}
-        </PeriodDropdown>
-        <PeriodDropdown label="Zile" summary={selectedDays.length === 31 ? 'Toata luna' : `${selectedDays.length} selectate`}>
-          <div className="mb-2 flex gap-1">
-            <button type="button" onClick={onSelectAllDays} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold dark:border-slate-700">
-              Toate
-            </button>
-            <button type="button" onClick={onSelectFirstNineDays} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold dark:border-slate-700">
-              Primele 9
-            </button>
-          </div>
-          <div className="grid grid-cols-4 gap-1">
-            {ALL_DAYS.map((day) => (
-              <CheckRow key={day} label={String(day)} checked={selectedDays.includes(day)} onChange={() => onDayToggle(day)} />
-            ))}
-          </div>
-        </PeriodDropdown>
-      </div>
-      <div className="text-[11px] font-semibold text-slate-500">
-        {selectedMonthCount} luni rezultate · {selectedDays.length === 31 ? 'toate zilele' : `zilele ${selectedDays.join(', ')}`}
-      </div>
-    </div>
-  );
-}
-
-function PeriodDropdown({ label, summary, children }: { label: string; summary: string; children: ReactNode }) {
-  return (
-    <details className="relative open:z-50 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-      <summary className="cursor-pointer list-none px-2 py-2 text-xs font-bold text-slate-600 dark:text-slate-200">
-        <span className="block text-[10px] uppercase text-slate-400">{label}</span>
-        <span>{summary}</span>
-      </summary>
-      <div className="absolute left-0 z-[60] mt-1 max-h-72 min-w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-        {children}
-      </div>
-    </details>
-  );
-}
-
-function ErpReconciliationResult({ result }: { result: ErpReconciliationResponse }) {
-  const hasDifferences = result.status === 'differences';
-  return (
-    <div className="mt-4 min-w-0 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-700">
-      <div className={cn(
-        'flex items-start gap-3 rounded-2xl border p-3',
-        hasDifferences
-          ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
-          : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100',
-      )}>
-        {hasDifferences ? <AlertTriangle size={18} className="mt-0.5 shrink-0" /> : <CheckCircle2 size={18} className="mt-0.5 shrink-0" />}
-        <div>
-          <div className="text-xs font-bold">
-            {hasDifferences
-              ? result.issue_count > 0
-                ? `${result.issue_count} diferențe de detaliu de verificat`
-                : 'Au fost găsite diferențe în totalurile comparate'
-              : 'Raportul coincide cu datele verificabile din Retail'}
-          </div>
-          <div className="mt-1 text-[11px] opacity-80">
-            {result.import_month} · perioadă comparată 01–{settingsPresenters.formatReconciliationDate(result.report_cutoff_date)} · snapshot Retail disponibil până la {result.retail_cutoff_date ? settingsPresenters.formatReconciliationDate(result.retail_cutoff_date) : 'fără date'} · hash {result.file_digest}
-          </div>
-          <div className="mt-1 text-[11px] opacity-80">
-            Magazine {result.report_store_count}/{result.retail_store_count} · Agenți {result.report_agent_count}/{result.retail_agent_count}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {result.metrics.map((metric) => (
-          <ReconciliationMetricCard key={metric.key} metric={metric} />
-        ))}
-      </div>
-
-      {result.issues.length > 0 && (
-        <details open className="rounded-2xl border border-amber-200 bg-white p-3 dark:border-amber-900/50 dark:bg-slate-900">
-          <summary className="cursor-pointer text-xs font-bold text-amber-800 dark:text-amber-200">
-            Unde sunt diferențele · {result.issue_count}
-          </summary>
-          <div className="mt-2 max-h-80 max-w-full overflow-auto">
-            <table className="w-full min-w-[680px] text-left text-[11px]">
-              <thead className="sticky top-0 bg-white text-slate-400 dark:bg-slate-900">
-                <tr>
-                  <th className="px-2 py-2">Nivel</th>
-                  <th className="px-2 py-2">Magazin / entitate</th>
-                  <th className="px-2 py-2">Metrică</th>
-                  <th className="px-2 py-2 text-right">ERP</th>
-                  <th className="px-2 py-2 text-right">Retail</th>
-                  <th className="px-2 py-2 text-right">Dif.</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {result.issues.map((issue, index) => (
-                  <tr key={`${issue.scope}-${issue.site_code}-${issue.entity}-${issue.metric}-${index}`} title={issue.note}>
-                    <td className="px-2 py-2 font-semibold">{issue.scope === 'agent' ? 'Agent' : issue.scope === 'store' ? 'Magazin' : 'Raport'}</td>
-                    <td className="px-2 py-2"><span className="font-semibold">{issue.site_code ?? '—'}</span> · {issue.entity}</td>
-                    <td className="px-2 py-2">{issue.metric}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{settingsPresenters.formatReconciliationNumber(issue.report_value)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{settingsPresenters.formatReconciliationNumber(issue.retail_value)}</td>
-                    <td className="px-2 py-2 text-right font-bold tabular-nums text-amber-700 dark:text-amber-300">{settingsPresenters.formatSignedReconciliationNumber(issue.difference)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {result.omitted_issue_count > 0 && (
-            <div className="mt-2 text-[11px] text-slate-500">Încă {result.omitted_issue_count} diferențe nu sunt afișate în listă.</div>
-          )}
-        </details>
-      )}
-
-      <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/50 dark:bg-sky-950/20">
-        <div className="mb-2 flex items-center gap-2 text-xs font-bold text-sky-800 dark:text-sky-200">
-          <Info size={15} /> Promo și Incentive — valori Retail, necomparabile direct
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {result.app_only_metrics.map((metric) => (
-            <div key={metric.key} className="rounded-xl bg-white/80 p-2 dark:bg-slate-900/70" title={metric.note}>
-              <div className="text-[10px] font-semibold text-slate-500">{metric.label}</div>
-              <div className="mt-1 text-sm font-bold tabular-nums">
-                {settingsPresenters.formatReconciliationValue(metric.value, metric.unit)}
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] text-sky-700 dark:text-sky-300">
-          Raportul agregat nu conține codurile de produs, identitatea bonului și unitățile promo necesare pentru certificarea independentă a acestor valori.
-        </p>
-      </div>
-
-      <details className="rounded-2xl bg-slate-50 p-3 text-[11px] text-slate-500 dark:bg-slate-800/60">
-        <summary className="cursor-pointer font-bold">Cum a fost făcută verificarea</summary>
-        <ul className="mt-2 list-disc space-y-1 pl-4">
-          {result.notes.map((note) => <li key={note}>{note}</li>)}
-        </ul>
-      </details>
-    </div>
-  );
-}
-
-function ReconciliationMetricCard({ metric }: { metric: ErpReconciliationMetric }) {
-  const tone = metric.status === 'difference'
-    ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20'
-    : metric.status === 'explained'
-      ? 'border-sky-200 bg-sky-50 dark:border-sky-900/50 dark:bg-sky-950/20'
-      : 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20';
-  return (
-    <div className={cn('rounded-2xl border p-3', tone)} title={metric.note ?? undefined}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{metric.label}</div>
-        {metric.status === 'difference'
-          ? <AlertTriangle size={14} className="shrink-0 text-amber-600" />
-          : metric.status === 'explained'
-            ? <Info size={14} className="shrink-0 text-sky-600" />
-            : <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />}
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-slate-500">
-        <div>ERP <strong className="block text-xs text-slate-800 dark:text-slate-100">{settingsPresenters.formatReconciliationValue(metric.report_value, metric.unit)}</strong></div>
-        <div>Retail <strong className="block text-xs text-slate-800 dark:text-slate-100">{settingsPresenters.formatReconciliationValue(metric.retail_value, metric.unit)}</strong></div>
-      </div>
-      {metric.note && <p className="mt-2 text-[10px] leading-snug text-slate-500">{metric.note}</p>}
-    </div>
-  );
-}
-
-function ModeButton({
-  active,
-  icon,
-  title,
-  subtitle,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  title: string;
-  subtitle: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-colors',
-        active
-          ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/30 dark:text-indigo-200'
-          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-      )}
-    >
-      <span className={cn(
-        'grid h-8 w-8 place-items-center rounded-xl',
-        active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
-      )}>
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-xs font-bold">{title}</span>
-        <span className="block truncate text-[11px] opacity-75">{subtitle}</span>
-      </span>
-    </button>
-  );
-}
-
-function FieldBlock({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function CheckRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-      />
-      <span className="truncate">{label}</span>
-    </label>
-  );
-}
-
-function ColumnBlock({
-  title,
-  columns,
-  selected,
-  onToggle,
-}: {
-  title: string;
-  columns: ExportColumnDef[];
-  selected: string[];
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <details className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-      <summary className="cursor-pointer text-xs font-bold text-slate-600 dark:text-slate-300">
-        {title} · {selected.filter((key) => columns.some((column) => column.key === key)).length}
-      </summary>
-      <div className="mt-2 grid gap-1 sm:grid-cols-2">
-        {columns.map((column) => (
-          <CheckRow
-            key={column.key}
-            label={column.label}
-            checked={selected.includes(column.key)}
-            onChange={() => onToggle(column.key)}
-          />
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function LevelBlock({
-  levels,
-  selected,
-  onToggle,
-}: {
-  levels: Array<{ key: string; label: string }>;
-  selected: string[];
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <details open className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-      <summary className="cursor-pointer text-xs font-bold text-slate-600 dark:text-slate-300">
-        Niveluri exportate · {selected.length}
-      </summary>
-      <div className="mt-2 grid gap-1 sm:grid-cols-2">
-        {levels.map((level) => (
-          <CheckRow
-            key={level.key}
-            label={level.label}
-            checked={selected.includes(level.key)}
-            onChange={() => onToggle(level.key)}
-          />
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function FilterBlock({
-  title,
-  values,
-  selected,
-  onToggle,
-}: {
-  title: string;
-  values: Array<string | { key: string; value?: string; label: string }>;
-  selected: string[];
-  onToggle: (value: string) => void;
-}) {
-  const [query, setQuery] = useState('');
-  const normalized = query.trim().toLowerCase();
-  const items = values
-    .map((item) => typeof item === 'string' ? { key: item, value: item, label: item } : { ...item, value: item.value ?? item.key })
-    .filter((item) => !normalized || item.label.toLowerCase().includes(normalized))
-    .slice(0, 80);
-
-  return (
-    <details className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-      <summary className="cursor-pointer text-xs font-bold text-slate-600 dark:text-slate-300">
-        {title} · {selected.length}
-      </summary>
-      <input
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Cauta..."
-        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs outline-none dark:border-slate-700 dark:bg-slate-800"
-      />
-      <div className="mt-2 max-h-44 overflow-auto">
-        {items.map((item) => (
-          <CheckRow
-            key={item.key}
-            label={item.label}
-            checked={selected.includes(item.value)}
-            onChange={() => onToggle(item.value)}
-          />
-        ))}
-      </div>
-    </details>
   );
 }
