@@ -84,13 +84,13 @@ Constatări reconfirmate în codul curent:
 | R-04 | DONE | Bootstrap recuperabil, cache stale și retry fără reload |
 | R-05 | DONE | Harness Vitest DOM și teste pentru bootstrap/sezonabilitate/status |
 | R-06 | DONE | Strict global pe toate fișierele non-Grile |
-| R-07 | PARTIAL | Feature presenters/model boundaries conectate pentru Dashboard, Target, Campanii, Settings, Agents și AI; Dashboard aggregation presenter este acum scos din componentă, dar decompoziția completă a containerelor vizuale rămâne lot separat |
+| R-07 | PARTIAL | Feature presenters/model boundaries conectate pentru Dashboard, Target, Campanii, Settings, Agents și AI; lotul curent adaugă PremiumView/SortableTable, export controls, ERP result, AgentDetails și model pur Target/AI; containerele principale rămân peste pragul 300–400 linii |
 | R-08 | DONE | Niciun emitter/listener `unihub:navigate` rămas |
 | R-09 | DONE | Benchmark RSS, writer write-only bounded și worker complex izolat cu spawn |
 | R-10 | DONE | Parsare Excel single-pass în importurile afectate și metrici de resurse |
 | R-11 | DONE | Snapshot repeatable-read Campanii și pool eliberat înainte de agregarea CPU |
 | R-12 | DONE | Decimal/rotunjire HALF_UP și alocare exactă la cent în Campanii/Target |
-| R-13 | PARTIAL | OpenAPI offline + client/rute generate folosite de filtre și exporturi + drift gate; migrarea tuturor tipurilor locale continuă |
+| R-13 | PARTIAL | OpenAPI offline + client/rute generate pentru toate modulele API non-Grile, Decimal/Blob runtime decoding, response models și drift gate; tipurile locale compatibilitate încă există, iar Grile rămâne exclus |
 | R-14 | DONE | Settings query keys/cache și efecte separate pentru catalog/luni/filtre |
 | R-15 | satisfăcut | Lot 7: numai revalidare exact-SHA; nu se reconstruiește |
 | R-16 | DONE | Bundle budget ratcheted pe raw/gzip/precache |
@@ -110,26 +110,50 @@ Implementarea curentă este verificată local pe `dell-standby`; candidații
 `4b94583027211ba6b525a8e2ffe20d1ceed44983`,
 `26c67c697d16ca00a754871c64440d16bee0f46d` și
 `fc5fb24aa13a2a0391a17e60185bdf144b632420` sunt sincronizați pe `origin/main`,
-iar ultimul SHA este build-uit și deployat pe primary. Dovezi curente:
+iar ultimul SHA documentat anterior este build-uit și deployat pe primary.
+
+Candidatul curent local este `6800dace58ce66a3488edc429fdb0e22035d3049`.
+Acesta nu este încă publicat/deployat; closure-ul Lotului 6 se face numai după
+push, build pe primary și health check exact pe SHA. Schimbările curente:
+
+- decompoziție vizuală efectivă: `features/campaigns/PremiumView.tsx`,
+  `SortableTable.tsx`, `features/settings/exports/controls.tsx`, rezultatul ERP,
+  `features/agents/AgentDetails.tsx`, modele pure Target și AI Forecast;
+- toate modulele API non-Grile folosesc clientul generat; `storePnl` a fost mutat
+  pe aceeași rută; clientul păstrează cookie same-origin, CSRF, request ID,
+  ApiError, 401 și AbortSignal;
+- contractul include Decimal branded + decoder runtime, PATCH/path params și
+  Blob pentru export XLSX/fotografii; digest curent:
+  `f847dbfd8029e331803f5cca023b7dde449312e11873de617933482130664921`;
+- response models au fost adăugate pentru Target, CRM, HR, task-uri, P&L,
+  salarii și endpointurile binary; Grile și infrastructura auth/metrics rămân
+  în afara lotului.
+
+Dovezi curente:
 
 - `npm run typecheck`, `npm run typecheck:strict`, `npm run lint`: verde;
-- `npm run test -- --run`: `41` fișiere, `264` teste verzi;
-- contract drift: `b4781a979672b05a03ac21699386d22e743664263d7e9896d085196973d466ca`;
-- bundle ratchet: precache gzip `1,589,311` bytes, fără depășire;
+- `npm run test -- --run`: `43` fișiere, `270` teste verzi; testele generate
+  includ nullable Decimal, coliziunea `value`, PATCH/path, Blob și AbortSignal;
+- contract drift: `f847dbfd8029e331803f5cca023b7dde449312e11873de617933482130664921`;
+- `npm run verify:rum-build`: RUM verificat în 21 asset-uri JavaScript;
+- bundle ratchet: precache gzip `1,589,310` bytes, fără depășire;
 - export benchmark fresh-process: `50k x 20`, `33.815s`, peak RSS `138,018,816` bytes;
 - writer/exports țintit: `33` teste verzi; Dashboard țintit: `49` teste verzi, `2` skip;
 - Target/Campanii/Dashboard țintit după ultimele boundary-uri: `68` teste verzi, `2` skip;
   Campanii complet țintit: `14` teste verzi; mypy pe `35` module schimbate verde;
-- full backend local înainte de re-rularea fixului final: `1491` verzi, `128` skip;
-  testele DB/Valkey sunt protejate de
-  guardul `UNIHUB_TEST_DATABASE=1` și nu au fost executate pe baza shared/producție.
+- full backend local: `1505` verzi, `128` skip; `38` failure-uri sunt limitate
+  la testele DB/Valkey fără `UNIHUB_TEST_DATABASE=1` și la trei teste XLSX care
+  ating plafonul RSS al procesului de test; nu s-a folosit baza shared/producție.
+- contract/response-model tests țintite: `37` verzi; `mypy` complet: `382`
+  module fără erori.
 - Smoke primary după ultimul deploy: backend/worker `active`, `/health` și `/readyz`
   `200`, fără erori backend în ultimele 2 minute.
 
 R-07 și R-13 rămân explicit parțiale: mai sunt necesare decompoziția completă a
-containerelor vizuale mari și migrarea tuturor tipurilor locale către contractul
-generat. R-17, R-18 și R-20 sunt închise pe boundary-urile cerute, cu facade
-publice și teste existente păstrate.
+containerelor vizuale mari și eliminarea ultimelor tipuri locale echivalente.
+Endpointurile Grile sunt excluse explicit; auth/session și metrics sunt
+infrastructură, nu consumatori ai API-ului Retail. R-17, R-18 și R-20 sunt
+închise pe boundary-urile cerute, cu facade publice și teste existente păstrate.
 
 Nicio recomandare nu este omisă. Sunt două adaptări justificate:
 
