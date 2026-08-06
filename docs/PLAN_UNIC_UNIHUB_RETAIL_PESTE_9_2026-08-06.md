@@ -976,3 +976,41 @@ pentru build. La momentul acestei dovezi, runul este în coada incidentului
 global GitHub Actions; această stare externă nu blochează runtime-ul livrat
 prin fluxul local-first autorizat de ADR-005, dar statusul documentului devine
 `closed` numai după rezultatul formal verde.
+
+# 16. Closure Grile și curățenie finală — 2026-08-06
+
+Status: `closed` după consumarea dovezii formale exact-SHA descrise mai jos.
+`implementation_sha` pentru remedierea runtime este
+`324d9eab0e7a91a5d537c680d6720708dcbf7ac9`. `release_sha`, runul CI și runul
+deploy sunt identitatea machine-readable a ultimului artefact formal consumat;
+se citesc din runurile GitHub și auditul immutable al approval/deployului, fără
+un commit docs-only auto-referențial după deploy.
+
+Remedierea Grile este închisă cu următoarele dovezi:
+
+- runul abandonat `192` a fost recuperat prin CAS în `failed`, cu motivul
+  `grile_run_recovered_after_arq_worker_failure`; progresul `65/71` și toate
+  cele `65` observații, dintre care `64` valide, au rămas intacte;
+- unicul run de verificare live nou, `193`, a avansat până la `71/71` și a
+  terminat `completed`, cu `8` magazine OK, `63` problemă și `0` erori;
+- overview-ul autoritativ raportează runul `193` `active=false`, nu există run
+  `queued/running`, iar wrapperul ARQ a terminat `complete` fără retry;
+- hashul `agent_targets` înainte și după run este identic:
+  `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`;
+- publicarea Campaign păstrează intenția `Neatribuit` exclusiv prin API-urile
+  publice curente, fără `_build_campaign_context` sau cherry-pick legacy.
+
+Gate-uri pe conținutul runtime neschimbat:
+
+- suita Grile: `214 passed, 42 skipped`; SQL izolat țintit: `17 passed`;
+- backend complet izolat: `1761 passed, 7 skipped`; mypy: `412` fișiere verzi;
+- frontend typecheck, strict, lint, `56` fișiere / `325` teste Vitest și build:
+  verzi; contract, manifest, vendor integrity, bundle budget și
+  `git diff --check`: verzi;
+- backend, operations worker și import worker active; `/health`, `/readyz` și
+  frontendul public sunt verzi, iar assetul Grile public este identic byte cu
+  buildul producției.
+
+Closure este valid numai cât timp ultimul `release_sha` are CI formal verde,
+approval/deploy consumat pe același SHA, toate checkouturile sincronizate,
+GitHub numai cu `main`, zero PR-uri și zero worktree-uri temporare.
