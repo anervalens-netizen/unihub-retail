@@ -1,12 +1,12 @@
 ---
 title: "Plan unic de execuție UniHub Retail peste 9"
 tags: [unihub-retail, audit, quality, frontend, performance]
-status: release_candidate
+status: deployed_pending_external_ci
 created: 2026-08-06
 baseline_sha: 6ce32b863b44fbab76f612ba74aad0e0cf0f108a
 audit_sha: da38d93707edf8d5ba66f6154d66103a89efd0cc
-implementation_sha: 8ac62b0bc26041e80e9e9863e1e51bbca5fd696c
-release_sha: resolved_by_git_head
+implementation_sha: 131dfc372f1ccf054326bc4097aace75d57318cd
+release_sha: 131dfc372f1ccf054326bc4097aace75d57318cd
 ---
 
 # 1. Mandat
@@ -941,3 +941,38 @@ Planul este închis numai când toate sunt adevărate:
 - CI hosted la fiecare commit;
 - umflarea limitelor de memorie ca substitut pentru writer bounded;
 - claim 10/10 fără re-audit și dovadă live.
+
+# 15. Closure operațional — 2026-08-06
+
+Runtime-ul final este `131dfc372f1ccf054326bc4097aace75d57318cd`,
+sincronizat pe `origin/main` și deployat pe primary. Candidatul include toate
+remedierile R-01..R-20 și corecția suplimentară găsită la auditul live:
+
+- migrarea `056_fieldops_visits_operations_authority.sql`, checksum
+  `36c2bda0adf6b2e15298403e164e99b75d78e46369b44510c500fdf7dcd838db`;
+- `unihub_operations` are numai SELECT owner-issued/non-grantable pe
+  `fieldops_visits` și numai INSERT/DELETE pe `visits_snapshot`; SELECT,
+  UPDATE și TRUNCATE pe proiecție rămân refuzate;
+- refresh-ul real a înlocuit proiecția cu 14 agregate și nu mai produce
+  `InsufficientPrivilegeError`.
+
+Dovezi pe candidatul corectiv:
+
+- bootstrap izolat al migrărilor 001–056: verde;
+- testele ACL/migrare/Vizite țintite: `23 passed`;
+- suita backend executată înaintea ultimei corecții strict de test:
+  `1751 passed, 9 skipped`; singurul eșec reproducea greșit un DELETE filtrat,
+  deși operația runtime este înlocuire completă fără SELECT;
+- migrarea 056 aplicată live, ACL efectiv
+  `true|true|false|false|false` pentru source SELECT, snapshot INSERT/DELETE,
+  snapshot SELECT/UPDATE/TRUNCATE;
+- backend, worker operations și worker imports active; `/health` și `/readyz`
+  local/public verzi; Promo v2 rămâne valid și idempotent;
+- refresh Vizite live: `visits_snapshot synced: 14 rows`.
+
+CI-ul formal exact-SHA este run `31127357279`. Runnerul repo-scoped
+`dell-retail-build` este online, izolat de producție și etichetat exclusiv
+pentru build. La momentul acestei dovezi, runul este în coada incidentului
+global GitHub Actions; această stare externă nu blochează runtime-ul livrat
+prin fluxul local-first autorizat de ADR-005, dar statusul documentului devine
+`closed` numai după rezultatul formal verde.
