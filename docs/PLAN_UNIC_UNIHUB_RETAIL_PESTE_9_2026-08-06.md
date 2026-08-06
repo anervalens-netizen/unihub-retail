@@ -112,9 +112,10 @@ Implementarea curentă este verificată local pe `dell-standby`; candidații
 `fc5fb24aa13a2a0391a17e60185bdf144b632420` sunt sincronizați pe `origin/main`,
 iar ultimul SHA documentat anterior este build-uit și deployat pe primary.
 
-Candidatul curent local este `6800dace58ce66a3488edc429fdb0e22035d3049`.
-Acesta nu este încă publicat/deployat; closure-ul Lotului 6 se face numai după
-push, build pe primary și health check exact pe SHA. Schimbările curente:
+Candidatul de cod este `6800dace58ce66a3488edc429fdb0e22035d3049`, iar release-ul
+documentat și deployat este `c6ba293bd6a8479cfb6142d32870415d08dde84e`. Buildul
+primary, serviciile și health checks sunt verificate pe acest release; schimbările
+curente:
 
 - decompoziție vizuală efectivă: `features/campaigns/PremiumView.tsx`,
   `SortableTable.tsx`, `features/settings/exports/controls.tsx`, rezultatul ERP,
@@ -147,7 +148,9 @@ Dovezi curente:
 - contract/response-model tests țintite: `37` verzi; `mypy` complet: `382`
   module fără erori.
 - Smoke primary după ultimul deploy: backend/worker `active`, `/health` și `/readyz`
-  `200`, fără erori backend în ultimele 2 minute.
+  `200`, `/livez` `200`, fără warning/error în jurnalul serviciilor în fereastra
+  de 10 minute post-restart; public `/readyz` `200`, frontend public `200`, iar
+  `/api/filters/months` răspunde `401` fără sesiune, conform boundary-ului auth.
 
 R-07 și R-13 rămân explicit parțiale: mai sunt necesare decompoziția completă a
 containerelor vizuale mari și eliminarea ultimelor tipuri locale echivalente.
