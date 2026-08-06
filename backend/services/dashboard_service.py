@@ -19,7 +19,6 @@ from schemas.dashboard import (
     DashboardHistoryResponse,
     MonthlyHistoryPoint,
     YearHistoryResponse,
-    YearHistoryPoint,
     AgentStats,
     StoreStats,
     PeriodComparisonPayload,
@@ -53,6 +52,8 @@ from services.dashboard.queries import (
     _load_dashboard_campaign_context,
 )
 from services.dashboard.specials_data import _get_special_cards_data
+from services.dashboard.history import project_year_history
+from services.dashboard.orchestration import gather_dashboard_phase
 from services.dashboard.metrics import observe_dashboard_component
 from services.dashboard.scheduler import (
     DASHBOARD_COMPONENT_CONCURRENCY,
@@ -77,11 +78,6 @@ from services.filters import build_scoped_params, normalize_filter, scoped_claus
 from services.premium_glass import build_premium_glass_card, get_premium_glass_analysis
 from services.request_deadline import RequestDeadline
 
-
-_RO_MONTHS = {
-    1: "Ian", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Mai", 6: "Iun",
-    7: "Iul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
-}
 
 _MONEY = Decimal("0.01")
 
@@ -342,8 +338,6 @@ class DashboardService:
         _site_code = site_code
         _agent = normalize_filter(agent)
 
-        points: list[YearHistoryPoint] = []
-
         start_month = f"{year}-01"
         end_month = f"{year}-12"
 
@@ -382,13 +376,11 @@ class DashboardService:
             rep_clauses.append("s.is_active = TRUE")
 
         rows = await self.repo.fetch_year_history_monthly(rep_clauses, rep_params, pool=self._pool_for(deadline))
-        visible_rows = [
-            r
-            for r in rows
-            if r["total_sales"] > 0 or r["total_target"] > 0 or r["total_quantity"] > 0
-        ]
-        has_monthly_sales = any(r["total_sales"] > 0 or r["total_quantity"] > 0 for r in visible_rows)
-
+        aggregate_row = None
+        has_monthly_sales = any(
+            row["total_sales"] > 0 or row["total_quantity"] > 0
+            for row in rows
+        )
         if year <= 2023 and _agent is None and not has_monthly_sales:
             hist_params: list[Any] = [year]
             hist_clauses: list[str] = []
@@ -424,33 +416,13 @@ class DashboardService:
             if current_scope and not include_closed_stores:
                 hist_clauses.append("s.is_active = TRUE")
 
-            row = await self.repo.fetch_year_history_agg(year, hist_clauses, hist_params, pool=self._pool_for(deadline))
-            if row and row["total_sales"] > 0:
-                points.append(
-                    YearHistoryPoint(
-                        label="Ian-Aug" if year == 2023 else str(year),
-                        sort_key=f"{year}-00",
-                        total_sales=row["total_sales"],
-                        total_target=Decimal(0),
-                        total_quantity=row["total_quantity"],
-                        is_aggregate=True,
-                    )
-                )
-
-        for r in visible_rows:
-            month_num = int(r["import_month"][5:7])
-            points.append(
-                YearHistoryPoint(
-                    label=_RO_MONTHS[month_num],
-                    sort_key=r["import_month"],
-                    total_sales=r["total_sales"],
-                    total_target=r["total_target"],
-                    total_quantity=r["total_quantity"],
-                    is_aggregate=False,
-                )
+            aggregate_row = await self.repo.fetch_year_history_agg(
+                year, hist_clauses, hist_params, pool=self._pool_for(deadline)
             )
 
-        return YearHistoryResponse(points=points)
+        return YearHistoryResponse(
+            points=project_year_history(year, [dict(row) for row in rows], aggregate_row)
+        )
 
     async def get_performance_detail(
         self,
@@ -840,13 +812,15 @@ class DashboardService:
         # connection before the scheduler has admitted it.
         campaign_context: Any | None = None
         if not _history_projection:
-            context_results = await _gather_named(
-                DASHBOARD_COMPONENT_CONCURRENCY,
-                self.dashboard_global_component_concurrency,
-                campaign_context=observe_dashboard_component(
-                    "campaign_context",
-                    load_campaign_context(),
-                ),
+            context_results = await gather_dashboard_phase(
+                {
+                    "campaign_context": observe_dashboard_component(
+                        "campaign_context",
+                        load_campaign_context(),
+                    )
+                },
+                component_limit=DASHBOARD_COMPONENT_CONCURRENCY,
+                global_limit=self.dashboard_global_component_concurrency,
             )
             campaign_context = context_results["campaign_context"]
 
@@ -1168,10 +1142,10 @@ class DashboardService:
                     "daily_last_year", get_daily_last_year_data()
                 ),
             )
-        component_results = await _gather_named(
-            DASHBOARD_COMPONENT_CONCURRENCY,
-            self.dashboard_global_component_concurrency,
-            **components,
+        component_results = await gather_dashboard_phase(
+            components,
+            component_limit=DASHBOARD_COMPONENT_CONCURRENCY,
+            global_limit=self.dashboard_global_component_concurrency,
         )
         if not _history_projection:
             # Special cards consume the already materialized summary.  Keep
@@ -1184,12 +1158,14 @@ class DashboardService:
                 asyncio.get_running_loop().create_future()
             )
             resolved_promo.set_result(promo_incentive)
-            dependent_results = await _gather_named(
-                DASHBOARD_COMPONENT_CONCURRENCY,
-                self.dashboard_global_component_concurrency,
-                special_cards=observe_dashboard_component(
-                    "special_cards", get_special_cards_data(resolved_promo)
-                ),
+            dependent_results = await gather_dashboard_phase(
+                {
+                    "special_cards": observe_dashboard_component(
+                        "special_cards", get_special_cards_data(resolved_promo)
+                    )
+                },
+                component_limit=DASHBOARD_COMPONENT_CONCURRENCY,
+                global_limit=self.dashboard_global_component_concurrency,
             )
             component_results.update(dependent_results)
         summary = cast(DashboardSummary, component_results["summary"])

@@ -1,4 +1,5 @@
 import { client } from './client';
+import { generatedGet, generatedPost } from './generated/client';
 import type {
   RetailExportCatalogResponse,
   RetailExportColumnDef,
@@ -14,13 +15,11 @@ export type ExportRequest = RetailExportRequest;
 export type ExportPreview = RetailExportPreviewResponse;
 
 export async function getExportCatalog(signal?: AbortSignal): Promise<ExportCatalog> {
-  const { data } = await client.get<ExportCatalog>('/api/exports/catalog', { signal });
-  return data;
+  return generatedGet('get_catalog_api_exports_catalog_get', undefined, signal);
 }
 
 export async function previewExport(request: ExportRequest): Promise<ExportPreview> {
-  const { data } = await client.post<ExportPreview>('/api/exports/preview', request);
-  return data;
+  return generatedPost('preview_export_api_exports_preview_post', request);
 }
 
 export async function downloadExport(request: ExportRequest): Promise<Blob> {

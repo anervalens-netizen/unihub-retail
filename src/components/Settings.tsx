@@ -15,13 +15,14 @@ import { getCachedView, setCachedView } from '../lib/viewCache';
 import { downloadBlob } from '../lib/download';
 import { useAuth } from '../auth/AuthContext';
 import { canAdministerImports, canExportReports } from '../auth/permissions';
-import { ApiError, getApiErrorMessage } from '../api/client';
+import { ApiError } from '../api/client';
 import { pollImportJob } from '../lib/importJobPolling';
 import { formatIsoDateInput, formatIsoDateTime, getCurrentYearMonth, shiftIsoDate, formatMonthLabel } from '../lib/dates';
 import { SegmentedTabs } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
 import { TableHeaderCell } from './common/TableHeader';
 import { useAvailableMonths } from '../hooks/useAvailableMonths';
+import * as settingsPresenters from '../features/settings/presenters';
 
 interface SettingsProps {
   theme: string;
@@ -268,7 +269,7 @@ export function Settings({
       filters: exportFilters,
       include_closed_stores: includeClosedStores,
       preview_limit: 100,
-      filename: formatExportFilename(exportMode, exportDataset, exportMonths, selectedDays),
+      filename: settingsPresenters.formatExportFilename(exportMode, exportDataset, exportMonths, selectedDays),
     };
   }, [
     comparisonLevels,
@@ -445,7 +446,7 @@ export function Settings({
       );
     } catch (error) {
       setMessageType('error');
-      setMessage(formatExportError(error, 'Promovarea generației de vânzări a eșuat.'));
+      setMessage(settingsPresenters.formatExportError(error, 'Promovarea generației de vânzări a eșuat.'));
     } finally {
       setPromotingSales(false);
     }
@@ -468,7 +469,7 @@ export function Settings({
       );
       setPromoActualsFile(null);
     } catch (error) {
-      setPromoActualsMessage(formatExportError(error, 'Importul raportului promo a eșuat.'));
+      setPromoActualsMessage(settingsPresenters.formatExportError(error, 'Importul raportului promo a eșuat.'));
     } finally {
       setPromoActualsUploading(false);
     }
@@ -487,7 +488,7 @@ export function Settings({
       setErpReconciliationResult(result);
     } catch (error) {
       setErpReconciliationError(
-        formatExportError(error, 'Verificarea raportului ERP a eșuat.'),
+        settingsPresenters.formatExportError(error, 'Verificarea raportului ERP a eșuat.'),
       );
     } finally {
       setErpReconciliationBusy(false);
@@ -554,7 +555,7 @@ export function Settings({
       const data = await previewExport(exportRequest);
       setPreview(data);
     } catch (error) {
-      setExportMessage(formatExportError(error, 'Preview-ul nu a putut fi generat. Verifica selectia.'));
+      setExportMessage(settingsPresenters.formatExportError(error, 'Preview-ul nu a putut fi generat. Verifica selectia.'));
     } finally {
       setExportBusy(false);
     }
@@ -567,7 +568,7 @@ export function Settings({
       const blob = await downloadExport(exportRequest);
       downloadBlob(blob, `${exportRequest.filename || 'export_retail'}.xlsx`);
     } catch (error) {
-      setExportMessage(formatExportError(error, 'Exportul nu a putut fi generat. Verifica selectia.'));
+      setExportMessage(settingsPresenters.formatExportError(error, 'Exportul nu a putut fi generat. Verifica selectia.'));
     } finally {
       setExportBusy(false);
     }
@@ -1347,7 +1348,7 @@ function ErpReconciliationResult({ result }: { result: ErpReconciliationResponse
               : 'Raportul coincide cu datele verificabile din Retail'}
           </div>
           <div className="mt-1 text-[11px] opacity-80">
-            {result.import_month} · perioadă comparată 01–{formatReconciliationDate(result.report_cutoff_date)} · snapshot Retail disponibil până la {result.retail_cutoff_date ? formatReconciliationDate(result.retail_cutoff_date) : 'fără date'} · hash {result.file_digest}
+            {result.import_month} · perioadă comparată 01–{settingsPresenters.formatReconciliationDate(result.report_cutoff_date)} · snapshot Retail disponibil până la {result.retail_cutoff_date ? settingsPresenters.formatReconciliationDate(result.retail_cutoff_date) : 'fără date'} · hash {result.file_digest}
           </div>
           <div className="mt-1 text-[11px] opacity-80">
             Magazine {result.report_store_count}/{result.retail_store_count} · Agenți {result.report_agent_count}/{result.retail_agent_count}
@@ -1384,9 +1385,9 @@ function ErpReconciliationResult({ result }: { result: ErpReconciliationResponse
                     <td className="px-2 py-2 font-semibold">{issue.scope === 'agent' ? 'Agent' : issue.scope === 'store' ? 'Magazin' : 'Raport'}</td>
                     <td className="px-2 py-2"><span className="font-semibold">{issue.site_code ?? '—'}</span> · {issue.entity}</td>
                     <td className="px-2 py-2">{issue.metric}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{formatReconciliationNumber(issue.report_value)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{formatReconciliationNumber(issue.retail_value)}</td>
-                    <td className="px-2 py-2 text-right font-bold tabular-nums text-amber-700 dark:text-amber-300">{formatSignedReconciliationNumber(issue.difference)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{settingsPresenters.formatReconciliationNumber(issue.report_value)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{settingsPresenters.formatReconciliationNumber(issue.retail_value)}</td>
+                    <td className="px-2 py-2 text-right font-bold tabular-nums text-amber-700 dark:text-amber-300">{settingsPresenters.formatSignedReconciliationNumber(issue.difference)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1407,7 +1408,7 @@ function ErpReconciliationResult({ result }: { result: ErpReconciliationResponse
             <div key={metric.key} className="rounded-xl bg-white/80 p-2 dark:bg-slate-900/70" title={metric.note}>
               <div className="text-[10px] font-semibold text-slate-500">{metric.label}</div>
               <div className="mt-1 text-sm font-bold tabular-nums">
-                {formatReconciliationValue(metric.value, metric.unit)}
+                {settingsPresenters.formatReconciliationValue(metric.value, metric.unit)}
               </div>
             </div>
           ))}
@@ -1444,58 +1445,12 @@ function ReconciliationMetricCard({ metric }: { metric: ErpReconciliationMetric 
             : <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />}
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-slate-500">
-        <div>ERP <strong className="block text-xs text-slate-800 dark:text-slate-100">{formatReconciliationValue(metric.report_value, metric.unit)}</strong></div>
-        <div>Retail <strong className="block text-xs text-slate-800 dark:text-slate-100">{formatReconciliationValue(metric.retail_value, metric.unit)}</strong></div>
+        <div>ERP <strong className="block text-xs text-slate-800 dark:text-slate-100">{settingsPresenters.formatReconciliationValue(metric.report_value, metric.unit)}</strong></div>
+        <div>Retail <strong className="block text-xs text-slate-800 dark:text-slate-100">{settingsPresenters.formatReconciliationValue(metric.retail_value, metric.unit)}</strong></div>
       </div>
       {metric.note && <p className="mt-2 text-[10px] leading-snug text-slate-500">{metric.note}</p>}
     </div>
   );
-}
-
-function formatReconciliationValue(value: number | null, unit: string): string {
-  if (value == null) return '—';
-  const number = Number(value);
-  if (!Number.isFinite(number)) return '—';
-  if (unit === 'RON') {
-    return `${number.toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} RON`;
-  }
-  return `${number.toLocaleString('ro-RO', { maximumFractionDigits: 2 })} ${unit}`;
-}
-
-function formatReconciliationDate(value: string): string {
-  const [year, month, day] = value.split('-');
-  return year && month && day ? `${day}.${month}.${year}` : value;
-}
-
-function formatReconciliationNumber(value: number | null): string {
-  if (value == null) return '—';
-  const number = Number(value);
-  return Number.isFinite(number) ? number.toLocaleString('ro-RO', { maximumFractionDigits: 2 }) : '—';
-}
-
-function formatSignedReconciliationNumber(value: number | null): string {
-  if (value == null) return '—';
-  const number = Number(value);
-  if (!Number.isFinite(number)) return '—';
-  const formatted = Math.abs(number).toLocaleString('ro-RO', { maximumFractionDigits: 2 });
-  return number > 0 ? `+${formatted}` : number < 0 ? `-${formatted}` : '0';
-}
-
-function formatExportFilename(mode: ExportMode, dataset: string, months: string[], days: number[]): string {
-  const sortedMonths = [...months].sort();
-  const suffix = sortedMonths.length <= 4
-    ? sortedMonths.join('_')
-    : `${sortedMonths[0]}_${sortedMonths[sortedMonths.length - 1]}_${sortedMonths.length}luni`;
-  const daySuffix = days.length === 31
-    ? ''
-    : `_zile_${days.length <= 10 ? days.join('-') : `${days.length}selectate`}`;
-  return mode === 'daily_comparison'
-    ? `export_retail_evolutie_zilnica_${suffix}${daySuffix}`
-    : `export_retail_${dataset}_${suffix}${daySuffix}`;
-}
-
-function formatExportError(error: unknown, fallback: string): string {
-  return getApiErrorMessage(error, fallback);
 }
 
 function ModeButton({

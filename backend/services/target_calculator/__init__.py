@@ -499,6 +499,20 @@ from services.target_calculator.serialization import (
     serialize_header as calculation_serialize_header,
     serialize_row as calculation_serialize_row,
 )
+from services.target_calculator.rules import (
+    canonical_input_hash as calculation_canonical_input_hash,
+    clamp_decimal as calculation_clamp_decimal,
+    percent_change as calculation_percent_change,
+    realized_for_calculation as calculation_realized_for_calculation,
+    unique_months as calculation_unique_months,
+    weighted_available as calculation_weighted_available,
+)
+from services.target_calculator.context import build_target_context
+from services.target_calculator.proposal import normalize_proposal_parameters
+from services.target_calculator.editing import validate_unique_final_rows
+from services.target_calculator.finalization import finalization_error
+from services.target_calculator.scenarios import is_editable_scenario
+from services.target_calculator.warnings import unique_warnings
 
 MONEY = CALCULATION_MONEY
 TargetBudgetInfeasibleError = CalculationBudgetInfeasibleError  # type: ignore[misc]
@@ -512,6 +526,11 @@ seasonal_year_weights = calculation_seasonal_year_weights
 shift_month = calculation_shift_month
 source_month_configuration = calculation_source_month_configuration
 weighted_ratio = calculation_weighted_ratio
+percent_change = calculation_percent_change
+realized_for_calculation = calculation_realized_for_calculation
+unique_months = calculation_unique_months
+clamp_decimal = calculation_clamp_decimal
+weighted_available = calculation_weighted_available
 serialize_header = calculation_serialize_header
 serialize_row = calculation_serialize_row
 
@@ -529,18 +548,18 @@ class TargetCalculatorService:
         if target_total == 0:
             target_total = await self.repo.get_target_total(latest_month)
         cohort = await self.repo.get_active_cohort(latest_month, suggested_month)
-        return {
-            "latest_sales_month": latest_month,
-            "suggested_target_month": suggested_month,
-            "suggested_cohort_month": latest_month,
-            "suggested_total_target": float(target_total),
-            "default_min_floor": float(DEFAULT_MIN_FLOOR),
-            "default_previous_month_floor_pct": float(DEFAULT_PREVIOUS_MONTH_FLOOR_PCT),
-            "default_previous_month_cap_pct": float(DEFAULT_PREVIOUS_MONTH_CAP_PCT),
-            "default_seasonality_years": DEFAULT_SEASONALITY_YEARS,
-            "active_store_count": len(cohort),
-            "regionals": sorted({row["regional"] for row in cohort}),
-        }
+        return build_target_context(
+            latest_month=latest_month,
+            suggested_month=suggested_month,
+            target_total=target_total,
+            cohort=[dict(row) for row in cohort],
+            defaults={
+                "default_min_floor": float(DEFAULT_MIN_FLOOR),
+                "default_previous_month_floor_pct": float(DEFAULT_PREVIOUS_MONTH_FLOOR_PCT),
+                "default_previous_month_cap_pct": float(DEFAULT_PREVIOUS_MONTH_CAP_PCT),
+                "default_seasonality_years": DEFAULT_SEASONALITY_YEARS,
+            },
+        )
 
     async def calculate(self, payload: dict[str, Any]) -> dict[str, Any]:
         target_month = payload["target_month"]
@@ -565,28 +584,30 @@ class TargetCalculatorService:
         if not cohort:
             raise HTTPException(status_code=400, detail="Luna de cohorta nu are magazine active.")
 
-        total_target = money(payload["total_target"])
-        min_floor = money(payload.get("min_floor", DEFAULT_MIN_FLOOR))
-        floor_pct = Decimal(str(payload.get("previous_month_floor_pct", DEFAULT_PREVIOUS_MONTH_FLOOR_PCT)))
-        cap_pct = Decimal(str(payload.get("previous_month_cap_pct", DEFAULT_PREVIOUS_MONTH_CAP_PCT)))
-        trend_weight = Decimal(str(payload.get("trend_weight", DEFAULT_TREND_WEIGHT)))
-        seasonality_min = Decimal(str(payload.get("seasonality_min", DEFAULT_SEASONALITY_MIN)))
-        seasonality_max = Decimal(str(payload.get("seasonality_max", DEFAULT_SEASONALITY_MAX)))
-        trend_min = Decimal(str(payload.get("trend_adjustment_min", DEFAULT_TREND_ADJUSTMENT_MIN)))
-        trend_max = Decimal(str(payload.get("trend_adjustment_max", DEFAULT_TREND_ADJUSTMENT_MAX)))
-        if (
-            total_target <= 0
-            or min_floor < 0
-            or floor_pct < 0
-            or cap_pct <= 0
-            or cap_pct < floor_pct
-            or trend_weight < 0
-            or seasonality_min <= 0
-            or seasonality_max < seasonality_min
-            or trend_min <= 0
-            or trend_max < trend_min
-        ):
-            raise HTTPException(status_code=400, detail="Parametrii de calcul nu sunt valizi.")
+        try:
+            (
+                total_target,
+                min_floor,
+                floor_pct,
+                cap_pct,
+                trend_weight,
+                seasonality_min,
+                seasonality_max,
+                trend_min,
+                trend_max,
+            ) = normalize_proposal_parameters(
+                payload,
+                default_min_floor=DEFAULT_MIN_FLOOR,
+                default_floor_pct=DEFAULT_PREVIOUS_MONTH_FLOOR_PCT,
+                default_cap_pct=DEFAULT_PREVIOUS_MONTH_CAP_PCT,
+                default_trend_weight=DEFAULT_TREND_WEIGHT,
+                default_seasonality_min=DEFAULT_SEASONALITY_MIN,
+                default_seasonality_max=DEFAULT_SEASONALITY_MAX,
+                default_trend_min=DEFAULT_TREND_ADJUSTMENT_MIN,
+                default_trend_max=DEFAULT_TREND_ADJUSTMENT_MAX,
+            )
+        except (KeyError, ValueError, ArithmeticError):
+            raise HTTPException(status_code=400, detail="Parametrii de calcul nu sunt valizi.") from None
 
         rule_record = await self.repo.get_effective_target_rule_set(target_month)
         if not rule_record:
@@ -884,6 +905,7 @@ class TargetCalculatorService:
                 detail=f"Bugetul Target este infezabil; propunerea nu a fost salvata. {exc}",
             ) from None
         warnings.extend(allocation_warnings)
+        warnings = unique_warnings(warnings)
         for row in calculated_rows:
             flags = list(dict.fromkeys(row["flags"]))
             row["calculation_details"]["flags"] = flags
@@ -1124,8 +1146,7 @@ class TargetCalculatorService:
 
     @staticmethod
     def _canonical_input_hash(payload: Any) -> str:
-        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return calculation_canonical_input_hash(payload)
 
     @staticmethod
     def _profitability_input_payload(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -1388,8 +1409,10 @@ class TargetCalculatorService:
         *,
         actor: str | None = None,
     ) -> dict[str, Any]:
-        if len({row["site_code"] for row in rows}) != len(rows):
-            raise HTTPException(status_code=400, detail="Aceeasi locatie apare de mai multe ori in salvare.")
+        try:
+            validate_unique_final_rows(rows)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
         if actor is not None:
             current = await self.get_scenario_detail(scenario_id)
             proposed_by_site = {row["site_code"]: row["proposed_target"] for row in current["rows"]}
@@ -1422,24 +1445,25 @@ class TargetCalculatorService:
             scenario = await self.repo.get_scenario(scenario_id)
             if not scenario:
                 raise HTTPException(status_code=404, detail="Scenariul de target nu exista.")
-            if scenario["status"] != "draft":
+            if not is_editable_scenario(scenario):
                 raise HTTPException(status_code=409, detail="Un scenariu finalizat nu mai poate fi editat.")
             raise HTTPException(status_code=400, detail="Una sau mai multe locatii nu apartin scenariului.")
         return await self.get_scenario_detail(scenario_id)
 
     async def finalize(self, scenario_id: int, expected_revision: int) -> dict[str, Any]:
         scenario = await self.get_scenario_detail(scenario_id)
-        if scenario["calculation_method"] != CALCULATION_METHOD:
+        final_error = finalization_error(scenario, CALCULATION_METHOD)
+        if final_error == "formula_veche":
             raise HTTPException(
                 status_code=409,
                 detail="Scenariul a fost calculat cu o formula veche. Genereaza o propunere noua inainte de finalizare.",
             )
-        if scenario["pending_final_count"] > 0:
+        if final_error == "targete_incomplete":
             raise HTTPException(
                 status_code=400,
                 detail="Toate locatiile trebuie sa aiba target final completat inainte de finalizare.",
             )
-        if money(scenario["final_total"]) != money(scenario["total_target"]):
+        if final_error == "total_nealiniat":
             raise HTTPException(
                 status_code=400,
                 detail="Totalul targetelor finale trebuie sa fie egal cu bugetul scenariului inainte de finalizare.",

@@ -15,7 +15,6 @@ import {
 } from 'recharts';
 import { getAiForecastCurrent, getAiForecastRolling12 } from '../api/aiForecast';
 import type {
-  AiForecastDailyPoint,
   AiForecastManagerRow,
   AiForecastMetric,
   AiForecastResponse,
@@ -25,13 +24,14 @@ import type {
   AiForecastStoreRow,
 } from '../api/types';
 import { formatAmount, formatInt, formatPercent } from '../lib/formatters';
-import { formatIsoDateTime, isIsoWeekendDate } from '../lib/dates';
+import { formatIsoDateTime } from '../lib/dates';
 import { buildScopedMonthQuery } from '../lib/filterQueries';
 import { queryKeys } from '../lib/queryKeys';
 import type { AppFilters } from './MainLayout';
 import { ExportTableButton } from './ExportTableButton';
 import FirmaBadge from './FirmaBadge';
 import { ErrorCard, LoadingCard, Metric, SortableHeader } from './dashboard/DashboardWidgets';
+import * as aiForecastModel from '../features/ai-forecast/model';
 
 interface AiForecastPanelProps {
   currentMonth: string;
@@ -98,21 +98,6 @@ function riskLabel(deltaPct: number | null) {
 
 function formatGeneratedAt(value: string | undefined): string {
   return formatIsoDateTime(value);
-}
-
-function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
-  return points.map((point) => {
-    const hasActual = point.actual_sales > 0 || point.cumulative_actual > 0;
-    return {
-      day: point.forecast_date.slice(-2),
-      date: point.forecast_date,
-      isWeekend: isIsoWeekendDate(point.forecast_date),
-      forecastDaily: point.forecast_sales,
-      actualDaily: hasActual ? point.actual_sales : null,
-      cumulativeForecast: point.cumulative_forecast,
-      cumulativeActual: hasActual ? point.cumulative_actual : null,
-    };
-  });
 }
 
 const NUMERIC_SORT_KEYS = new Set<ForecastSortKey>([
@@ -217,7 +202,7 @@ function CurrentMonthForecastView({ currentMonth, filters, metric }: ForecastVie
     });
   }, [data, storeSearch]);
 
-  const dailyChartData = useMemo(() => (data ? buildDailyCurve(data.daily) : []), [data]);
+  const dailyChartData = useMemo(() => (data ? aiForecastModel.buildDailyCurve(data.daily) : []), [data]);
 
   if (forecastQuery.isPending) {
     return <LoadingCard label="Se incarca AI Forecast..." />;
@@ -673,7 +658,7 @@ function RollingManagerTable({ rows, metric }: { rows: AiForecastRollingManagerR
     });
   }, [rows, sortDirection, sortKey]);
   const handleSort = (key: RollingManagerSortKey) => {
-    setSortDirection((direction) => nextSortDirection(sortKey, key, direction));
+      setSortDirection((direction) => aiForecastModel.nextSortDirection(sortKey, key, direction));
     setSortKey(key);
   };
 
@@ -1105,7 +1090,7 @@ function ForecastDetailDrawer({
   onClose: () => void;
   onRetry: () => void;
 }) {
-  const dailyData = useMemo(() => (data ? buildDailyCurve(data.daily) : []), [data]);
+  const dailyData = useMemo(() => (data ? aiForecastModel.buildDailyCurve(data.daily) : []), [data]);
   const label = type === 'manager' ? 'RM / ASM' : 'Magazin';
 
   return (

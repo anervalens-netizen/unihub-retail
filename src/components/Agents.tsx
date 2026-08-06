@@ -37,6 +37,7 @@ import {
   type AgentMovementPoint,
   type StoreCoverageItem,
 } from '../api/agents';
+import * as agentsModel from '../features/agents/model';
 
 // formatters
 const nf = new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'RON', maximumFractionDigits: 0 });
@@ -57,31 +58,6 @@ const AGENTS_OVERVIEW_OPTIONS: SegmentedTabOption<AgentsOverviewSection>[] = [
   { value: 'coverage', label: 'Acoperire magazine' },
   { value: 'list', label: 'Lista agenților' },
 ];
-
-const AGENT_LIST_TABS = new Set<AgentListTab>([
-  'active',
-  'movement',
-  'inactive',
-  'churned',
-  'all',
-]);
-const AGENTS_MAIN_TABS = new Set<AgentsMainTab>(['overview', 'grile', 'analysis']);
-
-function deserializeAgentListTab(raw: string, fallback: AgentListTab): AgentListTab {
-  return AGENT_LIST_TABS.has(raw as AgentListTab) ? (raw as AgentListTab) : fallback;
-}
-
-function deserializeAgentsMainTab(raw: string, fallback: AgentsMainTab): AgentsMainTab {
-  return AGENTS_MAIN_TABS.has(raw as AgentsMainTab) ? (raw as AgentsMainTab) : fallback;
-}
-
-function deserializeSelectedAgent(raw: string): string | null {
-  return raw || null;
-}
-
-function hasNoSelectedAgent(value: string | null): boolean {
-  return value === null;
-}
 
 interface AgentDetailsProps {
   agent: string;
@@ -358,19 +334,19 @@ export function Agents({
     'agents_selectedAgent',
     null,
     {
-      deserialize: deserializeSelectedAgent,
-      removeWhen: hasNoSelectedAgent,
+      deserialize: agentsModel.deserializeSelectedAgent,
+      removeWhen: agentsModel.hasNoSelectedAgent,
     },
   );
   const [activeTab, setActiveTab] = usePersistentState<AgentListTab>(
     'agents_activeTab',
     'active',
-    { deserialize: deserializeAgentListTab },
+    { deserialize: agentsModel.deserializeAgentListTab },
   );
   const [mainTab, setMainTab] = usePersistentState<AgentsMainTab>(
     'agents_mainTab',
     preferredSection ?? 'overview',
-    { deserialize: deserializeAgentsMainTab },
+    { deserialize: agentsModel.deserializeAgentsMainTab },
   );
 
   useEffect(() => {

@@ -26,6 +26,7 @@ from services.dashboard.queries import (
     _fetch_promo_incentive_summary,
     _get_store_incentive_multipliers,
 )
+from services.campaigns.loader import load_campaign_configuration, load_incentive_campaign
 from services.dashboard_specials import (
     load_special_cards_config,
     parse_promotion_definitions,
@@ -44,7 +45,15 @@ from services.campaigns.money import (
     money as _money,
     money_float as _money_float,
 )
-from services.campaigns.dates import CampaignDateRangeError, validate_campaign_date_range
+from services.campaigns.range_policy import CampaignDateRangeError, validate_campaign_date_range
+from services.campaigns.aggregation import (
+    excluded_by_site_item,
+    merge_excluded_units,
+)
+from services.campaigns.promotions import compute_promotion_result
+from services.campaigns.incentives import incentive_item_codes
+from services.campaigns.context import build_campaign_context
+from services.campaigns.response import calculation_status
 
 
 def _merge_excluded_units(
@@ -91,7 +100,7 @@ async def _compute_promotion_result(
     )
 
 
-async def _build_campaign_context(
+async def _legacy_build_campaign_context(
     conn: asyncpg.Connection,
     *,
     config_error: str | None,
@@ -184,6 +193,17 @@ async def _build_campaign_context(
     )
 
 
+# Keep the historical private names stable for the service and publishers while
+# making the domain modules the actual implementation boundary.
+_merge_excluded_units = merge_excluded_units
+_excluded_by_site_item = excluded_by_site_item
+_compute_promotion_result = compute_promotion_result
+
+
+async def _build_campaign_context(conn: asyncpg.Connection, **kwargs: Any) -> DashboardCampaignContext:
+    return await build_campaign_context(conn, evaluator=_compute_promotion_result, **kwargs)
+
+
 class CampaignsService:
     def __init__(self, repo: CampaignsRepository, pool: asyncpg.Pool):
         self.repo = repo
@@ -269,12 +289,19 @@ class CampaignsService:
             raise CampaignDateRangeError("invalid_iso_date") from exc
         month = validate_campaign_date_range(start, end)
 
-        config, config_error = load_special_cards_config()
-        promotion_definitions, promotion_list_error = parse_promotion_definitions(config, month)
-        promotion_definition, promotion_error = parse_promotion_definition(
+        (
             config,
+            config_error,
+            promotion_definitions,
+            promotion_list_error,
+            promotion_definition,
+            promotion_error,
+        ) = load_campaign_configuration(
             month,
             promotion_key=promotion_key,
+            config_loader=load_special_cards_config,
+            definitions_loader=parse_promotion_definitions,
+            definition_loader=parse_promotion_definition,
         )
         if promotion_error is None:
             promotion_error = promotion_list_error
@@ -297,7 +324,7 @@ class CampaignsService:
                 readonly=True,
             ):
                 incentive_campaign = (
-                    await get_incentive_campaign(conn, month)
+                    await load_incentive_campaign(conn, month, loader=get_incentive_campaign)
                     if include_incentive
                     else None
                 )
@@ -437,19 +464,7 @@ class CampaignsService:
                         current_scope=current_scope,
                         include_closed_stores=include_closed_stores,
                     )
-                incentive_codes = sorted({
-                    str(product["item_code"])
-                    for period in (incentive_campaign or {}).get("periods", [])
-                    for product in period.get("products", [])
-                })
-                if incentive_campaign is not None and not incentive_codes:
-                    incentive_codes = sorted({
-                        str(code)
-                        for code in (
-                            incentive_campaign.get("item_codes")
-                            or incentive_campaign.get("reward_map", {}).keys()
-                        )
-                    })
+                incentive_codes = incentive_item_codes(incentive_campaign)
                 incentive_store_rows: list[Any] = []
                 incentive_agent_rows: list[Any] = []
                 if incentive_campaign is not None and incentive_codes:
@@ -489,15 +504,13 @@ class CampaignsService:
             incentive_title = incentive_campaign["title"] if incentive_campaign else ""
             incentive_description = incentive_campaign["description"] if incentive_campaign else ""
             calculation_warnings: list[str] = []
-            promo_calculation_status = (
-                "invalid"
-                if promotion_error is not None
-                else "complete"
-                if promotion_definition is not None
-                else "not_configured"
+            promo_calculation_status = calculation_status(
+                configured=promotion_definition is not None,
+                error=promotion_error,
             )
-            incentive_calculation_status = (
-                "complete" if incentive_campaign is not None else "not_configured"
+            incentive_calculation_status = calculation_status(
+                configured=incentive_campaign is not None,
+                error=None,
             )
             if incentive_campaign is not None and promotion_list_error is not None:
                 incentive_calculation_status = "invalid"
@@ -685,11 +698,7 @@ class CampaignsService:
                             for code, reward in incentive_campaign["reward_map"].items()
                         ],
                     }]
-                incentive_codes = incentive_campaign.get("item_codes") or sorted({
-                    str(product["item_code"])
-                    for period in campaign_periods
-                    for product in period["products"]
-                })
+                incentive_codes = incentive_item_codes(incentive_campaign)
                 incentive_product_count = len(incentive_codes)
                 period_excluded_ag: dict[tuple[str, str, str, str, str], int] = {}
                 if len(campaign_periods) <= 1:

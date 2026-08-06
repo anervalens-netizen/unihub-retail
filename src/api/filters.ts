@@ -1,12 +1,10 @@
-import { client } from './client';
+import { generatedGet } from './generated/client';
 import type { FilterOptions } from './types';
 
 export async function getFilterOptions(month: string, signal?: AbortSignal): Promise<FilterOptions> {
-  const { data } = await client.get<FilterOptions>('/api/filters/options', { params: { month }, signal });
-  return data;
+  return generatedGet('get_filter_options_api_filters_options_get', { month }, signal);
 }
 
 export async function getAvailableMonths(signal?: AbortSignal): Promise<string[]> {
-  const { data } = await client.get<string[]>('/api/filters/months', { signal });
-  return data;
+  return generatedGet('get_available_months_api_filters_months_get', undefined, signal);
 }

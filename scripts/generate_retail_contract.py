@@ -124,6 +124,11 @@ def generate_types(schema: dict[str, Any], operations: list[tuple[str, str, str,
             lines.append(f"    {status!r}: {response_type(response)};")
         lines.extend(["  }", ""])
     lines.append("}")
+    lines.append("")
+    lines.append("export const RETAIL_OPERATION_ROUTES = {")
+    for identifier, method, path, _operation in operations:
+        lines.append(f"  {identifier!r}: {{ method: {method!r}, path: {path!r} }},")
+    lines.append("} as const;")
     return "\n".join(lines) + "\n"
 
 
