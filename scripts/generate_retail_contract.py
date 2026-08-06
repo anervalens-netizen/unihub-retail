@@ -128,7 +128,7 @@ def generate_types(schema: dict[str, Any], operations: list[tuple[str, str, str,
     })
     lines = [
         "/* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */",
-        f"export const RETAIL_OPENAPI_SHA256 = {digest!r} as const;",
+        f"export const RETAIL_OPENAPI_SHA256 = {digest!r} as const; // pragma: allowlist secret",
         "",
         "export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };",
         "",
