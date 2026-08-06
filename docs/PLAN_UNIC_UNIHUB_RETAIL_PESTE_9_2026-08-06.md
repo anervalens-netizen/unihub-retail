@@ -101,12 +101,14 @@ Constatări reconfirmate în codul curent:
 
 ## 4.1 Implementare curentă și dovezi
 
-Implementarea curentă este verificată local pe `dell-standby`; SHA-ul final se
-completează după commit/deploy. Dovezi deja obținute:
+Implementarea curentă este verificată local pe `dell-standby`; candidații
+`035f81ca4d79be307d5d8c336963d5a8958acc87` și
+`97e96d651d15d918351763e60e211a29f65dd8cb` sunt sincronizați și deployați pe
+primary. Dovezi deja obținute:
 
 - `npm run typecheck`, `npm run typecheck:strict`, `npm run lint`: verde;
 - `npm run test`: `39` fișiere, `261` teste verzi;
-- contract drift: `50500c82375f8685c642a46f9dc2b39e60e0e04f6fd63e1b11f6633fd8501969`;
+- contract drift: `b4781a979672b05a03ac21699386d22e743664263d7e9896d085196973d466ca`;
 - bundle ratchet: precache gzip `1,589,311` bytes, fără depășire;
 - export benchmark fresh-process: `50k x 20`, `33.815s`, peak RSS `138,018,816` bytes;
 - writer/exports țintit: `33` teste verzi; Dashboard țintit: `49` teste verzi, `2` skip;
