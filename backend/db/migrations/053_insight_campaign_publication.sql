@@ -16,7 +16,7 @@ SET search_path = pg_catalog, public
 AS $$
     SELECT p_codes = COALESCE(
         ARRAY(
-            SELECT DISTINCT code
+            SELECT DISTINCT code COLLATE "C"
             FROM unnest(p_codes) AS code
             ORDER BY code COLLATE "C"
         ),
