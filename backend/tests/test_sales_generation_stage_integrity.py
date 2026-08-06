@@ -333,107 +333,116 @@ async def test_037_upgrade_verifies_legacy_controls_before_rollback_flow() -> No
     try:
         async with pool.acquire() as conn:
             await cleanup(conn)
-            first = await import_sales_dataframe(
-                conn,
-                sales_frame(),
-                "036-first.xlsx",
-                source_sha256="d" * 64,
-                cutoff_date=date(2099, 12, 2),
-                requested_by_sub="test:036-first",
-            )
-            second = await import_sales_dataframe(
-                conn,
-                sales_frame(),
-                "036-second.xlsx",
-                source_sha256="e" * 64,
-                cutoff_date=date(2099, 12, 2),
-                requested_by_sub="test:036-second",
-            )
+            rollback_scope = conn.transaction()
+            await rollback_scope.start()
+            try:
+                first = await import_sales_dataframe(
+                    conn,
+                    sales_frame(),
+                    "036-first.xlsx",
+                    source_sha256="d" * 64,
+                    cutoff_date=date(2099, 12, 2),
+                    requested_by_sub="test:036-first",
+                )
+                second = await import_sales_dataframe(
+                    conn,
+                    sales_frame(),
+                    "036-second.xlsx",
+                    source_sha256="e" * 64,
+                    cutoff_date=date(2099, 12, 2),
+                    requested_by_sub="test:036-second",
+                )
 
-            await conn.execute(
-                """
-                DROP TRIGGER IF EXISTS trg_verify_sales_generation_head_target
-                    ON sales_generation_heads;
-                DROP TRIGGER IF EXISTS trg_sales_stage_mutation
-                    ON sales_import_stage_rows;
-                DROP TRIGGER IF EXISTS trg_import_snapshot_sales_provenance
-                    ON import_snapshots;
-                DROP FUNCTION IF EXISTS verify_sales_generation_head_target();
-                DROP FUNCTION IF EXISTS guard_sales_stage_mutation();
-                DROP FUNCTION IF EXISTS sales_snapshot_is_retained(INTEGER);
-                DROP FUNCTION IF EXISTS guard_import_snapshot_sales_provenance();
-                DROP FUNCTION IF EXISTS sales_stage_rows_sha256(INTEGER);
-                DROP FUNCTION IF EXISTS sales_stage_digest_scalar(TEXT);
-                ALTER TABLE import_snapshots
-                    DROP CONSTRAINT IF EXISTS ck_import_snapshots_stage_rows_sha256;
-                UPDATE import_snapshots
-                SET manifest = manifest - 'stage_rows_sha256'
-                WHERE import_month = '2099-12';
-                ALTER TABLE import_snapshots DROP COLUMN stage_rows_sha256;
-                """
-            )
-            await conn.execute(
-                """
-                UPDATE import_snapshots
-                SET manifest = jsonb_set(manifest, '{rows_imported}', '999'::jsonb)
-                WHERE id = $1
-                """,
-                first.snapshot_id,
-            )
-            with pytest.raises(
-                asyncpg.PostgresError,
-                match="cannot certify legacy sales staging",
-            ):
+                await conn.execute(
+                    """
+                    DROP VIEW reporting_source_snapshot_v1 CASCADE;
+                    DROP TRIGGER IF EXISTS trg_verify_sales_generation_head_target
+                        ON sales_generation_heads;
+                    DROP TRIGGER IF EXISTS trg_sales_stage_mutation
+                        ON sales_import_stage_rows;
+                    DROP TRIGGER IF EXISTS trg_import_snapshot_sales_provenance
+                        ON import_snapshots;
+                    DROP FUNCTION IF EXISTS verify_sales_generation_head_target();
+                    DROP FUNCTION IF EXISTS guard_sales_stage_mutation();
+                    DROP FUNCTION IF EXISTS sales_snapshot_is_retained(INTEGER);
+                    DROP FUNCTION IF EXISTS guard_import_snapshot_sales_provenance();
+                    DROP FUNCTION IF EXISTS sales_stage_rows_sha256(INTEGER);
+                    DROP FUNCTION IF EXISTS sales_stage_digest_scalar(TEXT);
+                    ALTER TABLE import_snapshots
+                        DROP CONSTRAINT IF EXISTS ck_import_snapshots_stage_rows_sha256;
+                    UPDATE import_snapshots
+                    SET manifest = manifest - 'stage_rows_sha256'
+                    WHERE import_month = '2099-12';
+                    ALTER TABLE import_snapshots DROP COLUMN stage_rows_sha256;
+                    """
+                )
+                await conn.execute(
+                    """
+                    UPDATE import_snapshots
+                    SET manifest = jsonb_set(manifest, '{rows_imported}', '999'::jsonb)
+                    WHERE id = $1
+                    """,
+                    first.snapshot_id,
+                )
+                with pytest.raises(
+                    asyncpg.PostgresError,
+                    match="cannot certify legacy sales staging",
+                ):
+                    async with conn.transaction():
+                        await conn.execute(MIGRATION_037.read_text(encoding="utf-8"))
+                await conn.execute(
+                    """
+                    UPDATE import_snapshots
+                    SET manifest = jsonb_set(manifest, '{rows_imported}', '2'::jsonb)
+                    WHERE id = $1
+                    """,
+                    first.snapshot_id,
+                )
                 await conn.execute(MIGRATION_037.read_text(encoding="utf-8"))
-            await conn.execute(
-                """
-                UPDATE import_snapshots
-                SET manifest = jsonb_set(manifest, '{rows_imported}', '2'::jsonb)
-                WHERE id = $1
-                """,
-                first.snapshot_id,
-            )
-            await conn.execute(MIGRATION_037.read_text(encoding="utf-8"))
 
-            legacy_digests = await conn.fetchval(
-                """
-                SELECT COUNT(*)
-                FROM import_snapshots
-                WHERE id = ANY($1::integer[])
-                  AND stage_rows_sha256 IS NOT NULL
-                """,
-                [first.snapshot_id, second.snapshot_id],
-            )
-            assert legacy_digests == 2
+                legacy_digests = await conn.fetchval(
+                    """
+                    SELECT COUNT(*)
+                    FROM import_snapshots
+                    WHERE id = ANY($1::integer[])
+                      AND stage_rows_sha256 IS NOT NULL
+                    """,
+                    [first.snapshot_id, second.snapshot_id],
+                )
+                assert legacy_digests == 2
 
-            third = await import_sales_dataframe(
-                conn,
-                sales_frame(),
-                "037-third.xlsx",
-                source_sha256="f" * 64,
-                cutoff_date=date(2099, 12, 2),
-                requested_by_sub="test:037-third",
-            )
-            assert await conn.fetchval(
-                "SELECT COUNT(*) FROM sales_import_stage_rows WHERE snapshot_id = $1",
-                first.snapshot_id,
-            ) == len(sales_frame())
-            assert third.generation_token is not None
-            assert third.manifest_sha256 is not None
-            rollback_snapshot_id, rollback_rows, rollback_revision = await rollback_sales_generation(
-                conn,
-                current_snapshot_id=third.snapshot_id,
-                current_generation_token=third.generation_token,
-                expected_manifest_sha256=third.manifest_sha256,
-                requested_by_sub="test:037-upgrade-rollback",
-                reason="Rollback dupa upgrade 036 la 037",
-            )
-            assert rollback_rows == len(sales_frame())
-            assert rollback_revision == 4
-            assert await conn.fetchval(
-                "SELECT stage_rows_sha256 FROM import_snapshots WHERE id = $1",
-                rollback_snapshot_id,
-            ) is not None
+                third = await import_sales_dataframe(
+                    conn,
+                    sales_frame(),
+                    "037-third.xlsx",
+                    source_sha256="f" * 64,
+                    cutoff_date=date(2099, 12, 2),
+                    requested_by_sub="test:037-third",
+                )
+                assert await conn.fetchval(
+                    "SELECT COUNT(*) FROM sales_import_stage_rows WHERE snapshot_id = $1",
+                    first.snapshot_id,
+                ) == len(sales_frame())
+                assert third.generation_token is not None
+                assert third.manifest_sha256 is not None
+                rollback_snapshot_id, rollback_rows, rollback_revision = (
+                    await rollback_sales_generation(
+                        conn,
+                        current_snapshot_id=third.snapshot_id,
+                        current_generation_token=third.generation_token,
+                        expected_manifest_sha256=third.manifest_sha256,
+                        requested_by_sub="test:037-upgrade-rollback",
+                        reason="Rollback dupa upgrade 036 la 037",
+                    )
+                )
+                assert rollback_rows == len(sales_frame())
+                assert rollback_revision == 4
+                assert await conn.fetchval(
+                    "SELECT stage_rows_sha256 FROM import_snapshots WHERE id = $1",
+                    rollback_snapshot_id,
+                ) is not None
+            finally:
+                await rollback_scope.rollback()
     finally:
         async with pool.acquire() as conn:
             await cleanup(conn)

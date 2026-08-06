@@ -287,6 +287,12 @@ async def test_migration_publishes_views_and_preserves_n_minus_one_acl_in_postgr
     from db.migration_runner import run_migrations
 
     database_url = os.environ["DATABASE_URL"]
+    batch_id = UUID("00000000-0000-0000-0000-000000000047")
+    people = [
+        ("sp1_" + "c" * 64, "fixture a"),
+        ("sp1_" + "d" * 64, "fixture b"),
+        ("sp1_" + "e" * 64, "fixture c"),
+    ]
     connection = await asyncpg.connect(database_url)
     try:
         await connection.execute("CREATE ROLE unihub_insight_reader NOLOGIN")
@@ -332,7 +338,6 @@ async def test_migration_publishes_views_and_preserves_n_minus_one_acl_in_postgr
             "reporting_source_snapshot_v1"
         )
 
-        batch_id = UUID("00000000-0000-0000-0000-000000000047")
         await connection.execute(
             "INSERT INTO salary_import_batches ("
             "batch_id, year, month, status, manifest, manifest_sha256, applied_by, "
@@ -342,11 +347,6 @@ async def test_migration_publishes_views_and_preserves_n_minus_one_acl_in_postgr
             "a" * 64,
             "b" * 64,
         )
-        people = [
-            ("sp1_" + "c" * 64, "fixture a"),
-            ("sp1_" + "d" * 64, "fixture b"),
-            ("sp1_" + "e" * 64, "fixture c"),
-        ]
         await connection.executemany(
             "INSERT INTO salary_private.people (person_id, normalized_name, identity_source) "
             "VALUES ($1, $2, 'name')",
@@ -427,4 +427,20 @@ async def test_migration_publishes_views_and_preserves_n_minus_one_acl_in_postgr
         )
         assert duplicates == []
     finally:
+        await connection.execute(
+            "DELETE FROM ai_forecast_runs "
+            "WHERE forecast_month = '2099-02' AND model_name = 'fixture'"
+        )
+        await connection.execute(
+            "DELETE FROM salary_records WHERE import_batch_id = $1", batch_id
+        )
+        await connection.execute(
+            "DELETE FROM salary_import_batches WHERE batch_id = $1", batch_id
+        )
+        await connection.execute(
+            "DELETE FROM salary_private.people WHERE person_id = ANY($1::text[])",
+            [person_id for person_id, _ in people],
+        )
+        await connection.execute("DROP OWNED BY unihub_insight_reader")
+        await connection.execute("DROP ROLE unihub_insight_reader")
         await connection.close()
