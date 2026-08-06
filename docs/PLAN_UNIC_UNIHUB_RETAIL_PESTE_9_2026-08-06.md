@@ -5,7 +5,7 @@ status: closed
 created: 2026-08-06
 baseline_sha: 6ce32b863b44fbab76f612ba74aad0e0cf0f108a
 audit_sha: da38d93707edf8d5ba66f6154d66103a89efd0cc
-implementation_sha: 8afe0e3551da3e7c80c5fd4e7a4ed90fdbf23c02
+implementation_sha: 30d64f30209f1056d38a6d988aadc68506bfeeac
 ---
 
 # 1. Mandat
@@ -113,10 +113,9 @@ Implementarea curentă este verificată local pe `dell-standby`; candidații
 `fc5fb24aa13a2a0391a17e60185bdf144b632420` sunt sincronizați pe `origin/main`,
 iar ultimul SHA documentat anterior este build-uit și deployat pe primary.
 
-Candidatul de cod este `6800dace58ce66a3488edc429fdb0e22035d3049`, iar release-ul
-documentat și deployat este `c6ba293bd6a8479cfb6142d32870415d08dde84e`. Buildul
-primary, serviciile și health checks sunt verificate pe acest release; schimbările
-curente:
+Candidatul final de cod este `30d64f30209f1056d38a6d988aadc68506bfeeac`, iar
+primary rulează acest SHA; buildul, serviciile și health checks sunt verificate pe
+acest release. Schimbările livrate:
 
 - decompoziție vizuală efectivă: `features/campaigns/PremiumView.tsx`,
   `SortableTable.tsx`, `features/settings/exports/controls.tsx`, rezultatul ERP,
@@ -126,7 +125,7 @@ curente:
   ApiError, 401 și AbortSignal;
 - contractul include Decimal branded + decoder runtime, PATCH/path params și
   Blob pentru export XLSX/fotografii; digest curent:
-  `f847dbfd8029e331803f5cca023b7dde449312e11873de617933482130664921`;
+  `f97f73f17a1d18c7c0403e068947dfa9b86251b63b72d4098ef01afe019ff262`;
 - response models au fost adăugate pentru Target, CRM, HR, task-uri, P&L,
   salarii și endpointurile binary; Grile și infrastructura auth/metrics rămân
   în afara lotului.
@@ -134,7 +133,7 @@ curente:
 Dovezi curente:
 
 - `npm run typecheck`, `npm run typecheck:strict`, `npm run lint`: verde;
-- `npm run test -- --run`: `43` fișiere, `270` teste verzi; testele generate
+- `npm run test -- --run`: `45` fișiere, `274` teste verzi; testele generate
   includ nullable Decimal, coliziunea `value`, PATCH/path, Blob și AbortSignal;
 - contract drift: `f847dbfd8029e331803f5cca023b7dde449312e11873de617933482130664921`;
 - `npm run verify:rum-build`: RUM verificat în 21 asset-uri JavaScript;
@@ -174,8 +173,9 @@ Nicio recomandare nu este omisă. Sunt două adaptări justificate:
 
 ## 4.2 Closure evidence — 2026-08-06
 
-Implementarea finală este `8afe0e3551da3e7c80c5fd4e7a4ed90fdbf23c02`, sincronizată
-pe `origin/main` și verificată pe primary la același SHA. Schimbările livrate:
+Implementarea finală de cod este `30d64f30209f1056d38a6d988aadc68506bfeeac`,
+sincronizată pe `origin/main` și verificată pe primary la același SHA. Schimbările
+livrate:
 
 - contracte Retail generate offline în `src/api/generated/`, decoder runtime
   pentru Decimal/Blob și client BFF cu cookie, CSRF, AbortSignal, ApiError,
@@ -192,7 +192,7 @@ Dovezi finale pe conținut neschimbat:
 - `npm run typecheck`: verde;
 - `npm run typecheck:strict`: verde;
 - `npm run lint`: verde;
-- `npm run test -- --run`: `45` fișiere, `275` teste verzi;
+- `npm run test -- --run`: `45` fișiere, `274` teste verzi;
 - `backend/scripts/run_tests_isolated.sh`: `1664 passed, 7 skipped` într-o bază
   Postgres/Valkey izolată;
 - `mypy backend/ --ignore-missing-imports --explicit-package-bases`: `382`
@@ -207,7 +207,7 @@ Dovezi finale pe conținut neschimbat:
 
 Dovadă live exact-SHA:
 
-- primary `server`: `8afe0e3551da3e7c80c5fd4e7a4ed90fdbf23c02`,
+- primary `server`: `30d64f30209f1056d38a6d988aadc68506bfeeac`,
   `unihub-backend`, `unihub-worker` și `unihub-import-worker` active;
 - `/health` și `/readyz` locale: `200` cu `{"status":"ok"}`;
 - `https://retail.unihub.ro/`: `200`, `/readyz`: `200`,
