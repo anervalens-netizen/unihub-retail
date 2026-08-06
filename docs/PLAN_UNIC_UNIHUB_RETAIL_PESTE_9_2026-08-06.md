@@ -981,7 +981,7 @@ prin fluxul local-first autorizat de ADR-005, dar statusul documentului devine
 
 Status: `closed` după consumarea dovezii formale exact-SHA descrise mai jos.
 `implementation_sha` pentru remedierea runtime este
-`324d9eab0e7a91a5d537c680d6720708dcbf7ac9`. `release_sha`, runul CI și runul
+`074489b2364023a66b9fa9ce15c92db8d264f5af`. `release_sha`, runul CI și runul
 deploy sunt identitatea machine-readable a ultimului artefact formal consumat;
 se citesc din runurile GitHub și auditul immutable al approval/deployului, fără
 un commit docs-only auto-referențial după deploy.
@@ -999,13 +999,17 @@ Remedierea Grile este închisă cu următoarele dovezi:
   `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`;
 - publicarea Campaign păstrează intenția `Neatribuit` exclusiv prin API-urile
   publice curente, fără `_build_campaign_context` sau cherry-pick legacy.
+- gate-ul browser strict a restaurat în istoricul importurilor durata și
+  coverage-ul magazinelor și a aliniat fixture-urile E2E la encodingul Decimal
+  derivat din contractele generate, fără relaxarea decodorului runtime.
 
 Gate-uri pe conținutul runtime neschimbat:
 
 - suita Grile: `214 passed, 42 skipped`; SQL izolat țintit: `17 passed`;
 - backend complet izolat: `1761 passed, 7 skipped`; mypy: `412` fișiere verzi;
 - frontend typecheck, strict, lint, `56` fișiere / `325` teste Vitest și build:
-  verzi; contract, manifest, vendor integrity, bundle budget și
+  verzi; E2E Chromium complet: `53 passed`; contract, manifest, vendor
+  integrity, bundle budget și
   `git diff --check`: verzi;
 - backend, operations worker și import worker active; `/health`, `/readyz` și
   frontendul public sunt verzi, iar assetul Grile public este identic byte cu
