@@ -1,10 +1,14 @@
 """Static and unit checks for the immutable Campaigns publication contract."""
 from __future__ import annotations
 
+import os
+import re
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
-import re
+
+import asyncpg
+import pytest
 
 from services.campaign_reporting import _Store, _promo_agent_metrics, _row
 
@@ -16,6 +20,12 @@ MIGRATION = (
     / "053_insight_campaign_publication.sql"
 )
 SQL = MIGRATION.read_text(encoding="utf-8")
+PUBLISHER_ACL = (
+    Path(__file__).resolve().parents[1]
+    / "db"
+    / "migrations"
+    / "054_campaign_reporting_publisher_acl.sql"
+).read_text(encoding="utf-8")
 PUBLISHER = (
     Path(__file__).resolve().parents[1]
     / "services"
@@ -110,6 +120,48 @@ def test_campaign_publication_is_append_only_cas_and_fails_closed_when_stale() -
     assert "reporting_source_snapshot_v3 AS snapshot\nWHERE snapshot.domain <> 'campaigns'" in SQL
     assert "CREATE OR REPLACE VIEW reporting_source_snapshot_v3" not in SQL
     assert "CREATE OR REPLACE VIEW reporting_campaign_month_v1" not in SQL
+
+
+def test_campaign_publisher_acl_is_narrow_and_covers_canonical_incentive_inputs() -> None:
+    assert "incentive_campaigns" in PUBLISHER_ACL
+    assert "incentive_products" in PUBLISHER_ACL
+    assert "ai_forecast_runs" in PUBLISHER_ACL
+    assert "ai_forecast_store_day" in PUBLISHER_ACL
+    assert "store_targets" in PUBLISHER_ACL
+    assert "TO unihub_sales_import" in PUBLISHER_ACL
+    assert "ALL TABLES" not in PUBLISHER_ACL
+    assert "INSERT" not in PUBLISHER_ACL
+    assert "UPDATE" not in PUBLISHER_ACL
+    assert "DELETE" not in PUBLISHER_ACL
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires the isolated PostgreSQL contract database",
+)
+async def test_campaign_publisher_acl_is_select_only_in_postgres() -> None:
+    connection = await asyncpg.connect(os.environ["DATABASE_URL"])
+    try:
+        for table in (
+            "incentive_campaigns",
+            "incentive_products",
+            "ai_forecast_runs",
+            "ai_forecast_store_day",
+            "store_targets",
+        ):
+            assert await connection.fetchval(
+                "SELECT has_table_privilege('unihub_sales_import', $1, 'SELECT')",
+                f"public.{table}",
+            )
+            for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                assert not await connection.fetchval(
+                    "SELECT has_table_privilege('unihub_sales_import', $1, $2)",
+                    f"public.{table}",
+                    privilege,
+                )
+    finally:
+        await connection.close()
 
 
 def test_publisher_reuses_canonical_evaluators_and_preserves_agent_totals() -> None:

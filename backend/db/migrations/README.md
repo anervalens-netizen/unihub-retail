@@ -60,11 +60,12 @@ release-ului `v2.1.0` include:
 | 050 | `050_insight_visits_completion_semantics.sql` | `681a2e396f3d14713d4c1d40b8c93351329390a980320b6ac2e56db597963b0d` | semantică de completare Visits canonică și fail-closed |
 | 051 | `051_insight_planning_promotion_read_model.sql` | `1f7fafe8d3889d77affb2602502d0411d4bb28df0ab31a897c796e3ddf4f3bb0` | head și ledger Planning cu CAS, snapshot v3 și scenariu v2 fără promovare implicită |
 | 052 | `052_insight_planning_hash_acl.sql` | `3cb4411dba9ef15723ee82df7dff7dbb75f58efa61c9dbe751000ce1986aec4d` | bridge definer îngust pentru verificarea read-only a digestului forecast promovat |
-| 053 | `053_insight_campaign_publication.sql` | `2e7df7912da482f72be902e03808c2695442308d2aa446ac2cf7d3d816ab23b1` | generații Campanii immutable, CAS/ledger, publisher canonic Focus/Promo/Incentive pe magazin+agent, `reporting_source_snapshot_v4` și `reporting_campaign_month_v2`; v1/v3 rămân rollback |
+| 053 | `053_insight_campaign_publication.sql` | `bf3a4f5ae58dee480a224acc4664f2c294aa3f0d9d09f9339fcee44910f58ad2` | generații Campanii immutable, CAS/ledger, publisher canonic Focus/Promo/Incentive pe magazin+agent, `reporting_source_snapshot_v4` și `reporting_campaign_month_v2`; v1/v3 rămân rollback |
+| 054 | `054_campaign_reporting_publisher_acl.sql` | `8b04375c053ca1d1e081ba17d06e3049e0b48035f547c32b8743ef7237608db8` | grant read-only minim pentru evaluatorul Incentive folosit de publisherul izolat |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
-### Campaigns v2 publication (053)
+### Campaigns v2 publication (053–054)
 
 După aplicarea 053, pornește imports workerul cu codul care conține
 `publish_campaign_reporting_background`, apoi rulează întâi read-only:
