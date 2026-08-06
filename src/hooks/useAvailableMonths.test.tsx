@@ -42,7 +42,7 @@ describe('useAvailableMonths', () => {
     })).toBe('session_expired');
   });
 
-  it('keeps one last valid month as the recoverable stale fallback', () => {
+  it('rejects a single saved month as an incomplete stale fallback', () => {
     localStorage.setItem(
       'unihub_available_months_v1',
       JSON.stringify({
@@ -53,11 +53,21 @@ describe('useAvailableMonths', () => {
       }),
     );
 
-    expect(readCachedMonths('subject-single-month')).toEqual({
-      version: 1,
-      months: ['2026-08'],
-      savedAt: '2026-08-06T10:00:00.000Z',
-    });
+    expect(readCachedMonths('subject-single-month')).toBeNull();
+  });
+
+  it('rejects duplicate saved months that normalize to one value', () => {
+    localStorage.setItem(
+      'unihub_available_months_v1',
+      JSON.stringify({
+        version: 1,
+        identityKey: 'subject-duplicate-month',
+        months: ['2026-08', '2026-08'],
+        savedAt: '2026-08-06T10:00:00.000Z',
+      }),
+    );
+
+    expect(readCachedMonths('subject-duplicate-month')).toBeNull();
   });
 
   it('loads a valid month list and exposes retry without page reload', async () => {

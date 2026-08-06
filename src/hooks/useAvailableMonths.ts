@@ -6,7 +6,11 @@ import { ApiError } from '../api/client';
 
 export const AVAILABLE_MONTHS_QUERY_KEY = ['filters', 'available-months'] as const;
 const AVAILABLE_MONTHS_CACHE_KEY = 'unihub_available_months_v1';
-const MIN_CACHED_MONTHS = 1;
+const MIN_CACHED_MONTHS = 2;
+
+function normalizeMonths(months: string[]): string[] {
+  return [...new Set(months)].sort().reverse();
+}
 
 export function clearAvailableMonthsCache(): void {
   try {
@@ -51,25 +55,27 @@ export function readCachedMonths(identityKey: string): CachedMonths | null {
       parsed.version !== 1 ||
       parsed.identityKey !== identityKey ||
       !Array.isArray(parsed.months) ||
-      parsed.months.length < MIN_CACHED_MONTHS ||
       !parsed.months.every((month): month is string => /^\d{4}-(0[1-9]|1[0-2])$/.test(month)) ||
       typeof parsed.savedAt !== 'string'
     ) {
       return null;
     }
-    return { version: 1, months: [...new Set(parsed.months)].sort().reverse(), savedAt: parsed.savedAt };
+    const months = normalizeMonths(parsed.months);
+    if (months.length < MIN_CACHED_MONTHS) return null;
+    return { version: 1, months, savedAt: parsed.savedAt };
   } catch {
     return null;
   }
 }
 
 function writeCachedMonths(months: string[], identityKey: string): void {
-  if (months.length < MIN_CACHED_MONTHS) return;
+  const normalizedMonths = normalizeMonths(months);
+  if (normalizedMonths.length < MIN_CACHED_MONTHS) return;
   try {
     const payload: CachedMonths = {
       version: 1,
       identityKey,
-      months: [...new Set(months)].sort().reverse(),
+      months: normalizedMonths,
       savedAt: new Date().toISOString(),
     };
     window.localStorage.setItem(AVAILABLE_MONTHS_CACHE_KEY, JSON.stringify(payload));
