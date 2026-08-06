@@ -1,11 +1,12 @@
 ---
 title: "Plan unic de execuție UniHub Retail peste 9"
 tags: [unihub-retail, audit, quality, frontend, performance]
-status: active
+status: release_candidate
 created: 2026-08-06
 baseline_sha: 6ce32b863b44fbab76f612ba74aad0e0cf0f108a
 audit_sha: da38d93707edf8d5ba66f6154d66103a89efd0cc
-implementation_sha: pending
+implementation_sha: 8ac62b0bc26041e80e9e9863e1e51bbca5fd696c
+release_sha: resolved_by_git_head
 ---
 
 # 1. Mandat
@@ -259,12 +260,26 @@ Deficiențele care au redeschis R-07 și R-13 sunt reparate în candidatul local
 - Campanii folosește exclusiv API-ul public `services.campaigns`, un snapshot
   caller-owned și deadline request-wide pentru pool, query și compute.
 
-Dovezi locale deja verzi pe conținutul integrat: TypeScript strict, ESLint,
-`55` fișiere / `322` teste Vitest, `190` teste țintite Campanii/Dashboard/export,
-`41` teste Promo/migrare, contract drift, migration manifest, build, RUM în
-`27` asset-uri, bundle ratchet și ciclul PWA N -> N+1 -> rollback N. Planul
-rămâne `active` până la suita backend izolată completă, CI exact-SHA, deploy și
-re-auditul live final.
+Dovezi locale verzi pe candidatul integrat:
+
+- TypeScript strict global, ESLint și `55` fișiere / `322` teste Vitest;
+- `1752 passed, 9 skipped` în suita backend cu PostgreSQL/Valkey izolate și
+  bootstrap fresh până la migrarea 055; `services/imports.py` rămâne la 100%,
+  boundary-urile export la 95,44–100%, iar Target la 95,60–100%;
+- mypy complet: `410` fișiere fără erori; contract OpenAPI curent, digest
+  `d7a6a67c7c71aa9b5710885796de4233ab8e3e0b46df5432b4b513b18ff46c3e`;
+- build, RUM în `27` asset-uri, bundle ratchet și PWA N -> N+1 -> rollback N;
+- benchmark fresh-process: tabel simplu `50.000 x 20` în `36,101s`, peak RSS
+  `138.575.872` bytes, artefact `2.827.468` bytes; două chart exports de
+  `10.000 x 20` au terminat concurent în `7,89s`, cu peak RSS sub `180 MiB`
+  fiecare.
+
+`implementation_sha` identifică ultimul commit care modifică runtime-ul.
+`release_sha` este HEAD-ul Git care conține acest document și se rezolvă
+machine-readable din runul CI/deploy, evitând un hash Git auto-referențial.
+Închiderea operațională cere încă CI verde pe acel HEAD, deployul aceluiași
+artefact, migrarea Promo v1 -> v2 înainte de restart și re-auditul live final;
+dovezile se atașează release-ului, fără un commit docs-only după deploy.
 
 # 5. Protocol unic de execuție pentru GPT Luna
 
