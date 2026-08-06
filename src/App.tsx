@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { MainLayout, type AppFilters } from './components/MainLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -19,6 +19,7 @@ import { canAccessManagement } from './auth/permissions';
 import { pnlPermissionIsPending, shouldResetPnlSubtab } from './auth/pnlAccess';
 import { usePnlCapability } from './auth/usePnlCapability';
 import { selectCurrentMonth } from './lib/currentMonth';
+import { parseInsightDeepLink } from './lib/insightDeepLink';
 import { usePersistentState } from './lib/usePersistentState';
 
 const Campaigns = lazy(loadCampaignsScreen);
@@ -59,17 +60,18 @@ function parseCampaignsSection(value: string): CampaignsSection {
     : 'incentive';
 }
 
-function loadSavedFilters(key: string): AppFilters {
+function loadSavedFilters(key: string, overrides: Partial<AppFilters> = {}): AppFilters {
   const saved = localStorage.getItem(key);
-  if (!saved) return defaultAppFilters();
+  if (!saved) return { ...defaultAppFilters(), ...overrides };
   try {
-    return normalizeAppFilters(JSON.parse(saved));
+    return { ...normalizeAppFilters(JSON.parse(saved)), ...overrides };
   } catch {
-    return defaultAppFilters();
+    return { ...defaultAppFilters(), ...overrides };
   }
 }
 
 export default function App() {
+  const insightDeepLink = useMemo(() => parseInsightDeepLink(window.location), []);
   const { isAuthenticated, isLoading: isAuthLoading, login, logout, user } = useAuth();
   const hasManagementAccess = canAccessManagement(user?.profile);
   const verifiedSubject = typeof user?.profile.sub === 'string' ? user.profile.sub : undefined;
@@ -89,33 +91,59 @@ export default function App() {
     });
   }, [login]);
 
-  const [activeTab, setActiveTab] = usePersistentState<ActiveTab>('unihub_active_tab', 'hub', {
-    deserialize: (raw) => sanitizeActiveTab(raw, hasManagementAccess),
-  });
+  const [activeTab, setActiveTab] = usePersistentState<ActiveTab>(
+    'unihub_active_tab',
+    insightDeepLink?.tab ?? 'hub',
+    {
+      deserialize: (raw) => sanitizeActiveTab(raw, hasManagementAccess),
+    },
+  );
   const [campaignsSection, setCampaignsSection] = usePersistentState<CampaignsSection>(
     'unihub_campaigns_section',
-    'incentive',
+    insightDeepLink?.campaignSection ?? 'incentive',
     { deserialize: parseCampaignsSection },
   );
   const [theme, setTheme] = usePersistentState('unihub_theme', 'light');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [hubSection, setHubSection] = usePersistentState<HubSection>(
     HUB_SECTION_STORAGE_KEY,
-    'current',
+    insightDeepLink?.hubSection ?? 'current',
     { deserialize: parseHubSection },
   );
-  const [hubFilters, setHubFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.hub));
-  const [focusFilters, setFocusFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.focus));
-  const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_STORAGE_KEYS.agents));
+  const [hubFilters, setHubFilters] = useState<AppFilters>(() =>
+    loadSavedFilters(FILTER_STORAGE_KEYS.hub, insightDeepLink?.filters),
+  );
+  const [focusFilters, setFocusFilters] = useState<AppFilters>(() =>
+    loadSavedFilters(FILTER_STORAGE_KEYS.focus, insightDeepLink?.filters),
+  );
+  const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() =>
+    loadSavedFilters(FILTER_STORAGE_KEYS.agents, insightDeepLink?.filters),
+  );
   const [currentMonth, setCurrentMonth] = useState('');
   const [focusFilterMonth, setFocusFilterMonth] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [mgmtSubTab, setMgmtSubTab] = usePersistentState<ManagementTab>(
     MANAGEMENT_SUBTAB_STORAGE_KEY,
-    'asm',
+    insightDeepLink?.managementSubtab ?? 'asm',
     { deserialize: parseManagementSubTab },
   );
+
+  const insightDeepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (!insightDeepLink || insightDeepLinkApplied.current) return;
+    insightDeepLinkApplied.current = true;
+    setActiveTab(insightDeepLink.tab);
+    if (insightDeepLink.hubSection) setHubSection(insightDeepLink.hubSection);
+    if (insightDeepLink.campaignSection) setCampaignsSection(insightDeepLink.campaignSection);
+    if (insightDeepLink.managementSubtab) setMgmtSubTab(insightDeepLink.managementSubtab);
+  }, [
+    insightDeepLink,
+    setActiveTab,
+    setCampaignsSection,
+    setHubSection,
+    setMgmtSubTab,
+  ]);
 
   useEffect(() => {
     if (!hasManagementAccess && activeTab === 'management') {
@@ -186,7 +214,11 @@ export default function App() {
         const availableMonths = await getAvailableMonths();
         if (!mounted) return;
         setMonths(availableMonths);
-        setCurrentMonth(selectCurrentMonth(availableMonths));
+        setCurrentMonth(
+          insightDeepLink?.period && availableMonths.includes(insightDeepLink.period)
+            ? insightDeepLink.period
+            : selectCurrentMonth(availableMonths),
+        );
       } catch {
         // ignore — empty state OK
       } finally {
@@ -216,7 +248,14 @@ export default function App() {
       mounted = false;
       window.removeEventListener('unihub:navigate', handleNavigate as EventListener);
     };
-  }, [isAuthenticated, isAuthLoading, setActiveTab, setCampaignsSection, setMgmtSubTab]);
+  }, [
+    insightDeepLink?.period,
+    isAuthenticated,
+    isAuthLoading,
+    setActiveTab,
+    setCampaignsSection,
+    setMgmtSubTab,
+  ]);
 
 
 
@@ -296,7 +335,13 @@ export default function App() {
           />
         )}
         {activeTab === 'agents' && currentMonth && (
-          <Agents currentMonth={currentMonth} months={months} filters={agentsFilters} />
+          <Agents
+            currentMonth={currentMonth}
+            months={months}
+            filters={agentsFilters}
+            preferredSection={insightDeepLink?.agentsSection}
+            preferredGrileMonth={insightDeepLink?.period}
+          />
         )}
         {activeTab === 'management' && (
           <ErrorBoundary

@@ -306,6 +306,8 @@ interface AgentsProps {
   currentMonth: string;
   months: string[];
   filters: AppFilters;
+  preferredSection?: AgentsMainTab;
+  preferredGrileMonth?: string;
 }
 
 function CustomTooltip({ active, payload, label }: ChartTooltipProps) {
@@ -343,7 +345,13 @@ function CustomTooltip({ active, payload, label }: ChartTooltipProps) {
   return null;
 }
 
-export function Agents({ currentMonth, months, filters }: AgentsProps) {
+export function Agents({
+  currentMonth,
+  months,
+  filters,
+  preferredSection,
+  preferredGrileMonth,
+}: AgentsProps) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedAgent, setSelectedAgent] = usePersistentState<string | null>(
@@ -361,9 +369,13 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
   );
   const [mainTab, setMainTab] = usePersistentState<AgentsMainTab>(
     'agents_mainTab',
-    'overview',
+    preferredSection ?? 'overview',
     { deserialize: deserializeAgentsMainTab },
   );
+
+  useEffect(() => {
+    if (preferredSection) setMainTab(preferredSection);
+  }, [preferredSection, setMainTab]);
 
   const [cardFirma, setCardFirma] = useState(ALL_FIRMS);
   const [cardMagazin, setCardMagazin] = useState(ALL_STORES);
@@ -559,7 +571,7 @@ export function Agents({ currentMonth, months, filters }: AgentsProps) {
         </ErrorBoundary>
       ) : mainTab === 'grile' ? (
         <ErrorBoundary>
-          <GrileSubtab />
+          <GrileSubtab initialMonth={preferredGrileMonth} />
         </ErrorBoundary>
       ) : (
         <>

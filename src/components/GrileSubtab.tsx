@@ -429,10 +429,10 @@ function ManagerGroup({ m, filter, month }: { m: GrileManager; filter: StatusFil
 
 const LEGACY_GRILE_MONTH_KEY = 'unihub_grile_month';
 
-export function GrileSubtab() {
+export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
   // month gol = lasa backend-ul sa aleaga ultima luna operationala;
   // selectiile vechi nu se persista, ca inchiderea de luna sa nu blocheze UI-ul pe luna anterioara.
-  const [month, setMonth] = useState('');
+  const [month, setMonth] = useState(initialMonth ?? '');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const qc = useQueryClient();
 

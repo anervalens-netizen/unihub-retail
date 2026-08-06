@@ -60,6 +60,12 @@ starea terminală din PostgreSQL rămâne autoritativă.
 - **Setări:** importuri, exporturi și preferințe;
 - **Vizite:** read model Retail peste sursa comună FieldOps.
 
+Deep-link-urile venite din UniHub Insight folosesc `source_context=insight` și
+deschid direct suprafața operațională cerută, cu perioada și filtrele
+Firma/Manager/Magazin/Agent. Un scope cu mai multe magazine rămâne la nivelul
+părinte; Retail nu alege implicit primul magazin. Autorizarea fiecărui modul se
+recalculează normal în Retail.
+
 Detaliile de navigare, autorizare și responsabilitățile router → service →
 repository sunt în `APP_ARCHITECTURE.md`.
 
