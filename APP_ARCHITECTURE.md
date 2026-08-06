@@ -567,6 +567,15 @@ bonurile de retur nu sunt expuse până la un read-model cu identitatea canonic�
 de bon. Reader-ul Insight primește `SELECT` numai pe view, nu pe
 `reporting_item_day`.
 
+Migrarea 051 separă forecastul calculat de forecastul aprobat pentru Insight.
+`ai_forecast_runs.status='completed'` este numai candidat; publicarea trece prin
+`planning_forecast_heads`, cu hashul exact al run-ului, număr de rânduri,
+artefact de aprobare, revision CAS și ledger append-only. View-urile
+`reporting_source_snapshot_v3` și `reporting_planning_scenario_v2` omit orice
+run fără head sau cu integritatea schimbată. Targeturile apar numai dacă sunt
+finalizate, toate valorile sunt prezente, iar snapshotul de reguli corespunde
+exact registry-ului append-only. Migrarea nu promovează date business.
+
 `stores` este master data curenta pentru apartenenta magazinelor. In Retail
 exista un singur layer activ de management; coloanele `regional` si `asm` sunt
 pastrate pentru compatibilitate cu rapoartele, dar pentru magazinele active din
@@ -644,6 +653,11 @@ fiecare rulare cu `metric` (`sales_value` sau `units`) si `horizon`
 rulare `completed` pentru luna si metrica ceruta; daca nu exista, cauta o
 rulare care foloseste luna ceruta ca `source_month`, ca Hub sa poata afisa
 forecastul lunii urmatoare inainte sa existe importuri pentru acea luna.
+
+Aceste selecții „latest completed” rămân contractul operațional al Hub-ului
+Retail, nu autoritate analitică partajată. UniHub Insight citește exclusiv
+head-urile Planning promovate; un run completat, dar nepromovat, rămâne
+`partial/unavailable` în contractul Insight.
 `/api/ai-forecast/rolling-12` citeste cele 12 rulări lunare salvate pentru
 urmatoarele 12 luni, ancorate prin `metadata.anchor_month`.
 

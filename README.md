@@ -139,6 +139,11 @@ recitesc P&L sau forecast live. Allocatorul refuză bugete în afara
 `sum(floor) <= buget <= sum(cap)` înainte de write. Scenariile legacy rămân
 `legacy-unversioned`, fără backfill inventat.
 
+Migrarea 051 adaugă autoritatea Planning pentru Insight: head per
+lună/metrică/orizont, promotion/rollback cu revision CAS și ledger append-only.
+Niciun run `completed` și niciun Target legacy fără snapshot exact nu este
+publicat implicit; migrarea instalează contractul, dar nu promovează date live.
+
 Fiecare request Dashboard are un deadline monotonic unic, implicit 2.500 ms și
 configurabil până la maximum 3.000 ms, creat înainte de rezolvarea poolului.
 Acquire-urile și query-urile asyncpg primesc timpul rămas; copiii sunt anulați
