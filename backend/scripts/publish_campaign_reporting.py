@@ -26,7 +26,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from db.connection import verify_database_connection_authority
-from services.campaign_reporting import CampaignReportingPublisher
+from services.campaign_reporting import CampaignReportingPublisher, ContestReportingPublisher
 
 
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -123,6 +123,7 @@ async def run(args: argparse.Namespace) -> int:
     )
     try:
         publisher = CampaignReportingPublisher(pool)
+        contest_publisher = ContestReportingPublisher(pool)
         results = []
         for period in periods:
             result = await publisher.publish_month(
@@ -130,7 +131,12 @@ async def run(args: argparse.Namespace) -> int:
                 requested_by_sub=args.requested_by,
                 reason=args.reason,
             )
-            results.append(result.__dict__)
+            contest_result = await contest_publisher.publish_month(
+                period,
+                requested_by_sub=args.requested_by,
+                reason=args.reason,
+            )
+            results.append({"campaign": result.__dict__, "contest": contest_result.__dict__})
         print(json.dumps(results, sort_keys=True))
     finally:
         await pool.close()
@@ -139,7 +145,7 @@ async def run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Backfill controlat pentru reporting_campaign_month_v2; default read-only."
+        description="Backfill controlat pentru read-modelurile Campaigns v3 și Concursuri v1; default read-only."
     )
     parser.add_argument("--month", action="append", type=_month, default=[])
     parser.add_argument("--all", action="store_true", help="Selectează toate lunile sales complete.")

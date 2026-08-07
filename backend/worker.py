@@ -453,7 +453,10 @@ async def publish_campaign_reporting_background(
 ) -> dict:
     """Run the bounded, canonical Campaigns publisher in the imports worker."""
     from dataclasses import asdict
-    from services.campaign_reporting import CampaignReportingPublisher
+    from services.campaign_reporting import (
+        CampaignReportingPublisher,
+        ContestReportingPublisher,
+    )
 
     token = bind_request_id(request_id) if request_id else None
     try:
@@ -466,7 +469,12 @@ async def publish_campaign_reporting_background(
             requested_by_sub=requested_by_sub,
             reason=reason,
         )
-        return asdict(publication)
+        contest_publication = await ContestReportingPublisher(pool).publish_month(
+            period,
+            requested_by_sub=requested_by_sub,
+            reason=reason,
+        )
+        return {"campaign": asdict(publication), "contest": asdict(contest_publication)}
     finally:
         if token is not None:
             reset_request_id(token)

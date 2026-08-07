@@ -63,6 +63,8 @@ release-ului `v2.1.0` include:
 | 053 | `053_insight_campaign_publication.sql` | `bf3a4f5ae58dee480a224acc4664f2c294aa3f0d9d09f9339fcee44910f58ad2` | generații Campanii immutable, CAS/ledger, publisher canonic Focus/Promo/Incentive pe magazin+agent, `reporting_source_snapshot_v4` și `reporting_campaign_month_v2`; v1/v3 rămân rollback |
 | 054 | `054_campaign_reporting_publisher_acl.sql` | `8b04375c053ca1d1e081ba17d06e3049e0b48035f547c32b8743ef7237608db8` | grant read-only minim pentru evaluatorul Incentive folosit de publisherul izolat |
 | 055 | `055_durable_export_operations.sql` | `69e02b01dbfab1caf207b30a46b7abf2b1dcbeb7f51e26bcfabc5c1ec0c63b28` | operații XLSX complexe owner-bound, rezervare înainte de ARQ, lease/epoch fencing, artifact privat hash-uit, auto-download revendicat atomic și retry explicit până la TTL |
+| 056 | `056_fieldops_visits_operations_authority.sql` | `36c2bda0adf6b2e15298403e164e99b75d78e46369b44510c500fdf7dcd838db` | autoritate operațională minimă pentru snapshotul local Visits, fără extinderea accesului la sursa FieldOps |
+| 057 | `057_insight_contest_grile_campaign_v3.sql` | `b66ba6287f2e842be7e6be2047cf6c23e6048f92419044f0b45d639e6a83bc8e` | Campaign v3 cu variantă canonică, Concurs v1 publicat immutable, Grile v1 fenced și snapshot Insight v5; v2/v4 rămân N-1 |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
@@ -82,6 +84,17 @@ imports workerului și actor/motiv explicit. El publică prin funcția CAS
 business data. `reporting_source_snapshot_v4` semnalizează explicit
 `campaign_reporting_not_published` până la primul head, iar v1/v3 rămân
 ancorele rollback N-1.
+
+### Campaigns v3, Concurs și Grile (057)
+
+Migrarea 057 păstrează contractele v2/v4 pentru N-1 și adaugă
+`reporting_source_snapshot_v5`, `reporting_campaign_month_v3`,
+`reporting_contest_month_v1` și `reporting_grile_month_v1`. După migrare,
+republică lunile necesare cu același script controlat; acesta publică atât
+Campaigns v3, cât și rezultatul canonic `ContestsService`, exclusiv prin
+funcțiile CAS. Pentru sursele Promo POS agregate, identitatea de bon nu este
+reconstruibilă: `promo_qualifying_bons` rămâne `NULL`, iar unitățile și
+discountul materializat rămân disponibile cu warning explicit.
 
 Migrațiile nu activează singure TVA live sau importul salarial live. Promotion pointer-ul P&L și batchul salary sunt contracte de audit/recovery; apply-ul financiar și reconcilierea HR rămân explicit blocate la P0.
 

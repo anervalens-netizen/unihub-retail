@@ -92,6 +92,13 @@ Metricile dedicate sunt:
 `promo_qty` din reporting rămâne agregatul operațional simplu și nu este
 sinonim cu bonurile calificate.
 
+Publisherul Insight nu transformă unități în bonuri. Când mecanismul folosește
+actuals POS agregate fără identitatea completă a bonului,
+`promo_qualifying_bons` este publicat `NULL`; `promo_discounted_units` și
+`promo_discount_value` rămân materializate cu warning explicit. Numărul de
+bonuri se publică numai când evaluatorul rule-based păstrează identitatea
+canonică de mai sus.
+
 Pentru sursa POS, valoarea reducerii folosește `PromoValoare Luna Curenta`
 înmulțită cu rata promoției (implicit 20%). Hub afișează în aceeași coloană
 `Promo` unitățile confirmate și valoarea reducerii, agregate peste toate

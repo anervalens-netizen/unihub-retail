@@ -192,26 +192,37 @@ def test_publisher_reuses_canonical_evaluators_and_preserves_agent_totals() -> N
             ("S1", "-", "A"): Decimal("9.60"),
         },
     )
-    assert _promo_agent_metrics(result, site_code="S1", agent="Ana") == (
+    assert _promo_agent_metrics(
+        result, site_code="S1", agent="Ana", receipt_identity_available=True
+    ) == (
         3,
         3,
         Decimal("15.00"),
     )
-    assert _promo_agent_metrics(result, site_code="S1", agent="Bogdan") == (
+    assert _promo_agent_metrics(
+        result, site_code="S1", agent="Bogdan", receipt_identity_available=True
+    ) == (
         4,
         4,
         Decimal("20.00"),
     )
-    assert _promo_agent_metrics(None, site_code="S1", agent="Ana") == (
+    assert _promo_agent_metrics(
+        None, site_code="S1", agent="Ana", receipt_identity_available=False
+    ) == (
         None,
         None,
         None,
     )
-    assert _promo_agent_metrics(result, site_code="S1", agent="Neatribuit") == (
+    assert _promo_agent_metrics(
+        result, site_code="S1", agent="Neatribuit", receipt_identity_available=True
+    ) == (
         2,
         2,
         Decimal("9.60"),
     )
+    assert _promo_agent_metrics(
+        result, site_code="S1", agent="Ana", receipt_identity_available=False
+    ) == (None, 3, Decimal("15.00"))
     store = _Store("S1", "Loc", "Mobiup", "R", "A")
     scopes = [_StoreAgent(store, "Ana"), _StoreAgent(store, "Bogdan")]
     assert [
